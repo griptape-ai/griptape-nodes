@@ -5,6 +5,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import anyio
 import pytest
 from PIL import Image
 from pydantic import ValidationError
@@ -500,8 +501,8 @@ class TestGeneratePreview:
             assert preview_img.height <= 50  # noqa: PLR2004
 
         # Verify no metadata file
-        metadata_path = Path(str(preview_path) + ".json")
-        assert not metadata_path.exists()
+        metadata_path = anyio.Path(str(preview_path) + ".json")
+        assert not await metadata_path.exists()
 
     @pytest.mark.asyncio
     async def test_generate_preview_with_metadata_success(
@@ -542,7 +543,7 @@ class TestGeneratePreview:
         assert "preview_generator_parameters" in metadata_dict
 
         # Verify metadata values match source file
-        source_stat = test_image_path.stat()
+        source_stat = await anyio.Path(test_image_path).stat()
         assert metadata_dict["source_file_size"] == source_stat.st_size
         assert metadata_dict["source_file_modified_time"] == source_stat.st_mtime
         assert metadata_dict["preview_file_names"] == f"{test_image_path.name}.webp"

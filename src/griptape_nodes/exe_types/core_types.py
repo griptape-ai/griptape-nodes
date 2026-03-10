@@ -1688,7 +1688,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             return self._output_type
         return ParameterTypeBuiltin.STR.value
 
-    @type.setter
+    @type.setter  # noqa: A003
     @BaseNodeElement.emits_update_on_write
     def type(self, value: str | None) -> None:
         self._custom_setter_for_property_type(value)
