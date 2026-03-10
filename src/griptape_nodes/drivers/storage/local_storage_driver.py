@@ -96,7 +96,12 @@ class LocalStorageDriver(BaseStorageDriver):
         }
 
     def save_file(
-        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        path: Path,
+        file_content: bytes,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        *,
+        skip_metadata_injection: bool = False,
     ) -> str:
         """Save a file to local storage by writing directly to disk.
 
@@ -104,6 +109,7 @@ class LocalStorageDriver(BaseStorageDriver):
             path: The path of the file to save.
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
+            skip_metadata_injection: If True, skip automatic workflow metadata injection.
 
         Returns:
             The absolute file path where the file was saved.
@@ -119,6 +125,7 @@ class LocalStorageDriver(BaseStorageDriver):
                 file_path=str(absolute_path),
                 content=file_content,
                 existing_file_policy=existing_file_policy,
+                skip_metadata_injection=skip_metadata_injection,
             )
         )
 

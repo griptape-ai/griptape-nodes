@@ -305,6 +305,8 @@ class StaticFilesManager:
         data: bytes,
         file_name: str,
         existing_file_policy: ExistingFilePolicy | None = None,
+        *,
+        skip_metadata_injection: bool = False,
     ) -> str:
         """Saves a static file to the workspace directory.
 
@@ -318,6 +320,7 @@ class StaticFilesManager:
                 - OVERWRITE: Replace existing file content
                 - CREATE_NEW: Auto-generate unique filename (e.g., file_1.txt, file_2.txt)
                 - FAIL: Raise FileExistsError if file exists
+            skip_metadata_injection: If True, skip automatic workflow metadata injection.
 
         Returns:
             The URL of the saved file for UI display (with cache-busting). Note: the actual filename
@@ -340,7 +343,9 @@ class StaticFilesManager:
             effective_policy = existing_file_policy
 
         try:
-            saved_path = self.storage_driver.save_file(file_path, data, effective_policy)
+            saved_path = self.storage_driver.save_file(
+                file_path, data, effective_policy, skip_metadata_injection=skip_metadata_injection
+            )
         except FileExistsError:
             raise
         except Exception as e:

@@ -151,7 +151,12 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         return response_data["url"]
 
     def save_file(
-        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        path: Path,
+        file_content: bytes,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        *,
+        skip_metadata_injection: bool = False,  # noqa: ARG002
     ) -> str:
         """Save a file to cloud storage via HTTP upload.
 
@@ -159,6 +164,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             path: The path of the file to save.
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
+            skip_metadata_injection: Unused; cloud storage does not perform metadata injection.
 
         Returns:
             The full asset URL for the saved file.
