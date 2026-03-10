@@ -14,7 +14,7 @@ from inspect import getmodule, isclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
-import aiofiles
+import anyio
 import semver
 import tomlkit
 from rich.box import HEAVY_EDGE
@@ -661,7 +661,7 @@ class WorkflowManager:
         try:
             # Libraries are now loaded only on app initialization and explicit reload requests
             # Now execute the workflow.
-            async with aiofiles.open(Path(complete_file_path), encoding="utf-8") as file:
+            async with await anyio.open_file(Path(complete_file_path), encoding="utf-8") as file:
                 workflow_content = await file.read()
             exec(workflow_content)  # noqa: S102
 
@@ -686,7 +686,7 @@ class WorkflowManager:
             # Check if file path exists
             relative_file_path = request.file_path
             complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
-            if not Path(complete_file_path).is_file():
+            if not await anyio.Path(complete_file_path).is_file():
                 details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
                 return RunWorkflowFromScratchResultFailure(result_details=details)
 
@@ -710,7 +710,7 @@ class WorkflowManager:
     ) -> ResultPayload:
         relative_file_path = request.file_path
         complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
-        if not Path(complete_file_path).is_file():
+        if not await anyio.Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             return RunWorkflowWithCurrentStateResultFailure(result_details=details)
         execution_result = await self.run_workflow(relative_file_path=relative_file_path)
@@ -1073,7 +1073,7 @@ class WorkflowManager:
     async def _write_metadata_header(self, file_path: Path, workflow_metadata: WorkflowMetadata) -> str | None:
         """Replace the workflow header and persist changes to disk."""
         try:
-            existing_content = file_path.read_text(encoding="utf-8")
+            existing_content = await anyio.Path(file_path).read_text(encoding="utf-8")
         except OSError as e:
             return f"Failed to read workflow file '{file_path}': {e!s}"
 

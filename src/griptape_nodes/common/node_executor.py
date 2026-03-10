@@ -9,6 +9,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import anyio
+
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types import node_types
@@ -507,7 +509,7 @@ class NodeExecutor:
                 pickle_control_flow_result=True,
             )
 
-        if not published_workflow_filename.exists():
+        if not await anyio.Path(published_workflow_filename).exists():
             msg = f"Published workflow file does not exist at path: {published_workflow_filename}"
             raise FileNotFoundError(msg)
 
@@ -3254,8 +3256,8 @@ class NodeExecutor:
     async def _delete_workflow(self, workflow_path: Path) -> None:
         # Derive the registry key from the workflow path using workspace-relative logic so it
         # matches the key used during registration (push_workflow(file_path=__file__) in the workflow).
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path.resolve()
-        resolved = workflow_path.resolve()
+        workspace_path = await anyio.Path(GriptapeNodes.ConfigManager().workspace_path).resolve()
+        resolved = await anyio.Path(workflow_path).resolve()
         if resolved.is_relative_to(workspace_path):
             path_for_key = str(resolved.relative_to(workspace_path))
         else:

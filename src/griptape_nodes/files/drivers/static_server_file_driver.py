@@ -8,6 +8,8 @@ HTTP round-trips through the dev server.
 from pathlib import Path
 from urllib.parse import urlparse
 
+import anyio
+
 from griptape_nodes.files.base_file_driver import BaseFileDriver
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -83,17 +85,17 @@ class StaticServerFileDriver(BaseFileDriver):
             FileNotFoundError: File does not exist at resolved path
             IsADirectoryError: Path is a directory
         """
-        path = self._resolve_to_local_path(location)
+        anyio_path = anyio.Path(self._resolve_to_local_path(location))
 
-        if not path.exists():
-            msg = f"Attempted to read file from localhost URL. Failed with url='{location}' because file not found at resolved path: {path}"
+        if not await anyio_path.exists():
+            msg = f"Attempted to read file from localhost URL. Failed with url='{location}' because file not found at resolved path: {anyio_path}"
             raise FileNotFoundError(msg)
 
-        if not path.is_file():
-            msg = f"Attempted to read file from localhost URL. Failed with url='{location}' because path is a directory: {path}"
+        if not await anyio_path.is_file():
+            msg = f"Attempted to read file from localhost URL. Failed with url='{location}' because path is a directory: {anyio_path}"
             raise IsADirectoryError(msg)
 
-        return path.read_bytes()
+        return await anyio_path.read_bytes()
 
     async def exists(self, location: str) -> bool:
         """Check if file exists at resolved workspace path.
@@ -105,10 +107,10 @@ class StaticServerFileDriver(BaseFileDriver):
             True if file exists and is a regular file
         """
         try:
-            path = self._resolve_to_local_path(location)
+            anyio_path = anyio.Path(self._resolve_to_local_path(location))
         except ValueError:
             return False
-        return path.exists() and path.is_file()
+        return await anyio_path.exists() and await anyio_path.is_file()
 
     def get_size(self, location: str) -> int:
         """Get file size from resolved workspace path.

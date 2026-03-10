@@ -3,8 +3,9 @@ import platform
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import anyio
 import pytest
 import send2trash
 
@@ -871,7 +872,7 @@ class TestDeleteFileRequest:
         file_path = temp_dir / "test.txt"
         file_path.write_text("test content")
 
-        with patch.object(Path, "unlink", side_effect=PermissionError("Access denied")):
+        with patch.object(anyio.Path, "unlink", AsyncMock(side_effect=PermissionError("Access denied"))):
             request = DeleteFileRequest(
                 path=str(file_path),
                 workspace_only=False,

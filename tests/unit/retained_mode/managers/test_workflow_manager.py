@@ -1,6 +1,8 @@
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import anyio
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
@@ -251,14 +253,11 @@ class TestWorkflowManager:
         mock_workflow.file_path = "workflows/my_workflow.py"
         existing_content = "# /// script\n# [tool]\n# ///\nprint('body')\n"
 
-        def fake_read_text(_self, *_args, **_kwargs) -> str:  # noqa: ANN001
-            return existing_content
-
         with (
             patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/my_workflow.py"),
             patch.object(Path, "is_file", return_value=True),
-            patch.object(Path, "read_text", fake_read_text),
+            patch.object(anyio.Path, "read_text", AsyncMock(return_value=existing_content)),
             patch.object(workflow_manager, "_replace_workflow_metadata_header", return_value="updated"),
             patch.object(
                 workflow_manager,

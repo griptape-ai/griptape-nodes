@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from urllib.parse import urljoin
 
+import anyio
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,11 +55,11 @@ async def _create_static_file(request: Request, file_path: str) -> dict:
     full_file_path = workspace_directory / file_path
 
     # Create parent directories if they don't exist
-    full_file_path.parent.mkdir(parents=True, exist_ok=True)
+    await anyio.Path(full_file_path.parent).mkdir(parents=True, exist_ok=True)
 
     data = await request.body()
     try:
-        full_file_path.write_bytes(data)
+        await anyio.Path(full_file_path).write_bytes(data)
     except binascii.Error as e:
         msg = f"Invalid base64 encoding for file {file_path}."
         logger.error(msg)
@@ -88,10 +89,11 @@ async def _list_static_files(file_path_prefix: str = "") -> dict:
         target_directory = workspace_directory
 
     try:
+        anyio_target = anyio.Path(target_directory)
         file_names = []
-        if target_directory.exists() and target_directory.is_dir():
-            for file_path in target_directory.rglob("*"):
-                if file_path.is_file():
+        if await anyio_target.exists() and await anyio_target.is_dir():
+            async for file_path in anyio_target.rglob("*"):
+                if await file_path.is_file():
                     relative_path = file_path.relative_to(workspace_directory)
                     file_names.append(str(relative_path))
     except (OSError, PermissionError) as e:
@@ -111,20 +113,22 @@ async def _delete_static_file(file_path: str) -> dict:
     workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
     file_full_path = workspace_directory / file_path
 
+    anyio_file_path = anyio.Path(file_full_path)
+
     # Check if file exists
-    if not file_full_path.exists():
+    if not await anyio_file_path.exists():
         logger.warning("File not found for deletion: %s", file_path)
         raise HTTPException(status_code=404, detail=f"File {file_path} not found")
 
     # Check if it's actually a file (not a directory)
-    if not file_full_path.is_file():
+    if not await anyio_file_path.is_file():
         msg = f"Path {file_path} is not a file"
         logger.error(msg)
         raise HTTPException(status_code=400, detail=msg)
 
     try:
         # TODO: Replace with DeleteFileRequest https://github.com/griptape-ai/griptape-nodes/issues/3765
-        file_full_path.unlink()
+        await anyio_file_path.unlink()
     except (OSError, PermissionError) as e:
         msg = f"Failed to delete file {file_path}: {e}"
         logger.error(msg)
@@ -166,8 +170,8 @@ async def _serve_library_widget(library_name: str, file_path: str) -> FileRespon
 
     # Security: Ensure the resolved path is within the library directory
     try:
-        resolved_path = full_path.resolve()
-        resolved_library_dir = library_dir.resolve()
+        resolved_path = await anyio.Path(full_path).resolve()
+        resolved_library_dir = await anyio.Path(library_dir).resolve()
         if not resolved_path.is_relative_to(resolved_library_dir):
             logger.warning(
                 "Path traversal attempt detected while loading widget from library '%s': %s",
@@ -179,13 +183,13 @@ async def _serve_library_widget(library_name: str, file_path: str) -> FileRespon
         raise HTTPException(status_code=403, detail="Access denied") from None
 
     # Check if file exists
-    if not resolved_path.exists():
+    if not await resolved_path.exists():
         raise HTTPException(
             status_code=404,
             detail=f"Widget file '{file_path}' not found in library '{library_name}'",
         )
 
-    if not resolved_path.is_file():
+    if not await resolved_path.is_file():
         raise HTTPException(
             status_code=400,
             detail=f"Widget path '{file_path}' in library '{library_name}' is not a file",
@@ -220,13 +224,15 @@ async def _serve_external_file(file_path: str) -> FileResponse:
     # Reconstruct absolute path by adding leading slash
     absolute_path = Path(f"/{file_path}")
 
+    anyio_absolute_path = anyio.Path(absolute_path)
+
     # Check if file exists
-    if not absolute_path.exists():
+    if not await anyio_absolute_path.exists():
         logger.warning("External file not found: %s", absolute_path)
         raise HTTPException(status_code=404, detail=f"File {absolute_path} not found")
 
     # Check if it's actually a file (not a directory)
-    if not absolute_path.is_file():
+    if not await anyio_absolute_path.is_file():
         msg = f"Path {absolute_path} is not a file"
         logger.error(msg)
         raise HTTPException(status_code=400, detail=msg)
