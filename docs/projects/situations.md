@@ -15,9 +15,8 @@ When a node needs to save a file, it names the situation it's in (for example, `
 | `create_new` | Increment a counter in the filename until a non-colliding name is found. Requires `{_index?}` in the macro. |
 | `overwrite`  | Replace the existing file without asking.                                                                   |
 | `fail`       | Stop and report an error if the file already exists.                                                        |
-| `prompt`     | Ask the user what to do before proceeding.                                                                  |
 
-The `create_dirs` field controls whether missing parent directories are created automatically (`true`) or whether missing directories cause an error (`false`).
+The `create_dirs` field controls whether intermediate parent directories are created automatically (`true`, like `mkdir -p`) or whether a missing parent directory causes an error (`false`).
 
 ## Fallbacks
 

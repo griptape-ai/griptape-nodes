@@ -28,13 +28,13 @@ workspace
         └── environment   (custom key-value variables)
 ```
 
-**Workspace** is the root directory for all your work. It is configured in your settings.
+**Workspace** is the root directory for all work in this project. It is configured in your settings.
 
-**Project template** is the configuration loaded at startup — first the system defaults, then any overrides you've placed in `griptape-nodes-project.yml` inside your workspace.
+**Project template** is the configuration file that governs this project. It is loaded at startup — first the system defaults, then any overrides you've placed in `griptape-nodes-project.yml` inside your workspace. The project template is what lets you control where files land and how they're named.
 
-**Situations** are named file-saving scenarios. Each has a macro template that determines the file path and a policy that determines what happens when a file already exists.
+**Situations** are named scenarios for when a file is read or written. Each has a macro template that determines the file path and a policy that determines what happens when a file already exists.
 
-**Directories** are logical name-to-path mappings. The name `outputs` means whatever path `outputs` is configured to. Directory names can be used as variables in macros.
+**Directories** are logical name-to-path mappings. Each directory has a short name (like `outputs`) that you use as a variable in macros. That name maps to a real path on disk — by default `outputs` maps to an `outputs` subfolder. Directory paths can be relative or absolute, and can themselves contain macro variables or environment variable references.
 
 **Environment** is a bag of custom key-value pairs that can be referenced in macros.
 

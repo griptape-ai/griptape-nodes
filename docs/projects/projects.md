@@ -69,14 +69,14 @@ environment:
 
 Each entry under `situations` is keyed by situation name. You can provide any subset of these fields:
 
-| Field                 | Required for new | Description                                         |
-| --------------------- | ---------------- | --------------------------------------------------- |
-| `macro`               | Yes              | Macro template string for the file path             |
-| `policy`              | Yes              | Must include both `on_collision` and `create_dirs`  |
-| `policy.on_collision` | Yes              | One of: `create_new`, `overwrite`, `fail`, `prompt` |
-| `policy.create_dirs`  | Yes              | `true` to create missing directories automatically  |
-| `fallback`            | No               | Name of another situation to use if this one fails  |
-| `description`         | No               | Human-readable description                          |
+| Field                 | Required for new | Description                                        |
+| --------------------- | ---------------- | -------------------------------------------------- |
+| `macro`               | Yes              | Macro template string for the file path            |
+| `policy`              | Yes              | Must include both `on_collision` and `create_dirs` |
+| `policy.on_collision` | Yes              | One of: `create_new`, `overwrite`, `fail`          |
+| `policy.create_dirs`  | Yes              | `true` to create missing directories automatically |
+| `fallback`            | No               | Name of another situation to use if this one fails |
+| `description`         | No               | Human-readable description                         |
 
 When *modifying* an existing situation, you only need to provide the fields you want to change. When *adding* a new situation, `macro` and `policy` are required.
 
