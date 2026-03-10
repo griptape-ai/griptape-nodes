@@ -94,7 +94,12 @@ class BaseStorageDriver(ABC):
 
     @abstractmethod
     def save_file(
-        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        path: Path,
+        file_content: bytes,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        *,
+        skip_metadata_injection: bool = False,
     ) -> str:
         """Save a file to storage.
 
@@ -102,6 +107,7 @@ class BaseStorageDriver(ABC):
             path: Workspace-relative path of the file (e.g., ``outputs/image.png``).
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
+            skip_metadata_injection: If True, skip automatic workflow metadata injection.
 
         Returns:
             The absolute file path where the file was saved.
