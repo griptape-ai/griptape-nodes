@@ -794,10 +794,10 @@ class TestDeleteFileRequest:
 
         assert isinstance(result, DeleteFileResultSuccess)
         # Compare resolved paths to handle symlinks (e.g., /var -> /private/var on macOS)
-        assert Path(result.deleted_path).resolve() == file_path.resolve()
+        assert await anyio.Path(result.deleted_path).resolve() == file_path.resolve()
         assert result.was_directory is False
         assert len(result.deleted_paths) == 1
-        assert Path(result.deleted_paths[0]).resolve() == file_path.resolve()
+        assert await anyio.Path(result.deleted_paths[0]).resolve() == file_path.resolve()
         assert not file_path.exists()
 
     @pytest.mark.asyncio

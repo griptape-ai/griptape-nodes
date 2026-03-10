@@ -60,7 +60,7 @@ class StaticServerFileDriver(BaseFileDriver):
             ValueError: If URL format is invalid
         """
         # Strip query parameters (cachebuster ?t=...)
-        url_without_params = location.split("?")[0] if "?" in location else location
+        url_without_params = location.split("?", maxsplit=1)[0] if "?" in location else location
         parsed = urlparse(url_without_params)
 
         if "/workspace/" not in parsed.path:

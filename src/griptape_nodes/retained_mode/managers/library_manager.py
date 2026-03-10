@@ -458,7 +458,7 @@ class LibraryManager:
             # Library column with emoji, name, version, colored status, and file path underneath
             emoji = status_emoji.get(lib_info.fitness, "ERROR: Unknown/Unexpected Library Status")
             colored_status = status_text.get(lib_info.fitness, "(UNKNOWN)")
-            name = lib_info.library_name if lib_info.library_name else "*UNKNOWN*"
+            name = lib_info.library_name or "*UNKNOWN*"
 
             library_version = lib_info.library_version
             if library_version:

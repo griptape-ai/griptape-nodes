@@ -692,4 +692,4 @@ def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, Any] | None:
             # If JSON parsing fails, use the original string value
             result[key] = value
 
-    return result if result else None
+    return result or None

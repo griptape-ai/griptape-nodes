@@ -307,7 +307,7 @@ async def _send_outgoing_messages(client: Client) -> None:
         try:
             if isinstance(message, WebSocketMessage):
                 # Use client to publish message
-                topic = message.topic if message.topic else _determine_response_topic()
+                topic = message.topic or _determine_response_topic()
                 payload_dict = json.loads(message.payload)
                 await client.publish(message.event_type, payload_dict, topic)
             elif isinstance(message, SubscribeCommand):

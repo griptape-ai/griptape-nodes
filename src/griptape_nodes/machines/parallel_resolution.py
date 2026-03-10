@@ -587,7 +587,7 @@ class ExecuteDagState(State):
             # Add a callback to set node to done when task has finished.
             context.task_to_node[node_task] = node_reference
             node_reference.task_reference = node_task
-            node_task.add_done_callback(lambda t: on_task_done(t))
+            node_task.add_done_callback(on_task_done)
 
             # Send an event that this is a current data node:
 

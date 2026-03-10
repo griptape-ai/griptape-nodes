@@ -155,7 +155,7 @@ def process_image(image_path: Path, output_path: Path) -> None:
 
     try:
         # Check if it's a GIF - if so, copy as-is
-        if image_path.suffix.lower() in (".gif",):
+        if image_path.suffix.lower() == ".gif":
             output_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(image_path, output_path)
             return

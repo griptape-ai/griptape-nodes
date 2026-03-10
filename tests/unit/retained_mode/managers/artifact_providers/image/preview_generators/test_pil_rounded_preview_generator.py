@@ -4,6 +4,7 @@ import tempfile
 from collections.abc import Generator
 from pathlib import Path
 
+import anyio
 import pytest
 from PIL import Image
 from pydantic import ValidationError
@@ -410,6 +411,6 @@ class TestPILRoundedPreviewGeneratorGeneration:
                 assert img.width == 10  # noqa: PLR2004
                 assert img.height == 10  # noqa: PLR2004
         finally:
-            tiny_file = Path(tiny_path)
-            if tiny_file.exists():
-                tiny_file.unlink()
+            tiny_file = anyio.Path(tiny_path)
+            if await tiny_file.exists():
+                await tiny_file.unlink()

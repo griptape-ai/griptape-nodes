@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import pytest
 
 from griptape_nodes.common.node_executor import NodeExecutor
@@ -31,9 +32,9 @@ class TestDeleteWorkflowKeyDerivation:
     async def test_workflow_in_workspace_root_uses_stem(self) -> None:
         """A workflow file directly in the workspace produces a stem-only key."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            workspace = Path(tmp_dir).resolve()
+            workspace = await anyio.Path(tmp_dir).resolve()
             workflow_path = workspace / "my_flow.py"
-            workflow_path.touch()
+            await workflow_path.touch()
 
             mock_gn = MagicMock()
             mock_gn.ConfigManager.return_value.workspace_path = workspace
@@ -46,7 +47,7 @@ class TestDeleteWorkflowKeyDerivation:
                 # Mark as already registered so key derivation is the only thing being tested.
                 mock_registry.has_workflow_with_name.return_value = True
 
-                await _make_executor()._delete_workflow(workflow_path=workflow_path)
+                await _make_executor()._delete_workflow(workflow_path=Path(workflow_path))
 
             delete_request = mock_gn.ahandle_request.call_args.args[0]
             assert isinstance(delete_request, DeleteWorkflowRequest)
@@ -56,10 +57,10 @@ class TestDeleteWorkflowKeyDerivation:
     async def test_workflow_in_workspace_subdir_uses_relative_path(self) -> None:
         """A workflow in a workspace subdirectory produces a subdir/stem key."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            workspace = Path(tmp_dir).resolve()
+            workspace = await anyio.Path(tmp_dir).resolve()
             workflow_path = workspace / "subdir" / "my_flow.py"
-            workflow_path.parent.mkdir()
-            workflow_path.touch()
+            await workflow_path.parent.mkdir()
+            await workflow_path.touch()
 
             mock_gn = MagicMock()
             mock_gn.ConfigManager.return_value.workspace_path = workspace
@@ -71,7 +72,7 @@ class TestDeleteWorkflowKeyDerivation:
             ):
                 mock_registry.has_workflow_with_name.return_value = True
 
-                await _make_executor()._delete_workflow(workflow_path=workflow_path)
+                await _make_executor()._delete_workflow(workflow_path=Path(workflow_path))
 
             delete_request = mock_gn.ahandle_request.call_args.args[0]
             assert isinstance(delete_request, DeleteWorkflowRequest)
@@ -84,9 +85,9 @@ class TestDeleteWorkflowKeyDerivation:
             tempfile.TemporaryDirectory() as workspace_dir,
             tempfile.TemporaryDirectory() as other_dir,
         ):
-            workspace = Path(workspace_dir).resolve()
-            workflow_path = Path(other_dir).resolve() / "my_flow.py"
-            workflow_path.touch()
+            workspace = await anyio.Path(workspace_dir).resolve()
+            workflow_path = await anyio.Path(other_dir).resolve() / "my_flow.py"
+            await workflow_path.touch()
 
             mock_gn = MagicMock()
             mock_gn.ConfigManager.return_value.workspace_path = workspace
@@ -98,11 +99,11 @@ class TestDeleteWorkflowKeyDerivation:
             ):
                 mock_registry.has_workflow_with_name.return_value = True
 
-                await _make_executor()._delete_workflow(workflow_path=workflow_path)
+                await _make_executor()._delete_workflow(workflow_path=Path(workflow_path))
 
             delete_request = mock_gn.ahandle_request.call_args.args[0]
             assert isinstance(delete_request, DeleteWorkflowRequest)
-            expected_key = (Path(other_dir).resolve() / "my_flow").as_posix()
+            expected_key = (await anyio.Path(other_dir).resolve() / "my_flow").as_posix()
             assert delete_request.name == expected_key
 
 
@@ -113,9 +114,9 @@ class TestDeleteWorkflowRegistrationFallback:
     async def test_registers_workflow_when_not_in_registry(self) -> None:
         """generate_new_workflow is called when the workflow is not registered."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            workspace = Path(tmp_dir).resolve()
+            workspace = await anyio.Path(tmp_dir).resolve()
             workflow_path = workspace / "my_flow.py"
-            workflow_path.touch()
+            await workflow_path.touch()
 
             mock_metadata = MagicMock()
             mock_metadata_result = MagicMock(spec=LoadWorkflowMetadataResultSuccess)
@@ -132,7 +133,7 @@ class TestDeleteWorkflowRegistrationFallback:
             ):
                 mock_registry.has_workflow_with_name.return_value = False
 
-                await _make_executor()._delete_workflow(workflow_path=workflow_path)
+                await _make_executor()._delete_workflow(workflow_path=Path(workflow_path))
 
             mock_registry.generate_new_workflow.assert_called_once_with("my_flow.py", mock_metadata)
 
@@ -140,9 +141,9 @@ class TestDeleteWorkflowRegistrationFallback:
     async def test_skips_registration_when_already_in_registry(self) -> None:
         """generate_new_workflow is not called when the workflow is already registered."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            workspace = Path(tmp_dir).resolve()
+            workspace = await anyio.Path(tmp_dir).resolve()
             workflow_path = workspace / "my_flow.py"
-            workflow_path.touch()
+            await workflow_path.touch()
 
             mock_gn = MagicMock()
             mock_gn.ConfigManager.return_value.workspace_path = workspace
@@ -154,6 +155,6 @@ class TestDeleteWorkflowRegistrationFallback:
             ):
                 mock_registry.has_workflow_with_name.return_value = True
 
-                await _make_executor()._delete_workflow(workflow_path=workflow_path)
+                await _make_executor()._delete_workflow(workflow_path=Path(workflow_path))
 
             mock_registry.generate_new_workflow.assert_not_called()
