@@ -40,7 +40,6 @@ class ProjectFileDestination(FileDestination):
         self,
         filename: str,
         situation: str,
-        node_name: str,
         **extra_vars: str | int,
     ) -> None:
         """Build a FileDestination from a project situation template.
@@ -48,8 +47,7 @@ class ProjectFileDestination(FileDestination):
         Args:
             filename: Filename to parse into base and extension components.
             situation: Situation name to look up in the current project.
-            node_name: Node name for the {node_name} macro variable.
-            **extra_vars: Additional macro variables (e.g., _index=1).
+            **extra_vars: Additional macro variables (e.g., node_name="MyNode", _index=1).
         """
         result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation))
 
@@ -59,7 +57,7 @@ class ProjectFileDestination(FileDestination):
             existing_file_policy = SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.CREATE_NEW)
             create_dirs = result.situation.policy.create_dirs
         else:
-            logger.error("%s: Failed to load situation '%s', using fallback macro template", node_name, situation)
+            logger.error("Failed to load situation '%s', using fallback macro template", situation)
             macro_template = FALLBACK_MACRO_TEMPLATE
             existing_file_policy = ExistingFilePolicy.CREATE_NEW
             create_dirs = True
@@ -68,7 +66,6 @@ class ProjectFileDestination(FileDestination):
         variables: dict[str, str | int] = {
             "file_name_base": parts.stem,
             "file_extension": parts.extension,
-            "node_name": node_name,
             **extra_vars,
         }
 
