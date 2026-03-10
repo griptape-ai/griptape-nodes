@@ -352,7 +352,7 @@ class StaticFilesManager:
             msg = f"Failed to save static file {file_name}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
-        return saved_path
+        return self.storage_driver.create_signed_download_url(Path(saved_path))
 
     def _resolve_static_file_path(self, file_name: str) -> ResolvedStaticFilePath | None:
         """Resolve the file path for a static file using the save_static_file situation.
