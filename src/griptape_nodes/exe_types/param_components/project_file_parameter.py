@@ -137,7 +137,6 @@ class ProjectFileParameter:
         return ProjectFileDestination(
             filename=filename,
             situation=self._situation_name,
-            node_name=self._node.name,
             **extra_vars,
         )
 
