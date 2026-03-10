@@ -1,7 +1,6 @@
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -50,21 +49,6 @@ class TestStaticFilesManagerSaveStaticFile:
             manager.storage_driver = Mock()  # type: ignore[assignment]
             return manager
 
-    @pytest.fixture
-    def mock_upload_response(self) -> dict[str, Any]:
-        """Standard mock response for create_signed_upload_url."""
-        return {
-            "url": "http://test.com/upload",
-            "headers": {"Authorization": "Bearer token"},
-            "method": "PUT",
-            "file_path": "staticfiles/test_image.jpg",
-        }
-
-    @pytest.fixture
-    def mock_download_url(self) -> str:
-        """Standard mock response for create_signed_download_url."""
-        return "http://test.com/download/test_file.jpg"
-
     def test_save_static_file_raises_when_situation_missing(
         self,
         mock_static_files_manager: StaticFilesManager,
@@ -74,7 +58,10 @@ class TestStaticFilesManagerSaveStaticFile:
             patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
             pytest.raises(RuntimeError, match="save_static_file"),
         ):
-            mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, use_direct_save=True)
+            mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA,
+                TEST_FILE_NAME,
+            )
 
     def test_save_static_file_explicit_overwrite_policy(
         self,
@@ -91,7 +78,7 @@ class TestStaticFilesManagerSaveStaticFile:
             return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.CREATE_NEW),
         ):
             result = mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE
             )
 
         mock_static_files_manager.storage_driver.save_file.assert_called_once()
@@ -114,9 +101,7 @@ class TestStaticFilesManagerSaveStaticFile:
             "_resolve_static_file_path",
             return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
         ):
-            result = mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
-            )
+            result = mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL)
 
         mock_static_files_manager.storage_driver.save_file.assert_called_once()
         call_args = mock_static_files_manager.storage_driver.save_file.call_args
@@ -141,9 +126,7 @@ class TestStaticFilesManagerSaveStaticFile:
             ),
             pytest.raises(FileExistsError, match=f"File {TEST_FILE_NAME} already exists"),
         ):
-            mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
-            )
+            mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL)
 
         mock_static_files_manager.storage_driver.save_file.assert_called_once()
         call_args = mock_static_files_manager.storage_driver.save_file.call_args
@@ -162,7 +145,7 @@ class TestStaticFilesManagerSaveStaticFile:
             return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
         ):
             result = mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW, use_direct_save=True
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW
             )
 
         mock_static_files_manager.storage_driver.save_file.assert_called_once()
@@ -188,13 +171,13 @@ class TestStaticFilesManagerSaveStaticFile:
             ),
             pytest.raises(RuntimeError, match="Failed to save static file"),
         ):
-            mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
-            )
+            mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE)
 
         mock_static_files_manager.storage_driver.save_file.assert_called_once()
 
-    def test_save_static_file_http_upload_failure(self, mock_static_files_manager: StaticFilesManager) -> None:
+    def test_save_static_file_non_file_exists_error_wrapped_in_runtime_error(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
         """Non-FileExistsError exceptions from the storage driver are wrapped in RuntimeError."""
         mock_static_files_manager.storage_driver.save_file.side_effect = ValueError("Upload failed")
         situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
@@ -207,9 +190,7 @@ class TestStaticFilesManagerSaveStaticFile:
             ),
             pytest.raises(RuntimeError, match="Failed to save static file"),
         ):
-            mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
-            )
+            mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE)
 
         mock_static_files_manager.storage_driver.save_file.assert_called_once()
 
@@ -228,7 +209,7 @@ class TestStaticFilesManagerSaveStaticFile:
             return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
         ):
             result = mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW, use_direct_save=True
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW
             )
 
         mock_static_files_manager.storage_driver.save_file.assert_called_once()
@@ -254,7 +235,10 @@ class TestStaticFilesManagerSaveStaticFile:
             "_resolve_static_file_path",
             return_value=ResolvedStaticFilePath(path=situation_path, policy=situation_policy),
         ):
-            result = mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, use_direct_save=True)
+            result = mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA,
+                TEST_FILE_NAME,
+            )
 
         mock_static_files_manager.storage_driver.save_file.assert_called_once()
         call_args = mock_static_files_manager.storage_driver.save_file.call_args
@@ -278,9 +262,7 @@ class TestStaticFilesManagerSaveStaticFile:
             "_resolve_static_file_path",
             return_value=ResolvedStaticFilePath(path=situation_path, policy=situation_policy),
         ):
-            result = mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
-            )
+            result = mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL)
 
         mock_static_files_manager.storage_driver.save_file.assert_called_once()
         call_args = mock_static_files_manager.storage_driver.save_file.call_args
@@ -302,7 +284,10 @@ class TestStaticFilesManagerSaveStaticFile:
             "_resolve_static_file_path",
             return_value=ResolvedStaticFilePath(path=situation_path, policy=situation_policy),
         ):
-            mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, use_direct_save=True)
+            mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA,
+                TEST_FILE_NAME,
+            )
 
         call_args = mock_static_files_manager.storage_driver.save_file.call_args
         assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW

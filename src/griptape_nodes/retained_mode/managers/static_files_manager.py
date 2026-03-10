@@ -5,7 +5,6 @@ import threading
 from pathlib import Path
 from typing import NamedTuple
 
-import httpx
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
@@ -306,9 +305,6 @@ class StaticFilesManager:
         data: bytes,
         file_name: str,
         existing_file_policy: ExistingFilePolicy | None = None,
-        *,
-        use_direct_save: bool = False,
-        skip_metadata_injection: bool = False,
     ) -> str:
         """Saves a static file to the workspace directory.
 
@@ -322,10 +318,6 @@ class StaticFilesManager:
                 - OVERWRITE: Replace existing file content
                 - CREATE_NEW: Auto-generate unique filename (e.g., file_1.txt, file_2.txt)
                 - FAIL: Raise FileExistsError if file exists
-            use_direct_save: If True, use direct storage driver save (new behavior).
-                If False, use presigned URL upload (legacy behavior). Defaults to False for backward compatibility.
-            skip_metadata_injection: If True, skip automatic workflow metadata injection.
-                Defaults to False. Used by nodes that handle metadata explicitly (e.g., WriteImageMetadataNode).
 
         Returns:
             The URL of the saved file for UI display (with cache-busting). Note: the actual filename
@@ -334,7 +326,6 @@ class StaticFilesManager:
         Raises:
             FileExistsError: When existing_file_policy is FAIL and file already exists.
             RuntimeError: If the project template is missing the save_static_file situation, or if the file write fails.
-            ValueError: If file upload fails (legacy behavior).
         """
         resolved = self._resolve_static_file_path(file_name)
         if resolved is None:
@@ -348,42 +339,15 @@ class StaticFilesManager:
         else:
             effective_policy = existing_file_policy
 
-        # Inject workflow metadata if enabled (only when not using direct save)
-        if (
-            not use_direct_save
-            and self.config_manager.get_config_value("auto_inject_workflow_metadata")
-            and not skip_metadata_injection
-        ):
-            data = GriptapeNodes.ArtifactManager().prepare_content_for_write(data, file_name)
-
-        # NEW BEHAVIOR: Direct save via storage driver
-        if use_direct_save:
-            try:
-                saved_path = self.storage_driver.save_file(file_path, data, effective_policy)
-            except FileExistsError:
-                raise
-            except Exception as e:
-                msg = f"Failed to save static file {file_name}: {e}"
-                logger.error(msg)
-                raise RuntimeError(msg) from e
-            return saved_path
-
-        # OLD BEHAVIOR: Presigned URL upload
-        response = self.storage_driver.create_signed_upload_url(file_path, effective_policy)
-        resolved_file_path = Path(response["file_path"])
-
         try:
-            upload_response = httpx.request(
-                response["method"], response["url"], content=data, headers=response["headers"], timeout=60
-            )
-            upload_response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            msg = str(e.response.json()) if hasattr(e, "response") else str(e)
+            saved_path = self.storage_driver.save_file(file_path, data, effective_policy)
+        except FileExistsError:
+            raise
+        except Exception as e:
+            msg = f"Failed to save static file {file_name}: {e}"
             logger.error(msg)
-            raise ValueError(msg) from e
-
-        url = self.storage_driver.create_signed_download_url(resolved_file_path)
-        return url
+            raise RuntimeError(msg) from e
+        return saved_path
 
     def _resolve_static_file_path(self, file_name: str) -> ResolvedStaticFilePath | None:
         """Resolve the file path for a static file using the save_static_file situation.

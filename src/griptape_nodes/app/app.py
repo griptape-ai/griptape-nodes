@@ -32,7 +32,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils import install_file_url_support
 
 
 # WebSocket thread communication message types
@@ -71,9 +70,6 @@ websocket_event_loop_ready = threading.Event()
 REQUEST_SEMAPHORE = asyncio.Semaphore(100)
 
 config_manager = GriptapeNodes.ConfigManager()
-
-# Install file:// URL support for httpx/requests
-install_file_url_support()
 
 
 # Maximum length for log messages forwarded to the GUI.
