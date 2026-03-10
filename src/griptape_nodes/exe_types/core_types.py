@@ -1444,6 +1444,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         hide: bool | None = None,
         hide_label: bool | None = None,
         hide_property: bool | None = None,
+        display_name: str | None = None,
         allow_input: bool = True,
         allow_property: bool = True,
         allow_output: bool = True,
@@ -1539,6 +1540,10 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._validate_ui_option_conflict(
                 ui_options_dict=self._ui_options, param_name="hide_property", param_value=hide_property
             )
+        if display_name is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=self._ui_options, param_name="display_name", param_value=display_name
+            )
 
         # Add common UI options if explicitly provided (not None) and NOT already in ui_options
         # (ui_options always wins in case of conflict)
@@ -1548,6 +1553,8 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._ui_options["hide_label"] = hide_label
         if hide_property is not None and "hide_property" not in self._ui_options:
             self._ui_options["hide_property"] = hide_property
+        if display_name is not None and "display_name" not in self._ui_options:
+            self._ui_options["display_name"] = display_name
         if traits:
             for trait in traits:
                 if not isinstance(trait, Trait):
@@ -1826,6 +1833,30 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.update_ui_options_key("hide_property", value)
 
     @property
+    def display_name(self) -> str | None:
+        """Get the display name override for the parameter.
+
+        Returns:
+            The display name if set, None to use the default (parameter name)
+        """
+        return self.ui_options.get("display_name")
+
+    @display_name.setter
+    @BaseNodeElement.emits_update_on_write
+    def display_name(self, value: str | None) -> None:
+        """Set the display name override for the parameter.
+
+        Args:
+            value: Display name string, or None to use the default (parameter name)
+        """
+        if value is None:
+            ui_options = self.ui_options.copy()
+            ui_options.pop("display_name", None)
+            self.ui_options = ui_options
+        else:
+            self.update_ui_options_key("display_name", value)
+
+    @property
     def allow_input(self) -> bool:
         """Get whether the parameter allows INPUT mode.
 
@@ -2091,6 +2122,7 @@ class ControlParameter(Parameter, ABC):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         ui_options: dict | None = None,
         *,
+        display_name: str | None = None,
         user_defined: bool = False,
         private: bool = False,
     ):
@@ -2111,6 +2143,7 @@ class ControlParameter(Parameter, ABC):
             converters=converters,
             validators=validators,
             ui_options=ui_options,
+            display_name=display_name,
             user_defined=user_defined,
             private=private,
             element_type=self.__class__.__name__,
@@ -2136,11 +2169,6 @@ class ControlParameterInput(ControlParameter):
         allowed_modes = {ParameterMode.INPUT}
         input_types = [ParameterTypeBuiltin.CONTROL_TYPE.value]
 
-        if display_name is None:
-            ui_options = None
-        else:
-            ui_options = {"display_name": display_name}
-
         # Call parent with a few explicit tweaks.
         super().__init__(
             name=name,
@@ -2154,7 +2182,7 @@ class ControlParameterInput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
-            ui_options=ui_options,
+            display_name=display_name,
             user_defined=user_defined,
             private=private,
         )
@@ -2179,11 +2207,6 @@ class ControlParameterOutput(ControlParameter):
         allowed_modes = {ParameterMode.OUTPUT}
         output_type = ParameterTypeBuiltin.CONTROL_TYPE.value
 
-        if display_name is None:
-            ui_options = None
-        else:
-            ui_options = {"display_name": display_name}
-
         # Call parent with a few explicit tweaks.
         super().__init__(
             name=name,
@@ -2197,7 +2220,7 @@ class ControlParameterOutput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
-            ui_options=ui_options,
+            display_name=display_name,
             user_defined=user_defined,
             private=private,
         )
@@ -2228,6 +2251,7 @@ class ParameterContainer(Parameter, ABC):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
         hide: bool | None = None,
+        display_name: str | None = None,
         settable: bool = True,
         user_defined: bool = False,
         private: bool = False,
@@ -2250,6 +2274,7 @@ class ParameterContainer(Parameter, ABC):
             converters=converters,
             validators=validators,
             hide=hide,
+            display_name=display_name,
             settable=settable,
             user_defined=user_defined,
             private=private,
@@ -2300,6 +2325,7 @@ class ParameterList(ParameterContainer):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
         hide: bool | None = None,
+        display_name: str | None = None,
         settable: bool = True,
         user_defined: bool = False,
         private: bool = False,
@@ -2341,6 +2367,7 @@ class ParameterList(ParameterContainer):
             converters=converters,
             validators=validators,
             hide=hide,
+            display_name=display_name,
             settable=settable,
             user_defined=user_defined,
             private=private,
@@ -2556,9 +2583,7 @@ class ParameterList(ParameterContainer):
         """
         child = self.add_child_parameter()
         if display_name is not None:
-            ui_opts = child.ui_options or {}
-            ui_opts["display_name"] = display_name
-            child.ui_options = ui_opts
+            child.display_name = display_name
         return child
 
     def remove_last_child_parameter(self) -> None:
@@ -2604,9 +2629,7 @@ class ParameterList(ParameterContainer):
         # Optionally re-apply display names to existing children to keep indices tidy
         if display_name_prefix:
             for index, child in enumerate(self.get_child_parameters()):
-                ui_opts = child.ui_options or {}
-                ui_opts["display_name"] = f"{display_name_prefix} {index + 1}"
-                child.ui_options = ui_opts
+                child.display_name = f"{display_name_prefix} {index + 1}"
 
     def add_child(self, child: BaseNodeElement) -> None:
         """Override to mark parent node as unresolved when children are added.
@@ -2680,6 +2703,7 @@ class ParameterKeyValuePair(Parameter):
         value_converters: list[Callable[[Any], Any]] | None = None,
         value_validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
+        display_name: str | None = None,
         settable: bool = True,
         user_defined: bool = False,
         private: bool = False,
@@ -2700,6 +2724,7 @@ class ParameterKeyValuePair(Parameter):
             traits=traits,
             converters=converters,
             validators=validators,
+            display_name=display_name,
             settable=settable,
             user_defined=user_defined,
             private=private,
@@ -2802,6 +2827,7 @@ class ParameterDictionary(ParameterContainer):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
+        display_name: str | None = None,
         settable: bool = True,
         user_defined: bool = False,
         private: bool = False,
@@ -2822,6 +2848,7 @@ class ParameterDictionary(ParameterContainer):
             traits=traits,
             converters=converters,
             validators=validators,
+            display_name=display_name,
             settable=settable,
             user_defined=user_defined,
             private=private,
