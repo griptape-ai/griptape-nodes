@@ -266,6 +266,7 @@ class SerializeFlowToCommandsRequest(RequestPayload):
             Copy/paste can make use of this.
     """
 
+    broadcast_result: bool = False
     flow_name: str | None = None
     include_create_flow_command: bool = True
 
