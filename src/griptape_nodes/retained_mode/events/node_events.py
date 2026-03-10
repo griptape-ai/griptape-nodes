@@ -560,6 +560,7 @@ class SerializeNodeToCommandsRequest(RequestPayload):
     Results: SerializeNodeToCommandsResultSuccess (with commands) | SerializeNodeToCommandsResultFailure (serialization error)
     """
 
+    broadcast_result: bool = False
     node_name: str | None = None
     unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] = field(
         default_factory=dict
