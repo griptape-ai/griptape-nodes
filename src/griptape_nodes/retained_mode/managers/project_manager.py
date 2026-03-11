@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -85,6 +86,9 @@ SYSTEM_DEFAULTS_KEY: ProjectID = "<system-defaults>"
 
 # Filename for workspace-level project template overrides
 WORKSPACE_PROJECT_FILE = "griptape-nodes-project.yml"
+
+# Environment variable to specify a project file path, overrides workspace project
+GTN_PROJECT_FILE_ENV_VAR = "GTN_PROJECT_FILE"
 
 # Builtin variable name constants
 BUILTIN_PROJECT_DIR = "project_dir"
@@ -729,8 +733,12 @@ class ProjectManager:
 
         logger.debug("Successfully loaded default project template")
 
-        # Check workspace for an optional project overlay file
-        self._load_workspace_project()
+        # If GTN_PROJECT_FILE is set, load that project directly and skip the workspace file.
+        # Otherwise, check the workspace for an optional project overlay file.
+        if os.environ.get(GTN_PROJECT_FILE_ENV_VAR) is not None:
+            self._load_env_var_project()
+        else:
+            self._load_workspace_project()
 
     def on_get_all_situations_for_project_request(
         self, _request: GetAllSituationsForProjectRequest
@@ -1181,3 +1189,99 @@ class ProjectManager:
             return
 
         logger.info("Successfully loaded workspace project from '%s'", workspace_project_path)
+
+    def _load_env_var_project(self) -> None:
+        """Load project template from path specified in GTN_PROJECT_FILE environment variable.
+
+        If the environment variable is set, loads the project file at that path and sets it
+        as the current project. This takes precedence over the workspace project file.
+        If the variable is not set, no action is taken.
+        """
+        env_project_path_str = os.environ.get(GTN_PROJECT_FILE_ENV_VAR)
+        if env_project_path_str is None:
+            return
+
+        env_project_path = Path(env_project_path_str)
+        logger.info(
+            "Found %s='%s', loading project from environment variable",
+            GTN_PROJECT_FILE_ENV_VAR,
+            env_project_path,
+        )
+
+        if not env_project_path.exists():
+            logger.error(
+                "Attempted to load project from %s='%s'. Failed because file does not exist",
+                GTN_PROJECT_FILE_ENV_VAR,
+                env_project_path,
+            )
+            return
+
+        try:
+            yaml_text = File(str(env_project_path)).read_text()
+        except FileLoadError as e:
+            logger.error(
+                "Attempted to read project file at '%s' from %s. Failed with: %s",
+                env_project_path,
+                GTN_PROJECT_FILE_ENV_VAR,
+                e.result_details,
+            )
+            return
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay = load_partial_project_template(yaml_text, validation)
+
+        if overlay is None:
+            logger.error(
+                "Attempted to load project from '%s' via %s. Failed because YAML could not be parsed",
+                env_project_path,
+                GTN_PROJECT_FILE_ENV_VAR,
+            )
+            return
+
+        template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
+
+        if not validation.is_usable():
+            problem_details = "; ".join(
+                f"{p.field_path} (line {p.line_number}): {p.message}"
+                if p.line_number is not None
+                else f"{p.field_path}: {p.message}"
+                for p in validation.problems
+            )
+            logger.error(
+                "Attempted to load project from '%s' via %s. Failed because template is not usable (status: %s). Problems: %s",
+                env_project_path,
+                GTN_PROJECT_FILE_ENV_VAR,
+                validation.status,
+                problem_details,
+            )
+            return
+
+        project_id = str(env_project_path)
+        situation_schemas = self._parse_situation_macros(template.situations, validation)
+        directory_schemas = self._parse_directory_macros(template.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=env_project_path,
+            project_base_dir=env_project_path.parent,
+            template=template,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        self._successfully_loaded_project_templates[project_id] = project_info
+        self._registered_template_status[env_project_path] = validation
+
+        set_request = SetCurrentProjectRequest(project_id=project_id)
+        set_result = self.on_set_current_project_request(set_request)
+
+        if set_result.failed():
+            logger.error(
+                "Attempted to set project '%s' (from %s) as current. Failed with: %s",
+                env_project_path,
+                GTN_PROJECT_FILE_ENV_VAR,
+                set_result.result_details,
+            )
+            return
+
+        logger.info("Successfully loaded project from %s='%s'", GTN_PROJECT_FILE_ENV_VAR, env_project_path)
