@@ -38,8 +38,14 @@ def main(
     version: bool = typer.Option(  # noqa: FBT001
         False, "--version", help="Show version and exit."
     ),
+    no_update: bool = typer.Option(  # noqa: FBT001
+        False, "--no-update", help="Deprecated. Has no effect.", hidden=True
+    ),
 ) -> None:
     """Griptape Nodes Engine CLI."""
+    if no_update:
+        console.print("[yellow]Warning: --no-update is deprecated and will be removed in a future version.[/yellow]")
+
     if version:
         version_string = get_complete_version_string()
         console.print(f"[bold green]{version_string}[/bold green]")
