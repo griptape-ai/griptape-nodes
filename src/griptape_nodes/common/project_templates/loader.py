@@ -26,6 +26,7 @@ FIELD_DIRECTORIES = "directories"
 FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION = "project_template_schema_version"
 FIELD_ENVIRONMENT = "environment"
 FIELD_DESCRIPTION = "description"
+FIELD_WORKSPACE_DIR = "workspace_dir"
 
 # Special constants
 ROOT_FIELD_PATH = "<root>"
@@ -72,6 +73,7 @@ class ProjectOverlayData(NamedTuple):
     directories: dict[str, dict[str, Any]]  # directory_name -> raw dict
     environment: dict[str, str]
     description: str | None
+    workspace_dir: str | None
     line_info: YAMLLineInfo
 
 
@@ -218,6 +220,24 @@ def load_project_template_from_yaml(  # noqa: C901
         return template
 
 
+def _parse_optional_str_field(
+    data: dict[str, Any],
+    field_name: str,
+    validation_info: ProjectValidationInfo,
+    line_info: YAMLLineInfo,
+) -> str | None:
+    """Parse and validate an optional string field from YAML data."""
+    value = data.get(field_name)
+    if value is not None and not isinstance(value, str):
+        validation_info.add_error(
+            field_path=field_name,
+            message=f"Must be string, got {type(value).__name__}",
+            line_number=line_info.get_line(field_name),
+        )
+        return None
+    return value
+
+
 def load_partial_project_template(
     yaml_text: str,
     validation_info: ProjectValidationInfo,
@@ -321,15 +341,9 @@ def load_partial_project_template(
         )
         environment = {}
 
-    # Optional field: description
-    description = data.get(FIELD_DESCRIPTION)
-    if description is not None and not isinstance(description, str):
-        validation_info.add_error(
-            field_path=FIELD_DESCRIPTION,
-            message=f"Must be string, got {type(description).__name__}",
-            line_number=line_info.get_line(FIELD_DESCRIPTION),
-        )
-        description = None
+    # Optional fields: description and workspace_dir
+    description = _parse_optional_str_field(data, FIELD_DESCRIPTION, validation_info, line_info)
+    workspace_dir = _parse_optional_str_field(data, FIELD_WORKSPACE_DIR, validation_info, line_info)
 
     return ProjectOverlayData(
         name=name,
@@ -338,5 +352,6 @@ def load_partial_project_template(
         directories=directories,
         environment=environment,
         description=description,
+        workspace_dir=workspace_dir,
         line_info=line_info,
     )

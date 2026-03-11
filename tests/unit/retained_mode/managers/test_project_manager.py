@@ -172,26 +172,20 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/test/output.txt")
 
-    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
-    def test_builtin_workspace_dir_resolves_correctly(
-        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+    def test_builtin_workspace_dir_resolves_to_project_base_dir_by_default(
+        self, project_manager_with_template: ProjectManager
     ) -> None:
-        """Test that {workspace_dir} builtin resolves from ConfigManager."""
+        """Test that {workspace_dir} resolves to the project's base directory when no workspace_dir is configured."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        mock_config_manager = Mock()
-        mock_config_manager.get_config_value.return_value = "/workspace"
-        mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
-
         parsed_macro = ParsedMacro("{workspace_dir}/output.txt")
-
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
-        assert result.resolved_path == Path("/workspace/output.txt")
-        mock_config_manager.get_config_value.assert_called_once_with("workspace_directory")
+        # project_base_dir is /test (from Path("/test/project.yml").parent), so workspace_dir defaults to /test
+        assert result.resolved_path == Path("/test/output.txt")
 
     @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
     def test_builtin_workflow_name_resolves_correctly(
@@ -444,10 +438,9 @@ class TestProjectManagerBuiltinVariables:
 class TestProjectManagerDirectoryMacroResolution:
     """Test that directory path_macros are resolved through the builtin variable pipeline.
 
-    These tests verify the behavior introduced when default directory path_macros
-    changed from bare relative strings (e.g. "outputs") to explicit builtin-based
-    paths (e.g. "{project_dir}/outputs"). Forward resolution must now evaluate the
-    directory macro rather than inserting the raw path_macro string.
+    These tests verify that default directory path_macros use {workspace_dir}, which
+    defaults to project_base_dir but can be overridden. Forward resolution must evaluate
+    the directory macro rather than inserting the raw path_macro string.
     """
 
     @pytest.fixture
@@ -482,13 +475,10 @@ class TestProjectManagerDirectoryMacroResolution:
         return pm
 
     def test_directory_macro_resolves_to_absolute_path(self, tmp_path: Path) -> None:
-        """Test that {outputs} in a macro resolves to an absolute path, not the raw path_macro string.
+        """Test that {outputs} in a macro resolves to an absolute path under workspace_dir.
 
-        Red: resolution_bag["outputs"] = "outputs" → absolute_path contains workspace_base/outputs/...
-             but resolved_path is just "outputs/my_file.png" (bare relative string substituted)
-        Green: resolution_bag["outputs"] = "<project_dir>/outputs" → absolute_path is
-               <project_dir>/outputs/my_file.png (project_dir-rooted, same base either way)
-               AND resolved_path is also absolute (not a bare relative string)
+        When no workspace_dir override is set, workspace_dir defaults to project_base_dir,
+        so outputs land in <project_base>/outputs/.
         """
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
@@ -668,6 +658,55 @@ class TestProjectManagerDirectoryMacroResolution:
         assert isinstance(result, GetPathForMacroResultFailure)
         assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
         assert "workflow_name" in str(result.result_details)
+
+    def test_workspace_dir_override_redirects_outputs(self, tmp_path: Path) -> None:
+        """Test that setting workspace_dir in the project template redirects file outputs.
+
+        When workspace_dir is set, {workspace_dir} resolves to that path instead of
+        the project file's directory, so outputs land in the configured workspace.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        project_base = tmp_path / "project"
+        project_base.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        project_path = project_base / "project.yml"
+        project_id = str(project_path)
+
+        # Template with workspace_dir pointing somewhere other than the project file's directory
+        template_with_workspace = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"workspace_dir": str(workspace)})
+
+        pm = ProjectManager(Mock(), Mock(), Mock())
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(template_with_workspace.situations, validation)
+        directory_schemas = pm._parse_directory_macros(template_with_workspace.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_base,
+            workspace_dir=pm._resolve_workspace_dir(template_with_workspace, project_base),
+            template=template_with_workspace,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
+
+        parsed_macro = ParsedMacro("{outputs}/my_file.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = pm.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.absolute_path == workspace / "outputs" / "my_file.png"
+        assert not str(result.absolute_path).startswith(str(project_base))
 
     def test_secrets_manager_none_fails_before_directory_resolution(
         self, project_manager_with_template: ProjectManager

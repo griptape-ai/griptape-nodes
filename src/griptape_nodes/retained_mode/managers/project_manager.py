@@ -135,13 +135,20 @@ class ProjectInfo:
 
     project_id: ProjectID
     project_file_path: Path | None  # None for system defaults or non-file sources
-    project_base_dir: Path  # Directory for resolving relative paths ({project_dir})
+    project_base_dir: Path  # Directory containing the project file ({project_dir})
     template: ProjectTemplate
     validation: ProjectValidationInfo
 
     # Cached parsed macros (populated during load for performance)
     parsed_situation_schemas: dict[str, ParsedMacro]  # situation_name -> ParsedMacro
     parsed_directory_schemas: dict[str, ParsedMacro]  # directory_name -> ParsedMacro
+
+    # Root directory for file outputs ({workspace_dir}). Defaults to project_base_dir when not set.
+    workspace_dir: Path | None = None
+
+    def __post_init__(self) -> None:
+        if self.workspace_dir is None:
+            self.workspace_dir = self.project_base_dir
 
 
 class ProjectManager:
@@ -301,6 +308,7 @@ class ProjectManager:
             project_id=project_id,
             project_file_path=project_file_path,
             project_base_dir=project_base_dir,
+            workspace_dir=self._resolve_workspace_dir(template, project_base_dir),
             template=template,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
@@ -887,6 +895,16 @@ class ProjectManager:
 
         return directory_schemas
 
+    def _resolve_workspace_dir(self, template: ProjectTemplate, project_base_dir: Path) -> Path:
+        """Resolve the workspace directory for a project.
+
+        If the template specifies a workspace_dir, resolves it against the project base directory.
+        Otherwise, defaults to the project base directory itself.
+        """
+        if template.workspace_dir is None:
+            return project_base_dir
+        return resolve_workspace_path(Path(template.workspace_dir), project_base_dir)
+
     def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:  # noqa: C901
         """Get the value of a single builtin variable.
 
@@ -910,12 +928,10 @@ class ProjectManager:
                 raise NotImplementedError(msg)
 
             case "workspace_dir":
-                config_manager = GriptapeNodes.ConfigManager()
-                workspace_dir = config_manager.get_config_value("workspace_directory")
-                if workspace_dir is None:
-                    msg = "Attempted to resolve builtin variable '{workspace_dir}'. Failed because 'workspace_directory' config value was None"
+                if project_info.workspace_dir is None:
+                    msg = "Attempted to resolve builtin variable '{workspace_dir}'. Failed because workspace_dir was not initialized"
                     raise RuntimeError(msg)
-                return str(workspace_dir)
+                return str(project_info.workspace_dir)
 
             case "workflow_name":
                 context_manager = GriptapeNodes.ContextManager()
@@ -1109,6 +1125,7 @@ class ProjectManager:
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=None,  # No actual file for system defaults
             project_base_dir=workspace_dir,  # Use workspace as base
+            workspace_dir=workspace_dir,  # System defaults: workspace_dir == project_base_dir
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
@@ -1182,10 +1199,12 @@ class ProjectManager:
         situation_schemas = self._parse_situation_macros(template.situations, validation)
         directory_schemas = self._parse_directory_macros(template.directories, validation)
 
+        project_base_dir = workspace_project_path.parent
         project_info = ProjectInfo(
             project_id=project_id,
             project_file_path=workspace_project_path,
-            project_base_dir=workspace_project_path.parent,
+            project_base_dir=project_base_dir,
+            workspace_dir=self._resolve_workspace_dir(template, project_base_dir),
             template=template,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
