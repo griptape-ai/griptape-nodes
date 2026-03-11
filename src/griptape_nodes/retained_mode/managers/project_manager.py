@@ -736,7 +736,14 @@ class ProjectManager:
         # If GTN_PROJECT_FILE is set, load that project directly and skip the workspace file.
         # Otherwise, check the workspace for an optional project overlay file.
         if os.environ.get(GTN_PROJECT_FILE_ENV_VAR) is not None:
-            self._load_env_var_project()
+            try:
+                self._load_env_var_project()
+            except RuntimeError:
+                logger.error(
+                    "Aborting project initialization: failed to load project from %s",
+                    GTN_PROJECT_FILE_ENV_VAR,
+                )
+                return
         else:
             self._load_workspace_project()
 
@@ -1196,12 +1203,15 @@ class ProjectManager:
         If the environment variable is set, loads the project file at that path and sets it
         as the current project. This takes precedence over the workspace project file.
         If the variable is not set, no action is taken.
+
+        Raises:
+            RuntimeError: If the project file cannot be loaded or set as current.
         """
         env_project_path_str = os.environ.get(GTN_PROJECT_FILE_ENV_VAR)
         if env_project_path_str is None:
             return
 
-        env_project_path = Path(env_project_path_str)
+        env_project_path = Path(env_project_path_str).resolve()
         logger.info(
             "Found %s='%s', loading project from environment variable",
             GTN_PROJECT_FILE_ENV_VAR,
@@ -1209,34 +1219,21 @@ class ProjectManager:
         )
 
         if not env_project_path.exists():
-            logger.error(
-                "Attempted to load project from %s='%s'. Failed because file does not exist",
-                GTN_PROJECT_FILE_ENV_VAR,
-                env_project_path,
-            )
-            return
+            msg = f"Attempted to load project from {GTN_PROJECT_FILE_ENV_VAR}='{env_project_path}'. Failed because file does not exist"
+            raise RuntimeError(msg)
 
         try:
             yaml_text = File(str(env_project_path)).read_text()
         except FileLoadError as e:
-            logger.error(
-                "Attempted to read project file at '%s' from %s. Failed with: %s",
-                env_project_path,
-                GTN_PROJECT_FILE_ENV_VAR,
-                e.result_details,
-            )
-            return
+            msg = f"Attempted to read project file at '{env_project_path}' from {GTN_PROJECT_FILE_ENV_VAR}. Failed with: {e.result_details}"
+            raise RuntimeError(msg) from e
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, validation)
 
         if overlay is None:
-            logger.error(
-                "Attempted to load project from '%s' via %s. Failed because YAML could not be parsed",
-                env_project_path,
-                GTN_PROJECT_FILE_ENV_VAR,
-            )
-            return
+            msg = f"Attempted to load project from '{env_project_path}' via {GTN_PROJECT_FILE_ENV_VAR}. Failed because YAML could not be parsed"
+            raise RuntimeError(msg)
 
         template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
 
@@ -1247,14 +1244,8 @@ class ProjectManager:
                 else f"{p.field_path}: {p.message}"
                 for p in validation.problems
             )
-            logger.error(
-                "Attempted to load project from '%s' via %s. Failed because template is not usable (status: %s). Problems: %s",
-                env_project_path,
-                GTN_PROJECT_FILE_ENV_VAR,
-                validation.status,
-                problem_details,
-            )
-            return
+            msg = f"Attempted to load project from '{env_project_path}' via {GTN_PROJECT_FILE_ENV_VAR}. Failed because template is not usable (status: {validation.status}). Problems: {problem_details}"
+            raise RuntimeError(msg)
 
         project_id = str(env_project_path)
         situation_schemas = self._parse_situation_macros(template.situations, validation)
@@ -1276,12 +1267,7 @@ class ProjectManager:
         set_result = self.on_set_current_project_request(set_request)
 
         if set_result.failed():
-            logger.error(
-                "Attempted to set project '%s' (from %s) as current. Failed with: %s",
-                env_project_path,
-                GTN_PROJECT_FILE_ENV_VAR,
-                set_result.result_details,
-            )
-            return
+            msg = f"Attempted to set project '{env_project_path}' (from {GTN_PROJECT_FILE_ENV_VAR}) as current. Failed with: {set_result.result_details}"
+            raise RuntimeError(msg)
 
         logger.info("Successfully loaded project from %s='%s'", GTN_PROJECT_FILE_ENV_VAR, env_project_path)
