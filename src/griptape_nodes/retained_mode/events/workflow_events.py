@@ -751,6 +751,102 @@ class GetWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 
 @dataclass
+class WorkflowDependencyInfo:
+    """Information about a single library dependency for a workflow.
+
+    Args:
+        library_name: Name of the library
+        version_requested: Version of the library required by the workflow
+        version_present: Version of the library currently installed, or None if not found
+        status: Dependency status (PERFECT, GOOD, CAUTION, BAD, MISSING, or UNKNOWN)
+    """
+
+    library_name: str
+    version_requested: str
+    version_present: str | None
+    status: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowInfoRequest(RequestPayload):
+    """Get fitness/health information for a workflow.
+
+    Use when: Displaying workflow health warnings in the UI, checking whether a workflow
+    has compatibility issues before loading it, showing dependency status.
+
+    Provide workflow_name (registry key) or workflow_file_path, but not both.
+
+    Args:
+        workflow_name: Registry key for the workflow (optional if workflow_file_path provided)
+        workflow_file_path: Absolute file path to the workflow file (optional if workflow_name provided)
+
+    Results: GetWorkflowInfoResultSuccess (with status and details) | GetWorkflowInfoResultFailure (not found, ambiguous args)
+    """
+
+    workflow_name: str | None = None
+    workflow_file_path: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow info retrieved successfully.
+
+    Args:
+        status: Overall fitness status (GOOD, FLAWED, UNUSABLE, or MISSING)
+        workflow_name: Display name of the workflow, or None if unavailable
+        workflow_path: Absolute file path to the workflow file
+        problems: List of human-readable problem descriptions, one entry per problem group
+        workflow_dependencies: List of library dependency details
+    """
+
+    status: str
+    workflow_name: str | None
+    workflow_path: str
+    problems: list[str]
+    workflow_dependencies: list[WorkflowDependencyInfo]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow info retrieval failed. Common causes: workflow not found, neither or both identifiers provided."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ListAllWorkflowInfoRequest(RequestPayload):
+    """Get fitness/health information for all registered workflows in a single request.
+
+    Use when: Populating the workflow list UI with health indicators for every workflow
+    at once, avoiding many individual GetWorkflowInfoRequest calls.
+
+    Results: ListAllWorkflowInfoResultSuccess (with workflow_infos dict) | ListAllWorkflowInfoResultFailure
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ListAllWorkflowInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow info for all registered workflows retrieved successfully.
+
+    Args:
+        workflow_infos: Dict mapping registry key to a dict containing status,
+            workflow_name, workflow_path, problems, and workflow_dependencies.
+            Workflows with no info entry are omitted.
+    """
+
+    workflow_infos: dict
+
+
+@dataclass
+@PayloadRegistry.register
+class ListAllWorkflowInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow info listing failed."""
+
+
+@dataclass
 @PayloadRegistry.register
 class SetWorkflowMetadataRequest(RequestPayload):
     """Replace the workflow's metadata entirely and persist to file."""
