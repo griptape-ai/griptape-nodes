@@ -585,16 +585,6 @@ class File:
                 result_details="Cannot write: file_path is None",
             )
 
-        file_metadata: dict[str, str] | None = None
-        if isinstance(self._file_path, MacroPath):
-            file_metadata = {"gtn_macro_template": self._file_path.parsed_macro.template}
-            for key, value in self._file_path.variables.items():
-                file_metadata[f"gtn_variable_{key}"] = str(value)
-        if self._file_metadata:
-            if file_metadata is None:
-                file_metadata = {}
-            file_metadata.update(self._file_metadata)
-
         request = WriteFileRequest(
             file_path=resolved_path,
             content=content,
@@ -602,7 +592,7 @@ class File:
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
-            file_metadata=file_metadata,
+            file_metadata=self._build_file_metadata(),
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -648,16 +638,6 @@ class File:
                 result_details="Cannot write: file_path is None",
             )
 
-        file_metadata: dict[str, str] | None = None
-        if isinstance(self._file_path, MacroPath):
-            file_metadata = {"gtn_macro_template": self._file_path.parsed_macro.template}
-            for key, value in self._file_path.variables.items():
-                file_metadata[f"gtn_variable_{key}"] = str(value)
-        if self._file_metadata:
-            if file_metadata is None:
-                file_metadata = {}
-            file_metadata.update(self._file_metadata)
-
         request = WriteFileRequest(
             file_path=resolved_path,
             content=content,
@@ -665,7 +645,7 @@ class File:
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
-            file_metadata=file_metadata,
+            file_metadata=self._build_file_metadata(),
         )
         result = await GriptapeNodes.ahandle_request(request)
 
@@ -677,6 +657,19 @@ class File:
             )
 
         return Path(cast("WriteFileResultSuccess", result).final_file_path)
+
+    def _build_file_metadata(self) -> dict[str, str] | None:
+        """Build merged file metadata from MacroPath variables and caller-provided metadata."""
+        file_metadata: dict[str, str] | None = None
+        if isinstance(self._file_path, MacroPath):
+            file_metadata = {"gtn_macro_template": self._file_path.parsed_macro.template}
+            for key, value in self._file_path.variables.items():
+                file_metadata[f"gtn_variable_{key}"] = str(value)
+        if self._file_metadata:
+            if file_metadata is None:
+                file_metadata = {}
+            file_metadata.update(self._file_metadata)
+        return file_metadata
 
 
 class FileDestination:
