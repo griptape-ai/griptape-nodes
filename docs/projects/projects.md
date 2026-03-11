@@ -1,6 +1,6 @@
 # Projects
 
-A project template is a configuration that defines how files are organized and saved. It is the combination of situations, directories, and environment variables that every node consults when it needs to save a file.
+A project template is a configuration that defines how files are organized and saved. It is the combination of [situations](situations.md), [directories](directories.md), and [environment variables](environment.md) that every node consults when it needs to save a file.
 
 ## The project file
 
@@ -10,7 +10,7 @@ Your workspace-level customizations live in a file named:
 griptape-nodes-project.yml
 ```
 
-Place this file in your workspace directory. It is optional — if absent, the system defaults apply.
+Place this file in your workspace directory. It is optional — if absent, the [system defaults](#the-system-defaults) apply.
 
 ## The merge model
 

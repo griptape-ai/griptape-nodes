@@ -4,7 +4,7 @@ The workspace is the root directory for all your work in Griptape Nodes. It is t
 
 ## Configuring the workspace
 
-The workspace directory is set via the `workspace_directory` key in your settings. By default, this is a folder in your home directory, but you can point it anywhere on disk.
+The workspace directory is set via the `workspace_directory` key in your settings. By default, this is a folder in your home directory, but you can point it anywhere on disk. See [Engine Configuration](../configuration.md#workspace-directory) for details on how to change this setting.
 
 ## How paths resolve
 
