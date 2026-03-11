@@ -23,9 +23,7 @@
             "module": "src.griptape_nodes.__main__",
             "console": "integratedTerminal",
             "justMyCode": false,
-            "args": [
-                "--no-update"
-            ]
+            "args": []
         }
     ]
 }

@@ -485,7 +485,7 @@ class ModelManager:
         await asyncio.to_thread(self._write_download_status, status_file, initial_data)
 
         # Build CLI command
-        cmd = [sys.executable, "-m", "griptape_nodes", "--no-update", "models", "download", download_params.model_id]
+        cmd = [sys.executable, "-m", "griptape_nodes", "models", "download", download_params.model_id]
 
         if download_params.local_dir:
             cmd.extend(["--local-dir", download_params.local_dir])

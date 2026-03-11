@@ -231,4 +231,4 @@ ENV HOME=/app
 EXPOSE 8124
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/opt/venv/bin/griptape-nodes", "--no-update"]
+CMD ["/opt/venv/bin/griptape-nodes"]

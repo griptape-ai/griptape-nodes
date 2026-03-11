@@ -36,12 +36,9 @@ ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
 
 # URLs and constants
-LATEST_TAG = "latest"
 PACKAGE_NAME = "griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
-PYPI_UPDATE_URL = "https://pypi.org/pypi/{package}/json"
-GITHUB_UPDATE_URL = "https://api.github.com/repos/griptape-ai/{package}/git/refs/tags/{revision}"
 GT_CLOUD_BASE_URL = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
 
 # Environment variable defaults for init configuration
