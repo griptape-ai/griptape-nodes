@@ -82,6 +82,15 @@ nav:
       - Engine Configuration: configuration.md
       - Command Line Interface: command_line_interface.md
       - Scripting: retained_mode.md
+      - Project System:
+          - Overview: projects/index.md
+          - Workspace: projects/workspace.md
+          - Projects: projects/projects.md
+          - Macros: projects/macros.md
+          - Directories: projects/directories.md
+          - Situations: projects/situations.md
+          - Environment & Builtin Variables: projects/environment.md
+          - Customization Guide: projects/customization.md
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
       - Developing Nodes (Developer Onboarding): how_to/developing_nodes.md
