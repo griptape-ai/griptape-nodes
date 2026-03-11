@@ -388,6 +388,7 @@ def resolve_workspace_path(path: Path, base_directory: Path) -> Path:
         >>> resolve_workspace_path(Path("/tmp/file.txt"), base)
         Path("/tmp/file.txt")
     """
+    path = path.expanduser()
     if not path.is_absolute():
         return (base_directory / path).resolve()
     return path.resolve()

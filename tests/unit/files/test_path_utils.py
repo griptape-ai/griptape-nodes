@@ -15,6 +15,7 @@ from griptape_nodes.files.path_utils import (
     path_needs_expansion,
     resolve_file_path,
     resolve_path_safely,
+    resolve_workspace_path,
     sanitize_path_string,
     strip_surrounding_quotes,
 )
@@ -221,6 +222,40 @@ class TestResolvePathSafely:
     def test_works_with_nonexistent_paths(self) -> None:
         """Test that function works with non-existent paths."""
         result = resolve_path_safely(Path("/nonexistent/path/file.txt"))
+        assert result.is_absolute()
+
+
+class TestResolveWorkspacePath:
+    """Tests for resolve_workspace_path function."""
+
+    def test_relative_path_resolves_against_base(self) -> None:
+        """Test that relative paths are resolved against the base directory."""
+        base = Path("/project")
+        result = resolve_workspace_path(Path("outputs/file.png"), base)
+        assert result == Path("/project/outputs/file.png")
+
+    def test_absolute_path_passes_through(self) -> None:
+        """Test that absolute paths are not modified by the base directory."""
+        base = Path("/project")
+        result = resolve_workspace_path(Path("/abs/path/file.png"), base)
+        assert result == Path("/abs/path/file.png")
+
+    def test_tilde_expands_to_home_directory(self) -> None:
+        """Test that ~ is expanded to the user's home directory.
+
+        Without expanduser(), Path("~/Downloads") is not absolute, so it
+        would be treated as relative and resolved against the base dir,
+        giving /project/~/Downloads instead of /home/user/Downloads.
+        """
+        base = Path("/project")
+        result = resolve_workspace_path(Path("~/Downloads"), base)
+        assert result == Path.home() / "Downloads"
+
+    def test_tilde_path_not_resolved_against_base(self) -> None:
+        """Test that ~/... paths are not prepended with the base directory."""
+        base = Path("/project")
+        result = resolve_workspace_path(Path("~/Downloads/file.png"), base)
+        assert not str(result).startswith(str(base))
         assert result.is_absolute()
 
 

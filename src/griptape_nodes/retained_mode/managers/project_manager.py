@@ -454,6 +454,30 @@ class ProjectManager:
                 result_details=f"Attempted to resolve macro path. Failed because variables conflict with directory names: {', '.join(sorted(conflicting))}",
             )
 
+        if self._secrets_manager is None:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                result_details="Attempted to resolve macro path. Failed because SecretsManager is not available",
+            )
+
+        secrets_manager = self._secrets_manager
+
+        # Collect variables needed by directory macros and resolve the builtin ones
+        dir_variables_needed: set[str] = set()
+        for parsed_dir_macro in project_info.parsed_directory_schemas.values():
+            dir_variables_needed.update(var_info.name for var_info in parsed_dir_macro.get_variables())
+
+        builtin_vars: MacroVariables = {}
+        for dir_var_name in dir_variables_needed:
+            if dir_var_name in BUILTIN_VARIABLES:
+                try:
+                    builtin_vars[dir_var_name] = self._get_builtin_variable_value(dir_var_name, project_info)
+                except (RuntimeError, NotImplementedError, ValueError) as e:
+                    return GetPathForMacroResultFailure(
+                        failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                        result_details=f"Attempted to resolve macro path. Failed because directory builtin variable '{dir_var_name}' cannot be resolved: {e}",
+                    )
+
         resolution_bag: MacroVariables = {}
         disallowed_overrides: set[str] = set()
 
@@ -461,8 +485,15 @@ class ProjectManager:
             var_name = var_info.name
 
             if var_name in directory_names:
-                directory_def = template.directories[var_name]
-                resolution_bag[var_name] = directory_def.path_macro
+                parsed_directory_macro = project_info.parsed_directory_schemas[var_name]
+                try:
+                    resolved_dir = parsed_directory_macro.resolve(builtin_vars, secrets_manager)
+                except MacroResolutionError as e:
+                    return GetPathForMacroResultFailure(
+                        failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                        result_details=f"Attempted to resolve macro path. Failed because directory macro resolution error: {e}",
+                    )
+                resolution_bag[var_name] = resolved_dir
             elif var_name in user_provided_names:
                 resolution_bag[var_name] = request.variables[var_name]
 
@@ -511,14 +542,8 @@ class ProjectManager:
                 result_details=f"Attempted to resolve macro path. Failed because missing required variables: {', '.join(sorted(missing))}",
             )
 
-        if self._secrets_manager is None:
-            return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                result_details="Attempted to resolve macro path. Failed because SecretsManager is not available",
-            )
-
         try:
-            resolved_string = request.parsed_macro.resolve(resolution_bag, self._secrets_manager)
+            resolved_string = request.parsed_macro.resolve(resolution_bag, secrets_manager)
         except MacroResolutionError as e:
             if e.failure_reason == MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES:
                 path_failure_reason = PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES

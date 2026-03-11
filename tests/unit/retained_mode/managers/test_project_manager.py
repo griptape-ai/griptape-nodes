@@ -441,6 +441,227 @@ class TestProjectManagerBuiltinVariables:
         assert "cannot override builtin variables" in str(result.result_details)
 
 
+class TestProjectManagerDirectoryMacroResolution:
+    """Test that directory path_macros are resolved through the builtin variable pipeline.
+
+    These tests verify the behavior introduced when default directory path_macros
+    changed from bare relative strings (e.g. "outputs") to explicit builtin-based
+    paths (e.g. "{project_dir}/outputs"). Forward resolution must now evaluate the
+    directory macro rather than inserting the raw path_macro string.
+    """
+
+    @pytest.fixture
+    def project_manager_with_template(self) -> ProjectManager:
+        """Create a ProjectManager with system defaults loaded."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, Mock(), Mock())
+
+        project_path = Path("/test/project.yml")
+        project_id = str(project_path)
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
+        return pm
+
+    def test_directory_macro_resolves_to_absolute_path(
+        self, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that {outputs} in a macro resolves to an absolute path, not the raw path_macro string.
+
+        Red: resolution_bag["outputs"] = "outputs" → resolved_path = Path("outputs/my_file.png") (relative)
+        Green: resolution_bag["outputs"] = "/test/outputs" → resolved_path = Path("/test/outputs/my_file.png") (absolute)
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        parsed_macro = ParsedMacro("{outputs}/my_file.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path.is_absolute()
+        assert result.resolved_path == Path("/test/outputs/my_file.png")
+
+    def test_directory_macro_with_custom_absolute_path(self) -> None:
+        """Test that a custom directory with an absolute path_macro uses that path directly."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        custom_template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="test",
+            directories={"downloads": DirectoryDefinition(name="downloads", path_macro="/abs/custom")},
+            situations={},
+        )
+        project_path = Path("/test/project.yml")
+        project_id = str(project_path)
+
+        pm = ProjectManager(Mock(), Mock(), Mock())
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        directory_schemas = pm._parse_directory_macros(custom_template.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_path.parent,
+            template=custom_template,
+            validation=validation,
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
+
+        parsed_macro = ParsedMacro("{downloads}/file.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = pm.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/abs/custom/file.png")
+
+    def test_directory_macro_with_tilde_path_expands_to_home(self) -> None:
+        """Test that a directory with path_macro: ~/... expands tilde to the home directory.
+
+        Red: Path("~/Downloads").is_absolute() is False, so resolve_workspace_path
+             prepends the base dir: /test/~/Downloads
+        Green: expanduser() runs first, ~/Downloads → /home/user/Downloads (absolute)
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        custom_template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="test",
+            directories={"downloads": DirectoryDefinition(name="downloads", path_macro="~/Downloads")},
+            situations={},
+        )
+        project_path = Path("/test/project.yml")
+        project_id = str(project_path)
+
+        pm = ProjectManager(Mock(), Mock(), Mock())
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        directory_schemas = pm._parse_directory_macros(custom_template.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_path.parent,
+            template=custom_template,
+            validation=validation,
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
+
+        parsed_macro = ParsedMacro("{downloads}/file.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = pm.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.absolute_path.is_absolute()
+        assert result.absolute_path == Path.home() / "Downloads" / "file.png"
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_directory_builtin_unresolvable_fails(self, mock_griptape_nodes: Mock) -> None:
+        """Test that a directory whose path_macro needs an unresolvable builtin fails early."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        custom_template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="test",
+            directories={"outputs": DirectoryDefinition(name="outputs", path_macro="{workflow_name}_outputs")},
+            situations={},
+        )
+        project_path = Path("/test/project.yml")
+        project_id = str(project_path)
+
+        mock_context = Mock()
+        mock_context.has_current_workflow.return_value = False
+        mock_griptape_nodes.ContextManager.return_value = mock_context
+
+        pm = ProjectManager(Mock(), Mock(), Mock())
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        directory_schemas = pm._parse_directory_macros(custom_template.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_path.parent,
+            template=custom_template,
+            validation=validation,
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
+
+        parsed_macro = ParsedMacro("{outputs}/file.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = pm.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+        assert "workflow_name" in str(result.result_details)
+
+    def test_secrets_manager_none_fails_before_directory_resolution(
+        self, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that a None secrets_manager is caught before directory resolution is attempted."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        project_manager_with_template._secrets_manager = None
+
+        parsed_macro = ParsedMacro("{outputs}/file.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+        assert "SecretsManager" in str(result.result_details)
+
+
 class TestProjectManagerGetStateForMacro:
     """Test ProjectManager GetStateForMacro request handler."""
 

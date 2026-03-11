@@ -16,19 +16,19 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
     directories={
         "inputs": DirectoryDefinition(
             name="inputs",
-            path_macro="inputs",
+            path_macro="{project_dir}/inputs",
         ),
         "outputs": DirectoryDefinition(
             name="outputs",
-            path_macro="outputs",
+            path_macro="{project_dir}/outputs",
         ),
         "temp": DirectoryDefinition(
             name="temp",
-            path_macro="temp",
+            path_macro="{project_dir}/temp",
         ),
         "previews": DirectoryDefinition(
             name="previews",
-            path_macro=".griptape-nodes-previews",
+            path_macro="{project_dir}/.griptape-nodes-previews",
         ),
     },
     environment={},

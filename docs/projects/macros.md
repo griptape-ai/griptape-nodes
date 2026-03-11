@@ -8,12 +8,12 @@ Before diving into the full syntax, here are two examples that show what macros 
 Template:  {outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}
 
 With all variables:
-  outputs="outputs", node_name="ImageGen", file_name_base="render", _index=2, file_extension="png"
-  → outputs/ImageGen_render002.png
+  outputs="/your/project/outputs", node_name="ImageGen", file_name_base="render", _index=2, file_extension="png"
+  → /your/project/outputs/ImageGen_render002.png
 
 With optional variables omitted:
-  outputs="outputs", file_name_base="render", file_extension="png"
-  → outputs/render.png
+  outputs="/your/project/outputs", file_name_base="render", file_extension="png"
+  → /your/project/outputs/render.png
 ```
 
 `{outputs}` is a directory name that the project system supplies automatically. `{node_name?:_}` is optional — when present, its value is followed by `_`; when absent, the block disappears entirely. `{_index?:03}` is optional and zero-padded to three digits when present.
@@ -59,10 +59,10 @@ Path separators work the same way — `{sub_dirs?:/}` adds a subdirectory prefix
 {outputs}/{sub_dirs?:/}{file_name_base}.{file_extension}
 
   sub_dirs="lighting/pass_a", file_name_base="render", file_extension="exr"
-  → outputs/lighting/pass_a/render.exr
+  → /your/project/outputs/lighting/pass_a/render.exr
 
   sub_dirs not provided, file_name_base="render", file_extension="exr"
-  → outputs/render.exr
+  → /your/project/outputs/render.exr
 ```
 
 ### Numeric padding
@@ -133,9 +133,9 @@ For example, resolving the `save_node_output` situation macro:
 ```
 Template:   {outputs}/{sub_dirs?:/}{node_name?:_}{file_name_base}{_index?:03}.{file_extension}
 
-Automatic:  outputs → resolved from the "outputs" directory definition → "outputs"
+Automatic:  outputs → resolved from the "outputs" directory definition → "/your/project/outputs"
 Provided:   node_name="StyleTransfer", file_name_base="portrait", _index=3, file_extension="png"
-Result:     outputs/StyleTransfer_portrait003.png
+Result:     /your/project/outputs/StyleTransfer_portrait003.png
 ```
 
 Directory names (like `outputs`) are automatically resolved to their configured paths. See [Directories](directories.md).
@@ -150,8 +150,8 @@ For example:
 
 ```
 Template:  {outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}
-Path:      outputs/StyleTransfer_portrait003.png
-Extracted: outputs="outputs", node_name="StyleTransfer", file_name_base="portrait", _index=3, file_extension="png"
+Path:      /your/project/outputs/StyleTransfer_portrait003.png
+Extracted: outputs="/your/project/outputs", node_name="StyleTransfer", file_name_base="portrait", _index=3, file_extension="png"
 ```
 
 Numeric padding is reversed by parsing the number (`"003"` → integer `3`). Case transformations and slugification cannot be reliably reversed and return the value as-is.
