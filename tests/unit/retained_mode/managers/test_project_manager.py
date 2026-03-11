@@ -481,24 +481,49 @@ class TestProjectManagerDirectoryMacroResolution:
         pm._current_project_id = project_id
         return pm
 
-    def test_directory_macro_resolves_to_absolute_path(
-        self, project_manager_with_template: ProjectManager
-    ) -> None:
+    def test_directory_macro_resolves_to_absolute_path(self, tmp_path: Path) -> None:
         """Test that {outputs} in a macro resolves to an absolute path, not the raw path_macro string.
 
-        Red: resolution_bag["outputs"] = "outputs" → resolved_path = Path("outputs/my_file.png") (relative)
-        Green: resolution_bag["outputs"] = "/test/outputs" → resolved_path = Path("/test/outputs/my_file.png") (absolute)
+        Red: resolution_bag["outputs"] = "outputs" → absolute_path contains workspace_base/outputs/...
+             but resolved_path is just "outputs/my_file.png" (bare relative string substituted)
+        Green: resolution_bag["outputs"] = "<project_dir>/outputs" → absolute_path is
+               <project_dir>/outputs/my_file.png (project_dir-rooted, same base either way)
+               AND resolved_path is also absolute (not a bare relative string)
         """
         from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        project_base = tmp_path
+        project_path = project_base / "project.yml"
+        project_id = str(project_path)
+
+        pm = ProjectManager(Mock(), Mock(), Mock())
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_base,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
 
         parsed_macro = ParsedMacro("{outputs}/my_file.png")
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
-        result = project_manager_with_template.on_get_path_for_macro_request(request)
+        result = pm.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
-        assert result.resolved_path.is_absolute()
-        assert result.resolved_path == Path("/test/outputs/my_file.png")
+        assert result.absolute_path.is_absolute()
+        assert result.absolute_path == tmp_path / "outputs" / "my_file.png"
 
     def test_directory_macro_with_custom_absolute_path(self) -> None:
         """Test that a custom directory with an absolute path_macro uses that path directly."""

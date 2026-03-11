@@ -228,17 +228,17 @@ class TestResolvePathSafely:
 class TestResolveWorkspacePath:
     """Tests for resolve_workspace_path function."""
 
-    def test_relative_path_resolves_against_base(self) -> None:
+    def test_relative_path_resolves_against_base(self, tmp_path: Path) -> None:
         """Test that relative paths are resolved against the base directory."""
-        base = Path("/project")
-        result = resolve_workspace_path(Path("outputs/file.png"), base)
-        assert result == Path("/project/outputs/file.png")
+        result = resolve_workspace_path(Path("outputs/file.png"), tmp_path)
+        assert result == tmp_path / "outputs" / "file.png"
 
-    def test_absolute_path_passes_through(self) -> None:
+    def test_absolute_path_passes_through(self, tmp_path: Path) -> None:
         """Test that absolute paths are not modified by the base directory."""
-        base = Path("/project")
-        result = resolve_workspace_path(Path("/abs/path/file.png"), base)
-        assert result == Path("/abs/path/file.png")
+        abs_path = tmp_path / "abs" / "file.png"
+        different_base = tmp_path / "other"
+        result = resolve_workspace_path(abs_path, different_base)
+        assert result == abs_path
 
     def test_tilde_expands_to_home_directory(self) -> None:
         """Test that ~ is expanded to the user's home directory.

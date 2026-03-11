@@ -108,20 +108,13 @@ class TestWorkflowRegistry:
         assert result == expected
 
     def test_get_complete_file_path_with_home_expansion(self) -> None:
-        """Test that get_complete_file_path handles paths with home directory expansion."""
+        """Test that get_complete_file_path expands ~ to the user's home directory."""
         home_path = "~/workflows/my_workflow.py"
 
-        # Home paths starting with ~ are NOT considered absolute by Path.is_absolute()
-        # so they will be treated as relative paths
         result = WorkflowRegistry.get_complete_file_path(home_path)
 
-        # Should be treated as relative and appended to workspace
-        if os.name == "nt":  # Windows
-            # On Windows, ~ is just a regular character in the path
-            assert result.endswith("~\\workflows\\my_workflow.py")
-        else:
-            # On Unix, ~ is also treated as relative (not expanded)
-            assert result.endswith("~/workflows/my_workflow.py")
+        expected = str(Path.home() / "workflows" / "my_workflow.py")
+        assert result == expected
 
     def test_get_complete_file_path_with_current_dir_relative(self, griptape_nodes: GriptapeNodes) -> None:
         """Test that get_complete_file_path handles current directory relative paths."""
