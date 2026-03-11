@@ -72,7 +72,6 @@ COPY pyproject.toml pyproject.toml
 COPY uv.lock uv.lock
 COPY README.md README.md
 COPY src src
-COPY libraries libraries
 
 # Install the project (puts it into a venv at /opt/venv)
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -138,7 +137,6 @@ COPY pyproject.toml pyproject.toml
 COPY uv.lock uv.lock
 COPY README.md README.md
 COPY src src
-COPY libraries libraries
 
 # Install the project (puts it into a venv at /opt/venv)
 RUN --mount=type=cache,target=/root/.cache/uv \
