@@ -45,6 +45,7 @@ class ParameterBool(Parameter):
         hide: bool | None = None,
         hide_label: bool = False,
         hide_property: bool = False,
+        display_name: str | None = None,
         allow_input: bool = True,
         allow_property: bool = True,
         allow_output: bool = True,
@@ -78,6 +79,7 @@ class ParameterBool(Parameter):
             hide: Whether to hide the entire parameter
             hide_label: Whether to hide the parameter label
             hide_property: Whether to hide the parameter in property mode
+            display_name: Human-readable label for the parameter (overrides default parameter name)
             allow_input: Whether to allow input mode
             allow_property: Whether to allow property mode
             allow_output: Whether to allow output mode
@@ -134,6 +136,7 @@ class ParameterBool(Parameter):
             hide=hide,
             hide_label=hide_label,
             hide_property=hide_property,
+            display_name=display_name,
             allow_input=allow_input,
             allow_property=allow_property,
             allow_output=allow_output,
