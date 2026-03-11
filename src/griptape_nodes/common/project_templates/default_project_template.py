@@ -32,7 +32,7 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
         "metadata": DirectoryDefinition(
             name="metadata",
-            path_macro=".gtn",
+            path_macro=".griptape-nodes-metadata",
         ),
     },
     environment={},

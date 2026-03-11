@@ -1,13 +1,13 @@
 """Sidecar metadata file creation for files written through the retained mode API.
 
 When a file is saved, a sidecar JSON file is written to the project's metadata
-directory (`.gtn/`) with preserved path hierarchy. The sidecar captures
+directory (`.griptape-nodes-metadata/`) with preserved path hierarchy. The sidecar captures
 caller-provided project context (situation name, macro template, variable values)
 merged with auto-collected workflow metadata (workflow name, flow context, node
 parameters).
 
 Example layout (for a file at <workspace>/outputs/image.png):
-    .gtn/
+    .griptape-nodes-metadata/
       outputs/
         image.png.json
 """
