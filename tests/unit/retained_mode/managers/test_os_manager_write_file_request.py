@@ -542,7 +542,7 @@ class TestSidecarMetadata:
         griptape_nodes.ConfigManager().workspace_path = original_workspace
 
     def test_sidecar_written_on_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test that a sidecar .gtn/<filename>.json is created after a successful write."""
+        """Test that a sidecar .griptape-nodes-metadata/<filename>.json is created after a successful write."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "output.txt"
 
@@ -550,7 +550,7 @@ class TestSidecarMetadata:
         result = os_manager.on_write_file_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
-        sidecar_path = temp_dir / ".gtn" / "output.txt.json"
+        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
         assert sidecar_path.exists(), "Sidecar file should be created alongside saved file"
 
     def test_sidecar_contains_schema_version(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
@@ -563,7 +563,7 @@ class TestSidecarMetadata:
         request = WriteFileRequest(file_path=str(file_path), content="hello")
         os_manager.on_write_file_request(request)
 
-        sidecar_path = temp_dir / ".gtn" / "output.txt.json"
+        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
         data = _json.loads(sidecar_path.read_text())
         assert data["schema_version"] == "0.1.0"
         assert "saved_at" in data
@@ -585,7 +585,7 @@ class TestSidecarMetadata:
         result = os_manager.on_write_file_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
-        sidecar_path = temp_dir / ".gtn" / "image.png.json"
+        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "image.png.json"
         data = _json.loads(sidecar_path.read_text())
         assert data["situation"]["name"] == "save_node_output"
         assert data["situation"]["macro"] == "{outputs}/{node_name}.png"
@@ -603,7 +603,7 @@ class TestSidecarMetadata:
         result = os_manager.on_write_file_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
-        sidecar_path = temp_dir / ".gtn" / "output.txt.json"
+        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
         assert not sidecar_path.exists(), "Sidecar should not be created when skip_metadata_injection=True"
 
     def test_sidecar_not_written_when_config_disabled(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
@@ -616,7 +616,7 @@ class TestSidecarMetadata:
         result = os_manager.on_write_file_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
-        sidecar_path = temp_dir / ".gtn" / "output.txt.json"
+        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
         assert not sidecar_path.exists(), "Sidecar should not be created when auto_inject_workflow_metadata=False"
 
     def test_sidecar_written_for_indexed_fallback_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
@@ -637,7 +637,7 @@ class TestSidecarMetadata:
         assert isinstance(result, WriteFileResultSuccess)
         # File was written to output_1.txt
         actual_path = Path(result.final_file_path)
-        sidecar_path = actual_path.parent / ".gtn" / (actual_path.name + ".json")
+        sidecar_path = actual_path.parent / ".griptape-nodes-metadata" / (actual_path.name + ".json")
         assert sidecar_path.exists(), "Sidecar should be created at the actual indexed fallback path"
         data = _json.loads(sidecar_path.read_text())
         assert data["schema_version"] == "0.1.0"
