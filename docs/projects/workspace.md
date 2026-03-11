@@ -1,6 +1,6 @@
 # Workspace
 
-The workspace is the root directory for all your work in Griptape Nodes. It is the starting point from which relative file paths are resolved.
+The workspace is the root directory for all your work within a project. It is the starting point from which relative file paths are resolved.
 
 ## Configuring the workspace
 

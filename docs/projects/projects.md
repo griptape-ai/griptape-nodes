@@ -2,6 +2,8 @@
 
 A project template is a configuration that defines how files are organized and saved. It is the combination of [situations](situations.md), [directories](directories.md), and [environment variables](environment.md) that every node consults when it needs to save a file.
 
+By default, Griptape Nodes ships with a built-in project template that handles the common cases — saving images, audio, and other outputs to an `outputs` folder in your workspace. A project file lets you change any of that: redirect where a particular kind of file is saved, add a new named location (like `renders/4k`), or inject environment variables specific to your project. You only write down the things you want to change; everything else continues to use the [default situations](situations.md#default-situations) and [default directories](directories.md#default-directories).
+
 ## The project file
 
 Your workspace-level customizations live in a file named:
@@ -11,22 +13,6 @@ griptape-nodes-project.yml
 ```
 
 Place this file in your workspace directory. It is optional — if absent, the [system defaults](#the-system-defaults) apply.
-
-## The merge model
-
-The project system uses a two-layer model:
-
-1. **System defaults** — a complete, built-in project template that ships with Griptape Nodes. It defines all default situations and directories and is always loaded first.
-
-1. **Workspace overlay** — the contents of `griptape-nodes-project.yml`, if present. This file is merged *on top of* the system defaults.
-
-The merge behavior is additive and field-level:
-
-- Situations and directories from the overlay are merged into the defaults. An overlay situation with the same name as a default situation changes only the fields you specify (e.g., just the macro, or just the policy). An overlay situation with a new name is added alongside the defaults.
-- Environment entries in the overlay override entries with the same key in the defaults. New keys are added.
-- The `name` field is always taken from the overlay (required).
-
-You never need to repeat default values. Your project file only needs to contain the things you want to change.
 
 ## Project file structure
 
@@ -87,6 +73,22 @@ Each entry under `directories` is keyed by the logical name:
 | Field        | Required for new | Description                                                        |
 | ------------ | ---------------- | ------------------------------------------------------------------ |
 | `path_macro` | Yes              | Path string, may contain macros or environment variable references |
+
+## The merge model
+
+The project system uses a two-layer model:
+
+1. **System defaults** — a complete, built-in project template that ships with Griptape Nodes. It defines all default situations and directories and is always loaded first.
+
+1. **Workspace overlay** — the contents of `griptape-nodes-project.yml`, if present. This file is merged *on top of* the system defaults.
+
+The merge behavior is additive and field-level:
+
+- Situations and directories from the overlay are merged into the defaults. An overlay situation with the same name as a default situation changes only the fields you specify (e.g., just the macro, or just the policy). An overlay situation with a new name is added alongside the defaults.
+- Environment entries in the overlay override entries with the same key in the defaults. New keys are added.
+- The `name` field is always taken from the overlay (required).
+
+You never need to repeat default values. Your project file only needs to contain the things you want to change.
 
 ## Validation status
 
