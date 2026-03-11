@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.retained_mode.events.artifact_events import RegisterArtifactProviderRequest
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
@@ -25,6 +26,11 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileRequest,
     WriteFileResultFailure,
     WriteFileResultSuccess,
+)
+from griptape_nodes.retained_mode.events.project_events import (
+    LoadProjectTemplateRequest,
+    LoadProjectTemplateResultSuccess,
+    SetCurrentProjectRequest,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
@@ -518,11 +524,21 @@ class TestSidecarMetadata:
 
     @pytest.fixture(autouse=True)
     def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
-        """Set workspace to temp_dir and enable auto_inject_workflow_metadata."""
+        """Set workspace to temp_dir, enable auto_inject_workflow_metadata, and load a project."""
         original_workspace = griptape_nodes.ConfigManager().workspace_path
         griptape_nodes.ConfigManager().workspace_path = temp_dir
         griptape_nodes.ConfigManager().set_config_value("auto_inject_workflow_metadata", True)
+
+        # Create a project template file so sidecar path resolution has a project to use
+        project_yml = temp_dir / "project_template.yml"
+        project_yml.write_text(DEFAULT_PROJECT_TEMPLATE.to_yaml(include_comments=False))
+        load_result = GriptapeNodes.handle_request(LoadProjectTemplateRequest(project_path=project_yml))
+        if isinstance(load_result, LoadProjectTemplateResultSuccess):
+            GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=load_result.project_id))
+
         yield
+
+        GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=None))
         griptape_nodes.ConfigManager().workspace_path = original_workspace
 
     def test_sidecar_written_on_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:

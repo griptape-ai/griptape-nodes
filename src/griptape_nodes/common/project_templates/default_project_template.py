@@ -30,6 +30,10 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="previews",
             path_macro=".griptape-nodes-previews",
         ),
+        "metadata": DirectoryDefinition(
+            name="metadata",
+            path_macro=".gtn",
+        ),
     },
     environment={},
     situations={
@@ -87,6 +91,16 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="save_static_file",
             description="Save static file to workflow-relative staticfiles directory. Required for projects using StaticFilesManager.save_static_file.",
             macro="{workflow_dir?:/}{static_files_dir}/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.OVERWRITE,
+                create_dirs=True,
+            ),
+            fallback="save_file",
+        ),
+        "save_metadata": SituationTemplate(
+            name="save_metadata",
+            description="Save sidecar metadata file with preserved directory hierarchy",
+            macro="{metadata}/{source_relative_path?:/}{source_file_name}.json",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.OVERWRITE,
                 create_dirs=True,

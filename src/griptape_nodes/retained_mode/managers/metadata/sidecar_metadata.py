@@ -1,14 +1,14 @@
 """Sidecar metadata file creation for files written through the retained mode API.
 
-When a file is saved, a sidecar JSON file is written alongside it in a `.gtn/`
-subdirectory. The sidecar captures caller-provided project context (situation name,
-macro template, variable values) merged with auto-collected workflow metadata
-(workflow name, flow context, node parameters).
+When a file is saved, a sidecar JSON file is written to the project's metadata
+directory (`.gtn/`) with preserved path hierarchy. The sidecar captures
+caller-provided project context (situation name, macro template, variable values)
+merged with auto-collected workflow metadata (workflow name, flow context, node
+parameters).
 
-Example layout:
-    outputs/
-      image.png
-      .gtn/
+Example layout (for a file at <workspace>/outputs/image.png):
+    .gtn/
+      outputs/
         image.png.json
 """
 
@@ -19,6 +19,16 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from griptape_nodes.common.macro_parser import MacroVariables, ParsedMacro
+from griptape_nodes.retained_mode.events.project_events import (
+    GetCurrentProjectRequest,
+    GetCurrentProjectResultSuccess,
+    GetPathForMacroRequest,
+    GetPathForMacroResultSuccess,
+    GetSituationRequest,
+    GetSituationResultSuccess,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers.image.metadata import collect_workflow_metadata
 
 if TYPE_CHECKING:
@@ -28,7 +38,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
-SIDECAR_DIR = ".gtn"
 SCHEMA_VERSION = "0.1.0"
 
 # Keys from collect_workflow_metadata that are dropped from sidecars (too large / internal)
@@ -79,16 +88,55 @@ class SidecarContent(BaseModel):
     parameters: dict[str, str] | None = None
 
 
-def get_sidecar_path(file_path: Path) -> Path:
-    """Return the sidecar path for a given file.
+def _resolve_sidecar_path(file_path: Path) -> Path:
+    """Resolve the sidecar path for a given file via the project template system.
+
+    Uses the 'save_metadata' situation from the current project template to determine
+    where the sidecar JSON file should be written, preserving directory hierarchy
+    relative to the project workspace.
 
     Args:
         file_path: Absolute path to the saved file.
 
     Returns:
-        Path to the sidecar JSON file inside the `.gtn/` subdirectory.
+        Absolute path to the sidecar JSON file.
+
+    Raises:
+        RuntimeError: If project not loaded, situation not found, or path resolution fails.
     """
-    return file_path.parent / SIDECAR_DIR / (file_path.name + ".json")
+    # Lazy import to avoid circular dependency: os_manager imports sidecar_metadata
+    from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
+    get_project_result = GriptapeNodes.handle_request(GetCurrentProjectRequest())
+    if not isinstance(get_project_result, GetCurrentProjectResultSuccess):
+        msg = "No current project loaded"
+        raise RuntimeError(msg)  # noqa: TRY004
+
+    workspace_dir = get_project_result.project_info.project_base_dir
+    decomposed = OSManager.decompose_source_path(file_path, workspace_dir)
+
+    get_situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name="save_metadata"))
+    if not isinstance(get_situation_result, GetSituationResultSuccess):
+        msg = "save_metadata situation not found in project template"
+        raise RuntimeError(msg)  # noqa: TRY004
+
+    variables: MacroVariables = {"source_file_name": decomposed.source_file_name}
+    if decomposed.source_relative_path:
+        variables["source_relative_path"] = decomposed.source_relative_path
+
+    situation = get_situation_result.situation
+    parsed_macro = ParsedMacro(situation.macro)
+    path_result = GriptapeNodes.handle_request(
+        GetPathForMacroRequest(
+            parsed_macro=parsed_macro,
+            variables=variables,
+        )
+    )
+    if not isinstance(path_result, GetPathForMacroResultSuccess):
+        msg = f"Failed to resolve sidecar path macro: {path_result.result_details}"
+        raise RuntimeError(msg)  # noqa: TRY004
+
+    return path_result.absolute_path
 
 
 def build_situation_metadata(
@@ -211,17 +259,19 @@ def build_sidecar_content(file_metadata: dict[str, str] | None) -> SidecarConten
 
 
 def write_sidecar(file_path: Path, file_metadata: dict[str, str] | None) -> None:
-    """Write a sidecar JSON metadata file alongside the saved file.
+    """Write a sidecar JSON metadata file for the saved file.
 
-    Creates a `.gtn/<filename>.json` file next to `file_path`. Best-effort:
-    failures are logged as warnings and never propagated to callers.
+    Resolves the sidecar path via the project template's 'save_metadata' situation,
+    placing the file in the project's centralized metadata directory with preserved
+    path hierarchy. Best-effort: failures are logged as warnings and never propagated
+    to callers.
 
     Args:
         file_path: Absolute path to the file that was just saved.
         file_metadata: Caller-provided context dict (may be None).
     """
     try:
-        sidecar_path = get_sidecar_path(file_path)
+        sidecar_path = _resolve_sidecar_path(file_path)
         content = build_sidecar_content(file_metadata)
         sidecar_path.parent.mkdir(parents=True, exist_ok=True)
         sidecar_path.write_text(content.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
