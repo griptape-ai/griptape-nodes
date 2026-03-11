@@ -34,11 +34,7 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
         if self._list_all_models:
             all_revisions = list_all_repo_revisions_in_cache()
             return sorted(all_revisions, key=lambda x: x[0] not in self._repo_ids)
-        results = []
-        for repo in self._repo_ids:
-            revisions = list_repo_revisions_in_cache(repo)
-            results.extend(revisions if revisions else [(repo, "")])
-        return results
+        return [repo_revision for repo in self._repo_ids for repo_revision in list_repo_revisions_in_cache(repo)]
 
     def _is_deprecated(self, repo: str) -> bool:
         return repo in self._deprecated_repos
