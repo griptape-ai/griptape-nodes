@@ -26,7 +26,7 @@ from griptape_nodes.common.project_templates import (
     load_project_template_from_yaml,
 )
 from griptape_nodes.files.file import File, FileLoadError
-from griptape_nodes.files.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import resolve_file_path
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
@@ -533,8 +533,9 @@ class ProjectManager:
 
         resolved_path = Path(resolved_string)
 
-        # Make absolute path by resolving against project base directory
-        absolute_path = resolve_workspace_path(resolved_path, project_info.project_base_dir)
+        # Make absolute path by resolving against project base directory.
+        # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
+        absolute_path = resolve_file_path(resolved_string, project_info.project_base_dir)
 
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
@@ -994,8 +995,9 @@ class ProjectManager:
                 msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
                 raise RuntimeError(msg) from e
 
-            # Make absolute (resolve relative paths against project base directory)
-            resolved_dir_path = resolve_workspace_path(Path(resolved_path_str), project_base_dir)
+            # Make absolute (resolve relative paths against project base directory).
+            # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
+            resolved_dir_path = resolve_file_path(resolved_path_str, project_base_dir)
             # Normalize for consistent cross-platform comparison
             resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
 
