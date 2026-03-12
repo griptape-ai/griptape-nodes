@@ -22,6 +22,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
 )
+from griptape_nodes.retained_mode.events.workflow_events import WorkflowStatus
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.deprecated_node_warning_problem import (
     DeprecatedNodeWarningProblem,
@@ -45,7 +46,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
     from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
-    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -73,7 +73,7 @@ class WorkflowVersionCompatibilityIssue(NamedTuple):
     """Represents a workflow version compatibility issue found in a workflow."""
 
     problem: WorkflowProblem
-    severity: WorkflowManager.WorkflowStatus
+    severity: WorkflowStatus
 
 
 class WorkflowVersionCompatibilityCheck(ABC):
@@ -314,7 +314,7 @@ class VersionCompatibilityManager:
                             current_library_version=current_library_version,
                             workflow_library_version=workflow_library_version,
                         ),
-                        severity=GriptapeNodes.WorkflowManager().WorkflowStatus.FLAWED,
+                        severity=WorkflowStatus.FLAWED,
                     )
                 )
                 continue
@@ -348,7 +348,7 @@ class VersionCompatibilityManager:
                         removal_version=deprecation.removal_version,
                         deprecation_message=deprecation.deprecation_message,
                     ),
-                    severity=GriptapeNodes.WorkflowManager().WorkflowStatus.FLAWED,
+                    severity=WorkflowStatus.FLAWED,
                 )
             )
 

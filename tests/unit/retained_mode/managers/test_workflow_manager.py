@@ -11,12 +11,18 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     CreateWorkflowFromTemplateRequest,
     CreateWorkflowFromTemplateResultFailure,
     CreateWorkflowFromTemplateResultSuccess,
+    GetWorkflowInfoRequest,
+    GetWorkflowInfoResultFailure,
+    GetWorkflowInfoResultSuccess,
     GetWorkflowMetadataRequest,
     GetWorkflowMetadataResultFailure,
     GetWorkflowMetadataResultSuccess,
     ImportWorkflowRequest,
     ImportWorkflowResultFailure,
     ImportWorkflowResultSuccess,
+    ListAllWorkflowInfoRequest,
+    ListAllWorkflowInfoResultFailure,
+    ListAllWorkflowInfoResultSuccess,
     LoadWorkflowMetadataResultFailure,
     LoadWorkflowMetadataResultSuccess,
     MoveWorkflowRequest,
@@ -26,6 +32,10 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RegisterWorkflowResultSuccess,
     SetWorkflowMetadataRequest,
     SetWorkflowMetadataResultSuccess,
+    WorkflowDependencyInfo,
+    WorkflowDependencyStatus,
+    WorkflowInfoSummary,
+    WorkflowStatus,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
@@ -547,3 +557,218 @@ class TestWorkflowManager:
 
         assert isinstance(result, MoveWorkflowResultSuccess)
         mock_set_name.assert_not_called()
+
+    # --- WorkflowInfo payload helpers ---
+
+    def test_build_workflow_info_key_uses_workspace_join(self, griptape_nodes: GriptapeNodes) -> None:
+        """_build_workflow_info_key matches the key construction used when storing info (no symlink resolution)."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workspace = griptape_nodes.ConfigManager().workspace_path
+
+        key = workflow_manager._build_workflow_info_key("workflows/my_workflow.py")
+
+        assert key == str(workspace / "workflows/my_workflow.py")
+
+    def test_build_workflow_info_payload_good_status_no_problems(self, griptape_nodes: GriptapeNodes) -> None:
+        """_build_workflow_info_payload produces correct payload for a GOOD workflow with no problems."""
+        from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        wf_info = WorkflowManager.WorkflowInfo(
+            status=WorkflowStatus.GOOD,
+            workflow_path="/workspace/workflows/my_workflow.py",
+            workflow_name="my_workflow",
+        )
+
+        payload = workflow_manager._build_workflow_info_payload(wf_info)
+
+        assert isinstance(payload, WorkflowInfoSummary)
+        assert payload.status == "GOOD"
+        assert payload.workflow_name == "my_workflow"
+        assert payload.workflow_path == "/workspace/workflows/my_workflow.py"
+        assert payload.problems == []
+        assert payload.workflow_dependencies == []
+
+    def test_build_workflow_info_payload_collates_problems(self, griptape_nodes: GriptapeNodes) -> None:
+        """_build_workflow_info_payload calls collate_problems_for_display on each problem type."""
+        from griptape_nodes.retained_mode.managers.fitness_problems.workflows.library_not_registered_problem import (
+            LibraryNotRegisteredProblem,
+        )
+        from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        wf_info = WorkflowManager.WorkflowInfo(
+            status=WorkflowStatus.UNUSABLE,
+            workflow_path="/workspace/workflows/broken.py",
+            workflow_name="broken",
+            problems=[
+                LibraryNotRegisteredProblem(library_name="lib-a"),
+                LibraryNotRegisteredProblem(library_name="lib-b"),
+            ],
+        )
+
+        payload = workflow_manager._build_workflow_info_payload(wf_info)
+
+        assert len(payload.problems) == 1
+        assert "lib-a" in payload.problems[0]
+        assert "lib-b" in payload.problems[0]
+
+    def test_build_workflow_info_payload_includes_dependencies(self, griptape_nodes: GriptapeNodes) -> None:
+        """_build_workflow_info_payload passes WorkflowDependencyInfo instances through directly."""
+        from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        wf_info = WorkflowManager.WorkflowInfo(
+            status=WorkflowStatus.FLAWED,
+            workflow_path="/workspace/workflows/flawed.py",
+            workflow_name="flawed",
+            workflow_dependencies=[
+                WorkflowDependencyInfo(
+                    library_name="my-lib",
+                    version_requested="1.0.0",
+                    version_present="1.1.0",
+                    status=WorkflowDependencyStatus.CAUTION,
+                )
+            ],
+        )
+
+        payload = workflow_manager._build_workflow_info_payload(wf_info)
+
+        assert len(payload.workflow_dependencies) == 1
+        dep = payload.workflow_dependencies[0]
+        assert isinstance(dep, WorkflowDependencyInfo)
+        assert dep.library_name == "my-lib"
+        assert dep.version_requested == "1.0.0"
+        assert dep.version_present == "1.1.0"
+        assert dep.status == "CAUTION"
+
+    # --- GetWorkflowInfoRequest ---
+
+    def test_on_get_workflow_info_request_workflow_not_in_registry_fails(self, griptape_nodes: GriptapeNodes) -> None:
+        """GetWorkflowInfoRequest with unknown workflow_name returns failure."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = GetWorkflowInfoRequest(workflow_name="missing_workflow")
+
+        with patch.object(WorkflowRegistry, "get_workflow_by_name", side_effect=KeyError("not found")):
+            result = workflow_manager.on_get_workflow_info_request(request)
+
+        assert isinstance(result, GetWorkflowInfoResultFailure)
+        assert "missing_workflow" in str(result.result_details)
+
+    def test_on_get_workflow_info_request_no_info_for_path_fails(self, griptape_nodes: GriptapeNodes) -> None:
+        """GetWorkflowInfoRequest returns failure when no WorkflowInfo is stored for the resolved path."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = GetWorkflowInfoRequest(workflow_name="my_workflow")
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "workflows/my_workflow.py"
+
+        with patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow):
+            # _workflow_file_path_to_info is empty, so no info will be found
+            result = workflow_manager.on_get_workflow_info_request(request)
+
+        assert isinstance(result, GetWorkflowInfoResultFailure)
+
+    def test_on_get_workflow_info_request_success(self, griptape_nodes: GriptapeNodes) -> None:
+        """GetWorkflowInfoRequest succeeds when WorkflowInfo exists for the workflow."""
+        from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = GetWorkflowInfoRequest(workflow_name="my_workflow")
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "workflows/my_workflow.py"
+
+        workspace = griptape_nodes.ConfigManager().workspace_path
+        info_key = str(workspace / "workflows/my_workflow.py")
+        wf_info = WorkflowManager.WorkflowInfo(
+            status=WorkflowStatus.GOOD,
+            workflow_path=info_key,
+            workflow_name="my_workflow",
+        )
+        workflow_manager._workflow_file_path_to_info[info_key] = wf_info
+
+        with patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow):
+            result = workflow_manager.on_get_workflow_info_request(request)
+
+        assert isinstance(result, GetWorkflowInfoResultSuccess)
+        assert result.status == "GOOD"
+        assert result.workflow_name == "my_workflow"
+        assert result.problems == []
+        assert result.workflow_dependencies == []
+
+    # --- ListAllWorkflowInfoRequest ---
+
+    def test_on_list_all_workflow_info_request_registry_failure(self, griptape_nodes: GriptapeNodes) -> None:
+        """ListAllWorkflowInfoRequest returns failure when listing workflows raises."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = ListAllWorkflowInfoRequest()
+
+        with patch.object(WorkflowRegistry, "list_workflows", side_effect=Exception("registry error")):
+            result = workflow_manager.on_list_all_workflow_info_request(request)
+
+        assert isinstance(result, ListAllWorkflowInfoResultFailure)
+        assert "registry error" in str(result.result_details)
+
+    def test_on_list_all_workflow_info_request_success(self, griptape_nodes: GriptapeNodes) -> None:
+        """ListAllWorkflowInfoRequest returns info for every workflow that has a stored WorkflowInfo."""
+        from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = ListAllWorkflowInfoRequest()
+
+        workspace = griptape_nodes.ConfigManager().workspace_path
+        info_key = str(workspace / "workflows/my_workflow.py")
+        wf_info = WorkflowManager.WorkflowInfo(
+            status=WorkflowStatus.GOOD,
+            workflow_path=info_key,
+            workflow_name="my_workflow",
+        )
+        workflow_manager._workflow_file_path_to_info[info_key] = wf_info
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "workflows/my_workflow.py"
+
+        with (
+            patch.object(WorkflowRegistry, "list_workflows", return_value=["my_workflow"]),
+            patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
+        ):
+            result = workflow_manager.on_list_all_workflow_info_request(request)
+
+        assert isinstance(result, ListAllWorkflowInfoResultSuccess)
+        assert "my_workflow" in result.workflow_infos
+        assert result.workflow_infos["my_workflow"].status == "GOOD"
+
+    def test_on_list_all_workflow_info_request_skips_workflows_without_info(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """ListAllWorkflowInfoRequest omits workflows that have no stored WorkflowInfo."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = ListAllWorkflowInfoRequest()
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "workflows/my_workflow.py"
+
+        with (
+            patch.object(WorkflowRegistry, "list_workflows", return_value=["my_workflow"]),
+            patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
+        ):
+            # _workflow_file_path_to_info is empty, so the workflow is skipped
+            result = workflow_manager.on_list_all_workflow_info_request(request)
+
+        assert isinstance(result, ListAllWorkflowInfoResultSuccess)
+        assert result.workflow_infos == {}
+
+    def test_on_list_all_workflow_info_request_skips_unknown_registry_keys(self, griptape_nodes: GriptapeNodes) -> None:
+        """ListAllWorkflowInfoRequest skips registry keys that can't be looked up."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = ListAllWorkflowInfoRequest()
+
+        with (
+            patch.object(WorkflowRegistry, "list_workflows", return_value=["ghost_workflow"]),
+            patch.object(WorkflowRegistry, "get_workflow_by_name", side_effect=KeyError("not found")),
+        ):
+            result = workflow_manager.on_list_all_workflow_info_request(request)
+
+        assert isinstance(result, ListAllWorkflowInfoResultSuccess)
+        assert result.workflow_infos == {}
