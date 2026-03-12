@@ -4428,7 +4428,7 @@ class WorkflowManager:
             )
             return CreateWorkflowFromTemplateResultFailure(result_details=details)
 
-        base_name = request.file_name or derive_registry_key(template_workflow.file_path)
+        base_name = request.file_name or Path(template_workflow.file_path).stem
         new_file_name = self._generate_unique_filename(base_name)
         relative_file_path = f"{new_file_name}.py"
 
