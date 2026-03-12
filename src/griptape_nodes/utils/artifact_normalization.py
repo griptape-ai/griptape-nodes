@@ -59,9 +59,9 @@ def _resolve_file_path(file_path: str) -> Path | None:  # noqa: PLR0911
     # First resolve localhost URLs
     file_path = _resolve_localhost_url_to_path(file_path)
 
-    # Get workspace path (can raise exceptions from ConfigManager)
+    # Get workspace path (can raise exceptions from ProjectManager)
     try:
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        workspace_path = GriptapeNodes.ProjectManager().workspace_path
     except (AttributeError, RuntimeError, KeyError) as e:
         logger.debug("Failed to get workspace path: %s", e)
         return None

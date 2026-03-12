@@ -563,7 +563,7 @@ class TestWorkflowManager:
     def test_build_workflow_info_key_uses_workspace_join(self, griptape_nodes: GriptapeNodes) -> None:
         """_build_workflow_info_key matches the key construction used when storing info (no symlink resolution)."""
         workflow_manager = griptape_nodes.WorkflowManager()
-        workspace = griptape_nodes.ConfigManager().workspace_path
+        workspace = griptape_nodes.ProjectManager().workspace_path
 
         key = workflow_manager._build_workflow_info_key("workflows/my_workflow.py")
 
@@ -679,7 +679,7 @@ class TestWorkflowManager:
         mock_workflow = MagicMock()
         mock_workflow.file_path = "workflows/my_workflow.py"
 
-        workspace = griptape_nodes.ConfigManager().workspace_path
+        workspace = griptape_nodes.ProjectManager().workspace_path
         info_key = str(workspace / "workflows/my_workflow.py")
         wf_info = WorkflowManager.WorkflowInfo(
             status=WorkflowStatus.GOOD,
@@ -717,7 +717,7 @@ class TestWorkflowManager:
         workflow_manager = griptape_nodes.WorkflowManager()
         request = ListAllWorkflowInfoRequest()
 
-        workspace = griptape_nodes.ConfigManager().workspace_path
+        workspace = griptape_nodes.ProjectManager().workspace_path
         info_key = str(workspace / "workflows/my_workflow.py")
         wf_info = WorkflowManager.WorkflowInfo(
             status=WorkflowStatus.GOOD,

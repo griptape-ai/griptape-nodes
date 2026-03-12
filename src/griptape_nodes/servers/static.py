@@ -51,7 +51,7 @@ async def _create_static_file(request: Request, file_path: str) -> dict:
         msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
         raise ValueError(msg)
 
-    workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
+    workspace_directory = GriptapeNodes.ProjectManager().workspace_path
     full_file_path = workspace_directory / file_path
 
     # Create parent directories if they don't exist
@@ -80,7 +80,7 @@ async def _list_static_files(file_path_prefix: str = "") -> dict:
         msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
         raise HTTPException(status_code=500, detail=msg)
 
-    workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
+    workspace_directory = GriptapeNodes.ProjectManager().workspace_path
 
     # Handle the prefix path
     if file_path_prefix:
@@ -110,7 +110,7 @@ async def _delete_static_file(file_path: str) -> dict:
         msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
         raise HTTPException(status_code=500, detail=msg)
 
-    workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
+    workspace_directory = GriptapeNodes.ProjectManager().workspace_path
     file_full_path = workspace_directory / file_path
 
     anyio_file_path = anyio.Path(file_full_path)
@@ -286,7 +286,7 @@ def start_static_server() -> None:
     )
 
     # Mount static files
-    workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
+    workspace_directory = GriptapeNodes.ProjectManager().workspace_path
     static_files_directory = Path(GriptapeNodes.ConfigManager().get_config_value("static_files_directory"))
 
     app.mount(

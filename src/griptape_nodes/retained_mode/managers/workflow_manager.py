@@ -427,7 +427,7 @@ class WorkflowManager:
                 workflows_to_register.extend(config_workflows)
 
                 # Add from workspace (avoiding duplicates)
-                workspace_path = config_mgr.workspace_path
+                workspace_path = GriptapeNodes.ProjectManager().workspace_path
                 workflows_to_register.extend([str(workspace_path)])
 
             # Register all discovered workflows at once if any were found
@@ -648,7 +648,7 @@ class WorkflowManager:
 
     async def run_workflow(self, relative_file_path: str) -> WorkflowExecutionResult:
         # Resolve path using utility function
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        workspace_path = GriptapeNodes.ProjectManager().workspace_path
         complete_file_path = resolve_workspace_path(Path(relative_file_path), workspace_path)
         try:
             # Libraries are now loaded only on app initialization and explicit reload requests
@@ -850,7 +850,7 @@ class WorkflowManager:
             details = f"Failed to remove workflow from user config with name '{request.name}'. Exception: {e}"
             return DeleteWorkflowResultFailure(result_details=details)
         # delete the actual file
-        full_path = config_manager.workspace_path.joinpath(workflow.file_path)
+        full_path = GriptapeNodes.ProjectManager().workspace_path.joinpath(workflow.file_path)
 
         delete_request = DeleteFileRequest(
             path=str(full_path),
@@ -916,7 +916,7 @@ class WorkflowManager:
         Matches the key construction in on_load_workflow_metadata_request, which uses
         workspace_path.joinpath() without resolving symlinks.
         """
-        return str(GriptapeNodes.ConfigManager().workspace_path.joinpath(file_path))
+        return str(GriptapeNodes.ProjectManager().workspace_path.joinpath(file_path))
 
     def _build_workflow_info_payload(self, wf_info: WorkflowInfo) -> WorkflowInfoSummary:
         """Build a WorkflowInfoSummary from a WorkflowInfo, collating problems for display."""
@@ -1219,7 +1219,7 @@ class WorkflowManager:
         target_directory = target_directory.removeprefix("/")  # Remove leading slash
 
         # Create target directory path
-        target_dir_path = config_manager.workspace_path / target_directory
+        target_dir_path = GriptapeNodes.ProjectManager().workspace_path / target_directory
 
         try:
             # Create target directory if it doesn't exist
@@ -1231,7 +1231,7 @@ class WorkflowManager:
         # Create new file path
         workflow_filename = Path(workflow.file_path).name
         new_relative_path = (Path(target_directory) / workflow_filename).as_posix()
-        new_absolute_path = config_manager.workspace_path / new_relative_path
+        new_absolute_path = GriptapeNodes.ProjectManager().workspace_path / new_relative_path
 
         # Check if target file already exists
         if new_absolute_path.exists():
@@ -1296,7 +1296,7 @@ class WorkflowManager:
         self, request: LoadWorkflowMetadata
     ) -> ResultPayload:
         # Let us go into the darkness.
-        complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
+        complete_file_path = GriptapeNodes.ProjectManager().workspace_path.joinpath(request.file_name)
         str_path = str(complete_file_path)
         if not Path(complete_file_path).is_file():
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
@@ -1840,7 +1840,7 @@ class WorkflowManager:
         Returns:
             A unique filename that doesn't exist in the workspace
         """
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        workspace_path = GriptapeNodes.ProjectManager().workspace_path
         base_path = workspace_path.joinpath(f"{base_name}.py")
         if not base_path.exists():
             return base_name
@@ -1909,7 +1909,7 @@ class WorkflowManager:
             creation_date = datetime.now(tz=UTC)
             branched_from = None
             relative_file_path = f"{file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path = GriptapeNodes.ProjectManager().workspace_path.joinpath(relative_file_path)
 
         elif target_workflow:
             # Requested name exists in registry → overwrite it
@@ -1929,7 +1929,7 @@ class WorkflowManager:
             branched_from = current_workflow.metadata.branched_from
             current_dir = Path(current_workflow.file_path).parent
             relative_file_path = str(current_dir / f"{file_name}.py")
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path = GriptapeNodes.ProjectManager().workspace_path.joinpath(relative_file_path)
 
         else:
             # No requested name or no current workflow → first save
@@ -1938,7 +1938,7 @@ class WorkflowManager:
             creation_date = datetime.now(tz=UTC)
             branched_from = None
             relative_file_path = f"{file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path = GriptapeNodes.ProjectManager().workspace_path.joinpath(relative_file_path)
 
         # Ensure creation date is valid (backcompat)
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
@@ -1964,7 +1964,7 @@ class WorkflowManager:
         else:
             # Default to workspace path
             relative_file_path = f"{request.file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path = GriptapeNodes.ProjectManager().workspace_path.joinpath(relative_file_path)
 
         # Use provided creation date or default to current time
         creation_date = request.creation_date
@@ -5060,8 +5060,8 @@ class WorkflowManager:
             return None
 
         # Convert to relative path if the workflow is under workspace_path before checking registry
-        config_mgr = GriptapeNodes.ConfigManager()
-        workspace_path = config_mgr.workspace_path
+        GriptapeNodes.ConfigManager()
+        workspace_path = GriptapeNodes.ProjectManager().workspace_path
 
         if workflow_file.is_relative_to(workspace_path):
             relative_path = workflow_file.relative_to(workspace_path)

@@ -26,6 +26,7 @@ FIELD_DIRECTORIES = "directories"
 FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION = "project_template_schema_version"
 FIELD_ENVIRONMENT = "environment"
 FIELD_DESCRIPTION = "description"
+FIELD_WORKSPACE = "workspace_directory"
 
 # Special constants
 ROOT_FIELD_PATH = "<root>"
@@ -72,6 +73,7 @@ class ProjectOverlayData(NamedTuple):
     directories: dict[str, dict[str, Any]]  # directory_name -> raw dict
     environment: dict[str, str]
     description: str | None
+    workspace_directory: str | None
     line_info: YAMLLineInfo
 
 
@@ -218,7 +220,7 @@ def load_project_template_from_yaml(  # noqa: C901
         return template
 
 
-def load_partial_project_template(
+def load_partial_project_template(  # noqa: C901
     yaml_text: str,
     validation_info: ProjectValidationInfo,
 ) -> ProjectOverlayData | None:
@@ -331,6 +333,16 @@ def load_partial_project_template(
         )
         description = None
 
+    # Optional field: workspace_directory
+    workspace_directory = data.get(FIELD_WORKSPACE)
+    if workspace_directory is not None and not isinstance(workspace_directory, str):
+        validation_info.add_error(
+            field_path=FIELD_WORKSPACE,
+            message=f"Must be string, got {type(workspace_directory).__name__}",
+            line_number=line_info.get_line(FIELD_WORKSPACE),
+        )
+        workspace_directory = None
+
     return ProjectOverlayData(
         name=name,
         project_template_schema_version=schema_version,
@@ -338,5 +350,6 @@ def load_partial_project_template(
         directories=directories,
         environment=environment,
         description=description,
+        workspace_directory=workspace_directory,
         line_info=line_info,
     )

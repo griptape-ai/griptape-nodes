@@ -25,10 +25,8 @@ from griptape_nodes.common.project_templates import (
     load_partial_project_template,
     load_project_template_from_yaml,
 )
-from griptape_nodes.files.file import File, FileLoadError
-from griptape_nodes.files.path_utils import resolve_file_path
+from griptape_nodes.files.path_utils import expand_path, resolve_file_path
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
-from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
@@ -135,7 +133,12 @@ class ProjectInfo:
 
     project_id: ProjectID
     project_file_path: Path | None  # None for system defaults or non-file sources
-    project_base_dir: Path  # Directory for resolving relative paths ({project_dir})
+    project_base_dir: (
+        Path  # Folder containing the project file ({project_dir}); for system defaults, same as workspace_dir
+    )
+    workspace_dir: (
+        Path  # Working directory for the project ({workspace_dir}); where all project directories are relative to
+    )
     template: ProjectTemplate
     validation: ProjectValidationInfo
 
@@ -164,8 +167,8 @@ class ProjectManager:
 
     def __init__(
         self,
-        event_manager: EventManager | None = None,
-        config_manager: ConfigManager | None = None,
+        event_manager: EventManager | None,
+        config_manager: ConfigManager,
         secrets_manager: SecretsManager | None = None,
     ) -> None:
         """Initialize the ProjectManager.
@@ -175,7 +178,7 @@ class ProjectManager:
             config_manager: ConfigManager instance for accessing configuration
             secrets_manager: SecretsManager instance for macro resolution
         """
-        self._config_manager = config_manager
+        self._config_manager: ConfigManager = config_manager
         self._secrets_manager = secrets_manager
 
         # Consolidated project information storage
@@ -185,6 +188,10 @@ class ProjectManager:
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
         # This allows UI to query why a project failed to load
         self._registered_template_status: dict[Path, ProjectValidationInfo] = {}
+
+        self._load_system_defaults()
+        self.on_set_current_project_request(SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY))
+        self._auto_discover_project()
 
         # Register event handlers
         if event_manager is not None:
@@ -215,11 +222,25 @@ class ProjectManager:
                 AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
             )
 
-            # Register app initialization listener
-            event_manager.add_listener_to_app_event(
-                AppInitializationComplete,
-                self.on_app_initialization_complete,
-            )
+    @property
+    def workspace_path(self) -> Path:
+        """Get the workspace path for the current project.
+
+        Returns the current project's workspace directory (workspace_dir).
+        Falls back to system defaults, which are always loaded during initialization.
+        """
+        if self._current_project_id is not None:
+            project_info = self._successfully_loaded_project_templates.get(self._current_project_id)
+            if project_info is not None:
+                return project_info.workspace_dir
+
+        # Fall back to system defaults, which are always loaded during initialization.
+        system_defaults = self._successfully_loaded_project_templates.get(SYSTEM_DEFAULTS_KEY)
+        if system_defaults is not None:
+            return system_defaults.workspace_dir
+
+        msg = "Attempted to get workspace path but no project is loaded and system defaults are missing. This should never happen."
+        raise RuntimeError(msg)
 
     def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
@@ -282,7 +303,6 @@ class ProjectManager:
         # Generate project_id from file path
         project_file_path = Path(request.project_path)
         project_id = str(project_file_path)
-        project_base_dir = project_file_path.parent
 
         # Parse all macros BEFORE creating ProjectInfo - collect ALL errors
         situation_schemas = self._parse_situation_macros(template.situations, validation)
@@ -300,7 +320,8 @@ class ProjectManager:
         project_info = ProjectInfo(
             project_id=project_id,
             project_file_path=project_file_path,
-            project_base_dir=project_base_dir,
+            project_base_dir=project_file_path.parent.resolve(),
+            workspace_dir=self._resolve_workspace(template, project_file_path),
             template=template,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
@@ -533,9 +554,9 @@ class ProjectManager:
 
         resolved_path = Path(resolved_string)
 
-        # Make absolute path by resolving against project base directory.
+        # Make absolute path by resolving against the workspace directory.
         # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
-        absolute_path = resolve_file_path(resolved_string, project_info.project_base_dir)
+        absolute_path = resolve_file_path(resolved_string, project_info.workspace_dir)
 
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
@@ -711,28 +732,6 @@ class ProjectManager:
             result_details=f"Analyzed macro with {len(all_variables)} variables: {len(satisfied_variables)} satisfied, {len(missing_required_variables)} missing, {len(conflicting_variables)} conflicting",
         )
 
-    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        """Load system default project template when app initializes.
-
-        Called by EventManager after all libraries are loaded.
-        Loads system defaults, then checks workspace for a griptape-nodes-project.yml
-        overlay file and sets it as the current project if found.
-        """
-        self._load_system_defaults()
-
-        # Set system defaults as current project (using synthetic key for system defaults)
-        set_request = SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY)
-        result = self.on_set_current_project_request(set_request)
-
-        if result.failed():
-            logger.error("Failed to set default project as current: %s", result.result_details)
-            return
-
-        logger.debug("Successfully loaded default project template")
-
-        # Check workspace for an optional project overlay file
-        self._load_workspace_project()
-
     def on_get_all_situations_for_project_request(
         self, _request: GetAllSituationsForProjectRequest
     ) -> GetAllSituationsForProjectResultSuccess | GetAllSituationsForProjectResultFailure:
@@ -863,7 +862,7 @@ class ProjectManager:
 
         return directory_schemas
 
-    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:  # noqa: C901
+    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:
         """Get the value of a single builtin variable.
 
         Args:
@@ -886,12 +885,7 @@ class ProjectManager:
                 raise NotImplementedError(msg)
 
             case "workspace_dir":
-                config_manager = GriptapeNodes.ConfigManager()
-                workspace_dir = config_manager.get_config_value("workspace_directory")
-                if workspace_dir is None:
-                    msg = "Attempted to resolve builtin variable '{workspace_dir}'. Failed because 'workspace_directory' config value was None"
-                    raise RuntimeError(msg)
-                return str(workspace_dir)
+                return str(project_info.workspace_dir)
 
             case "workflow_name":
                 context_manager = GriptapeNodes.ContextManager()
@@ -953,6 +947,7 @@ class ProjectManager:
         absolute_path = os_manager.resolve_path_safely(absolute_path)
 
         template = project_info.template
+        workspace_dir = os_manager.resolve_path_safely(project_info.workspace_dir)
         project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
 
         # Secrets manager must be available (checked by caller)
@@ -995,9 +990,9 @@ class ProjectManager:
                 msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
                 raise RuntimeError(msg) from e
 
-            # Make absolute (resolve relative paths against project base directory).
+            # Make absolute (resolve relative paths against the workspace directory).
             # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
-            resolved_dir_path = resolve_file_path(resolved_path_str, project_base_dir)
+            resolved_dir_path = resolve_file_path(resolved_path_str, workspace_dir)
             # Normalize for consistent cross-platform comparison
             resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
 
@@ -1019,7 +1014,7 @@ class ProjectManager:
 
         # If no defined directories matched, try {project_dir} as fallback
         if not matches:
-            # Check if path is inside project_base_dir
+            # Check if path is inside the project base directory (folder containing the project file)
             try:
                 relative_path = absolute_path.relative_to(project_base_dir)
 
@@ -1052,6 +1047,39 @@ class ProjectManager:
 
     # Private helper methods
 
+    def _resolve_workspace(self, template: ProjectTemplate, project_file_path: Path | None) -> Path:
+        """Resolve the workspace directory for a project template.
+
+        Resolution logic:
+        1. template.workspace_directory is None + project_file_path exists → project_file_path.parent
+        2. template.workspace_directory is None + no file (system defaults) → workspace_directory from config
+        3. template.workspace_directory is absolute → Path(template.workspace_directory)
+        4. template.workspace_directory is relative + project_file_path exists → (project_file_path.parent / workspace_directory).resolve()
+        5. template.workspace_directory is relative + no file → (workspace_directory_config / workspace_directory).resolve()
+
+        Args:
+            template: The project template (may have a workspace field)
+            project_file_path: Path to the project YAML file, or None for system defaults
+
+        Returns:
+            Resolved workspace Path
+        """
+        workspace_dir_config = self._config_manager.get_config_value("workspace_directory")
+        fallback_dir = Path(workspace_dir_config).resolve()
+
+        if template.workspace_directory is None:
+            if project_file_path is not None:
+                return project_file_path.parent.resolve()
+            return fallback_dir
+
+        workspace_path = expand_path(template.workspace_directory)
+        if workspace_path.is_absolute():
+            return workspace_path.resolve()
+
+        if project_file_path is not None:
+            return (project_file_path.parent / workspace_path).resolve()
+        return (fallback_dir / workspace_path).resolve()
+
     def _load_system_defaults(self) -> None:
         """Load bundled system default template.
 
@@ -1063,19 +1091,9 @@ class ProjectManager:
         # Create validation info to track that defaults were loaded
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
-        # System defaults use workspace directory as the base directory
-        config_manager = GriptapeNodes.ConfigManager()
-        workspace_dir_value = config_manager.get_config_value("workspace_directory")
-        if workspace_dir_value is None:
-            msg = "Attempted to load Project Manager's default project schema. Failed because 'workspace_directory' config value was None"
-            raise RuntimeError(msg)
-
-        try:
-            workspace_dir = Path(workspace_dir_value)
-        except (TypeError, ValueError) as e:
-            msg = f"Attempted to load Project Manager's default project schema with workspace_directory='{workspace_dir_value}'. Failed due to {e}"
-            logger.error(msg)
-            raise RuntimeError(msg) from e
+        # System defaults have no project file, so project_base_dir and workspace_dir are both
+        # derived from the workspace_directory config value.
+        system_workspace = self._resolve_workspace(DEFAULT_PROJECT_TEMPLATE, None)
 
         # Parse all macros BEFORE creating ProjectInfo (system defaults should always be valid)
         situation_schemas = self._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
@@ -1085,7 +1103,8 @@ class ProjectManager:
         project_info = ProjectInfo(
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=None,  # No actual file for system defaults
-            project_base_dir=workspace_dir,  # Use workspace as base
+            project_base_dir=system_workspace,
+            workspace_dir=system_workspace,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
@@ -1097,20 +1116,15 @@ class ProjectManager:
 
         logger.debug("System defaults loaded successfully")
 
-    def _load_workspace_project(self) -> None:
-        """Load workspace-level project template overlay if present.
+    def _auto_discover_project(self) -> None:
+        """Auto-discover a project file in the current project's workspace directory.
 
-        Checks for griptape-nodes-project.yml in the workspace directory.
-        If found, loads it as an overlay on top of system defaults and sets it
-        as the current project. If the file is not present, the system defaults
-        remain current.
+        Checks for griptape-nodes-project.yml in the workspace directory of the
+        current project (initially the config workspace_directory). If found, loads
+        it as an overlay on top of system defaults and sets it as the current project.
+        If the file is not present, the system defaults remain current.
         """
-        config_manager = GriptapeNodes.ConfigManager()
-        workspace_dir_value = config_manager.get_config_value("workspace_directory")
-        if workspace_dir_value is None:
-            logger.debug("Skipping workspace project load: 'workspace_directory' config value is None")
-            return
-
+        workspace_dir_value = self._config_manager.get_config_value("workspace_directory")
         workspace_project_path = Path(workspace_dir_value) / WORKSPACE_PROJECT_FILE
         if not workspace_project_path.exists():
             logger.debug("No workspace project file found at '%s'", workspace_project_path)
@@ -1119,12 +1133,12 @@ class ProjectManager:
         logger.info("Found workspace project file at '%s', loading", workspace_project_path)
 
         try:
-            yaml_text = File(str(workspace_project_path)).read_text()
-        except FileLoadError as e:
+            yaml_text = workspace_project_path.read_text()
+        except OSError as e:
             logger.error(
                 "Attempted to read workspace project file at '%s'. Failed with: %s",
                 workspace_project_path,
-                e.result_details,
+                e,
             )
             return
 
@@ -1162,7 +1176,8 @@ class ProjectManager:
         project_info = ProjectInfo(
             project_id=project_id,
             project_file_path=workspace_project_path,
-            project_base_dir=workspace_project_path.parent,
+            project_base_dir=workspace_project_path.parent.resolve(),
+            workspace_dir=self._resolve_workspace(template, workspace_project_path),
             template=template,
             validation=validation,
             parsed_situation_schemas=situation_schemas,

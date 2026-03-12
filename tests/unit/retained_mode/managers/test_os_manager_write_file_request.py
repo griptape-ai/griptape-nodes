@@ -12,7 +12,7 @@ import logging
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
@@ -30,6 +30,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
     ImageArtifactProvider,
 )
+from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
 
 
 class TestCreateNewWarningLevelResultDetails:
@@ -42,12 +43,10 @@ class TestCreateNewWarningLevelResultDetails:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_create_new_fallback_warning_level(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test CREATE_NEW returns WARNING-level ResultDetails when falling back to indexed path."""
@@ -145,12 +144,10 @@ class TestBlanketExceptionHandling:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_blanket_exception_on_path_resolution(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test blanket exception handler for unexpected error during path resolution."""
@@ -226,12 +223,10 @@ class TestParentDirectoryMatchCase:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_parent_directory_permission_denied_message(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test match/case generates correct message for PERMISSION_DENIED."""
@@ -298,12 +293,10 @@ class TestOnDemandCandidateGeneration:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_on_demand_generation_early_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test CREATE_NEW only resolves macros until it finds available filename."""
@@ -395,12 +388,10 @@ class TestMetadataInjection:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_metadata_injected_for_bytes_content(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test that prepare_content_for_write is called for bytes content."""

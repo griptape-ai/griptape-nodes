@@ -33,6 +33,9 @@ class ProjectTemplate(BaseModel):
     )
     environment: dict[str, str] = Field(default_factory=dict, description="Custom environment variables")
     description: str | None = Field(default=None, description="Description of the project")
+    workspace_directory: str | None = Field(
+        default=None, description="Workspace directory path (absolute or relative to project file)"
+    )
 
     def get_situation(self, situation_name: str) -> SituationTemplate | None:
         """Get a situation by name, returns None if not found."""
@@ -239,8 +242,11 @@ class ProjectTemplate(BaseModel):
                 action=action,
             )
 
-        # Use overlay metadata, fall back to base for description
+        # Use overlay metadata, fall back to base for description and workspace
         merged_description = overlay.description if overlay.description is not None else base.description
+        merged_workspace = (
+            overlay.workspace_directory if overlay.workspace_directory is not None else base.workspace_directory
+        )
 
         return ProjectTemplate(
             project_template_schema_version=overlay.project_template_schema_version,
@@ -249,4 +255,5 @@ class ProjectTemplate(BaseModel):
             directories=merged_directories,
             environment=merged_environment,
             description=merged_description,
+            workspace_directory=merged_workspace,
         )

@@ -183,8 +183,7 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Resolve path using utility function
-        config_mgr = GriptapeNodes.ConfigManager()
-        workspace_path = config_mgr.workspace_path
+        workspace_path = GriptapeNodes.ProjectManager().workspace_path
         resolved_path = resolve_workspace_path(Path(relative_file_path), workspace_path)
         return str(resolved_path)
 
@@ -242,11 +241,10 @@ class Workflow:
         """Check if this workflow is in the synced workflows directory."""
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        config_mgr = GriptapeNodes.ConfigManager()
-        synced_directory = config_mgr.get_config_value("synced_workflows_directory")
+        synced_directory = GriptapeNodes.ConfigManager().get_config_value("synced_workflows_directory")
 
         # Get the full path to the synced workflows directory
-        synced_path = config_mgr.get_full_path(synced_directory)
+        synced_path = GriptapeNodes.ProjectManager().workspace_path / synced_directory
 
         # Get the complete file path for this workflow
         complete_file_path = WorkflowRegistry.get_complete_file_path(self.file_path)
