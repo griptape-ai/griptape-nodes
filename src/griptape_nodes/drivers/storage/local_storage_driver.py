@@ -56,6 +56,7 @@ class LocalStorageDriver(BaseStorageDriver):
             file_path=str(absolute_path),
             content=b"",  # Empty content for URL generation
             existing_file_policy=existing_file_policy,
+            skip_metadata_injection=True,
         )
         result = os_manager.on_write_file_request(write_request)
 
