@@ -566,8 +566,10 @@ class ProjectManager:
 
         resolved_path = Path(resolved_string)
 
-        # Make absolute path by resolving against project base directory
-        absolute_path = resolve_workspace_path(resolved_path, project_info.project_base_dir)
+        # Make absolute path by resolving relative paths against workspace_dir
+        absolute_path = resolve_workspace_path(
+            resolved_path, project_info.workspace_dir or project_info.project_base_dir
+        )
 
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
@@ -1035,8 +1037,10 @@ class ProjectManager:
                 msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
                 raise RuntimeError(msg) from e
 
-            # Make absolute (resolve relative paths against project base directory)
-            resolved_dir_path = resolve_workspace_path(Path(resolved_path_str), project_base_dir)
+            # Make absolute (resolve relative paths against workspace_dir)
+            resolved_dir_path = resolve_workspace_path(
+                Path(resolved_path_str), project_info.workspace_dir or project_info.project_base_dir
+            )
             # Normalize for consistent cross-platform comparison
             resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
 

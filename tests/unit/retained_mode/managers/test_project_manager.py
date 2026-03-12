@@ -438,9 +438,10 @@ class TestProjectManagerBuiltinVariables:
 class TestProjectManagerDirectoryMacroResolution:
     """Test that directory path_macros are resolved through the builtin variable pipeline.
 
-    These tests verify that default directory path_macros use {workspace_dir}, which
-    defaults to project_base_dir but can be overridden. Forward resolution must evaluate
-    the directory macro rather than inserting the raw path_macro string.
+    These tests verify that default directory path_macros use relative paths that
+    resolve against workspace_dir, which defaults to project_base_dir but can be
+    overridden. Forward resolution must evaluate the directory macro rather than
+    inserting the raw path_macro string.
     """
 
     @pytest.fixture
