@@ -56,7 +56,15 @@ Once added, `{deliverables}` is available in any macro.
 
 ## Directory paths with macros
 
-The `path_macro` field supports macro syntax and environment variable references:
+The `path_macro` field supports tilde (`~`) expansion, macro syntax, and environment variable references:
+
+```yaml
+directories:
+  downloads:
+    path_macro: "~/Downloads"
+```
+
+This maps the `downloads` directory to the current user's Downloads folder, regardless of the machine it runs on.
 
 ```yaml
 directories:
