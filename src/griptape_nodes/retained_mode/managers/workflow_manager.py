@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import dataclasses
 import logging
 import pickle
 import re
@@ -150,9 +149,10 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SetWorkflowMetadataRequest,
     SetWorkflowMetadataResultFailure,
     SetWorkflowMetadataResultSuccess,
-)
-from griptape_nodes.retained_mode.events.workflow_events import (
-    WorkflowDependencyInfo as WorkflowDependencyInfoPayload,
+    WorkflowDependencyInfo,
+    WorkflowDependencyStatus,
+    WorkflowInfoSummary,
+    WorkflowStatus,
 )
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
@@ -211,52 +211,19 @@ class WorkflowManager:
     )
     EPOCH_START = datetime(tzinfo=UTC, year=1970, month=1, day=1)
 
-    class WorkflowStatus(StrEnum):
-        """The status of a workflow that was attempted to be loaded."""
-
-        GOOD = "GOOD"  # No errors detected during loading. Registered.
-        FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
-        UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
-        MISSING = "MISSING"  # File not found. Not registered.
-
-    class WorkflowDependencyStatus(StrEnum):
-        """Records the status of each dependency for a workflow that was attempted to be loaded."""
-
-        PERFECT = "PERFECT"  # Same major, minor, and patch version
-        GOOD = "GOOD"  # Same major, minor version
-        CAUTION = "CAUTION"  # Dependency is ahead within maximum minor revisions
-        BAD = "BAD"  # Different major, or dependency ahead by more than maximum minor revisions
-        MISSING = "MISSING"  # Not found
-        UNKNOWN = "UNKNOWN"  # May not have been able to evaluate due to other errors.
-
-    @dataclass
-    class WorkflowDependencyInfo:
-        """Information about each dependency in a workflow that was attempted to be loaded."""
-
-        library_name: str
-        version_requested: str
-        version_present: str | None
-        status: WorkflowManager.WorkflowDependencyStatus
+    WorkflowStatus = WorkflowStatus
+    WorkflowDependencyStatus = WorkflowDependencyStatus
+    WorkflowDependencyInfo = WorkflowDependencyInfo
 
     @dataclass
     class WorkflowInfo:
         """Information about a workflow that was attempted to be loaded."""
 
-        status: WorkflowManager.WorkflowStatus
+        status: WorkflowStatus
         workflow_path: str
         workflow_name: str | None = None
-        workflow_dependencies: list[WorkflowManager.WorkflowDependencyInfo] = field(default_factory=list)
+        workflow_dependencies: list[WorkflowDependencyInfo] = field(default_factory=list)
         problems: list[WorkflowProblem] = field(default_factory=list)
-
-    @dataclass
-    class WorkflowInfoPayload:
-        """Serializable representation of WorkflowInfo for API responses."""
-
-        status: str
-        workflow_name: str | None
-        workflow_path: str
-        problems: list[str]
-        workflow_dependencies: list
 
     _workflow_file_path_to_info: dict[str, WorkflowInfo]
 
@@ -951,8 +918,8 @@ class WorkflowManager:
         """
         return str(GriptapeNodes.ConfigManager().workspace_path.joinpath(file_path))
 
-    def _build_workflow_info_payload(self, wf_info: WorkflowInfo) -> WorkflowInfoPayload:
-        """Convert a WorkflowInfo into a serializable payload for API responses."""
+    def _build_workflow_info_payload(self, wf_info: WorkflowInfo) -> WorkflowInfoSummary:
+        """Build a WorkflowInfoSummary from a WorkflowInfo, collating problems for display."""
         problems_by_type: dict[type, list] = defaultdict(list)
         for problem in wf_info.problems:
             problems_by_type[type(problem)].append(problem)
@@ -960,41 +927,22 @@ class WorkflowManager:
             problem_class.collate_problems_for_display(instances)
             for problem_class, instances in problems_by_type.items()
         ]
-        dependency_payloads = [
-            WorkflowDependencyInfoPayload(
-                library_name=dep.library_name,
-                version_requested=dep.version_requested,
-                version_present=dep.version_present,
-                status=dep.status.value,
-            )
-            for dep in wf_info.workflow_dependencies
-        ]
-        return WorkflowManager.WorkflowInfoPayload(
-            status=wf_info.status.value,
+        return WorkflowInfoSummary(
+            status=wf_info.status,
             workflow_name=wf_info.workflow_name,
             workflow_path=str(wf_info.workflow_path),
             problems=collated_problems,
-            workflow_dependencies=dependency_payloads,
+            workflow_dependencies=wf_info.workflow_dependencies,
         )
 
     def on_get_workflow_info_request(self, request: GetWorkflowInfoRequest) -> ResultPayload:
-        if request.workflow_name is None and request.workflow_file_path is None:
-            details = "Attempted to get workflow info. Failed because neither workflow_name nor workflow_file_path was provided."
+        try:
+            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+        except KeyError:
+            details = f"Attempted to get workflow info. Failed because workflow '{request.workflow_name}' was not found in the registry."
             return GetWorkflowInfoResultFailure(result_details=details)
 
-        if request.workflow_name is not None and request.workflow_file_path is not None:
-            details = "Attempted to get workflow info. Failed because both workflow_name and workflow_file_path were provided. Provide only one."
-            return GetWorkflowInfoResultFailure(result_details=details)
-
-        if request.workflow_name is not None:
-            try:
-                workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
-            except KeyError:
-                details = f"Attempted to get workflow info. Failed because workflow '{request.workflow_name}' was not found in the registry."
-                return GetWorkflowInfoResultFailure(result_details=details)
-            workflow_file_path = self._build_workflow_info_key(workflow.file_path)
-        else:
-            workflow_file_path = request.workflow_file_path
+        workflow_file_path = self._build_workflow_info_key(workflow.file_path)
 
         if workflow_file_path not in self._workflow_file_path_to_info:
             details = (
@@ -1020,7 +968,7 @@ class WorkflowManager:
             details = f"Attempted to list all workflow info. Failed to list workflows: {e}"
             return ListAllWorkflowInfoResultFailure(result_details=details)
 
-        workflow_infos: dict[str, dict] = {}
+        workflow_infos: dict[str, WorkflowInfoSummary] = {}
         for registry_key in registry_keys:
             try:
                 workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
@@ -1030,7 +978,7 @@ class WorkflowManager:
             wf_info = self._workflow_file_path_to_info.get(workflow_file_path)
             if wf_info is None:
                 continue
-            workflow_infos[registry_key] = dataclasses.asdict(self._build_workflow_info_payload(wf_info))
+            workflow_infos[registry_key] = self._build_workflow_info_payload(wf_info)
 
         return ListAllWorkflowInfoResultSuccess(
             workflow_infos=workflow_infos,

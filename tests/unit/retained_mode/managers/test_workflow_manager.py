@@ -32,6 +32,10 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RegisterWorkflowResultSuccess,
     SetWorkflowMetadataRequest,
     SetWorkflowMetadataResultSuccess,
+    WorkflowDependencyInfo,
+    WorkflowDependencyStatus,
+    WorkflowInfoSummary,
+    WorkflowStatus,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
@@ -571,14 +575,14 @@ class TestWorkflowManager:
 
         workflow_manager = griptape_nodes.WorkflowManager()
         wf_info = WorkflowManager.WorkflowInfo(
-            status=WorkflowManager.WorkflowStatus.GOOD,
+            status=WorkflowStatus.GOOD,
             workflow_path="/workspace/workflows/my_workflow.py",
             workflow_name="my_workflow",
         )
 
         payload = workflow_manager._build_workflow_info_payload(wf_info)
 
-        assert isinstance(payload, WorkflowManager.WorkflowInfoPayload)
+        assert isinstance(payload, WorkflowInfoSummary)
         assert payload.status == "GOOD"
         assert payload.workflow_name == "my_workflow"
         assert payload.workflow_path == "/workspace/workflows/my_workflow.py"
@@ -594,7 +598,7 @@ class TestWorkflowManager:
 
         workflow_manager = griptape_nodes.WorkflowManager()
         wf_info = WorkflowManager.WorkflowInfo(
-            status=WorkflowManager.WorkflowStatus.UNUSABLE,
+            status=WorkflowStatus.UNUSABLE,
             workflow_path="/workspace/workflows/broken.py",
             workflow_name="broken",
             problems=[
@@ -610,23 +614,20 @@ class TestWorkflowManager:
         assert "lib-b" in payload.problems[0]
 
     def test_build_workflow_info_payload_includes_dependencies(self, griptape_nodes: GriptapeNodes) -> None:
-        """_build_workflow_info_payload converts WorkflowDependencyInfo to WorkflowDependencyInfoPayload instances."""
-        from griptape_nodes.retained_mode.events.workflow_events import (
-            WorkflowDependencyInfo as WorkflowDependencyInfoPayload,
-        )
+        """_build_workflow_info_payload passes WorkflowDependencyInfo instances through directly."""
         from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
         workflow_manager = griptape_nodes.WorkflowManager()
         wf_info = WorkflowManager.WorkflowInfo(
-            status=WorkflowManager.WorkflowStatus.FLAWED,
+            status=WorkflowStatus.FLAWED,
             workflow_path="/workspace/workflows/flawed.py",
             workflow_name="flawed",
             workflow_dependencies=[
-                WorkflowManager.WorkflowDependencyInfo(
+                WorkflowDependencyInfo(
                     library_name="my-lib",
                     version_requested="1.0.0",
                     version_present="1.1.0",
-                    status=WorkflowManager.WorkflowDependencyStatus.CAUTION,
+                    status=WorkflowDependencyStatus.CAUTION,
                 )
             ],
         )
@@ -635,31 +636,13 @@ class TestWorkflowManager:
 
         assert len(payload.workflow_dependencies) == 1
         dep = payload.workflow_dependencies[0]
-        assert isinstance(dep, WorkflowDependencyInfoPayload)
+        assert isinstance(dep, WorkflowDependencyInfo)
         assert dep.library_name == "my-lib"
         assert dep.version_requested == "1.0.0"
         assert dep.version_present == "1.1.0"
         assert dep.status == "CAUTION"
 
     # --- GetWorkflowInfoRequest ---
-
-    def test_on_get_workflow_info_request_neither_arg_fails(self, griptape_nodes: GriptapeNodes) -> None:
-        """GetWorkflowInfoRequest with neither workflow_name nor workflow_file_path returns failure."""
-        workflow_manager = griptape_nodes.WorkflowManager()
-        request = GetWorkflowInfoRequest()
-
-        result = workflow_manager.on_get_workflow_info_request(request)
-
-        assert isinstance(result, GetWorkflowInfoResultFailure)
-
-    def test_on_get_workflow_info_request_both_args_fails(self, griptape_nodes: GriptapeNodes) -> None:
-        """GetWorkflowInfoRequest with both workflow_name and workflow_file_path returns failure."""
-        workflow_manager = griptape_nodes.WorkflowManager()
-        request = GetWorkflowInfoRequest(workflow_name="my_workflow", workflow_file_path="/path/to/my_workflow.py")
-
-        result = workflow_manager.on_get_workflow_info_request(request)
-
-        assert isinstance(result, GetWorkflowInfoResultFailure)
 
     def test_on_get_workflow_info_request_workflow_not_in_registry_fails(self, griptape_nodes: GriptapeNodes) -> None:
         """GetWorkflowInfoRequest with unknown workflow_name returns failure."""
@@ -686,7 +669,7 @@ class TestWorkflowManager:
 
         assert isinstance(result, GetWorkflowInfoResultFailure)
 
-    def test_on_get_workflow_info_request_success_by_name(self, griptape_nodes: GriptapeNodes) -> None:
+    def test_on_get_workflow_info_request_success(self, griptape_nodes: GriptapeNodes) -> None:
         """GetWorkflowInfoRequest succeeds when WorkflowInfo exists for the workflow."""
         from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
@@ -699,7 +682,7 @@ class TestWorkflowManager:
         workspace = griptape_nodes.ConfigManager().workspace_path
         info_key = str(workspace / "workflows/my_workflow.py")
         wf_info = WorkflowManager.WorkflowInfo(
-            status=WorkflowManager.WorkflowStatus.GOOD,
+            status=WorkflowStatus.GOOD,
             workflow_path=info_key,
             workflow_name="my_workflow",
         )
@@ -713,27 +696,6 @@ class TestWorkflowManager:
         assert result.workflow_name == "my_workflow"
         assert result.problems == []
         assert result.workflow_dependencies == []
-
-    def test_on_get_workflow_info_request_success_by_file_path(self, griptape_nodes: GriptapeNodes) -> None:
-        """GetWorkflowInfoRequest succeeds when using workflow_file_path directly."""
-        from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
-
-        workflow_manager = griptape_nodes.WorkflowManager()
-
-        workspace = griptape_nodes.ConfigManager().workspace_path
-        info_key = str(workspace / "workflows/my_workflow.py")
-        wf_info = WorkflowManager.WorkflowInfo(
-            status=WorkflowManager.WorkflowStatus.FLAWED,
-            workflow_path=info_key,
-            workflow_name="my_workflow",
-        )
-        workflow_manager._workflow_file_path_to_info[info_key] = wf_info
-
-        request = GetWorkflowInfoRequest(workflow_file_path=info_key)
-        result = workflow_manager.on_get_workflow_info_request(request)
-
-        assert isinstance(result, GetWorkflowInfoResultSuccess)
-        assert result.status == "FLAWED"
 
     # --- ListAllWorkflowInfoRequest ---
 
@@ -758,7 +720,7 @@ class TestWorkflowManager:
         workspace = griptape_nodes.ConfigManager().workspace_path
         info_key = str(workspace / "workflows/my_workflow.py")
         wf_info = WorkflowManager.WorkflowInfo(
-            status=WorkflowManager.WorkflowStatus.GOOD,
+            status=WorkflowStatus.GOOD,
             workflow_path=info_key,
             workflow_name="my_workflow",
         )
@@ -775,7 +737,7 @@ class TestWorkflowManager:
 
         assert isinstance(result, ListAllWorkflowInfoResultSuccess)
         assert "my_workflow" in result.workflow_infos
-        assert result.workflow_infos["my_workflow"]["status"] == "GOOD"
+        assert result.workflow_infos["my_workflow"].status == "GOOD"
 
     def test_on_list_all_workflow_info_request_skips_workflows_without_info(
         self, griptape_nodes: GriptapeNodes
