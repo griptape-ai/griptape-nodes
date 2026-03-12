@@ -87,6 +87,7 @@ from griptape_nodes.retained_mode.events.resource_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.metadata.sidecar_metadata import write_sidecar
 from griptape_nodes.retained_mode.managers.resource_types.compute_resource import ComputeBackend, ComputeResourceType
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
@@ -1990,6 +1991,12 @@ class OSManager:
         if final_file_path is None or final_bytes_written is None:
             msg = "Internal error: success path reached but file path or bytes not set"
             raise RuntimeError(msg)
+
+        # Write sidecar metadata file if enabled and not skipped
+        if not request.skip_metadata_injection and GriptapeNodes.ConfigManager().get_config_value(
+            "auto_inject_workflow_metadata"
+        ):
+            write_sidecar(final_file_path, request.file_metadata)
 
         if used_indexed_fallback:
             msg = f"File written to indexed path: {final_file_path} (original path '{path_display}' already existed)"

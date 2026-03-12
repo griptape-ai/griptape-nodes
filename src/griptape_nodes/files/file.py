@@ -172,6 +172,8 @@ class File:
     def __init__(
         self,
         file_path: str | MacroPath,
+        *,
+        file_metadata: dict[str, str] | None = None,
     ) -> None:
         """Store file reference. No I/O is performed.
 
@@ -183,7 +185,10 @@ class File:
         Args:
             file_path: Path to the file. Can be a plain string or a MacroPath
                 (which contains macro variables).
+            file_metadata: Optional caller-provided context to include in the sidecar
+                metadata file alongside auto-collected workflow metadata.
         """
+        self._file_metadata = file_metadata
         if isinstance(file_path, str):
             try:
                 parsed = ParsedMacro(file_path)
@@ -587,6 +592,7 @@ class File:
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
+            file_metadata=self._build_file_metadata(),
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -639,6 +645,7 @@ class File:
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
+            file_metadata=self._build_file_metadata(),
         )
         result = await GriptapeNodes.ahandle_request(request)
 
@@ -650,6 +657,19 @@ class File:
             )
 
         return Path(cast("WriteFileResultSuccess", result).final_file_path)
+
+    def _build_file_metadata(self) -> dict[str, str] | None:
+        """Build merged file metadata from MacroPath variables and caller-provided metadata."""
+        file_metadata: dict[str, str] | None = None
+        if isinstance(self._file_path, MacroPath):
+            file_metadata = {"gtn_macro_template": self._file_path.parsed_macro.template}
+            for key, value in self._file_path.variables.items():
+                file_metadata[f"gtn_variable_{key}"] = str(value)
+        if self._file_metadata:
+            if file_metadata is None:
+                file_metadata = {}
+            file_metadata.update(self._file_metadata)
+        return file_metadata
 
 
 class FileDestination:
@@ -669,6 +689,7 @@ class FileDestination:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
+        file_metadata: dict[str, str] | None = None,
     ) -> None:
         """Store file path and write configuration. No I/O is performed.
 
@@ -680,8 +701,10 @@ class FileDestination:
             append: If True, append to an existing file. Defaults to False.
             create_parents: If True, create parent directories if missing.
                 Defaults to True.
+            file_metadata: Optional caller-provided context to include in the sidecar
+                metadata file alongside auto-collected workflow metadata.
         """
-        self._file = File(file_path)
+        self._file = File(file_path, file_metadata=file_metadata)
         self._existing_file_policy = existing_file_policy
         self._append = append
         self._create_parents = create_parents

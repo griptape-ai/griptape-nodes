@@ -440,6 +440,8 @@ class WriteFileRequest(RequestPayload):
         create_parents: If True, create parent directories if missing (default: True)
         skip_metadata_injection: If True, skip automatic workflow metadata injection for supported file types
             (default: False). Use when the content already contains metadata to avoid double-injection.
+        file_metadata: Optional caller-provided context (e.g., situation name, macro, variables) to include
+            in the sidecar metadata file. Keys should use the "gtn_" namespace prefix.
 
     Results: WriteFileResultSuccess | WriteFileResultFailure
 
@@ -454,6 +456,7 @@ class WriteFileRequest(RequestPayload):
     existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     create_parents: bool = True
     skip_metadata_injection: bool = False
+    file_metadata: dict[str, str] | None = None
 
 
 @dataclass
