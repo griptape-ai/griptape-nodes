@@ -14,6 +14,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterContainer,
     ParameterGroup,
+    ParameterList,
     ParameterMessage,
     ParameterMode,
     ParameterType,
@@ -177,6 +178,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RenameParameterRequest,
     RenameParameterResultFailure,
     RenameParameterResultSuccess,
+    ReorderParameterListItemRequest,
+    ReorderParameterListItemResultFailure,
+    ReorderParameterListItemResultSuccess,
     SetParameterValueRequest,
     SetParameterValueResultFailure,
     SetParameterValueResultSuccess,
@@ -291,6 +295,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(GetParameterValueRequest, self.on_get_parameter_value_request)
         event_manager.assign_manager_to_request_type(SetParameterValueRequest, self.on_set_parameter_value_request)
         event_manager.assign_manager_to_request_type(RenameParameterRequest, self.on_rename_parameter_request)
+        event_manager.assign_manager_to_request_type(
+            ReorderParameterListItemRequest, self.on_reorder_parameter_list_item_request
+        )
         event_manager.assign_manager_to_request_type(MigrateParameterRequest, self.on_migrate_parameter_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
@@ -4644,4 +4651,79 @@ class NodeManager:
             failed_incoming_connections=failed_incoming,
             failed_outgoing_connections=failed_outgoing,
             result_details=ResultDetails(message=details, level=log_level),
+        )
+
+    def on_reorder_parameter_list_item_request(self, request: ReorderParameterListItemRequest) -> ResultPayload:  # noqa: PLR0911
+        """Handle reordering an item within a ParameterList.
+
+        Args:
+            request: The reorder request containing the parameter list name and indices
+
+        Returns:
+            ResultPayload: Success or failure result
+        """
+        # Get the node
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to reorder ParameterList item in the Current Context. Failed because the Current Context was empty."
+                return ReorderParameterListItemResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+        else:
+            try:
+                node = self.get_node_by_name(node_name)
+            except KeyError as err:
+                details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because the Node could not be found. Error: {err}"
+                return ReorderParameterListItemResultFailure(result_details=details)
+
+        # Is the node locked?
+        if node.lock:
+            details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because the Node is locked."
+            return ReorderParameterListItemResultFailure(result_details=details)
+
+        # Get the ParameterList
+        parameter_list = node.get_parameter_by_name(request.parameter_list_name)
+        if parameter_list is None:
+            details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because the ParameterList could not be found."
+            return ReorderParameterListItemResultFailure(result_details=details)
+
+        # Validate it's actually a ParameterList
+        if not isinstance(parameter_list, ParameterList):
+            details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because '{request.parameter_list_name}' is not a ParameterList."
+            return ReorderParameterListItemResultFailure(result_details=details)
+
+        # Get child parameters
+        children = parameter_list.get_child_parameters()
+        list_length = len(children)
+
+        # Validate indices
+        if request.from_index < 0 or request.from_index >= list_length:
+            details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because from_index {request.from_index} is out of range (list has {list_length} items)."
+            return ReorderParameterListItemResultFailure(result_details=details)
+
+        if request.to_index < 0 or request.to_index >= list_length:
+            details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because to_index {request.to_index} is out of range (list has {list_length} items)."
+            return ReorderParameterListItemResultFailure(result_details=details)
+
+        if request.from_index == request.to_index:
+            details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because from_index equals to_index ({request.from_index})."
+            return ReorderParameterListItemResultFailure(result_details=details)
+
+        # Perform the reorder by moving the item in the _children list
+        item_to_move = children[request.from_index]
+        parameter_list._children.remove(item_to_move)
+        parameter_list._children.insert(request.to_index, item_to_move)
+
+        # Mark the node as unresolved since parameter structure changed
+        node.state = NodeResolutionState.UNRESOLVED
+
+        # Manually add the reordered children structure to _changes so the event includes it
+        parameter_list._changes["children"] = [child.to_dict() for child in parameter_list._children]
+
+        # Emit update event for the parameter list with the reordered children
+        parameter_list._emit_alter_element_event_if_possible()
+
+        return ReorderParameterListItemResultSuccess(
+            result_details=f"Successfully reordered item in ParameterList '{request.parameter_list_name}' on Node '{node_name}' from index {request.from_index} to {request.to_index}."
         )
