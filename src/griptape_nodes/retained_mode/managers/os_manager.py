@@ -1368,28 +1368,38 @@ class OSManager:
                             if need_stat_for_metadata and stat is None:
                                 stat = dir_entry.stat(follow_symlinks=False)
 
-                            # Only resolve entry path if we need absolute_path or relative paths
-                            resolved_entry = None
-                            absolute_resolved_path = ""
+                            # Use the path as seen (preserve symlinks - don't resolve to target)
+                            # dir_entry.path is the full path to the entry (symlink path if it's a symlink)
                             if request.include_absolute_path or need_relative_paths:
                                 if entry_path_obj is None:
                                     entry_path_obj = Path(dir_entry.path)
-                                resolved_entry = entry_path_obj.resolve()
-                                absolute_resolved_path = str(resolved_entry) if request.include_absolute_path else ""
+                                entry_path_absolute = entry_path_obj.absolute()
+                            else:
+                                entry_path_absolute = None
 
                             # Determine entry_path based on what we need
-                            if need_relative_paths and resolved_entry is not None and resolved_workspace is not None:
+                            if (
+                                need_relative_paths
+                                and entry_path_absolute is not None
+                                and resolved_workspace is not None
+                            ):
                                 try:
-                                    relative = resolved_entry.relative_to(resolved_workspace)
+                                    relative = entry_path_absolute.relative_to(resolved_workspace)
                                     entry_path = relative
                                 except ValueError:
                                     # Entry is outside workspace
-                                    entry_path = resolved_entry
-                            elif request.include_absolute_path and resolved_entry is not None:
-                                entry_path = resolved_entry
+                                    entry_path = entry_path_absolute
+                            elif request.include_absolute_path and entry_path_absolute is not None:
+                                entry_path = entry_path_absolute
                             else:
                                 # Use the path from dir_entry (may be relative or absolute depending on system)
                                 entry_path = dir_entry.path
+
+                            absolute_path_str = (
+                                str(entry_path_absolute)
+                                if entry_path_absolute is not None and request.include_absolute_path
+                                else ""
+                            )
 
                             # Only detect MIME type if requested
                             mime_type = None
@@ -1416,7 +1426,7 @@ class OSManager:
                                     size=entry_size,
                                     modified_time=entry_modified_time,
                                     mime_type=mime_type,
-                                    absolute_path=absolute_resolved_path,
+                                    absolute_path=absolute_path_str,
                                 )
                             )
                         except (OSError, PermissionError) as e:
