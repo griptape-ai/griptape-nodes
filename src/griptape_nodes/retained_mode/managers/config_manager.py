@@ -115,6 +115,22 @@ class ConfigManager:
             event_manager.assign_manager_to_request_type(ResetConfigRequest, self.on_handle_reset_config_request)
 
     @property
+    def workspace_path(self) -> Path:
+        """Get the workspace path for the current project.
+
+        Delegates to ProjectManager.workspace_path. Uses a lazy import to avoid
+        a circular dependency between ConfigManager and ProjectManager.
+        """
+        # Lazy import required: ConfigManager is initialized before ProjectManager,
+        # and importing GriptapeNodes at module level would cause a circular dependency.
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        logger.warning(
+            "ConfigManager.workspace_path is deprecated. Use GriptapeNodes.ProjectManager().workspace_path instead."
+        )
+        return GriptapeNodes.ProjectManager().workspace_path
+
+    @property
     def config_files(self) -> list[Path]:
         """Get a list of config files in ascending order of priority.
 
