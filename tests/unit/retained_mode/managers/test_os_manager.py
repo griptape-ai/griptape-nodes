@@ -509,6 +509,61 @@ class TestListDirectoryRequest:
         assert isinstance(result, ListDirectoryResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
 
+    def test_list_directory_symlink_to_file_preserves_symlink_path(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Symlink-to-file entries return the symlink path, not the resolved target."""
+        os_manager = griptape_nodes.OSManager()
+        target_file = temp_dir / "target.txt"
+        target_file.write_text("content")
+        symlink_file = temp_dir / "link.txt"
+        try:
+            symlink_file.symlink_to(target_file)
+        except OSError:
+            pytest.skip("Symlink creation not supported (e.g. Windows without Developer Mode)")
+
+        request = ListDirectoryRequest(
+            directory_path=str(temp_dir),
+            workspace_only=False,
+            include_absolute_path=True,
+        )
+        result = os_manager.on_list_directory_request(request)
+
+        assert isinstance(result, ListDirectoryResultSuccess)
+        link_entry = next(e for e in result.entries if e.name == "link.txt")
+        symlink_path = Path(link_entry.absolute_path)
+        assert symlink_path.is_symlink()
+        assert symlink_path.resolve() == target_file.resolve()
+        assert str(symlink_path) == str(symlink_file.absolute())
+
+    def test_list_directory_symlink_to_directory_preserves_symlink_path(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Symlink-to-directory entries return the symlink path, not the resolved target."""
+        os_manager = griptape_nodes.OSManager()
+        target_dir = temp_dir / "target_dir"
+        target_dir.mkdir()
+        (target_dir / "nested.txt").write_text("nested")
+        symlink_dir = temp_dir / "link_dir"
+        try:
+            symlink_dir.symlink_to(target_dir)
+        except OSError:
+            pytest.skip("Symlink creation not supported (e.g. Windows without Developer Mode)")
+
+        request = ListDirectoryRequest(
+            directory_path=str(temp_dir),
+            workspace_only=False,
+            include_absolute_path=True,
+        )
+        result = os_manager.on_list_directory_request(request)
+
+        assert isinstance(result, ListDirectoryResultSuccess)
+        link_entry = next(e for e in result.entries if e.name == "link_dir")
+        symlink_path = Path(link_entry.absolute_path)
+        assert symlink_path.is_symlink()
+        assert symlink_path.resolve() == target_dir.resolve()
+        assert str(symlink_path) == str(symlink_dir.absolute())
+
 
 class TestNormalizePathPartsForSpecialFolder:
     """Test normalize_path_parts_for_special_folder helper."""
