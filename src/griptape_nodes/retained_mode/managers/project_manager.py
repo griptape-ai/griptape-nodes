@@ -551,7 +551,16 @@ class ProjectManager:
         if request.project_id is not None and self._config_manager is not None:
             project_info = self._successfully_loaded_project_templates.get(request.project_id)
             if project_info is not None and project_info.project_file_path is not None:
-                self._config_manager.load_project_config(project_info.project_file_path.parent)
+                project_dir = project_info.project_file_path.parent
+                self._config_manager.load_project_config(project_dir)
+                # If neither the project-adjacent config nor env vars explicitly set workspace_directory,
+                # default the workspace to the project directory itself.
+                if (
+                    "workspace_directory" not in self._config_manager.project_config
+                    and "workspace_directory" not in self._config_manager.env_config
+                ):
+                    self._config_manager.workspace_path = project_dir
+                    self._config_manager.merged_config["workspace_directory"] = str(project_dir.resolve())
 
         if request.project_id is None:
             return SetCurrentProjectResultSuccess(
@@ -869,7 +878,7 @@ class ProjectManager:
 
         return directory_schemas
 
-    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:  # noqa: C901
+    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:
         """Get the value of a single builtin variable.
 
         Args:
@@ -892,12 +901,7 @@ class ProjectManager:
                 raise NotImplementedError(msg)
 
             case "workspace_dir":
-                config_manager = GriptapeNodes.ConfigManager()
-                workspace_dir = config_manager.get_config_value("workspace_directory")
-                if workspace_dir is None:
-                    msg = "Attempted to resolve builtin variable '{workspace_dir}'. Failed because 'workspace_directory' config value was None"
-                    raise RuntimeError(msg)
-                return str(workspace_dir)
+                return str(GriptapeNodes.ConfigManager().workspace_path)
 
             case "workflow_name":
                 context_manager = GriptapeNodes.ContextManager()

@@ -397,7 +397,7 @@ class StaticFilesManager:
         workspace_dir = GriptapeNodes.ConfigManager().workspace_path
         try:
             # Resolve both sides to ensure drive letters match on Windows (drive-relative vs absolute paths).
-            workspace_relative_path = macro_result.absolute_path.resolve().relative_to(workspace_dir)
+            workspace_relative_path = macro_result.absolute_path.resolve().relative_to(workspace_dir.resolve())
         except ValueError:
             static_files_dir = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
             workspace_relative_path = Path(static_files_dir) / file_name

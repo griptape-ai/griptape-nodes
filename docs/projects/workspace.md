@@ -4,11 +4,11 @@ The workspace is the root directory for all your work within a project. It is th
 
 ## Configuring the workspace
 
-The workspace directory is set via the `workspace_directory` key in your settings. By default, this is a folder in your home directory, but you can point it anywhere on disk. See [Engine Configuration](../configuration.md#workspace-directory) for details on how to change this setting.
+The workspace directory is set via the `workspace_directory` key in your settings. See [Engine Configuration](../configuration.md#workspace-directory) for details on how to change this setting.
 
 ### Per-project workspace (project-adjacent config)
 
-Each project directory can contain an optional `griptape_nodes_config.json` file **next to** the `griptape-nodes-project.yml`. When a project is loaded, this file is read and merged on top of the user config, letting you set a project-specific workspace directory without modifying your global settings.
+Each project directory can contain an optional `griptape_nodes_config.json` file **next to** the `griptape-nodes-project.yml`. When a project is loaded, this file is read and merged on top of the user config, letting you set a project-specific workspace directory without modifying your user config.
 
 ```
 /path/to/project/
@@ -20,8 +20,9 @@ Each project directory can contain an optional `griptape_nodes_config.json` file
 
 `workspace_directory` is resolved in this order (later entries win):
 
-1. Built-in default
+1. Built-in default — `GriptapeNodes/` inside the engine's working directory at startup
 1. User config (`~/.config/griptape_nodes/griptape_nodes_config.json`)
+1. **Project directory** — when a project file is loaded and neither the project-adjacent config nor an environment variable sets `workspace_directory`, the workspace defaults to the directory containing `griptape-nodes-project.yml`
 1. Project-adjacent config (`<project_dir>/griptape_nodes_config.json`)
 1. Environment variable (`GTN_CONFIG_WORKSPACE_DIRECTORY`)
 
@@ -29,9 +30,36 @@ This means a studio can distribute a `griptape_nodes_config.json` next to the pr
 
 ## Example scenarios
 
-### Scenario 1: Studio-mandated workspace
+### Scenario 1: No project file
 
-A studio stores projects on a shared NAS. The project directory includes a `griptape_nodes_config.json` that points all artists to the same shared workspace, so output files land in a predictable location regardless of where each artist's machine mounts the drive.
+When there is no `griptape-nodes-project.yml`, there is no project directory and therefore no project-adjacent config. The workspace comes from (in priority order):
+
+1. `GTN_CONFIG_WORKSPACE_DIRECTORY` environment variable
+1. `workspace_directory` in the user config (`~/.config/griptape_nodes/griptape_nodes_config.json`)
+1. Built-in default
+
+### Scenario 2: Project file auto-discovered in the workspace
+
+When Griptape Nodes starts, it looks for `griptape-nodes-project.yml` in the workspace directory. If found, the project is loaded and the workspace defaults to that same directory — which is the workspace the user already had configured. Nothing changes; the project template is simply applied on top of the system defaults.
+
+### Scenario 3: Portable self-contained project
+
+A project file loaded from outside the configured workspace (such as a thumb drive or a collaborator's folder) defaults its workspace to the directory containing the project file.
+
+```
+/My_Indie_Short/
+  griptape-nodes-project.yml
+  opening_scene.py
+  ending_scene.py
+  inputs/
+  outputs/
+```
+
+Because there is no `griptape_nodes_config.json` here, the workspace automatically becomes `/My_Indie_Short/`. All relative paths resolve from there. Moving the folder to a thumb drive or a different machine requires no changes — load the project file and everything works.
+
+### Scenario 4: Studio-mandated workspace
+
+A studio stores projects on a shared NAS and needs all artists to write output to the same location regardless of where the project file lives on their machines. The project directory includes a `griptape_nodes_config.json` that overrides the workspace:
 
 ```
 \\NAS\Projects\ProjectA\
@@ -47,25 +75,17 @@ A studio stores projects on a shared NAS. The project directory includes a `grip
 }
 ```
 
-When any artist loads this project, their workspace is automatically set to `\\NAS\Workspaces\ProjectA`.
+When any artist loads this project, their workspace is set to `\\NAS\Workspaces\ProjectA` regardless of what they have in their user config.
 
-### Scenario 2: Studio-controlled per-machine override
+### Scenario 5: Per-machine override via environment variable
 
-A studio wants most artists to use the shared NAS workspace from Scenario 1, but render farm machines should redirect output to local fast storage. The studio's launcher sets an environment variable before starting Griptape Nodes:
+A studio wants most artists to use the shared NAS workspace from Scenario 4, but render farm machines should redirect output to local fast storage. The studio's launcher sets an environment variable before starting Griptape Nodes:
 
 ```
 GTN_CONFIG_WORKSPACE_DIRECTORY=D:\LocalRenderCache\ProjectA
 ```
 
-Because environment variables have the highest priority, this overrides both the user config and the project-adjacent config. The project files and YAML remain unchanged — only the launch environment differs per machine.
-
-### Scenario 3: No project file
-
-When there is no `griptape-nodes-project.yml`, there is also no project directory and therefore no project-adjacent config. The active workspace comes from whichever of the following is set (in priority order):
-
-1. `GTN_CONFIG_WORKSPACE_DIRECTORY` environment variable
-1. `workspace_directory` in `~/.config/griptape_nodes/griptape_nodes_config.json`
-1. The built-in default (`~/griptape-nodes` in your home directory)
+Because environment variables have the highest priority, this overrides the user config and the project-adjacent config. The project files remain unchanged — only the launch environment differs per machine.
 
 ## How paths resolve
 

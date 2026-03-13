@@ -192,7 +192,6 @@ class TestProjectManagerBuiltinVariables:
 
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/workspace/output.txt")
-        mock_config_manager.get_config_value.assert_called_once_with("workspace_directory")
 
     @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
     def test_builtin_workflow_name_resolves_correctly(
@@ -1350,7 +1349,11 @@ situations:
     @pytest.fixture
     def pm(self) -> ProjectManager:
         mock_event_manager = Mock()
-        return ProjectManager(mock_event_manager, Mock(), Mock())
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
     def _setup_system_defaults(self, pm: ProjectManager, workspace_dir: str = "/workspace") -> None:
         """Load system defaults into pm, mirroring _load_system_defaults."""

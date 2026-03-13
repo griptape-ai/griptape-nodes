@@ -37,13 +37,13 @@ directories:
 
 Builtin variables are automatically available in all macros. You do not define them — the system provides their values at runtime. They cannot be overridden.
 
-| Variable           | Type      | Description                                                                                                                                                  |
-| ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `project_dir`      | directory | Absolute path to the project base directory (the folder containing `griptape-nodes-project.yml`, or the workspace directory when no project file is present) |
-| `workspace_dir`    | directory | Absolute path to the workspace directory (resolved from config files and environment variables; see [Workspace](workspace.md#config-resolution-order))       |
-| `workflow_name`    | string    | Name of the currently running workflow                                                                                                                       |
-| `workflow_dir`     | directory | Absolute path to the directory containing the current workflow file                                                                                          |
-| `static_files_dir` | string    | Name of the static files subdirectory (from settings, defaults to `staticfiles`)                                                                             |
+| Variable           | Type      | Description                                                                                                                                                                  |
+| ------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project_dir`      | directory | Absolute path to the project base directory (the folder containing `griptape-nodes-project.yml`, or the workspace directory when no project file is present)                 |
+| `workspace_dir`    | directory | Absolute path to the workspace directory (defaults to the project directory when no explicit workspace is configured; see [Workspace](workspace.md#config-resolution-order)) |
+| `workflow_name`    | string    | Name of the currently running workflow                                                                                                                                       |
+| `workflow_dir`     | directory | Absolute path to the directory containing the current workflow file                                                                                                          |
+| `static_files_dir` | string    | Name of the static files subdirectory (from settings, defaults to `staticfiles`)                                                                                             |
 
 ### How builtins are resolved
 
@@ -51,7 +51,7 @@ Builtins are resolved at the moment a macro is evaluated — not when the projec
 
 - `workflow_name` and `workflow_dir` reflect whichever workflow is currently executing
 - `project_dir` reflects the actual path of the loaded project file
-- `workspace_dir` reflects the current value from config (user config, project-adjacent config, or environment variable)
+- `workspace_dir` reflects the project directory when no explicit workspace is configured, otherwise the value from the project-adjacent config or environment variable
 
 If a builtin variable is required but cannot be resolved (for example, `workflow_name` when no workflow is running), macro resolution fails with an error. If the variable is optional (marked with `?`), the block is silently omitted instead.
 
