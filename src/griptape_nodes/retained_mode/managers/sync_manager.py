@@ -224,7 +224,7 @@ class SyncManager:
             msg = "Cloud storage api_key not configured. Set GT_CLOUD_API_KEY secret."
             raise RuntimeError(msg)
 
-        workspace_directory = Path(self._config_manager.get_config_value("workspace_directory"))
+        workspace_directory = self._config_manager.workspace_path
 
         return GriptapeCloudStorageDriver(
             workspace_directory,

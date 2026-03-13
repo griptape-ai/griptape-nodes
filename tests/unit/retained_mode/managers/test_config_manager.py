@@ -65,25 +65,39 @@ class TestConfigManager:
     def test_config_integration_with_env_vars(self) -> None:
         """Test that environment variables are integrated into merged config with highest priority."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Set up a temporary workspace
-            workspace_path = Path(temp_dir)
+            # Set up a temporary project directory with a project-adjacent config
+            project_dir = Path(temp_dir)
+            project_config_path = project_dir / "griptape_nodes_config.json"
+            project_config_path.write_text('{"log_level": "ERROR"}')
 
-            # Create a workspace config file with a value
-            workspace_config_path = workspace_path / "griptape_nodes_config.json"
-            workspace_config_path.write_text('{"log_level": "ERROR"}')
-
-            # Set environment variable that should override the workspace config
+            # Set environment variable that should override the project config
             with patch.dict(
                 os.environ, {"GTN_CONFIG_LOG_LEVEL": "DEBUG", "GTN_CONFIG_STORAGE_BACKEND": "gtc"}, clear=True
             ):
                 manager = ConfigManager()
-                # Set the workspace path to our temp directory
-                manager.workspace_path = workspace_path
-                manager.load_configs()
+                manager.load_project_config(project_dir)
 
-                # Environment variable should override workspace config
+                # Environment variable should override project config
                 assert manager.get_config_value("log_level") == "DEBUG"
                 assert manager.get_config_value("storage_backend") == "gtc"
+
+    def test_load_project_config_sets_project_config_layer(self) -> None:
+        """Test that load_project_config reads project-adjacent config and merges it."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir)
+            project_config_path = project_dir / "griptape_nodes_config.json"
+            project_config_path.write_text('{"log_level": "ERROR"}')
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                # Before loading project config, log_level is default
+                assert manager.get_config_value("log_level") != "ERROR"
+
+                manager.load_project_config(project_dir)
+
+                # After loading, project config value takes effect
+                assert manager.get_config_value("log_level") == "ERROR"
+                assert manager.project_config == {"log_level": "ERROR"}
 
     def test_non_gtn_config_env_vars_ignored(self) -> None:
         """Test that environment variables not starting with GTN_CONFIG_ are ignored."""

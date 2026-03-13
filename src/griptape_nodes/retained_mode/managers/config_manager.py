@@ -65,7 +65,7 @@ class ConfigManager:
     This class handles loading and saving configuration from multiple sources with the following precedence:
     1. Default configuration from Settings model (lowest priority)
     2. User global configuration from ~/.config/griptape_nodes/griptape_nodes_config.json
-    3. Workspace-specific configuration from <workspace>/griptape_nodes_config.json
+    3. Project-adjacent configuration from <project_dir>/griptape_nodes_config.json
     4. Environment variables with GTN_CONFIG_ prefix (highest priority)
 
     Environment variables starting with GTN_CONFIG_ are converted to config keys by removing the prefix
@@ -77,7 +77,7 @@ class ConfigManager:
     Attributes:
         default_config (dict): The default configuration loaded from the Settings model.
         user_config (dict): The user configuration loaded from the config file.
-        workspace_config (dict): The workspace configuration loaded from the workspace config file.
+        project_config (dict): The project-adjacent configuration loaded when a project is set.
         env_config (dict): The configuration loaded from GTN_CONFIG_ environment variables.
         merged_config (dict): The merged configuration, combining all sources in precedence order.
     """
@@ -88,6 +88,7 @@ class ConfigManager:
         Args:
             event_manager: The EventManager instance to use for event handling.
         """
+        self._project_config_path: Path | None = None
         self.load_configs()
 
         self._set_log_level(self.merged_config.get("log_level", logging.INFO))
@@ -127,16 +128,7 @@ class ConfigManager:
         Args:
             path: The path to set as the base file path.
         """
-        self._workspace_path = str(Path(path).resolve())
-
-    @property
-    def workspace_config_path(self) -> Path:
-        """Get the path to the workspace config file.
-
-        Returns:
-            Path object representing the user config file.
-        """
-        return self.workspace_path / "griptape_nodes_config.json"
+        self._workspace_path = str(Path(path).expanduser().resolve())
 
     @property
     def config_files(self) -> list[Path]:
@@ -148,10 +140,10 @@ class ConfigManager:
         Returns:
             List of Path objects representing the config files.
         """
-        possible_config_files = [
-            USER_CONFIG_PATH,
-            self.workspace_config_path,
-        ]
+        possible_config_files: list[Path] = [USER_CONFIG_PATH]
+
+        if self._project_config_path is not None:
+            possible_config_files.append(self._project_config_path)
 
         return [config_file for config_file in possible_config_files if config_file.exists()]
 
@@ -176,12 +168,10 @@ class ConfigManager:
         return env_config
 
     def load_configs(self) -> None:
-        """Load configs from the user config file and the workspace config file.
+        """Load configs from the user config file and the project-adjacent config file.
 
-        Sets the default_config, user_config, workspace_config, and merged_config attributes.
+        Sets the default_config, user_config, project_config, and merged_config attributes.
         """
-        # We need to load the user config file first so we can get the workspace directory which may contain a workspace config file.
-        # Load the user config file to get the workspace directory.
         self.default_config = Settings().model_dump()
         merged_config = self.default_config
         if USER_CONFIG_PATH.exists():
@@ -195,18 +185,17 @@ class ConfigManager:
             self.user_config = {}
             logger.debug("User config file not found")
 
-        # Merge in any settings from the workspace directory.
-        self.workspace_path = merged_config["workspace_directory"]
-        if self.workspace_config_path.exists():
+        # Merge in any settings from the project-adjacent config file, if one has been loaded.
+        if self._project_config_path is not None and self._project_config_path.exists():
             try:
-                self.workspace_config = json.loads(self.workspace_config_path.read_text())
-                merged_config = merge_dicts(merged_config, self.workspace_config)
+                self.project_config = json.loads(self._project_config_path.read_text())
+                merged_config = merge_dicts(merged_config, self.project_config)
             except json.JSONDecodeError as e:
-                logger.error("Error parsing workspace config file: %s", e)
-                self.workspace_config = {}
+                logger.error("Error parsing project config file: %s", e)
+                self.project_config = {}
         else:
-            self.workspace_config = {}
-            logger.debug("Workspace config file not found")
+            self.project_config = {}
+            logger.debug("No project config file loaded")
 
         # Merge in configuration from GTN_CONFIG_ environment variables (highest priority)
         self.env_config = self._load_config_from_env_vars()
@@ -214,7 +203,7 @@ class ConfigManager:
             merged_config = merge_dicts(merged_config, self.env_config)
             logger.debug("Merged config from environment variables: %s", list(self.env_config.keys()))
 
-        # Re-assign workspace path in case env var overrides it
+        # Re-assign workspace path in case env var or project config overrides it
         self.workspace_path = merged_config["workspace_directory"]
 
         # Validate the full config against the Settings model.
@@ -224,6 +213,20 @@ class ConfigManager:
         except ValidationError as e:
             logger.error("Error validating config file: %s", e)
             self.merged_config = self.default_config
+
+    def load_project_config(self, project_dir: Path) -> None:
+        """Load the project-adjacent config from the given project directory and remerge all configs.
+
+        Reads griptape_nodes_config.json from project_dir (if it exists) and stores it as
+        the project_config layer. Then rebuilds the merged config with the updated layer order:
+        default → user → project_config → env vars.
+
+        Args:
+            project_dir: Directory containing the project YAML file. Looks for
+                griptape_nodes_config.json in this directory.
+        """
+        self._project_config_path = project_dir / "griptape_nodes_config.json"
+        self.load_configs()
 
     def reset_user_config(self) -> None:
         """Reset the user configuration to the default values.
@@ -306,7 +309,7 @@ class ConfigManager:
         key: str,
         *,
         should_load_env_var_if_detected: bool = True,
-        config_source: Literal["user_config", "workspace_config", "default_config", "merged_config"] = "merged_config",
+        config_source: Literal["user_config", "project_config", "default_config", "merged_config"] = "merged_config",
         default: Any | None = None,
         cast_type: type[bool] | type[int] | type[float] | type[str] | None = None,
     ) -> Any:
@@ -318,7 +321,7 @@ class ConfigManager:
             key: The configuration key to get. Can use dot notation for nested keys (e.g., 'category.subcategory.key').
                  If the key refers to a category (dictionary), returns the entire category.
             should_load_env_var_if_detected: If True, and the value starts with a $, it will be pulled from the environment variables.
-            config_source: The source of the configuration to use. Can be 'user_config', 'workspace_config', 'default_config', or 'merged_config'.
+            config_source: The source of the configuration to use. Can be 'user_config', 'project_config', 'default_config', or 'merged_config'.
             default: The default value to return if the key is not found in the configuration.
             cast_type: Optional type to coerce the value to (bool, int, float, or str). Useful for environment
                        variables which are always strings (e.g., "false" -> False when cast_type=bool).
@@ -328,7 +331,7 @@ class ConfigManager:
         """
         config_source_map = {
             "user_config": self.user_config,
-            "workspace_config": self.workspace_config,
+            "project_config": self.project_config,
             "merged_config": self.merged_config,
             "default_config": self.default_config,
         }
