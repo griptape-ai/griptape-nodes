@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
 dependencies = [
-  "griptape>=1.9.3",
+  "griptape>=1.9.4",
   "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
@@ -79,9 +79,7 @@ griptape-cloud-client = { git = "https://github.com/griptape-ai/griptape-cloud-p
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
-pythonpath = [
-  "libraries/griptape_nodes_library",
-]
+pythonpath = ["libraries/griptape_nodes_library"]
 
 [tool.ruff]
 line-length = 120
