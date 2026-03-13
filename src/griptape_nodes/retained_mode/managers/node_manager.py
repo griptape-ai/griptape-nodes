@@ -4718,7 +4718,10 @@ class NodeManager:
         # Mark the node as unresolved since parameter structure changed
         node.state = NodeResolutionState.UNRESOLVED
 
-        # Emit update event for the parameter list if possible
+        # Manually add the reordered children structure to _changes so the event includes it
+        parameter_list._changes["children"] = [child.to_dict() for child in parameter_list._children]
+
+        # Emit update event for the parameter list with the reordered children
         parameter_list._emit_alter_element_event_if_possible()
 
         return ReorderParameterListItemResultSuccess(
