@@ -125,6 +125,9 @@ class ConfigManager:
         # and importing GriptapeNodes at module level would cause a circular dependency.
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+        logger.warning(
+            "ConfigManager.workspace_path is deprecated. Use GriptapeNodes.ProjectManager().workspace_path instead."
+        )
         return GriptapeNodes.ProjectManager().workspace_path
 
     @property
