@@ -181,6 +181,7 @@ class TestProjectManagerBuiltinVariables:
 
         mock_config_manager = Mock()
         mock_config_manager.get_config_value.return_value = "/workspace"
+        mock_config_manager.workspace_path = Path("/workspace")
         mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
 
         parsed_macro = ParsedMacro("{workspace_dir}/output.txt")
@@ -393,6 +394,7 @@ class TestProjectManagerBuiltinVariables:
 
         mock_config_manager = Mock()
         mock_config_manager.get_config_value.return_value = "my_static"
+        mock_config_manager.workspace_path = Path("/test")
         mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
 
         parsed_macro = ParsedMacro("{static_files_dir}/output.png")
@@ -970,6 +972,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1033,6 +1036,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1111,6 +1115,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1174,6 +1179,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1235,6 +1241,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1307,6 +1314,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
