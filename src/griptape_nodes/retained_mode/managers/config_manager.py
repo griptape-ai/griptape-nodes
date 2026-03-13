@@ -82,10 +82,7 @@ class ConfigManager:
         merged_config (dict): The merged configuration, combining all sources in precedence order.
     """
 
-    def __init__(
-        self,
-        event_manager: EventManager | None = None,
-    ) -> None:
+    def __init__(self, event_manager: EventManager | None = None) -> None:
         """Initialize the ConfigManager.
 
         Args:
@@ -115,6 +112,33 @@ class ConfigManager:
             event_manager.assign_manager_to_request_type(ResetConfigRequest, self.on_handle_reset_config_request)
 
     @property
+    def workspace_path(self) -> Path:
+        """Get the base file path from the configuration.
+
+        Returns:
+            Path object representing the base file path.
+        """
+        return Path(self._workspace_path).resolve()
+
+    @workspace_path.setter
+    def workspace_path(self, path: str | Path) -> None:
+        """Set the base file path in the configuration.
+
+        Args:
+            path: The path to set as the base file path.
+        """
+        self._workspace_path = str(Path(path).resolve())
+
+    @property
+    def workspace_config_path(self) -> Path:
+        """Get the path to the workspace config file.
+
+        Returns:
+            Path object representing the user config file.
+        """
+        return self.workspace_path / "griptape_nodes_config.json"
+
+    @property
     def config_files(self) -> list[Path]:
         """Get a list of config files in ascending order of priority.
 
@@ -124,11 +148,9 @@ class ConfigManager:
         Returns:
             List of Path objects representing the config files.
         """
-        workspace_dir = self.merged_config.get("workspace_directory", str(Path.cwd()))
-        workspace_config_path = Path(workspace_dir).resolve() / "griptape_nodes_config.json"
         possible_config_files = [
             USER_CONFIG_PATH,
-            workspace_config_path,
+            self.workspace_config_path,
         ]
 
         return [config_file for config_file in possible_config_files if config_file.exists()]
@@ -173,15 +195,11 @@ class ConfigManager:
             self.user_config = {}
             logger.debug("User config file not found")
 
-        # Merge in any settings from the project workspace config file.
-        # Note: ConfigManager is initialized before ProjectManager, so we bootstrap the workspace
-        # path from merged_config here. ProjectManager becomes the authority for workspace
-        # resolution after it is initialized.
-        workspace_dir = Path(merged_config.get("workspace_directory", str(Path.cwd()))).resolve()
-        workspace_config_path = workspace_dir / "griptape_nodes_config.json"
-        if workspace_config_path.exists():
+        # Merge in any settings from the workspace directory.
+        self.workspace_path = merged_config["workspace_directory"]
+        if self.workspace_config_path.exists():
             try:
-                self.workspace_config = json.loads(workspace_config_path.read_text())
+                self.workspace_config = json.loads(self.workspace_config_path.read_text())
                 merged_config = merge_dicts(merged_config, self.workspace_config)
             except json.JSONDecodeError as e:
                 logger.error("Error parsing workspace config file: %s", e)
@@ -195,6 +213,9 @@ class ConfigManager:
         if self.env_config:
             merged_config = merge_dicts(merged_config, self.env_config)
             logger.debug("Merged config from environment variables: %s", list(self.env_config.keys()))
+
+        # Re-assign workspace path in case env var overrides it
+        self.workspace_path = merged_config["workspace_directory"]
 
         # Validate the full config against the Settings model.
         try:
@@ -242,6 +263,18 @@ class ConfigManager:
                 if (saved_workflow.lower() != workflow_file_name.lower())
             ]
             self.set_config_value(WORKFLOWS_TO_REGISTER_KEY, default_workflows)
+
+    def get_full_path(self, relative_path: str) -> Path:
+        """Get a full path by combining the base path with a relative path.
+
+        Args:
+            relative_path: A path relative to the base path.
+
+        Returns:
+            Path object representing the full path.
+        """
+        workspace_path = self.workspace_path
+        return workspace_path / relative_path
 
     def _coerce_to_type(self, value: Any, cast_type: type) -> Any:
         """Coerce a value to the specified type.
@@ -331,6 +364,8 @@ class ConfigManager:
         delta = set_dot_value({}, key, value)
         if key == "log_level":
             self._set_log_level(value)
+        elif key == "workspace_directory":
+            self.workspace_path = value
         self.user_config = merge_dicts(self.merged_config, delta)
         self._write_user_config_delta(delta)
 
@@ -471,6 +506,7 @@ class ConfigManager:
         try:
             self.reset_user_config()
             self._set_log_level(str(self.merged_config["log_level"]))
+            self.workspace_path = Path(self.merged_config["workspace_directory"])
 
             result_details = "Successfully reset user configuration."
             return ResetConfigResultSuccess(result_details=result_details)

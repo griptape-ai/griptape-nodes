@@ -2,39 +2,15 @@
 
 The workspace is the root directory for all your work within a project. It is the starting point from which relative file paths are resolved.
 
-## How the workspace is determined
+## Configuring the workspace
 
-The workspace is resolved in this order:
-
-1. **`workspace_directory` field in the project file** — if your `griptape-nodes-project.yml` contains a `workspace_directory` field, that path is used as the workspace. Absolute paths are used as-is; relative paths are resolved relative to the project file's directory. Tilde (`~`) and environment variables are expanded.
-
-1. **Project file's directory** — if the project file does not include a `workspace_directory` field, the workspace defaults to the directory containing `griptape-nodes-project.yml`.
-
-1. **`workspace_directory` setting** — if no project file is present (system defaults only), the workspace falls back to the `workspace_directory` key in your engine settings. See [Engine Configuration](../configuration.md#workspace-directory) for details.
-
-## Configuring workspace in the project file
-
-You can pin the workspace to a specific directory by adding a `workspace_directory` field to your project file:
-
-```yaml
-project_template_schema_version: "0.1.0"
-name: "My Project"
-workspace_directory: ~/my-project-files
-```
-
-Or relative to the project file's own location:
-
-```yaml
-project_template_schema_version: "0.1.0"
-name: "My Project"
-workspace_directory: ./outputs-root
-```
-
-When `workspace_directory` is omitted, the workspace is the folder containing the project file.
+The workspace directory is set via the `workspace_directory` key in your settings. By default, this is a folder in your home directory, but you can point it anywhere on disk. See [Engine Configuration](../configuration.md#workspace-directory) for details on how to change this setting.
 
 ## How paths resolve
 
-All relative paths in the project system are resolved against the workspace. For example, if the workspace is `/Users/you/my_project/` and a situation macro resolves to `outputs/render_001.png`, the final absolute path is `/Users/you/my_project/outputs/render_001.png`.
+All relative paths in the project system are resolved against the **project base directory**. When a project file (`griptape-nodes-project.yml`) is present, the project base directory is the folder containing that file — which is normally the workspace root. When no project file is present, the workspace directory itself is used as the base.
+
+For example, if your workspace is `/Users/you/my_project/` and a situation macro resolves to `outputs/render_001.png`, the final absolute path is `/Users/you/my_project/outputs/render_001.png`.
 
 ## Workspace and the project file
 
@@ -44,10 +20,9 @@ See [Projects](projects.md) for the full details on the project file and merge m
 
 ## Summary
 
-| Source                                | Description                                                     |
-| ------------------------------------- | --------------------------------------------------------------- |
-| `workspace_directory` in project file | Explicit path override; takes precedence over all other sources |
-| Project file's directory              | Default when no `workspace_directory` field is set              |
-| `workspace_directory` setting         | Fallback when no project file is present                        |
+| Setting                      | Description                                              |
+| ---------------------------- | -------------------------------------------------------- |
+| `workspace_directory`        | The root directory for your work                         |
+| `griptape-nodes-project.yml` | Optional file in the workspace for project customization |
 
-All relative paths in macros and directory definitions resolve against the workspace.
+All relative paths in macros and directory definitions resolve against the project base directory, which is the folder containing the project file (or the workspace directory when no project file exists).

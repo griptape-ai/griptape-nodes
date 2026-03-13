@@ -498,7 +498,7 @@ class NodeExecutor:
 
         subprocess_workflow_publisher = SubprocessWorkflowPublisher(on_event=on_event)
         published_filename = f"{Path(workflow_result.file_path).stem}_published"
-        published_workflow_filename = GriptapeNodes.ProjectManager().workspace_path / (published_filename + ".py")
+        published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (published_filename + ".py")
 
         async with subprocess_workflow_publisher:
             await subprocess_workflow_publisher.arun(
@@ -3256,7 +3256,7 @@ class NodeExecutor:
     async def _delete_workflow(self, workflow_path: Path) -> None:
         # Derive the registry key from the workflow path using workspace-relative logic so it
         # matches the key used during registration (push_workflow(file_path=__file__) in the workflow).
-        workspace_path = await anyio.Path(GriptapeNodes.ProjectManager().workspace_path).resolve()
+        workspace_path = await anyio.Path(GriptapeNodes.ConfigManager().workspace_path).resolve()
         resolved = await anyio.Path(workflow_path).resolve()
         if resolved.is_relative_to(workspace_path):
             path_for_key = str(resolved.relative_to(workspace_path))

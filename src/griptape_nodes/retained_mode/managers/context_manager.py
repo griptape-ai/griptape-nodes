@@ -491,7 +491,7 @@ class ContextManager:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             resolved = Path(file_path).resolve()
-            workspace_path = GriptapeNodes.ProjectManager().workspace_path
+            workspace_path = GriptapeNodes.ConfigManager().workspace_path
             if resolved.is_relative_to(workspace_path):
                 path_for_key = str(resolved.relative_to(workspace_path))
             else:

@@ -25,7 +25,7 @@ class TestLocalStorageDriverCreateSignedUploadUrl:
     @pytest.fixture
     def local_storage_driver(self) -> LocalStorageDriver:
         """Create LocalStorageDriver instance for testing."""
-        return LocalStorageDriver()
+        return LocalStorageDriver(Path("/workspace"))
 
     @pytest.fixture
     def mock_os_manager(self) -> Mock:
@@ -61,7 +61,6 @@ class TestLocalStorageDriverCreateSignedUploadUrl:
             patch("griptape_nodes.drivers.storage.local_storage_driver.httpx.post") as mock_post,
         ):
             # Setup mocks
-            mock_griptape.ProjectManager.return_value.workspace_path = Path("/workspace")
             mock_griptape.OSManager.return_value = mock_os_manager
             mock_os_manager.on_write_file_request.return_value = mock_write_success_result
             mock_post_response = Mock()
@@ -92,7 +91,6 @@ class TestLocalStorageDriverCreateSignedUploadUrl:
             patch("griptape_nodes.drivers.storage.local_storage_driver.httpx.post") as mock_post,
         ):
             # Setup mocks
-            mock_griptape.ProjectManager.return_value.workspace_path = Path("/workspace")
             mock_griptape.OSManager.return_value = mock_os_manager
             mock_os_manager.on_write_file_request.return_value = mock_write_success_result
             mock_post_response = Mock()
@@ -114,7 +112,6 @@ class TestLocalStorageDriverCreateSignedUploadUrl:
         """Test that create_signed_upload_url raises FileExistsError when WriteFileRequest fails."""
         with patch("griptape_nodes.drivers.storage.local_storage_driver.GriptapeNodes") as mock_griptape:
             # Setup mocks
-            mock_griptape.ProjectManager.return_value.workspace_path = Path("/workspace")
             mock_griptape.OSManager.return_value = mock_os_manager
             mock_os_manager.on_write_file_request.return_value = mock_write_failure_result
 
@@ -134,7 +131,6 @@ class TestLocalStorageDriverCreateSignedUploadUrl:
             patch("griptape_nodes.drivers.storage.local_storage_driver.httpx.post") as mock_post,
         ):
             # Setup mocks
-            mock_griptape.ProjectManager.return_value.workspace_path = Path("/workspace")
             mock_griptape.OSManager.return_value = mock_os_manager
             mock_os_manager.on_write_file_request.return_value = mock_write_success_result
             mock_post_response = Mock()

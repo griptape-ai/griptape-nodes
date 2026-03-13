@@ -68,7 +68,7 @@ class StaticServerFileDriver(BaseFileDriver):
             raise ValueError(msg)
 
         workspace_relative_path = parsed.path.split("/workspace/", 1)[1]
-        workspace_path = GriptapeNodes.ProjectManager().workspace_path
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
         return workspace_path / workspace_relative_path
 
     async def read(self, location: str, timeout: float) -> bytes:  # noqa: ARG002, ASYNC109

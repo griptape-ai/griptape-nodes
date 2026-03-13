@@ -74,15 +74,12 @@ class TestConfigManager:
 
             # Set environment variable that should override the workspace config
             with patch.dict(
-                os.environ,
-                {
-                    "GTN_CONFIG_LOG_LEVEL": "DEBUG",
-                    "GTN_CONFIG_STORAGE_BACKEND": "gtc",
-                    "GTN_CONFIG_WORKSPACE_DIRECTORY": str(workspace_path),
-                },
-                clear=True,
+                os.environ, {"GTN_CONFIG_LOG_LEVEL": "DEBUG", "GTN_CONFIG_STORAGE_BACKEND": "gtc"}, clear=True
             ):
                 manager = ConfigManager()
+                # Set the workspace path to our temp directory
+                manager.workspace_path = workspace_path
+                manager.load_configs()
 
                 # Environment variable should override workspace config
                 assert manager.get_config_value("log_level") == "DEBUG"
@@ -104,9 +101,13 @@ class TestConfigManager:
             env_config = manager._load_config_from_env_vars()
             assert env_config == {"bar": "should_be_loaded"}
 
-    def test_workspace_directory_from_env_var_override(self) -> None:
-        """Test that workspace_directory config value reflects environment variable override after load."""
+    def test_workspace_path_reassigned_after_env_var_override(self) -> None:
+        """Test that workspace path is reassigned after environment variable config is loaded."""
         with tempfile.TemporaryDirectory() as temp_dir:
+            # Create initial workspace directory
+            initial_workspace = Path(temp_dir) / "initial_workspace"
+            initial_workspace.mkdir()
+
             # Create override workspace directory
             override_workspace = Path(temp_dir) / "override_workspace"
             override_workspace.mkdir()
@@ -114,8 +115,14 @@ class TestConfigManager:
             # Set environment variable to override workspace directory
             with patch.dict(os.environ, {"GTN_CONFIG_WORKSPACE_DIRECTORY": str(override_workspace)}, clear=True):
                 manager = ConfigManager()
+                # Initially set workspace to the initial directory
+                manager.workspace_path = initial_workspace
 
-                # Verify workspace directory was set from env var
+                # Load configs which should reassign workspace path from env var
+                manager.load_configs()
+
+                # Verify workspace path was reassigned to the env var value
+                assert manager.workspace_path == override_workspace.resolve()
                 assert manager.get_config_value("workspace_directory") == str(override_workspace)
 
     def test_coerce_to_type_bool_from_string(self) -> None:

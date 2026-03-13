@@ -79,6 +79,7 @@ class StaticFilesManager:
         self.secrets_manager = secrets_manager
 
         self.storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
+        workspace_directory = Path(config_manager.get_config_value("workspace_directory"))
 
         # Build base URL for LocalStorageDriver from configured base URL
         base_url_config = config_manager.get_config_value("static_server_base_url")
@@ -92,14 +93,19 @@ class StaticFilesManager:
                     logger.warning(
                         "GT_CLOUD_BUCKET_ID secret is not available, falling back to local storage. Run `gtn init` to set it up."
                     )
-                    self.storage_driver = LocalStorageDriver(base_url=base_url)
+                    self.storage_driver = LocalStorageDriver(workspace_directory, base_url=base_url)
                 else:
+                    static_files_directory = config_manager.get_config_value(
+                        "static_files_directory", default="staticfiles"
+                    )
                     self.storage_driver = GriptapeCloudStorageDriver(
+                        workspace_directory,
                         bucket_id=bucket_id,
                         api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"),
+                        static_files_directory=static_files_directory,
                     )
             case StorageBackend.LOCAL:
-                self.storage_driver = LocalStorageDriver(base_url=base_url)
+                self.storage_driver = LocalStorageDriver(workspace_directory, base_url=base_url)
             case _:
                 msg = f"Invalid storage backend: {self.storage_backend}"
                 raise ValueError(msg)
@@ -220,9 +226,14 @@ class StaticFilesManager:
         if not api_key:
             return None
 
+        workspace_directory = Path(self.config_manager.get_config_value("workspace_directory"))
+        static_files_directory = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
+
         return GriptapeCloudStorageDriver(
+            workspace_directory,
             bucket_id=bucket_id,
             api_key=api_key,
+            static_files_directory=static_files_directory,
         )
 
     def on_handle_create_static_file_download_url_from_path_request(
@@ -383,10 +394,10 @@ class StaticFilesManager:
             )
             return None
 
-        workspace_dir = GriptapeNodes.ProjectManager().workspace_path
+        workspace_dir = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory")).resolve()
         try:
             # Resolve both sides to ensure drive letters match on Windows (drive-relative vs absolute paths).
-            workspace_relative_path = macro_result.absolute_path.resolve().relative_to(workspace_dir.resolve())
+            workspace_relative_path = macro_result.absolute_path.resolve().relative_to(workspace_dir)
         except ValueError:
             static_files_dir = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
             workspace_relative_path = Path(static_files_dir) / file_name

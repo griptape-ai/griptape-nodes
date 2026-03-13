@@ -42,15 +42,14 @@ environment:
 
 ### Fields reference
 
-| Field                             | Required | Description                                                  |
-| --------------------------------- | -------- | ------------------------------------------------------------ |
-| `project_template_schema_version` | Yes      | Must match the supported version (`"0.1.0"`)                 |
-| `name`                            | Yes      | Human-readable name for this project                         |
-| `description`                     | No       | Optional description                                         |
-| `workspace_directory`             | No       | Workspace directory override (see [Workspace](workspace.md)) |
-| `situations`                      | No       | Dict of situation overrides and additions                    |
-| `directories`                     | No       | Dict of directory overrides and additions                    |
-| `environment`                     | No       | Dict of custom key-value variables                           |
+| Field                             | Required | Description                                  |
+| --------------------------------- | -------- | -------------------------------------------- |
+| `project_template_schema_version` | Yes      | Must match the supported version (`"0.1.0"`) |
+| `name`                            | Yes      | Human-readable name for this project         |
+| `description`                     | No       | Optional description                         |
+| `situations`                      | No       | Dict of situation overrides and additions    |
+| `directories`                     | No       | Dict of directory overrides and additions    |
+| `environment`                     | No       | Dict of custom key-value variables           |
 
 ### Situation fields
 

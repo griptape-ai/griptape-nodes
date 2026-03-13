@@ -27,6 +27,14 @@ class BaseStorageDriver(ABC):
     converting absolute paths to workspace-relative before calling driver methods.
     """
 
+    def __init__(self, workspace_directory: Path) -> None:
+        """Initialize the storage driver with a workspace directory.
+
+        Args:
+            workspace_directory: The base workspace directory path.
+        """
+        self.workspace_directory = workspace_directory
+
     @abstractmethod
     def create_signed_upload_url(
         self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE

@@ -35,11 +35,8 @@ class SecretsManager:
     def __init__(self, config_manager: ConfigManager, event_manager: EventManager | None = None) -> None:
         self.config_manager = config_manager
 
-        # Bootstrap: load workspace .env using config directly. ProjectManager cannot be passed here
-        # because SecretsManager is created before ProjectManager in GriptapeNodes.__init__.
-        # The workspace_env_path property uses ProjectManager lazily for all post-init lookups.
-        bootstrap_workspace = Path(config_manager.merged_config.get("workspace_directory", ".")).resolve()
-        load_dotenv(bootstrap_workspace / ".env", override=False)
+        # So that users can access secrets directly via `os.environ`
+        load_dotenv(self.workspace_env_path, override=False)
         load_dotenv(ENV_VAR_PATH, override=False)
 
         # Register all our listeners.
@@ -55,10 +52,7 @@ class SecretsManager:
 
     @property
     def workspace_env_path(self) -> Path:
-        # Lazy import required: secrets_manager is imported by griptape_nodes, creating a circular dependency.
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        return GriptapeNodes.ProjectManager().workspace_path / ".env"
+        return self.config_manager.workspace_path / ".env"
 
     @property
     def secrets_to_register(self) -> dict[str, str]:

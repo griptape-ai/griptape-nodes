@@ -30,11 +30,11 @@ class TestStaticServerFileDriver:
         return workspace
 
     @pytest.fixture
-    def mock_project_manager(self, workspace_path: Path) -> MagicMock:
-        """Mock the ProjectManager to return our test workspace."""
-        project_manager = MagicMock()
-        project_manager.workspace_path = workspace_path
-        return project_manager
+    def mock_config_manager(self, workspace_path: Path) -> MagicMock:
+        """Mock the ConfigManager to return our test workspace."""
+        config_manager = MagicMock()
+        config_manager.workspace_path = workspace_path
+        return config_manager
 
     # --- Priority ---
 
@@ -82,12 +82,12 @@ class TestStaticServerFileDriver:
     async def test_read_existing_file(
         self,
         driver: StaticServerFileDriver,
-        mock_project_manager: MagicMock,
+        mock_config_manager: MagicMock,
     ) -> None:
         """Test reading an existing file from localhost URL."""
         with patch(
-            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ProjectManager",
-            return_value=mock_project_manager,
+            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ConfigManager",
+            return_value=mock_config_manager,
         ):
             content = await driver.read(
                 "http://localhost:8124/workspace/static_files/test.png",
@@ -99,12 +99,12 @@ class TestStaticServerFileDriver:
     async def test_read_strips_query_params(
         self,
         driver: StaticServerFileDriver,
-        mock_project_manager: MagicMock,
+        mock_config_manager: MagicMock,
     ) -> None:
         """Test that query parameters (cachebuster) are stripped before resolving."""
         with patch(
-            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ProjectManager",
-            return_value=mock_project_manager,
+            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ConfigManager",
+            return_value=mock_config_manager,
         ):
             content = await driver.read(
                 "http://localhost:8124/workspace/static_files/test.png?t=1234567890",
@@ -116,13 +116,13 @@ class TestStaticServerFileDriver:
     async def test_read_file_not_found(
         self,
         driver: StaticServerFileDriver,
-        mock_project_manager: MagicMock,
+        mock_config_manager: MagicMock,
     ) -> None:
         """Test reading a non-existent file raises FileNotFoundError."""
         with (
             patch(
-                "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ProjectManager",
-                return_value=mock_project_manager,
+                "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ConfigManager",
+                return_value=mock_config_manager,
             ),
             pytest.raises(FileNotFoundError, match="file not found"),
         ):
@@ -135,13 +135,13 @@ class TestStaticServerFileDriver:
     async def test_read_directory_raises_error(
         self,
         driver: StaticServerFileDriver,
-        mock_project_manager: MagicMock,
+        mock_config_manager: MagicMock,
     ) -> None:
         """Test reading a directory raises IsADirectoryError."""
         with (
             patch(
-                "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ProjectManager",
-                return_value=mock_project_manager,
+                "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ConfigManager",
+                return_value=mock_config_manager,
             ),
             pytest.raises(IsADirectoryError, match="directory"),
         ):
@@ -165,12 +165,12 @@ class TestStaticServerFileDriver:
     async def test_exists_true_for_existing_file(
         self,
         driver: StaticServerFileDriver,
-        mock_project_manager: MagicMock,
+        mock_config_manager: MagicMock,
     ) -> None:
         """Test exists returns True for existing file."""
         with patch(
-            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ProjectManager",
-            return_value=mock_project_manager,
+            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ConfigManager",
+            return_value=mock_config_manager,
         ):
             result = await driver.exists("http://localhost:8124/workspace/static_files/test.png")
         assert result is True
@@ -179,12 +179,12 @@ class TestStaticServerFileDriver:
     async def test_exists_false_for_nonexistent_file(
         self,
         driver: StaticServerFileDriver,
-        mock_project_manager: MagicMock,
+        mock_config_manager: MagicMock,
     ) -> None:
         """Test exists returns False for non-existent file."""
         with patch(
-            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ProjectManager",
-            return_value=mock_project_manager,
+            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ConfigManager",
+            return_value=mock_config_manager,
         ):
             result = await driver.exists("http://localhost:8124/workspace/static_files/nonexistent.png")
         assert result is False
@@ -200,12 +200,12 @@ class TestStaticServerFileDriver:
     def test_get_size_returns_correct_size(
         self,
         driver: StaticServerFileDriver,
-        mock_project_manager: MagicMock,
+        mock_config_manager: MagicMock,
     ) -> None:
         """Test get_size returns the correct file size."""
         with patch(
-            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ProjectManager",
-            return_value=mock_project_manager,
+            "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ConfigManager",
+            return_value=mock_config_manager,
         ):
             size = driver.get_size("http://localhost:8124/workspace/static_files/test.png")
         assert size == len(b"fake image data")
@@ -213,13 +213,13 @@ class TestStaticServerFileDriver:
     def test_get_size_file_not_found(
         self,
         driver: StaticServerFileDriver,
-        mock_project_manager: MagicMock,
+        mock_config_manager: MagicMock,
     ) -> None:
         """Test get_size raises FileNotFoundError for non-existent file."""
         with (
             patch(
-                "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ProjectManager",
-                return_value=mock_project_manager,
+                "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ConfigManager",
+                return_value=mock_config_manager,
             ),
             pytest.raises(FileNotFoundError, match="file not found"),
         ):
@@ -228,13 +228,13 @@ class TestStaticServerFileDriver:
     def test_get_size_directory_raises_error(
         self,
         driver: StaticServerFileDriver,
-        mock_project_manager: MagicMock,
+        mock_config_manager: MagicMock,
     ) -> None:
         """Test get_size raises IsADirectoryError for directories."""
         with (
             patch(
-                "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ProjectManager",
-                return_value=mock_project_manager,
+                "griptape_nodes.files.drivers.static_server_file_driver.GriptapeNodes.ConfigManager",
+                return_value=mock_config_manager,
             ),
             pytest.raises(IsADirectoryError, match="directory"),
         ):

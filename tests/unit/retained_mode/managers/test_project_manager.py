@@ -30,7 +30,6 @@ class TestProjectManagerMacroHandlers:
     def project_manager(self) -> ProjectManager:
         """Create a ProjectManager instance for testing."""
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         return ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -96,25 +95,21 @@ class TestProjectManagerMacroHandlers:
 class TestProjectManagerInitialization:
     """Test ProjectManager initialization and state."""
 
-    def test_project_manager_initializes_with_system_defaults(self) -> None:
-        """Test ProjectManager loads system defaults during construction."""
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
-
+    def test_project_manager_initializes_empty(self) -> None:
+        """Test ProjectManager starts with empty state."""
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
 
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
         assert pm._registered_template_status == {}
-        assert SYSTEM_DEFAULTS_KEY in pm._successfully_loaded_project_templates
-        assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
+        assert pm._successfully_loaded_project_templates == {}
+        assert pm._current_project_id is None
 
     def test_project_manager_stores_manager_references(self) -> None:
         """Test ProjectManager stores config and secrets manager references."""
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
 
@@ -135,7 +130,6 @@ class TestProjectManagerBuiltinVariables:
         from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -153,7 +147,6 @@ class TestProjectManagerBuiltinVariables:
             project_id=project_id,
             project_file_path=project_path,
             project_base_dir=project_path.parent,
-            workspace_dir=project_path.parent,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
@@ -179,9 +172,16 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/test/output.txt")
 
-    def test_builtin_workspace_dir_resolves_correctly(self, project_manager_with_template: ProjectManager) -> None:
-        """Test that {workspace_dir} builtin resolves from project_info.workspace_dir."""
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_workspace_dir_resolves_correctly(
+        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that {workspace_dir} builtin resolves from ConfigManager."""
         from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_config_manager = Mock()
+        mock_config_manager.get_config_value.return_value = "/workspace"
+        mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
 
         parsed_macro = ParsedMacro("{workspace_dir}/output.txt")
 
@@ -190,8 +190,8 @@ class TestProjectManagerBuiltinVariables:
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
-        # workspace_dir resolves to workspace_dir (/test from fixture)
-        assert result.resolved_path == Path("/test/output.txt")
+        assert result.resolved_path == Path("/workspace/output.txt")
+        mock_config_manager.get_config_value.assert_called_once_with("workspace_directory")
 
     @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
     def test_builtin_workflow_name_resolves_correctly(
@@ -452,7 +452,6 @@ class TestProjectManagerGetStateForMacro:
         from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -470,7 +469,6 @@ class TestProjectManagerGetStateForMacro:
             project_id=project_id,
             project_file_path=project_path,
             project_base_dir=project_path.parent,
-            workspace_dir=project_path.parent,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
@@ -488,14 +486,9 @@ class TestProjectManagerGetStateForMacro:
         from griptape_nodes.common.macro_parser import ParsedMacro
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
-
-        # Clear project state to simulate no project loaded
-        pm._current_project_id = None
-        pm._successfully_loaded_project_templates.clear()
 
         parsed_macro = ParsedMacro("{file_name}.txt")
 
@@ -629,16 +622,14 @@ class TestProjectManagerGetStateForMacro:
 class TestProjectManagerGetCurrentProject:
     """Test ProjectManager GetCurrentProject request handler."""
 
-    def test_get_current_project_returns_system_defaults_after_init(self) -> None:
-        """Test GetCurrentProject returns system defaults immediately after construction."""
+    def test_get_current_project_no_project_set(self) -> None:
+        """Test GetCurrentProject fails when no project is set."""
         from griptape_nodes.retained_mode.events.project_events import (
             GetCurrentProjectRequest,
-            GetCurrentProjectResultSuccess,
+            GetCurrentProjectResultFailure,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -646,8 +637,8 @@ class TestProjectManagerGetCurrentProject:
         request = GetCurrentProjectRequest()
         result = pm.on_get_current_project_request(request)
 
-        assert isinstance(result, GetCurrentProjectResultSuccess)
-        assert result.project_info.project_id == SYSTEM_DEFAULTS_KEY
+        assert isinstance(result, GetCurrentProjectResultFailure)
+        assert "no project is currently set" in str(result.result_details)
 
     def test_get_current_project_returns_project_info(self) -> None:
         """Test GetCurrentProject returns complete ProjectInfo."""
@@ -660,7 +651,6 @@ class TestProjectManagerGetCurrentProject:
         from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -678,7 +668,6 @@ class TestProjectManagerGetCurrentProject:
             project_id=project_id,
             project_file_path=project_path,
             project_base_dir=project_path.parent,
-            workspace_dir=project_path.parent,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
@@ -706,7 +695,6 @@ class TestProjectManagerGetCurrentProject:
         )
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -732,7 +720,6 @@ class TestProjectManagerListProjectTemplates:
         )
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -755,7 +742,6 @@ class TestProjectManagerListProjectTemplates:
         from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -771,7 +757,6 @@ class TestProjectManagerListProjectTemplates:
             project_id=project1_id,
             project_file_path=project1_path,
             project_base_dir=project1_path.parent,
-            workspace_dir=project1_path.parent,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation1,
             parsed_situation_schemas=situation_schemas,
@@ -788,7 +773,6 @@ class TestProjectManagerListProjectTemplates:
             project_id=project2_id,
             project_file_path=project2_path,
             project_base_dir=project2_path.parent,
-            workspace_dir=project2_path.parent,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation2,
             parsed_situation_schemas=situation_schemas2,
@@ -817,7 +801,6 @@ class TestProjectManagerListProjectTemplates:
         )
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -849,7 +832,6 @@ class TestProjectManagerListProjectTemplates:
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -863,7 +845,6 @@ class TestProjectManagerListProjectTemplates:
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=None,
             project_base_dir=Path("/workspace"),
-            workspace_dir=Path("/workspace"),
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation_sys,
             parsed_situation_schemas=situation_schemas,
@@ -898,7 +879,6 @@ class TestProjectManagerListProjectTemplates:
         from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -914,7 +894,6 @@ class TestProjectManagerListProjectTemplates:
             project_id=success_id,
             project_file_path=success_path,
             project_base_dir=success_path.parent,
-            workspace_dir=success_path.parent,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation_success,
             parsed_situation_schemas=situation_schemas,
@@ -948,7 +927,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
     def project_manager(self) -> ProjectManager:
         """Create a ProjectManager instance for testing."""
         mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
         mock_secrets = Mock()
         mock_event_manager = Mock()
         return ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -975,7 +953,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=project_base / "project.yml",
             project_base_dir=project_base,
-            workspace_dir=project_base,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
             parsed_situation_schemas={},
@@ -1039,7 +1016,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=project_base / "project.yml",
             project_base_dir=project_base,
-            workspace_dir=project_base,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
             parsed_situation_schemas={},
@@ -1085,9 +1061,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test mapping when no current project is set (returns failure)."""
         from griptape_nodes.retained_mode.events.project_events import AttemptMapAbsolutePathToProjectResultFailure
 
-        # Clear project state to simulate no project loaded
-        project_manager._current_project_id = None
-        project_manager._successfully_loaded_project_templates.clear()
+        # No project set up
 
         absolute_path = Path("/Users/test/project/outputs/file.png")
 
@@ -1120,7 +1094,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=project_base / "project.yml",
             project_base_dir=project_base,
-            workspace_dir=project_base,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
             parsed_situation_schemas={},
@@ -1184,7 +1157,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=project_base / "project.yml",
             project_base_dir=project_base,
-            workspace_dir=project_base,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
             parsed_situation_schemas={},
@@ -1248,7 +1220,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=project_base / "project.yml",
             project_base_dir=project_base,
-            workspace_dir=project_base,
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
             parsed_situation_schemas={},
@@ -1321,7 +1292,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=project_base / "project.yml",
             project_base_dir=project_base,
-            workspace_dir=project_base,
             template=custom_template,
             validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
             parsed_situation_schemas={},
@@ -1356,7 +1326,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
 
 class TestLoadWorkspaceProject:
-    """Test _auto_discover_project and on_app_initialization_complete."""
+    """Test _load_workspace_project and on_app_initialization_complete."""
 
     VALID_PROJECT_YAML = """\
 project_template_schema_version: "0.1.0"
@@ -1372,9 +1342,7 @@ situations:
     @pytest.fixture
     def pm(self) -> ProjectManager:
         mock_event_manager = Mock()
-        mock_config = Mock()
-        mock_config.get_config_value.return_value = str(Path.cwd())
-        return ProjectManager(mock_event_manager, mock_config, Mock())
+        return ProjectManager(mock_event_manager, Mock(), Mock())
 
     def _setup_system_defaults(self, pm: ProjectManager, workspace_dir: str = "/workspace") -> None:
         """Load system defaults into pm, mirroring _load_system_defaults."""
@@ -1390,7 +1358,6 @@ situations:
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=None,
             project_base_dir=Path(workspace_dir),
-            workspace_dir=Path(workspace_dir),
             template=DEFAULT_PROJECT_TEMPLATE,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
@@ -1399,43 +1366,65 @@ situations:
         pm._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
         pm._current_project_id = SYSTEM_DEFAULTS_KEY
 
-    def test_auto_discover_project_not_present(self, pm: ProjectManager, tmp_path: Path) -> None:
+    def test_load_workspace_project_not_present(self, pm: ProjectManager, tmp_path: Path) -> None:
         """No project file in workspace leaves system defaults as current project."""
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         self._setup_system_defaults(pm, str(tmp_path))
-        pm._config_manager.get_config_value.return_value = str(tmp_path)  # type: ignore[union-attr]
 
-        pm._auto_discover_project()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_gn.ConfigManager.return_value = mock_config
+
+            pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
-    def test_auto_discover_project_loads_and_sets_current(self, pm: ProjectManager, tmp_path: Path) -> None:
+    def test_load_workspace_project_loads_and_sets_current(self, pm: ProjectManager, tmp_path: Path) -> None:
         """Valid griptape-nodes-project.yml is loaded and set as current project."""
         from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
 
         self._setup_system_defaults(pm, str(tmp_path))
-        pm._config_manager.get_config_value.return_value = str(tmp_path)  # type: ignore[union-attr]
 
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        pm._auto_discover_project()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+                mock_file_instance = Mock()
+                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+                mock_file_cls.return_value = mock_file_instance
+
+                pm._load_workspace_project()
 
         assert pm._current_project_id == str(workspace_project_path)
         assert str(workspace_project_path) in pm._successfully_loaded_project_templates
 
-    def test_auto_discover_project_merges_with_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
+    def test_load_workspace_project_merges_with_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
         """Workspace project merges on top of defaults, preserving unoverridden situations."""
         from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
 
         self._setup_system_defaults(pm, str(tmp_path))
-        pm._config_manager.get_config_value.return_value = str(tmp_path)  # type: ignore[union-attr]
 
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        pm._auto_discover_project()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+                mock_file_instance = Mock()
+                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+                mock_file_cls.return_value = mock_file_instance
+
+                pm._load_workspace_project()
 
         project_info = pm._successfully_loaded_project_templates[str(workspace_project_path)]
         template = project_info.template
@@ -1448,8 +1437,10 @@ situations:
         assert "save_preview" in template.situations
         assert "copy_external_file" in template.situations
 
-    def test_auto_discover_project_read_failure_keeps_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
+    def test_load_workspace_project_read_failure_keeps_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
         """A file read failure leaves system defaults as current project."""
+        from griptape_nodes.files.file import FileLoadError
+        from griptape_nodes.retained_mode.events.os_events import FileIOFailureReason
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, WORKSPACE_PROJECT_FILE
 
         self._setup_system_defaults(pm, str(tmp_path))
@@ -1458,47 +1449,102 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        pm._config_manager.get_config_value.return_value = str(tmp_path)  # type: ignore[union-attr]
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_gn.ConfigManager.return_value = mock_config
 
-        with patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):
-            pm._auto_discover_project()
+            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+                mock_file_instance = Mock()
+                mock_file_instance.read_text.side_effect = FileLoadError(
+                    failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
+                    result_details="permission denied",
+                )
+                mock_file_cls.return_value = mock_file_instance
+
+                pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
-    def test_auto_discover_project_invalid_yaml_keeps_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
+    def test_load_workspace_project_invalid_yaml_keeps_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
         """Invalid YAML in project file leaves system defaults as current project."""
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, WORKSPACE_PROJECT_FILE
 
         self._setup_system_defaults(pm, str(tmp_path))
 
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
-        workspace_project_path.write_text("not: valid: yaml: ][")
+        workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        pm._config_manager.get_config_value.return_value = str(tmp_path)  # type: ignore[union-attr]
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_gn.ConfigManager.return_value = mock_config
 
-        pm._auto_discover_project()
+            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+                mock_file_instance = Mock()
+                mock_file_instance.read_text.return_value = "not: valid: yaml: ]["
+                mock_file_cls.return_value = mock_file_instance
+
+                pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
-    def test_auto_discover_project_sets_workspace_project_as_current(self, pm: ProjectManager, tmp_path: Path) -> None:
-        """_auto_discover_project sets workspace project as current when present."""
-        from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
+    def test_load_workspace_project_none_workspace_dir_skips(self, pm: ProjectManager) -> None:
+        """None workspace_directory config value skips loading without error."""
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
-        pm._config_manager.get_config_value.return_value = str(tmp_path)  # type: ignore[union-attr]
+        self._setup_system_defaults(pm)
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = None
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+                pm._load_workspace_project()
+
+                mock_file_cls.assert_not_called()
+
+        assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
+
+    @pytest.mark.asyncio
+    async def test_app_initialization_complete_loads_workspace_project(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """on_app_initialization_complete sets workspace project as current when present."""
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+        from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
 
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        pm._auto_discover_project()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+                mock_file_instance = Mock()
+                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+                mock_file_cls.return_value = mock_file_instance
+
+                await pm.on_app_initialization_complete(AppInitializationComplete())
 
         assert pm._current_project_id == str(workspace_project_path)
 
-    def test_auto_discover_project_keeps_defaults_when_no_file(self, pm: ProjectManager, tmp_path: Path) -> None:
-        """_auto_discover_project keeps system defaults when no workspace project file exists."""
+    @pytest.mark.asyncio
+    async def test_app_initialization_complete_uses_defaults_when_no_workspace_project(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """on_app_initialization_complete keeps system defaults when no workspace project file exists."""
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
-        pm._config_manager.get_config_value.return_value = str(tmp_path)  # type: ignore[union-attr]
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_gn.ConfigManager.return_value = mock_config
 
-        pm._auto_discover_project()
+            await pm.on_app_initialization_complete(AppInitializationComplete())
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY

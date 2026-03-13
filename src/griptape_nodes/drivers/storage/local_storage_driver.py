@@ -16,13 +16,15 @@ logger = logging.getLogger("griptape_nodes")
 class LocalStorageDriver(BaseStorageDriver):
     """Stores files using the engine's local static server."""
 
-    def __init__(self, base_url: str | None = None) -> None:
+    def __init__(self, workspace_directory: Path, base_url: str | None = None) -> None:
         """Initialize the LocalStorageDriver.
 
         Args:
+            workspace_directory: The base workspace directory path.
             base_url: The base URL for the static file server. If not provided, it will be constructed
-                from the static server configuration.
         """
+        super().__init__(workspace_directory)
+
         from griptape_nodes.servers.static import (
             STATIC_SERVER_ENABLED,
             STATIC_SERVER_HOST,
@@ -42,9 +44,8 @@ class LocalStorageDriver(BaseStorageDriver):
     def create_signed_upload_url(
         self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     ) -> CreateSignedUploadUrlResponse:
-        workspace = GriptapeNodes.ProjectManager().workspace_path
         # on_write_file_request seems to work most reliably with an absolute path.
-        absolute_path = resolve_workspace_path(path, workspace)
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
 
         # Always delegate to OSManager for file path resolution and policy handling.
         # Creating an empty file before the upload url gives us a chance to claim ownership
@@ -70,7 +71,7 @@ class LocalStorageDriver(BaseStorageDriver):
         # WriteFileRequest always returns an absolute path; convert back to workspace-relative
         # since the static server upload handler prepends the workspace directory itself.
         # Resolve both sides to ensure drive letters match on Windows (drive-relative vs absolute paths).
-        resolved_path = resolved_path.resolve().relative_to(workspace.resolve())
+        resolved_path = resolved_path.resolve().relative_to(self.workspace_directory.resolve())
 
         static_url = urljoin(self.base_url, "/static-upload-urls")
         try:
@@ -118,8 +119,7 @@ class LocalStorageDriver(BaseStorageDriver):
             FileExistsError: When existing_file_policy is FAIL and file already exists.
             RuntimeError: If file write fails.
         """
-        workspace = GriptapeNodes.ProjectManager().workspace_path
-        absolute_path = resolve_workspace_path(path, workspace)
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
 
         result = GriptapeNodes.OSManager().on_write_file_request(
             WriteFileRequest(
@@ -137,13 +137,12 @@ class LocalStorageDriver(BaseStorageDriver):
         return result.final_file_path
 
     def create_signed_download_url(self, path: Path) -> str:
-        workspace = GriptapeNodes.ProjectManager().workspace_path
         # Resolve path, treating relative paths as workspace-relative
-        absolute_path = resolve_workspace_path(path, workspace)
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
 
         # Automatically determine if the file is external to the workspace
         try:
-            workspace_relative_path = absolute_path.relative_to(workspace.resolve())
+            workspace_relative_path = absolute_path.relative_to(self.workspace_directory.resolve())
             # Internal files: use workspace-relative path
             url = f"{self.base_url}/{workspace_relative_path.as_posix()}"
         except ValueError:
@@ -205,6 +204,5 @@ class LocalStorageDriver(BaseStorageDriver):
         Returns:
             Absolute file path as a string
         """
-        workspace = GriptapeNodes.ProjectManager().workspace_path
-        absolute_path = resolve_workspace_path(path, workspace)
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
         return str(absolute_path)

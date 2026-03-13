@@ -50,6 +50,12 @@ class SyncManager:
         self._file_hashes = defaultdict(str)
         self._hash_lock = threading.Lock()
 
+        # Initialize sync directory
+        self._sync_dir = self._config_manager.workspace_path / self._config_manager.get_config_value(
+            "synced_workflows_directory"
+        )
+        self._sync_dir.mkdir(parents=True, exist_ok=True)
+
         event_manager.assign_manager_to_request_type(
             StartSyncAllCloudWorkflowsRequest,
             self.on_start_sync_all_cloud_workflows_request,
@@ -121,9 +127,7 @@ class SyncManager:
         """Start syncing all cloud workflows to local synced_workflows directory."""
         try:
             storage_driver = self._get_cloud_storage_driver()
-            sync_dir = GriptapeNodes.ProjectManager().workspace_path / self._config_manager.get_config_value(
-                "synced_workflows_directory"
-            )
+            sync_dir = self._sync_dir
 
             # List all assets in the bucket to get count
             files = storage_driver.list_files()
@@ -161,11 +165,6 @@ class SyncManager:
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Automatically start syncing cloud workflows when the app initializes."""
-        sync_dir = GriptapeNodes.ProjectManager().workspace_path / self._config_manager.get_config_value(
-            "synced_workflows_directory"
-        )
-        sync_dir.mkdir(parents=True, exist_ok=True)
-
         try:
             # Check if cloud storage is configured before attempting sync
             self._get_cloud_storage_driver()
@@ -225,10 +224,16 @@ class SyncManager:
             msg = "Cloud storage api_key not configured. Set GT_CLOUD_API_KEY secret."
             raise RuntimeError(msg)
 
+        workspace_directory = Path(self._config_manager.get_config_value("workspace_directory"))
+
         return GriptapeCloudStorageDriver(
+            workspace_directory,
             bucket_id=bucket_id,
             base_url=base_url,
             api_key=api_key,
+            static_files_directory=self._config_manager.get_config_value(
+                "synced_workflows_directory", default="synced_workflows"
+            ),
         )
 
     def _download_cloud_workflow_to_sync_dir(self, filename: str) -> bool:
@@ -242,9 +247,7 @@ class SyncManager:
         """
         try:
             storage_driver = self._get_cloud_storage_driver()
-            sync_dir = GriptapeNodes.ProjectManager().workspace_path / self._config_manager.get_config_value(
-                "synced_workflows_directory"
-            )
+            sync_dir = self._sync_dir
 
             # Download file content from cloud
             file_content = storage_driver.download_file(Path(filename))
@@ -325,9 +328,7 @@ class SyncManager:
     def _start_file_watching(self) -> None:
         """Start watching the synced_workflows directory for changes."""
         try:
-            sync_dir = GriptapeNodes.ProjectManager().workspace_path / self._config_manager.get_config_value(
-                "synced_workflows_directory"
-            )
+            sync_dir = self._sync_dir
 
             # Stop any existing watching
             if self._watch_task and self._watch_task.is_alive():

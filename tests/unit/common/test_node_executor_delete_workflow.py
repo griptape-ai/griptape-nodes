@@ -37,7 +37,7 @@ class TestDeleteWorkflowKeyDerivation:
             await workflow_path.touch()
 
             mock_gn = MagicMock()
-            mock_gn.ProjectManager.return_value.workspace_path = workspace
+            mock_gn.ConfigManager.return_value.workspace_path = workspace
             mock_gn.ahandle_request = AsyncMock(return_value=_make_delete_success())
 
             with (
@@ -63,7 +63,7 @@ class TestDeleteWorkflowKeyDerivation:
             await workflow_path.touch()
 
             mock_gn = MagicMock()
-            mock_gn.ProjectManager.return_value.workspace_path = workspace
+            mock_gn.ConfigManager.return_value.workspace_path = workspace
             mock_gn.ahandle_request = AsyncMock(return_value=_make_delete_success())
 
             with (
@@ -90,7 +90,7 @@ class TestDeleteWorkflowKeyDerivation:
             await workflow_path.touch()
 
             mock_gn = MagicMock()
-            mock_gn.ProjectManager.return_value.workspace_path = workspace
+            mock_gn.ConfigManager.return_value.workspace_path = workspace
             mock_gn.ahandle_request = AsyncMock(return_value=_make_delete_success())
 
             with (
@@ -123,7 +123,7 @@ class TestDeleteWorkflowRegistrationFallback:
             mock_metadata_result.metadata = mock_metadata
 
             mock_gn = MagicMock()
-            mock_gn.ProjectManager.return_value.workspace_path = workspace
+            mock_gn.ConfigManager.return_value.workspace_path = workspace
             mock_gn.handle_request.return_value = mock_metadata_result
             mock_gn.ahandle_request = AsyncMock(return_value=_make_delete_success())
 
@@ -146,7 +146,7 @@ class TestDeleteWorkflowRegistrationFallback:
             await workflow_path.touch()
 
             mock_gn = MagicMock()
-            mock_gn.ProjectManager.return_value.workspace_path = workspace
+            mock_gn.ConfigManager.return_value.workspace_path = workspace
             mock_gn.ahandle_request = AsyncMock(return_value=_make_delete_success())
 
             with (

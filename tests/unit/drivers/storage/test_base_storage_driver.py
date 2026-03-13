@@ -59,7 +59,7 @@ class TestBaseStorageDriverUploadFile:
     @pytest.fixture
     def base_storage_driver(self) -> ConcreteStorageDriver:
         """Create a concrete BaseStorageDriver instance for testing."""
-        return self.ConcreteStorageDriver()
+        return self.ConcreteStorageDriver(Path("/workspace"))
 
     @pytest.fixture
     def mock_upload_response(self) -> dict[str, Any]:
@@ -144,7 +144,7 @@ class TestBaseStorageDriverUploadFile:
 
     def test_upload_file_uses_timeout_parameter(self) -> None:
         """upload_file should pass timeout parameter to httpx.request."""
-        driver = self.ConcreteStorageDriver()
+        driver = self.ConcreteStorageDriver(Path("/workspace"))
 
         with (
             patch.object(driver, "create_signed_upload_url") as mock_create_url,
