@@ -79,7 +79,7 @@ class StaticFilesManager:
         self.secrets_manager = secrets_manager
 
         self.storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
-        workspace_directory = Path(config_manager.get_config_value("workspace_directory"))
+        workspace_directory = config_manager.workspace_path
 
         # Build base URL for LocalStorageDriver from configured base URL
         base_url_config = config_manager.get_config_value("static_server_base_url")
@@ -226,7 +226,7 @@ class StaticFilesManager:
         if not api_key:
             return None
 
-        workspace_directory = Path(self.config_manager.get_config_value("workspace_directory"))
+        workspace_directory = self.config_manager.workspace_path
         static_files_directory = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
 
         return GriptapeCloudStorageDriver(
@@ -394,7 +394,7 @@ class StaticFilesManager:
             )
             return None
 
-        workspace_dir = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory")).resolve()
+        workspace_dir = GriptapeNodes.ConfigManager().workspace_path
         try:
             # Resolve both sides to ensure drive letters match on Windows (drive-relative vs absolute paths).
             workspace_relative_path = macro_result.absolute_path.resolve().relative_to(workspace_dir)

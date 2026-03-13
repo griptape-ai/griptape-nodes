@@ -533,9 +533,10 @@ class ProjectManager:
 
         resolved_path = Path(resolved_string)
 
-        # Make absolute path by resolving against project base directory.
+        # Make absolute path by resolving against the workspace directory.
         # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
-        absolute_path = resolve_file_path(resolved_string, project_info.project_base_dir)
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        absolute_path = resolve_file_path(resolved_string, workspace_path)
 
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
@@ -546,6 +547,11 @@ class ProjectManager:
     def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> SetCurrentProjectResultSuccess:
         """Set which project user has selected."""
         self._current_project_id = request.project_id
+
+        if request.project_id is not None and self._config_manager is not None:
+            project_info = self._successfully_loaded_project_templates.get(request.project_id)
+            if project_info is not None and project_info.project_file_path is not None:
+                self._config_manager.load_project_config(project_info.project_file_path.parent)
 
         if request.project_id is None:
             return SetCurrentProjectResultSuccess(
@@ -953,6 +959,7 @@ class ProjectManager:
         absolute_path = os_manager.resolve_path_safely(absolute_path)
 
         template = project_info.template
+        workspace_dir = os_manager.resolve_path_safely(GriptapeNodes.ConfigManager().workspace_path)
         project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
 
         # Secrets manager must be available (checked by caller)
@@ -995,9 +1002,9 @@ class ProjectManager:
                 msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
                 raise RuntimeError(msg) from e
 
-            # Make absolute (resolve relative paths against project base directory).
+            # Make absolute (resolve relative paths against the workspace directory).
             # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
-            resolved_dir_path = resolve_file_path(resolved_path_str, project_base_dir)
+            resolved_dir_path = resolve_file_path(resolved_path_str, workspace_dir)
             # Normalize for consistent cross-platform comparison
             resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
 
