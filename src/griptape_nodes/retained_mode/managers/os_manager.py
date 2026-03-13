@@ -371,8 +371,8 @@ class OSManager:
         FileDriverRegistry.register(LocalFileDriver())
 
     def _get_workspace_path(self) -> Path:
-        """Get the workspace path from config."""
-        return GriptapeNodes.ConfigManager().workspace_path
+        """Get the workspace path from the current project."""
+        return GriptapeNodes.ProjectManager().workspace_path
 
     def _get_windows_special_folder_path(self, csidl: int) -> Path:
         """Get Windows special folder path using Shell API.
@@ -634,7 +634,7 @@ class OSManager:
         Returns:
             Tuple of (is_workspace_path, relative_or_absolute_path)
         """
-        workspace = GriptapeNodes.ConfigManager().workspace_path
+        workspace = GriptapeNodes.ProjectManager().workspace_path
 
         # Ensure both paths are resolved for comparison
         # Both path and workspace should use .resolve() to follow symlinks consistently
@@ -1320,7 +1320,7 @@ class OSManager:
             # Cache workspace path and resolved workspace to avoid repeated lookups/resolutions
             # Only resolve workspace if we need it for relative paths or absolute paths
             need_relative_paths = request.workspace_only is True
-            workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            workspace_path = GriptapeNodes.ProjectManager().workspace_path
             if need_relative_paths or request.include_absolute_path:
                 resolved_workspace = workspace_path.resolve()
             else:
@@ -1614,8 +1614,7 @@ class OSManager:
 
             # Only check workspace directory for absolute local paths
             if path_obj.is_absolute():
-                config_manager = GriptapeNodes.ConfigManager()
-                static_dir = config_manager.workspace_path
+                static_dir = GriptapeNodes.ProjectManager().workspace_path
 
                 try:
                     # Check if file is within the static files directory

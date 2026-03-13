@@ -100,7 +100,7 @@ class TestWorkflowRegistry:
         relative_path = "workflows/my_workflow.py"
 
         # Get the actual workspace path from the config manager
-        workspace_path = griptape_nodes.ConfigManager().workspace_path
+        workspace_path = griptape_nodes.ProjectManager().workspace_path
 
         result = WorkflowRegistry.get_complete_file_path(relative_path)
 
@@ -128,7 +128,7 @@ class TestWorkflowRegistry:
         current_dir_path = "./my_workflow.py"
 
         # Get the actual workspace path from the config manager
-        workspace_path = griptape_nodes.ConfigManager().workspace_path
+        workspace_path = griptape_nodes.ProjectManager().workspace_path
 
         result = WorkflowRegistry.get_complete_file_path(current_dir_path)
 
@@ -140,7 +140,7 @@ class TestWorkflowRegistry:
         parent_dir_path = "../external/my_workflow.py"
 
         # Get the actual workspace path from the config manager
-        workspace_path = griptape_nodes.ConfigManager().workspace_path
+        workspace_path = griptape_nodes.ProjectManager().workspace_path
 
         result = WorkflowRegistry.get_complete_file_path(parent_dir_path)
 

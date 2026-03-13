@@ -2,7 +2,7 @@ import os
 import platform
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
@@ -32,10 +32,13 @@ class TestSecretsManager:
             # Set environment variable (should have highest priority)
             with patch.dict(os.environ, {"TEST_SECRET": "env_value"}, clear=False):
                 config_manager = ConfigManager()
-                config_manager.workspace_path = workspace_path
 
                 # Patch the global env path for test isolation
-                with patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env):
+                with (
+                    patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env),
+                    patch.object(SecretsManager, "workspace_env_path", new_callable=PropertyMock) as mock_env_path,
+                ):
+                    mock_env_path.return_value = workspace_path / ".env"
                     secrets_manager = SecretsManager(config_manager)
 
                     # Environment variable should win
@@ -57,10 +60,16 @@ class TestSecretsManager:
             # Ensure no environment variable is set
             with patch.dict(os.environ, {}, clear=True):
                 config_manager = ConfigManager()
-                config_manager.workspace_path = workspace_path
+                # Set workspace so the bootstrap load_dotenv loads workspace .env first,
+                # establishing precedence over global .env via override=False.
+                config_manager.merged_config["workspace_directory"] = str(workspace_path)
 
                 # Patch the global env path for test isolation
-                with patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env):
+                with (
+                    patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env),
+                    patch.object(SecretsManager, "workspace_env_path", new_callable=PropertyMock) as mock_env_path,
+                ):
+                    mock_env_path.return_value = workspace_path / ".env"
                     secrets_manager = SecretsManager(config_manager)
 
                     # Workspace should win over global
@@ -78,10 +87,15 @@ class TestSecretsManager:
             # Ensure no environment variable is set
             with patch.dict(os.environ, {}, clear=True):
                 config_manager = ConfigManager()
-                config_manager.workspace_path = workspace_path
+                # Point bootstrap to workspace_path (no .env file here, so global is the fallback).
+                config_manager.merged_config["workspace_directory"] = str(workspace_path)
 
                 # Patch the global env path for test isolation
-                with patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env):
+                with (
+                    patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env),
+                    patch.object(SecretsManager, "workspace_env_path", new_callable=PropertyMock) as mock_env_path,
+                ):
+                    mock_env_path.return_value = workspace_path / ".env"
                     secrets_manager = SecretsManager(config_manager)
 
                     # Global should be used as fallback
@@ -95,12 +109,13 @@ class TestSecretsManager:
             # Ensure no environment variable is set and no .env files exist
             with patch.dict(os.environ, {}, clear=True):
                 config_manager = ConfigManager()
-                config_manager.workspace_path = workspace_path
 
-                secrets_manager = SecretsManager(config_manager)
+                with patch.object(SecretsManager, "workspace_env_path", new_callable=PropertyMock) as mock_env_path:
+                    mock_env_path.return_value = workspace_path / ".env"
+                    secrets_manager = SecretsManager(config_manager)
 
-                # Should return None for missing secret
-                assert secrets_manager.get_secret("NONEXISTENT_SECRET", should_error_on_not_found=False) is None
+                    # Should return None for missing secret
+                    assert secrets_manager.get_secret("NONEXISTENT_SECRET", should_error_on_not_found=False) is None
 
     def test_secret_name_compliance(self) -> None:
         """Test that secret names are properly transformed to uppercase with underscores."""
@@ -110,14 +125,15 @@ class TestSecretsManager:
             # Set environment variable with compliant name
             with patch.dict(os.environ, {"MY_TEST_SECRET": "test_value"}, clear=False):
                 config_manager = ConfigManager()
-                config_manager.workspace_path = workspace_path
 
-                secrets_manager = SecretsManager(config_manager)
+                with patch.object(SecretsManager, "workspace_env_path", new_callable=PropertyMock) as mock_env_path:
+                    mock_env_path.return_value = workspace_path / ".env"
+                    secrets_manager = SecretsManager(config_manager)
 
-                # Different input formats should all resolve to the same compliant name
-                assert secrets_manager.get_secret("my test secret") == "test_value"
-                assert secrets_manager.get_secret("my-test-secret") == "test_value"
-                assert secrets_manager.get_secret("MY_TEST_SECRET") == "test_value"
+                    # Different input formats should all resolve to the same compliant name
+                    assert secrets_manager.get_secret("my test secret") == "test_value"
+                    assert secrets_manager.get_secret("my-test-secret") == "test_value"
+                    assert secrets_manager.get_secret("MY_TEST_SECRET") == "test_value"
 
     def test_search_order_partial_overlap(self) -> None:
         """Test search order when secrets exist in some but not all sources."""
@@ -135,9 +151,15 @@ class TestSecretsManager:
             # Set environment variable for one secret
             with patch.dict(os.environ, {"SECRET_A": "env_a"}, clear=False):
                 config_manager = ConfigManager()
-                config_manager.workspace_path = workspace_path
+                # Set workspace so the bootstrap load_dotenv loads workspace .env first,
+                # establishing precedence over global .env via override=False.
+                config_manager.merged_config["workspace_directory"] = str(workspace_path)
 
-                with patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env):
+                with (
+                    patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env),
+                    patch.object(SecretsManager, "workspace_env_path", new_callable=PropertyMock) as mock_env_path,
+                ):
+                    mock_env_path.return_value = workspace_path / ".env"
                     secrets_manager = SecretsManager(config_manager)
 
                     # SECRET_A: env var should win
@@ -151,30 +173,24 @@ class TestSecretsManager:
 
     def test_secrets_to_register_with_list_format(self) -> None:
         """Test that list format is normalized to dict with empty defaults."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_path = Path(temp_dir)
-            config_manager = ConfigManager()
-            config_manager.workspace_path = workspace_path
+        config_manager = ConfigManager()
 
-            with patch.object(config_manager, "get_config_value", return_value=["KEY1", "KEY2"]):
-                secrets_manager = SecretsManager(config_manager)
-                result = secrets_manager.secrets_to_register
+        with patch.object(config_manager, "get_config_value", return_value=["KEY1", "KEY2"]):
+            secrets_manager = SecretsManager(config_manager)
+            result = secrets_manager.secrets_to_register
 
-                assert result == {"KEY1": "", "KEY2": ""}
+            assert result == {"KEY1": "", "KEY2": ""}
 
     def test_secrets_to_register_with_dict_format(self) -> None:
         """Test that dict format preserves default values."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_path = Path(temp_dir)
-            config_manager = ConfigManager()
-            config_manager.workspace_path = workspace_path
+        config_manager = ConfigManager()
 
-            with patch.object(
-                config_manager,
-                "get_config_value",
-                return_value={"KEY1": "default1", "KEY2": "", "KEY3": "default3"},
-            ):
-                secrets_manager = SecretsManager(config_manager)
-                result = secrets_manager.secrets_to_register
+        with patch.object(
+            config_manager,
+            "get_config_value",
+            return_value={"KEY1": "default1", "KEY2": "", "KEY3": "default3"},
+        ):
+            secrets_manager = SecretsManager(config_manager)
+            result = secrets_manager.secrets_to_register
 
-                assert result == {"KEY1": "default1", "KEY2": "", "KEY3": "default3"}
+            assert result == {"KEY1": "default1", "KEY2": "", "KEY3": "default3"}

@@ -10,6 +10,7 @@ import httpx
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
 from griptape_nodes.files.path_utils import get_workspace_relative_path
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -19,7 +20,6 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
     def __init__(
         self,
-        workspace_directory: Path,
         *,
         bucket_id: str,
         api_key: str | None = None,
@@ -28,14 +28,10 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         """Initialize the GriptapeCloudStorageDriver.
 
         Args:
-            workspace_directory: The base workspace directory path.
             bucket_id: The ID of the bucket to use. Required.
             api_key: The API key for authentication. If not provided, it will be retrieved from the environment variable "GT_CLOUD_API_KEY".
-            static_files_directory: The directory path prefix for static files. If provided, file names will be prefixed with this path.
             **kwargs: Additional keyword arguments including base_url and headers.
         """
-        super().__init__(workspace_directory)
-
         self.base_url = kwargs.get("base_url") or os.environ.get("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         self.api_key = api_key if api_key is not None else os.environ.get("GT_CLOUD_API_KEY")
         self.headers = kwargs.get("headers") or {"Authorization": f"Bearer {self.api_key}"}
@@ -134,9 +130,10 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         return Path(path_str)
 
     def create_signed_download_url(self, path: Path) -> str:
-        # Parse cloud asset URLs before normalizing
+        workspace = GriptapeNodes.ProjectManager().workspace_path
+        # Parse cloud asset URLs, then normalize absolute paths to workspace-relative bucket keys
         parsed_path = self._parse_cloud_asset_path(path)
-        normalized_path = get_workspace_relative_path(parsed_path, self.workspace_directory)
+        normalized_path = get_workspace_relative_path(parsed_path, workspace)
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{normalized_path.as_posix()}")
         try:
             response = httpx.post(url, json={"method": "GET"}, headers=self.headers, timeout=self.request_timeout)
@@ -172,7 +169,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         Raises:
             RuntimeError: If file upload fails.
         """
-        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+        workspace = GriptapeNodes.ProjectManager().workspace_path
+        normalized_path = get_workspace_relative_path(path, workspace)
 
         if existing_file_policy != ExistingFilePolicy.OVERWRITE:
             logger.warning(
@@ -267,7 +265,6 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             response = httpx.get(
                 url,
                 headers=self.headers,
-                params={"prefix": self.workspace_directory.name or ""},
                 timeout=self.request_timeout,
             )
             response.raise_for_status()
@@ -278,16 +275,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         response_data = response.json()
         assets = response_data.get("assets", [])
-
-        file_names = []
-        for asset in assets:
-            name = asset.get("name", "")
-            # Remove the static files directory prefix if it exists
-            if self.workspace_directory and name.startswith(f"{self.workspace_directory.name}/"):
-                name = name[len(f"{self.workspace_directory.name}/") :]
-            file_names.append(name)
-
-        return file_names
+        return [asset.get("name", "") for asset in assets]
 
     def get_asset_url(self, path: Path) -> str:
         """Get the permanent unsigned URL for a cloud asset.
@@ -300,9 +288,10 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         Returns:
             Permanent cloud asset URL
         """
-        # Parse cloud asset URLs before normalizing
+        workspace = GriptapeNodes.ProjectManager().workspace_path
+        # Parse cloud asset URLs, then normalize absolute paths to workspace-relative bucket keys
         parsed_path = self._parse_cloud_asset_path(path)
-        normalized_path = get_workspace_relative_path(parsed_path, self.workspace_directory)
+        normalized_path = get_workspace_relative_path(parsed_path, workspace)
         return urljoin(self.base_url, f"/buckets/{self.bucket_id}/assets/{normalized_path.as_posix()}")
 
     @staticmethod
@@ -336,14 +325,15 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         Args:
             path: The path of the file to delete.
         """
-        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+        workspace = GriptapeNodes.ProjectManager().workspace_path
+        normalized_path = get_workspace_relative_path(path, workspace)
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{normalized_path.as_posix()}")
 
         try:
             response = httpx.delete(url, headers=self.headers, timeout=self.request_timeout)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to delete file {normalized_path}: {e}"
+            msg = f"Failed to delete file {path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 

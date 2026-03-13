@@ -1064,7 +1064,7 @@ class LibraryManager:
         if not sandbox_library_subdir:
             return None
 
-        sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+        sandbox_library_dir = GriptapeNodes.ProjectManager().workspace_path / sandbox_library_subdir
         if not sandbox_library_dir.exists():
             return None
 
@@ -2492,7 +2492,7 @@ class LibraryManager:
             logger.warning("Cannot download libraries: libraries_directory not configured")
             return {}
 
-        libraries_path = config_mgr.workspace_path / libraries_dir_setting
+        libraries_path = GriptapeNodes.ProjectManager().workspace_path / libraries_dir_setting
 
         async def download_one(git_url_with_ref: str) -> tuple[str, dict[str, Any]]:
             """Download a single library if not already present."""
@@ -3829,7 +3829,7 @@ class LibraryManager:
             if not libraries_dir_setting:
                 details = "Cannot download library: libraries_directory setting is not configured."
                 return DownloadLibraryResultFailure(result_details=details)
-            libraries_path = config_mgr.workspace_path / libraries_dir_setting
+            libraries_path = GriptapeNodes.ProjectManager().workspace_path / libraries_dir_setting
 
         # Ensure parent directory exists
         await anyio.Path(libraries_path).mkdir(parents=True, exist_ok=True)

@@ -30,7 +30,6 @@ class TestStaticFilesManagerSaveStaticFile:
         """Mock ConfigManager for StaticFilesManager initialization."""
         mock_config = Mock()
         mock_config.get_config_value.return_value = "local"
-        mock_config.workspace_path = Path("/mock/workspace")
         return mock_config
 
     @pytest.fixture
@@ -349,7 +348,6 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
             "workspace_directory": "/mock/workspace",
             "static_files_directory": "staticfiles",
         }.get(key, default)
-        mock_config.workspace_path = Path("/mock/workspace")
         return mock_config
 
     @pytest.fixture
@@ -604,7 +602,6 @@ class TestStaticFilesManagerResolveStaticFilePath:
         """Create a StaticFilesManager with mocked dependencies."""
         mock_config = Mock()
         mock_config.get_config_value.return_value = "local"
-        mock_config.workspace_path = Path("/mock/workspace")
         with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
             manager = StaticFilesManager(config_manager=mock_config, secrets_manager=Mock(), event_manager=None)
         return manager
@@ -651,9 +648,13 @@ class TestStaticFilesManagerResolveStaticFilePath:
         mock_config_manager = Mock()
         mock_config_manager.get_config_value.return_value = str(workspace_dir)
 
+        mock_project_manager = Mock()
+        mock_project_manager.workspace_path = workspace_dir
+
         with (
             patch.object(GriptapeNodes, "handle_request", side_effect=handle_request),
             patch.object(GriptapeNodes, "ConfigManager", return_value=mock_config_manager),
+            patch.object(GriptapeNodes, "ProjectManager", return_value=mock_project_manager),
         ):
             result = mock_static_files_manager._resolve_static_file_path("output.png")
 

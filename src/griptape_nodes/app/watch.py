@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     try:
         # Watch for changes in src, libraries, and tests directories
-        for changes in watch("src", "tests", watch_filter=watch_filter):
+        for changes in watch("src", watch_filter=watch_filter):
             # Only restart on .py file changes
             if any(str(path).endswith(".py") for _, path in changes):
                 terminate_process(process)

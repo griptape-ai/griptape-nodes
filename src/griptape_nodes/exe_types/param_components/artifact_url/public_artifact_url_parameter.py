@@ -52,7 +52,6 @@ class PublicArtifactUrlParameter:
         api_key = str(self._get_secret_value(self.API_KEY_NAME))
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         self._storage_driver = GriptapeCloudStorageDriver(
-            workspace_directory=GriptapeNodes.ConfigManager().workspace_path,
             bucket_id=self._get_bucket_id(base, api_key, timeout=self._request_timeout),
             api_key=api_key,
             base_url=base,
@@ -123,7 +122,7 @@ class PublicArtifactUrlParameter:
         if url.startswith(("http://", "https://")) and "localhost" not in url:
             return url
 
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        workspace_path = GriptapeNodes.ProjectManager().workspace_path
         static_files_dir = str(self._get_config_value("static_files_directory", default="staticfiles"))
         static_files_path = workspace_path / static_files_dir
 

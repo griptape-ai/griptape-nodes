@@ -3,10 +3,12 @@
 import ast
 import tempfile
 from pathlib import Path
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
 
 
 class TestPushWorkflow:
@@ -25,17 +27,14 @@ class TestPushWorkflow:
     def test_push_workflow_with_file_path_inside_workspace(self, griptape_nodes: GriptapeNodes) -> None:
         """file_path inside workspace produces a workspace-relative registry key."""
         context_manager = griptape_nodes.ContextManager()
-        config_manager = griptape_nodes.ConfigManager()
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
-            original = config_manager.workspace_path
-            config_manager.workspace_path = workspace
-            try:
+            with patch.object(
+                ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=workspace.resolve()
+            ):
                 workflow_file = workspace / "subdir" / "my_flow.py"
                 result = context_manager.push_workflow(file_path=str(workflow_file))
-            finally:
-                config_manager.workspace_path = original
 
         assert result == "subdir/my_flow"
         assert context_manager.get_current_workflow_name() == "subdir/my_flow"
@@ -45,17 +44,14 @@ class TestPushWorkflow:
     def test_push_workflow_with_file_path_outside_workspace(self, griptape_nodes: GriptapeNodes) -> None:
         """file_path outside workspace uses the absolute path as the registry key."""
         context_manager = griptape_nodes.ContextManager()
-        config_manager = griptape_nodes.ConfigManager()
 
         with tempfile.TemporaryDirectory() as workspace_dir, tempfile.TemporaryDirectory() as other_dir:
             workspace = Path(workspace_dir)
-            original = config_manager.workspace_path
-            config_manager.workspace_path = workspace
-            try:
+            with patch.object(
+                ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=workspace.resolve()
+            ):
                 workflow_file = Path(other_dir) / "my_flow.py"
                 result = context_manager.push_workflow(file_path=str(workflow_file))
-            finally:
-                config_manager.workspace_path = original
 
         expected = (Path(other_dir).resolve() / "my_flow").as_posix()
         assert result == expected
@@ -80,17 +76,14 @@ class TestPushWorkflow:
     def test_push_workflow_strips_extension(self, griptape_nodes: GriptapeNodes) -> None:
         """Registry key derived from file_path has no file extension."""
         context_manager = griptape_nodes.ContextManager()
-        config_manager = griptape_nodes.ConfigManager()
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
-            original = config_manager.workspace_path
-            config_manager.workspace_path = workspace
-            try:
+            with patch.object(
+                ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=workspace.resolve()
+            ):
                 workflow_file = workspace / "my_workflow.py"
                 result = context_manager.push_workflow(file_path=str(workflow_file))
-            finally:
-                config_manager.workspace_path = original
 
         assert result == "my_workflow"
         assert "." not in result

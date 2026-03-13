@@ -3,7 +3,7 @@ import platform
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 import anyio
 import pytest
@@ -39,6 +39,7 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager, WindowsSpecialFolderError
+from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
 
 # Windows MAX_PATH constant for tests
 WINDOWS_MAX_PATH = 260
@@ -54,12 +55,10 @@ class TestWriteFileRequest:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_write_text_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully writing a text file."""
@@ -201,12 +200,10 @@ class TestReadFileRequest:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_read_text_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully reading a text file."""
@@ -278,12 +275,10 @@ class TestCreateFileRequest:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_create_empty_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test creating an empty file."""
@@ -353,12 +348,10 @@ class TestRenameFileRequest:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_rename_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully renaming a file."""
@@ -427,12 +420,10 @@ class TestListDirectoryRequest:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_list_directory_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully listing a directory."""
@@ -640,12 +631,10 @@ class TestExpandPath:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Set workspace to temp_dir for tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_expand_path_relative_resolved_against_cwd(
         self,
@@ -705,12 +694,10 @@ class TestWindowsLongPathHandling:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     @pytest.fixture
     def long_path(self, temp_dir: Path) -> Path:
@@ -775,12 +762,10 @@ class TestDeleteFileRequest:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     @pytest.mark.asyncio
     async def test_delete_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
@@ -1150,12 +1135,10 @@ class TestGetFileInfoRequest:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_get_file_info_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully getting file info."""
@@ -1235,12 +1218,10 @@ class TestCreateNewFilePolicy:
             yield Path(tmpdir)
 
     @pytest.fixture(autouse=True)
-    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+    def setup_workspace(self, temp_dir: Path) -> Generator[None, None, None]:
         """Automatically set workspace to temp_dir for all tests."""
-        original_workspace = griptape_nodes.ConfigManager().workspace_path
-        griptape_nodes.ConfigManager().workspace_path = temp_dir
-        yield
-        griptape_nodes.ConfigManager().workspace_path = original_workspace
+        with patch.object(ProjectManager, "workspace_path", new_callable=PropertyMock, return_value=temp_dir):
+            yield
 
     def test_create_new_first_file(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test CREATE_NEW policy creates file with requested name if available."""
