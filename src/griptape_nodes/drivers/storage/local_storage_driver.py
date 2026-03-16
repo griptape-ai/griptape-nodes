@@ -47,7 +47,7 @@ class LocalStorageDriver(BaseStorageDriver):
         path: Path,
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
-        file_metadata: SidecarContent | None = None,
+        file_metadata: SidecarContent | None = None,  # noqa: ARG002
     ) -> CreateSignedUploadUrlResponse:
         # on_write_file_request seems to work most reliably with an absolute path.
         absolute_path = resolve_workspace_path(path, self.workspace_directory)

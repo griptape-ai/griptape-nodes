@@ -43,7 +43,6 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from griptape_nodes.common.project_templates.situation import SituationTemplate
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -109,7 +108,7 @@ def _resolve_sidecar_path(file_path: Path) -> Path:
         msg = "save_metadata situation not found in project template"
         raise RuntimeError(msg)  # noqa: TRY004
 
-    variables: dict[str, str] = {"source_file_name": decomposed.source_file_name}
+    variables: dict[str, str | int] = {"source_file_name": decomposed.source_file_name}
     if decomposed.source_relative_path:
         variables["source_relative_path"] = decomposed.source_relative_path
 
@@ -126,34 +125,6 @@ def _resolve_sidecar_path(file_path: Path) -> Path:
         raise RuntimeError(msg)  # noqa: TRY004
 
     return path_result.absolute_path
-
-
-def build_sidecar_metadata(
-    situation_name: str,
-    situation: SituationTemplate,
-    variables: dict[str, object],
-) -> SidecarContent:
-    """Build SidecarContent from a resolved situation template.
-
-    Args:
-        situation_name: Name of the situation (e.g., "save_node_output").
-        situation: The resolved SituationTemplate.
-        variables: Macro variable values used when resolving the situation.
-
-    Returns:
-        SidecarContent to pass as WriteFileRequest.file_metadata.
-    """
-    return SidecarContent(
-        situation=SituationMetadata(
-            name=situation_name,
-            macro=situation.macro,
-            policy=SituationPolicy(
-                on_collision=situation.policy.on_collision,
-                create_dirs=situation.policy.create_dirs,
-            ),
-        ),
-        variables={k: str(v) for k, v in variables.items()},
-    )
 
 
 def write_sidecar(file_path: Path, metadata: SidecarContent | None) -> None:

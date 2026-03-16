@@ -18,6 +18,7 @@ import pytest
 
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.retained_mode.events.artifact_events import RegisterArtifactProviderRequest
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
@@ -31,6 +32,11 @@ from griptape_nodes.retained_mode.events.project_events import (
     LoadProjectTemplateRequest,
     LoadProjectTemplateResultSuccess,
     SetCurrentProjectRequest,
+)
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    SidecarContent,
+    SituationMetadata,
+    SituationPolicy,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
@@ -569,17 +575,18 @@ class TestSidecarMetadata:
         assert "saved_at" in data
 
     def test_sidecar_contains_situation_info_when_provided(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test sidecar includes situation block when file_metadata has situation keys."""
+        """Test sidecar includes situation block when file_metadata has situation info."""
         import json as _json
 
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "image.png"
-        file_metadata = {
-            "gtn_situation_name": "save_node_output",
-            "gtn_situation_macro": "{outputs}/{node_name}.png",
-            "gtn_situation_policy_on_collision": "create_new",
-            "gtn_situation_policy_create_dirs": "true",
-        }
+        file_metadata = SidecarContent(
+            situation=SituationMetadata(
+                name="save_node_output",
+                macro="{outputs}/{node_name}.png",
+                policy=SituationPolicy(on_collision=SituationFilePolicy.CREATE_NEW, create_dirs=True),
+            ),
+        )
 
         request = WriteFileRequest(file_path=str(file_path), content=b"", file_metadata=file_metadata)
         result = os_manager.on_write_file_request(request)

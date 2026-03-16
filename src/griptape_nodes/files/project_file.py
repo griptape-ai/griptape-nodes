@@ -15,7 +15,11 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationResultSuccess,
     MacroPath,
 )
-from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import build_sidecar_metadata
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    SidecarContent,
+    SituationMetadata,
+    SituationPolicy,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
@@ -73,7 +77,19 @@ class ProjectFileDestination(FileDestination):
         }
 
         file_metadata = (
-            build_sidecar_metadata(situation, situation_obj, variables) if situation_obj is not None else None
+            SidecarContent(
+                situation=SituationMetadata(
+                    name=situation,
+                    macro=situation_obj.macro,
+                    policy=SituationPolicy(
+                        on_collision=situation_obj.policy.on_collision,
+                        create_dirs=situation_obj.policy.create_dirs,
+                    ),
+                ),
+                variables={k: str(v) for k, v in variables.items()},
+            )
+            if situation_obj is not None
+            else None
         )
 
         macro_path = MacroPath(ParsedMacro(macro_template), variables)

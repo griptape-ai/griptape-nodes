@@ -72,7 +72,11 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
     GetSituationResultSuccess,
 )
-from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent, build_sidecar_metadata
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    SidecarContent,
+    SituationMetadata,
+    SituationPolicy,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactPreviewGenerator,
@@ -1437,7 +1441,17 @@ class ArtifactManager:
 
         # Return destination directory and filename with situation context for sidecar
         full_preview_path = path_result.absolute_path
-        preview_file_metadata = build_sidecar_metadata("save_preview", situation, dict(variables))
+        preview_file_metadata = SidecarContent(
+            situation=SituationMetadata(
+                name="save_preview",
+                macro=situation.macro,
+                policy=SituationPolicy(
+                    on_collision=situation.policy.on_collision,
+                    create_dirs=situation.policy.create_dirs,
+                ),
+            ),
+            variables={k: str(v) for k, v in variables.items()},
+        )
         return ResolvedPreviewPath(
             destination_dir=full_preview_path.parent,
             file_name=full_preview_path.name,

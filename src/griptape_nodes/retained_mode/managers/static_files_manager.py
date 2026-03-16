@@ -33,7 +33,11 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
 )
-from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent, build_sidecar_metadata
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    SidecarContent,
+    SituationMetadata,
+    SituationPolicy,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -419,7 +423,17 @@ class StaticFilesManager:
 
         policy = self._map_situation_policy(situation.policy.on_collision)
         variables = {"file_name_base": parts.stem, "file_extension": parts.extension}
-        metadata = build_sidecar_metadata(SAVE_STATIC_FILE_SITUATION, situation, variables)
+        metadata = SidecarContent(
+            situation=SituationMetadata(
+                name=SAVE_STATIC_FILE_SITUATION,
+                macro=situation.macro,
+                policy=SituationPolicy(
+                    on_collision=situation.policy.on_collision,
+                    create_dirs=situation.policy.create_dirs,
+                ),
+            ),
+            variables={k: str(v) for k, v in variables.items()},
+        )
         return ResolvedStaticFilePath(path=workspace_relative_path, policy=policy, file_metadata=metadata)
 
     @staticmethod
