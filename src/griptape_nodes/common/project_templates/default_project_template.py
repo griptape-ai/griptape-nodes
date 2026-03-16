@@ -26,12 +26,12 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="temp",
             path_macro="temp",
         ),
-        "previews": DirectoryDefinition(
-            name="previews",
+        "griptape-nodes-previews": DirectoryDefinition(
+            name="griptape-nodes-previews",
             path_macro=".griptape-nodes-previews",
         ),
-        "metadata": DirectoryDefinition(
-            name="metadata",
+        "griptape-nodes-metadata": DirectoryDefinition(
+            name="griptape-nodes-metadata",
             path_macro=".griptape-nodes-metadata",
         ),
     },
@@ -80,7 +80,7 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         "save_preview": SituationTemplate(
             name="save_preview",
             description="Generate preview/thumbnail with preserved directory hierarchy",
-            macro="{previews}/{drive_volume_mount?:/}{source_relative_path?:/}{source_file_name}.{preview_format}",
+            macro="{griptape-nodes-previews}/{drive_volume_mount?:/}{source_relative_path?:/}{source_file_name}.{preview_format}",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.OVERWRITE,
                 create_dirs=True,
@@ -100,7 +100,7 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         "save_metadata": SituationTemplate(
             name="save_metadata",
             description="Save sidecar metadata file with preserved directory hierarchy",
-            macro="{metadata}/{source_relative_path?:/}{source_file_name}.json",
+            macro="{griptape-nodes-metadata}/{source_relative_path?:/}{source_file_name}.json",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.OVERWRITE,
                 create_dirs=True,
