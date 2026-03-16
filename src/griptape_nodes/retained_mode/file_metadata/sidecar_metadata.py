@@ -56,13 +56,13 @@ class SituationMetadata(BaseModel):
     name: str | None = None
     macro: str | None = None
     policy: SituationPolicy | None = None
+    variables: dict[str, str] | None = None
 
 
 class SidecarContent(BaseModel):
     """Caller-provided context written to the sidecar JSON file alongside saved files."""
 
     situation: SituationMetadata | None = None
-    variables: dict[str, str] | None = None
 
 
 def _resolve_sidecar_path(file_path: Path) -> Path:

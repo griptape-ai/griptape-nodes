@@ -673,8 +673,10 @@ class File:
             return self._file_metadata
         if isinstance(self._file_path, MacroPath):
             return SidecarContent(
-                situation=SituationMetadata(macro=self._file_path.parsed_macro.template),
-                variables={k: str(v) for k, v in self._file_path.variables.items()},
+                situation=SituationMetadata(
+                    macro=self._file_path.parsed_macro.template,
+                    variables={k: str(v) for k, v in self._file_path.variables.items()},
+                ),
             )
         return None
 

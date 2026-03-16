@@ -85,8 +85,8 @@ class ProjectFileDestination(FileDestination):
                         on_collision=situation_obj.policy.on_collision,
                         create_dirs=situation_obj.policy.create_dirs,
                     ),
+                    variables={k: str(v) for k, v in variables.items()},
                 ),
-                variables={k: str(v) for k, v in variables.items()},
             )
             if situation_obj is not None
             else None

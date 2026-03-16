@@ -1449,8 +1449,8 @@ class ArtifactManager:
                     on_collision=situation.policy.on_collision,
                     create_dirs=situation.policy.create_dirs,
                 ),
+                variables={k: str(v) for k, v in variables.items()},
             ),
-            variables={k: str(v) for k, v in variables.items()},
         )
         return ResolvedPreviewPath(
             destination_dir=full_preview_path.parent,
