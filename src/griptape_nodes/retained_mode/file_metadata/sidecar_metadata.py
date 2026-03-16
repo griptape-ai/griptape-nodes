@@ -32,12 +32,6 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
     GetSituationResultSuccess,
 )
-from griptape_nodes.retained_mode.file_metadata.workflow_metadata import (
-    FlowMetadata,
-    WorkflowContext,
-    WorkflowMetadata,
-    collect_workflow_context,
-)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
@@ -65,18 +59,10 @@ class SituationMetadata(BaseModel):
 
 
 class SidecarContent(BaseModel):
-    """Metadata for a sidecar JSON file written alongside saved files.
-
-    Serves as both the input type (callers fill in situation/variables)
-    and the basis for the written JSON (write_sidecar merges in workflow
-    context and adds schema_version/saved_at at write time).
-    """
+    """Caller-provided context written to the sidecar JSON file alongside saved files."""
 
     situation: SituationMetadata | None = None
     variables: dict[str, str] | None = None
-    workflow: WorkflowMetadata | None = None
-    flow: FlowMetadata | None = None
-    parameters: dict[str, str] | None = None
 
 
 def _resolve_sidecar_path(file_path: Path) -> Path:
@@ -141,14 +127,7 @@ def write_sidecar(file_path: Path, metadata: SidecarContent | None) -> None:
     """
     try:
         sidecar_path = _resolve_sidecar_path(file_path)
-        ctx: WorkflowContext = collect_workflow_context()
-        content = SidecarContent(
-            situation=metadata.situation if metadata else None,
-            variables=metadata.variables if metadata else None,
-            workflow=ctx.workflow,
-            flow=ctx.flow,
-            parameters=ctx.parameters,
-        )
+        content = metadata or SidecarContent()
         output = {
             "schema_version": SCHEMA_VERSION,
             "saved_at": datetime.now(UTC).isoformat(),
