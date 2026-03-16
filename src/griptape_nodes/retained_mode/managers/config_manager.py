@@ -636,6 +636,7 @@ class ConfigManager:
                 encoding="utf-8",
                 existing_file_policy=ExistingFilePolicy.FAIL,  # Should not exist, fail if it does
                 create_parents=True,  # Create parent directories if missing
+                skip_metadata_injection=True,
             )
             create_result = os_manager.on_write_file_request(create_request)
 

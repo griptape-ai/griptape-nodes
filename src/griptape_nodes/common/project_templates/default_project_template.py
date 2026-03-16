@@ -26,9 +26,13 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="temp",
             path_macro="temp",
         ),
-        "previews": DirectoryDefinition(
-            name="previews",
+        "griptape-nodes-previews": DirectoryDefinition(
+            name="griptape-nodes-previews",
             path_macro=".griptape-nodes-previews",
+        ),
+        "griptape-nodes-metadata": DirectoryDefinition(
+            name="griptape-nodes-metadata",
+            path_macro=".griptape-nodes-metadata",
         ),
     },
     environment={},
@@ -73,10 +77,10 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             ),
             fallback="save_file",
         ),
-        "save_preview": SituationTemplate(
-            name="save_preview",
+        "save_griptape_nodes_preview": SituationTemplate(
+            name="save_griptape_nodes_preview",
             description="Generate preview/thumbnail with preserved directory hierarchy",
-            macro="{previews}/{drive_volume_mount?:/}{source_relative_path?:/}{source_file_name}.{preview_format}",
+            macro="{griptape-nodes-previews}/{drive_volume_mount?:/}{source_relative_path?:/}{source_file_name}.{preview_format}",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.OVERWRITE,
                 create_dirs=True,
@@ -87,6 +91,16 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="save_static_file",
             description="Save static file to workflow-relative staticfiles directory. Required for projects using StaticFilesManager.save_static_file.",
             macro="{workflow_dir?:/}{static_files_dir}/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.OVERWRITE,
+                create_dirs=True,
+            ),
+            fallback="save_file",
+        ),
+        "save_griptape_nodes_metadata": SituationTemplate(
+            name="save_griptape_nodes_metadata",
+            description="Save sidecar metadata file with preserved directory hierarchy",
+            macro="{griptape-nodes-metadata}/{source_relative_path?:/}{source_file_name}.json",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.OVERWRITE,
                 create_dirs=True,

@@ -15,6 +15,11 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationResultSuccess,
     MacroPath,
 )
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    SidecarContent,
+    SituationMetadata,
+    SituationPolicy,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
@@ -52,12 +57,14 @@ class ProjectFileDestination(FileDestination):
         result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation))
 
         if isinstance(result, GetSituationResultSuccess):
-            macro_template = result.situation.macro
-            on_collision = result.situation.policy.on_collision
+            situation_obj = result.situation
+            macro_template = situation_obj.macro
+            on_collision = situation_obj.policy.on_collision
             existing_file_policy = SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.CREATE_NEW)
-            create_dirs = result.situation.policy.create_dirs
+            create_dirs = situation_obj.policy.create_dirs
         else:
             logger.error("Failed to load situation '%s', using fallback macro template", situation)
+            situation_obj = None
             macro_template = FALLBACK_MACRO_TEMPLATE
             existing_file_policy = ExistingFilePolicy.CREATE_NEW
             create_dirs = True
@@ -69,11 +76,28 @@ class ProjectFileDestination(FileDestination):
             **extra_vars,
         }
 
+        file_metadata = (
+            SidecarContent(
+                situation=SituationMetadata(
+                    name=situation,
+                    macro=situation_obj.macro,
+                    policy=SituationPolicy(
+                        on_collision=situation_obj.policy.on_collision,
+                        create_dirs=situation_obj.policy.create_dirs,
+                    ),
+                    variables={k: str(v) for k, v in variables.items()},
+                ),
+            )
+            if situation_obj is not None
+            else None
+        )
+
         macro_path = MacroPath(ParsedMacro(macro_template), variables)
         super().__init__(
             macro_path,
             existing_file_policy=existing_file_policy,
             create_parents=create_dirs,
+            file_metadata=file_metadata,
         )
 
     def write_bytes(self, content: bytes) -> File:

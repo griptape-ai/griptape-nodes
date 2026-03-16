@@ -17,6 +17,8 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.retained_mode.events.artifact_events import RegisterArtifactProviderRequest
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
@@ -25,6 +27,16 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileRequest,
     WriteFileResultFailure,
     WriteFileResultSuccess,
+)
+from griptape_nodes.retained_mode.events.project_events import (
+    LoadProjectTemplateRequest,
+    LoadProjectTemplateResultSuccess,
+    SetCurrentProjectRequest,
+)
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    SidecarContent,
+    SituationMetadata,
+    SituationPolicy,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
@@ -505,3 +517,114 @@ class TestMetadataInjection:
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.read_bytes() == injected_bytes
+
+
+class TestSidecarMetadata:
+    """Test sidecar metadata file creation alongside file writes."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        """Set workspace to temp_dir and load a project template for sidecar path resolution."""
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+
+        # Create a project template file so sidecar path resolution has a project to use
+        project_yml = temp_dir / "project_template.yml"
+        project_yml.write_text(DEFAULT_PROJECT_TEMPLATE.to_yaml(include_comments=False))
+        load_result = GriptapeNodes.handle_request(LoadProjectTemplateRequest(project_path=project_yml))
+        if isinstance(load_result, LoadProjectTemplateResultSuccess):
+            GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=load_result.project_id))
+
+        yield
+
+        GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=None))
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_sidecar_not_written_without_file_metadata(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that no sidecar is written when file_metadata is not provided."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "output.txt"
+
+        request = WriteFileRequest(file_path=str(file_path), content="hello")
+        result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
+        assert not sidecar_path.exists(), "Sidecar should not be written when file_metadata is not provided"
+
+    def test_sidecar_written_when_file_metadata_provided(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that a sidecar is written when file_metadata is explicitly provided."""
+        import json as _json
+
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "output.txt"
+        file_metadata = SidecarContent(
+            situation=SituationMetadata(name="save_node_output", macro="{outputs}/output.txt"),
+        )
+
+        request = WriteFileRequest(file_path=str(file_path), content="hello", file_metadata=file_metadata)
+        result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
+        assert sidecar_path.exists()
+        data = _json.loads(sidecar_path.read_text())
+        assert data["schema_version"] == "0.1.0"
+        assert "saved_at" in data
+
+    def test_sidecar_contains_situation_info_when_provided(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test sidecar includes situation block when file_metadata has situation info."""
+        import json as _json
+
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "image.png"
+        file_metadata = SidecarContent(
+            situation=SituationMetadata(
+                name="save_node_output",
+                macro="{outputs}/{node_name}.png",
+                policy=SituationPolicy(on_collision=SituationFilePolicy.CREATE_NEW, create_dirs=True),
+            ),
+        )
+
+        request = WriteFileRequest(file_path=str(file_path), content=b"", file_metadata=file_metadata)
+        result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "image.png.json"
+        data = _json.loads(sidecar_path.read_text())
+        assert data["situation"]["name"] == "save_node_output"
+        assert data["situation"]["macro"] == "{outputs}/{node_name}.png"
+        assert data["situation"]["policy"]["on_collision"] == "create_new"
+        assert data["situation"]["policy"]["create_dirs"] is True
+
+    def test_sidecar_written_for_indexed_fallback_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test sidecar is written at the actual indexed fallback path, not the requested path."""
+        import json as _json
+
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "output.txt"
+        file_path.write_text("Original")
+        file_metadata = SidecarContent(
+            situation=SituationMetadata(name="save_node_output", macro="{outputs}/output.txt"),
+        )
+
+        request = WriteFileRequest(
+            file_path=str(file_path),
+            content="New content",
+            existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+            file_metadata=file_metadata,
+        )
+        result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        actual_path = Path(result.final_file_path)
+        sidecar_path = actual_path.parent / ".griptape-nodes-metadata" / (actual_path.name + ".json")
+        assert sidecar_path.exists(), "Sidecar should be created at the actual indexed fallback path"
+        data = _json.loads(sidecar_path.read_text())
+        assert data["schema_version"] == "0.1.0"

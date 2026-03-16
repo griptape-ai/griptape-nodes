@@ -23,6 +23,10 @@ from griptape_nodes.retained_mode.events.project_events import (
     MacroPath,
     PathResolutionFailureReason,
 )
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    SidecarContent,
+    SituationMetadata,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
@@ -172,6 +176,8 @@ class File:
     def __init__(
         self,
         file_path: str | MacroPath,
+        *,
+        file_metadata: SidecarContent | None = None,
     ) -> None:
         """Store file reference. No I/O is performed.
 
@@ -183,7 +189,10 @@ class File:
         Args:
             file_path: Path to the file. Can be a plain string or a MacroPath
                 (which contains macro variables).
+            file_metadata: Optional caller-provided context to include in the sidecar
+                metadata file alongside auto-collected workflow metadata.
         """
+        self._file_metadata = file_metadata
         if isinstance(file_path, str):
             try:
                 parsed = ParsedMacro(file_path)
@@ -587,6 +596,7 @@ class File:
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
+            file_metadata=self._build_file_metadata(),
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -639,6 +649,7 @@ class File:
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
+            file_metadata=self._build_file_metadata(),
         )
         result = await GriptapeNodes.ahandle_request(request)
 
@@ -650,6 +661,24 @@ class File:
             )
 
         return Path(cast("WriteFileResultSuccess", result).final_file_path)
+
+    def _build_file_metadata(self) -> SidecarContent | None:
+        """Build SidecarContent from MacroPath variables and caller-provided metadata.
+
+        Caller-provided metadata takes full precedence. If only a MacroPath is present
+        (no caller metadata), the macro template and variables are captured as a minimal
+        SituationMetadata.
+        """
+        if self._file_metadata is not None:
+            return self._file_metadata
+        if isinstance(self._file_path, MacroPath):
+            return SidecarContent(
+                situation=SituationMetadata(
+                    macro=self._file_path.parsed_macro.template,
+                    variables={k: str(v) for k, v in self._file_path.variables.items()},
+                ),
+            )
+        return None
 
 
 class FileDestination:
@@ -669,6 +698,7 @@ class FileDestination:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
+        file_metadata: SidecarContent | None = None,
     ) -> None:
         """Store file path and write configuration. No I/O is performed.
 
@@ -680,8 +710,10 @@ class FileDestination:
             append: If True, append to an existing file. Defaults to False.
             create_parents: If True, create parent directories if missing.
                 Defaults to True.
+            file_metadata: Optional caller-provided context to include in the sidecar
+                metadata file alongside auto-collected workflow metadata.
         """
-        self._file = File(file_path)
+        self._file = File(file_path, file_metadata=file_metadata)
         self._existing_file_policy = existing_file_policy
         self._append = append
         self._create_parents = create_parents

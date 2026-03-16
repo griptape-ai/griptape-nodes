@@ -33,6 +33,11 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
 )
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    SidecarContent,
+    SituationMetadata,
+    SituationPolicy,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -53,10 +58,12 @@ class ResolvedStaticFilePath(NamedTuple):
     Attributes:
         path: Absolute path where the static file should be written.
         policy: How to handle an existing file at that path.
+        file_metadata: Situation context to pass to WriteFileRequest for sidecar generation.
     """
 
     path: Path
     policy: ExistingFilePolicy
+    file_metadata: SidecarContent | None = None
 
 
 class StaticFilesManager:
@@ -170,7 +177,7 @@ class StaticFilesManager:
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
         try:
-            response = self.storage_driver.create_signed_upload_url(resolved.path)
+            response = self.storage_driver.create_signed_upload_url(resolved.path, file_metadata=resolved.file_metadata)
         except Exception as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
@@ -344,7 +351,11 @@ class StaticFilesManager:
 
         try:
             saved_path = self.storage_driver.save_file(
-                file_path, data, effective_policy, skip_metadata_injection=skip_metadata_injection
+                file_path,
+                data,
+                effective_policy,
+                skip_metadata_injection=skip_metadata_injection,
+                file_metadata=resolved.file_metadata,
             )
         except FileExistsError:
             raise
@@ -411,7 +422,19 @@ class StaticFilesManager:
             )
 
         policy = self._map_situation_policy(situation.policy.on_collision)
-        return ResolvedStaticFilePath(path=workspace_relative_path, policy=policy)
+        variables = {"file_name_base": parts.stem, "file_extension": parts.extension}
+        metadata = SidecarContent(
+            situation=SituationMetadata(
+                name=SAVE_STATIC_FILE_SITUATION,
+                macro=situation.macro,
+                policy=SituationPolicy(
+                    on_collision=situation.policy.on_collision,
+                    create_dirs=situation.policy.create_dirs,
+                ),
+                variables={k: str(v) for k, v in variables.items()},
+            ),
+        )
+        return ResolvedStaticFilePath(path=workspace_relative_path, policy=policy, file_metadata=metadata)
 
     @staticmethod
     def _map_situation_policy(situation_policy: SituationFilePolicy) -> ExistingFilePolicy:

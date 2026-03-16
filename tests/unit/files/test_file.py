@@ -963,6 +963,108 @@ class TestFileName:
         assert f.name == _Path(f.location).name
 
 
+class TestFileBuildFileMetadata:
+    """Tests for File._build_file_metadata()."""
+
+    def test_returns_none_for_plain_string_path_without_metadata(self) -> None:
+        f = File("workspace/output.txt")
+        assert f._build_file_metadata() is None
+
+    def test_returns_provided_file_metadata(self) -> None:
+        from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+            SidecarContent,
+            SituationMetadata,
+        )
+
+        metadata = SidecarContent(situation=SituationMetadata(name="save_node_output"))
+        f = File("workspace/output.txt", file_metadata=metadata)
+        assert f._build_file_metadata() is metadata
+
+    def test_returns_sidecar_content_for_macro_path(self) -> None:
+        from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
+
+        macro_path = MacroPath(
+            ParsedMacro("{outputs}/image.png"),
+            {"outputs": "/workspace/outputs"},
+        )
+        f = File(macro_path)
+        result = f._build_file_metadata()
+
+        assert isinstance(result, SidecarContent)
+        assert result.situation is not None
+        assert result.situation.macro == "{outputs}/image.png"
+        assert result.situation.variables == {"outputs": "/workspace/outputs"}
+
+    def test_macro_path_metadata_includes_all_variables(self) -> None:
+        macro_path = MacroPath(
+            ParsedMacro("{outputs}/{node_name}/image.png"),
+            {"outputs": "/workspace/outputs", "node_name": "MyNode"},
+        )
+        f = File(macro_path)
+        result = f._build_file_metadata()
+
+        assert result is not None
+        assert result.situation is not None
+        assert result.situation.variables == {
+            "outputs": "/workspace/outputs",
+            "node_name": "MyNode",
+        }
+
+    def test_file_metadata_passed_through_write_bytes(self) -> None:
+        from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+            SidecarContent,
+            SituationMetadata,
+        )
+
+        metadata = SidecarContent(situation=SituationMetadata(name="save_node_output"))
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=5,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            File("workspace/output.txt", file_metadata=metadata).write_bytes(b"hello")
+
+        request = mock_handle.call_args.args[0]
+        assert request.file_metadata is metadata
+
+    def test_macro_path_metadata_passed_through_write_bytes(self) -> None:
+        from griptape_nodes.retained_mode.events.os_events import WriteFileRequest
+        from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
+
+        macro_path = MacroPath(
+            ParsedMacro("{outputs}/image.png"),
+            {"outputs": "/workspace/outputs"},
+        )
+        resolve_result = GetPathForMacroResultSuccess(
+            result_details="OK",
+            resolved_path=Path("outputs/image.png"),
+            absolute_path=Path("/workspace/outputs/image.png"),
+        )
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/outputs/image.png",
+            bytes_written=4,
+        )
+
+        write_request = None
+
+        def handle(request: object) -> object:
+            nonlocal write_request
+            if isinstance(request, WriteFileRequest):
+                write_request = request
+                return success_result
+            return resolve_result
+
+        with patch(HANDLE_REQUEST_PATH, side_effect=handle):
+            File(macro_path).write_bytes(b"\x89PNG")
+
+        assert write_request is not None
+        assert isinstance(write_request.file_metadata, SidecarContent)
+        assert write_request.file_metadata.situation is not None
+        assert write_request.file_metadata.situation.macro == "{outputs}/image.png"
+
+
 class TestFileResolve:
     """Tests for File.resolve() method."""
 

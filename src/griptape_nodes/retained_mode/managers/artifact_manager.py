@@ -10,6 +10,7 @@ import semver
 from pydantic import BaseModel, ValidationError
 
 from griptape_nodes.common.macro_parser import MacroVariables, ParsedMacro
+from griptape_nodes.files.path_utils import decompose_source_path
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.artifact_events import (
     GeneratePreviewFromDefaultsRequest,
@@ -71,6 +72,11 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
     GetSituationResultSuccess,
 )
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    SidecarContent,
+    SituationMetadata,
+    SituationPolicy,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactPreviewGenerator,
@@ -93,7 +99,6 @@ from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
     normalize_friendly_name_to_key,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -104,10 +109,12 @@ class ResolvedPreviewPath(NamedTuple):
     Attributes:
         destination_dir: Directory where preview should be saved
         file_name: Preview filename with extension
+        file_metadata: Situation context to pass to WriteFileRequest for sidecar generation.
     """
 
     destination_dir: Path
     file_name: str
+    file_metadata: SidecarContent | None = None
 
 
 class PreviewMetadata(BaseModel):
@@ -413,6 +420,7 @@ class ArtifactManager:
                 content=metadata_content,
                 create_parents=True,
                 existing_file_policy=ExistingFilePolicy.OVERWRITE,
+                file_metadata=resolved_path.file_metadata,
             )
             metadata_write_result = GriptapeNodes.handle_request(metadata_write_request)
 
@@ -1372,7 +1380,7 @@ class ArtifactManager:
     ) -> ResolvedPreviewPath:
         """Resolve preview path using project situation template.
 
-        Uses the project's "save_preview" situation to determine where to save
+        Uses the project's "save_griptape_nodes_preview" situation to determine where to save
         the preview artifact. Decomposes the source path and provides variables
         to the macro resolver.
 
@@ -1398,14 +1406,14 @@ class ArtifactManager:
 
         # Decompose source path into components
         source_path_obj = Path(source_path)
-        decomposed = OSManager.decompose_source_path(source_path_obj, workspace_dir)
+        decomposed = decompose_source_path(source_path_obj, workspace_dir)
 
-        # Get save_preview situation template
-        get_situation_request = GetSituationRequest(situation_name="save_preview")
+        # Get save_griptape_nodes_preview situation template
+        get_situation_request = GetSituationRequest(situation_name="save_griptape_nodes_preview")
         get_situation_result = GriptapeNodes.handle_request(get_situation_request)
 
         if not isinstance(get_situation_result, GetSituationResultSuccess):
-            msg = "save_preview situation not found in project template"
+            msg = "save_griptape_nodes_preview situation not found in project template"
             raise RuntimeError(msg)  # noqa: TRY004
 
         # Build variables dict for macro resolution
@@ -1431,9 +1439,21 @@ class ArtifactManager:
             msg = f"Failed to resolve preview path macro: {path_result.result_details}"
             raise RuntimeError(msg)  # noqa: TRY004
 
-        # Return destination directory and filename
+        # Return destination directory and filename with situation context for sidecar
         full_preview_path = path_result.absolute_path
+        preview_file_metadata = SidecarContent(
+            situation=SituationMetadata(
+                name="save_griptape_nodes_preview",
+                macro=situation.macro,
+                policy=SituationPolicy(
+                    on_collision=situation.policy.on_collision,
+                    create_dirs=situation.policy.create_dirs,
+                ),
+                variables={k: str(v) for k, v in variables.items()},
+            ),
+        )
         return ResolvedPreviewPath(
             destination_dir=full_preview_path.parent,
             file_name=full_preview_path.name,
+            file_metadata=preview_file_metadata,
         )

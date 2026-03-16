@@ -1445,7 +1445,7 @@ situations:
 
         # Default-only situations are still present (inherited from defaults)
         assert "save_file" in template.situations
-        assert "save_preview" in template.situations
+        assert "save_griptape_nodes_preview" in template.situations
         assert "copy_external_file" in template.situations
 
     def test_load_workspace_project_read_failure_keeps_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:

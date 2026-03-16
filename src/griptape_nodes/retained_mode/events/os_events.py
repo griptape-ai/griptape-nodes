@@ -14,6 +14,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.project_events import MacroPath
+    from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
 
 
 class ExistingFilePolicy(StrEnum):
@@ -440,6 +441,8 @@ class WriteFileRequest(RequestPayload):
         create_parents: If True, create parent directories if missing (default: True)
         skip_metadata_injection: If True, skip automatic workflow metadata injection for supported file types
             (default: False). Use when the content already contains metadata to avoid double-injection.
+        file_metadata: Optional caller-provided situation and variable context to include in the sidecar
+            metadata file.
 
     Results: WriteFileResultSuccess | WriteFileResultFailure
 
@@ -454,6 +457,7 @@ class WriteFileRequest(RequestPayload):
     existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     create_parents: bool = True
     skip_metadata_injection: bool = False
+    file_metadata: SidecarContent | None = None
 
 
 @dataclass

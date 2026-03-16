@@ -834,3 +834,53 @@ class TestStaticFilesManagerResolveStaticFilePath:
         assert result.path == Path("staticfiles/output.png")
         assert result.policy == ExistingFilePolicy.OVERWRITE
         assert "outside workspace" in caplog.text
+
+
+class TestStaticFilesManagerCreateUploadUrl:
+    """Test StaticFilesManager.on_handle_create_static_file_upload_url_request()."""
+
+    @pytest.fixture
+    def mock_static_files_manager(self) -> StaticFilesManager:
+        """Create a StaticFilesManager with mocked dependencies."""
+        mock_config = Mock()
+        mock_config.get_config_value.return_value = "local"
+        mock_config.workspace_path = Path("/mock/workspace")
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            manager = StaticFilesManager(config_manager=mock_config, secrets_manager=Mock(), event_manager=None)
+        manager.storage_driver = Mock()  # type: ignore[assignment]
+        return manager
+
+    def test_upload_url_success_passes_file_metadata_to_storage_driver(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
+        """on_handle_create_static_file_upload_url_request passes file_metadata to create_signed_upload_url."""
+        from griptape_nodes.retained_mode.events.static_file_events import (
+            CreateStaticFileUploadUrlRequest,
+            CreateStaticFileUploadUrlResultSuccess,
+        )
+        from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
+        from griptape_nodes.retained_mode.managers.static_files_manager import ResolvedStaticFilePath
+
+        resolved_path = Path("staticfiles/image.png")
+        mock_metadata = SidecarContent()
+        resolved = ResolvedStaticFilePath(
+            path=resolved_path, policy=ExistingFilePolicy.OVERWRITE, file_metadata=mock_metadata
+        )
+
+        mock_static_files_manager.storage_driver.create_signed_upload_url.return_value = {
+            "url": "https://example.com/upload",
+            "headers": {},
+            "method": "PUT",
+            "file_path": "staticfiles/image.png",
+        }
+        mock_static_files_manager.storage_driver.get_asset_url.return_value = "https://example.com/image.png"
+
+        with patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=resolved):
+            result = mock_static_files_manager.on_handle_create_static_file_upload_url_request(
+                CreateStaticFileUploadUrlRequest(file_name="image.png")
+            )
+
+        assert isinstance(result, CreateStaticFileUploadUrlResultSuccess)
+        mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once_with(
+            resolved_path, file_metadata=mock_metadata
+        )
