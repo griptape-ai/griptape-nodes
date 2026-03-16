@@ -724,6 +724,45 @@ class ConversionConfig:
 
 @dataclass
 @PayloadRegistry.register
+class ReorderParameterListItemRequest(RequestPayload):
+    """Reorder an item within a ParameterList.
+
+    Use when: User drags to reorder list items in the UI, implementing undo/redo for list reordering,
+    programmatically organizing list items. Moves an item from one position to another within the same list.
+
+    Args:
+        parameter_list_name: Name of the ParameterList containing the items
+        from_index: Current index of the item to move (0-based)
+        to_index: Destination index where the item should be moved (0-based)
+        node_name: Name of the node containing the ParameterList (None for current context)
+
+    Results: ReorderParameterListItemResultSuccess | ReorderParameterListItemResultFailure (list not found, invalid indices)
+    """
+
+    parameter_list_name: str
+    from_index: int
+    to_index: int
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ReorderParameterListItemResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """ParameterList item reordered successfully. List now reflects the new order."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ReorderParameterListItemResultFailure(ResultPayloadFailure):
+    """ParameterList item reordering failed.
+
+    Common causes: node not found, parameter list not found, invalid indices,
+    from_index equals to_index, index out of range.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
 class MigrateParameterRequest(RequestPayload):
     """Request to migrate a parameter from one node to another with optional conversions.
 
