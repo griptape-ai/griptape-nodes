@@ -530,10 +530,9 @@ class TestSidecarMetadata:
 
     @pytest.fixture(autouse=True)
     def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
-        """Set workspace to temp_dir, enable auto_inject_workflow_metadata, and load a project."""
+        """Set workspace to temp_dir and load a project template for sidecar path resolution."""
         original_workspace = griptape_nodes.ConfigManager().workspace_path
         griptape_nodes.ConfigManager().workspace_path = temp_dir
-        griptape_nodes.ConfigManager().set_config_value("auto_inject_workflow_metadata", True)
 
         # Create a project template file so sidecar path resolution has a project to use
         project_yml = temp_dir / "project_template.yml"
@@ -547,8 +546,8 @@ class TestSidecarMetadata:
         GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=None))
         griptape_nodes.ConfigManager().workspace_path = original_workspace
 
-    def test_sidecar_written_on_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test that a sidecar .griptape-nodes-metadata/<filename>.json is created after a successful write."""
+    def test_sidecar_not_written_without_file_metadata(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that no sidecar is written when file_metadata is not provided."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "output.txt"
 
@@ -557,19 +556,24 @@ class TestSidecarMetadata:
 
         assert isinstance(result, WriteFileResultSuccess)
         sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
-        assert sidecar_path.exists(), "Sidecar file should be created alongside saved file"
+        assert not sidecar_path.exists(), "Sidecar should not be written when file_metadata is not provided"
 
-    def test_sidecar_contains_schema_version(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test that the sidecar JSON contains the schema_version field."""
+    def test_sidecar_written_when_file_metadata_provided(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that a sidecar is written when file_metadata is explicitly provided."""
         import json as _json
 
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "output.txt"
+        file_metadata = SidecarContent(
+            situation=SituationMetadata(name="save_node_output", macro="{outputs}/output.txt"),
+        )
 
-        request = WriteFileRequest(file_path=str(file_path), content="hello")
-        os_manager.on_write_file_request(request)
+        request = WriteFileRequest(file_path=str(file_path), content="hello", file_metadata=file_metadata)
+        result = os_manager.on_write_file_request(request)
 
+        assert isinstance(result, WriteFileResultSuccess)
         sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
+        assert sidecar_path.exists()
         data = _json.loads(sidecar_path.read_text())
         assert data["schema_version"] == "0.1.0"
         assert "saved_at" in data
@@ -599,33 +603,6 @@ class TestSidecarMetadata:
         assert data["situation"]["policy"]["on_collision"] == "create_new"
         assert data["situation"]["policy"]["create_dirs"] is True
 
-    def test_sidecar_not_written_when_skip_metadata_injection(
-        self, griptape_nodes: GriptapeNodes, temp_dir: Path
-    ) -> None:
-        """Test that no sidecar is written when skip_metadata_injection=True."""
-        os_manager = griptape_nodes.OSManager()
-        file_path = temp_dir / "output.txt"
-
-        request = WriteFileRequest(file_path=str(file_path), content="hello", skip_metadata_injection=True)
-        result = os_manager.on_write_file_request(request)
-
-        assert isinstance(result, WriteFileResultSuccess)
-        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
-        assert not sidecar_path.exists(), "Sidecar should not be created when skip_metadata_injection=True"
-
-    def test_sidecar_not_written_when_config_disabled(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test that no sidecar is written when auto_inject_workflow_metadata config is False."""
-        griptape_nodes.ConfigManager().set_config_value("auto_inject_workflow_metadata", False)
-        os_manager = griptape_nodes.OSManager()
-        file_path = temp_dir / "output.txt"
-
-        request = WriteFileRequest(file_path=str(file_path), content="hello")
-        result = os_manager.on_write_file_request(request)
-
-        assert isinstance(result, WriteFileResultSuccess)
-        sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
-        assert not sidecar_path.exists(), "Sidecar should not be created when auto_inject_workflow_metadata=False"
-
     def test_sidecar_written_for_indexed_fallback_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test sidecar is written at the actual indexed fallback path, not the requested path."""
         import json as _json
@@ -633,16 +610,19 @@ class TestSidecarMetadata:
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "output.txt"
         file_path.write_text("Original")
+        file_metadata = SidecarContent(
+            situation=SituationMetadata(name="save_node_output", macro="{outputs}/output.txt"),
+        )
 
         request = WriteFileRequest(
             file_path=str(file_path),
             content="New content",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+            file_metadata=file_metadata,
         )
         result = os_manager.on_write_file_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
-        # File was written to output_1.txt
         actual_path = Path(result.final_file_path)
         sidecar_path = actual_path.parent / ".griptape-nodes-metadata" / (actual_path.name + ".json")
         assert sidecar_path.exists(), "Sidecar should be created at the actual indexed fallback path"

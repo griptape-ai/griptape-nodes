@@ -1972,10 +1972,8 @@ class OSManager:
             msg = "Internal error: success path reached but file path or bytes not set"
             raise RuntimeError(msg)
 
-        # Write sidecar metadata file if enabled and not skipped
-        if not request.skip_metadata_injection and GriptapeNodes.ConfigManager().get_config_value(
-            "auto_inject_workflow_metadata"
-        ):
+        # Write sidecar metadata file if caller opted in by providing file_metadata
+        if request.file_metadata is not None:
             write_sidecar(final_file_path, request.file_metadata)
 
         if used_indexed_fallback:
