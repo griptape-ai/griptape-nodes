@@ -10,6 +10,7 @@ import httpx
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
 from griptape_nodes.files.path_utils import get_workspace_relative_path
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import CallerFileMetadata
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -47,7 +48,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         path: Path,
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
-        file_metadata: dict[str, str] | None = None,  # noqa: ARG002
+        file_metadata: CallerFileMetadata | None = None,  # noqa: ARG002
     ) -> CreateSignedUploadUrlResponse:
         normalized_path = path
 
@@ -161,7 +162,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
         skip_metadata_injection: bool = False,  # noqa: ARG002
-        file_metadata: dict[str, str] | None = None,  # noqa: ARG002
+        file_metadata: CallerFileMetadata | None = None,  # noqa: ARG002
     ) -> str:
         """Save a file to cloud storage via HTTP upload.
 

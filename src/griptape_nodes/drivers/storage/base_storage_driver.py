@@ -6,6 +6,7 @@ from typing import TypedDict
 import httpx
 
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import CallerFileMetadata
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -41,7 +42,7 @@ class BaseStorageDriver(ABC):
         path: Path,
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
-        file_metadata: dict[str, str] | None = None,
+        file_metadata: CallerFileMetadata | None = None,
     ) -> CreateSignedUploadUrlResponse:
         """Create a signed upload URL for the given path.
 
@@ -105,7 +106,7 @@ class BaseStorageDriver(ABC):
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
         skip_metadata_injection: bool = False,
-        file_metadata: dict[str, str] | None = None,
+        file_metadata: CallerFileMetadata | None = None,
     ) -> str:
         """Save a file to storage.
 

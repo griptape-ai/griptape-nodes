@@ -6,6 +6,8 @@ import pickle
 from datetime import UTC, datetime
 from typing import Any
 
+from pydantic import BaseModel
+
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -27,6 +29,32 @@ METADATA_NAMESPACE = "gtn_"
 
 # Metadata key for storing flow commands
 FLOW_COMMANDS_KEY = f"{METADATA_NAMESPACE}flow_commands"
+
+
+class WorkflowMetadata(BaseModel):
+    """Workflow-level metadata captured at save time."""
+
+    name: str | None = None
+    created: str | None = None
+    modified: str | None = None
+    engine_version: str | None = None
+    description: str | None = None
+
+
+class FlowMetadata(BaseModel):
+    """Flow and node context captured at save time."""
+
+    name: str | None = None
+    node_name: str | None = None
+
+
+class WorkflowContext(BaseModel):
+    """Structured auto-collected workflow context for sidecar metadata."""
+
+    saved_at: str
+    workflow: WorkflowMetadata | None = None
+    flow: FlowMetadata | None = None
+    parameters: dict[str, str] | None = None
 
 
 def _serialize_node(node_name: str) -> str | None:
@@ -229,3 +257,63 @@ def collect_workflow_metadata() -> dict[str, str]:
             logger.exception("Failed to collect flow/node metadata")
 
     return metadata
+
+
+def collect_workflow_context() -> WorkflowContext:
+    """Collect available workflow context as structured Pydantic models.
+
+    Used by the sidecar metadata writer. For PNG image metadata injection
+    (which requires a flat dict), use collect_workflow_metadata() instead.
+
+    Returns:
+        WorkflowContext with structured workflow, flow, and parameter data.
+    """
+    context_manager = GriptapeNodes.ContextManager()
+    saved_at = datetime.now(UTC).isoformat()
+
+    if not context_manager.has_current_workflow():
+        return WorkflowContext(saved_at=saved_at)
+
+    workflow_meta: WorkflowMetadata | None = None
+    try:
+        workflow_name = context_manager.get_current_workflow_name()
+        workflow_meta = WorkflowMetadata(name=workflow_name)
+        try:
+            wf = WorkflowRegistry.get_workflow_by_name(workflow_name)
+            workflow_meta = WorkflowMetadata(
+                name=workflow_name,
+                created=wf.metadata.creation_date.isoformat() if wf.metadata.creation_date else None,
+                modified=wf.metadata.last_modified_date.isoformat() if wf.metadata.last_modified_date else None,
+                engine_version=wf.metadata.engine_version_created_with or None,
+                description=wf.metadata.description or None,
+            )
+        except Exception:  # noqa: S110
+            pass
+    except Exception:  # noqa: S110
+        pass
+
+    flow_meta: FlowMetadata | None = None
+    parameters: dict[str, str] | None = None
+
+    if context_manager.has_current_flow():
+        try:
+            flow = context_manager.get_current_flow()
+            flow_manager = GriptapeNodes.FlowManager()
+            _, resolving_nodes, _ = flow_manager.flow_state(flow)
+
+            node_name = ", ".join(resolving_nodes) if resolving_nodes else None
+            flow_meta = FlowMetadata(name=flow.name, node_name=node_name)
+
+            if resolving_nodes:
+                parameter_values = _collect_parameter_values(resolving_nodes[0])
+                if parameter_values:
+                    parameters = {k: str(v) for k, v in parameter_values.items()}
+        except Exception:
+            logger.exception("Failed to collect flow/node context")
+
+    return WorkflowContext(
+        saved_at=saved_at,
+        workflow=workflow_meta,
+        flow=flow_meta,
+        parameters=parameters,
+    )

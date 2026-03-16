@@ -23,6 +23,10 @@ from griptape_nodes.retained_mode.events.project_events import (
     MacroPath,
     PathResolutionFailureReason,
 )
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
+    CallerFileMetadata,
+    SituationMetadata,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
@@ -173,7 +177,7 @@ class File:
         self,
         file_path: str | MacroPath,
         *,
-        file_metadata: dict[str, str] | None = None,
+        file_metadata: CallerFileMetadata | None = None,
     ) -> None:
         """Store file reference. No I/O is performed.
 
@@ -658,18 +662,21 @@ class File:
 
         return Path(cast("WriteFileResultSuccess", result).final_file_path)
 
-    def _build_file_metadata(self) -> dict[str, str] | None:
-        """Build merged file metadata from MacroPath variables and caller-provided metadata."""
-        file_metadata: dict[str, str] | None = None
+    def _build_file_metadata(self) -> CallerFileMetadata | None:
+        """Build CallerFileMetadata from MacroPath variables and caller-provided metadata.
+
+        Caller-provided metadata takes full precedence. If only a MacroPath is present
+        (no caller metadata), the macro template and variables are captured as a minimal
+        SituationMetadata.
+        """
+        if self._file_metadata is not None:
+            return self._file_metadata
         if isinstance(self._file_path, MacroPath):
-            file_metadata = {"gtn_macro_template": self._file_path.parsed_macro.template}
-            for key, value in self._file_path.variables.items():
-                file_metadata[f"gtn_variable_{key}"] = str(value)
-        if self._file_metadata:
-            if file_metadata is None:
-                file_metadata = {}
-            file_metadata.update(self._file_metadata)
-        return file_metadata
+            return CallerFileMetadata(
+                situation=SituationMetadata(macro=self._file_path.parsed_macro.template),
+                variables={k: str(v) for k, v in self._file_path.variables.items()},
+            )
+        return None
 
 
 class FileDestination:
@@ -689,7 +696,7 @@ class FileDestination:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-        file_metadata: dict[str, str] | None = None,
+        file_metadata: CallerFileMetadata | None = None,
     ) -> None:
         """Store file path and write configuration. No I/O is performed.
 
