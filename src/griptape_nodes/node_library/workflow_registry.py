@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime  # noqa: TC003 (can't put into type checking block as Pydantic model relies on it)
+from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from griptape_nodes.files.path_utils import derive_registry_key, resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
-    LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
+    LibraryNameAndVersion,
 )
 from griptape_nodes.utils.metaclasses import SingletonMeta
 

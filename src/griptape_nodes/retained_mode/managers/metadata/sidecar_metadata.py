@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel
 
 from griptape_nodes.common.macro_parser import MacroVariables, ParsedMacro
+from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     GetCurrentProjectRequest,
     GetCurrentProjectResultSuccess,
@@ -47,7 +48,7 @@ _OMIT_FROM_SIDECAR = {"gtn_flow_commands"}
 class SituationPolicy(BaseModel):
     """File collision and directory creation policy from the situation template."""
 
-    on_collision: str | None = None
+    on_collision: SituationFilePolicy | None = None
     create_dirs: bool | None = None
 
 
