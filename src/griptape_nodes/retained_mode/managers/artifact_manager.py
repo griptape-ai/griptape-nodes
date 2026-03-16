@@ -1380,7 +1380,7 @@ class ArtifactManager:
     ) -> ResolvedPreviewPath:
         """Resolve preview path using project situation template.
 
-        Uses the project's "save_preview" situation to determine where to save
+        Uses the project's "save_griptape_nodes_preview" situation to determine where to save
         the preview artifact. Decomposes the source path and provides variables
         to the macro resolver.
 
@@ -1408,12 +1408,12 @@ class ArtifactManager:
         source_path_obj = Path(source_path)
         decomposed = decompose_source_path(source_path_obj, workspace_dir)
 
-        # Get save_preview situation template
-        get_situation_request = GetSituationRequest(situation_name="save_preview")
+        # Get save_griptape_nodes_preview situation template
+        get_situation_request = GetSituationRequest(situation_name="save_griptape_nodes_preview")
         get_situation_result = GriptapeNodes.handle_request(get_situation_request)
 
         if not isinstance(get_situation_result, GetSituationResultSuccess):
-            msg = "save_preview situation not found in project template"
+            msg = "save_griptape_nodes_preview situation not found in project template"
             raise RuntimeError(msg)  # noqa: TRY004
 
         # Build variables dict for macro resolution
@@ -1443,7 +1443,7 @@ class ArtifactManager:
         full_preview_path = path_result.absolute_path
         preview_file_metadata = SidecarContent(
             situation=SituationMetadata(
-                name="save_preview",
+                name="save_griptape_nodes_preview",
                 macro=situation.macro,
                 policy=SituationPolicy(
                     on_collision=situation.policy.on_collision,

@@ -68,7 +68,7 @@ class SidecarContent(BaseModel):
 def _resolve_sidecar_path(file_path: Path) -> Path:
     """Resolve the sidecar path for a given file via the project template system.
 
-    Uses the 'save_metadata' situation from the current project template to determine
+    Uses the 'save_griptape_nodes_metadata' situation from the current project template to determine
     where the sidecar JSON file should be written, preserving directory hierarchy
     relative to the project workspace.
 
@@ -89,9 +89,11 @@ def _resolve_sidecar_path(file_path: Path) -> Path:
     workspace_dir = get_project_result.project_info.project_base_dir
     decomposed = decompose_source_path(file_path, workspace_dir)
 
-    get_situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name="save_metadata"))
+    get_situation_result = GriptapeNodes.handle_request(
+        GetSituationRequest(situation_name="save_griptape_nodes_metadata")
+    )
     if not isinstance(get_situation_result, GetSituationResultSuccess):
-        msg = "save_metadata situation not found in project template"
+        msg = "save_griptape_nodes_metadata situation not found in project template"
         raise RuntimeError(msg)  # noqa: TRY004
 
     variables: dict[str, str | int] = {"source_file_name": decomposed.source_file_name}
@@ -116,7 +118,7 @@ def _resolve_sidecar_path(file_path: Path) -> Path:
 def write_sidecar(file_path: Path, metadata: SidecarContent | None) -> None:
     """Write a sidecar JSON metadata file for the saved file.
 
-    Resolves the sidecar path via the project template's 'save_metadata' situation,
+    Resolves the sidecar path via the project template's 'save_griptape_nodes_metadata' situation,
     placing the file in the project's centralized metadata directory with preserved
     path hierarchy. Best-effort: failures are logged as warnings and never propagated
     to callers.

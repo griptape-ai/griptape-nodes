@@ -77,8 +77,8 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             ),
             fallback="save_file",
         ),
-        "save_preview": SituationTemplate(
-            name="save_preview",
+        "save_griptape_nodes_preview": SituationTemplate(
+            name="save_griptape_nodes_preview",
             description="Generate preview/thumbnail with preserved directory hierarchy",
             macro="{griptape-nodes-previews}/{drive_volume_mount?:/}{source_relative_path?:/}{source_file_name}.{preview_format}",
             policy=SituationPolicy(
@@ -97,8 +97,8 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             ),
             fallback="save_file",
         ),
-        "save_metadata": SituationTemplate(
-            name="save_metadata",
+        "save_griptape_nodes_metadata": SituationTemplate(
+            name="save_griptape_nodes_metadata",
             description="Save sidecar metadata file with preserved directory hierarchy",
             macro="{griptape-nodes-metadata}/{source_relative_path?:/}{source_file_name}.json",
             policy=SituationPolicy(
