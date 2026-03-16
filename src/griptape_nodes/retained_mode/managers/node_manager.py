@@ -4706,9 +4706,11 @@ class NodeManager:
             details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because to_index {request.to_index} is out of range (list has {list_length} items)."
             return ReorderParameterListItemResultFailure(result_details=details)
 
+        # Early-out success: if indices are the same, item is already in correct position
         if request.from_index == request.to_index:
-            details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because from_index equals to_index ({request.from_index})."
-            return ReorderParameterListItemResultFailure(result_details=details)
+            details = f"Item in ParameterList '{request.parameter_list_name}' on Node '{node_name}' is already at index {request.from_index}. No reordering needed."
+            logger.warning(details)
+            return ReorderParameterListItemResultSuccess(result_details=details)
 
         # Perform the reorder by moving the item in the _children list
         item_to_move = children[request.from_index]
