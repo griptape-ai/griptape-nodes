@@ -10,6 +10,7 @@ import semver
 from pydantic import BaseModel, ValidationError
 
 from griptape_nodes.common.macro_parser import MacroVariables, ParsedMacro
+from griptape_nodes.files.path_utils import decompose_source_path
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.artifact_events import (
     GeneratePreviewFromDefaultsRequest,
@@ -71,7 +72,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
     GetSituationResultSuccess,
 )
-from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import build_situation_metadata
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import CallerFileMetadata, build_caller_metadata
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactPreviewGenerator,
@@ -94,7 +95,6 @@ from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
     normalize_friendly_name_to_key,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -110,7 +110,7 @@ class ResolvedPreviewPath(NamedTuple):
 
     destination_dir: Path
     file_name: str
-    file_metadata: dict[str, str] | None = None
+    file_metadata: CallerFileMetadata | None = None
 
 
 class PreviewMetadata(BaseModel):
@@ -1402,7 +1402,7 @@ class ArtifactManager:
 
         # Decompose source path into components
         source_path_obj = Path(source_path)
-        decomposed = OSManager.decompose_source_path(source_path_obj, workspace_dir)
+        decomposed = decompose_source_path(source_path_obj, workspace_dir)
 
         # Get save_preview situation template
         get_situation_request = GetSituationRequest(situation_name="save_preview")
@@ -1437,7 +1437,7 @@ class ArtifactManager:
 
         # Return destination directory and filename with situation context for sidecar
         full_preview_path = path_result.absolute_path
-        preview_file_metadata = build_situation_metadata("save_preview", situation, dict(variables))
+        preview_file_metadata = build_caller_metadata("save_preview", situation, dict(variables))
         return ResolvedPreviewPath(
             destination_dir=full_preview_path.parent,
             file_name=full_preview_path.name,
