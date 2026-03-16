@@ -4709,8 +4709,9 @@ class NodeManager:
         # Early-out success: if indices are the same, item is already in correct position
         if request.from_index == request.to_index:
             details = f"Item in ParameterList '{request.parameter_list_name}' on Node '{node_name}' is already at index {request.from_index}. No reordering needed."
-            logger.warning(details)
-            return ReorderParameterListItemResultSuccess(result_details=details)
+            return ReorderParameterListItemResultSuccess(
+                result_details=ResultDetails(message=details, level=logging.WARNING)
+            )
 
         # Perform the reorder by moving the item in the _children list
         item_to_move = children[request.from_index]
