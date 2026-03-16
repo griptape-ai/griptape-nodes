@@ -181,6 +181,7 @@ class TestProjectManagerBuiltinVariables:
 
         mock_config_manager = Mock()
         mock_config_manager.get_config_value.return_value = "/workspace"
+        mock_config_manager.workspace_path = Path("/workspace")
         mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
 
         parsed_macro = ParsedMacro("{workspace_dir}/output.txt")
@@ -191,7 +192,6 @@ class TestProjectManagerBuiltinVariables:
 
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/workspace/output.txt")
-        mock_config_manager.get_config_value.assert_called_once_with("workspace_directory")
 
     @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
     def test_builtin_workflow_name_resolves_correctly(
@@ -393,6 +393,7 @@ class TestProjectManagerBuiltinVariables:
 
         mock_config_manager = Mock()
         mock_config_manager.get_config_value.return_value = "my_static"
+        mock_config_manager.workspace_path = Path("/test")
         mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
 
         parsed_macro = ParsedMacro("{static_files_dir}/output.png")
@@ -970,6 +971,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1033,6 +1035,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1111,6 +1114,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1174,6 +1178,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1235,6 +1240,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1307,6 +1313,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)
+            mock_config.workspace_path = project_base
             mock_gn.ConfigManager.return_value = mock_config
 
             mock_context = Mock()
@@ -1342,7 +1349,11 @@ situations:
     @pytest.fixture
     def pm(self) -> ProjectManager:
         mock_event_manager = Mock()
-        return ProjectManager(mock_event_manager, Mock(), Mock())
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
     def _setup_system_defaults(self, pm: ProjectManager, workspace_dir: str = "/workspace") -> None:
         """Load system defaults into pm, mirroring _load_system_defaults."""

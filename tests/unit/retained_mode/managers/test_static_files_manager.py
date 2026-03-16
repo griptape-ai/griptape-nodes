@@ -650,6 +650,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
 
         mock_config_manager = Mock()
         mock_config_manager.get_config_value.return_value = str(workspace_dir)
+        mock_config_manager.workspace_path = workspace_dir
 
         with (
             patch.object(GriptapeNodes, "handle_request", side_effect=handle_request),
@@ -819,6 +820,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
         mock_config_manager.get_config_value.side_effect = lambda key, **kwargs: (
             str(workspace_dir) if key == "workspace_directory" else kwargs.get("default", "staticfiles")
         )
+        mock_config_manager.workspace_path = workspace_dir
         mock_static_files_manager.config_manager = mock_config_manager
 
         with (

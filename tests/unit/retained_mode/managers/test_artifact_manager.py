@@ -465,12 +465,16 @@ class TestGeneratePreview:
         return MacroPath(parsed_macro=parsed_macro, variables={})
 
     @pytest.fixture
-    def artifact_manager(self, mock_project: None) -> ArtifactManager:  # noqa: ARG002
+    def artifact_manager(self, mock_project: None, temp_dir: Path) -> ArtifactManager:  # noqa: ARG002
         """Create ArtifactManager instance with ImageArtifactProvider registered."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         manager = ArtifactManager()
         # Register ImageArtifactProvider (no longer auto-registered)
         request = RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
         manager.on_handle_register_artifact_provider_request(request)
+        # Set workspace_path after provider registration since registration triggers load_configs()
+        GriptapeNodes.ConfigManager().workspace_path = temp_dir
         return manager
 
     @pytest.mark.asyncio
@@ -769,12 +773,16 @@ class TestGetPreviewForArtifact:
         return MacroPath(parsed_macro=parsed_macro, variables={})
 
     @pytest.fixture
-    def artifact_manager(self, mock_project: None) -> ArtifactManager:  # noqa: ARG002
+    def artifact_manager(self, mock_project: None, temp_dir: Path) -> ArtifactManager:  # noqa: ARG002
         """Create ArtifactManager with ImageArtifactProvider registered."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         manager = ArtifactManager()
         # Register ImageArtifactProvider (no longer auto-registered)
         request = RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
         manager.on_handle_register_artifact_provider_request(request)
+        # Set workspace_path after provider registration since registration triggers load_configs()
+        GriptapeNodes.ConfigManager().workspace_path = temp_dir
         return manager
 
     @pytest.fixture

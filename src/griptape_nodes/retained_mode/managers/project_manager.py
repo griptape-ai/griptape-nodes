@@ -533,9 +533,10 @@ class ProjectManager:
 
         resolved_path = Path(resolved_string)
 
-        # Make absolute path by resolving against project base directory.
+        # Make absolute path by resolving against the workspace directory.
         # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
-        absolute_path = resolve_file_path(resolved_string, project_info.project_base_dir)
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        absolute_path = resolve_file_path(resolved_string, workspace_path)
 
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
@@ -546,6 +547,20 @@ class ProjectManager:
     def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> SetCurrentProjectResultSuccess:
         """Set which project user has selected."""
         self._current_project_id = request.project_id
+
+        if request.project_id is not None and self._config_manager is not None:
+            project_info = self._successfully_loaded_project_templates.get(request.project_id)
+            if project_info is not None and project_info.project_file_path is not None:
+                project_dir = project_info.project_file_path.parent
+                self._config_manager.load_project_config(project_dir)
+                # If neither the project-adjacent config nor env vars explicitly set workspace_directory,
+                # default the workspace to the project directory itself.
+                if (
+                    "workspace_directory" not in self._config_manager.project_config
+                    and "workspace_directory" not in self._config_manager.env_config
+                ):
+                    self._config_manager.workspace_path = project_dir
+                    self._config_manager.merged_config["workspace_directory"] = str(project_dir.resolve())
 
         if request.project_id is None:
             return SetCurrentProjectResultSuccess(
@@ -863,7 +878,7 @@ class ProjectManager:
 
         return directory_schemas
 
-    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:  # noqa: C901
+    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:
         """Get the value of a single builtin variable.
 
         Args:
@@ -886,12 +901,7 @@ class ProjectManager:
                 raise NotImplementedError(msg)
 
             case "workspace_dir":
-                config_manager = GriptapeNodes.ConfigManager()
-                workspace_dir = config_manager.get_config_value("workspace_directory")
-                if workspace_dir is None:
-                    msg = "Attempted to resolve builtin variable '{workspace_dir}'. Failed because 'workspace_directory' config value was None"
-                    raise RuntimeError(msg)
-                return str(workspace_dir)
+                return str(GriptapeNodes.ConfigManager().workspace_path)
 
             case "workflow_name":
                 context_manager = GriptapeNodes.ContextManager()
@@ -953,6 +963,7 @@ class ProjectManager:
         absolute_path = os_manager.resolve_path_safely(absolute_path)
 
         template = project_info.template
+        workspace_dir = os_manager.resolve_path_safely(GriptapeNodes.ConfigManager().workspace_path)
         project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
 
         # Secrets manager must be available (checked by caller)
@@ -995,9 +1006,9 @@ class ProjectManager:
                 msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
                 raise RuntimeError(msg) from e
 
-            # Make absolute (resolve relative paths against project base directory).
+            # Make absolute (resolve relative paths against the workspace directory).
             # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
-            resolved_dir_path = resolve_file_path(resolved_path_str, project_base_dir)
+            resolved_dir_path = resolve_file_path(resolved_path_str, workspace_dir)
             # Normalize for consistent cross-platform comparison
             resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
 
