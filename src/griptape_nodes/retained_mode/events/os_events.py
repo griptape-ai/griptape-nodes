@@ -14,7 +14,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.project_events import MacroPath
-    from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import CallerFileMetadata
+    from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
 
 
 class ExistingFilePolicy(StrEnum):
@@ -457,7 +457,7 @@ class WriteFileRequest(RequestPayload):
     existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     create_parents: bool = True
     skip_metadata_injection: bool = False
-    file_metadata: CallerFileMetadata | None = None
+    file_metadata: SidecarContent | None = None
 
 
 @dataclass

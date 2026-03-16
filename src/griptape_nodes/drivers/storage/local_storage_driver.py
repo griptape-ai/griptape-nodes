@@ -7,7 +7,7 @@ import httpx
 
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy, WriteFileRequest, WriteFileResultSuccess
-from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import CallerFileMetadata
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils import resolve_workspace_path
 
@@ -47,7 +47,7 @@ class LocalStorageDriver(BaseStorageDriver):
         path: Path,
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
-        file_metadata: CallerFileMetadata | None = None,
+        file_metadata: SidecarContent | None = None,
     ) -> CreateSignedUploadUrlResponse:
         # on_write_file_request seems to work most reliably with an absolute path.
         absolute_path = resolve_workspace_path(path, self.workspace_directory)
@@ -108,7 +108,7 @@ class LocalStorageDriver(BaseStorageDriver):
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
         skip_metadata_injection: bool = False,
-        file_metadata: CallerFileMetadata | None = None,
+        file_metadata: SidecarContent | None = None,
     ) -> str:
         """Save a file to local storage by writing directly to disk.
 

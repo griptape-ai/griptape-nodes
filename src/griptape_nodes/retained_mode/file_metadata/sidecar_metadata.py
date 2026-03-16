@@ -14,7 +14,9 @@ Example layout (for a file at <workspace>/outputs/image.png):
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -64,26 +66,18 @@ class SituationMetadata(BaseModel):
 
 
 class SidecarContent(BaseModel):
-    """Root model for the sidecar JSON file written alongside saved files."""
+    """Metadata for a sidecar JSON file written alongside saved files.
 
-    schema_version: str
-    saved_at: str
+    Serves as both the input type (callers fill in situation/variables)
+    and the basis for the written JSON (write_sidecar merges in workflow
+    context and adds schema_version/saved_at at write time).
+    """
+
     situation: SituationMetadata | None = None
     variables: dict[str, str] | None = None
     workflow: WorkflowMetadata | None = None
     flow: FlowMetadata | None = None
     parameters: dict[str, str] | None = None
-
-
-class CallerFileMetadata(BaseModel):
-    """Caller-provided context to include in the sidecar metadata file.
-
-    Passed through WriteFileRequest so the sidecar writer can capture
-    the situation and macro variables that were active when the file was saved.
-    """
-
-    situation: SituationMetadata | None = None
-    variables: dict[str, str] | None = None
 
 
 def _resolve_sidecar_path(file_path: Path) -> Path:
@@ -134,12 +128,12 @@ def _resolve_sidecar_path(file_path: Path) -> Path:
     return path_result.absolute_path
 
 
-def build_caller_metadata(
+def build_sidecar_metadata(
     situation_name: str,
     situation: SituationTemplate,
     variables: dict[str, object],
-) -> CallerFileMetadata:
-    """Build CallerFileMetadata from a resolved situation template.
+) -> SidecarContent:
+    """Build SidecarContent from a resolved situation template.
 
     Args:
         situation_name: Name of the situation (e.g., "save_node_output").
@@ -147,9 +141,9 @@ def build_caller_metadata(
         variables: Macro variable values used when resolving the situation.
 
     Returns:
-        CallerFileMetadata to pass as WriteFileRequest.file_metadata.
+        SidecarContent to pass as WriteFileRequest.file_metadata.
     """
-    return CallerFileMetadata(
+    return SidecarContent(
         situation=SituationMetadata(
             name=situation_name,
             macro=situation.macro,
@@ -162,29 +156,7 @@ def build_caller_metadata(
     )
 
 
-def build_sidecar_content(caller_metadata: CallerFileMetadata | None) -> SidecarContent:
-    """Build the sidecar content by merging caller metadata with auto-collected workflow context.
-
-    Args:
-        caller_metadata: Caller-provided situation and variable context. May be None.
-
-    Returns:
-        SidecarContent suitable for JSON serialization.
-    """
-    ctx: WorkflowContext = collect_workflow_context()
-
-    return SidecarContent(
-        schema_version=SCHEMA_VERSION,
-        saved_at=ctx.saved_at,
-        situation=caller_metadata.situation if caller_metadata else None,
-        variables=caller_metadata.variables if caller_metadata else None,
-        workflow=ctx.workflow,
-        flow=ctx.flow,
-        parameters=ctx.parameters,
-    )
-
-
-def write_sidecar(file_path: Path, caller_metadata: CallerFileMetadata | None) -> None:
+def write_sidecar(file_path: Path, metadata: SidecarContent | None) -> None:
     """Write a sidecar JSON metadata file for the saved file.
 
     Resolves the sidecar path via the project template's 'save_metadata' situation,
@@ -194,12 +166,24 @@ def write_sidecar(file_path: Path, caller_metadata: CallerFileMetadata | None) -
 
     Args:
         file_path: Absolute path to the file that was just saved.
-        caller_metadata: Caller-provided situation and variable context (may be None).
+        metadata: Caller-provided situation and variable context (may be None).
     """
     try:
         sidecar_path = _resolve_sidecar_path(file_path)
-        content = build_sidecar_content(caller_metadata)
+        ctx: WorkflowContext = collect_workflow_context()
+        content = SidecarContent(
+            situation=metadata.situation if metadata else None,
+            variables=metadata.variables if metadata else None,
+            workflow=ctx.workflow,
+            flow=ctx.flow,
+            parameters=ctx.parameters,
+        )
+        output = {
+            "schema_version": SCHEMA_VERSION,
+            "saved_at": datetime.now(UTC).isoformat(),
+            **content.model_dump(exclude_none=True),
+        }
         sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-        sidecar_path.write_text(content.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+        sidecar_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
     except Exception as e:
         logger.warning("Failed to write sidecar metadata for '%s': %s", file_path, e)

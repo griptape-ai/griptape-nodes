@@ -51,7 +51,6 @@ class FlowMetadata(BaseModel):
 class WorkflowContext(BaseModel):
     """Structured auto-collected workflow context for sidecar metadata."""
 
-    saved_at: str
     workflow: WorkflowMetadata | None = None
     flow: FlowMetadata | None = None
     parameters: dict[str, str] | None = None
@@ -269,10 +268,9 @@ def collect_workflow_context() -> WorkflowContext:
         WorkflowContext with structured workflow, flow, and parameter data.
     """
     context_manager = GriptapeNodes.ContextManager()
-    saved_at = datetime.now(UTC).isoformat()
 
     if not context_manager.has_current_workflow():
-        return WorkflowContext(saved_at=saved_at)
+        return WorkflowContext()
 
     workflow_meta: WorkflowMetadata | None = None
     try:
@@ -312,7 +310,6 @@ def collect_workflow_context() -> WorkflowContext:
             logger.exception("Failed to collect flow/node context")
 
     return WorkflowContext(
-        saved_at=saved_at,
         workflow=workflow_meta,
         flow=flow_meta,
         parameters=parameters,

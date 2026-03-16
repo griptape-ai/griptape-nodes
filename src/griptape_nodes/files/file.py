@@ -24,7 +24,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     PathResolutionFailureReason,
 )
 from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
-    CallerFileMetadata,
+    SidecarContent,
     SituationMetadata,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -177,7 +177,7 @@ class File:
         self,
         file_path: str | MacroPath,
         *,
-        file_metadata: CallerFileMetadata | None = None,
+        file_metadata: SidecarContent | None = None,
     ) -> None:
         """Store file reference. No I/O is performed.
 
@@ -662,8 +662,8 @@ class File:
 
         return Path(cast("WriteFileResultSuccess", result).final_file_path)
 
-    def _build_file_metadata(self) -> CallerFileMetadata | None:
-        """Build CallerFileMetadata from MacroPath variables and caller-provided metadata.
+    def _build_file_metadata(self) -> SidecarContent | None:
+        """Build SidecarContent from MacroPath variables and caller-provided metadata.
 
         Caller-provided metadata takes full precedence. If only a MacroPath is present
         (no caller metadata), the macro template and variables are captured as a minimal
@@ -672,7 +672,7 @@ class File:
         if self._file_metadata is not None:
             return self._file_metadata
         if isinstance(self._file_path, MacroPath):
-            return CallerFileMetadata(
+            return SidecarContent(
                 situation=SituationMetadata(macro=self._file_path.parsed_macro.template),
                 variables={k: str(v) for k, v in self._file_path.variables.items()},
             )
@@ -696,7 +696,7 @@ class FileDestination:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-        file_metadata: CallerFileMetadata | None = None,
+        file_metadata: SidecarContent | None = None,
     ) -> None:
         """Store file path and write configuration. No I/O is performed.
 
