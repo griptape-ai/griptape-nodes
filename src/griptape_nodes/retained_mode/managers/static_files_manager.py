@@ -33,10 +33,10 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
 )
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import build_situation_metadata
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.metadata.sidecar_metadata import build_situation_metadata
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.servers.static import STATIC_SERVER_URL, start_static_server
 from griptape_nodes.utils.url_utils import uri_to_path

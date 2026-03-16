@@ -29,8 +29,8 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
     GetSituationResultSuccess,
 )
+from griptape_nodes.retained_mode.file_metadata.workflow_metadata import collect_workflow_metadata
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.artifact_providers.image.metadata import collect_workflow_metadata
 
 if TYPE_CHECKING:
     from pathlib import Path

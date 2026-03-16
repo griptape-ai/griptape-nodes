@@ -12,10 +12,10 @@ from PIL import Image
 from griptape_nodes.drivers.image_metadata.image_metadata_driver_registry import (
     ImageMetadataDriverRegistry,
 )
+from griptape_nodes.retained_mode.file_metadata.workflow_metadata import collect_workflow_metadata
 from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
     BaseArtifactProvider,
 )
-from griptape_nodes.retained_mode.managers.artifact_providers.image.metadata import collect_workflow_metadata
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (

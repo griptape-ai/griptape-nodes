@@ -71,6 +71,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
     GetSituationResultSuccess,
 )
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import build_situation_metadata
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactPreviewGenerator,
@@ -93,7 +94,6 @@ from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
     normalize_friendly_name_to_key,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.metadata.sidecar_metadata import build_situation_metadata
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 logger = logging.getLogger("griptape_nodes")

@@ -1,9 +1,4 @@
-"""Automatic workflow metadata injection for images saved through StaticFilesManager.
-
-This module provides functionality to automatically inject workflow metadata into
-images when they are saved. Format eligibility is checked by the caller
-(ImageArtifactProvider).
-"""
+"""Workflow metadata collection for files saved through the retained mode API."""
 
 import base64
 import logging

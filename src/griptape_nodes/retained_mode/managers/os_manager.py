@@ -85,9 +85,9 @@ from griptape_nodes.retained_mode.events.resource_events import (
     RegisterResourceTypeRequest,
     RegisterResourceTypeResultSuccess,
 )
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import write_sidecar
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.metadata.sidecar_metadata import write_sidecar
 from griptape_nodes.retained_mode.managers.resource_types.compute_resource import ComputeBackend, ComputeResourceType
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform

@@ -15,8 +15,8 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationResultSuccess,
     MacroPath,
 )
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import build_situation_metadata
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.metadata.sidecar_metadata import build_situation_metadata
 
 logger = logging.getLogger("griptape_nodes")
 
