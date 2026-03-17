@@ -1452,9 +1452,6 @@ class LibraryManager:
                         # base_dir comes first so the library's own modules take precedence.
                         library_path_entries: list[str] = [str(base_dir)]
 
-                        # Add the directory to the Python path to allow for relative imports
-                        sys.path.insert(0, str(base_dir))
-
                         # Add venv site-packages to sys.path if library has dependencies
                         if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
                             venv_path = self._get_library_venv_path(library_data.name, file_path)
@@ -1468,7 +1465,6 @@ class LibraryManager:
                                     )
                                 )
                                 library_path_entries.append(site_packages)
-                                sys.path.insert(0, site_packages)
                                 logger.debug(
                                     "Added library '%s' venv to sys.path: %s", library_data.name, site_packages
                                 )
@@ -2287,7 +2283,7 @@ class LibraryManager:
                 # Execute the module with the new code, scoping sys.path to this
                 # library's paths to prevent it from resolving against other libraries.
                 library_paths = self._library_to_path_entries.get(library_name, [])
-                with LibraryImportContext(library_paths, self._engine_baseline_path):
+                with LibraryImportContext(library_name, library_paths, self._engine_baseline_path):
                     spec.loader.exec_module(module)
                 # Register new stable alias
                 self._register_stable_module_alias(module_name, stable_namespace, module, library_name)
@@ -2317,7 +2313,7 @@ class LibraryManager:
             # it from resolving imports against other libraries' paths.
             try:
                 library_paths = self._library_to_path_entries.get(library_name, [])
-                with LibraryImportContext(library_paths, self._engine_baseline_path):
+                with LibraryImportContext(library_name, library_paths, self._engine_baseline_path):
                     spec.loader.exec_module(module)
                 # Register stable alias
                 self._register_stable_module_alias(module_name, stable_namespace, module, library_name)
@@ -2613,8 +2609,6 @@ class LibraryManager:
                         if library_info.library_name == library_name:
                             library_path = Path(library_info.library_path)
                             base_dir = library_path.parent.absolute()
-                            # Add the directory to the Python path to allow for relative imports.
-                            sys.path.insert(0, str(base_dir))
                             for workflow in library_data.workflows:
                                 final_workflow_path = base_dir / workflow
                                 library_workflow_files_to_register.append(str(final_workflow_path))

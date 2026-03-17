@@ -111,3 +111,50 @@ class TestLoadModuleFromFileSysPathScoping:
         module = library_manager._load_module_from_file(module_file, library_name)
 
         assert library_paths + engine_baseline == module.CAPTURED_SYS_PATH
+
+    def test_dependency_imported_by_lib_a_not_leaked_to_lib_b(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """A dependency imported during Library A's module load is not visible to Library B's load."""
+        import types
+
+        from griptape_nodes.retained_mode.managers.library_import_context import LibraryImportContext
+
+        library_manager = griptape_nodes.LibraryManager()
+
+        lib_a_dir = temp_dir / "lib_a"
+        lib_a_dir.mkdir()
+        lib_b_dir = temp_dir / "lib_b"
+        lib_b_dir.mkdir()
+
+        # Library A's module captures which modules are present at import time
+        module_a_file = lib_a_dir / "node_a.py"
+        module_a_file.write_text("import sys\nCAPTURED_MODULES = set(sys.modules.keys())\n")
+
+        # Library B's module also captures which modules are present
+        module_b_file = lib_b_dir / "node_b.py"
+        module_b_file.write_text("import sys\nCAPTURED_MODULES = set(sys.modules.keys())\n")
+
+        lib_a_name = "Isolation Test Library A"
+        lib_b_name = "Isolation Test Library B"
+        fake_dep_name = "_test_fake_shared_dep_xyz"
+
+        library_manager._library_to_path_entries[lib_a_name] = [str(lib_a_dir)]
+        library_manager._library_to_path_entries[lib_b_name] = [str(lib_b_dir)]
+        library_manager._engine_baseline_path = ["/fake/engine"]
+
+        # Simulate a dependency that Library A loaded into sys.modules
+        fake_dep = types.ModuleType(fake_dep_name)
+        fake_dep.__file__ = str(lib_a_dir / "fake_dep/__init__.py")
+        LibraryImportContext._library_module_caches.pop(lib_a_name, None)
+        LibraryImportContext._library_module_caches.pop(lib_b_name, None)
+        LibraryImportContext._library_module_caches[lib_a_name] = {fake_dep_name: fake_dep}
+
+        # Load Library B's module — it should NOT see lib_a's cached dep
+        module_b = library_manager._load_module_from_file(module_b_file, lib_b_name)
+
+        assert fake_dep_name not in module_b.CAPTURED_MODULES
+
+        # Cleanup
+        LibraryImportContext._library_module_caches.pop(lib_a_name, None)
+        LibraryImportContext._library_module_caches.pop(lib_b_name, None)
