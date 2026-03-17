@@ -1895,10 +1895,6 @@ class LibraryManager:
         # Clean up all stable module aliases for this library
         self._unregister_all_stable_module_aliases_for_library(request.library_name)
 
-        # Clear the per-library dependency module cache so a subsequent reload
-        # doesn't restore stale versions of dependency packages.
-        LibraryImportContext._library_module_caches.pop(request.library_name, None)
-
         # Remove the library from our library info list. This prevents it from still showing
         # up in the table of attempted library loads.
         lib_info = self.get_library_info_by_library_name(request.library_name)
