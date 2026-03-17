@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
@@ -123,16 +122,12 @@ class PublicArtifactUrlParameter:
         if url.startswith(("http://", "https://")) and "localhost" not in url:
             return url
 
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
-        static_files_dir = str(self._get_config_value("static_files_directory", default="staticfiles"))
-        static_files_path = workspace_path / static_files_dir
+        from griptape_nodes.files.file import File
 
-        parsed_url = urlparse(url)
-        filename = Path(parsed_url.path).name
-        with (static_files_path / filename).open("rb") as f:
-            file_contents = f.read()
+        file_contents = File(url).read_bytes()
+        filename = Path(url).name
 
-        self.gtc_file_path = Path(static_files_dir) / "artifact_url_storage" / uuid4().hex / filename
+        self.gtc_file_path = Path("artifact_url_storage") / uuid4().hex / filename
 
         # upload to Griptape Cloud and get a public URL
         public_url = self._storage_driver.upload_file(path=self.gtc_file_path, file_content=file_contents)
