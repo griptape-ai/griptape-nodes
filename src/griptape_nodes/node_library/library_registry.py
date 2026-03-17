@@ -11,6 +11,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_widget_registration_problem import (
     DuplicateWidgetRegistrationProblem,
 )
+from griptape_nodes.retained_mode.managers.library_import_context import library_scope_for_library_name
 from griptape_nodes.retained_mode.managers.resource_components.resource_instance import (
     Requirements,
 )
@@ -436,7 +437,8 @@ class Library:
         metadata["library_node_metadata"] = library_node_metadata
         metadata["library"] = self._library_data.name
         metadata["node_type"] = node_type
-        node = node_class(name=name, metadata=metadata)
+        with library_scope_for_library_name(self._library_data.name):
+            node = node_class(name=name, metadata=metadata)
         return node
 
     def get_registered_nodes(self) -> list[str]:

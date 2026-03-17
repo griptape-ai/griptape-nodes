@@ -103,6 +103,7 @@ from griptape_nodes.retained_mode.managers.event_manager import (
     EventSuppressionContext,
     EventTranslationContext,
 )
+from griptape_nodes.retained_mode.managers.library_import_context import library_scope_for_node
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -213,35 +214,36 @@ class NodeExecutor:
             node: The BaseNode to execute
             library_name: The library that the execute method should come from.
         """
-        # Handle iterative node groups (ForEachGroup, ForLoopGroup, etc.)
-        # Check this BEFORE SubflowNodeGroup since BaseIterativeNodeGroup extends SubflowNodeGroup
-        if isinstance(node, BaseIterativeNodeGroup):
-            await self.handle_iterative_group_execution(node)
-            return
-
-        if isinstance(node, SubflowNodeGroup):
-            execution_type = node.get_parameter_value(node.execution_environment.name)
-            if execution_type == LOCAL_EXECUTION:
-                # Just execute the node normally! This means we aren't doing any special packaging.
-                await node.aprocess()
+        with library_scope_for_node(node):
+            # Handle iterative node groups (ForEachGroup, ForLoopGroup, etc.)
+            # Check this BEFORE SubflowNodeGroup since BaseIterativeNodeGroup extends SubflowNodeGroup
+            if isinstance(node, BaseIterativeNodeGroup):
+                await self.handle_iterative_group_execution(node)
                 return
-            # Clear execution state before subprocess execution starts
-            node.subflow_execution_component.clear_execution_state()
-            if execution_type == PRIVATE_EXECUTION:
-                # Package the flow and run it in a subprocess.
-                await self._execute_private_workflow(node)
+
+            if isinstance(node, SubflowNodeGroup):
+                execution_type = node.get_parameter_value(node.execution_environment.name)
+                if execution_type == LOCAL_EXECUTION:
+                    # Just execute the node normally! This means we aren't doing any special packaging.
+                    await node.aprocess()
+                    return
+                # Clear execution state before subprocess execution starts
+                node.subflow_execution_component.clear_execution_state()
+                if execution_type == PRIVATE_EXECUTION:
+                    # Package the flow and run it in a subprocess.
+                    await self._execute_private_workflow(node)
+                    return
+                # If it isn't Local or Private, it must be a library name. We'll try to execute it, and if the library name doesn't exist, it'll raise an error.
+                await self._execute_library_workflow(node, execution_type)
                 return
-            # If it isn't Local or Private, it must be a library name. We'll try to execute it, and if the library name doesn't exist, it'll raise an error.
-            await self._execute_library_workflow(node, execution_type)
-            return
 
-        # Handle iterative loop nodes - check if we need to package and execute the loop
-        if isinstance(node, BaseIterativeEndNode):
-            await self.handle_loop_execution(node)
-            return
+            # Handle iterative loop nodes - check if we need to package and execute the loop
+            if isinstance(node, BaseIterativeEndNode):
+                await self.handle_loop_execution(node)
+                return
 
-        # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-        await node.aprocess()
+            # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
+            await node.aprocess()
 
     async def _execute_and_apply_workflow(
         self,
@@ -852,7 +854,8 @@ class NodeExecutor:
             return False
 
         # Check if end node would emit break_loop_signal_output
-        next_control_output = deserialized_end_node.get_next_control_output()
+        with library_scope_for_node(deserialized_end_node):
+            next_control_output = deserialized_end_node.get_next_control_output()
         if next_control_output is None:
             return False
 
@@ -942,7 +945,8 @@ class NodeExecutor:
             return False
 
         # Check if the node's next control output matches the source parameter
-        next_control_output = deserialized_source_node.get_next_control_output()
+        with library_scope_for_node(deserialized_source_node):
+            next_control_output = deserialized_source_node.get_next_control_output()
         if next_control_output is None:
             return False
 
