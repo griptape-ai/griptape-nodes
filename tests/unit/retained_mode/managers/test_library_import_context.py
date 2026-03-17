@@ -150,6 +150,35 @@ class TestLibraryImportContext:
         # Cleanup
         LibraryImportContext._library_module_caches.pop(library_name, None)
 
+    def test_no_caching_on_exception(self) -> None:
+        """Modules imported during a failed context are not cached, only cleaned up."""
+        library_paths = ["/lib/a/site-packages"]
+        engine_baseline = ["/engine/src"]
+        library_name = "_test_lib_no_cache_on_exception"
+        module_name = "_test_failed_import_module"
+
+        LibraryImportContext._library_module_caches.pop(library_name, None)
+        sys.modules.pop(module_name, None)
+
+        fake_module = types.ModuleType(module_name)
+        fake_module.__file__ = "/lib/a/site-packages/failed_module/__init__.py"
+
+        def _failing_import() -> None:
+            sys.modules[module_name] = fake_module
+            err_msg = "simulated DLL load failure"
+            raise ImportError(err_msg)
+
+        with pytest.raises(ImportError), LibraryImportContext(library_name, library_paths, engine_baseline):
+            _failing_import()
+
+        # Module should be cleaned up from sys.modules
+        assert module_name not in sys.modules
+        # But it should NOT be cached — the import was partial/broken
+        assert library_name not in LibraryImportContext._library_module_caches
+
+        # Cleanup
+        LibraryImportContext._library_module_caches.pop(library_name, None)
+
     def test_no_caching_when_library_name_is_empty(self) -> None:
         """When library_name is empty, no modules are cached or removed on exit."""
         library_paths = ["/lib/a/site-packages"]
