@@ -177,6 +177,7 @@ griptape_nodes_config.json
 
 # Griptape Nodes
 GriptapeNodes/
+libraries/
 
 # MacOS
 .DS_Store
