@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
@@ -17,7 +19,7 @@ class TestLoadModuleFromFileSysPathScoping:
     """Verify that _load_module_from_file uses LibraryImportContext to scope sys.path."""
 
     @pytest.fixture
-    def temp_dir(self) -> Path:
+    def temp_dir(self) -> Generator[Path, None, None]:
         with tempfile.TemporaryDirectory() as d:
             yield Path(d)
 

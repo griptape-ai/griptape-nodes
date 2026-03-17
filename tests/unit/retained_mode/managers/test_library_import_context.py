@@ -32,8 +32,7 @@ class TestLibraryImportContext:
         """sys.path is restored even when an exception is raised inside the context."""
         original = sys.path.copy()
         with pytest.raises(RuntimeError), LibraryImportContext(["/fake/lib"], ["/fake/baseline"]):
-            msg = "failure inside context"
-            raise RuntimeError(msg)
+            raise RuntimeError
         assert sys.path == original
 
     def test_empty_library_paths_uses_engine_baseline_only(self) -> None:
