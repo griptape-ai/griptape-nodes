@@ -68,7 +68,10 @@ class LibraryImportContext:
             if module_file is not None and self._is_under_library_path(module_file):
                 library_specific[name] = module
         # Cache this library's modules so they can be restored on re-entry.
-        if library_specific:
+        # Skip caching when an exception occurred — modules may be in a partial or broken
+        # state (e.g. a C extension that failed mid-load), and restoring them on the next
+        # context entry would propagate that broken state to subsequent node loads.
+        if _exc_type is None and library_specific:
             if self._library_name not in self._library_module_caches:
                 self._library_module_caches[self._library_name] = {}
             self._library_module_caches[self._library_name].update(library_specific)
