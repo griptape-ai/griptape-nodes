@@ -253,8 +253,11 @@ async def _process_incoming_messages(client: Client) -> None:
     async for message in client.messages:
         try:
             await _process_api_event(message)
-        except Exception:
-            logger.exception("Error processing event, skipping.")
+        except Exception as e:
+            logger.warning(
+                "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
+                e,
+            )
 
 
 async def _process_api_event(event: dict) -> None:
