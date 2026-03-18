@@ -57,6 +57,7 @@ class CreateNodeRequest(RequestPayload):
         create_error_proxy_on_failure: Create Error Proxy node if creation fails (defaults to True)
         node_names_to_add: List of existing node names to add to this node after creation (used by SubflowNodeGroup, defaults to None)
         subflow_name: Subflow name for node groups (if None, a fresh one will be created; used by SubflowNodeGroup, defaults to None)
+        parent_group_name: Name of the group node to add this node to after creation (defaults to None)
 
     Results: CreateNodeResultSuccess (with assigned name) | CreateNodeResultFailure (invalid type, missing library, flow not found)
     """
@@ -78,6 +79,8 @@ class CreateNodeRequest(RequestPayload):
     node_names_to_add: list[str] | None = None
     # Subflow name for node groups (if None, a fresh one will be created; used by SubflowNodeGroup)
     subflow_name: str | None = None
+    # Name of the group node to add this node to after creation
+    parent_group_name: str | None = None
 
 
 @dataclass
@@ -90,12 +93,14 @@ class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
         node_type: Class name of created node
         specific_library_name: Library that provided this node type
         parent_flow_name: Name of the flow the node was created in
+        parent_group_name: Name of the group this node belongs to (None if not in a group)
     """
 
     node_name: str
     node_type: str
     specific_library_name: str | None = None
     parent_flow_name: str | None = None
+    parent_group_name: str | None = None
 
 
 @dataclass
