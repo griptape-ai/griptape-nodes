@@ -15,6 +15,7 @@ from rich.panel import Panel
 
 from griptape_nodes.api_client import Client
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
+from griptape_nodes.common.node_executor import current_executing_node_name
 from griptape_nodes.retained_mode.events import app_events, execution_events
 
 # This import is necessary to register all events, even if not technically used
@@ -92,8 +93,11 @@ class EventLogHandler(logging.Handler):
             message = record.getMessage()
             if len(message) > LOG_MESSAGE_MAX_LENGTH:
                 message = message[:LOG_MESSAGE_MAX_LENGTH] + "... (truncated; full output available in engine logs)"
+            node_name = current_executing_node_name.get(None)
             log_event = AppEvent(
-                payload=LogHandlerEvent(message=message, levelname=record.levelname, created=record.created)
+                payload=LogHandlerEvent(
+                    message=message, levelname=record.levelname, created=record.created, node_name=node_name
+                )
             )
             griptape_nodes.EventManager().put_event(log_event)
 

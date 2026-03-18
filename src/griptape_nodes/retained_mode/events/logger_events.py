@@ -23,3 +23,4 @@ class LogHandlerEvent(AppPayload):
     message: str
     levelname: str
     created: float
+    node_name: str | None = None

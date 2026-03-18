@@ -4,6 +4,7 @@ import ast
 import asyncio
 import logging
 import pickle
+from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -118,6 +119,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
+# Tracks the name of the node currently being executed in this async context.
+# Each asyncio task gets its own copy, so parallel node execution is safe.
+current_executing_node_name: ContextVar[str | None] = ContextVar("current_executing_node_name", default=None)
+
 
 class IterationControlAction(StrEnum):
     """Enum for iterative group control actions."""
@@ -219,41 +224,45 @@ class NodeExecutor:
             node: The BaseNode to execute
             library_name: The library that the execute method should come from.
         """
-        # Handle while-loop node groups (RetryGroup, etc.)
-        # Check this BEFORE SubflowNodeGroup since BaseWhileNodeGroup extends SubflowNodeGroup
-        if isinstance(node, BaseWhileNodeGroup):
-            await self.handle_while_group_execution(node)
-            return
-
-        # Handle iterative node groups (ForEachGroup, ForLoopGroup, etc.)
-        # Check this BEFORE SubflowNodeGroup since BaseIterativeNodeGroup extends SubflowNodeGroup
-        if isinstance(node, BaseIterativeNodeGroup):
-            await self.handle_iterative_group_execution(node)
-            return
-
-        if isinstance(node, SubflowNodeGroup):
-            execution_type = node.get_parameter_value(node.execution_environment.name)
-            if execution_type == LOCAL_EXECUTION:
-                # Just execute the node normally! This means we aren't doing any special packaging.
-                await node.aprocess()
+        token = current_executing_node_name.set(node.name)
+        try:
+            # Handle while-loop node groups (RetryGroup, etc.)
+            # Check this BEFORE SubflowNodeGroup since BaseWhileNodeGroup extends SubflowNodeGroup
+            if isinstance(node, BaseWhileNodeGroup):
+                await self.handle_while_group_execution(node)
                 return
-            # Clear execution state before subprocess execution starts
-            node.subflow_execution_component.clear_execution_state()
-            if execution_type == PRIVATE_EXECUTION:
-                # Package the flow and run it in a subprocess.
-                await self._execute_private_workflow(node)
+
+            # Handle iterative node groups (ForEachGroup, ForLoopGroup, etc.)
+            # Check this BEFORE SubflowNodeGroup since BaseIterativeNodeGroup extends SubflowNodeGroup
+            if isinstance(node, BaseIterativeNodeGroup):
+                await self.handle_iterative_group_execution(node)
                 return
-            # If it isn't Local or Private, it must be a library name. We'll try to execute it, and if the library name doesn't exist, it'll raise an error.
-            await self._execute_library_workflow(node, execution_type)
-            return
 
-        # Handle iterative loop nodes - check if we need to package and execute the loop
-        if isinstance(node, BaseIterativeEndNode):
-            await self.handle_loop_execution(node)
-            return
+            if isinstance(node, SubflowNodeGroup):
+                execution_type = node.get_parameter_value(node.execution_environment.name)
+                if execution_type == LOCAL_EXECUTION:
+                    # Just execute the node normally! This means we aren't doing any special packaging.
+                    await node.aprocess()
+                    return
+                # Clear execution state before subprocess execution starts
+                node.subflow_execution_component.clear_execution_state()
+                if execution_type == PRIVATE_EXECUTION:
+                    # Package the flow and run it in a subprocess.
+                    await self._execute_private_workflow(node)
+                    return
+                # If it isn't Local or Private, it must be a library name. We'll try to execute it, and if the library name doesn't exist, it'll raise an error.
+                await self._execute_library_workflow(node, execution_type)
+                return
 
-        # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-        await node.aprocess()
+            # Handle iterative loop nodes - check if we need to package and execute the loop
+            if isinstance(node, BaseIterativeEndNode):
+                await self.handle_loop_execution(node)
+                return
+
+            # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
+            await node.aprocess()
+        finally:
+            current_executing_node_name.reset(token)
 
     async def _execute_and_apply_workflow(
         self,
