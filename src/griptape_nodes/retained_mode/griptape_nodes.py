@@ -156,6 +156,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._workflow_variables_manager = VariablesManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
+            # ProjectManager must be initialized before StaticFilesManager because
+            # StaticFilesManager.__init__ calls secrets_manager.get_secret() which
+            # accesses workspace_env_path via GriptapeNodes.ProjectManager(), and
+            # SingletonMeta would recurse infinitely if ProjectManager isn't ready yet.
+            self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
             self._static_files_manager = StaticFilesManager(
                 self._config_manager, self._secrets_manager, self._event_manager
             )
@@ -166,7 +171,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._mcp_manager = MCPManager(self._event_manager, self._config_manager)
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
             self._user_manager = UserManager(self._secrets_manager)
-            self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
             self._artifact_manager = ArtifactManager(self._event_manager)
 
             # Assign handlers now that these are created.
