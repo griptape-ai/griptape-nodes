@@ -6,6 +6,8 @@ from urllib.parse import urljoin
 import httpx
 
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
+from griptape_nodes.files.file import FileLoadError
+from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy, WriteFileRequest, WriteFileResultSuccess
 from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -204,13 +206,19 @@ class LocalStorageDriver(BaseStorageDriver):
     def get_asset_url(self, path: Path) -> str:
         """Get the permanent URL for a local asset.
 
-        Returns the absolute file path.
+        Builds the canonical path using the ``copy_external_file`` situation and returns
+        it as an absolute path string.  Falls back to the absolute path of the original
+        file if the situation cannot be resolved (e.g. no project loaded).
 
         Args:
             path: The path of the file
 
         Returns:
-            Absolute file path as a string
+            Absolute path string for the resolved asset path
         """
-        absolute_path = resolve_workspace_path(path, self.workspace_directory)
-        return str(absolute_path)
+        destination = ProjectFileDestination.from_situation(path.name, "copy_external_file")
+        try:
+            resolved_path = Path(destination.resolve())
+        except FileLoadError:
+            return str(resolve_workspace_path(path, self.workspace_directory))
+        return str(resolved_path)

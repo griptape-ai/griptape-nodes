@@ -48,6 +48,7 @@ from griptape_nodes.utils.url_utils import uri_to_path
 logger = logging.getLogger("griptape_nodes")
 
 SAVE_STATIC_FILE_SITUATION = "save_static_file"
+COPY_EXTERNAL_FILE_SITUATION = "copy_external_file"
 
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
 
@@ -171,9 +172,9 @@ class StaticFilesManager:
         """
         file_name = request.file_name
 
-        resolved = self._resolve_static_file_path(file_name)
+        resolved = self._resolve_static_file_path(file_name, COPY_EXTERNAL_FILE_SITUATION)
         if resolved is None:
-            msg = f"Attempted to create upload URL for '{file_name}'. Failed because the project template is missing the '{SAVE_STATIC_FILE_SITUATION}' situation."
+            msg = f"Attempted to create upload URL for '{file_name}'. Failed because the project template is missing the '{COPY_EXTERNAL_FILE_SITUATION}' situation."
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
         try:
@@ -365,21 +366,25 @@ class StaticFilesManager:
             raise RuntimeError(msg) from e
         return self.storage_driver.create_signed_download_url(Path(saved_path))
 
-    def _resolve_static_file_path(self, file_name: str) -> ResolvedStaticFilePath | None:
-        """Resolve the file path for a static file using the save_static_file situation.
+    def _resolve_static_file_path(
+        self, file_name: str, situation_name: str = SAVE_STATIC_FILE_SITUATION
+    ) -> ResolvedStaticFilePath | None:
+        """Resolve the file path for a static file using the given situation.
 
         Args:
             file_name: The name of the file (e.g., "output.png").
+            situation_name: The situation to use for path resolution. Defaults to
+                ``save_static_file``.
 
         Returns:
             ResolvedStaticFilePath if situation resolution succeeds, or None on failure.
         """
-        situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=SAVE_STATIC_FILE_SITUATION))
+        situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation_name))
         if not isinstance(situation_result, GetSituationResultSuccess):
             logger.warning(
                 "Project template does not include '%s' situation; static files will save to the default directory. "
                 "Projects using StaticFilesManager.save_static_file require this situation in their project template.",
-                SAVE_STATIC_FILE_SITUATION,
+                situation_name,
             )
             return None
 
@@ -390,7 +395,7 @@ class StaticFilesManager:
         try:
             parsed_macro = ParsedMacro(situation.macro)
         except MacroSyntaxError as e:
-            logger.warning("Failed to parse %s situation macro: %s", SAVE_STATIC_FILE_SITUATION, e)
+            logger.warning("Failed to parse %s situation macro: %s", situation_name, e)
             return None
 
         macro_result = GriptapeNodes.handle_request(
@@ -400,9 +405,7 @@ class StaticFilesManager:
             )
         )
         if not isinstance(macro_result, GetPathForMacroResultSuccess):
-            logger.warning(
-                "Failed to resolve %s situation path: %s", SAVE_STATIC_FILE_SITUATION, macro_result.result_details
-            )
+            logger.warning("Failed to resolve %s situation path: %s", situation_name, macro_result.result_details)
             return None
 
         workspace_dir = GriptapeNodes.ConfigManager().workspace_path
@@ -415,7 +418,7 @@ class StaticFilesManager:
             logger.warning(
                 "Resolved %s situation path %s is outside workspace %s. "
                 "Falling back to workspace staticfiles directory: %s",
-                SAVE_STATIC_FILE_SITUATION,
+                situation_name,
                 macro_result.absolute_path,
                 workspace_dir,
                 workspace_relative_path,
@@ -425,7 +428,7 @@ class StaticFilesManager:
         variables = {"file_name_base": parts.stem, "file_extension": parts.extension}
         metadata = SidecarContent(
             situation=SituationMetadata(
-                name=SAVE_STATIC_FILE_SITUATION,
+                name=situation_name,
                 macro=situation.macro,
                 policy=SituationPolicy(
                     on_collision=situation.policy.on_collision,
