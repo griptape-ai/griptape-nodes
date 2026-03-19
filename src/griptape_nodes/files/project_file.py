@@ -30,51 +30,15 @@ SITUATION_TO_FILE_POLICY: dict[str, ExistingFilePolicy] = {
 
 
 class ProjectFileDestination(FileDestination):
-    """A FileDestination built from a project situation template.
+    """A FileDestination that maps written absolute paths back to project macro form.
 
-    Resolves the macro template and write policy from the named situation in the
-    current project, then delegates all I/O to the parent FileDestination.
+    After each write, attempts to convert the resulting absolute path to its
+    portable macro representation (e.g. ``{outputs}/image.png``).  Falls back
+    to the plain absolute path if mapping is not possible.
+
+    Construct directly with a ``MacroPath`` and write policy, or use the
+    ``from_situation`` classmethod to build from a situation name and filename.
     """
-
-    def __init__(
-        self,
-        filename: str,
-        situation: str,
-        **extra_vars: str | int,
-    ) -> None:
-        """Build a FileDestination from a project situation template.
-
-        Args:
-            filename: Filename to parse into base and extension components.
-            situation: Situation name to look up in the current project.
-            **extra_vars: Additional macro variables (e.g., node_name="MyNode", _index=1).
-        """
-        result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation))
-
-        if isinstance(result, GetSituationResultSuccess):
-            macro_template = result.situation.macro
-            on_collision = result.situation.policy.on_collision
-            existing_file_policy = SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.CREATE_NEW)
-            create_dirs = result.situation.policy.create_dirs
-        else:
-            logger.error("Failed to load situation '%s', using fallback macro template", situation)
-            macro_template = FALLBACK_MACRO_TEMPLATE
-            existing_file_policy = ExistingFilePolicy.CREATE_NEW
-            create_dirs = True
-
-        parts = FilenameParts.from_filename(filename)
-        variables: dict[str, str | int] = {
-            "file_name_base": parts.stem,
-            "file_extension": parts.extension,
-            **extra_vars,
-        }
-
-        macro_path = MacroPath(ParsedMacro(macro_template), variables)
-        super().__init__(
-            macro_path,
-            existing_file_policy=existing_file_policy,
-            create_parents=create_dirs,
-        )
 
     def write_bytes(self, content: bytes) -> File:
         return self._map_to_macro_file(super().write_bytes(content))
@@ -102,3 +66,47 @@ class ProjectFileDestination(FileDestination):
         if isinstance(map_result, AttemptMapAbsolutePathToProjectResultSuccess) and map_result.mapped_path is not None:
             return File(map_result.mapped_path)
         return result_file
+
+    @classmethod
+    def from_situation(
+        cls,
+        filename: str,
+        situation: str,
+        **extra_vars: str | int,
+    ) -> "ProjectFileDestination":
+        """Build a ProjectFileDestination from a project situation template.
+
+        Looks up the named situation in the current project to obtain the macro
+        template and write policy, then constructs the destination.
+
+        Args:
+            filename: Filename to parse into base and extension components.
+            situation: Situation name to look up in the current project.
+            **extra_vars: Additional macro variables (e.g., node_name="MyNode", _index=1).
+        """
+        result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation))
+
+        if isinstance(result, GetSituationResultSuccess):
+            macro_template = result.situation.macro
+            on_collision = result.situation.policy.on_collision
+            existing_file_policy = SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.CREATE_NEW)
+            create_dirs = result.situation.policy.create_dirs
+        else:
+            logger.error("Failed to load situation '%s', using fallback macro template", situation)
+            macro_template = FALLBACK_MACRO_TEMPLATE
+            existing_file_policy = ExistingFilePolicy.CREATE_NEW
+            create_dirs = True
+
+        parts = FilenameParts.from_filename(filename)
+        variables: dict[str, str | int] = {
+            "file_name_base": parts.stem,
+            "file_extension": parts.extension,
+            **extra_vars,
+        }
+
+        macro_path = MacroPath(ParsedMacro(macro_template), variables)
+        return cls(
+            macro_path,
+            existing_file_policy=existing_file_policy,
+            create_parents=create_dirs,
+        )
