@@ -35,19 +35,54 @@ SITUATION_TO_FILE_POLICY: dict[str, ExistingFilePolicy] = {
 
 
 class ProjectFileDestination(FileDestination):
-    """A FileDestination built from a project situation template.
+    """A FileDestination that maps written absolute paths back to project macro form.
 
-    Resolves the macro template and write policy from the named situation in the
-    current project, then delegates all I/O to the parent FileDestination.
+    After each write, attempts to convert the resulting absolute path to its
+    portable macro representation (e.g. ``{outputs}/image.png``).  Falls back
+    to the plain absolute path if mapping is not possible.
+
+    Construct directly with a ``MacroPath`` and write policy, or use the
+    ``from_situation`` classmethod to build from a situation name and filename.
     """
 
-    def __init__(
-        self,
+    def write_bytes(self, content: bytes) -> File:
+        return self._map_to_macro_file(super().write_bytes(content))
+
+    async def awrite_bytes(self, content: bytes) -> File:
+        return self._map_to_macro_file(await super().awrite_bytes(content))
+
+    def write_text(self, content: str, encoding: str = "utf-8") -> File:
+        return self._map_to_macro_file(super().write_text(content, encoding))
+
+    async def awrite_text(self, content: str, encoding: str = "utf-8") -> File:
+        return self._map_to_macro_file(await super().awrite_text(content, encoding))
+
+    def _map_to_macro_file(self, result_file: File) -> File:
+        """Attempt to convert the written path to its portable macro form.
+
+        Returns a File holding the macro template (e.g. ``{outputs}/image.png``)
+        when the path is inside a project directory, so callers can store a
+        portable reference via ``file.as_macro()``.  Falls back to the original
+        File (absolute path) if mapping is not possible.
+        """
+        map_result = GriptapeNodes.handle_request(
+            AttemptMapAbsolutePathToProjectRequest(absolute_path=Path(result_file.resolve()))
+        )
+        if isinstance(map_result, AttemptMapAbsolutePathToProjectResultSuccess) and map_result.mapped_path is not None:
+            return File(map_result.mapped_path)
+        return result_file
+
+    @classmethod
+    def from_situation(
+        cls,
         filename: str,
         situation: str,
         **extra_vars: str | int,
-    ) -> None:
-        """Build a FileDestination from a project situation template.
+    ) -> "ProjectFileDestination":
+        """Build a ProjectFileDestination from a project situation template.
+
+        Looks up the named situation in the current project to obtain the macro
+        template and write policy, then constructs the destination.
 
         Args:
             filename: Filename to parse into base and extension components.
@@ -93,36 +128,9 @@ class ProjectFileDestination(FileDestination):
         )
 
         macro_path = MacroPath(ParsedMacro(macro_template), variables)
-        super().__init__(
+        return cls(
             macro_path,
             existing_file_policy=existing_file_policy,
             create_parents=create_dirs,
             file_metadata=file_metadata,
         )
-
-    def write_bytes(self, content: bytes) -> File:
-        return self._map_to_macro_file(super().write_bytes(content))
-
-    async def awrite_bytes(self, content: bytes) -> File:
-        return self._map_to_macro_file(await super().awrite_bytes(content))
-
-    def write_text(self, content: str, encoding: str = "utf-8") -> File:
-        return self._map_to_macro_file(super().write_text(content, encoding))
-
-    async def awrite_text(self, content: str, encoding: str = "utf-8") -> File:
-        return self._map_to_macro_file(await super().awrite_text(content, encoding))
-
-    def _map_to_macro_file(self, result_file: File) -> File:
-        """Attempt to convert the written path to its portable macro form.
-
-        Returns a File holding the macro template (e.g. ``{outputs}/image.png``)
-        when the path is inside a project directory, so callers can store a
-        portable reference via ``file.as_macro()``.  Falls back to the original
-        File (absolute path) if mapping is not possible.
-        """
-        map_result = GriptapeNodes.handle_request(
-            AttemptMapAbsolutePathToProjectRequest(absolute_path=Path(result_file.resolve()))
-        )
-        if isinstance(map_result, AttemptMapAbsolutePathToProjectResultSuccess) and map_result.mapped_path is not None:
-            return File(map_result.mapped_path)
-        return result_file

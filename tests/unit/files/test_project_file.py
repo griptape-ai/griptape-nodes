@@ -29,7 +29,7 @@ class TestProjectFileDestinationInit:
         with patch(
             HANDLE_REQUEST_PATH, return_value=GetSituationResultSuccess(situation=situation, result_details="ok")
         ):
-            dest = ProjectFileDestination("image.png", "save_node_output")
+            dest = ProjectFileDestination.from_situation("image.png", "save_node_output")
 
         assert dest._file._file_metadata is not None
         assert isinstance(dest._file._file_metadata, SidecarContent)
@@ -55,7 +55,7 @@ class TestProjectFileDestinationInit:
         with patch(
             HANDLE_REQUEST_PATH, return_value=GetSituationResultSuccess(situation=situation, result_details="ok")
         ):
-            dest = ProjectFileDestination("render.png", "save_node_output", node_name="MyNode")
+            dest = ProjectFileDestination.from_situation("render.png", "save_node_output", node_name="MyNode")
 
         assert dest._file._file_metadata is not None
         assert dest._file._file_metadata.situation is not None
@@ -70,7 +70,7 @@ class TestProjectFileDestinationInit:
         from griptape_nodes.retained_mode.events.project_events import GetSituationResultFailure
 
         with patch(HANDLE_REQUEST_PATH, return_value=GetSituationResultFailure(result_details="not found")):
-            dest = ProjectFileDestination("image.png", "missing_situation")
+            dest = ProjectFileDestination.from_situation("image.png", "missing_situation")
 
         assert dest._file._file_metadata is None
 
@@ -92,7 +92,7 @@ class TestProjectFileDestinationInit:
         with patch(
             HANDLE_REQUEST_PATH, return_value=GetSituationResultSuccess(situation=situation, result_details="ok")
         ):
-            dest = ProjectFileDestination("data.json", "save_node_output")
+            dest = ProjectFileDestination.from_situation("data.json", "save_node_output")
 
         assert dest._file._file_metadata is not None
         assert dest._file._file_metadata.situation is not None
