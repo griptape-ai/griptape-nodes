@@ -10,6 +10,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.node_manager import SerializedGroupResult
 from tests.unit.exe_types.mocks import MockNode
 
 
@@ -22,7 +23,7 @@ class _ConcreteGroup(BaseNodeGroup):
     def initialize(self) -> None:
         pass
 
-    def process(self):
+    def process(self) -> None:
         return None
 
 
@@ -54,9 +55,7 @@ def _make_serialize_result(
 ) -> SerializeNodeToCommandsResultSuccess:
     """Build a minimal SerializeNodeToCommandsResultSuccess for use as a mock return value."""
     return SerializeNodeToCommandsResultSuccess(
-        serialized_node_commands=_make_serialized_node_commands(
-            node_name, node_uuid, node_names_to_add, metadata
-        ),
+        serialized_node_commands=_make_serialized_node_commands(node_name, node_uuid, node_names_to_add, metadata),
         set_parameter_value_commands=[],
         result_details=MagicMock(),
     )
@@ -69,7 +68,9 @@ class TestCreateNodeParentGroupNameDefaults:
         assert CreateNodeRequest(node_type="T").parent_group_name is None
 
     def test_create_node_result_success_defaults_to_none(self) -> None:
-        assert CreateNodeResultSuccess(node_name="n", node_type="T", result_details=MagicMock()).parent_group_name is None
+        assert (
+            CreateNodeResultSuccess(node_name="n", node_type="T", result_details=MagicMock()).parent_group_name is None
+        )
 
 
 class TestSerializeGroupWithChildren:
@@ -87,7 +88,7 @@ class TestSerializeGroupWithChildren:
         group: _ConcreteGroup,
         group_uuid: str,
         child_uuids: list[str],
-    ):
+    ) -> SerializedGroupResult:
         """Call _serialize_group_with_children with mocked on_serialize_node_to_commands."""
         group_result = _make_serialize_result(
             node_name=group.name,
@@ -97,7 +98,7 @@ class TestSerializeGroupWithChildren:
         )
         child_results = [
             _make_serialize_result(node_name=child_name, node_uuid=uuid)
-            for child_name, uuid in zip(group.nodes.keys(), child_uuids)
+            for child_name, uuid in zip(group.nodes.keys(), child_uuids, strict=True)
         ]
         manager = GriptapeNodes().NodeManager()
         with patch.object(
@@ -120,6 +121,7 @@ class TestSerializeGroupWithChildren:
 
         result = self._run_serialize(group, "group-uuid-1", ["child-uuid-1"])
 
+        assert result.group_command is not None
         assert result.group_command.create_node_command.node_names_to_add is None
 
     def test_children_embed_parent_group_uuid_in_metadata(self) -> None:
@@ -132,9 +134,10 @@ class TestSerializeGroupWithChildren:
         group.add_nodes_to_group([MockNode("ChildA"), MockNode("ChildB")])
 
         group_uuid = "group-uuid-abc"
-        result = self._run_serialize(group, group_uuid, ["child-uuid-1", "child-uuid-2"])
+        child_uuids = ["child-uuid-1", "child-uuid-2"]
+        result = self._run_serialize(group, group_uuid, child_uuids)
 
-        assert len(result.child_commands) == 2
+        assert len(result.child_commands) == len(child_uuids)
         for child_cmd in result.child_commands:
             metadata = child_cmd.create_node_command.metadata
             assert metadata is not None
