@@ -1065,6 +1065,36 @@ class TestFileBuildFileMetadata:
         assert write_request.file_metadata.situation.macro == "{outputs}/image.png"
 
 
+class TestFileDestinationLocation:
+    """Tests for FileDestination.location property."""
+
+    def test_location_plain_string(self) -> None:
+        dest = FileDestination("workspace/outputs/image.png")
+        assert dest.location == "workspace/outputs/image.png"
+
+    def test_location_macro_path_returns_template(self) -> None:
+        dest = FileDestination("{outputs}/image.png")
+        assert dest.location == "{outputs}/image.png"
+
+    def test_location_no_io_performed(self) -> None:
+        with patch(HANDLE_REQUEST_PATH) as mock_handle:
+            dest = FileDestination("{outputs}/image.png")
+            _ = dest.location
+        mock_handle.assert_not_called()
+
+
+class TestFileDestinationName:
+    """Tests for FileDestination.name property."""
+
+    def test_name_plain_string(self) -> None:
+        dest = FileDestination("workspace/outputs/image.png")
+        assert dest.name == "image.png"
+
+    def test_name_macro_path_returns_filename_from_template(self) -> None:
+        dest = FileDestination("{outputs}/image.png")
+        assert dest.name == "image.png"
+
+
 class TestFileResolve:
     """Tests for File.resolve() method."""
 

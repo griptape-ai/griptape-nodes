@@ -729,6 +729,14 @@ class FileDestination:
         """
         return self._file.resolve()
 
+    @property
+    def location(self) -> str:
+        return self._file.location
+
+    @property
+    def name(self) -> str:
+        return self._file.name
+
     def write_bytes(self, content: bytes) -> File:
         """Write bytes to the file using the configured write policy.
 
