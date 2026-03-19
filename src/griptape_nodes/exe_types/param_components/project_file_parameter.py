@@ -134,6 +134,9 @@ class ProjectFileParameter:
         else:
             filename = self._default_filename
 
+        if "node_name" not in extra_vars:
+            extra_vars["node_name"] = self._node.name
+
         return ProjectFileDestination(
             filename=filename,
             situation=self._situation_name,
