@@ -1790,7 +1790,7 @@ class WorkflowManager:
         details = f"Successfully saved workflow to: {save_file_result.file_path}"
         return SaveWorkflowResultSuccess(
             file_path=save_file_result.file_path,
-            registry_key=registry_key,
+            workflow_name=registry_key,
             result_details=ResultDetails(message=details, level=logging.INFO),
         )
 
