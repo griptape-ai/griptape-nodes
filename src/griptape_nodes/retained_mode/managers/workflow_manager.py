@@ -1789,7 +1789,9 @@ class WorkflowManager:
         existing_workflow.metadata = workflow_metadata
         details = f"Successfully saved workflow to: {save_file_result.file_path}"
         return SaveWorkflowResultSuccess(
-            file_path=save_file_result.file_path, result_details=ResultDetails(message=details, level=logging.INFO)
+            file_path=save_file_result.file_path,
+            registry_key=registry_key,
+            result_details=ResultDetails(message=details, level=logging.INFO),
         )
 
     class _ExistingMetadata(NamedTuple):
