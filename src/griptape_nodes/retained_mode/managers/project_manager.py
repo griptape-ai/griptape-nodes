@@ -1122,13 +1122,12 @@ class ProjectManager:
         project_file_value = config_manager.get_config_value("project_file")
         if project_file_value is not None:
             project_path = Path(project_file_value)
-            if not project_path.exists():
-                logger.warning(
-                    "project_file config points to '%s' which does not exist, skipping project load",
-                    project_path,
-                )
-                return None
-            return project_path
+            if project_path.exists():
+                return project_path
+            logger.warning(
+                "project_file config points to '%s' which does not exist, falling back to workspace default",
+                project_path,
+            )
 
         workspace_dir_value = config_manager.get_config_value("workspace_directory")
         if workspace_dir_value is None:

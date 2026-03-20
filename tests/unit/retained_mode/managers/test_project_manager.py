@@ -1654,15 +1654,19 @@ situations:
 
         assert pm._current_project_id == str(workspace_project_path)
 
-    def test_load_workspace_project_project_file_setting_nonexistent_skips(
+    def test_load_workspace_project_project_file_setting_nonexistent_falls_back_to_workspace(
         self, pm: ProjectManager, tmp_path: Path
     ) -> None:
-        """When project_file config points to a nonexistent file, system defaults remain current."""
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
+        """When project_file config points to a nonexistent file, falls back to the workspace default."""
+        from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
 
         self._setup_system_defaults(pm, str(tmp_path))
 
         nonexistent_path = tmp_path / "does_not_exist.yml"
+
+        # Workspace default exists and should be loaded as fallback
+        workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
+        workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
         def get_config_value_side_effect(key: str, **_: object) -> str | None:
             if key == "project_file":
@@ -1674,6 +1678,11 @@ situations:
             mock_config.get_config_value.side_effect = get_config_value_side_effect
             mock_gn.ConfigManager.return_value = mock_config
 
-            pm._load_workspace_project()
+            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+                mock_file_instance = Mock()
+                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+                mock_file_cls.return_value = mock_file_instance
 
-        assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
+                pm._load_workspace_project()
+
+        assert pm._current_project_id == str(workspace_project_path)
