@@ -36,6 +36,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 NODE_GROUP_FLOW = "NodeGroupFlow"
+LEFT_PARAMETERS_KEY = "left_parameters"
+RIGHT_PARAMETERS_KEY = "right_parameters"
 
 
 class SubflowNodeGroup(BaseNodeGroup, ABC):
@@ -297,14 +299,14 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             msg = f"{self.name} failed to create proxy parameter '{result.parameter_name}'"
             raise RuntimeError(msg)
         if is_incoming:
-            if "left_parameters" in self.metadata:
-                self.metadata["left_parameters"].append(proxy_param.name)
+            if LEFT_PARAMETERS_KEY in self.metadata:
+                self.metadata[LEFT_PARAMETERS_KEY].append(proxy_param.name)
             else:
-                self.metadata["left_parameters"] = [proxy_param.name]
-        elif "right_parameters" in self.metadata:
-            self.metadata["right_parameters"].append(proxy_param.name)
+                self.metadata[LEFT_PARAMETERS_KEY] = [proxy_param.name]
+        elif RIGHT_PARAMETERS_KEY in self.metadata:
+            self.metadata[RIGHT_PARAMETERS_KEY].append(proxy_param.name)
         else:
-            self.metadata["right_parameters"] = [proxy_param.name]
+            self.metadata[RIGHT_PARAMETERS_KEY] = [proxy_param.name]
 
         return proxy_param
 
@@ -552,7 +554,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             msg = f"{self.name}: Failed to delete external connection from proxy {proxy_parameter.name} to {connection.target_node.name}.{connection.target_parameter.name}: {delete_result.result_details}"
                             raise RuntimeError(msg)
 
-                    self._cleanup_proxy_parameter(proxy_parameter, "right_parameters")
+                    self._cleanup_proxy_parameter(proxy_parameter, RIGHT_PARAMETERS_KEY)
 
     def _remap_incoming_connections(self, node: BaseNode, connections: Connections) -> None:
         """Remap incoming connections that go through proxy parameters.
@@ -619,7 +621,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             msg = f"{self.name}: Failed to delete external connection from {connection.source_node.name}.{connection.source_parameter.name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
                             raise RuntimeError(msg)
 
-                    self._cleanup_proxy_parameter(proxy_parameter, "left_parameters")
+                    self._cleanup_proxy_parameter(proxy_parameter, LEFT_PARAMETERS_KEY)
 
     def remap_to_internal(self, nodes: list[BaseNode], connections: Connections) -> None:
         """Remap connections that are now internal after adding nodes to the group.
@@ -641,9 +643,9 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
     ) -> None:
         # Instead of right_parameters, we should check the internal connections
         if target_node.parent_group == self:
-            metadata_key = "left_parameters"
+            metadata_key = LEFT_PARAMETERS_KEY
         else:
-            metadata_key = "right_parameters"
+            metadata_key = RIGHT_PARAMETERS_KEY
         self._cleanup_proxy_parameter(source_parameter, metadata_key)
         return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
 
@@ -652,9 +654,9 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
     ) -> None:
         # Instead of left_parameters, we should check the internal connections.
         if source_node.parent_group == self:
-            metadata_key = "right_parameters"
+            metadata_key = RIGHT_PARAMETERS_KEY
         else:
-            metadata_key = "left_parameters"
+            metadata_key = LEFT_PARAMETERS_KEY
         self._cleanup_proxy_parameter(target_parameter, metadata_key)
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
@@ -822,9 +824,9 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         # Determine which proxy parameters to check based on direction
         if is_incoming:
-            proxy_param_names = self.metadata.get("left_parameters", [])
+            proxy_param_names = self.metadata.get(LEFT_PARAMETERS_KEY, [])
         else:
-            proxy_param_names = self.metadata.get("right_parameters", [])
+            proxy_param_names = self.metadata.get(RIGHT_PARAMETERS_KEY, [])
 
         for proxy_name in proxy_param_names:
             proxy_param = self.get_parameter_by_name(proxy_name)
@@ -978,7 +980,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         connections = GriptapeNodes.FlowManager().get_connections()
 
-        right_params = self.metadata.get("right_parameters", [])
+        right_params = self.metadata.get(RIGHT_PARAMETERS_KEY, [])
         for proxy_param_name in right_params:
             proxy_param = self.get_parameter_by_name(proxy_param_name)
             if proxy_param is None:

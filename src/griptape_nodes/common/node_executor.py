@@ -21,10 +21,10 @@ from griptape_nodes.exe_types.base_iterative_nodes import (
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_groups import (
     BaseIterativeNodeGroup,
-    BaseRetryNodeGroup,
+    BaseWhileNodeGroup,
     IterationControlParam,
-    RetryControlParam,
     SubflowNodeGroup,
+    WhileControlParam,
 )
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
@@ -219,10 +219,10 @@ class NodeExecutor:
             node: The BaseNode to execute
             library_name: The library that the execute method should come from.
         """
-        # Handle retry node groups (RetryGroup, etc.)
-        # Check this BEFORE SubflowNodeGroup since BaseRetryNodeGroup extends SubflowNodeGroup
-        if isinstance(node, BaseRetryNodeGroup):
-            await self.handle_retry_group_execution(node)
+        # Handle while-loop node groups (RetryGroup, etc.)
+        # Check this BEFORE SubflowNodeGroup since BaseWhileNodeGroup extends SubflowNodeGroup
+        if isinstance(node, BaseWhileNodeGroup):
+            await self.handle_while_group_execution(node)
             return
 
         # Handle iterative node groups (ForEachGroup, ForLoopGroup, etc.)
@@ -942,14 +942,14 @@ class NodeExecutor:
         source_node_name, source_param_name = source
         deserialized_source_name = node_name_mappings.get(source_node_name)
         if deserialized_source_name is None:
-            logger.info("_check_control_source_fired: no deserialized name for '%s'", source_node_name)
+            logger.debug("_check_control_source_fired: no deserialized name for '%s'", source_node_name)
             return False
 
         node_manager = GriptapeNodes.NodeManager()
         try:
             deserialized_source_node = node_manager.get_node_by_name(deserialized_source_name)
         except ValueError:
-            logger.info("_check_control_source_fired: node '%s' not found", deserialized_source_name)
+            logger.debug("_check_control_source_fired: node '%s' not found", deserialized_source_name)
             return False
 
         if deserialized_source_node is None:
@@ -1472,21 +1472,21 @@ class NodeExecutor:
             node.name,
         )
 
-    async def handle_retry_group_execution(self, node: BaseRetryNodeGroup) -> None:
-        """Handle execution of a retry node group by running its child nodes and retrying on failure.
+    async def handle_while_group_execution(self, node: BaseWhileNodeGroup) -> None:
+        """Handle execution of a while-loop node group by running its child nodes in a loop.
 
         This method:
         1. Packages the child nodes into a serialized flow
         2. Deserializes and executes the flow
-        3. Checks which control input was triggered (succeeded vs failed)
-        4. If failed and retries remain, re-executes the flow
+        3. Checks which control input was triggered (done vs continue_loop)
+        4. If continue_loop and iterations remain, re-executes the flow
         5. Propagates final results when done
 
         Args:
-            node: The BaseRetryNodeGroup to execute
+            node: The BaseWhileNodeGroup to execute
         """
-        node._initialize_retry_data()
-        max_retries = node._get_max_retries()
+        node._initialize_loop_data()
+        max_iterations = node._get_max_iterations()
 
         # Get execution environment
         execution_type = node.get_parameter_value(node.execution_environment.name)
@@ -1495,26 +1495,26 @@ class NodeExecutor:
             node.subflow_execution_component.clear_execution_state()
 
         # Package the group body (child nodes)
-        package_result = await self._package_subflow_group_body(node, "retry_group")
+        package_result = await self._package_subflow_group_body(node, "while_group")
 
         if package_result is None:
-            logger.debug("Empty retry group '%s' - no child nodes to execute", node.name)
-            node.parameter_output_values["was_successful"] = True
+            logger.debug("Empty while group '%s' - no child nodes to execute", node.name)
+            node._on_complete(condition_met=True, iterations=0)
             return
 
-        # Get resolved upstream values (constant across all attempts)
+        # Get resolved upstream values (constant across all iterations)
         resolved_upstream_values = self.get_resolved_upstream_values(
             packaged_node_names=package_result.packaged_node_names, package_result=package_result
         )
 
-        # Find StartFlow parameter(s) that correspond to attempt_number
+        # Find StartFlow parameter(s) that correspond to iteration
         start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
-        attempt_number_startflow_params = self._get_retry_attempt_param_mappings(
+        iteration_startflow_params = self._get_while_iteration_param_mappings(
             node, start_node_mapping.parameter_mappings
         )
 
         # Deserialize the flow once for sequential re-execution
-        flow_name, node_name_mappings, packaged_start_node_name = self._deserialize_retry_flow(
+        flow_name, node_name_mappings, packaged_start_node_name = self._deserialize_while_flow(
             package_result, start_node_mapping.node_name
         )
 
@@ -1523,23 +1523,23 @@ class NodeExecutor:
             packaged_name: original_name for original_name, packaged_name in node_name_mappings.items()
         }
 
-        succeeded = False
+        condition_met = False
         last_iteration_values: dict[str, Any] = {}
-        total_attempts = max_retries + 1  # first attempt + retries
+        total_iterations = max_iterations + 1  # first iteration + re-iterations
         event_manager = GriptapeNodes.EventManager()
 
         try:
-            succeeded = await self._run_retry_attempts(
+            condition_met = await self._run_while_loop_iterations(
                 node=node,
                 flow_name=flow_name,
                 node_name_mappings=node_name_mappings,
                 packaged_start_node_name=packaged_start_node_name,
                 resolved_upstream_values=resolved_upstream_values,
-                attempt_number_startflow_params=attempt_number_startflow_params,
+                iteration_startflow_params=iteration_startflow_params,
                 reverse_node_mapping=reverse_node_mapping,
                 event_manager=event_manager,
-                max_retries=max_retries,
-                total_attempts=total_attempts,
+                max_iterations=max_iterations,
+                total_iterations=total_iterations,
             )
 
             # Extract final values from the deserialized flow
@@ -1556,13 +1556,11 @@ class NodeExecutor:
                 delete_request = DeleteFlowRequest(flow_name=flow_name)
                 delete_result = GriptapeNodes.handle_request(delete_request)
                 if isinstance(delete_result, DeleteFlowResultFailure):
-                    logger.warning("Failed to clean up retry group flow '%s': %s", flow_name, delete_result)
+                    logger.warning("Failed to clean up while group flow '%s': %s", flow_name, delete_result)
 
-        # Notify subclass before setting outputs
-        node._on_complete(succeeded=succeeded, attempts=node._current_attempt + 1)
-
-        # Set output values
-        node.parameter_output_values["was_successful"] = succeeded
+        # Notify subclass and set base outputs
+        total_iterations_executed = node._current_iteration + 1
+        node._on_complete(condition_met=condition_met, iterations=total_iterations_executed)
 
         # Apply last iteration values to the original child nodes
         self._apply_last_iteration_to_packaged_nodes(
@@ -1574,18 +1572,18 @@ class NodeExecutor:
         node._propagate_output_values_from_internal_nodes()
 
         logger.debug(
-            "Retry group '%s': completed after %d attempt(s), succeeded=%s",
+            "While group '%s': completed after %d iteration(s), condition_met=%s",
             node.name,
-            node._current_attempt + 1,
-            succeeded,
+            node._current_iteration + 1,
+            condition_met,
         )
 
-    def _deserialize_retry_flow(
+    def _deserialize_while_flow(
         self,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         start_node_name: str,
     ) -> tuple[str, dict[str, str], str]:
-        """Deserialize a packaged retry flow and return execution context.
+        """Deserialize a packaged while-loop flow and return execution context.
 
         Args:
             package_result: The packaged flow result
@@ -1602,7 +1600,7 @@ class NodeExecutor:
             )
             deserialize_result = GriptapeNodes.handle_request(deserialize_request)
             if not isinstance(deserialize_result, DeserializeFlowFromCommandsResultSuccess):
-                msg = f"Failed to deserialize flow for retry group. Error: {deserialize_result.result_details}"
+                msg = f"Failed to deserialize flow for while group. Error: {deserialize_result.result_details}"
                 raise TypeError(msg)
 
             flow_name = deserialize_result.flow_name
@@ -1613,54 +1611,47 @@ class NodeExecutor:
 
         packaged_start_node_name = node_name_mappings.get(start_node_name)
         if packaged_start_node_name is None:
-            msg = f"Could not find deserialized Start node (original: '{start_node_name}') for retry group"
+            msg = f"Could not find deserialized Start node (original: '{start_node_name}') for while group"
             raise TypeError(msg)
 
         return flow_name, node_name_mappings, packaged_start_node_name
 
-    async def _run_retry_attempts(  # noqa: PLR0913
+    async def _run_while_loop_iterations(  # noqa: PLR0913
         self,
         *,
-        node: BaseRetryNodeGroup,
+        node: BaseWhileNodeGroup,
         flow_name: str,
         node_name_mappings: dict[str, str],
         packaged_start_node_name: str,
         resolved_upstream_values: dict[str, Any],
-        attempt_number_startflow_params: list[str],
+        iteration_startflow_params: list[str],
         reverse_node_mapping: dict[str, str],
         event_manager: Any,
-        max_retries: int,
-        total_attempts: int,
+        max_iterations: int,
+        total_iterations: int,
     ) -> bool:
-        """Execute retry attempts in a loop until success or retries exhausted.
+        """Execute while-loop iterations until the done condition is met or iterations are exhausted.
 
         Returns:
-            True if the group ultimately succeeded, False otherwise
+            True if the loop's done condition was met, False otherwise
         """
-        for attempt in range(total_attempts):
-            node._current_attempt = attempt
+        for iteration in range(total_iterations):
+            node._current_iteration = iteration
             logger.debug(
-                "Retry group '%s': starting attempt %d/%d",
+                "While group '%s': starting iteration %d/%d",
                 node.name,
-                attempt + 1,
-                total_attempts,
+                iteration + 1,
+                total_iterations,
             )
 
-            if attempt > 0:
-                node._on_retry(attempt)
+            if iteration > 0:
+                node._before_loop_iteration(iteration, flow_name)
 
-                # Reset all deserialized flow nodes to UNRESOLVED so they re-execute.
-                # On re-execution, the DAG builder skips RESOLVED upstream dependencies,
-                # which means nodes won't be added to the DAG and won't run.
-                flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
-                for flow_node in flow.nodes.values():
-                    flow_node.state = NodeResolutionState.UNRESOLVED
-
-            await self._set_retry_attempt_parameters(
+            await self._set_while_iteration_parameters(
                 packaged_start_node_name=packaged_start_node_name,
                 resolved_upstream_values=resolved_upstream_values,
-                attempt_number_startflow_params=attempt_number_startflow_params,
-                attempt=attempt,
+                iteration_startflow_params=iteration_startflow_params,
+                iteration=iteration,
             )
 
             # Execute the subflow
@@ -1676,18 +1667,18 @@ class NodeExecutor:
 
             if execution_failed:
                 logger.warning(
-                    "Retry group '%s' attempt %d execution error: %s",
+                    "While group '%s' iteration %d execution error: %s",
                     node.name,
-                    attempt + 1,
+                    iteration + 1,
                     start_subflow_result.result_details,
                 )
 
-            result = self._evaluate_retry_attempt_result(
+            result = self._evaluate_while_iteration_result(
                 node=node,
                 execution_failed=execution_failed,
                 node_name_mappings=node_name_mappings,
-                attempt=attempt,
-                max_retries=max_retries,
+                iteration=iteration,
+                max_iterations=max_iterations,
             )
 
             if result is not None:
@@ -1695,20 +1686,20 @@ class NodeExecutor:
 
         return False
 
-    async def _set_retry_attempt_parameters(
+    async def _set_while_iteration_parameters(
         self,
         *,
         packaged_start_node_name: str,
         resolved_upstream_values: dict[str, Any],
-        attempt_number_startflow_params: list[str],
-        attempt: int,
+        iteration_startflow_params: list[str],
+        iteration: int,
     ) -> None:
-        """Set parameter values on the StartFlow node for a retry attempt."""
+        """Set parameter values on the StartFlow node for a while-loop iteration."""
         parameter_values: dict[str, Any] = {}
         if resolved_upstream_values:
             parameter_values.update(resolved_upstream_values)
-        for startflow_param in attempt_number_startflow_params:
-            parameter_values[startflow_param] = attempt
+        for startflow_param in iteration_startflow_params:
+            parameter_values[startflow_param] = iteration
 
         for startflow_param_name, value_to_set in parameter_values.items():
             set_value_request = SetParameterValueRequest(
@@ -1719,77 +1710,77 @@ class NodeExecutor:
             set_value_result = await GriptapeNodes.ahandle_request(set_value_request)
             if not isinstance(set_value_result, SetParameterValueResultSuccess):
                 logger.warning(
-                    "Failed to set parameter '%s' on Start node '%s' for attempt %d: %s",
+                    "Failed to set parameter '%s' on Start node '%s' for iteration %d: %s",
                     startflow_param_name,
                     packaged_start_node_name,
-                    attempt,
+                    iteration,
                     set_value_result.result_details,
                 )
 
-    def _evaluate_retry_attempt_result(
+    def _evaluate_while_iteration_result(
         self,
         *,
-        node: BaseRetryNodeGroup,
+        node: BaseWhileNodeGroup,
         execution_failed: bool,
         node_name_mappings: dict[str, str],
-        attempt: int,
-        max_retries: int,
+        iteration: int,
+        max_iterations: int,
     ) -> bool | None:
-        """Evaluate the result of a single retry attempt.
+        """Evaluate the result of a single while-loop iteration.
 
         Returns:
-            True if succeeded, False if failed with no retries left, None if should continue retrying
+            True if done condition met, False if iterations exhausted, None if should continue looping
         """
-        total_attempts = max_retries + 1
-        retries_remaining = attempt < max_retries
+        total_iterations = max_iterations + 1
+        iterations_remaining = iteration < max_iterations
 
-        # If the execution itself errored, treat as failure regardless of control signals
+        # If the execution itself errored, treat as continue (retry) regardless of control signals
         if execution_failed:
-            if retries_remaining:
+            if iterations_remaining:
                 logger.debug(
-                    "Retry group '%s': execution error on attempt %d/%d, will retry",
+                    "While group '%s': execution error on iteration %d/%d, will continue",
                     node.name,
-                    attempt + 1,
-                    total_attempts,
+                    iteration + 1,
+                    total_iterations,
                 )
                 return None
             logger.info(
-                "Retry group '%s': execution error on attempt %d/%d, no retries remaining",
+                "While group '%s': execution error on iteration %d/%d, no iterations remaining",
                 node.name,
-                attempt + 1,
-                total_attempts,
+                iteration + 1,
+                total_iterations,
             )
             return False
 
         # Check which control input was triggered
-        retry_action = self._get_retry_control_action(node, node_name_mappings)
+        loop_action = self._get_while_control_action(node, node_name_mappings)
 
-        if retry_action == RetryControlParam.SUCCEEDED:
-            logger.info("Retry group '%s': succeeded on attempt %d/%d", node.name, attempt + 1, total_attempts)
+        if loop_action == WhileControlParam.DONE:
+            logger.info("While group '%s': done on iteration %d/%d", node.name, iteration + 1, total_iterations)
             return True
 
-        if retry_action == RetryControlParam.FAILED:
-            if retries_remaining:
+        if loop_action == WhileControlParam.CONTINUE:
+            if iterations_remaining:
                 logger.debug(
-                    "Retry group '%s': failed on attempt %d/%d, will retry",
+                    "While group '%s': continuing on iteration %d/%d",
                     node.name,
-                    attempt + 1,
-                    total_attempts,
+                    iteration + 1,
+                    total_iterations,
                 )
                 return None
             logger.info(
-                "Retry group '%s': failed on attempt %d/%d, no retries remaining",
+                "While group '%s': continue requested on iteration %d/%d, no iterations remaining",
                 node.name,
-                attempt + 1,
-                total_attempts,
+                iteration + 1,
+                total_iterations,
             )
             return False
 
-        # Neither succeeded nor failed was triggered and execution didn't error - treat as success
+        # Neither done nor continue was triggered and execution didn't error - treat as done
         logger.info(
-            "Retry group '%s': completed without control signal on attempt %d, treating as success",
+            "While group '%s': completed without control signal on iteration %d, treating as done",
             node.name,
-            attempt + 1,
+            iteration + 1,
         )
         return True
 
@@ -1830,33 +1821,33 @@ class NodeExecutor:
 
         return (target_node_name, target_param_name)
 
-    def _get_retry_attempt_param_mappings(
+    def _get_while_iteration_param_mappings(
         self,
-        node: BaseRetryNodeGroup,
+        node: BaseWhileNodeGroup,
         start_node_param_mappings: dict,
     ) -> list[str]:
-        """Find StartFlow parameter names that correspond to the retry group's attempt_number output.
+        """Find StartFlow parameter names that correspond to the while group's iteration output.
 
-        Traces outgoing connections from the retry group's attempt_number parameter
+        Traces outgoing connections from the while group's iteration parameter
         to internal nodes, then maps those targets to their StartFlow parameter names.
 
         Args:
-            node: The retry group node
+            node: The while group node
             start_node_param_mappings: Mappings from StartFlow param names to original node/param
 
         Returns:
-            List of StartFlow parameter names that should receive the attempt number value
+            List of StartFlow parameter names that should receive the iteration value
         """
-        attempt_params: list[str] = []
+        iteration_params: list[str] = []
 
         list_connections_request = ListConnectionsForNodeRequest(node_name=node.name)
         list_connections_result = GriptapeNodes.handle_request(list_connections_request)
         if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            logger.warning("Failed to list connections for retry node %s", node.name)
-            return attempt_params
+            logger.warning("Failed to list connections for while group node %s", node.name)
+            return iteration_params
 
         for conn in list_connections_result.outgoing_connections:
-            if conn.source_parameter_name != "attempt_number":
+            if conn.source_parameter_name != "iteration":
                 continue
 
             target_node_name, target_param_name = self._resolve_outgoing_target_through_proxy(
@@ -1869,62 +1860,62 @@ class NodeExecutor:
                     original_node_param.node_name == target_node_name
                     and original_node_param.parameter_name == target_param_name
                 ):
-                    attempt_params.append(startflow_param_name)
+                    iteration_params.append(startflow_param_name)
                     break
 
-        return attempt_params
+        return iteration_params
 
-    def _get_retry_control_action(
+    def _get_while_control_action(
         self,
-        retry_node: BaseRetryNodeGroup,
+        while_node: BaseWhileNodeGroup,
         node_name_mappings: dict[str, str],
-    ) -> RetryControlParam | None:
-        """Determine which control action was taken during retry group execution.
+    ) -> WhileControlParam | None:
+        """Determine which control action was taken during while group execution.
 
-        Checks if internal nodes have triggered the 'succeeded' or 'failed' control
-        inputs on the retry group. Multiple nodes may connect to the same control input,
+        Checks if internal nodes have triggered the 'done' or 'continue_loop' control
+        inputs on the while group. Multiple nodes may connect to the same control input,
         so all sources are checked.
 
         Args:
-            retry_node: The BaseRetryNodeGroup being executed
+            while_node: The BaseWhileNodeGroup being executed
             node_name_mappings: Mapping from original to deserialized node names
 
         Returns:
-            RetryControlParam.SUCCEEDED, RetryControlParam.FAILED, or None
+            WhileControlParam.DONE, WhileControlParam.CONTINUE, or None
         """
-        list_connections_request = ListConnectionsForNodeRequest(node_name=retry_node.name)
+        list_connections_request = ListConnectionsForNodeRequest(node_name=while_node.name)
         list_connections_result = GriptapeNodes.handle_request(list_connections_request)
         if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            logger.warning("Failed to list connections for retry node %s", retry_node.name)
+            logger.warning("Failed to list connections for while group node %s", while_node.name)
             return None
 
         incoming_connections = list_connections_result.incoming_connections
 
         # Collect all sources for both control params
-        succeeded_sources = self._find_sources_for_control_param(incoming_connections, RetryControlParam.SUCCEEDED)
-        failed_sources = self._find_sources_for_control_param(incoming_connections, RetryControlParam.FAILED)
+        done_sources = self._find_sources_for_control_param(incoming_connections, WhileControlParam.DONE)
+        continue_sources = self._find_sources_for_control_param(incoming_connections, WhileControlParam.CONTINUE)
 
-        # Check if any succeeded source fired
-        succeeded_fired = any(
-            self._check_control_source_fired(source, node_name_mappings) for source in succeeded_sources
+        # Check if any done source fired
+        done_fired = any(self._check_control_source_fired(source, node_name_mappings) for source in done_sources)
+        # Check if any continue source fired
+        continue_fired = any(
+            self._check_control_source_fired(source, node_name_mappings) for source in continue_sources
         )
-        # Check if any failed source fired
-        failed_fired = any(self._check_control_source_fired(source, node_name_mappings) for source in failed_sources)
 
         logger.debug(
-            "Retry group '%s': succeeded_fired=%s (sources=%s), failed_fired=%s (sources=%s)",
-            retry_node.name,
-            succeeded_fired,
-            succeeded_sources,
-            failed_fired,
-            failed_sources,
+            "While group '%s': done_fired=%s (sources=%s), continue_fired=%s (sources=%s)",
+            while_node.name,
+            done_fired,
+            done_sources,
+            continue_fired,
+            continue_sources,
         )
 
-        # If both fired (shouldn't normally happen), failed takes priority to be safe
-        if failed_fired:
-            return RetryControlParam.FAILED
-        if succeeded_fired:
-            return RetryControlParam.SUCCEEDED
+        # If both fired (shouldn't normally happen), continue takes priority to be safe
+        if continue_fired:
+            return WhileControlParam.CONTINUE
+        if done_fired:
+            return WhileControlParam.DONE
 
         return None
 
@@ -1988,7 +1979,7 @@ class NodeExecutor:
 
         Args:
             node: The SubflowNodeGroup whose children should be packaged
-            label: Label used for the output parameter prefix (e.g., "retry_group", "iterative_group")
+            label: Label used for the output parameter prefix (e.g., "while_group", "iterative_group")
 
         Returns:
             PackageNodesAsSerializedFlowResultSuccess if successful, None if no child nodes
