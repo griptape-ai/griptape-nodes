@@ -88,7 +88,6 @@ def assert_model_has_checkpoint_files(repo_id: str, revision: str) -> None:
         repo_id: HuggingFace repository ID (e.g. 'google/t5-v1_1-xxl')
         revision: Model revision commit hash
     """
-
     try:
         snapshot_path = Path(snapshot_download(repo_id=repo_id, revision=revision, local_files_only=True))
     except Exception as e:
