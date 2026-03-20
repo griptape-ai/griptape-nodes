@@ -1443,25 +1443,8 @@ class LibraryManager:
                         json_path = Path(file_path)
                         base_dir = json_path.parent.absolute()
 
-                        # Add the directory to the Python path to allow for relative imports
-                        sys.path.insert(0, str(base_dir))
-
-                        # Add venv site-packages to sys.path if library has dependencies
-                        if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
-                            venv_path = self._get_library_venv_path(library_data.name, file_path)
-                            if await anyio.Path(venv_path).exists():
-                                site_packages = str(
-                                    Path(
-                                        sysconfig.get_path(
-                                            "purelib",
-                                            vars={"base": str(venv_path), "platbase": str(venv_path)},
-                                        )
-                                    )
-                                )
-                                sys.path.insert(0, site_packages)
-                                logger.debug(
-                                    "Added library '%s' venv to sys.path: %s", library_data.name, site_packages
-                                )
+                        # Add library directory and venv site-packages to sys.path
+                        await self._add_library_paths_to_sys_path(library_data.name, file_path, base_dir)
 
                         # Load the advanced library module if specified
                         advanced_library_instance = None
@@ -1575,24 +1558,11 @@ class LibraryManager:
                             self._library_file_path_to_info[library_info.library_path] = library_info
                             return RegisterLibraryFromFileResultFailure(result_details=metadata_result.result_details)
 
-                        # Add sandbox directory to sys.path for sibling imports
-                        sys.path.insert(0, str(sandbox_directory))
-
-                        # Add venv site-packages to sys.path if sandbox library has pip dependencies
+                        # Add sandbox directory and venv site-packages to sys.path
                         library_data = metadata_result.library_schema
-                        if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
-                            venv_path = self._get_library_venv_path(library_data.name, library_info.library_path)
-                            if await anyio.Path(venv_path).exists():
-                                site_packages = str(
-                                    Path(
-                                        sysconfig.get_path(
-                                            "purelib",
-                                            vars={"base": str(venv_path), "platbase": str(venv_path)},
-                                        )
-                                    )
-                                )
-                                sys.path.insert(0, site_packages)
-                                logger.debug("Added sandbox library venv to sys.path: %s", site_packages)
+                        await self._add_library_paths_to_sys_path(
+                            library_data.name, library_info.library_path, sandbox_directory
+                        )
 
                         # Discover real class names by importing files
                         await self._attempt_generate_sandbox_library_from_schema(
@@ -1864,6 +1834,29 @@ class LibraryManager:
 
         # Create venv relative to the xdg data home
         return xdg_data_home() / "griptape_nodes" / "libraries" / clean_library_name / ".venv"
+
+    async def _add_library_paths_to_sys_path(self, library_name: str, library_file_path: str, base_dir: Path) -> None:
+        """Add a library's directory and venv site-packages to sys.path.
+
+        Args:
+            library_name: Name of the library (for venv lookup)
+            library_file_path: Path to the library JSON file (for venv lookup)
+            base_dir: Library base directory to add for relative imports
+        """
+        sys.path.insert(0, str(base_dir))
+
+        venv_path = self._get_library_venv_path(library_name, library_file_path)
+        if await anyio.Path(venv_path).exists():
+            site_packages = str(
+                Path(
+                    sysconfig.get_path(
+                        "purelib",
+                        vars={"base": str(venv_path), "platbase": str(venv_path)},
+                    )
+                )
+            )
+            sys.path.insert(0, site_packages)
+            logger.debug("Added library '%s' venv to sys.path: %s", library_name, site_packages)
 
     def _can_write_to_venv_location(self, venv_python_path: Path) -> bool:
         """Check if we can write to the venv location (either create it or modify existing).
