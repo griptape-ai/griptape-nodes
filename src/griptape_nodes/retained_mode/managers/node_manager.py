@@ -625,11 +625,31 @@ class NodeManager:
                 )
                 logger.warning(warning_details)
 
+        # Handle parent_group_name: add this node to an existing group
+        if request.parent_group_name:
+            try:
+                parent_group = self.get_node_by_name(request.parent_group_name)
+                if isinstance(parent_group, BaseNodeGroup):
+                    parent_group.add_nodes_to_group([node])
+                else:
+                    logger.warning(
+                        "Attempted to add node '%s' to '%s'. Failed because it is not a BaseNodeGroup.",
+                        node.name,
+                        request.parent_group_name,
+                    )
+            except KeyError:
+                logger.warning(
+                    "Attempted to add node '%s' to parent group '%s'. Failed because group was not found.",
+                    node.name,
+                    request.parent_group_name,
+                )
+
         return CreateNodeResultSuccess(
             node_name=node.name,
             node_type=node.__class__.__name__,
             specific_library_name=request.specific_library_name,
             parent_flow_name=parent_flow_name,
+            parent_group_name=node.parent_group.name if node.parent_group else None,
             result_details=ResultDetails(message=details, level=log_level),
         )
 
@@ -2723,14 +2743,13 @@ class NodeManager:
     ) -> SerializedGroupResult:
         """Serialize a group node and its children for copy/paste operations.
 
-        This method handles the special case of group nodes by serializing all child nodes
-        that aren't explicitly selected (a node that has been manually selected by the user when copying), tracking their UUIDs for deserialization remapping,
-        and storing the UUID mapping in the group's metadata. All child nodes should be copied if their parent node was copied, even if they were not manually selected.
+        This method handles the special case of group nodes by serializing the group first,
+        then each child with the group's UUID embedded in its metadata. This ordering ensures
+        that during deserialization the group exists before its children are created, allowing
+        each child's CreateNodeResultSuccess to include parent_group_name.
 
         Args:
             group_node: The group node to serialize
-            explicitly_selected_names: Set of node names that were explicitly selected
-                                      by the user (to avoid duplicate serialization)
             unique_uuid_to_values: Shared dictionary for tracking pickled parameter values
             serialized_parameter_value_tracker: Tracker for parameter value hashes
 
@@ -2742,32 +2761,7 @@ class NodeManager:
         child_parameter_commands = {}
         child_uuids = []
 
-        # Serialize each child node that isn't explicitly selected
-        for child_name in group_node.nodes:
-            # Child is implicitly selected via group membership - serialize it
-            child_result = self.on_serialize_node_to_commands(
-                SerializeNodeToCommandsRequest(
-                    node_name=child_name,
-                    unique_parameter_uuid_to_values=unique_uuid_to_values,
-                    serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-                    use_pickling=True,
-                )
-            )
-
-            if not isinstance(child_result, SerializeNodeToCommandsResultSuccess):
-                # Failed to serialize child - log warning and skip
-                logger.error("%s failed to serialize child node '%s'", group_name, child_name)
-                msg = f"Failed to serialize child node '{child_name}'"
-                raise RuntimeError(msg)  # noqa: TRY004 Type Error doesn't make sense here, this is a runtime error.
-
-            # Store child's serialized command, parameter commands, and UUID
-            child_commands.append(child_result.serialized_node_commands)
-            child_parameter_commands[child_result.serialized_node_commands.node_uuid] = (
-                child_result.set_parameter_value_commands
-            )
-            child_uuids.append(child_result.serialized_node_commands.node_uuid)
-
-        # Serialize the group node itself
+        # Serialize the group node first so its UUID is known before children are serialized
         group_result = self.on_serialize_node_to_commands(
             SerializeNodeToCommandsRequest(
                 node_name=group_name,
@@ -2778,18 +2772,46 @@ class NodeManager:
         )
 
         if not isinstance(group_result, SerializeNodeToCommandsResultSuccess):
-            # This shouldn't happen, log error
             logger.error("Failed to serialize group node '%s'", group_name)
             msg = f"Failed to serialize children and group node '{group_name}'"
             raise RuntimeError(msg)  # noqa: TRY004 Type Error doesn't make sense here, this is a runtime error.
 
         group_command = group_result.serialized_node_commands
+        group_uuid = group_command.node_uuid
 
-        # Add child_node_uuids to the group's metadata for deserialization remapping
-        if group_command.create_node_command.metadata is None:
-            group_command.create_node_command.metadata = {}
+        # Clear node_names_to_add from the group's create command — children are assigned
+        # to the group via _parent_group_uuid/parent_group_name during deserialization.
+        # Leaving node_names_to_add set would cause on_create_node_request to call
+        # add_nodes_to_group on the *original* child names, moving original nodes into
+        # the new group instead of (or alongside) the newly created children.
+        group_command.create_node_command.node_names_to_add = None
 
-        group_command.create_node_command.metadata["child_node_uuids"] = child_uuids
+        # Serialize each child, embedding the group's UUID so deserialization can assign parentage
+        for child_name in group_node.nodes:
+            child_result = self.on_serialize_node_to_commands(
+                SerializeNodeToCommandsRequest(
+                    node_name=child_name,
+                    unique_parameter_uuid_to_values=unique_uuid_to_values,
+                    serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                    use_pickling=True,
+                )
+            )
+
+            if not isinstance(child_result, SerializeNodeToCommandsResultSuccess):
+                logger.error("%s failed to serialize child node '%s'", group_name, child_name)
+                msg = f"Failed to serialize child node '{child_name}'"
+                raise RuntimeError(msg)  # noqa: TRY004 Type Error doesn't make sense here, this is a runtime error.
+
+            child_cmd = child_result.serialized_node_commands
+
+            # Embed parent group UUID in child metadata for deserialization remapping
+            if child_cmd.create_node_command.metadata is None:
+                child_cmd.create_node_command.metadata = {}
+            child_cmd.create_node_command.metadata["_parent_group_uuid"] = group_uuid
+
+            child_commands.append(child_cmd)
+            child_parameter_commands[child_cmd.node_uuid] = child_result.set_parameter_value_commands
+            child_uuids.append(child_cmd.node_uuid)
 
         return SerializedGroupResult(
             group_command=group_command,
@@ -3318,8 +3340,8 @@ class NodeManager:
                 )
             )
         # Final result for serialized node commands
-        # Children must come before parents for proper deserialization ordering
-        all_serialized_commands = child_node_commands_list + list(node_commands.values())
+        # Groups must come before their children so deserialization can assign parent_group_name
+        all_serialized_commands = list(node_commands.values()) + child_node_commands_list
 
         # Build node_names_in_order to match the actual command serialization order
         # This ensures remake_connections receives matching old/new node name lists
@@ -3397,8 +3419,8 @@ class NodeManager:
         child_node_uuids = set()
         for node_command in commands.serialized_node_commands:
             metadata = node_command.create_node_command.metadata
-            if metadata and "child_node_uuids" in metadata:
-                child_node_uuids.update(metadata["child_node_uuids"])
+            if metadata and "_parent_group_uuid" in metadata:
+                child_node_uuids.add(node_command.node_uuid)
 
         # Separate position index - only increments for explicitly selected nodes (not children)
         position_index = 0
@@ -3427,29 +3449,17 @@ class NodeManager:
                     }
                 position_index += 1
 
-            # Check if this is a group with child_node_uuids that need remapping
+            # Assign parent_group_name for child nodes using their embedded parent group UUID
             metadata = node_command.create_node_command.metadata
-            if metadata and "child_node_uuids" in metadata:
-                child_uuids = metadata["child_node_uuids"]
-
-                # Remap each child UUID to its new name using the UUID mapping
-                remapped_child_names = []
-                for child_uuid in child_uuids:
-                    if child_uuid in node_uuid_to_name:
-                        # Child node was already created, use its new name
-                        remapped_child_names.append(node_uuid_to_name[child_uuid])
-                    else:
-                        # This shouldn't happen - child should have been created first
-                        logger.error("Child node UUID %s not found in UUID mapping", child_uuid)
-                        return DeserializeSelectedNodesFromCommandsResultFailure(
-                            result_details="Child node UUID not found in UUID mapping"
-                        )
-
-                # Update node_names_to_add with the remapped names
-                node_command.create_node_command.node_names_to_add = remapped_child_names
-
-                # Remove temporary serialization metadata
-                del metadata["child_node_uuids"]
+            if metadata and "_parent_group_uuid" in metadata:
+                parent_group_uuid = metadata["_parent_group_uuid"]
+                if parent_group_uuid not in node_uuid_to_name:
+                    logger.error("Parent group UUID %s not found in UUID mapping", parent_group_uuid)
+                    return DeserializeSelectedNodesFromCommandsResultFailure(
+                        result_details="Parent group UUID not found in UUID mapping"
+                    )
+                node_command.create_node_command.parent_group_name = node_uuid_to_name[parent_group_uuid]
+                del metadata["_parent_group_uuid"]
 
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
