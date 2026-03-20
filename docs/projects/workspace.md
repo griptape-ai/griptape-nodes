@@ -102,19 +102,7 @@ When Griptape Nodes starts, it resolves the active project file using the follow
 
 If the `project_file` setting points to a file that does not exist, a warning is logged and the engine falls back to the workspace default. If neither source produces a file, the system defaults are used as-is.
 
-The `project_file` setting lets you use a single project configuration across multiple workspaces, or store the project file in a non-standard location (for example, a shared network drive or a CI/CD secrets volume):
-
-```json
-{
-  "project_file": "/shared/configs/studio-project.yml"
-}
-```
-
-Or via environment variable:
-
-```
-GTN_CONFIG_PROJECT_FILE=/shared/configs/studio-project.yml
-```
+The `project_file` setting lets you use a single project configuration across multiple workspaces, or store the project file in a non-standard location (for example, a shared network drive or a CI/CD secrets volume). Like any config value, it can be set in a config file or via the `GTN_CONFIG_PROJECT_FILE` environment variable — see [Environment Variable Overrides](../configuration.md#environment-variable-overrides) for the general pattern.
 
 See [Projects](projects.md) for the full details on the project file and merge model.
 
