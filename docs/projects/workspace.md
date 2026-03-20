@@ -96,7 +96,7 @@ Collin's user config:
 }
 ```
 
-James's user config:
+James' user config:
 
 ```json
 {
