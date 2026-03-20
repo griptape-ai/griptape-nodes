@@ -1575,6 +1575,25 @@ class LibraryManager:
                             self._library_file_path_to_info[library_info.library_path] = library_info
                             return RegisterLibraryFromFileResultFailure(result_details=metadata_result.result_details)
 
+                        # Add sandbox directory to sys.path for sibling imports
+                        sys.path.insert(0, str(sandbox_directory))
+
+                        # Add venv site-packages to sys.path if sandbox library has pip dependencies
+                        library_data = metadata_result.library_schema
+                        if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
+                            venv_path = self._get_library_venv_path(library_data.name, library_info.library_path)
+                            if await anyio.Path(venv_path).exists():
+                                site_packages = str(
+                                    Path(
+                                        sysconfig.get_path(
+                                            "purelib",
+                                            vars={"base": str(venv_path), "platbase": str(venv_path)},
+                                        )
+                                    )
+                                )
+                                sys.path.insert(0, site_packages)
+                                logger.debug("Added sandbox library venv to sys.path: %s", site_packages)
+
                         # Discover real class names by importing files
                         await self._attempt_generate_sandbox_library_from_schema(
                             library_schema=metadata_result.library_schema,
