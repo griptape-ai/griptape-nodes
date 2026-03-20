@@ -966,29 +966,32 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                 msg = result.result_details
                 raise RuntimeError(msg)
 
-        # After subflow execution, collect output values from internal nodes
-        # and set them on the NodeGroup's output (right) proxy parameters
+        self._propagate_output_values_from_internal_nodes()
+
+    def _propagate_output_values_from_internal_nodes(self) -> None:
+        """Collect output values from internal nodes and set them on proxy output parameters.
+
+        For each right (output) proxy parameter, finds the internal node connected
+        to it and copies the value to this group's parameter_output_values.
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         connections = GriptapeNodes.FlowManager().get_connections()
 
-        # Get all right parameters (output parameters)
         right_params = self.metadata.get("right_parameters", [])
         for proxy_param_name in right_params:
             proxy_param = self.get_parameter_by_name(proxy_param_name)
             if proxy_param is None:
                 continue
 
-            # Find the internal node connected to this proxy parameter
-            # The internal connection goes: InternalNode -> ProxyParameter
             incoming_connections = connections.get_incoming_connections_to_parameter(self, proxy_param)
             if not incoming_connections:
                 continue
 
-            # Get the first connection (there should only be one internal connection)
             for connection in incoming_connections:
                 if not connection.is_node_group_internal:
                     continue
 
-                # Get the value from the internal node's output parameter
                 internal_node = connection.source_node
                 internal_param = connection.source_parameter
 
@@ -997,7 +1000,6 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                 else:
                     value = internal_node.get_parameter_value(internal_param.name)
 
-                # Set the value on the NodeGroup's proxy parameter output
                 if value is not None:
                     self.parameter_output_values[proxy_param_name] = value
                 break
