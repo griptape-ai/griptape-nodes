@@ -561,7 +561,7 @@ class ProjectManager:
                 # 3. env vars
                 # 4. Auto-default to project directory
                 project_workspaces = self._config_manager.get_config_value(
-                    "app_events.on_app_initialization_complete.project_workspaces",
+                    "project_workspaces",
                     config_source="user_config",
                     default={},
                 )

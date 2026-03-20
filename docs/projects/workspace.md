@@ -41,13 +41,9 @@ The `project_workspaces` setting in your user config maps project file paths to 
 
 ```json
 {
-  "app_events": {
-    "on_app_initialization_complete": {
-      "project_workspaces": {
-        "//NAS/Projects/ProjectA/griptape-nodes-project.yml": "/Users/collin/ProjectA/",
-        "//NAS/Projects/ProjectB/griptape-nodes-project.yml": "/Users/collin/ProjectB/"
-      }
-    }
+  "project_workspaces": {
+    "//NAS/Projects/ProjectA/griptape-nodes-project.yml": "/Users/collin/ProjectA/",
+    "//NAS/Projects/ProjectB/griptape-nodes-project.yml": "/Users/collin/ProjectB/"
   }
 }
 ```
@@ -94,12 +90,8 @@ Collin's user config:
 
 ```json
 {
-  "app_events": {
-    "on_app_initialization_complete": {
-      "project_workspaces": {
-        "//NAS/Projects/ProjectA/griptape-nodes-project.yml": "/Users/collin/ProjectA/"
-      }
-    }
+  "project_workspaces": {
+    "//NAS/Projects/ProjectA/griptape-nodes-project.yml": "/Users/collin/ProjectA/"
   }
 }
 ```
@@ -108,12 +100,8 @@ James's user config:
 
 ```json
 {
-  "app_events": {
-    "on_app_initialization_complete": {
-      "project_workspaces": {
-        "//NAS/Projects/ProjectA/griptape-nodes-project.yml": "C:\\Projects\\ProjectA\\"
-      }
-    }
+  "project_workspaces": {
+    "//NAS/Projects/ProjectA/griptape-nodes-project.yml": "C:\\Projects\\ProjectA\\"
   }
 }
 ```
@@ -150,13 +138,9 @@ The studio ships `log_level: "WARNING"` in the project-adjacent config. A develo
 
 ```json
 {
-  "app_events": {
-    "on_app_initialization_complete": {
-      "project_workspaces": {
-        "//NAS/ProjectA/griptape-nodes-project.yml": "/Users/dev/ProjectA/",
-        "//NAS/ProjectB/griptape-nodes-project.yml": "/Users/dev/ProjectB/"
-      }
-    }
+  "project_workspaces": {
+    "//NAS/ProjectA/griptape-nodes-project.yml": "/Users/dev/ProjectA/",
+    "//NAS/ProjectB/griptape-nodes-project.yml": "/Users/dev/ProjectB/"
   }
 }
 ```
