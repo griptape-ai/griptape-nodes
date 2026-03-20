@@ -95,16 +95,36 @@ The **project base directory** (the folder containing `griptape-nodes-project.ym
 
 ## Workspace and the project file
 
-When Griptape Nodes starts, it looks for a file named `griptape-nodes-project.yml` in your workspace directory. If it finds one, it merges the contents of that file on top of the system defaults to produce the active project template. If no file is found, the system defaults are used as-is.
+When Griptape Nodes starts, it resolves the active project file using the following order:
+
+1. **`project_file` setting** — if set, the path specified there is used directly
+1. **Workspace default** — `griptape-nodes-project.yml` in the workspace directory
+
+If the `project_file` setting points to a file that does not exist, a warning is logged and the engine falls back to the workspace default. If neither source produces a file, the system defaults are used as-is.
+
+The `project_file` setting lets you use a single project configuration across multiple workspaces, or store the project file in a non-standard location (for example, a shared network drive or a CI/CD secrets volume):
+
+```json
+{
+  "project_file": "/shared/configs/studio-project.yml"
+}
+```
+
+Or via environment variable:
+
+```
+GTN_CONFIG_PROJECT_FILE=/shared/configs/studio-project.yml
+```
 
 See [Projects](projects.md) for the full details on the project file and merge model.
 
 ## Summary
 
-| Setting                      | Description                                                       |
-| ---------------------------- | ----------------------------------------------------------------- |
-| `workspace_directory`        | The root directory for your work                                  |
-| `griptape-nodes-project.yml` | Optional file in the project directory for template customization |
-| `griptape_nodes_config.json` | Optional project-adjacent config to set a per-project workspace   |
+| Setting                      | Description                                                                |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| `workspace_directory`        | The root directory for your work                                           |
+| `project_file`               | Optional path to a project template file, overriding the workspace default |
+| `griptape-nodes-project.yml` | Optional file in the project directory for template customization          |
+| `griptape_nodes_config.json` | Optional project-adjacent config to set a per-project workspace            |
 
 All relative paths in macros and directory definitions resolve against the workspace directory.
