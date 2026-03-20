@@ -198,3 +198,6 @@ profiles/
 mcp_server_readme.md
 
 .workmux.yaml
+
+# Claude Code local instructions
+CLAUDE.local.md
