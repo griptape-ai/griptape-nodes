@@ -16,19 +16,19 @@ Griptape Nodes employs a specific search order to load settings from environment
 
     > You shouldn't interact with these files directly. Griptape Nodes manages your environment variables through its Settings dialog.
 
-1. **Configuration Files (`griptape_nodes_config.[json|yaml|toml]`)**
+1. **Configuration Files (`griptape_nodes_config.json`)**
     Configuration files hold information important for Griptape Nodes operation, such as where to locate Node Libraries, as well as user preferences to customize the Griptape Nodes experience.
 
-    - If no configuration files are found, Griptape Nodes will issue a warning and attempt to run using built-in default values.
-    - The application searches for configuration files named `griptape_nodes_config` with `.json`, `.yaml`, or `.toml` extensions.
-    - It searches in multiple locations in a specific order. **All** valid configuration files found across these locations are loaded and their settings are **merged**.
-    - **Search Order (Lower numbers are checked first, but higher numbers override):**
-        1. **System-wide Shared:** Paths in `XDG_CONFIG_DIRS` (e.g., `/etc/xdg/griptape_nodes/`). Settings here have the *lowest* priority.
-        1. **System-wide User:** Path in `XDG_CONFIG_HOME` (e.g., `~/.config/griptape_nodes/`). Settings here override System-wide Shared.
-        1. **Implicit CWD Subdirectory:** `current_working_directory / "GriptapeNodes" /` (relative to where `gtn` is run). Settings here override System User.
-        1. **Current Directory & Parents:** The current working directory (`cwd`) and its parent directories up to the user's home directory (`~`). Settings found closer to `cwd` have *higher* priority and override settings from parent directories and all locations above.
-    - **Override Priority:** Because settings are merged, if the same setting exists in multiple files, the value from the file found *later* in the search order (i.e., closer to the current directory) takes precedence. For example, a setting in `./griptape_nodes_config.json` will override the same setting in `~/.config/griptape_nodes/griptape_nodes_config.json`.
-    - **File Type Priority:** If multiple file types (e.g., `.json` and `.yaml`) exist in the *same directory*, they are all loaded, but the priority for merging within that *single* directory is: `.json` > `.yaml` > `.toml`.
+    - If no configuration files are found, Griptape Nodes will run using built-in default values.
+    - Settings are loaded from up to four `griptape_nodes_config.json` files and merged in priority order:
+    - **Load Order (lower numbers are loaded first; higher numbers override):**
+        1. **Built-in defaults** — values baked into the application.
+        1. **User config** — `~/.config/griptape_nodes/griptape_nodes_config.json`. Global settings for this machine.
+        1. **Project-adjacent config** — `<project_dir>/griptape_nodes_config.json`. Loaded when a project is set as active. Use this to distribute shared defaults alongside a project file.
+        1. **Workspace config** — `<workspace_dir>/griptape_nodes_config.json`. Loaded after the workspace is resolved. Use this for per-user overrides that take precedence over the shared project config. When the workspace directory is the same as the project directory, this file is the same as the project-adjacent config and is not loaded twice.
+        1. **Environment variables** — `GTN_CONFIG_*` prefix (highest priority). See below.
+    - **Override Priority:** Settings in files loaded later override settings from files loaded earlier.
+    - **Per-project workspace overrides** — The `project_workspaces` key in your user config maps project file paths to local workspace directories. See [Workspace](projects/workspace.md#per-project-workspace-overrides) for details.
 
 1. **Defaults and Merging**
     Griptape Nodes comes with built-in default settings for various options, including the default workspace directory. These defaults are used unless overridden by settings loaded from discovered configuration files.
