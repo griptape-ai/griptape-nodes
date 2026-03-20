@@ -131,6 +131,31 @@ Here are a few scenarios to illustrate how configuration files are located and l
     1. Checks `/home/user/my_project/griptape_nodes_config.toml` (Found!).
     1. **Result:** The application loads settings from `/home/user/my_project/griptape_nodes_config.toml`. If this file specifies a `workspace_directory`, that path is used. If not, the default (`<cwd>/GriptapeNodes` = `/home/user/my_project/GriptapeNodes`) is used.
 
+## Environment Variable Overrides
+
+Any configuration value can be set or overridden using an environment variable with the `GTN_CONFIG_` prefix. The key is the config setting name in uppercase:
+
+```
+GTN_CONFIG_<SETTING_NAME>=<value>
+```
+
+Environment variable overrides have the **highest priority** — they win over user config files, project-adjacent config files, and built-in defaults.
+
+Examples:
+
+| Setting               | Environment variable             |
+| --------------------- | -------------------------------- |
+| `workspace_directory` | `GTN_CONFIG_WORKSPACE_DIRECTORY` |
+| `project_file`        | `GTN_CONFIG_PROJECT_FILE`        |
+| `log_level`           | `GTN_CONFIG_LOG_LEVEL`           |
+| `storage_backend`     | `GTN_CONFIG_STORAGE_BACKEND`     |
+
+This is useful for scripted environments, containers, and CI/CD pipelines where you want to inject configuration without modifying any config files:
+
+```bash
+GTN_CONFIG_PROJECT_FILE=/shared/studio-project.yml gtn
+```
+
 ## Workspace Directory
 
 During `gtn init`, you specify a Workspace Directory. This is the root for your projects, saved flows, and potentially project-specific settings.

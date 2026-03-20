@@ -1108,23 +1108,48 @@ class ProjectManager:
 
         logger.debug("System defaults loaded successfully")
 
-    def _load_workspace_project(self) -> None:
-        """Load workspace-level project template overlay if present.
+    def _resolve_project_file_path(self) -> Path | None:
+        """Resolve the path to the project file to load, or None if no file should be loaded.
 
-        Checks for griptape-nodes-project.yml in the workspace directory.
-        If found, loads it as an overlay on top of system defaults and sets it
-        as the current project. If the file is not present, the system defaults
-        remain current.
+        Checks config in the following order:
+        1. The path specified by the `project_file` config setting (if set)
+        2. griptape-nodes-project.yml in the workspace directory (default)
+
+        Returns None if no project file should be loaded (missing config, file not found).
         """
         config_manager = GriptapeNodes.ConfigManager()
+
+        project_file_value = config_manager.get_config_value("project_file")
+        if project_file_value is not None:
+            project_path = Path(project_file_value)
+            if project_path.exists():
+                return project_path
+            logger.warning(
+                "project_file config points to '%s' which does not exist, falling back to workspace default",
+                project_path,
+            )
+
         workspace_dir_value = config_manager.get_config_value("workspace_directory")
         if workspace_dir_value is None:
             logger.debug("Skipping workspace project load: 'workspace_directory' config value is None")
-            return
+            return None
 
         workspace_project_path = Path(workspace_dir_value) / WORKSPACE_PROJECT_FILE
         if not workspace_project_path.exists():
             logger.debug("No workspace project file found at '%s'", workspace_project_path)
+            return None
+
+        return workspace_project_path
+
+    def _load_workspace_project(self) -> None:
+        """Load workspace-level project template overlay if present.
+
+        Checks for a project file using _resolve_project_file_path. If found, loads
+        it as an overlay on top of system defaults and sets it as the current project.
+        If no file is found, the system defaults remain current.
+        """
+        workspace_project_path = self._resolve_project_file_path()
+        if workspace_project_path is None:
             return
 
         logger.info("Found workspace project file at '%s', loading", workspace_project_path)
