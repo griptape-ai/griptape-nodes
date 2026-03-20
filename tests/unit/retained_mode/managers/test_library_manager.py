@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -808,3 +809,67 @@ class TestGetAllInfoForAllLibraries:
 
         assert isinstance(result, GetAllInfoForAllLibrariesResultFailure)
         assert "BadLib" in str(result.result_details)
+
+
+class TestAddLibraryPathsToSysPath:
+    """Test the _add_library_paths_to_sys_path helper method."""
+
+    @pytest.mark.asyncio
+    async def test_adds_base_dir_to_sys_path(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that the library base directory is added to sys.path."""
+        library_manager = griptape_nodes.LibraryManager()
+        base_dir = Path("/fake/library/dir")
+
+        original_sys_path = sys.path.copy()
+        try:
+            with patch.object(library_manager, "_get_library_venv_path") as mock_venv:
+                mock_venv.return_value = Path("/fake/venv")
+                with patch("anyio.Path.exists", new_callable=AsyncMock, return_value=False):
+                    await library_manager._add_library_paths_to_sys_path("test_lib", "/fake/lib.json", base_dir)
+
+            assert str(base_dir) in sys.path
+        finally:
+            sys.path[:] = original_sys_path
+
+    @pytest.mark.asyncio
+    async def test_adds_venv_site_packages_when_venv_exists(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that venv site-packages are added to sys.path when the venv exists."""
+        library_manager = griptape_nodes.LibraryManager()
+        base_dir = Path("/fake/library/dir")
+        venv_path = Path("/fake/library/dir/.venv")
+
+        original_sys_path = sys.path.copy()
+        try:
+            with (
+                patch.object(library_manager, "_get_library_venv_path", return_value=venv_path),
+                patch("anyio.Path.exists", new_callable=AsyncMock, return_value=True),
+                patch("sysconfig.get_path", return_value="/fake/library/dir/.venv/lib/python3.12/site-packages"),
+            ):
+                await library_manager._add_library_paths_to_sys_path("test_lib", "/fake/lib.json", base_dir)
+
+            assert "/fake/library/dir/.venv/lib/python3.12/site-packages" in sys.path
+            assert str(base_dir) in sys.path
+        finally:
+            sys.path[:] = original_sys_path
+
+    @pytest.mark.asyncio
+    async def test_skips_venv_when_venv_does_not_exist(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that venv site-packages are NOT added when the venv doesn't exist."""
+        library_manager = griptape_nodes.LibraryManager()
+        base_dir = Path("/fake/library/dir")
+        venv_path = Path("/fake/library/dir/.venv")
+
+        original_sys_path = sys.path.copy()
+        try:
+            with (
+                patch.object(library_manager, "_get_library_venv_path", return_value=venv_path),
+                patch("anyio.Path.exists", new_callable=AsyncMock, return_value=False),
+                patch("sysconfig.get_path") as mock_get_path,
+            ):
+                await library_manager._add_library_paths_to_sys_path("test_lib", "/fake/lib.json", base_dir)
+
+            # sysconfig.get_path should not have been called since venv doesn't exist
+            mock_get_path.assert_not_called()
+            assert str(base_dir) in sys.path
+        finally:
+            sys.path[:] = original_sys_path
