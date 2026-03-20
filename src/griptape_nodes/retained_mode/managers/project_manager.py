@@ -551,16 +551,37 @@ class ProjectManager:
         if request.project_id is not None and self._config_manager is not None:
             project_info = self._successfully_loaded_project_templates.get(request.project_id)
             if project_info is not None and project_info.project_file_path is not None:
-                project_dir = project_info.project_file_path.parent
+                project_file_path = project_info.project_file_path
+                project_dir = project_file_path.parent
                 self._config_manager.load_project_config(project_dir)
-                # If neither the project-adjacent config nor env vars explicitly set workspace_directory,
-                # default the workspace to the project directory itself.
-                if (
+
+                # Determine workspace directory using the following priority:
+                # 1. project_workspaces in user config (per-user, per-project override)
+                # 2. workspace_directory in project-adjacent config (shared project default)
+                # 3. env vars
+                # 4. Auto-default to project directory
+                project_workspaces = self._config_manager.get_config_value(
+                    "app_events.on_app_initialization_complete.project_workspaces",
+                    config_source="user_config",
+                    default={},
+                )
+                workspace_override = project_workspaces.get(str(project_file_path.resolve()))
+                if workspace_override is not None:
+                    self._config_manager.workspace_path = workspace_override
+                    self._config_manager.merged_config["workspace_directory"] = str(
+                        Path(workspace_override).expanduser().resolve()
+                    )
+                elif (
                     "workspace_directory" not in self._config_manager.project_config
                     and "workspace_directory" not in self._config_manager.env_config
                 ):
+                    # If neither the project-adjacent config nor env vars explicitly set
+                    # workspace_directory, default the workspace to the project directory itself.
                     self._config_manager.workspace_path = project_dir
                     self._config_manager.merged_config["workspace_directory"] = str(project_dir.resolve())
+
+                # Load workspace config layer from the resolved workspace directory.
+                self._config_manager.load_workspace_config(self._config_manager.workspace_path)
 
         if request.project_id is None:
             return SetCurrentProjectResultSuccess(

@@ -12,6 +12,7 @@ WORKFLOWS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.workflows
 SECRETS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.secrets_to_register"
 MODELS_TO_DOWNLOAD_KEY = "app_events.on_app_initialization_complete.models_to_download"
 PROJECTS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.projects_to_register"
+PROJECT_WORKSPACES_KEY = "app_events.on_app_initialization_complete.project_workspaces"
 EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
 
 
@@ -123,6 +124,11 @@ class AppInitializationComplete(BaseModel):
         category=PROJECTS,
         default_factory=list,
         description="List of griptape-nodes-project.yml file paths to load at startup",
+    )
+    project_workspaces: dict[str, str] = Field(
+        category=PROJECTS,
+        default_factory=dict,
+        description="Mapping of project file paths to workspace directory overrides. When a project is loaded, if its path matches a key here, the corresponding value is used as the workspace directory instead of the project-adjacent config or auto-default.",
     )
 
 

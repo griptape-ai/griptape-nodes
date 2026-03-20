@@ -221,6 +221,87 @@ class TestConfigManager:
             assert value_with_cast == int("100")
             assert isinstance(value_with_cast, int)
 
+    def test_load_workspace_config_sets_workspace_layer(self) -> None:
+        """Test that load_workspace_config reads workspace config and merges it above project config."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir) / "project"
+            project_dir.mkdir()
+            workspace_dir = Path(temp_dir) / "workspace"
+            workspace_dir.mkdir()
+
+            (project_dir / "griptape_nodes_config.json").write_text('{"log_level": "ERROR"}')
+            (workspace_dir / "griptape_nodes_config.json").write_text('{"log_level": "DEBUG"}')
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                manager.load_project_config(project_dir)
+                assert manager.get_config_value("log_level") == "ERROR"
+
+                manager.load_workspace_config(workspace_dir)
+                # Workspace config overrides project-adjacent config
+                assert manager.get_config_value("log_level") == "DEBUG"
+                assert manager.workspace_config == {"log_level": "DEBUG"}
+
+    def test_load_workspace_config_skips_duplicate_when_same_as_project(self) -> None:
+        """Test that workspace config is skipped when workspace dir equals project dir."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir)
+            (project_dir / "griptape_nodes_config.json").write_text('{"log_level": "WARNING"}')
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                manager.load_project_config(project_dir)
+                # Now load workspace config from same dir — should be skipped
+                manager.load_workspace_config(project_dir)
+
+                assert manager.get_config_value("log_level") == "WARNING"
+                # workspace_config is empty because the duplicate was skipped
+                assert manager.workspace_config == {}
+
+    def test_workspace_config_overrides_project_config_but_not_env_vars(self) -> None:
+        """Test that workspace config wins over project config but loses to env vars."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir) / "project"
+            project_dir.mkdir()
+            workspace_dir = Path(temp_dir) / "workspace"
+            workspace_dir.mkdir()
+
+            (project_dir / "griptape_nodes_config.json").write_text('{"log_level": "ERROR"}')
+            (workspace_dir / "griptape_nodes_config.json").write_text('{"log_level": "WARNING"}')
+
+            with patch.dict(os.environ, {"GTN_CONFIG_LOG_LEVEL": "DEBUG"}, clear=True):
+                manager = ConfigManager()
+                manager.load_project_config(project_dir)
+                manager.load_workspace_config(workspace_dir)
+
+                # Env var wins over workspace config
+                assert manager.get_config_value("log_level") == "DEBUG"
+
+    def test_get_config_value_workspace_config_source(self) -> None:
+        """Test that get_config_value can read from workspace_config source specifically."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_dir = Path(temp_dir)
+            (workspace_dir / "griptape_nodes_config.json").write_text('{"log_level": "DEBUG"}')
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                manager.load_workspace_config(workspace_dir)
+
+                value = manager.get_config_value("log_level", config_source="workspace_config")
+                assert value == "DEBUG"
+
+    def test_workspace_config_missing_file_is_empty(self) -> None:
+        """Test that load_workspace_config with no config file results in empty workspace_config."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_dir = Path(temp_dir)
+            # No griptape_nodes_config.json created
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                manager.load_workspace_config(workspace_dir)
+
+                assert manager.workspace_config == {}
+
 
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="xdg_base_dirs cannot find XDG_CONFIG_HOME on Windows on GitHub Actions"

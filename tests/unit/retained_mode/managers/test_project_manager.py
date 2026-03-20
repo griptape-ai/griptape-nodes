@@ -1353,6 +1353,7 @@ situations:
         mock_config_manager.project_config = {}
         mock_config_manager.env_config = {}
         mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = {}
         return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
     def _setup_system_defaults(self, pm: ProjectManager, workspace_dir: str = "/workspace") -> None:
@@ -1383,9 +1384,11 @@ situations:
 
         self._setup_system_defaults(pm, str(tmp_path))
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return None
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1406,9 +1409,11 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return None
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1435,9 +1440,11 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return None
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1475,9 +1482,11 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return None
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1506,9 +1515,11 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return None
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1554,9 +1565,11 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return None
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1581,9 +1594,11 @@ situations:
         from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return None
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1604,9 +1619,11 @@ situations:
         external_project_path.parent.mkdir(parents=True)
         external_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return str(external_project_path)
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1635,9 +1652,11 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return None
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1668,9 +1687,11 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
-        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
             if key == "project_file":
                 return str(nonexistent_path)
+            if "project_workspaces" in key:
+                return {}
             return str(tmp_path)
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1686,3 +1707,98 @@ situations:
                 pm._load_workspace_project()
 
         assert pm._current_project_id == str(workspace_project_path)
+
+
+class TestProjectManagerProjectWorkspaces:
+    """Test ProjectManager project_workspaces lookup in on_set_current_project_request."""
+
+    def _make_project_manager_with_project(self, project_file_path: Path, mock_config: Mock) -> ProjectManager:
+        """Create a ProjectManager with a loaded project template at the given path."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_event_manager = Mock()
+        mock_secrets = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        project_id = str(project_file_path)
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_file_path,
+            project_base_dir=project_file_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        return pm
+
+    def test_project_workspaces_overrides_workspace(self, tmp_path: Path) -> None:
+        """Test that a matching project_workspaces entry sets workspace to the mapped value."""
+        import tempfile
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+        workspace_dir = Path(tempfile.mkdtemp())
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {str(project_file.resolve()): str(workspace_dir)}
+
+        pm = self._make_project_manager_with_project(project_file, mock_config)
+
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+
+        mock_config.load_workspace_config.assert_called_once()
+
+    def test_project_workspaces_no_match_falls_back_to_project_dir(self, tmp_path: Path) -> None:
+        """Test that when no project_workspaces entry matches, workspace defaults to project dir."""
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(project_file, mock_config)
+
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+
+        mock_config.workspace_path = tmp_path
+        mock_config.load_workspace_config.assert_called_once()
+
+    def test_project_workspaces_project_adjacent_config_not_overridden_when_set(self, tmp_path: Path) -> None:
+        """Test that project-adjacent config workspace_directory is not auto-overridden."""
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        mock_config = Mock()
+        mock_config.project_config = {"workspace_directory": "/some/shared/workspace"}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(project_file, mock_config)
+
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+
+        # merged_config should NOT have workspace_directory set to the project dir
+        # (the project-adjacent config already set it)
+        assert mock_config.merged_config.get("workspace_directory") != str(project_file.parent.resolve())
+        mock_config.load_workspace_config.assert_called_once()
