@@ -302,6 +302,69 @@ class TestConfigManager:
 
                 assert manager.workspace_config == {}
 
+    def test_workspace_override_survives_load_configs(self) -> None:
+        """Test that set_workspace_override persists through load_configs() calls."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            override_dir = Path(temp_dir)
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                manager.set_workspace_override(override_dir)
+
+                manager.load_configs()
+
+                assert manager.workspace_path == override_dir.resolve()
+                assert manager.merged_config["workspace_directory"] == str(override_dir.resolve())
+
+    def test_workspace_override_loses_to_env_var(self) -> None:
+        """Test that GTN_CONFIG_WORKSPACE_DIRECTORY still wins over the runtime override."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            override_dir = Path(temp_dir) / "override"
+            override_dir.mkdir()
+            env_dir = Path(temp_dir) / "env"
+            env_dir.mkdir()
+
+            with patch.dict(os.environ, {"GTN_CONFIG_WORKSPACE_DIRECTORY": str(env_dir)}, clear=True):
+                manager = ConfigManager()
+                manager.set_workspace_override(override_dir)
+
+                manager.load_configs()
+
+                assert manager.workspace_path == env_dir.resolve()
+
+    def test_workspace_override_cleared_on_reset(self) -> None:
+        """Test that reset_user_config clears the runtime workspace override."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            override_dir = Path(temp_dir)
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                manager.set_workspace_override(override_dir)
+                assert manager.workspace_path == override_dir.resolve()
+
+                manager.reset_user_config()
+
+                assert manager._workspace_dir_override is None
+                assert manager.workspace_path != override_dir.resolve()
+
+    def test_set_workspace_override_none_clears(self) -> None:
+        """Test that set_workspace_override(None) clears a previously set override."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            override_dir = Path(temp_dir)
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                default_workspace = manager.workspace_path
+
+                manager.set_workspace_override(override_dir)
+                assert manager.workspace_path == override_dir.resolve()
+
+                manager.set_workspace_override(None)
+                assert manager._workspace_dir_override is None
+
+                manager.load_configs()
+                assert manager.workspace_path == default_workspace
+
 
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="xdg_base_dirs cannot find XDG_CONFIG_HOME on Windows on GitHub Actions"

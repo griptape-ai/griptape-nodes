@@ -1740,7 +1740,7 @@ class TestProjectManagerProjectWorkspaces:
         return pm
 
     def test_project_workspaces_overrides_workspace(self, tmp_path: Path) -> None:
-        """Test that a matching project_workspaces entry sets workspace to the mapped value."""
+        """Test that a matching project_workspaces entry calls set_workspace_override with the mapped value."""
         import tempfile
 
         project_file = tmp_path / "project.yml"
@@ -1759,10 +1759,11 @@ class TestProjectManagerProjectWorkspaces:
 
         pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
+        mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
         mock_config.load_workspace_config.assert_called_once()
 
     def test_project_workspaces_no_match_falls_back_to_project_dir(self, tmp_path: Path) -> None:
-        """Test that when no project_workspaces entry matches, workspace defaults to project dir."""
+        """Test that when no project_workspaces entry matches, set_workspace_override is called with project dir."""
         project_file = tmp_path / "project.yml"
         project_file.touch()
 
@@ -1778,11 +1779,11 @@ class TestProjectManagerProjectWorkspaces:
 
         pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        mock_config.workspace_path = tmp_path
+        mock_config.set_workspace_override.assert_called_once_with(project_file.parent)
         mock_config.load_workspace_config.assert_called_once()
 
     def test_project_workspaces_project_adjacent_config_not_overridden_when_set(self, tmp_path: Path) -> None:
-        """Test that project-adjacent config workspace_directory is not auto-overridden."""
+        """Test that set_workspace_override is not called when project-adjacent config sets workspace_directory."""
         project_file = tmp_path / "project.yml"
         project_file.touch()
 
@@ -1798,7 +1799,5 @@ class TestProjectManagerProjectWorkspaces:
 
         pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        # merged_config should NOT have workspace_directory set to the project dir
-        # (the project-adjacent config already set it)
-        assert mock_config.merged_config.get("workspace_directory") != str(project_file.parent.resolve())
+        mock_config.set_workspace_override.assert_not_called()
         mock_config.load_workspace_config.assert_called_once()

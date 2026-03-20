@@ -566,19 +566,16 @@ class ProjectManager:
                     default={},
                 )
                 workspace_override = project_workspaces.get(str(project_file_path.resolve()))
+
                 if workspace_override is not None:
-                    self._config_manager.workspace_path = workspace_override
-                    self._config_manager.merged_config["workspace_directory"] = str(
-                        Path(workspace_override).expanduser().resolve()
-                    )
+                    self._config_manager.set_workspace_override(Path(workspace_override))
                 elif (
                     "workspace_directory" not in self._config_manager.project_config
                     and "workspace_directory" not in self._config_manager.env_config
                 ):
                     # If neither the project-adjacent config nor env vars explicitly set
                     # workspace_directory, default the workspace to the project directory itself.
-                    self._config_manager.workspace_path = project_dir
-                    self._config_manager.merged_config["workspace_directory"] = str(project_dir.resolve())
+                    self._config_manager.set_workspace_override(project_dir)
 
                 # Load workspace config layer from the resolved workspace directory.
                 self._config_manager.load_workspace_config(self._config_manager.workspace_path)

@@ -92,6 +92,7 @@ class ConfigManager:
         """
         self._project_config_path: Path | None = None
         self._workspace_config_path: Path | None = None
+        self._workspace_dir_override: str | None = None
         self.load_configs()
 
         self._set_log_level(self.merged_config.get("log_level", logging.INFO))
@@ -132,6 +133,27 @@ class ConfigManager:
             path: The path to set as the base file path.
         """
         self._workspace_path = str(Path(path).expanduser().resolve())
+
+    def set_workspace_override(self, path: Path | None) -> None:
+        """Set a runtime workspace directory override.
+
+        This override takes precedence over config-file-based workspace_directory
+        values (default, user, project, workspace configs) but is still overridden
+        by the GTN_CONFIG_WORKSPACE_DIRECTORY environment variable.
+
+        Used by ProjectManager to apply project_workspaces mappings and
+        auto-default-to-project-dir behavior. Also updates workspace_path immediately
+        so callers see the correct value before the next load_configs() call.
+
+        Args:
+            path: The workspace directory override, or None to clear it.
+        """
+        if path is None:
+            self._workspace_dir_override = None
+        else:
+            resolved = str(Path(path).expanduser().resolve())
+            self._workspace_dir_override = resolved
+            self._workspace_path = resolved
 
     @property
     def config_files(self) -> list[Path]:
@@ -215,6 +237,11 @@ class ConfigManager:
         else:
             self.workspace_config = {}
 
+        # Apply runtime workspace override (from ProjectManager's project_workspaces lookup
+        # or auto-default-to-project-dir). Sits above config files but below env vars.
+        if self._workspace_dir_override is not None:
+            merged_config["workspace_directory"] = self._workspace_dir_override
+
         self.env_config = self._load_config_from_env_vars()
         if self.env_config:
             merged_config = merge_dicts(merged_config, self.env_config)
@@ -280,6 +307,7 @@ class ConfigManager:
                 indent=2,
             )
         )
+        self._workspace_dir_override = None
         self.load_configs()
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
@@ -545,7 +573,6 @@ class ConfigManager:
         try:
             self.reset_user_config()
             self._set_log_level(str(self.merged_config["log_level"]))
-            self.workspace_path = Path(self.merged_config["workspace_directory"])
 
             result_details = "Successfully reset user configuration."
             return ResetConfigResultSuccess(result_details=result_details)
