@@ -12,12 +12,8 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_utils imp
 
 from .mocks import MockNode
 
-_SNAPSHOT_DOWNLOAD = (
-    "griptape_nodes.exe_types.param_components.huggingface.huggingface_utils.snapshot_download"
-)
-_ASSERT_CHECKPOINT = (
-    "griptape_nodes.exe_types.param_components.huggingface.huggingface_model_parameter.assert_model_has_checkpoint_files"
-)
+_SNAPSHOT_DOWNLOAD = "griptape_nodes.exe_types.param_components.huggingface.huggingface_utils.snapshot_download"
+_ASSERT_CHECKPOINT = "griptape_nodes.exe_types.param_components.huggingface.huggingface_model_parameter.assert_model_has_checkpoint_files"
 
 
 class ConcreteHFModelParam(HuggingFaceModelParameter):
