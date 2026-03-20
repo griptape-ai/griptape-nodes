@@ -339,9 +339,11 @@ class SaveWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 
     Args:
         file_path: Path where the workflow was saved
+        workflow_name: Registry key of the saved workflow, for use with workflow lookup requests
     """
 
     file_path: str
+    workflow_name: str
 
 
 @dataclass

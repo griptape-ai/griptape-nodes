@@ -1789,7 +1789,9 @@ class WorkflowManager:
         existing_workflow.metadata = workflow_metadata
         details = f"Successfully saved workflow to: {save_file_result.file_path}"
         return SaveWorkflowResultSuccess(
-            file_path=save_file_result.file_path, result_details=ResultDetails(message=details, level=logging.INFO)
+            file_path=save_file_result.file_path,
+            workflow_name=registry_key,
+            result_details=ResultDetails(message=details, level=logging.INFO),
         )
 
     class _ExistingMetadata(NamedTuple):
@@ -1928,7 +1930,12 @@ class WorkflowManager:
             creation_date = current_workflow.metadata.creation_date
             branched_from = current_workflow.metadata.branched_from
             current_dir = Path(current_workflow.file_path).parent
-            relative_file_path = str(current_dir / f"{file_name}.py")
+            # If current_dir is absolute, the workflow lives outside the workspace;
+            # save the copy to the workspace root so the registry key stays relative.
+            if current_dir.is_absolute():
+                relative_file_path = f"{file_name}.py"
+            else:
+                relative_file_path = str(current_dir / f"{file_name}.py")
             file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
 
         else:
