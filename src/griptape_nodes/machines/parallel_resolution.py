@@ -32,7 +32,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.library_import_context import library_scope_for_node
 
 if TYPE_CHECKING:
     from griptape_nodes.common.directed_graph import DirectedGraph
@@ -234,8 +233,7 @@ class ExecuteDagState(State):
         # Early returns for various conditions
         if ExecuteDagState._should_skip_control_flow(context, node, network_name, flow_manager):
             return
-        with library_scope_for_node(node):
-            next_output = node.get_next_control_output()
+        next_output = node.get_next_control_output()
         if next_output is not None:
             ExecuteDagState._process_next_control_node(context, node, next_output, network_name, flow_manager)
 
@@ -529,8 +527,7 @@ class ExecuteDagState(State):
             # Clear all of the current output values but don't broadcast the clearing.
             # to avoid any flickering in subscribers (UI).
             node_reference.node_reference.parameter_output_values.silent_clear()
-            with library_scope_for_node(node_reference.node_reference):
-                exceptions = node_reference.node_reference.validate_before_node_run()
+            exceptions = node_reference.node_reference.validate_before_node_run()
             if exceptions:
                 context.running_tasks_count -= 1  # Decrement on error
                 msg = f"Node '{node_reference.node_reference.name}' encountered problems: {exceptions}"

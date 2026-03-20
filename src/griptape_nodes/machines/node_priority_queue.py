@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from griptape_nodes.machines.heuristics import DistanceToNode, HasConnectionFromPrevious, TopLeftToBottomRight
-from griptape_nodes.retained_mode.managers.library_import_context import library_scope_for_node
 
 if TYPE_CHECKING:
     from griptape_nodes.machines.dag_builder import DagNode
@@ -56,9 +55,7 @@ class NodePriorityQueue:
         if node_name in self._queued_nodes or node_name in self._blocked_nodes:
             return node_name
 
-        with library_scope_for_node(dag_node.node_reference):
-            can_queue = dag_node.node_reference.can_queue_for_execution()
-        if can_queue:
+        if dag_node.node_reference.can_queue_for_execution():
             self._queued_nodes.append(node_name)
             self._needs_reorder = True
         else:
@@ -115,9 +112,7 @@ class NodePriorityQueue:
         for node_name in self._blocked_nodes:
             if node_name in self._context.node_to_reference:
                 dag_node = self._context.node_to_reference[node_name]
-                with library_scope_for_node(dag_node.node_reference):
-                    can_queue = dag_node.node_reference.can_queue_for_execution()
-                if can_queue:
+                if dag_node.node_reference.can_queue_for_execution():
                     self._queued_nodes.append(node_name)
                     self._needs_reorder = True
                     promoted_count += 1

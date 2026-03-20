@@ -36,7 +36,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
-from griptape_nodes.retained_mode.managers.library_import_context import library_scope_for_node
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.widget import Widget
 from griptape_nodes.utils import async_utils
@@ -851,15 +850,13 @@ class BaseNode(ABC):
             if skip_before_value_set:
                 final_value = candidate_value
             else:
-                with library_scope_for_node(self):
-                    final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
             # ACTUALLY SET THE NEW VALUE
             self.parameter_values[param_name] = final_value
 
             # If a parameter value has been set at the top level of a container, wipe all children.
             # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-            with library_scope_for_node(self):
-                self.after_value_set(parameter=parameter, value=final_value)
+            self.after_value_set(parameter=parameter, value=final_value)
             if emit_change:
                 self._emit_parameter_lifecycle_event(parameter)
         else:

@@ -171,7 +171,6 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     SandboxDirectoryMissingProblem,
     UpdateConfigCategoryProblem,
 )
-from griptape_nodes.retained_mode.managers.library_import_context import LibraryImportContext
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
 from griptape_nodes.utils.async_utils import subprocess_run
@@ -340,16 +339,12 @@ class LibraryManager:
     _dynamic_to_stable_module_mapping: dict[str, str]  # dynamic_module_name -> stable_namespace
     _stable_to_dynamic_module_mapping: dict[str, str]  # stable_namespace -> dynamic_module_name
     _library_to_stable_modules: dict[str, set[str]]  # library_name -> set of stable_namespaces
-    _library_to_path_entries: dict[str, list[str]]  # library_name -> [base_dir, site_packages, ...]
-    _engine_baseline_path: list[str]  # sys.path snapshot taken before any library paths are added
 
     def __init__(self, event_manager: EventManager) -> None:
         self._library_file_path_to_info = {}
         self._dynamic_to_stable_module_mapping = {}
         self._stable_to_dynamic_module_mapping = {}
         self._library_to_stable_modules = {}
-        self._library_to_path_entries = {}
-        self._engine_baseline_path = []
         self._library_event_handler_mappings: dict[
             type[Payload], dict[str, LibraryManager.RegisteredEventHandler[Any]]
         ] = {}
@@ -1448,9 +1443,8 @@ class LibraryManager:
                         json_path = Path(file_path)
                         base_dir = json_path.parent.absolute()
 
-                        # Track per-library path entries for scoped import contexts.
-                        # base_dir comes first so the library's own modules take precedence.
-                        library_path_entries: list[str] = [str(base_dir)]
+                        # Add the directory to the Python path to allow for relative imports
+                        sys.path.insert(0, str(base_dir))
 
                         # Add venv site-packages to sys.path if library has dependencies
                         if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
@@ -1464,12 +1458,10 @@ class LibraryManager:
                                         )
                                     )
                                 )
-                                library_path_entries.append(site_packages)
+                                sys.path.insert(0, site_packages)
                                 logger.debug(
                                     "Added library '%s' venv to sys.path: %s", library_data.name, site_packages
                                 )
-
-                        self._library_to_path_entries[library_data.name] = library_path_entries
 
                         # Load the advanced library module if specified
                         advanced_library_instance = None
@@ -2280,11 +2272,8 @@ class LibraryManager:
             sys.modules[module_name] = module
 
             try:
-                # Execute the module with the new code, scoping sys.path to this
-                # library's paths to prevent it from resolving against other libraries.
-                library_paths = self._library_to_path_entries.get(library_name, [])
-                with LibraryImportContext(library_name, library_paths, self._engine_baseline_path):
-                    spec.loader.exec_module(module)
+                # Execute the module with the new code
+                spec.loader.exec_module(module)
                 # Register new stable alias
                 self._register_stable_module_alias(module_name, stable_namespace, module, library_name)
                 details = f"Hot reloaded module: {module_name} from {file_path}"
@@ -2309,12 +2298,9 @@ class LibraryManager:
             # Add to sys.modules to handle recursive imports
             sys.modules[module_name] = module
 
-            # Execute the module, scoping sys.path to this library's paths to prevent
-            # it from resolving imports against other libraries' paths.
+            # Execute the module
             try:
-                library_paths = self._library_to_path_entries.get(library_name, [])
-                with LibraryImportContext(library_name, library_paths, self._engine_baseline_path):
-                    spec.loader.exec_module(module)
+                spec.loader.exec_module(module)
                 # Register stable alias
                 self._register_stable_module_alias(module_name, stable_namespace, module, library_name)
             except Exception as err:
@@ -2574,10 +2560,6 @@ class LibraryManager:
         # TODO: Remove https://github.com/griptape-ai/griptape-nodes/issues/3348
         self._migrate_old_xdg_library_paths()
 
-        # Capture sys.path before any library paths are added so each library's
-        # modules can be loaded against a clean baseline (not polluted by other libraries).
-        self._engine_baseline_path = sys.path.copy()
-
         # App just got init'd. First download any missing libraries from git URLs.
         await self._ensure_libraries_from_config()
 
@@ -2609,6 +2591,8 @@ class LibraryManager:
                         if library_info.library_name == library_name:
                             library_path = Path(library_info.library_path)
                             base_dir = library_path.parent.absolute()
+                            # Add the directory to the Python path to allow for relative imports.
+                            sys.path.insert(0, str(base_dir))
                             for workflow in library_data.workflows:
                                 final_workflow_path = base_dir / workflow
                                 library_workflow_files_to_register.append(str(final_workflow_path))
