@@ -1383,9 +1383,14 @@ situations:
 
         self._setup_system_defaults(pm, str(tmp_path))
 
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return None
+            return str(tmp_path)
+
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
-            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
             mock_gn.ConfigManager.return_value = mock_config
 
             pm._load_workspace_project()
@@ -1401,9 +1406,14 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return None
+            return str(tmp_path)
+
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
-            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
             mock_gn.ConfigManager.return_value = mock_config
 
             with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
@@ -1425,9 +1435,14 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return None
+            return str(tmp_path)
+
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
-            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
             mock_gn.ConfigManager.return_value = mock_config
 
             with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
@@ -1460,9 +1475,14 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return None
+            return str(tmp_path)
+
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
-            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
             mock_gn.ConfigManager.return_value = mock_config
 
             with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
@@ -1486,9 +1506,14 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return None
+            return str(tmp_path)
+
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
-            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
             mock_gn.ConfigManager.return_value = mock_config
 
             with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
@@ -1529,9 +1554,14 @@ situations:
         workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
         workspace_project_path.write_text(self.VALID_PROJECT_YAML)
 
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return None
+            return str(tmp_path)
+
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
-            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
             mock_gn.ConfigManager.return_value = mock_config
 
             with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
@@ -1551,11 +1581,99 @@ situations:
         from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return None
+            return str(tmp_path)
+
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_config = Mock()
-            mock_config.get_config_value.return_value = str(tmp_path)
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
             mock_gn.ConfigManager.return_value = mock_config
 
             await pm.on_app_initialization_complete(AppInitializationComplete())
+
+        assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
+
+    def test_load_workspace_project_uses_project_file_setting(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """When project_file config is set, that path is used instead of workspace default."""
+        self._setup_system_defaults(pm, str(tmp_path))
+
+        # Project file is outside the workspace directory
+        external_project_path = tmp_path / "external" / "my-project.yml"
+        external_project_path.parent.mkdir(parents=True)
+        external_project_path.write_text(self.VALID_PROJECT_YAML)
+
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return str(external_project_path)
+            return str(tmp_path)
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+                mock_file_instance = Mock()
+                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+                mock_file_cls.return_value = mock_file_instance
+
+                pm._load_workspace_project()
+
+        assert pm._current_project_id == str(external_project_path)
+        assert str(external_project_path) in pm._successfully_loaded_project_templates
+
+    def test_load_workspace_project_uses_workspace_default_when_no_project_file_setting(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """When project_file config is None, falls back to workspace/griptape-nodes-project.yml."""
+        from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
+
+        self._setup_system_defaults(pm, str(tmp_path))
+
+        workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
+        workspace_project_path.write_text(self.VALID_PROJECT_YAML)
+
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return None
+            return str(tmp_path)
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+                mock_file_instance = Mock()
+                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+                mock_file_cls.return_value = mock_file_instance
+
+                pm._load_workspace_project()
+
+        assert pm._current_project_id == str(workspace_project_path)
+
+    def test_load_workspace_project_project_file_setting_nonexistent_skips(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """When project_file config points to a nonexistent file, system defaults remain current."""
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
+
+        self._setup_system_defaults(pm, str(tmp_path))
+
+        nonexistent_path = tmp_path / "does_not_exist.yml"
+
+        def get_config_value_side_effect(key: str, **_: object) -> str | None:
+            if key == "project_file":
+                return str(nonexistent_path)
+            return str(tmp_path)
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
+            mock_gn.ConfigManager.return_value = mock_config
+
+            pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY

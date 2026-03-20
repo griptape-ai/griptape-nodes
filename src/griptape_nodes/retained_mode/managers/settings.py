@@ -273,3 +273,8 @@ class Settings(BaseModel):
         default_factory=dict,
         description="Control how previews are generated for images and other media files",
     )
+    project_file: str | None = Field(
+        category=PROJECTS,
+        default=None,
+        description="Path to a project template file (griptape-nodes-project.yml). When set, overrides the default location of <workspace_directory>/griptape-nodes-project.yml. Can be an absolute path or a path relative to the workspace directory. Configurable via the GTN_CONFIG_PROJECT_FILE environment variable.",
+    )
