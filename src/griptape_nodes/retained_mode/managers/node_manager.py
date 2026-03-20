@@ -192,7 +192,6 @@ from griptape_nodes.retained_mode.events.validation_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.library_import_context import library_scope_for_node
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 
 logger = logging.getLogger("griptape_nodes")
@@ -2258,8 +2257,7 @@ class NodeManager:
 
         # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
         try:
-            with library_scope_for_node(node):
-                modified_value = node.before_value_set(parameter, parameter_value)
+            modified_value = node.before_value_set(parameter, parameter_value)
             if modified_value is not None:
                 # Check if it's a TransformedParameterValue (value + type)
                 if isinstance(modified_value, TransformedParameterValue):
@@ -2725,8 +2723,7 @@ class NodeManager:
         nodes = flow.get_node_dependencies(node)
         all_exceptions = []
         for dependent_node in nodes:
-            with library_scope_for_node(dependent_node):
-                exceptions = dependent_node.validate_before_workflow_run()
+            exceptions = dependent_node.validate_before_workflow_run()
             if exceptions:
                 all_exceptions = all_exceptions + exceptions
         return ValidateNodeDependenciesResultSuccess(
@@ -4091,12 +4088,11 @@ class NodeManager:
                 return SendNodeMessageResultFailure(result_details=details, altered_workflow_state=False)
 
         # Call the node's message callback
-        with library_scope_for_node(node):
-            callback_result = node.on_node_message_received(
-                optional_element_name=request.optional_element_name,
-                message_type=request.message_type,
-                message=request.message,
-            )
+        callback_result = node.on_node_message_received(
+            optional_element_name=request.optional_element_name,
+            message_type=request.message_type,
+            message=request.message,
+        )
 
         if not callback_result.success:
             details = f"Failed to handle message for Node '{node_name}': {callback_result.details}"

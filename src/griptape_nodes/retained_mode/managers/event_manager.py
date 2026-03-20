@@ -22,7 +22,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
     ResultPayload,
 )
-from griptape_nodes.retained_mode.managers.library_import_context import library_scope_for_node
 from griptape_nodes.utils.async_utils import call_function
 
 if TYPE_CHECKING:
@@ -425,8 +424,7 @@ class EventManager:
         for node in nodes.values():
             # Only flush if there are actually tracked parameters
             if node._tracked_parameters:
-                with library_scope_for_node(node):
-                    node.emit_parameter_changes()
+                node.emit_parameter_changes()
 
 
 class EventSuppressionContext:

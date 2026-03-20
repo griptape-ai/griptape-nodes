@@ -157,7 +157,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import FLOW_COMMANDS_KEY
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.library_import_context import library_scope_for_node
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 if TYPE_CHECKING:
@@ -889,25 +888,21 @@ class FlowManager:
             return CreateConnectionResultFailure(result_details=details)
 
         # Ask each node involved to bless this union.
-        with library_scope_for_node(source_node):
-            source_allows = source_node.allow_outgoing_connection(
-                source_parameter=source_param,
-                target_node=target_node,
-                target_parameter=target_param,
-            )
-        if not source_allows:
+        if not source_node.allow_outgoing_connection(
+            source_parameter=source_param,
+            target_node=target_node,
+            target_parameter=target_param,
+        ):
             details = (
                 f'Connection failed : "{source_node_name}.{request.source_parameter_name}" rejected the connection '
             )
             return CreateConnectionResultFailure(result_details=details)
 
-        with library_scope_for_node(target_node):
-            target_allows = target_node.allow_incoming_connection(
-                source_node=source_node,
-                source_parameter=source_param,
-                target_parameter=target_param,
-            )
-        if not target_allows:
+        if not target_node.allow_incoming_connection(
+            source_node=source_node,
+            source_parameter=source_param,
+            target_parameter=target_param,
+        ):
             details = (
                 f'Connection failed : "{target_node_name}.{request.target_parameter_name}" rejected the connection '
             )
@@ -995,18 +990,16 @@ class FlowManager:
             return CreateConnectionResultFailure(result_details=details)
 
         # Let the source make any internal handling decisions now that the Connection has been made.
-        with library_scope_for_node(source_node):
-            source_node.after_outgoing_connection(
-                source_parameter=source_param, target_node=target_node, target_parameter=target_param
-            )
+        source_node.after_outgoing_connection(
+            source_parameter=source_param, target_node=target_node, target_parameter=target_param
+        )
 
         # And target.
-        with library_scope_for_node(target_node):
-            target_node.after_incoming_connection(
-                source_node=source_node,
-                source_parameter=source_param,
-                target_parameter=target_param,
-            )
+        target_node.after_incoming_connection(
+            source_node=source_node,
+            source_parameter=source_param,
+            target_parameter=target_param,
+        )
 
         # Check if either node is in a NodeGroup and track connections
 
@@ -1250,18 +1243,16 @@ class FlowManager:
             except KeyError as e:
                 logger.warning(e)
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
-        with library_scope_for_node(source_node):
-            source_node.after_outgoing_connection_removed(
-                source_parameter=source_param, target_node=target_node, target_parameter=target_param
-            )
+        source_node.after_outgoing_connection_removed(
+            source_parameter=source_param, target_node=target_node, target_parameter=target_param
+        )
 
         # And target.
-        with library_scope_for_node(target_node):
-            target_node.after_incoming_connection_removed(
-                source_node=source_node,
-                source_parameter=source_param,
-                target_parameter=target_param,
-            )
+        target_node.after_incoming_connection_removed(
+            source_node=source_node,
+            source_parameter=source_param,
+            target_parameter=target_param,
+        )
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
 
@@ -3078,8 +3069,7 @@ class FlowManager:
         # If we're just running the whole flow
         all_exceptions = []
         for node in nodes:
-            with library_scope_for_node(node):
-                exceptions = node.validate_before_workflow_run()
+            exceptions = node.validate_before_workflow_run()
             if exceptions:
                 all_exceptions = all_exceptions + exceptions
         return ValidateFlowDependenciesResultSuccess(
