@@ -4,7 +4,11 @@ from abc import ABC, abstractmethod
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_utils import (
+    assert_model_has_checkpoint_files,
+)
 from griptape_nodes.traits.options import Options
+
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -117,8 +121,13 @@ class HuggingFaceModelParameter(ABC):
     def validate_before_node_run(self) -> list[Exception] | None:
         self.refresh_parameters()
         try:
-            self.get_repo_revision()
+            repo_id, revision = self.get_repo_revision()
         except Exception as e:
+            return [e]
+
+        try:
+            assert_model_has_checkpoint_files(repo_id, revision)
+        except ValueError as e:
             return [e]
 
         return None
