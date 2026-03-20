@@ -122,7 +122,7 @@ class AppInitializationComplete(BaseModel):
     projects_to_register: list[str] = Field(
         category=PROJECTS,
         default_factory=list,
-        description="List of project.yml file paths to load at startup",
+        description="List of griptape-nodes-project.yml file paths to load at startup",
     )
 
 
@@ -276,5 +276,5 @@ class Settings(BaseModel):
     project_file: str | None = Field(
         category=PROJECTS,
         default=None,
-        description="Path to a project template file (griptape-nodes-project.yml). When set, overrides the default location of <workspace_directory>/griptape-nodes-project.yml. If the specified path does not exist, falls back to the workspace default.",
+        description="Path to the project file (griptape-nodes-project.yml) to load initially when the engine starts. When set, overrides the default location of <workspace_directory>/griptape-nodes-project.yml. If the specified path does not exist, falls back to the workspace default.",
     )
