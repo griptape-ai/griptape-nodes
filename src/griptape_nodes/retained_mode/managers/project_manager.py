@@ -565,7 +565,11 @@ class ProjectManager:
                     config_source="user_config",
                     default={},
                 )
-                workspace_override = project_workspaces.get(str(project_file_path.resolve()))
+                resolved_project_path = str(project_file_path.resolve())
+                workspace_override = next(
+                    (v for k, v in project_workspaces.items() if str(Path(k).resolve()) == resolved_project_path),
+                    None,
+                )
 
                 if workspace_override is not None:
                     self._config_manager.set_workspace_override(Path(workspace_override))

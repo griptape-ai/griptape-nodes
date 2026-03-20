@@ -1762,6 +1762,30 @@ class TestProjectManagerProjectWorkspaces:
         mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
         mock_config.load_workspace_config.assert_called_once()
 
+    def test_project_workspaces_key_resolved_before_lookup(self, tmp_path: Path) -> None:
+        """Test that project_workspaces keys are resolved before matching, so symlinks and relative paths work."""
+        import tempfile
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+        workspace_dir = Path(tempfile.mkdtemp())
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        # Key uses the unresolved path; the code must resolve both sides before comparing.
+        mock_config.get_config_value.return_value = {str(project_file): str(workspace_dir)}
+
+        pm = self._make_project_manager_with_project(project_file, mock_config)
+
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+
+        mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
+        mock_config.load_workspace_config.assert_called_once()
+
     def test_project_workspaces_no_match_falls_back_to_project_dir(self, tmp_path: Path) -> None:
         """Test that when no project_workspaces entry matches, set_workspace_override is called with project dir."""
         project_file = tmp_path / "project.yml"
