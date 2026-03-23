@@ -32,16 +32,13 @@ class TestGriptapeCloudStorageDriverCreateSignedUploadUrl:
         self, cloud_storage_driver: GriptapeCloudStorageDriver, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that create_signed_upload_url logs warning when policy is not OVERWRITE."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"url": "http://test.com/upload", "headers": {}}
+
         with (
             patch.object(cloud_storage_driver, "_create_asset"),
-            patch("griptape_nodes.drivers.storage.griptape_cloud_storage_driver.httpx.post") as mock_post,
+            patch.object(cloud_storage_driver, "_request", return_value=mock_response),
         ):
-            # Setup mocks
-            mock_post_response = Mock()
-            mock_post_response.raise_for_status.return_value = None
-            mock_post_response.json.return_value = {"url": "http://test.com/upload"}
-            mock_post.return_value = mock_post_response
-
             # Clear any existing log records and set level
             caplog.clear()
             caplog.set_level(logging.WARNING)
@@ -61,16 +58,13 @@ class TestGriptapeCloudStorageDriverCreateSignedUploadUrl:
         self, cloud_storage_driver: GriptapeCloudStorageDriver, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that create_signed_upload_url logs warning when policy is CREATE_NEW."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"url": "http://test.com/upload", "headers": {}}
+
         with (
             patch.object(cloud_storage_driver, "_create_asset"),
-            patch("griptape_nodes.drivers.storage.griptape_cloud_storage_driver.httpx.post") as mock_post,
+            patch.object(cloud_storage_driver, "_request", return_value=mock_response),
         ):
-            # Setup mocks
-            mock_post_response = Mock()
-            mock_post_response.raise_for_status.return_value = None
-            mock_post_response.json.return_value = {"url": "http://test.com/upload"}
-            mock_post.return_value = mock_post_response
-
             # Clear any existing log records and set level
             caplog.clear()
             caplog.set_level(logging.WARNING)
@@ -90,16 +84,13 @@ class TestGriptapeCloudStorageDriverCreateSignedUploadUrl:
         self, cloud_storage_driver: GriptapeCloudStorageDriver, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that create_signed_upload_url does NOT log warning when policy is OVERWRITE."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"url": "http://test.com/upload", "headers": {}}
+
         with (
             patch.object(cloud_storage_driver, "_create_asset"),
-            patch("griptape_nodes.drivers.storage.griptape_cloud_storage_driver.httpx.post") as mock_post,
+            patch.object(cloud_storage_driver, "_request", return_value=mock_response),
         ):
-            # Setup mocks
-            mock_post_response = Mock()
-            mock_post_response.raise_for_status.return_value = None
-            mock_post_response.json.return_value = {"url": "http://test.com/upload"}
-            mock_post.return_value = mock_post_response
-
             # Clear any existing log records and set level
             caplog.clear()
             caplog.set_level(logging.WARNING)
@@ -114,16 +105,13 @@ class TestGriptapeCloudStorageDriverCreateSignedUploadUrl:
         self, cloud_storage_driver: GriptapeCloudStorageDriver, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that create_signed_upload_url does NOT log warning with default OVERWRITE policy."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"url": "http://test.com/upload", "headers": {}}
+
         with (
             patch.object(cloud_storage_driver, "_create_asset"),
-            patch("griptape_nodes.drivers.storage.griptape_cloud_storage_driver.httpx.post") as mock_post,
+            patch.object(cloud_storage_driver, "_request", return_value=mock_response),
         ):
-            # Setup mocks
-            mock_post_response = Mock()
-            mock_post_response.raise_for_status.return_value = None
-            mock_post_response.json.return_value = {"url": "http://test.com/upload"}
-            mock_post.return_value = mock_post_response
-
             # Clear any existing log records and set level
             caplog.clear()
             caplog.set_level(logging.WARNING)
