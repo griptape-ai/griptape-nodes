@@ -346,7 +346,7 @@ dependencies = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.77.5"
+version = "0.78.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
