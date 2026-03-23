@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from PIL import Image
+
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
@@ -15,12 +16,18 @@ from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import Griptap
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+from griptape_nodes.retained_mode.events.artifact_events import (
+    GetPreviewForArtifactRequest,
+    GetPreviewForArtifactResultSuccess,
+    PreviewGenerationPolicy,
+)
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
     GetSituationRequest,
     GetSituationResultSuccess,
+    MacroPath,
 )
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlFromPathRequest,
@@ -56,6 +63,23 @@ USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config
 
 # Supported image extensions for preview generation
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+
+# Maps PIL image mode to (channels, color_space) for original metadata reporting
+_PIL_MODE_INFO: dict[str, tuple[int, str]] = {
+    "L": (1, "Grayscale"),
+    "P": (1, "Palette"),
+    "RGB": (3, "RGB"),
+    "RGBA": (4, "RGBA"),
+    "CMYK": (4, "CMYK"),
+    "YCbCr": (3, "YCbCr"),
+    "LAB": (3, "LAB"),
+    "HSV": (3, "HSV"),
+    "I": (1, "Grayscale"),
+    "F": (1, "Grayscale"),
+    "LA": (2, "Grayscale+Alpha"),
+    "RGBa": (4, "RGBA"),
+    "RGBX": (4, "RGB"),
+}
 
 
 class ResolvedStaticFilePath(NamedTuple):
@@ -143,28 +167,6 @@ class StaticFilesManager:
             )
             # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop static server
 
-    def _is_preview_up_to_date(self, original_path: Path, preview_path: Path) -> bool:
-        """Check if cached preview exists and is newer than the original file.
-
-        Args:
-            original_path: Path to the original image file
-            preview_path: Path to the cached preview
-
-        Returns:
-            True if preview exists and is up-to-date, False otherwise
-        """
-        if not preview_path.exists():
-            return False
-
-        try:
-            original_mtime = original_path.stat().st_mtime
-            preview_mtime = preview_path.stat().st_mtime
-        except OSError as e:
-            logger.warning("Failed to check preview modification time: %s", e)
-            return False
-        else:
-            return preview_mtime >= original_mtime
-
     def _generate_preview_if_needed(self, file_path: Path) -> Path:
         """Generate preview for an image file if needed.
 
@@ -181,68 +183,29 @@ class StaticFilesManager:
         # Check if file is an image
         file_extension = file_path.suffix.lower()
         if file_extension not in IMAGE_EXTENSIONS:
+            logger.warning("Skipping preview for non-image file: %s", file_path)
             return file_path
 
-        # Determine preview cache path using workflow-aware directory structure
-        workspace_path = self.config_manager.workspace_path
-
-        # Get the base directory for the original file relative to workspace
+        logger.warning("Attempting to generate preview for image: %s", file_path)
         try:
-            relative_file_path = file_path.relative_to(workspace_path)
-        except ValueError:
-            # File is outside workspace, use absolute path structure
-            logger.warning("File %s is outside workspace, using absolute path for preview", file_path)
-            # For external files, use a flattened structure in workspace/thumbnails
-            preview_cache_dir = workspace_path / "thumbnails" / "external"
-            preview_filename = f"{file_path.stem}_{hash(str(file_path))}.webp"
-            preview_path = preview_cache_dir / preview_filename
-        else:
-            # File is inside workspace, use workflow-aware structure
-            # Replace staticfiles with thumbnails in the path
-            relative_str = str(relative_file_path)
-            if "staticfiles" in relative_str:
-                preview_relative_str = relative_str.replace("staticfiles", "thumbnails", 1)
-            else:
-                # File not in staticfiles directory, use parallel thumbnails structure
-                preview_relative_str = str(Path("thumbnails") / relative_file_path)
-
-            preview_relative_path = Path(preview_relative_str).with_suffix(".webp")
-            preview_path = workspace_path / preview_relative_path
-
-        # Check if cached preview is up-to-date
-        if self._is_preview_up_to_date(file_path, preview_path):
-            return preview_path
-
-        # Generate preview
-        try:
-            with Image.open(file_path) as original_img:
-                # Convert RGBA to RGB for formats that don't support transparency
-                if original_img.mode in ("RGBA", "LA", "P"):
-                    # Create white background
-                    background = Image.new("RGB", original_img.size, (255, 255, 255))
-                    img_to_paste = original_img.convert("RGBA") if original_img.mode == "P" else original_img
-                    background.paste(
-                        img_to_paste, mask=img_to_paste.split()[-1] if img_to_paste.mode in ("RGBA", "LA") else None
-                    )
-                    processed_img = background
-                elif original_img.mode != "RGB":
-                    processed_img = original_img.convert("RGB")
-                else:
-                    processed_img = original_img.copy()
-
-                # Resize while maintaining aspect ratio
-                processed_img.thumbnail((512, 512), Image.Resampling.LANCZOS)
-
-                # Create preview directory if it doesn't exist
-                preview_path.parent.mkdir(parents=True, exist_ok=True)
-
-                # Save preview to cache
-                processed_img.save(preview_path, format="WEBP", quality=85)
+            result = GriptapeNodes.handle_request(
+                GetPreviewForArtifactRequest(
+                    macro_path=MacroPath(ParsedMacro(str(file_path)), {}),
+                    artifact_provider_name="Image",
+                    preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
+                )
+            )
         except Exception as e:
             logger.warning("Failed to generate preview for %s: %s", file_path, e)
             return file_path
-        else:
+
+        if isinstance(result, GetPreviewForArtifactResultSuccess) and isinstance(result.paths_to_preview, str):
+            preview_path = Path(result.paths_to_preview)
+            logger.warning("Serving thumbnail for %s -> %s", file_path, preview_path)
             return preview_path
+
+        logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
+        return file_path
 
     def on_handle_create_static_file_request(
         self,
@@ -363,6 +326,7 @@ class StaticFilesManager:
             Result with download URL or failure message.
         """
         file_path = request.file_path
+        logger.warning("CreateStaticFileDownloadUrlFromPath: file_path=%s, preview=%s", file_path, request.preview)
 
         # Resolve macro paths (e.g. "{outputs}/file.png") before further processing
         try:
@@ -404,7 +368,10 @@ class StaticFilesManager:
             except Exception as e:
                 logger.warning("Preview generation failed for %s, using original: %s", request.file_path, e)
                 file_path_to_use = file_path_for_driver
+            if file_path_to_use == file_path_for_driver:
+                logger.warning("Serving full image (no thumbnail available) for %s", file_path_for_driver)
         else:
+            logger.warning("Serving full image for %s", file_path_for_driver)
             file_path_to_use = file_path_for_driver
 
         try:
@@ -413,9 +380,29 @@ class StaticFilesManager:
             msg = f"Failed to create presigned URL for file {file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
+        # Extract original image metadata via PIL's lazy header read (no full decode).
+        # Only for local image files when a preview was requested.
+        original_metadata = None
+        if request.preview and bucket_id is None and file_path_for_driver.suffix.lower() in IMAGE_EXTENSIONS:
+            try:
+                with Image.open(file_path_for_driver) as img:
+                    width, height = img.size
+                    channels, color_space = _PIL_MODE_INFO.get(img.mode, (3, img.mode))
+                    original_metadata = {
+                        "width": width,
+                        "height": height,
+                        "format": (img.format or file_path_for_driver.suffix.lstrip(".")).upper(),
+                        "channels": channels,
+                        "color_space": color_space,
+                        "file_size": file_path_for_driver.stat().st_size,
+                    }
+            except Exception as e:
+                logger.debug("Could not read original image metadata for %s: %s", file_path_for_driver, e)
+
         return CreateStaticFileDownloadUrlResultSuccess(
             url=url,
             file_url=driver.get_asset_url(file_path_for_driver),
+            original_metadata=original_metadata,
             result_details="Successfully created static file download URL",
         )
 
