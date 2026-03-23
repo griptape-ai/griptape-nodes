@@ -526,6 +526,8 @@ class ExecuteDagState(State):
                             payload=NodeErrorEvent(
                                 node_name=error_node_name,
                                 error_message=str(e),
+                                exception_type=type(e).__name__,
+                                request_id=getattr(e, "request_id", None),
                             )
                         )
                     )
@@ -543,12 +545,15 @@ class ExecuteDagState(State):
                 validation_node_name = node_reference.node_reference.name
                 msg = f"Node '{validation_node_name}' encountered problems: {exceptions}"
                 logger.error("Canceling flow run. %s", msg)
+                first_exc = exceptions[0] if exceptions else None
                 await GriptapeNodes.EventManager().aput_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(
                             payload=NodeErrorEvent(
                                 node_name=validation_node_name,
                                 error_message=str(exceptions),
+                                exception_type=type(first_exc).__name__ if first_exc is not None else None,
+                                request_id=getattr(first_exc, "request_id", None) if first_exc is not None else None,
                             )
                         )
                     )
@@ -645,6 +650,8 @@ class ExecuteDagState(State):
                                 payload=NodeErrorEvent(
                                     node_name=node_name,
                                     error_message=str(exc),
+                                    exception_type=type(exc).__name__,
+                                    request_id=getattr(exc, "request_id", None),
                                 )
                             )
                         )

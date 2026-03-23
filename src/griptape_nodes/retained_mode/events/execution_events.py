@@ -437,6 +437,8 @@ class NodeFinishProcessEvent(ExecutionPayload):
 class NodeErrorEvent(ExecutionPayload):
     node_name: str
     error_message: str
+    exception_type: str | None = None
+    request_id: str | None = None
 
 
 @dataclass
