@@ -1,4 +1,6 @@
-from dataclasses import dataclass, field
+from dataclasses import field
+
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.common.macro_parser import MacroVariables
 from griptape_nodes.retained_mode.events.base_events import (

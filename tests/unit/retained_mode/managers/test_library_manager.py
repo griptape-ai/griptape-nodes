@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from griptape_nodes.node_library.library_registry import LibraryRegistry
-from griptape_nodes.retained_mode.events.base_events import ResultDetails
+from griptape_nodes.node_library.library_registry import Dependencies, LibraryMetadata, LibraryRegistry, LibrarySchema
+from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
     GetAllInfoForAllLibrariesRequest,
     GetAllInfoForAllLibrariesResultFailure,
@@ -36,6 +36,7 @@ class TestLibraryManagerLoadLibraries:
 
         # Mock that libraries are already loaded and discovered libraries match loaded ones
         from griptape_nodes.node_library.library_registry import LibraryRegistry
+        from griptape_nodes.retained_mode.events.library_events import LibraryFitness
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
         mock_lib_info = library_manager.LibraryInfo(
@@ -44,7 +45,7 @@ class TestLibraryManagerLoadLibraries:
             is_sandbox=False,
             library_name="SomeLib",
             library_version="1.0.0",
-            fitness=LibraryManager.LibraryFitness.GOOD,
+            fitness=LibraryFitness.GOOD,
             problems=[],
         )
         mock_load_config = AsyncMock()
@@ -465,12 +466,21 @@ class TestLibraryManagerRegisterLibraryFromFile:
         """Test that dependencies are always installed on library load, even when venv already exists."""
         library_manager = griptape_nodes.LibraryManager()
 
-        # Mock library schema with pip dependencies
-        schema = MagicMock()
-        schema.name = "test_lib"
-        schema.metadata.library_version = "1.0.0"
-        schema.metadata.dependencies.pip_dependencies = ["requests"]
-        schema.advanced_library_path = None
+        # Minimal library schema with pip dependencies
+        schema = LibrarySchema(
+            name="test_lib",
+            library_schema_version="0.1",
+            metadata=LibraryMetadata(
+                author="test",
+                description="test",
+                library_version="1.0.0",
+                engine_version="0.77.0",
+                tags=[],
+                dependencies=Dependencies(pip_dependencies=["requests"]),
+            ),
+            categories=[],
+            nodes=[],
+        )
 
         with (
             patch("griptape_nodes.retained_mode.managers.library_manager.Path") as mock_path,
@@ -486,12 +496,14 @@ class TestLibraryManagerRegisterLibraryFromFile:
                 file_path="/mock.json",
                 git_remote=None,
                 git_ref=None,
-                result_details=ResultDetails(message="Success", level=20),
+                result_details=ResultDetails(result_details=[ResultDetail(message="Success", level=20)]),
             )
             mock_venv.return_value.exists.return_value = True
             # Mock successful dependency installation
             mock_install.return_value = InstallLibraryDependenciesResultSuccess(
-                library_name="test_lib", dependencies_installed=2, result_details=ResultDetails(message="OK", level=20)
+                library_name="test_lib",
+                dependencies_installed=2,
+                result_details=ResultDetails(result_details=[ResultDetail(message="OK", level=20)]),
             )
 
             await library_manager.register_library_from_file_request(
@@ -505,11 +517,20 @@ class TestLibraryManagerRegisterLibraryFromFile:
     async def test_dependency_installation_failure_returns_failure(self, griptape_nodes: GriptapeNodes) -> None:
         """Test that dependency installation failure returns RegisterLibraryFromFileResultFailure."""
         mgr = griptape_nodes.LibraryManager()
-        schema = MagicMock()
-        schema.name = "lib"
-        schema.metadata.library_version = "1.0.0"
-        schema.metadata.dependencies.pip_dependencies = ["req"]
-        schema.advanced_library_path = None
+        schema = LibrarySchema(
+            name="lib",
+            library_schema_version="0.1",
+            metadata=LibraryMetadata(
+                author="test",
+                description="test",
+                library_version="1.0.0",
+                engine_version="0.77.0",
+                tags=[],
+                dependencies=Dependencies(pip_dependencies=["req"]),
+            ),
+            categories=[],
+            nodes=[],
+        )
 
         with (
             patch(
@@ -524,7 +545,7 @@ class TestLibraryManagerRegisterLibraryFromFile:
                     file_path="/f",
                     git_remote=None,
                     git_ref=None,
-                    result_details=ResultDetails(message="OK", level=20),
+                    result_details=ResultDetails(result_details=[ResultDetail(message="OK", level=20)]),
                 ),
             ),
             patch.object(mgr, "_get_library_venv_path", return_value=MagicMock(exists=MagicMock(return_value=True))),
@@ -561,7 +582,7 @@ class TestLibraryManagerConfigChangeHandling:
         library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
 
         mock_result = ReloadAllLibrariesResultSuccess(
-            result_details=ResultDetails(message="Libraries reloaded", level=20)
+            result_details=ResultDetails(result_details=[ResultDetail(message="Libraries reloaded", level=20)])
         )
 
         with patch.object(
@@ -606,7 +627,7 @@ class TestLibraryManagerConfigChangeHandling:
         library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
 
         mock_result = ReloadAllLibrariesResultSuccess(
-            result_details=ResultDetails(message="Libraries reloaded", level=20)
+            result_details=ResultDetails(result_details=[ResultDetail(message="Libraries reloaded", level=20)])
         )
 
         with (
@@ -690,7 +711,7 @@ class TestLibraryManagerConfigChangeHandling:
         library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
 
         mock_result = ReloadAllLibrariesResultSuccess(
-            result_details=ResultDetails(message="Libraries reloaded", level=20)
+            result_details=ResultDetails(result_details=[ResultDetail(message="Libraries reloaded", level=20)])
         )
 
         with patch.object(

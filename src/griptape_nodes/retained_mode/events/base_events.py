@@ -3,17 +3,21 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.mixins.serializable_mixin import SerializableMixin
 from griptape.structures import Structure
 from griptape.tools import BaseTool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 if TYPE_CHECKING:
     import builtins
+
+# Config shared by all pydantic payload dataclasses to handle complex types like Exception.
+_payload_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 def default_json_encoder(obj: Any) -> Any:
@@ -41,7 +45,7 @@ def default_json_encoder(obj: Any) -> Any:
         return str(obj)
 
 
-@dataclass
+@pydantic_dataclass
 class ResultDetail:
     """A single detail about an operation result, including logging level and human readable message."""
 
@@ -49,39 +53,11 @@ class ResultDetail:
     message: str
 
 
-@dataclass
+@pydantic_dataclass
 class ResultDetails:
     """Container for multiple ResultDetail objects."""
 
     result_details: list[ResultDetail]
-
-    def __init__(
-        self,
-        *result_details: ResultDetail,
-        message: str | None = None,
-        level: int | None = None,
-    ):
-        """Initialize with ResultDetail objects or create a single one from message/level.
-
-        Args:
-            *result_details: Variable number of ResultDetail objects
-            message: If provided, creates a single ResultDetail with this message
-            level: Logging level for the single ResultDetail (required if message is provided)
-        """
-        # Handle single message/level convenience
-        if message is not None:
-            if level is None:
-                err_msg = "level is required when message is provided"
-                raise ValueError(err_msg)
-            if result_details:
-                err_msg = "Cannot provide both result_details and message/level"
-                raise ValueError(err_msg)
-            self.result_details = [ResultDetail(level=level, message=message)]
-        else:
-            if not result_details:
-                err_msg = "ResultDetails requires at least one ResultDetail or message/level"
-                raise ValueError(err_msg)
-            self.result_details = list(result_details)
 
     def __str__(self) -> str:
         """String representation of ResultDetails.
@@ -102,19 +78,12 @@ class Payload(ABC):  # noqa: B024
         Returns:
             JSON string representation of the payload
         """
-        # Convert payload to dict
-        if is_dataclass(self):
-            payload_dict = asdict(self)
-        elif hasattr(self, "__dict__"):
-            payload_dict = self.__dict__
-        else:
-            payload_dict = str(self)
-
+        payload_dict = TypeAdapter(type(self)).dump_python(self, mode="python")
         return json.dumps(payload_dict, default=default_json_encoder, **kwargs)
 
 
 # Request payload base class with optional request ID
-@dataclass(kw_only=True)
+@pydantic_dataclass(kw_only=True, config=_payload_config)
 class RequestPayload(Payload, ABC):
     """Base class for all request payloads.
 
@@ -137,7 +106,7 @@ class RequestPayload(Payload, ABC):
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
-@dataclass(kw_only=True)
+@pydantic_dataclass(kw_only=True, config=_payload_config)
 class ResultPayload(Payload, ABC):
     """Base class for all result payloads."""
 
@@ -158,14 +127,14 @@ class ResultPayload(Payload, ABC):
         return not self.succeeded()
 
 
-@dataclass
+@pydantic_dataclass(config=_payload_config)
 class WorkflowAlteredMixin:
     """Mixin for a ResultPayload that guarantees that a workflow was altered."""
 
     altered_workflow_state: bool = field(default=True, init=False)
 
 
-@dataclass
+@pydantic_dataclass(config=_payload_config)
 class WorkflowNotAlteredMixin:
     """Mixin for a ResultPayload that guarantees that a workflow was NOT altered."""
 
@@ -182,7 +151,7 @@ class SkipTheLineMixin:
 
 
 # Success result payload abstract base class
-@dataclass(kw_only=True)
+@pydantic_dataclass(kw_only=True, config=_payload_config)
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
 
@@ -191,7 +160,9 @@ class ResultPayloadSuccess(ResultPayload, ABC):
     def __post_init__(self) -> None:
         """Initialize success result with INFO level default for strings."""
         if isinstance(self.result_details, str):
-            self.result_details = ResultDetails(message=self.result_details, level=logging.DEBUG)
+            self.result_details = ResultDetails(
+                result_details=[ResultDetail(message=self.result_details, level=logging.DEBUG)]
+            )
 
     def succeeded(self) -> bool:
         """Returns True as this is a success result.
@@ -203,7 +174,7 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 
 
 # Failure result payload abstract base class
-@dataclass(kw_only=True)
+@pydantic_dataclass(kw_only=True, config=_payload_config)
 class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
 
@@ -213,7 +184,9 @@ class ResultPayloadFailure(ResultPayload, ABC):
     def __post_init__(self) -> None:
         """Initialize failure result with ERROR level default for strings."""
         if isinstance(self.result_details, str):
-            self.result_details = ResultDetails(message=self.result_details, level=logging.ERROR)
+            self.result_details = ResultDetails(
+                result_details=[ResultDetail(message=self.result_details, level=logging.ERROR)]
+            )
 
     def succeeded(self) -> bool:
         """Returns False as this is a failure result.
@@ -302,15 +275,7 @@ class EventRequest[P: Payload](BaseEvent):
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization."""
         result = super().dict(*args, **kwargs)
-
-        if hasattr(self.request, "__dict__"):
-            result["request"] = self.request.__dict__
-        elif is_dataclass(self.request):
-            result["request"] = asdict(self.request)
-        else:
-            # Handle other object types if needed
-            result["request"] = str(self.request)
-
+        result["request"] = TypeAdapter(type(self.request)).dump_python(self.request, mode="python")
         return result
 
     def get_request(self) -> P:
@@ -330,22 +295,11 @@ class EventRequest[P: Payload](BaseEvent):
         # Extract payload data
         request_data = event_data.pop("request", {})
 
-        # Create and attach the request payload
-        if payload_type:
-            if is_dataclass(payload_type):
-                # Create dataclass instance
-                request_payload = payload_type(**request_data)
-            elif issubclass(payload_type, BaseModel):
-                # Handle Pydantic models
-                request_payload = payload_type.model_validate(request_data)
-            else:
-                # For regular classes, create an instance and set attributes
-                request_payload = payload_type()
-                for key, value in request_data.items():
-                    setattr(request_payload, key, value)
-        else:
+        if not payload_type:
             msg = "Cannot create EventRequest without a payload type"
             raise ValueError(msg)
+
+        request_payload = TypeAdapter(payload_type).validate_python(request_data)
 
         # Create the event instance with the payload
         return cls(request=request_payload, **event_data)
@@ -368,27 +322,10 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization."""
         result = super().dict(*args, **kwargs)
-
-        if hasattr(self.request, "__dict__"):
-            result["request"] = self.request.__dict__
-        elif is_dataclass(self.request):
-            result["request"] = asdict(self.request)
-        else:
-            result["request"] = str(self.request)
-
-        # Handle result payload
-        if is_dataclass(self.result):
-            try:
-                result["result"] = asdict(self.result)
-            except TypeError:
-                result["result"] = self.result.__dict__
-        elif hasattr(self.result, "__dict__"):
-            result["result"] = self.result.__dict__
-        else:
-            result["result"] = str(self.result)
+        result["request"] = TypeAdapter(type(self.request)).dump_python(self.request, mode="python")
+        result["result"] = TypeAdapter(type(self.result)).dump_python(self.result, mode="python")
         if self.retained_mode:
             result["retained_mode"] = self.retained_mode
-
         return result
 
     def get_request(self) -> P:
@@ -417,18 +354,8 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
 
     @classmethod
     def _create_payload_instance(cls, payload_type: type, payload_data: dict[str, Any]) -> Any:
-        """Create a payload instance from data, handling dataclass init=False fields."""
-        if is_dataclass(payload_type):
-            # Filter out fields that have init=False to avoid TypeError
-            init_fields = {f.name for f in fields(payload_type) if f.init}
-            filtered_data = {k: v for k, v in payload_data.items() if k in init_fields}
-            return payload_type(**filtered_data)
-        if issubclass(payload_type, BaseModel):
-            return payload_type.model_validate(payload_data)
-        instance = payload_type()
-        for key, value in payload_data.items():
-            setattr(instance, key, value)
-        return instance
+        """Create a payload instance from data."""
+        return TypeAdapter(payload_type).validate_python(payload_data)
 
     @classmethod
     def from_dict(  # pyright: ignore[reportIncompatibleMethodOverride]
@@ -547,15 +474,7 @@ class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization."""
         result = super().dict(*args, **kwargs)
-
-        # Convert Payload object to dict
-        if hasattr(self.payload, "__dict__"):
-            result["payload"] = self.payload.__dict__
-        elif is_dataclass(self.payload):
-            result["payload"] = asdict(self.payload)
-        else:
-            # Handle other object types if needed
-            result["payload"] = str(self.payload)
+        result["payload"] = TypeAdapter(type(self.payload)).dump_python(self.payload, mode="python")
         return result
 
     def get_request(self) -> E:
@@ -575,22 +494,11 @@ class ExecutionEvent[E: ExecutionPayload](BaseEvent):
         # Extract payload data
         payload_data = event_data.pop("payload", {})
 
-        # Create and attach the payload
-        if payload_type:
-            if is_dataclass(payload_type):
-                # Create dataclass instance
-                event_payload = payload_type(**payload_data)
-            elif issubclass(payload_type, BaseModel):
-                # Handle Pydantic models
-                event_payload = payload_type.model_validate(payload_data)
-            else:
-                # For regular classes, create an instance and set attributes
-                event_payload = payload_type()
-                for key, value in payload_data.items():
-                    setattr(event_payload, key, value)
-        else:
+        if not payload_type:
             msg = "Cannot create ExecutionEvent without a payload type"
             raise ValueError(msg)
+
+        event_payload = TypeAdapter(payload_type).validate_python(payload_data)
 
         # Create the event instance with the payload
         return cls(payload=event_payload, **event_data)
@@ -608,16 +516,7 @@ class AppEvent[A: AppPayload](BaseEvent):
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization."""
         result = super().dict(*args, **kwargs)
-
-        if isinstance(self.payload, list) and all(hasattr(item, "__dict__") for item in self.payload):
-            result["payload"] = [
-                {k: v for k, v in item.__dict__.items() if not k.startswith("_")} for item in self.payload
-            ]
-        elif hasattr(self.payload, "__dict__"):
-            result["payload"] = self.payload.__dict__
-        else:
-            # Handle other object types if needed
-            result["payload"] = str(self.payload)
+        result["payload"] = TypeAdapter(type(self.payload)).dump_python(self.payload, mode="python")
         return result
 
     def get_request(self) -> A:
@@ -637,22 +536,11 @@ class AppEvent[A: AppPayload](BaseEvent):
         # Extract payload data
         payload_data = event_data.pop("payload", {})
 
-        # Create and attach the payload
-        if payload_type:
-            if is_dataclass(payload_type):
-                # Create dataclass instance
-                event_payload = payload_type(**payload_data)
-            elif issubclass(payload_type, BaseModel):
-                # Handle Pydantic models
-                event_payload = payload_type.model_validate(payload_data)
-            else:
-                # For regular classes, create an instance and set attributes
-                event_payload = payload_type()
-                for key, value in payload_data.items():
-                    setattr(event_payload, key, value)
-        else:
+        if not payload_type:
             msg = "Cannot create AppEvent without a payload type"
             raise ValueError(msg)
+
+        event_payload = TypeAdapter(payload_type).validate_python(payload_data)
 
         # Create the event instance with the payload
         return cls(payload=event_payload, **event_data)

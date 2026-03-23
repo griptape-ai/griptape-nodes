@@ -25,6 +25,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -42,7 +43,6 @@ from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
-    from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -1121,7 +1121,7 @@ class BaseNode(ABC):
                 return deps
         """
         # Lazy import to avoid circular dependency: library_registry imports BaseNode
-        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
+        from griptape_nodes.node_library.library_registry import LibraryRegistry
 
         widget_libraries: set[LibraryNameAndVersion] = set()
 

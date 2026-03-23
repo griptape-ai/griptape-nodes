@@ -17,6 +17,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultSuccess,
+    LibraryFitness,
     ListNodeTypesInLibraryRequest,
     ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
@@ -27,13 +28,14 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.deprecated_node_warning_problem import (
     DeprecatedNodeWarningProblem,
 )
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
 from griptape_nodes.retained_mode.managers.fitness_problems.workflows.deprecated_node_in_workflow_problem import (
     DeprecatedNodeInWorkflowProblem,
 )
 from griptape_nodes.retained_mode.managers.fitness_problems.workflows.node_type_not_found_problem import (
     NodeTypeNotFoundProblem,
 )
-from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -44,8 +46,6 @@ if TYPE_CHECKING:
         SetParameterValueResultSuccess,
     )
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
-    from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -54,7 +54,7 @@ class LibraryVersionCompatibilityIssue(NamedTuple):
     """Represents a library version compatibility issue found in a library."""
 
     problem: LibraryProblem
-    severity: LibraryManager.LibraryFitness
+    severity: LibraryFitness
 
 
 class LibraryVersionCompatibilityCheck(ABC):
@@ -208,7 +208,7 @@ class VersionCompatibilityManager:
                     removal_version=node.metadata.deprecation.removal_version,
                     deprecation_message=node.metadata.deprecation.deprecation_message,
                 ),
-                severity=LibraryManager.LibraryFitness.FLAWED,
+                severity=LibraryFitness.FLAWED,
             )
             for node in library_data.nodes
             if node.metadata.deprecation is not None

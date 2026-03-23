@@ -1,6 +1,8 @@
-from dataclasses import dataclass, field
+from dataclasses import field
 from enum import StrEnum
 from typing import Any
+
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,

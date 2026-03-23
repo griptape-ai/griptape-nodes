@@ -61,6 +61,8 @@ from griptape_nodes.retained_mode.events.project_events import (
     LoadProjectTemplateResultFailure,
     LoadProjectTemplateResultSuccess,
     PathResolutionFailureReason,
+    ProjectID,
+    ProjectInfo,
     ProjectTemplateInfo,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
@@ -75,10 +77,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 logger = logging.getLogger("griptape_nodes")
-
-# Type alias for project identifiers
-# Usually constructed from file path, but kept opaque to prevent abuse
-ProjectID = str
 
 # Synthetic identifier for the system default project template
 SYSTEM_DEFAULTS_KEY: ProjectID = "<system-defaults>"
@@ -123,25 +121,6 @@ _BUILTIN_VARIABLE_INFO: dict[str, BuiltinVariableInfo] = {var.name: var for var 
 
 # Builtin variables available in all macros (read-only)
 BUILTIN_VARIABLES = frozenset(var.name for var in _BUILTIN_VARIABLE_DEFINITIONS)
-
-
-@dataclass
-class ProjectInfo:
-    """Consolidated information about a loaded project.
-
-    Stores all project-related data including template, validation,
-    file paths, and cached parsed macros.
-    """
-
-    project_id: ProjectID
-    project_file_path: Path | None  # None for system defaults or non-file sources
-    project_base_dir: Path  # Directory for resolving relative paths ({project_dir})
-    template: ProjectTemplate
-    validation: ProjectValidationInfo
-
-    # Cached parsed macros (populated during load for performance)
-    parsed_situation_schemas: dict[str, ParsedMacro]  # situation_name -> ParsedMacro
-    parsed_directory_schemas: dict[str, ParsedMacro]  # directory_name -> ParsedMacro
 
 
 class ProjectManager:

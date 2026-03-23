@@ -4,10 +4,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from griptape_nodes.retained_mode.events.library_events import LibraryFitness
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_engine_version_too_new_problem import (
     LibraryEngineVersionTooNewProblem,
 )
-from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check import (
     IncompatibleEngineVersionCheck,
 )
@@ -150,7 +150,7 @@ class TestIncompatibleEngineVersionCheck:
             issues = check.check_library(mock_library_data)
 
         assert len(issues) == 1
-        assert issues[0].severity == LibraryManager.LibraryFitness.UNUSABLE
+        assert issues[0].severity == LibraryFitness.UNUSABLE
         assert isinstance(issues[0].problem, LibraryEngineVersionTooNewProblem)
         assert issues[0].problem.library_engine_version == "1.0.0"
         assert issues[0].problem.current_engine_version == "0.70.0"
@@ -168,7 +168,7 @@ class TestIncompatibleEngineVersionCheck:
             issues = check.check_library(mock_library_data)
 
         assert len(issues) == 1
-        assert issues[0].severity == LibraryManager.LibraryFitness.FLAWED
+        assert issues[0].severity == LibraryFitness.FLAWED
 
     def test_check_library_returns_flawed_for_file_install(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
@@ -183,7 +183,7 @@ class TestIncompatibleEngineVersionCheck:
             issues = check.check_library(mock_library_data)
 
         assert len(issues) == 1
-        assert issues[0].severity == LibraryManager.LibraryFitness.FLAWED
+        assert issues[0].severity == LibraryFitness.FLAWED
 
     def test_check_library_returns_flawed_for_unknown_install(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
@@ -198,7 +198,7 @@ class TestIncompatibleEngineVersionCheck:
             issues = check.check_library(mock_library_data)
 
         assert len(issues) == 1
-        assert issues[0].severity == LibraryManager.LibraryFitness.FLAWED
+        assert issues[0].severity == LibraryFitness.FLAWED
 
     def test_applies_with_patch_version_difference(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock

@@ -35,6 +35,7 @@ from griptape_nodes.exe_types.node_types import (
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
+    ResultDetail,
     ResultDetails,
     ResultPayload,
     ResultPayloadFailure,
@@ -649,7 +650,7 @@ class NodeManager:
             specific_library_name=request.specific_library_name,
             parent_flow_name=parent_flow_name,
             parent_group_name=node.parent_group.name if node.parent_group else None,
-            result_details=ResultDetails(message=details, level=log_level),
+            result_details=ResultDetails(result_details=[ResultDetail(message=details, level=log_level)]),
         )
 
     def _get_flow_for_node_group_operation(self, flow_name: str | None) -> AddNodesToNodeGroupResultFailure | None:
@@ -738,7 +739,7 @@ class NodeManager:
 
         details = f"Successfully added node '{request.node_names}' to NodeGroup '{request.node_group_name}'"
         return AddNodesToNodeGroupResultSuccess(
-            result_details=ResultDetails(message=details, level=logging.DEBUG),
+            result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.DEBUG)]),
         )
 
     def _get_flow_for_remove_operation(self, flow_name: str | None) -> RemoveNodeFromNodeGroupResultFailure | None:
@@ -825,7 +826,7 @@ class NodeManager:
 
         details = f"Successfully removed nodes '{request.node_names}' from NodeGroup '{request.node_group_name}'"
         return RemoveNodeFromNodeGroupResultSuccess(
-            result_details=ResultDetails(message=details, level=logging.DEBUG),
+            result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.DEBUG)]),
         )
 
     def cancel_conditionally(
@@ -2009,7 +2010,7 @@ class NodeManager:
                 # Early return with warning - we're just preserving the original changes
                 details = f"Parameter '{request.parameter_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
 
-                result_details = ResultDetails(message=details, level=logging.WARNING)
+                result_details = ResultDetails(result_details=[ResultDetail(message=details, level=logging.WARNING)])
                 return AlterParameterDetailsResultSuccess(result_details=result_details)
 
             # Reject runtime parameter alterations on ErrorProxy
@@ -2042,7 +2043,7 @@ class NodeManager:
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
                 details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Element was not user-defined (i.e., critical to the Node implementation). Only user-defined Elements can be totally modified from a Node."
                 return AlterParameterDetailsResultSuccess(
-                    result_details=ResultDetails(message=details, level=logging.WARNING)
+                    result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.WARNING)])
                 )
             self.modify_key_parameter_fields(request, element)
 
@@ -2085,7 +2086,7 @@ class NodeManager:
             if request.initial_setup:
                 node.record_initialization_request(request)
                 details = f"ParameterGroup '{request.group_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
-                result_details = ResultDetails(message=details, level=logging.WARNING)
+                result_details = ResultDetails(result_details=[ResultDetail(message=details, level=logging.WARNING)])
                 return AlterParameterGroupDetailsResultSuccess(result_details=result_details)
 
             details = f"Cannot modify ParameterGroup '{request.group_name}' on placeholder node '{node_name}'. This placeholder preserves your workflow structure but doesn't allow modifications."
@@ -4668,7 +4669,7 @@ class NodeManager:
             node_name=node_name,
             failed_incoming_connections=failed_incoming,
             failed_outgoing_connections=failed_outgoing,
-            result_details=ResultDetails(message=details, level=log_level),
+            result_details=ResultDetails(result_details=[ResultDetail(message=details, level=log_level)]),
         )
 
     def on_reorder_parameter_list_item_request(self, request: ReorderParameterListItemRequest) -> ResultPayload:  # noqa: PLR0911
@@ -4728,7 +4729,7 @@ class NodeManager:
         if request.from_index == request.to_index:
             details = f"Item in ParameterList '{request.parameter_list_name}' on Node '{node_name}' is already at index {request.from_index}. No reordering needed."
             return ReorderParameterListItemResultSuccess(
-                result_details=ResultDetails(message=details, level=logging.WARNING)
+                result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.WARNING)])
             )
 
         # Perform the reorder by moving the item in the _children list

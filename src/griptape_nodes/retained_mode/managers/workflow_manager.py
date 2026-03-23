@@ -756,14 +756,16 @@ class WorkflowManager:
                 clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
 
                 # The clear-all above here wipes the ContextManager, so no need to do a pop_workflow().
-                return RunWorkflowFromRegistryResultFailure(result_details=ResultDetails(*result_messages))
+                return RunWorkflowFromRegistryResultFailure(
+                    result_details=ResultDetails(result_details=result_messages)
+                )
 
         # Success!
         result_messages = []
         if context_warning:
             result_messages.append(ResultDetail(message=context_warning, level=logging.WARNING))
         result_messages.append(ResultDetail(message=execution_result.execution_details, level=logging.DEBUG))
-        return RunWorkflowFromRegistryResultSuccess(result_details=ResultDetails(*result_messages))
+        return RunWorkflowFromRegistryResultSuccess(result_details=ResultDetails(result_details=result_messages))
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
         try:
@@ -779,8 +781,12 @@ class WorkflowManager:
         return RegisterWorkflowResultSuccess(
             workflow_name=registry_key,
             result_details=ResultDetails(
-                message=f"Successfully registered workflow: {registry_key}",
-                level=logging.DEBUG,
+                result_details=[
+                    ResultDetail(
+                        message=f"Successfully registered workflow: {registry_key}",
+                        level=logging.DEBUG,
+                    )
+                ]
             ),
         )
 
@@ -821,7 +827,11 @@ class WorkflowManager:
         return ImportWorkflowResultSuccess(
             workflow_name=register_result.workflow_name,
             result_details=ResultDetails(
-                message=f"Successfully imported workflow: {register_result.workflow_name}", level=logging.INFO
+                result_details=[
+                    ResultDetail(
+                        message=f"Successfully imported workflow: {register_result.workflow_name}", level=logging.INFO
+                    )
+                ]
             ),
         )
 
@@ -862,7 +872,11 @@ class WorkflowManager:
             details = f"Failed to delete workflow file with path '{workflow.file_path}'. {delete_result.result_details}"
             return DeleteWorkflowResultFailure(result_details=details)
         return DeleteWorkflowResultSuccess(
-            result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level=logging.INFO)
+            result_details=ResultDetails(
+                result_details=[
+                    ResultDetail(message=f"Successfully deleted workflow: {request.name}", level=logging.INFO)
+                ]
+            )
         )
 
     async def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
@@ -906,7 +920,9 @@ class WorkflowManager:
         return RenameWorkflowResultSuccess(
             new_workflow_name=sanitized_name,
             result_details=ResultDetails(
-                message=f"Successfully renamed workflow to: {sanitized_name}", level=logging.INFO
+                result_details=[
+                    ResultDetail(message=f"Successfully renamed workflow to: {sanitized_name}", level=logging.INFO)
+                ]
             ),
         )
 
@@ -1107,7 +1123,9 @@ class WorkflowManager:
             run_command=run_command,
             workflow_shape=workflow_shape,
             engine_os=GriptapeNodes.OSManager()._get_platform_name(),
-            result_details=ResultDetails(message=f"Run command: {run_command}", level=logging.DEBUG),
+            result_details=ResultDetails(
+                result_details=[ResultDetail(message=f"Run command: {run_command}", level=logging.DEBUG)]
+            ),
         )
 
     class WorkflowPathResolution(NamedTuple):
@@ -1192,7 +1210,12 @@ class WorkflowManager:
 
         return SetWorkflowMetadataResultSuccess(
             result_details=ResultDetails(
-                message=f"Successfully updated metadata for workflow '{request.workflow_name}'.", level=logging.INFO
+                result_details=[
+                    ResultDetail(
+                        message=f"Successfully updated metadata for workflow '{request.workflow_name}'.",
+                        level=logging.INFO,
+                    )
+                ]
             )
         )
 
@@ -1280,7 +1303,7 @@ class WorkflowManager:
                     rollback_failure = f"Failed to rollback file move for workflow '{request.workflow_name}'"
                     error_messages.append(ResultDetail(message=rollback_failure, level=logging.ERROR))
 
-            return MoveWorkflowResultFailure(result_details=ResultDetails(*error_messages))
+            return MoveWorkflowResultFailure(result_details=ResultDetails(result_details=error_messages))
         except Exception as e:
             details = f"Failed to move workflow '{request.workflow_name}': {e!s}"
             return MoveWorkflowResultFailure(result_details=details)
@@ -1289,7 +1312,7 @@ class WorkflowManager:
             return MoveWorkflowResultSuccess(
                 moved_file_path=new_relative_path,
                 new_workflow_name=new_registry_key,
-                result_details=ResultDetails(message=details, level=logging.INFO),
+                result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.INFO)]),
             )
 
     def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
@@ -1791,7 +1814,7 @@ class WorkflowManager:
         return SaveWorkflowResultSuccess(
             file_path=save_file_result.file_path,
             workflow_name=registry_key,
-            result_details=ResultDetails(message=details, level=logging.INFO),
+            result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.INFO)]),
         )
 
     class _ExistingMetadata(NamedTuple):
@@ -2020,7 +2043,7 @@ class WorkflowManager:
         return SaveWorkflowFileFromSerializedFlowResultSuccess(
             file_path=str(file_path),
             workflow_metadata=workflow_metadata,
-            result_details=ResultDetails(message=details, level=logging.INFO),
+            result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.INFO)]),
         )
 
     def _generate_workflow_metadata_from_commands(  # noqa: PLR0913
@@ -4245,26 +4268,28 @@ class WorkflowManager:
                 if isinstance(register_workflow_result, RegisterWorkflowResultSuccess):
                     success_message = f"Successfully registered new workflow with file '{workflow_file.name}'."
                     result_messages.append(ResultDetail(message=success_message, level=logging.INFO))
-                    final_result.result_details = ResultDetails(*result_messages)
+                    final_result.result_details = ResultDetails(result_details=result_messages)
                 else:
                     exception = cast("RegisterWorkflowResultFailure", register_workflow_result).exception
                     failure_message = f"Failed to register workflow with file '{workflow_file.name}': {exception}"
                     result_messages.append(ResultDetail(message=failure_message, level=logging.ERROR))
                     final_result = PublishWorkflowResultFailure(
-                        result_details=ResultDetails(*result_messages), exception=exception
+                        result_details=ResultDetails(result_details=result_messages), exception=exception
                     )
             else:
                 metadata_failure_message = (
                     f"Failed to load metadata for workflow file '{workflow_file.name}'. Not registering workflow."
                 )
                 result_messages = [ResultDetail(message=metadata_failure_message, level=logging.ERROR)]
-                final_result = PublishWorkflowResultFailure(result_details=ResultDetails(*result_messages))
+                final_result = PublishWorkflowResultFailure(
+                    result_details=ResultDetails(result_details=result_messages)
+                )
 
         else:
             result_messages.append(
                 ResultDetail(message=f"Workflow file '{workflow_file.name}' does not exist.", level=logging.ERROR)
             )
-            final_result = PublishWorkflowResultFailure(result_details=ResultDetails(*result_messages))
+            final_result = PublishWorkflowResultFailure(result_details=ResultDetails(result_details=result_messages))
 
         return final_result
 
@@ -4466,7 +4491,7 @@ class WorkflowManager:
             return BranchWorkflowResultSuccess(
                 branched_workflow_name=branch_name,
                 original_workflow_name=request.workflow_name,
-                result_details=ResultDetails(message=details, level=logging.INFO),
+                result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.INFO)]),
             )
 
         except Exception as e:
@@ -4543,7 +4568,7 @@ class WorkflowManager:
         return CreateWorkflowFromTemplateResultSuccess(
             workflow_name=new_file_name,
             file_path=new_full_path,
-            result_details=ResultDetails(message=details, level=logging.INFO),
+            result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.INFO)]),
         )
 
     def on_merge_workflow_branch_request(self, request: MergeWorkflowBranchRequest) -> ResultPayload:
@@ -4624,7 +4649,7 @@ class WorkflowManager:
             result_messages.append(ResultDetail(message=success_message, level=logging.INFO))
 
             return MergeWorkflowBranchResultSuccess(
-                merged_workflow_name=source_workflow_name, result_details=ResultDetails(*result_messages)
+                merged_workflow_name=source_workflow_name, result_details=ResultDetails(result_details=result_messages)
             )
 
         except Exception as e:
@@ -4697,7 +4722,7 @@ class WorkflowManager:
             details = f"Successfully reset branch workflow '{request.workflow_name}' to match source workflow '{source_workflow_name}'"
             return ResetWorkflowBranchResultSuccess(
                 reset_workflow_name=request.workflow_name,
-                result_details=ResultDetails(message=details, level=logging.INFO),
+                result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.INFO)]),
             )
 
     def on_compare_workflows_request(self, request: CompareWorkflowsRequest) -> ResultPayload:
@@ -4944,8 +4969,12 @@ class WorkflowManager:
                 succeeded_workflows=succeeded,
                 failed_workflows=failed,
                 result_details=ResultDetails(
-                    message=f"Successfully processed workflows: {len(succeeded)} succeeded, {len(failed)} failed.",
-                    level=logging.INFO,
+                    result_details=[
+                        ResultDetail(
+                            message=f"Successfully processed workflows: {len(succeeded)} succeeded, {len(failed)} failed.",
+                            level=logging.INFO,
+                        )
+                    ]
                 ),
             )
 

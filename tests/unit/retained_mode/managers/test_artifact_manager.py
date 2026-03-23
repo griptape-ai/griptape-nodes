@@ -417,8 +417,8 @@ class TestGeneratePreview:
         """Set up a real project in ProjectManager with temp_dir as workspace."""
         from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
         from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         # Get ProjectManager singleton
         project_manager = GriptapeNodes.ProjectManager()
@@ -729,8 +729,8 @@ class TestGetPreviewForArtifact:
         """Set up a real project in ProjectManager with temp_dir as workspace."""
         from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
         from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         # Get ProjectManager singleton
         project_manager = GriptapeNodes.ProjectManager()

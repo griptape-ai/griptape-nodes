@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING
 
 import semver
 
+from griptape_nodes.retained_mode.events.library_events import LibraryFitness
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_engine_version_too_new_problem import (
     LibraryEngineVersionTooNewProblem,
 )
-from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
     LibraryVersionCompatibilityCheck,
     LibraryVersionCompatibilityIssue,
@@ -47,9 +47,7 @@ class IncompatibleEngineVersionCheck(LibraryVersionCompatibilityCheck):
         and UNUSABLE for stable PyPI releases where the incompatibility is definitive.
         """
         install_source, _ = get_install_source()
-        severity = (
-            LibraryManager.LibraryFitness.FLAWED if install_source != "pypi" else LibraryManager.LibraryFitness.UNUSABLE
-        )
+        severity = LibraryFitness.FLAWED if install_source != "pypi" else LibraryFitness.UNUSABLE
 
         return [
             LibraryVersionCompatibilityIssue(

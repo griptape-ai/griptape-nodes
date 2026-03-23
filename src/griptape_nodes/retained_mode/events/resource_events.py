@@ -1,5 +1,7 @@
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass as stdlib_dataclass
+from typing import Any
+
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -8,11 +10,20 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements  # noqa: TC001
+from griptape_nodes.retained_mode.managers.resource_components.resource_type import ResourceType
 
-if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
-    from griptape_nodes.retained_mode.managers.resource_components.resource_type import ResourceType
-    from griptape_nodes.retained_mode.managers.resource_manager import ResourceStatus
+
+@stdlib_dataclass
+class ResourceStatus:
+    resource_type: ResourceType
+    instance_id: str
+    owner_of_lock: str | None
+    capabilities: dict[str, Any]
+
+    def is_locked(self) -> bool:
+        """Check if this resource is currently locked."""
+        return self.owner_of_lock is not None
 
 
 # List Registered Resource Types Events

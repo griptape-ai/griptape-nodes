@@ -3,15 +3,18 @@
 import json
 import logging
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
+from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo
+from griptape_nodes.common.project_templates.validation import ProjectValidationStatus
 from griptape_nodes.retained_mode.events.project_events import (
     GetCurrentProjectResultFailure,
     GetPathForMacroResultFailure,
     GetSituationResultFailure,
     PathResolutionFailureReason,
+    ProjectInfo,
 )
 from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SidecarContent,
@@ -19,6 +22,25 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SituationPolicy,
     write_sidecar,
 )
+
+
+def _make_project_info(base_dir: Path) -> ProjectInfo:
+    """Create a minimal ProjectInfo for testing."""
+    return ProjectInfo(
+        project_id="test_project",
+        project_file_path=None,
+        project_base_dir=base_dir,
+        template=ProjectTemplate(
+            project_template_schema_version="0.1",
+            name="test",
+            situations={},
+            directories={},
+        ),
+        validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+        parsed_situation_schemas={},
+        parsed_directory_schemas={},
+    )
+
 
 HANDLE_REQUEST_PATH = "griptape_nodes.retained_mode.file_metadata.sidecar_metadata.GriptapeNodes.handle_request"
 
@@ -78,8 +100,7 @@ class TestWriteSidecarFailurePaths:
             GetCurrentProjectResultSuccess,
         )
 
-        mock_project_info = Mock()
-        mock_project_info.project_base_dir = Path("/workspace")
+        project_info = _make_project_info(Path("/workspace"))
         file_path = Path("/workspace/output.txt")
         metadata = SidecarContent()
 
@@ -90,7 +111,7 @@ class TestWriteSidecarFailurePaths:
             )
 
             if isinstance(request, GetCurrentProjectRequest):
-                return GetCurrentProjectResultSuccess(project_info=mock_project_info, result_details="ok")
+                return GetCurrentProjectResultSuccess(project_info=project_info, result_details="ok")
             if isinstance(request, GetSituationRequest):
                 return GetSituationResultFailure(result_details="not found")
             msg = f"Unexpected request: {request}"
@@ -118,8 +139,7 @@ class TestWriteSidecarFailurePaths:
             GetSituationResultSuccess,
         )
 
-        mock_project_info = Mock()
-        mock_project_info.project_base_dir = Path("/workspace")
+        project_info = _make_project_info(Path("/workspace"))
         situation = SituationTemplate(
             name="save_griptape_nodes_metadata",
             macro="{griptape-nodes-metadata}/{source_file_name}.json",
@@ -136,7 +156,7 @@ class TestWriteSidecarFailurePaths:
             )
 
             if isinstance(request, GetCurrentProjectRequest):
-                return GetCurrentProjectResultSuccess(project_info=mock_project_info, result_details="ok")
+                return GetCurrentProjectResultSuccess(project_info=project_info, result_details="ok")
             if isinstance(request, GetSituationRequest):
                 return GetSituationResultSuccess(situation=situation, result_details="ok")
             if isinstance(request, GetPathForMacroRequest):
@@ -172,8 +192,7 @@ class TestWriteSidecarFailurePaths:
         )
 
         sidecar_path = tmp_path / ".griptape-nodes-metadata" / "output.txt.json"
-        mock_project_info = Mock()
-        mock_project_info.project_base_dir = tmp_path
+        project_info = _make_project_info(tmp_path)
         situation = SituationTemplate(
             name="save_griptape_nodes_metadata",
             macro="{griptape-nodes-metadata}/{source_file_name}.json",
@@ -189,7 +208,7 @@ class TestWriteSidecarFailurePaths:
             )
 
             if isinstance(request, GetCurrentProjectRequest):
-                return GetCurrentProjectResultSuccess(project_info=mock_project_info, result_details="ok")
+                return GetCurrentProjectResultSuccess(project_info=project_info, result_details="ok")
             if isinstance(request, GetSituationRequest):
                 return GetSituationResultSuccess(situation=situation, result_details="ok")
             if isinstance(request, GetPathForMacroRequest):

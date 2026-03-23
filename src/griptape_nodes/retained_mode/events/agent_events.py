@@ -1,6 +1,7 @@
-from dataclasses import dataclass, field
+from dataclasses import field
 
 from griptape.memory.structure import Run
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,

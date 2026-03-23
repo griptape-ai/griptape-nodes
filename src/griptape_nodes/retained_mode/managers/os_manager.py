@@ -33,7 +33,7 @@ from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriverRegistry
 from griptape_nodes.files.path_utils import path_needs_expansion
 from griptape_nodes.files.path_utils import resolve_path_safely as pr_resolve
-from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
+from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
     CopyFileResultFailure,
@@ -1978,7 +1978,7 @@ class OSManager:
 
         if used_indexed_fallback:
             msg = f"File written to indexed path: {final_file_path} (original path '{path_display}' already existed)"
-            result_details = ResultDetails(message=msg, level=logging.DEBUG)
+            result_details = ResultDetails(result_details=[ResultDetail(message=msg, level=logging.DEBUG)])
         else:
             result_details = f"File written successfully: {final_file_path}"
 
@@ -2425,7 +2425,8 @@ class OSManager:
         if file_path.exists():
             msg = f"Path already exists: {file_path}"
             return CreateFileResultSuccess(
-                created_path=str(file_path), result_details=ResultDetails(message=msg, level=logging.WARNING)
+                created_path=str(file_path),
+                result_details=ResultDetails(result_details=[ResultDetail(message=msg, level=logging.WARNING)]),
             )
 
         # Create parent directories if needed
@@ -2549,7 +2550,7 @@ class OSManager:
         return RenameFileResultSuccess(
             old_path=str(old_path),
             new_path=str(new_path),
-            result_details=ResultDetails(message=details, level=logging.INFO),
+            result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.INFO)]),
         )
 
     def on_copy_file_request(self, request: CopyFileRequest) -> ResultPayload:  # noqa: PLR0911, C901
@@ -2756,8 +2757,12 @@ class OSManager:
                         return failure
                     outcome = DeletionOutcome.PERMANENTLY_DELETED
                     result_details = ResultDetails(
-                        message=f"Attempted to send {'directory' if is_directory else 'file'} at path {path_to_delete} to the recycle bin, but this failed; fell back to permanent deletion, which succeeded.",
-                        level=logging.WARNING,
+                        result_details=[
+                            ResultDetail(
+                                message=f"Attempted to send {'directory' if is_directory else 'file'} at path {path_to_delete} to the recycle bin, but this failed; fell back to permanent deletion, which succeeded.",
+                                level=logging.WARNING,
+                            )
+                        ]
                     )
                 else:
                     outcome = DeletionOutcome.SENT_TO_RECYCLE_BIN

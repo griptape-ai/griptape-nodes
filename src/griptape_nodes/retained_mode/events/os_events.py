@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -11,10 +11,8 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-
-if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.events.project_events import MacroPath
-    from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
+from griptape_nodes.retained_mode.events.project_events import MacroPath
+from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
 
 
 class ExistingFilePolicy(StrEnum):

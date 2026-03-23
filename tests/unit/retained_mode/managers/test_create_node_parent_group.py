@@ -1,12 +1,14 @@
 """Unit tests for CreateNodeRequest.parent_group_name handling (PR #4195)."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
+from griptape_nodes.exe_types.node_types import NodeDependencies
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     CreateNodeResultSuccess,
     SerializedNodeCommands,
+    SerializedParameterValueTracker,
     SerializeNodeToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -42,7 +44,7 @@ def _make_serialized_node_commands(
             metadata=metadata,
         ),
         element_modification_commands=[],
-        node_dependencies=MagicMock(),
+        node_dependencies=NodeDependencies(),
         node_uuid=SerializedNodeCommands.NodeUUID(node_uuid),
     )
 
@@ -57,7 +59,7 @@ def _make_serialize_result(
     return SerializeNodeToCommandsResultSuccess(
         serialized_node_commands=_make_serialized_node_commands(node_name, node_uuid, node_names_to_add, metadata),
         set_parameter_value_commands=[],
-        result_details=MagicMock(),
+        result_details="ok",
     )
 
 
@@ -68,9 +70,7 @@ class TestCreateNodeParentGroupNameDefaults:
         assert CreateNodeRequest(node_type="T").parent_group_name is None
 
     def test_create_node_result_success_defaults_to_none(self) -> None:
-        assert (
-            CreateNodeResultSuccess(node_name="n", node_type="T", result_details=MagicMock()).parent_group_name is None
-        )
+        assert CreateNodeResultSuccess(node_name="n", node_type="T", result_details="ok").parent_group_name is None
 
 
 class TestSerializeGroupWithChildren:
@@ -108,7 +108,7 @@ class TestSerializeGroupWithChildren:
         ):
             from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
-            return NodeManager._serialize_group_with_children(manager, group, {}, MagicMock())
+            return NodeManager._serialize_group_with_children(manager, group, {}, SerializedParameterValueTracker())
 
     def test_node_names_to_add_cleared_on_group_command(self) -> None:
         """group_command.create_node_command.node_names_to_add is None after serialization.

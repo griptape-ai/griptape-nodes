@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import anyio
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.workflow_events import (
     CreateWorkflowFromTemplateRequest,
@@ -39,6 +40,15 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+
+
+def _make_workflow_metadata(name: str = "test_workflow") -> WorkflowMetadata:
+    return WorkflowMetadata(
+        name=name,
+        schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+        engine_version_created_with="0.77.0",
+        node_libraries_referenced=[LibraryNameAndVersion(library_name="test_lib", library_version="1.0.0")],
+    )
 
 
 class TestWorkflowManager:
@@ -99,14 +109,13 @@ class TestWorkflowManager:
         workflow_manager = griptape_nodes.WorkflowManager()
         request = ImportWorkflowRequest(file_path="/path/to/workflow.py")
 
-        mock_metadata = MagicMock()
-        mock_metadata.name = "test_workflow"
-
         with (
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
+                return_value=LoadWorkflowMetadataResultSuccess(
+                    metadata=_make_workflow_metadata(), result_details="Success"
+                ),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=False),
             patch.object(
@@ -130,14 +139,13 @@ class TestWorkflowManager:
         workflow_manager = griptape_nodes.WorkflowManager()
         request = ImportWorkflowRequest(file_path="/path/to/workflow.py")
 
-        mock_metadata = MagicMock()
-        mock_metadata.name = "test_workflow"
-
         with (
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
+                return_value=LoadWorkflowMetadataResultSuccess(
+                    metadata=_make_workflow_metadata(), result_details="Success"
+                ),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=True),
         ):
@@ -168,14 +176,13 @@ class TestWorkflowManager:
         workflow_manager = griptape_nodes.WorkflowManager()
         request = ImportWorkflowRequest(file_path="/path/to/workflow.py")
 
-        mock_metadata = MagicMock()
-        mock_metadata.name = "test_workflow"
-
         with (
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
+                return_value=LoadWorkflowMetadataResultSuccess(
+                    metadata=_make_workflow_metadata(), result_details="Success"
+                ),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=False),
             patch.object(
@@ -195,14 +202,13 @@ class TestWorkflowManager:
         workflow_manager = griptape_nodes.WorkflowManager()
         request = ImportWorkflowRequest(file_path="/path/to/workflow.py")
 
-        mock_metadata = MagicMock()
-        mock_metadata.name = "test_workflow"
-
         with (
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
+                return_value=LoadWorkflowMetadataResultSuccess(
+                    metadata=_make_workflow_metadata(), result_details="Success"
+                ),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=False),
             patch.object(
@@ -229,15 +235,15 @@ class TestWorkflowManager:
         workflow_manager = griptape_nodes.WorkflowManager()
         request = GetWorkflowMetadataRequest(workflow_name="my_workflow")
 
-        mock_metadata = MagicMock()
+        real_metadata = _make_workflow_metadata("my_workflow")
         mock_workflow = MagicMock()
-        mock_workflow.metadata = mock_metadata
+        mock_workflow.metadata = real_metadata
 
         with patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow):
             result = workflow_manager.on_get_workflow_metadata_request(request)
 
         assert isinstance(result, GetWorkflowMetadataResultSuccess)
-        assert result.workflow_metadata is mock_metadata
+        assert result.workflow_metadata == real_metadata
 
     def test_get_workflow_metadata_not_found(self, griptape_nodes: GriptapeNodes) -> None:
         """Ensure GetWorkflowMetadataRequest returns failure when workflow missing."""
@@ -254,10 +260,9 @@ class TestWorkflowManager:
         workflow_manager = griptape_nodes.WorkflowManager()
         workflow_manager._workflows_loading_complete.set()  # type: ignore[attr-defined]
 
-        # Provide a full metadata object (mock is fine as we stub header replacement)
-        mock_new_metadata = MagicMock()
-        mock_new_metadata.name = "my_workflow"
-        request = SetWorkflowMetadataRequest(workflow_name="my_workflow", workflow_metadata=mock_new_metadata)
+        request = SetWorkflowMetadataRequest(
+            workflow_name="my_workflow", workflow_metadata=_make_workflow_metadata("my_workflow")
+        )
 
         mock_workflow = MagicMock()
         mock_workflow.file_path = "workflows/my_workflow.py"

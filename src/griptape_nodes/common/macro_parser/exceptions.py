@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from griptape_nodes.common.macro_parser.segments import MacroVariables
+from griptape_nodes.common.macro_parser.segments import MacroVariables  # noqa: TC001
 
 
 class MacroSyntaxError(Exception):

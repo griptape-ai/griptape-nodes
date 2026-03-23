@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.base_events import (
+    ResultDetail,
     ResultDetails,
     ResultPayload,
 )
@@ -102,7 +103,7 @@ class ObjectManager:
             details += " WARNING: Originally requested the name '{request.requested_name}', but that was taken."
             log_level = logging.WARNING
         if log_level == logging.WARNING:
-            result_details = ResultDetails(message=details, level=logging.WARNING)
+            result_details = ResultDetails(result_details=[ResultDetail(message=details, level=logging.WARNING)])
         else:
             result_details = details
         return RenameObjectResultSuccess(final_name=final_name, result_details=result_details)

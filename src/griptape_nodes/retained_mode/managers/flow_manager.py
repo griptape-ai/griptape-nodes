@@ -39,6 +39,7 @@ from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
+    ResultDetail,
     ResultDetails,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
@@ -158,11 +159,11 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import FLOW_COMMANDS_KEY
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
+from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowShapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowShapeNodes
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -585,7 +586,8 @@ class FlowManager:
             log_level = logging.WARNING
 
         result = CreateFlowResultSuccess(
-            flow_name=final_flow_name, result_details=ResultDetails(message=details, level=log_level)
+            flow_name=final_flow_name,
+            result_details=ResultDetails(result_details=[ResultDetail(message=details, level=log_level)]),
         )
         return result
 

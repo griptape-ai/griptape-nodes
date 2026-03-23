@@ -1,6 +1,5 @@
 import logging
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.resource_events import (
@@ -29,6 +28,7 @@ from griptape_nodes.retained_mode.events.resource_events import (
     ReleaseResourceInstanceLockRequest,
     ReleaseResourceInstanceLockResultFailure,
     ReleaseResourceInstanceLockResultSuccess,
+    ResourceStatus,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.resource_components.resource_type import ResourceType
@@ -37,18 +37,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.resource_components.resource_instance import ResourceInstance
 
 logger = logging.getLogger("griptape_nodes")
-
-
-@dataclass
-class ResourceStatus:
-    resource_type: ResourceType
-    instance_id: str
-    owner_of_lock: str | None
-    capabilities: dict[str, Any]
-
-    def is_locked(self) -> bool:
-        """Check if this resource is currently locked."""
-        return self.owner_of_lock is not None
 
 
 class ResourceManager:

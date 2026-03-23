@@ -28,6 +28,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 from griptape_nodes.retained_mode.events.base_events import (
     BaseEvent,
+    ResultDetail,
     ResultDetails,
     ResultPayload,
 )
@@ -161,7 +162,7 @@ class EngineIdentityManager:
             details = f"Engine name set to: {request.engine_name.strip()}"
             return SetEngineNameResultSuccess(
                 engine_name=request.engine_name.strip(),
-                result_details=ResultDetails(message=details, level=logging.INFO),
+                result_details=ResultDetails(result_details=[ResultDetail(message=details, level=logging.INFO)]),
             )
 
         except Exception as err:

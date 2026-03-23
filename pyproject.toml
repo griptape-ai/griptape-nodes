@@ -124,7 +124,8 @@ ignore = [
 "libraries/**/tests/**" = ["S101", "D104", "INP001"]
 
 [tool.ruff.lint.flake8-type-checking]
-runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+runtime-evaluated-base-classes = ["pydantic.BaseModel", "typing.NamedTuple"]
+runtime-evaluated-decorators = ["pydantic.dataclasses.dataclass"]
 
 [tool.ruff.lint.flake8-annotations]
 mypy-init-return = true

@@ -127,7 +127,7 @@ class TestProjectManagerBuiltinVariables:
         """Create a ProjectManager with system defaults loaded."""
         from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
         from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
 
         mock_config = Mock()
         mock_secrets = Mock()
@@ -450,7 +450,7 @@ class TestProjectManagerGetStateForMacro:
         """Create a ProjectManager with current project set."""
         from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
         from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
 
         mock_config = Mock()
         mock_secrets = Mock()
@@ -648,8 +648,8 @@ class TestProjectManagerGetCurrentProject:
         from griptape_nodes.retained_mode.events.project_events import (
             GetCurrentProjectRequest,
             GetCurrentProjectResultSuccess,
+            ProjectInfo,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
         mock_secrets = Mock()
@@ -739,8 +739,8 @@ class TestProjectManagerListProjectTemplates:
         from griptape_nodes.retained_mode.events.project_events import (
             ListProjectTemplatesRequest,
             ListProjectTemplatesResultSuccess,
+            ProjectInfo,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
         mock_secrets = Mock()
@@ -829,8 +829,9 @@ class TestProjectManagerListProjectTemplates:
         from griptape_nodes.retained_mode.events.project_events import (
             ListProjectTemplatesRequest,
             ListProjectTemplatesResultSuccess,
+            ProjectInfo,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         mock_config = Mock()
         mock_secrets = Mock()
@@ -876,8 +877,8 @@ class TestProjectManagerListProjectTemplates:
         from griptape_nodes.retained_mode.events.project_events import (
             ListProjectTemplatesRequest,
             ListProjectTemplatesResultSuccess,
+            ProjectInfo,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
         mock_secrets = Mock()
@@ -940,7 +941,8 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         # Set up project with outputs directory
         project_base = Path("/Users/test/project")
@@ -1004,7 +1006,8 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         # Set up project
         project_base = Path("/Users/test/project")
@@ -1083,7 +1086,8 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         # Set up project
         project_base = Path("/Users/test/project")
@@ -1147,7 +1151,8 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         # Set up project
         project_base = Path("/Users/test/project")
@@ -1211,7 +1216,8 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         # Set up project
         project_base = Path("/Users/test/project")
@@ -1274,8 +1280,11 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
-        from griptape_nodes.retained_mode.events.project_events import AttemptMapAbsolutePathToProjectResultFailure
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.events.project_events import (
+            AttemptMapAbsolutePathToProjectResultFailure,
+            ProjectInfo,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         # Create a custom template with a directory that uses workflow_name (will fail without workflow)
         custom_template = ProjectTemplate(
@@ -1360,7 +1369,8 @@ situations:
         """Load system defaults into pm, mirroring _load_system_defaults."""
         from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
         from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.events.project_events import ProjectInfo
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)

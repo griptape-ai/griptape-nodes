@@ -1,8 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, NamedTuple
+from enum import StrEnum
+from pathlib import Path
+from typing import NamedTuple
 
+from pydantic.dataclasses import dataclass
+
+from griptape_nodes.node_library.library_registry import (
+    LibraryMetadata,
+    LibrarySchema,
+    NodeMetadata,
+)
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -11,17 +19,17 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
 
-if TYPE_CHECKING:
-    from pathlib import Path
 
-    from griptape_nodes.node_library.library_registry import (
-        LibraryMetadata,
-        LibrarySchema,
-        NodeMetadata,
-    )
-    from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
-    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+class LibraryFitness(StrEnum):
+    """Fitness of the library that was attempted to be loaded."""
+
+    GOOD = "GOOD"  # No errors detected during loading. Registered.
+    FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
+    UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
+    MISSING = "MISSING"  # File not found. Not registered.
+    NOT_EVALUATED = "NOT_EVALUATED"  # Library has not been evaluated yet.
 
 
 class DiscoveredLibrary(NamedTuple):
@@ -230,7 +238,7 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
 
     library_path: str
     library_name: str | None
-    status: LibraryManager.LibraryFitness
+    status: LibraryFitness
     problems: list[LibraryProblem]
 
 
@@ -667,7 +675,7 @@ class EvaluateLibraryFitnessResultSuccess(WorkflowNotAlteredMixin, ResultPayload
     Caller manages their own lifecycle state.
     """
 
-    fitness: LibraryManager.LibraryFitness
+    fitness: LibraryFitness
     problems: list[LibraryProblem]
 
 
@@ -679,7 +687,7 @@ class EvaluateLibraryFitnessResultFailure(WorkflowNotAlteredMixin, ResultPayload
     Returns fitness and problems for caller to update their LibraryInfo.
     """
 
-    fitness: LibraryManager.LibraryFitness
+    fitness: LibraryFitness
     problems: list[LibraryProblem]
 
 

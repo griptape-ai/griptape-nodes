@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass as stdlib_dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, NamedTuple
+from pathlib import Path
+from typing import Any, NamedTuple
 
+from pydantic.dataclasses import dataclass
+
+from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroVariables, ParsedMacro, VariableInfo
+from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo, SituationTemplate
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -14,12 +19,28 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
-if TYPE_CHECKING:
-    from pathlib import Path
+# Type alias for project identifiers.
+# Usually constructed from file path, but kept opaque to prevent abuse.
+ProjectID = str
 
-    from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroVariables, ParsedMacro, VariableInfo
-    from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo, SituationTemplate
-    from griptape_nodes.retained_mode.managers.project_manager import ProjectID, ProjectInfo
+
+@stdlib_dataclass
+class ProjectInfo:
+    """Consolidated information about a loaded project.
+
+    Stores all project-related data including template, validation,
+    file paths, and cached parsed macros.
+    """
+
+    project_id: ProjectID
+    project_file_path: Path | None  # None for system defaults or non-file sources
+    project_base_dir: Path  # Directory for resolving relative paths ({project_dir})
+    template: ProjectTemplate
+    validation: ProjectValidationInfo
+
+    # Cached parsed macros (populated during load for performance)
+    parsed_situation_schemas: dict[str, ParsedMacro]  # situation_name -> ParsedMacro
+    parsed_directory_schemas: dict[str, ParsedMacro]  # directory_name -> ParsedMacro
 
 
 class MacroPath(NamedTuple):

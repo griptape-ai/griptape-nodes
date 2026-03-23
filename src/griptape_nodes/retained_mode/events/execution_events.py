@@ -1,5 +1,8 @@
-from dataclasses import dataclass, field
+from dataclasses import field
 from typing import Any
+
+from pydantic import ConfigDict
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
@@ -389,7 +392,7 @@ class ControlFlowResolvedEvent(ExecutionPayload):
     )
 
 
-@dataclass
+@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
 @PayloadRegistry.register
 class ControlFlowCancelledEvent(ExecutionPayload):
     result_details: ResultDetails | str | None = None

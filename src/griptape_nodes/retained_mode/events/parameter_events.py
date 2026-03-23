@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NamedTuple
+from collections.abc import Callable
+from dataclasses import field
+from typing import Any, NamedTuple
+
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
@@ -12,12 +15,8 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.connection_events import IncomingConnection, OutgoingConnection
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from griptape_nodes.retained_mode.events.connection_events import IncomingConnection, OutgoingConnection
 
 
 @dataclass

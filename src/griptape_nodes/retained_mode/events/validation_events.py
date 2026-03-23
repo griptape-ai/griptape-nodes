@@ -1,5 +1,5 @@
 # Validates that the flow they are trying to run has all it's dependencies
-from dataclasses import dataclass
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,

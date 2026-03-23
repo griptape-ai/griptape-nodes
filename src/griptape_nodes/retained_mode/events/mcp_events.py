@@ -1,7 +1,8 @@
 """MCP (Model Context Protocol) server management events."""
 
-from dataclasses import dataclass
 from typing import Any, TypedDict
+
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,

@@ -13,7 +13,7 @@ from watchfiles import Change, PythonFilter, watch
 
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetail, ResultDetails
 from griptape_nodes.retained_mode.events.sync_events import (
     StartSyncAllCloudWorkflowsRequest,
     StartSyncAllCloudWorkflowsResultFailure,
@@ -138,7 +138,9 @@ class SyncManager:
                     sync_directory=str(sync_dir),
                     total_workflows=0,
                     result_details=ResultDetails(
-                        message="No workflow files found in cloud storage.", level=logging.INFO
+                        result_details=[
+                            ResultDetail(message="No workflow files found in cloud storage.", level=logging.INFO)
+                        ]
                     ),
                 )
 
