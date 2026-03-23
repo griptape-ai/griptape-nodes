@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 import threading
 import uuid
 from collections.abc import Iterator
@@ -72,7 +71,8 @@ from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.retained_mode.managers.static_files_manager import (
     StaticFilesManager,
 )
-from griptape_nodes.servers.mcp import start_mcp_server
+from griptape_nodes.servers import bind_free_socket
+from griptape_nodes.servers.mcp import GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT, start_mcp_server
 
 if TYPE_CHECKING:
     from griptape.tools.mcp.sessions import StreamableHttpConnection
@@ -81,7 +81,6 @@ logger = logging.getLogger("griptape_nodes")
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "9927"))
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
@@ -129,6 +128,7 @@ class AgentManager:
         self.image_tool = None
         self.mcp_tool = None
         self.static_files_manager = static_files_manager
+        self._mcp_server_port = GTN_MCP_SERVER_PORT
 
         # Thread management
         self._threads_dir = xdg_data_home() / "griptape_nodes" / "threads"
@@ -319,8 +319,15 @@ class AgentManager:
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         secrets_manager = GriptapeNodes.SecretsManager()
         api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
+
+        # Pre-bind to port 0 (or the configured port) so the OS assigns a free port before
+        # the server thread starts. This lets us know the actual port immediately with no
+        # race condition between discovering the port and uvicorn binding to it.
+        sock = bind_free_socket(GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT)
+        self._mcp_server_port = sock.getsockname()[1]
+
         # Start MCP server in daemon thread
-        threading.Thread(target=start_mcp_server, args=(api_key,), daemon=True, name="mcp-server").start()
+        threading.Thread(target=start_mcp_server, args=(api_key, sock), daemon=True, name="mcp-server").start()
 
     def _on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         # EventBus functionality removed - events now go directly to event queue
@@ -550,7 +557,7 @@ class AgentManager:
     def _initialize_mcp_tool(self) -> MCPTool:
         connection: StreamableHttpConnection = {  # type: ignore[reportAssignmentType]
             "transport": "streamable_http",
-            "url": f"http://localhost:{GTN_MCP_SERVER_PORT}/mcp/",
+            "url": f"http://localhost:{self._mcp_server_port}/mcp/",
         }
         return MCPTool(connection=connection, name="mcpGriptapeNodes")
 

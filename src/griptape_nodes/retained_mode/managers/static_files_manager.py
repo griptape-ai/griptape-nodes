@@ -42,7 +42,8 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.servers.static import STATIC_SERVER_URL, start_static_server
+from griptape_nodes.servers import bind_free_socket
+from griptape_nodes.servers.static import STATIC_SERVER_HOST, STATIC_SERVER_PORT, STATIC_SERVER_URL, start_static_server
 from griptape_nodes.utils.url_utils import uri_to_path
 
 logger = logging.getLogger("griptape_nodes")
@@ -306,7 +307,17 @@ class StaticFilesManager:
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # Start static server in daemon thread if enabled
         if isinstance(self.storage_driver, LocalStorageDriver):
-            threading.Thread(target=start_static_server, daemon=True, name="static-server").start()
+            # Pre-bind to port 0 (or the configured port) so the OS assigns a free port before
+            # the server thread starts. This lets us know the actual port immediately with no
+            # race condition between discovering the port and uvicorn binding to it.
+            sock = bind_free_socket(STATIC_SERVER_HOST, STATIC_SERVER_PORT)
+            actual_port = sock.getsockname()[1]
+
+            actual_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}"
+            self.config_manager.set_config_value("static_server_base_url", actual_base_url)
+            self.storage_driver.base_url = f"{actual_base_url}{STATIC_SERVER_URL}"
+
+            threading.Thread(target=start_static_server, args=(sock,), daemon=True, name="static-server").start()
 
     def save_static_file(
         self,
