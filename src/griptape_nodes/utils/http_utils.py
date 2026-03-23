@@ -1,0 +1,90 @@
+import logging
+from collections.abc import Callable
+from http import HTTPStatus
+from typing import Any
+
+import httpx
+from tenacity import before_sleep_log, retry, retry_if_exception, stop_after_attempt, wait_exponential
+from tenacity.wait import WaitBaseT
+
+logger = logging.getLogger("griptape_nodes")
+
+RETRY_MAX_ATTEMPTS = 3
+RETRY_WAIT_MULTIPLIER = 1
+RETRY_WAIT_MIN_SECONDS = 1
+RETRY_WAIT_MAX_SECONDS = 10
+
+
+def is_retryable_httpx_error(exc: BaseException) -> bool:
+    """Return True for transient httpx errors that warrant a retry.
+
+    Retries on:
+    - Connection errors (httpx.ConnectError)
+    - Timeouts (httpx.TimeoutException)
+    - Server errors (HTTP 5xx)
+
+    Does not retry on client errors (HTTP 4xx) or other exceptions.
+    """
+    if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR
+    return False
+
+
+retry_on_transient_error = retry(
+    retry=retry_if_exception(is_retryable_httpx_error),
+    wait=wait_exponential(multiplier=RETRY_WAIT_MULTIPLIER, min=RETRY_WAIT_MIN_SECONDS, max=RETRY_WAIT_MAX_SECONDS),
+    stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+
+
+DEFAULT_RETRY_WAIT: WaitBaseT = wait_exponential(
+    multiplier=RETRY_WAIT_MULTIPLIER, min=RETRY_WAIT_MIN_SECONDS, max=RETRY_WAIT_MAX_SECONDS
+)
+
+
+def request_with_retry(
+    method: str,
+    url: str,
+    *,
+    max_attempts: int = RETRY_MAX_ATTEMPTS,
+    wait: WaitBaseT = DEFAULT_RETRY_WAIT,
+    httpx_request_func: Callable[..., httpx.Response] | None = None,
+    **kwargs: Any,
+) -> httpx.Response:
+    """Make an HTTP request with automatic retries on transient errors.
+
+    Convenience wrapper for standalone/static-method use where a decorated
+    closure would otherwise be needed.
+
+    Args:
+        method: HTTP method (GET, POST, PUT, DELETE, etc.).
+        url: The URL to request.
+        max_attempts: Maximum number of retry attempts.
+        wait: Tenacity wait strategy for backoff between retries.
+        httpx_request_func: Optional httpx request callable. Use this to pass
+            the original (unpatched) httpx.request when calling from within
+            monkey-patched code to avoid infinite recursion.
+        **kwargs: Passed through to the request function.
+
+    Returns:
+        The httpx.Response (already checked via raise_for_status).
+    """
+    func = httpx_request_func or httpx.request
+
+    @retry(
+        retry=retry_if_exception(is_retryable_httpx_error),
+        wait=wait,
+        stop=stop_after_attempt(max_attempts),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
+    def _do_request() -> httpx.Response:
+        response = func(method, url, **kwargs)
+        response.raise_for_status()
+        return response
+
+    return _do_request()

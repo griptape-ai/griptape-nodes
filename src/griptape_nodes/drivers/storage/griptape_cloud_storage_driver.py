@@ -11,6 +11,7 @@ from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver
 from griptape_nodes.files.path_utils import get_workspace_relative_path
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
+from griptape_nodes.utils.http_utils import request_with_retry, retry_on_transient_error
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -43,6 +44,15 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         self.request_timeout = kwargs.get("request_timeout")
         self.bucket_id = bucket_id
 
+    @retry_on_transient_error
+    def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Make an HTTP request with automatic retries on transient errors."""
+        kwargs.setdefault("headers", self.headers)
+        kwargs.setdefault("timeout", self.request_timeout)
+        response = httpx.request(method, url, **kwargs)
+        response.raise_for_status()
+        return response
+
     def create_signed_upload_url(
         self,
         path: Path,
@@ -64,8 +74,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{normalized_path.as_posix()}")
         try:
-            response = httpx.post(url, json={"operation": "PUT"}, headers=self.headers, timeout=self.request_timeout)
-            response.raise_for_status()
+            response = self._request("POST", url, json={"operation": "PUT"})
         except httpx.HTTPStatusError as e:
             msg = f"Failed to create presigned upload URL for file {normalized_path}: {e}"
             logger.error(msg)
@@ -144,8 +153,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         normalized_path = get_workspace_relative_path(parsed_path, self.workspace_directory)
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{normalized_path.as_posix()}")
         try:
-            response = httpx.post(url, json={"method": "GET"}, headers=self.headers, timeout=self.request_timeout)
-            response.raise_for_status()
+            response = self._request("POST", url, json={"method": "GET"})
         except httpx.HTTPStatusError as e:
             msg = f"Failed to create presigned download URL for file {normalized_path}: {e}"
             logger.error(msg)
@@ -193,14 +201,12 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         # Upload the file using the signed URL
         try:
-            response = httpx.request(
+            self._request(
                 upload_response["method"],
                 upload_response["url"],
                 content=file_content,
                 headers=upload_response["headers"],
-                timeout=self.request_timeout,
             )
-            response.raise_for_status()
         except httpx.HTTPStatusError as e:
             msg = f"Failed to upload file {normalized_path}: {e}"
             logger.error(msg)
@@ -212,13 +218,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
     def _create_asset(self, asset_name: str) -> str:
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
         try:
-            response = httpx.put(
-                url=url,
-                json={"name": asset_name},
-                headers=self.headers,
-                timeout=self.request_timeout,
-            )
-            response.raise_for_status()
+            response = self._request("PUT", url, json={"name": asset_name})
         except httpx.HTTPStatusError as e:
             msg = str(e)
             logger.error(msg)
@@ -247,8 +247,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         payload = {"name": bucket_name}
 
         try:
-            response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
-            response.raise_for_status()
+            response = request_with_retry("POST", url, json=payload, headers=headers, timeout=timeout)
         except httpx.HTTPStatusError as e:
             msg = f"Failed to create bucket '{bucket_name}': {e}"
             logger.error(msg)
@@ -271,13 +270,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         """
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
         try:
-            response = httpx.get(
-                url,
-                headers=self.headers,
-                params={"prefix": self.workspace_directory.name or ""},
-                timeout=self.request_timeout,
-            )
-            response.raise_for_status()
+            response = self._request("GET", url, params={"prefix": self.workspace_directory.name or ""})
         except httpx.HTTPStatusError as e:
             msg = f"Failed to list files in bucket {self.bucket_id}: {e}"
             logger.error(msg)
@@ -328,8 +321,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         url = urljoin(base_url, "/api/buckets")
 
         try:
-            response = httpx.get(url, headers=headers, timeout=timeout)
-            response.raise_for_status()
+            response = request_with_retry("GET", url, headers=headers, timeout=timeout)
         except httpx.HTTPStatusError as e:
             msg = f"Failed to list buckets: {e}"
             logger.error(msg)
@@ -347,8 +339,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{normalized_path.as_posix()}")
 
         try:
-            response = httpx.delete(url, headers=self.headers, timeout=self.request_timeout)
-            response.raise_for_status()
+            self._request("DELETE", url)
         except httpx.HTTPStatusError as e:
             msg = f"Failed to delete file {normalized_path}: {e}"
             logger.error(msg)
@@ -439,8 +430,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         # Make API request to get signed URL
         try:
-            response = httpx.post(api_url, json={"method": "GET"}, headers=self.headers, timeout=self.request_timeout)
-            response.raise_for_status()
+            response = self._request("POST", api_url, json={"method": "GET"})
 
             response_data = response.json()
             signed_url = response_data["url"]
@@ -625,20 +615,13 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         # Make API request to get signed URL
         try:
             headers = {"Authorization": f"Bearer {api_key}"}
-            response = httpx_request_func("POST", api_url, json={"method": "GET"}, headers=headers)
-            response.raise_for_status()
-
-            response_data = response.json()
-            signed_url = response_data["url"]
-
-            logger.info("Converted cloud asset URL to signed URL: %s", asset_url)
+            response = request_with_retry(
+                "POST", api_url, httpx_request_func=httpx_request_func, json={"method": "GET"}, headers=headers
+            )
         except Exception as e:
-            if isinstance(e, httpx.HTTPStatusError):
-                logger.warning(
-                    "Failed to create signed download URL for %s: HTTP %s", asset_url, e.response.status_code
-                )
-            else:
-                logger.warning("Failed to create signed download URL for %s: %s", asset_url, e)
+            logger.warning("Failed to create signed download URL for %s: %s", asset_url, e)
             return None
-        else:
-            return signed_url
+
+        signed_url = response.json()["url"]
+        logger.info("Converted cloud asset URL to signed URL: %s", asset_url)
+        return signed_url
