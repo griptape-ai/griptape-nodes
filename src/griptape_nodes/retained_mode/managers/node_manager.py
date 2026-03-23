@@ -3143,6 +3143,10 @@ class NodeManager:
                 source_node_name = incoming_connection.source_node_name
                 target_parameter_name = incoming_connection.target_parameter_name
 
+                # Don't remake connections that are between selected duplicated nodes
+                if source_node_name in old_node_names:
+                    continue
+
                 # Get info about parameter
                 connection_type = NodeManager.parameter_type(self, source_parameter_name, source_node_name)
 
@@ -3162,6 +3166,10 @@ class NodeManager:
                 source_parameter_name = outgoing_connection.source_parameter_name
                 target_node_name = outgoing_connection.target_node_name
                 target_parameter_name = outgoing_connection.target_parameter_name
+
+                # Don't remake connections that are between selected duplicated nodes
+                if target_node_name in old_node_names:
+                    continue
 
                 # Get info about parameter
                 connection_type = NodeManager.parameter_type(self, source_parameter_name, new_node_name)
