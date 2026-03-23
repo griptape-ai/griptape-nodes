@@ -25,8 +25,8 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
 # Host of the static server (where uvicorn binds)
 STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
-# Port of the static server (where uvicorn binds). 0 means the OS assigns a free port automatically.
-STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "0"))
+# Port of the static server (where uvicorn binds). Falls back to an OS-assigned free port if unavailable.
+STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/workspace")
 # Log level for the static server
