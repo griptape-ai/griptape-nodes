@@ -12,7 +12,11 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.node_groups.subflow_node_group import SubflowNodeGroup
+from griptape_nodes.exe_types.node_groups.subflow_node_group import (
+    LEFT_PARAMETERS_KEY,
+    RIGHT_PARAMETERS_KEY,
+    SubflowNodeGroup,
+)
 from griptape_nodes.traits.options import Options
 
 # Execution mode choices and their corresponding boolean values (True = run in order)
@@ -106,9 +110,9 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         self.add_parameter(self.index_param)
 
         # Track left parameters for UI layout
-        if "left_parameters" not in self.metadata:
-            self.metadata["left_parameters"] = []
-        self.metadata["left_parameters"].append("index")
+        if LEFT_PARAMETERS_KEY not in self.metadata:
+            self.metadata[LEFT_PARAMETERS_KEY] = []
+        self.metadata[LEFT_PARAMETERS_KEY].append("index")
 
         # Control input for loop completion (right side - primary loop completion path)
         self.loop_complete = ControlParameterInput(
@@ -151,9 +155,9 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         self.add_parameter(self.results)
 
         # Track right parameters for UI layout
-        if "right_parameters" not in self.metadata:
-            self.metadata["right_parameters"] = []
-        self.metadata["right_parameters"].extend(
+        if RIGHT_PARAMETERS_KEY not in self.metadata:
+            self.metadata[RIGHT_PARAMETERS_KEY] = []
+        self.metadata[RIGHT_PARAMETERS_KEY].extend(
             [
                 IterationControlParam.LOOP_COMPLETE.value,
                 "new_item_to_add",

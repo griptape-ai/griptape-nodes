@@ -773,6 +773,16 @@ class FlowManager:
 
         return flow
 
+    def unresolve_all_nodes_in_flow(self, flow_name: str) -> None:
+        """Reset all nodes in a flow to UNRESOLVED state.
+
+        Args:
+            flow_name: Name of the flow whose nodes should be unresolved
+        """
+        flow = self.get_flow_by_name(flow_name)
+        for node in flow.nodes.values():
+            node.state = NodeResolutionState.UNRESOLVED
+
     def handle_flow_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old flow name and its parent first.
         parent = self._name_to_parent_name[old_name]
