@@ -1,7 +1,9 @@
+import asyncio
 import contextlib
 import json
 import logging
 import os
+import socket
 from collections.abc import AsyncIterator
 
 import uvicorn
@@ -90,7 +92,8 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
 }
 
 GTN_MCP_SERVER_HOST = os.getenv("GTN_MCP_SERVER_HOST", "localhost")
-GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "9927"))
+# Port of the MCP server (where uvicorn binds). 0 means the OS assigns a free port automatically.
+GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "0"))
 GTN_MCP_SERVER_LOG_LEVEL = os.getenv("GTN_MCP_SERVER_LOG_LEVEL", "ERROR").lower()
 
 config_manager = ConfigManager()
@@ -101,8 +104,13 @@ mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup
 mcp_server_logger.setLevel(logging.INFO)
 
 
-def start_mcp_server(api_key: str) -> None:
-    """Synchronous version of main entry point for the Griptape Nodes MCP server."""
+def start_mcp_server(api_key: str, sock: socket.socket) -> None:
+    """Synchronous version of main entry point for the Griptape Nodes MCP server.
+
+    The socket should already be bound to the desired address and port before calling
+    this function. Using a pre-bound socket avoids race conditions when discovering
+    the actual port assigned by the OS.
+    """
     mcp_server_logger.debug("Starting MCP GTN server...")
 
     app = Server("mcp-gtn")
@@ -167,14 +175,9 @@ def start_mcp_server(api_key: str) -> None:
     mcp_server_app.mount("/mcp", app=handle_streamable_http)
 
     try:
-        # Run server using uvicorn.run
-        uvicorn.run(
-            mcp_server_app,
-            host=GTN_MCP_SERVER_HOST,
-            port=GTN_MCP_SERVER_PORT,
-            log_config=None,
-            log_level=GTN_MCP_SERVER_LOG_LEVEL,
-        )
+        config = uvicorn.Config(mcp_server_app, log_config=None, log_level=GTN_MCP_SERVER_LOG_LEVEL)
+        server = uvicorn.Server(config)
+        asyncio.run(server.serve(sockets=[sock]))
     except Exception as e:
         mcp_server_logger.error("MCP server failed: %s", e)
         raise

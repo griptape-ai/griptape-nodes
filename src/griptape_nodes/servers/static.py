@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import binascii
 import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin
+
+if TYPE_CHECKING:
+    import socket
 
 import anyio
 import uvicorn
@@ -20,8 +25,8 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
 # Host of the static server (where uvicorn binds)
 STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
-# Port of the static server (where uvicorn binds)
-STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
+# Port of the static server (where uvicorn binds). 0 means the OS assigns a free port automatically.
+STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "0"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/workspace")
 # Log level for the static server
@@ -241,8 +246,13 @@ async def _serve_external_file(file_path: str) -> FileResponse:
     return FileResponse(absolute_path)
 
 
-def start_static_server() -> None:
-    """Run uvicorn server synchronously using uvicorn.run."""
+def start_static_server(sock: socket.socket) -> None:
+    """Run uvicorn server synchronously using a pre-bound socket.
+
+    The socket should already be bound to the desired address and port before calling
+    this function. Using a pre-bound socket avoids race conditions when discovering
+    the actual port assigned by the OS.
+    """
     logger.debug("Starting static server...")
 
     # Create FastAPI app
@@ -304,14 +314,9 @@ def start_static_server() -> None:
     )
 
     try:
-        # Run server using uvicorn.run
-        uvicorn.run(
-            app,
-            host=STATIC_SERVER_HOST,
-            port=STATIC_SERVER_PORT,
-            log_level=STATIC_SERVER_LOG_LEVEL,
-            log_config=None,
-        )
+        config = uvicorn.Config(app, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None)
+        server = uvicorn.Server(config)
+        asyncio.run(server.serve(sockets=[sock]))
     except Exception as e:
         logger.error("API server failed: %s", e)
         raise
