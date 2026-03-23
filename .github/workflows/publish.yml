@@ -4,6 +4,12 @@ name: Publish
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. v0.78.1)'
+        required: true
+        type: string
 
 jobs:
   pre-publish-checks:
@@ -15,6 +21,8 @@ jobs:
     steps:
       - name: Checkout actions
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - name: Init environment
         uses: ./.github/actions/init-environment
       - name: Run checks
@@ -23,7 +31,7 @@ jobs:
   publish-pypi:
     needs: pre-publish-checks
     runs-on: ubuntu-latest
-    if: github.event.release.prerelease == false
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +39,8 @@ jobs:
     steps:
       - name: Checkout actions
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - name: Init environment
         uses: ./.github/actions/init-environment
       - name: uv Build
@@ -50,6 +60,8 @@ jobs:
     steps:
       - name: Check out the repo
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v4
@@ -95,6 +107,8 @@ jobs:
     steps:
       - name: Check out the repo
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v4
