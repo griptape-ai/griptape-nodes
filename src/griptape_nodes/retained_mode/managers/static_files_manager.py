@@ -203,9 +203,9 @@ class StaticFilesManager:
         Returns:
             A result object indicating success or failure.
         """
-        resolved = self._resolve_static_file_path(request.file_name)
+        resolved = self._resolve_static_file_path(request.file_name, COPY_EXTERNAL_FILE_SITUATION)
         if resolved is None:
-            msg = f"Attempted to create download URL for '{request.file_name}'. Failed because the project template is missing the '{SAVE_STATIC_FILE_SITUATION}' situation."
+            msg = f"Attempted to create download URL for '{request.file_name}'. Failed because the project template is missing the '{COPY_EXTERNAL_FILE_SITUATION}' situation."
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         try:
