@@ -3,6 +3,7 @@
 This section provides comprehensive documentation for developers building custom nodes for Griptape Nodes.
 
 !!! tip "For AI Assistants & Coding Agents"
+
     All documentation in this section is available as raw markdown for use with AI coding assistants:
 
     - **Getting Started**: [Download/View Raw Markdown](https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/docs/developing_nodes/getting_started.md)
@@ -40,5 +41,5 @@ For detailed technical information, see the [Comprehensive Node Development Guid
 ## Documentation Structure
 
 1. **[Getting Started](getting_started.md)** - Your first node and essential concepts
-2. **[Comprehensive Guide](comprehensive_guide.md)** - Complete technical reference
-3. **[Example Code](example_control_node.py)** - Practical implementation patterns
+1. **[Comprehensive Guide](comprehensive_guide.md)** - Complete technical reference
+1. **[Example Code](example_control_node.py)** - Practical implementation patterns

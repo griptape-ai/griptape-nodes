@@ -1,6 +1,7 @@
 # Comprehensive Node Development Guide
 
 !!! tip "For AI Assistants & Coding Agents"
+
     This guide is available as raw markdown for use with AI coding assistants:
 
     - **Comprehensive Guide**: [Download/View Raw Markdown](https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/docs/developing_nodes/comprehensive_guide.md)
@@ -13,27 +14,27 @@
 ## Table of Contents
 
 1. [Introduction](#introduction)
-2. [Core Concepts](#core-concepts)
-3. [Setting Up](#setting-up)
-4. [Creating a Node](#creating-a-node)
-5. [Parameters](#parameters)
-6. [Advanced Parameter Patterns](#advanced-parameter-patterns)
-7. [Lifecycle Callbacks](#lifecycle-callbacks)
-8. [Best Practices](#best-practices)
-9. [Working with the Project System](#working-with-the-project-system)
-10. [Advanced Topics](#advanced-topics)
-11. [Modern UI/UX Patterns](#modern-uiux-patterns)
-12. [Production Error Handling](#production-error-handling)
-13. [Logging Best Practices](#logging-best-practices)
-14. [Flexible Artifact Processing](#flexible-artifact-processing)
-15. [Creating Node Libraries](#creating-node-libraries)
-16. [Custom Widget Components](#custom-widget-components)
-17. [Library Structure with uv Dependency Management](#library-structure-with-uv-dependency-management)
-18. [Two-Mode UI Pattern (Simple + Custom)](#two-mode-ui-pattern-simple-custom)
-19. [Music/Audio Generation API Patterns](#musicaudio-generation-api-patterns)
-20. [Documentation Patterns for Node Libraries](#documentation-patterns-for-node-libraries)
-21. [Contributing to the Standard Library](#contributing-to-the-standard-library)
-22. [Appendix](#appendix)
+1. [Core Concepts](#core-concepts)
+1. [Setting Up](#setting-up)
+1. [Creating a Node](#creating-a-node)
+1. [Parameters](#parameters)
+1. [Advanced Parameter Patterns](#advanced-parameter-patterns)
+1. [Lifecycle Callbacks](#lifecycle-callbacks)
+1. [Best Practices](#best-practices)
+1. [Working with the Project System](#working-with-the-project-system)
+1. [Advanced Topics](#advanced-topics)
+1. [Modern UI/UX Patterns](#modern-uiux-patterns)
+1. [Production Error Handling](#production-error-handling)
+1. [Logging Best Practices](#logging-best-practices)
+1. [Flexible Artifact Processing](#flexible-artifact-processing)
+1. [Creating Node Libraries](#creating-node-libraries)
+1. [Custom Widget Components](#custom-widget-components)
+1. [Library Structure with uv Dependency Management](#library-structure-with-uv-dependency-management)
+1. [Two-Mode UI Pattern (Simple + Custom)](#two-mode-ui-pattern-simple-custom)
+1. [Music/Audio Generation API Patterns](#musicaudio-generation-api-patterns)
+1. [Documentation Patterns for Node Libraries](#documentation-patterns-for-node-libraries)
+1. [Contributing to the Standard Library](#contributing-to-the-standard-library)
+1. [Appendix](#appendix)
 
 ## Introduction
 
@@ -86,9 +87,9 @@ Use `on_griptape_event` for reacting to workflow events.
 ## Setting Up
 
 1. Install griptape-nodes
-2. Use virtual environments for isolation
-3. Structure projects with simple folder hierarchies
-4. Import from `griptape_nodes.exe_types.*` and `griptape_nodes_library.utils.*`
+1. Use virtual environments for isolation
+1. Structure projects with simple folder hierarchies
+1. Import from `griptape_nodes.exe_types.*` and `griptape_nodes_library.utils.*`
 
 ## Creating a Node
 
@@ -137,8 +138,8 @@ All Parameter attributes:
 - **output_type**: str for outgoing connection type
 - **allowed_modes**: set[ParameterMode] {INPUT, OUTPUT, PROPERTY}
 - **ui_options**: dict for UI customization
-- **converters**: list[Callable[[Any], Any]] for value transformation
-- **validators**: list[Callable[[Parameter, Any], None]] for validation
+- **converters**: list\[Callable\[[Any], Any\]\] for value transformation
+- **validators**: list\[Callable\[[Parameter, Any], None\]\] for validation
 - **hide/hide_label/hide_property**: common UI flags (also available via `ui_options`; `ui_options` wins on conflict)
 - **allow_input/allow_property/allow_output**: convenience flags for configuring modes (ignored if `allowed_modes` is explicitly set)
 - **settable**: bool (default True) - False for computed/output parameters
@@ -205,9 +206,9 @@ They exist to make common parameter patterns **simple, consistent, and runtime-m
 - Enforces numeric `type` / `output_type` and can prepend a converter when `accept_any=True`.
 - `step`: stored in `ui_options["step"]` and validated (value must be a multiple of the current step).
 - `slider`, `min_val`, `max_val`, `validate_min_max`: adds one of these constraint traits based on priority:
-  - `Slider(min_val, max_val)` if `slider=True`
-  - `MinMax(min_val, max_val)` if `validate_min_max=True`
-  - `Clamp(min_val, max_val)` if `min_val` and `max_val` are provided
+    - `Slider(min_val, max_val)` if `slider=True`
+    - `MinMax(min_val, max_val)` if `validate_min_max=True`
+    - `Clamp(min_val, max_val)` if `min_val` and `max_val` are provided
 
 ##### `ParameterJson`
 
@@ -445,40 +446,41 @@ self.add_node_element(nav_buttons)
 
 1. **Update Display Values**
 
-   ```python
-   def _update_datetime(self, button: Button, button_payload: ButtonDetailsMessagePayload) -> None:
-       """Update datetime display when button is clicked."""
-       current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-       self.set_parameter_value("datetime_display", current_time)
-   ```
+    ```python
+    def _update_datetime(self, button: Button, button_payload: ButtonDetailsMessagePayload) -> None:
+        """Update datetime display when button is clicked."""
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.set_parameter_value("datetime_display", current_time)
+    ```
 
-2. **Navigate Through Items**
+1. **Navigate Through Items**
 
-   ```python
-   def _next_image(self, button: Button, button_payload: ButtonDetailsMessagePayload) -> None:
-       """Increment index and update display."""
-       current_index = self.get_parameter_value("image_index")
-       self.set_parameter_value("image_index", current_index + 1)
-       self._update_display()
-   ```
+    ```python
+    def _next_image(self, button: Button, button_payload: ButtonDetailsMessagePayload) -> None:
+        """Increment index and update display."""
+        current_index = self.get_parameter_value("image_index")
+        self.set_parameter_value("image_index", current_index + 1)
+        self._update_display()
+    ```
 
-3. **Trigger Calculations**
+1. **Trigger Calculations**
 
-   ```python
-   def _calculate(self, button: Button, button_payload: ButtonDetailsMessagePayload) -> None:
-       """Perform calculation and update result parameter."""
-       input_value = self.get_parameter_value("input")
-       result = self._perform_complex_calculation(input_value)
-       self.set_parameter_value("result", result)
-   ```
+    ```python
+    def _calculate(self, button: Button, button_payload: ButtonDetailsMessagePayload) -> None:
+        """Perform calculation and update result parameter."""
+        input_value = self.get_parameter_value("input")
+        result = self._perform_complex_calculation(input_value)
+        self.set_parameter_value("result", result)
+    ```
 
-4. **Reset to Defaults**
-   ```python
-   def _reset(self, button: Button, button_payload: ButtonDetailsMessagePayload) -> None:
-       """Reset parameters to default values."""
-       self.set_parameter_value("counter", 0)
-       self.set_parameter_value("display", "")
-   ```
+1. **Reset to Defaults**
+
+    ```python
+    def _reset(self, button: Button, button_payload: ButtonDetailsMessagePayload) -> None:
+        """Reset parameters to default values."""
+        self.set_parameter_value("counter", 0)
+        self.set_parameter_value("display", "")
+    ```
 
 **Link Buttons (Alternative to `on_click`):**
 
@@ -538,17 +540,19 @@ See `example_control_node.py` and `image_carousel.py` for working implementation
 
 Parameters have two separate parent-pointer attributes that serve different purposes:
 
-| Attribute | Points to | Purpose |
-|---|---|---|
-| `parent_container_name` | `ParameterContainer` (`ParameterList`, `ParameterDictionary`) | **Ownership.** The parameter is a child of a list/dictionary container. The engine uses this for `add_parameter()`, child cleanup, value aggregation, and serialization/reload. |
-| `parent_element_name` | `ParameterGroup` | **UI grouping.** The parameter is visually nested under a collapsible group in the node UI. The engine uses this for `add_parameter()` placement, `_remove_existing_*()` lookups, and serialization/reload. |
+| Attribute               | Points to                                                     | Purpose                                                                                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parent_container_name` | `ParameterContainer` (`ParameterList`, `ParameterDictionary`) | **Ownership.** The parameter is a child of a list/dictionary container. The engine uses this for `add_parameter()`, child cleanup, value aggregation, and serialization/reload.                             |
+| `parent_element_name`   | `ParameterGroup`                                              | **UI grouping.** The parameter is visually nested under a collapsible group in the node UI. The engine uses this for `add_parameter()` placement, `_remove_existing_*()` lookups, and serialization/reload. |
 
 **Do NOT confuse them.** If you use `parent_container_name` when you should be using `parent_element_name` (or vice versa), the parameter will:
+
 1. Appear at the node root instead of inside the intended group/container
-2. Not be cleaned up between runs (e.g. stale outputs persist)
-3. Fail to restore after save/reload — the reload handler looks for a `ParameterContainer` or `ParameterGroup` by the name you specified, and if the type doesn't match, the parameter is silently dropped before its saved values are applied
+1. Not be cleaned up between runs (e.g. stale outputs persist)
+1. Fail to restore after save/reload — the reload handler looks for a `ParameterContainer` or `ParameterGroup` by the name you specified, and if the type doesn't match, the parameter is silently dropped before its saved values are applied
 
 **Rule of thumb:**
+
 - Putting a parameter inside a **`ParameterList`** or **`ParameterDictionary`**? → use `parent_container_name`
 - Putting a parameter inside a **`ParameterGroup`** for visual organization? → use `parent_element_name`
 
@@ -1138,18 +1142,19 @@ workspace/
 #### Situations
 
 Named scenarios that define:
+
 1. **Where** files are saved (via macro templates)
-2. **How** to handle collisions (create_new, overwrite, fail)
-3. **Fallback** behavior if saving fails
+1. **How** to handle collisions (create_new, overwrite, fail)
+1. **Fallback** behavior if saving fails
 
 Common situations include:
 
-| Situation | Purpose | Default Macro Pattern |
-|-----------|---------|----------------------|
-| `save_node_output` | Generated node outputs | `{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}` |
-| `copy_external_file` | External file imports | `{inputs}/{node_name?:_}{parameter_name?:_}{file_name_base}...` |
-| `download_url` | Downloaded files | `{inputs}/{sanitized_url}` |
-| `save_preview` | Thumbnail generation | `{previews}/{source_relative_path?:/}...` |
+| Situation            | Purpose                | Default Macro Pattern                                                   |
+| -------------------- | ---------------------- | ----------------------------------------------------------------------- |
+| `save_node_output`   | Generated node outputs | `{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}` |
+| `copy_external_file` | External file imports  | `{inputs}/{node_name?:_}{parameter_name?:_}{file_name_base}...`         |
+| `download_url`       | Downloaded files       | `{inputs}/{sanitized_url}`                                              |
+| `save_preview`       | Thumbnail generation   | `{previews}/{source_relative_path?:/}...`                               |
 
 #### Macros
 
@@ -1218,6 +1223,7 @@ class MyVideoNode(ControlNode):
 ```
 
 **Key Points:**
+
 - `ProjectFileParameter` creates a UI parameter that users can configure
 - Call `build_file()` to get a `ProjectFileDestination` instance
 - Use `write_bytes()` to save the file
@@ -1246,6 +1252,7 @@ def frames_to_video_artifact(frames: list, fps: int = 30, video_format: str = "m
 ```
 
 **Key Points:**
+
 - Use `from_situation()` to create a destination with a named situation
 - The `filename` parameter is the base filename (will be transformed by the situation's macro)
 - The situation (e.g., "save_node_output") determines the final path and collision behavior
@@ -1279,6 +1286,7 @@ def new_save_video(video_bytes: bytes) -> VideoUrlArtifact:
 ```
 
 **Migration Benefits:**
+
 - No more UUID generation required
 - Consistent file organization across all nodes
 - User-configurable file paths via project templates
@@ -1318,11 +1326,11 @@ Your nodes automatically respect these customizations without any code changes.
 ### Best Practices
 
 1. **Always use the project system** for saving files - never use hard-coded paths
-2. **Choose the right pattern**: Use `ProjectFileParameter` for user-configurable outputs, `ProjectFileDestination` for utility functions
-3. **Use semantic situations**: Pick the situation that best describes your operation
-4. **Let macros handle naming**: Don't generate UUIDs or timestamps yourself - let the situation's macro and collision policy handle it
-5. **Handle temporary files properly**: Use Python's `tempfile` for intermediate processing, only save final results via the project system
-6. **Clean up temporary files**: Always clean up temporary files after copying to the project system
+1. **Choose the right pattern**: Use `ProjectFileParameter` for user-configurable outputs, `ProjectFileDestination` for utility functions
+1. **Use semantic situations**: Pick the situation that best describes your operation
+1. **Let macros handle naming**: Don't generate UUIDs or timestamps yourself - let the situation's macro and collision policy handle it
+1. **Handle temporary files properly**: Use Python's `tempfile` for intermediate processing, only save final results via the project system
+1. **Clean up temporary files**: Always clean up temporary files after copying to the project system
 
 ### Example: Complete Video Processing Node
 
@@ -1483,12 +1491,12 @@ for cand in candidates:
 **Key Considerations**:
 
 1. **Dependencies**: Use `google-auth` instead of full SDK (`google-cloud-aiplatform`, `google-genai`)
-2. **Regional Availability**: Some models only work in specific regions (e.g., `us-central1`), not `global`
-3. **Model Names**: Check for `-preview` suffix differences between preview and stable models
-4. **Authentication Scopes**: Use `https://www.googleapis.com/auth/cloud-platform` for Vertex AI
-5. **Response Format**: Handle both camelCase (API) and snake_case (some SDKs) field names
-6. **Base64 Encoding**: REST API expects base64-encoded strings for binary data
-7. **Error Handling**: Parse JSON error responses for detailed error messages
+1. **Regional Availability**: Some models only work in specific regions (e.g., `us-central1`), not `global`
+1. **Model Names**: Check for `-preview` suffix differences between preview and stable models
+1. **Authentication Scopes**: Use `https://www.googleapis.com/auth/cloud-platform` for Vertex AI
+1. **Response Format**: Handle both camelCase (API) and snake_case (some SDKs) field names
+1. **Base64 Encoding**: REST API expects base64-encoded strings for binary data
+1. **Error Handling**: Parse JSON error responses for detailed error messages
 
 **Trade-offs**:
 
@@ -2201,9 +2209,9 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
 ### Library Structure
 
 - **settings**: Register secrets/API keys used by library nodes
-  - Use `secrets_to_register` array to declare required secrets
-  - Category should be `app_events.on_app_initialization_complete`
-  - Secrets are accessed via `GriptapeNodes.SecretsManager().get_secret()`
+    - Use `secrets_to_register` array to declare required secrets
+    - Category should be `app_events.on_app_initialization_complete`
+    - Secrets are accessed via `GriptapeNodes.SecretsManager().get_secret()`
 - **metadata.dependencies**: PIP packages installed on library load
 - **widgets**: Register custom JS widget components (see [Custom Widget Components](#custom-widget-components))
 - **categories**: Group nodes in UI with colors and icons
@@ -2223,8 +2231,8 @@ Nodes can use custom JavaScript widget components to provide rich, interactive U
 A custom widget involves three pieces:
 
 1. **Widget JS file** (`widgets/MyWidget.js`) — the UI component
-2. **Node Python file** — references the widget via the `Widget` trait on a parameter
-3. **Library JSON** (`griptape_nodes_library.json`) — registers the widget so the framework can find it
+1. **Node Python file** — references the widget via the `Widget` trait on a parameter
+1. **Library JSON** (`griptape_nodes_library.json`) — registers the widget so the framework can find it
 
 ```
 library_name/
@@ -2299,10 +2307,10 @@ export default function MyWidget(container, props) {
 
 | Prop       | Type       | Description                                      |
 | ---------- | ---------- | ------------------------------------------------ |
-| `value`    | `any`      | Current parameter value (matches Python default)  |
-| `onChange`  | `function` | Callback to send updated value to the framework  |
-| `disabled` | `boolean`  | Whether the widget should be read-only            |
-| `height`   | `number`   | Suggested height in pixels (may be 0 or absent)   |
+| `value`    | `any`      | Current parameter value (matches Python default) |
+| `onChange` | `function` | Callback to send updated value to the framework  |
+| `disabled` | `boolean`  | Whether the widget should be read-only           |
+| `height`   | `number`   | Suggested height in pixels (may be 0 or absent)  |
 
 ### Critical Patterns and Pitfalls
 
@@ -2827,10 +2835,10 @@ filename = generate_filename(self.name, suffix="processed", ext="png")
 
 #### Project System (`griptape_nodes.files.project_file`)
 
-| Class/Function                           | Purpose                                          | Returns                  |
-| ---------------------------------------- | ------------------------------------------------ | ------------------------ |
+| Class/Function                            | Purpose                                          | Returns                  |
+| ----------------------------------------- | ------------------------------------------------ | ------------------------ |
 | `ProjectFileDestination.from_situation()` | Create file destination with named situation     | `ProjectFileDestination` |
-| `ProjectFileParameter`                   | Parameter component for configurable file output | -                        |
+| `ProjectFileParameter`                    | Parameter component for configurable file output | -                        |
 
 **Example usage:**
 
@@ -2988,13 +2996,13 @@ The `WidgetHost` component is a React wrapper that hosts imperative widget funct
 
 **Props:**
 
-| Prop       | Type       | Description                                          |
-| ---------- | ---------- | ---------------------------------------------------- |
+| Prop       | Type       | Description                                                 |
+| ---------- | ---------- | ----------------------------------------------------------- |
 | `widgetFn` | `function` | The widget function to render (container, props) => cleanup |
-| `value`    | `any`      | Current widget value                                  |
-| `onChange` | `function` | Callback when widget emits changes                    |
-| `disabled` | `boolean`  | Whether widget should be read-only (default: false)   |
-| `height`   | `number`   | Suggested height in pixels (default: 0)               |
+| `value`    | `any`      | Current widget value                                        |
+| `onChange` | `function` | Callback when widget emits changes                          |
+| `disabled` | `boolean`  | Whether widget should be read-only (default: false)         |
+| `height`   | `number`   | Suggested height in pixels (default: 0)                     |
 
 **Implementation pattern:**
 
@@ -3138,12 +3146,12 @@ Navigate to `http://localhost:5173` (or the port shown in terminal).
 **Typical development cycle:**
 
 1. **Write widget code**: Create or modify your widget `.js` file
-2. **Update testbed**: Import the widget in `App.jsx`
-3. **Run dev server**: `npm run dev` for hot-reload
-4. **Test interactions**: Click, type, drag, and interact with the widget
-5. **Verify state**: Check the JSON debug panel to see state changes
-6. **Test edge cases**: Use Reset button and Disabled toggle to test edge cases
-7. **Iterate**: Make changes to widget code and see updates instantly
+1. **Update testbed**: Import the widget in `App.jsx`
+1. **Run dev server**: `npm run dev` for hot-reload
+1. **Test interactions**: Click, type, drag, and interact with the widget
+1. **Verify state**: Check the JSON debug panel to see state changes
+1. **Test edge cases**: Use Reset button and Disabled toggle to test edge cases
+1. **Iterate**: Make changes to widget code and see updates instantly
 
 **Common testing scenarios:**
 
@@ -3162,9 +3170,9 @@ The `WidgetHost` component solves a critical problem: **preventing unnecessary w
 **How it works:**
 
 1. **Flag-based change tracking**: `isWidgetChangeRef` tracks whether the current change originated from the widget
-2. **Conditional re-mount**: Widget is only re-mounted when `value` changes externally (not from `onChange`)
-3. **Stable onChange callback**: Uses `useCallback` to prevent unnecessary effect triggers
-4. **Cleanup on unmount**: Calls widget's cleanup function when widget is destroyed or value changes externally
+1. **Conditional re-mount**: Widget is only re-mounted when `value` changes externally (not from `onChange`)
+1. **Stable onChange callback**: Uses `useCallback` to prevent unnecessary effect triggers
+1. **Cleanup on unmount**: Calls widget's cleanup function when widget is destroyed or value changes externally
 
 **Key implementation:**
 
@@ -3494,10 +3502,10 @@ def _get_image_data(self, image_artifact: ImageArtifact | ImageUrlArtifact) -> s
 **Key Points:**
 
 1. **Always detect localhost URLs** - External APIs cannot access them
-2. **Use ImageArtifact.base64 property** - The proper Griptape way (returns raw base64)
-3. **Use ImageArtifact.mime_type property** - Automatic MIME type detection
-4. **Log which path is used** - Essential for debugging
-5. **Download localhost files** - Convert to base64 before sending to API
+1. **Use ImageArtifact.base64 property** - The proper Griptape way (returns raw base64)
+1. **Use ImageArtifact.mime_type property** - Automatic MIME type detection
+1. **Log which path is used** - Essential for debugging
+1. **Download localhost files** - Convert to base64 before sending to API
 
 **Parameter Definition:**
 
@@ -3651,8 +3659,8 @@ def validate_before_node_run(self) -> list[Exception] | None:
 When a model provider deprecates endpoints (e.g., preview models replaced by GA equivalents), nodes should automatically migrate saved workflows while informing the user. This pattern uses three components working together:
 
 1. A `DEPRECATED_MODELS` dictionary mapping old model names to their replacements
-2. A hidden `ParameterMessage` element that acts as a dismissable info banner
-3. The `before_value_set` lifecycle hook to intercept and replace deprecated values before they are applied
+1. A hidden `ParameterMessage` element that acts as a dismissable info banner
+1. The `before_value_set` lifecycle hook to intercept and replace deprecated values before they are applied
 
 **Step 1: Define the deprecation map and current models**
 
@@ -3743,20 +3751,20 @@ def after_value_set(self, parameter: Parameter, value: Any) -> None:
 **How it works end-to-end:**
 
 1. A user opens a workflow saved with `"veo-3.1-generate-preview"`.
-2. The framework calls `before_value_set` with the saved value.
-3. The hook detects it in `DEPRECATED_MODELS`, swaps it to `"veo-3.1-generate-001"`, and shows the info banner.
-4. `after_value_set` fires with the replacement value — model-dependent UI updates (duration choices, parameter visibility, etc.) work correctly because they see the valid GA model.
-5. The user sees the banner: *"The 'veo-3.1-generate-preview' model has been deprecated. The model has been updated to 'veo-3.1-generate-001'. Please save your workflow to apply this change."*
-6. The user can dismiss the banner or it hides automatically on the next valid model selection.
+1. The framework calls `before_value_set` with the saved value.
+1. The hook detects it in `DEPRECATED_MODELS`, swaps it to `"veo-3.1-generate-001"`, and shows the info banner.
+1. `after_value_set` fires with the replacement value — model-dependent UI updates (duration choices, parameter visibility, etc.) work correctly because they see the valid GA model.
+1. The user sees the banner: *"The 'veo-3.1-generate-preview' model has been deprecated. The model has been updated to 'veo-3.1-generate-001'. Please save your workflow to apply this change."*
+1. The user can dismiss the banner or it hides automatically on the next valid model selection.
 
 **Key API methods used:**
 
-| Method | Purpose |
-|--------|---------|
-| `self.add_node_element(ParameterMessage(...))` | Adds the message element to the node |
+| Method                                         | Purpose                                           |
+| ---------------------------------------------- | ------------------------------------------------- |
+| `self.add_node_element(ParameterMessage(...))` | Adds the message element to the node              |
 | `self.get_message_by_name_or_element_id(name)` | Retrieves the message element to update its value |
-| `self.show_message_by_name(name)` | Makes the hidden message visible |
-| `self.hide_message_by_name(name)` | Hides the message again |
+| `self.show_message_by_name(name)`              | Makes the hidden message visible                  |
+| `self.hide_message_by_name(name)`              | Hides the message again                           |
 
 **Reference implementations:**
 
@@ -3835,10 +3843,10 @@ def _get_image_data(self, image_artifact) -> str:
 **Common Pitfalls to Avoid:**
 
 1. **Model Names**: Check exact capitalization (`MiniMax-Hailuo-02` not `video-01`)
-2. **Endpoints**: Verify exact URLs (`/v1/query/video_generation` not `/v1/video_generation/{id}`)
-3. **Parameters**: Check query params vs path params
-4. **Response Structure**: Verify exact field names (`file_id` vs `file_list`)
-5. **Polling Intervals**: Use API-recommended values
+1. **Endpoints**: Verify exact URLs (`/v1/query/video_generation` not `/v1/video_generation/{id}`)
+1. **Parameters**: Check query params vs path params
+1. **Response Structure**: Verify exact field names (`file_id` vs `file_list`)
+1. **Polling Intervals**: Use API-recommended values
 
 **Example: Correct vs Incorrect Polling:**
 
@@ -3958,12 +3966,12 @@ Provide both uv (recommended) and pip (fallback) installation methods:
    ```
 ````
 
-3. Place in Griptape Nodes libraries directory
+1. Place in Griptape Nodes libraries directory
 
 ### Option 2: Automatic Installation
 
 1. Place folder in libraries directory
-2. Dependencies install automatically via pip
+1. Dependencies install automatically via pip
 
 ````
 
@@ -4347,6 +4355,6 @@ Always include a comparison table for services with multiple models:
 | V4    | 4 min        | Best     | Medium  | Prompt: 3000, Style: 200  |
 ```
 
----
+______________________________________________________________________
 
 This guide represents the current best practices for Griptape node development, incorporating both foundational concepts and modern patterns demonstrated in production nodes. Use these patterns to create robust, user-friendly, and maintainable nodes that integrate seamlessly with the Griptape ecosystem.

@@ -1,7 +1,0 @@
-# Comprehensive Node Development Guide
-# Imported from griptape-ai/griptape-nodes-node-development-guide
-# Contains MkDocs admonitions that trigger mdformat-mkdocs rendering bugs:
-# - Admonition blocks get incorrectly wrapped in code blocks
-# - Would require 500+ line manual review to safely apply auto-numbering changes
-# The file renders correctly as-is and follows MkDocs formatting conventions
-docs/developing_nodes/comprehensive_guide.md

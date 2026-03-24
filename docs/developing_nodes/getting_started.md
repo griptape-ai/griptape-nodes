@@ -1,6 +1,7 @@
 # Getting Started with Node Development
 
 !!! tip "For AI Assistants & Coding Agents"
+
     This guide is available as raw markdown for use with AI coding assistants:
 
     - **Getting Started** (this page): [Download/View Raw Markdown](https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/docs/developing_nodes/getting_started.md)
