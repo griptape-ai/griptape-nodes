@@ -1,9 +1,19 @@
-# Developing Nodes (Developer Onboarding)
+# Getting Started with Node Development
+
+!!! tip "For AI Assistants & Coding Agents"
+    This guide is available as raw markdown for use with AI coding assistants:
+
+    - **Getting Started** (this page): [Download/View Raw Markdown](https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/docs/developing_nodes/getting_started.md)
+    - **Comprehensive Guide**: [Download/View Raw Markdown](https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/docs/developing_nodes/comprehensive_guide.md)
+    - **Example Code**: [View Python Example](https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/docs/developing_nodes/example_control_node.py)
+
+    **Usage:** Point your AI assistant to these URLs with instructions like:
+    `"Read this node development guide: [URL] and help me build a custom node"`
 
 This page is for developers who are **new to the Griptape Nodes ecosystem** and want to build custom nodes with confidence.
 
 It’s a beginner-friendly “front door” to the deeper, exhaustive technical material in the
-[Node Development Guide](https://github.com/griptape-ai/griptape-nodes-node-development-guide/blob/main/node-development-guide-v3.md).
+[Comprehensive Node Development Guide](comprehensive_guide.md).
 
 ## What you’ll build (mentally) before you write code
 
@@ -28,7 +38,7 @@ If you’re unsure, start with a `DataNode` and only graduate to `ControlNode`/l
 
 If you’ve never built a Griptape Node before, this is the fastest path to a working node:
 
-- Start from the template: [Making Custom Nodes](making_custom_nodes.md)
+- Start from the template: [Making Custom Nodes](../how_to/making_custom_nodes.md)
 - Build a single `DataNode` first (no control flow).
 - Prefer the built-in `Parameter*` helper constructs for common types.
 - Validate inputs with `validate_before_node_run()`.
@@ -119,7 +129,7 @@ These helpers are useful because they:
 - expose several UI options as Python properties for runtime updates
 
 If you need a quick reference, see the **Parameter helper constructs** section in the
-[Node Development Guide](https://github.com/griptape-ai/griptape-nodes-node-development-guide/blob/main/node-development-guide-v3.md).
+[Comprehensive Node Development Guide](comprehensive_guide.md).
 
 ### Containers: `ParameterList` and `ParameterDictionary`
 
@@ -190,5 +200,5 @@ When a node needs an API key or other secret:
 
 ## Next steps
 
-- Read the deeper technical guide: [Node Development Guide](https://github.com/griptape-ai/griptape-nodes-node-development-guide/blob/main/node-development-guide-v3.md)
+- Read the deeper technical guide: [Comprehensive Node Development Guide](comprehensive_guide.md)
 - Browse a few nodes in the standard library and copy patterns that match your use case
