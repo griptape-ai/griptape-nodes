@@ -40,7 +40,7 @@ class ProjectFileParameter:
 
     DEFAULT_SITUATION = "save_node_output"
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         node: BaseNode,
         name: str,
