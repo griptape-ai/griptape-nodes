@@ -48,6 +48,7 @@ class ProjectFileParameter:
         default_filename: str,
         situation: str = DEFAULT_SITUATION,
         allowed_modes: set[ParameterMode] | None = None,
+        hide: bool = False,
     ) -> None:
         """Initialize with situation context.
 
@@ -57,12 +58,14 @@ class ProjectFileParameter:
             default_filename: Default filename if parameter is empty
             situation: Situation name (default: "save_node_output")
             allowed_modes: Set of allowed parameter modes (default: INPUT, PROPERTY)
+            hide: Whether to hide the parameter in the UI (default: False)
         """
         self._node = node
         self._name = name
         self._situation_name = situation
         self._default_filename = default_filename
         self._allowed_modes = allowed_modes or {ParameterMode.INPUT, ParameterMode.PROPERTY}
+        self._hide = hide
 
     def add_parameter(self) -> None:
         """Create and add the file path parameter to the node."""
@@ -96,6 +99,7 @@ class ProjectFileParameter:
             input_types=["str"],
             output_type="str",
             traits=traits,
+            ui_options={"hide": True} if self._hide else None,
         )
         parameter.on_incoming_connection_removed.append(self._reset_to_default)
 
