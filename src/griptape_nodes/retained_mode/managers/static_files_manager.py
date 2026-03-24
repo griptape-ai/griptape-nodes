@@ -183,10 +183,10 @@ class StaticFilesManager:
         # Check if file is an image
         file_extension = file_path.suffix.lower()
         if file_extension not in IMAGE_EXTENSIONS:
-            logger.warning("Skipping preview for non-image file: %s", file_path)
+            logger.debug("Skipping preview for non-image file: %s", file_path)
             return file_path
 
-        logger.warning("Attempting to generate preview for image: %s", file_path)
+        logger.debug("Attempting to generate preview for image: %s", file_path)
         try:
             result = GriptapeNodes.handle_request(
                 GetPreviewForArtifactRequest(
@@ -201,7 +201,7 @@ class StaticFilesManager:
 
         if isinstance(result, GetPreviewForArtifactResultSuccess) and isinstance(result.paths_to_preview, str):
             preview_path = Path(result.paths_to_preview)
-            logger.warning("Serving thumbnail for %s -> %s", file_path, preview_path)
+            logger.debug("Serving thumbnail for %s -> %s", file_path, preview_path)
             return preview_path
 
         logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
@@ -326,7 +326,7 @@ class StaticFilesManager:
             Result with download URL or failure message.
         """
         file_path = request.file_path
-        logger.warning("CreateStaticFileDownloadUrlFromPath: file_path=%s, preview=%s", file_path, request.preview)
+        logger.debug("CreateStaticFileDownloadUrlFromPath: file_path=%s, preview=%s", file_path, request.preview)
 
         # Resolve macro paths (e.g. "{outputs}/file.png") before further processing
         try:
@@ -369,9 +369,9 @@ class StaticFilesManager:
                 logger.warning("Preview generation failed for %s, using original: %s", request.file_path, e)
                 file_path_to_use = file_path_for_driver
             if file_path_to_use == file_path_for_driver:
-                logger.warning("Serving full image (no thumbnail available) for %s", file_path_for_driver)
+                logger.debug("Serving full image (no thumbnail available) for %s", file_path_for_driver)
         else:
-            logger.warning("Serving full image for %s", file_path_for_driver)
+            logger.debug("Serving full image for %s", file_path_for_driver)
             file_path_to_use = file_path_for_driver
 
         try:
