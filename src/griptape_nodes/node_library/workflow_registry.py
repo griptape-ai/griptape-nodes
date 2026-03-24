@@ -179,6 +179,16 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         return {key: instance._workflows[key].get_workflow_metadata() for key in instance._workflows}
 
     @classmethod
+    def list_valid_workflows(cls) -> dict[str, dict]:
+        """Return only workflows that have a workflow_shape (i.e. contain StartFlow and EndFlow nodes)."""
+        instance = cls()
+        result = {}
+        for key, workflow in instance._workflows.items():
+            if workflow.metadata.workflow_shape is not None:
+                result[key] = workflow.get_workflow_metadata()
+        return result
+
+    @classmethod
     def get_complete_file_path(cls, relative_file_path: str) -> str:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
