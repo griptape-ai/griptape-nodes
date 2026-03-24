@@ -71,7 +71,7 @@ lint: ## Lint project.
 .PHONY: format
 format: ## Format project.
 	@uv run ruff format
-	@uv run mdformat .github docs src tests *.md
+	@uv run mdformat .github docs/ftue docs/frontend docs/nodes docs/projects docs/how_to docs/assets docs/*.md src tests *.md
 
 .PHONY: fix
 fix: ## Fix project.
@@ -84,7 +84,7 @@ check: check/format check/lint check/types check/spell ## Run all checks.
 .PHONY: check/format
 check/format:
 	@uv run ruff format --check
-	@uv run mdformat --check .github docs src tests *.md
+	@uv run mdformat --check .github docs/ftue docs/frontend docs/nodes docs/projects docs/how_to docs/assets docs/*.md src tests *.md
 
 .PHONY: check/lint
 check/lint:

@@ -9,20 +9,23 @@ Note: This example uses the low-level `Parameter` API directly so you can see
 all the moving parts. In real node libraries, consider the `Parameter*` helper
 constructs (e.g. `ParameterString`, `ParameterInt`) for common cases.
 """
+# ruff: noqa: INP001
 
 from __future__ import annotations
 
-from typing import Any
-
 import random
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin, ParameterButtonGroup
+from griptape_nodes.exe_types.core_types import Parameter, ParameterButtonGroup, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
-from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
+
+if TYPE_CHECKING:
+    from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
+
 
 class ExampleNode(DataNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -163,15 +166,15 @@ class ExampleNode(DataNode):
 
     def _update_datetime(
         self,
-        button: Button,
-        button_payload: ButtonDetailsMessagePayload,
+        _button: Button,
+        _button_payload: ButtonDetailsMessagePayload,
     ) -> None:
         """Button handler: update the datetime_display parameter with current date/time.
-        
+
         Uses locale-appropriate formatting (e.g., 2024-02-04 14:30:45).
         """
         # Get current datetime and format it in ISO-like format (space-efficient and locale-appropriate)
-        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_datetime = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
         self.set_parameter_value("datetime_display", current_datetime)
 
     def process(self) -> None:
@@ -181,7 +184,6 @@ class ExampleNode(DataNode):
         Read parameters with `get_parameter_value(...)` and write outputs to
         `self.parameter_output_values`.
         """
-
         # Read the current parameter values (from UI or from upstream connections).
         free_text = self.get_parameter_value("free_text") or ""
         dropdown = self.get_parameter_value("dropdown")
@@ -197,17 +199,11 @@ class ExampleNode(DataNode):
         # Calculate random float
         # NOTE: `random.uniform(a, b)` requires numeric inputs. This is a toy example;
         # real nodes should validate and handle None/missing values robustly.
-        random_float = round(random.uniform(0, float(integer_slider)), 3)
+        random_float = round(random.uniform(0, float(integer_slider)), 3)  # noqa: S311
         self.parameter_output_values["random_float"] = random_float
 
         # For demonstration, just print the values
         # (Avoid print() in production nodes; use structured logging or a "logs" output parameter.)
-        print(
-            "Free Text: "
-            f"{free_text}, Dropdown: {dropdown}, Integer Slider: {integer_slider}, "
-            f"Reversed Words: {self.parameter_output_values['reversed_text']}, "
-            f"Random Float: {self.parameter_output_values['random_float']}"
-        )
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
         """Validate node configuration before the flow runs.
@@ -222,4 +218,4 @@ class ExampleNode(DataNode):
         if not free_text_value:
             errors.append(ValueError(f"The '{self.name}' node's 'free_text' parameter is empty."))
 
-        return errors if errors else None
+        return errors or None
