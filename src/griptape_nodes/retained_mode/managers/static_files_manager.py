@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import NamedTuple
 
 from PIL import Image
-
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
@@ -77,7 +76,7 @@ _PIL_MODE_INFO: dict[str, tuple[int, str]] = {
     "I": (1, "Grayscale"),
     "F": (1, "Grayscale"),
     "LA": (2, "Grayscale+Alpha"),
-    "RGBa": (4, "RGBA"),
+    "RGBa": (4, "RGBA"),  # spellchecker:disable-line
     "RGBX": (4, "RGB"),
 }
 
@@ -313,6 +312,29 @@ class StaticFilesManager:
             static_files_directory=static_files_directory,
         )
 
+    def _resolve_preview_path(self, file_path: Path, *, preview: bool) -> Path:
+        """Return the path to serve, generating a preview when requested.
+
+        Args:
+            file_path: Path to the original file.
+            preview: Whether to generate and serve a preview.
+
+        Returns:
+            Path to the preview file, or original file path if preview is not
+            requested or generation fails.
+        """
+        if not preview:
+            logger.debug("Serving full image for %s", file_path)
+            return file_path
+        try:
+            preview_path = self._generate_preview_if_needed(file_path)
+        except Exception as e:
+            logger.warning("Preview generation failed for %s, using original: %s", file_path, e)
+            return file_path
+        if preview_path == file_path:
+            logger.debug("Serving full image (no thumbnail available) for %s", file_path)
+        return preview_path
+
     def on_handle_create_static_file_download_url_from_path_request(
         self,
         request: CreateStaticFileDownloadUrlFromPathRequest,
@@ -362,17 +384,7 @@ class StaticFilesManager:
             file_path_for_driver = Path(uri_to_path(file_path))
 
         # If preview requested, generate preview and get preview path
-        if request.preview:
-            try:
-                file_path_to_use = self._generate_preview_if_needed(file_path_for_driver)
-            except Exception as e:
-                logger.warning("Preview generation failed for %s, using original: %s", request.file_path, e)
-                file_path_to_use = file_path_for_driver
-            if file_path_to_use == file_path_for_driver:
-                logger.debug("Serving full image (no thumbnail available) for %s", file_path_for_driver)
-        else:
-            logger.debug("Serving full image for %s", file_path_for_driver)
-            file_path_to_use = file_path_for_driver
+        file_path_to_use = self._resolve_preview_path(file_path_for_driver, preview=request.preview)
 
         try:
             url = driver.create_signed_download_url(file_path_to_use)
