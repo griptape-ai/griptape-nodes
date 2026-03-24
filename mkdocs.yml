@@ -93,7 +93,6 @@ nav:
           - Customization Guide: projects/customization.md
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
-      - Developing Nodes (Developer Onboarding): how_to/developing_nodes.md
       - Making Custom Scripts: how_to/making_custom_scripts.md
       - External Resources:
           - Keys:
@@ -111,6 +110,7 @@ nav:
                   - Server-Sent Events (SSE): how_to/mcp/connection_types/sse.md
                   - Streamable HTTP: how_to/mcp/connection_types/streamable_http.md
                   - WebSocket: how_to/mcp/connection_types/websocket.md
+              - MCP Server Rules: how_to/mcp/rules.md
               - Example MCP Servers:
                   - Overview: how_to/mcp/servers/index.md
                   - Blender: how_to/mcp/servers/blender.md
@@ -262,9 +262,15 @@ nav:
           - Web Search: nodes/tools/web_search_tool.md
       - Advanced Media Library:
           - Diffusion Pipelines: nodes/advanced_media_library/diffusion_pipelines.md
+          - YOLOv8 Face Detection: nodes/advanced_media_library/yolov8_face_detection.md
       - Workflows:
           - Start Flow: nodes/execution/start_flow.md
           - End Flow: nodes/execution/end_flow.md
       - 3D:
           - Load 3D: nodes/three_d/load_gltf.md
+  - Developing Custom Nodes:
+      - Overview: developing_nodes/index.md
+      - Getting Started: developing_nodes/getting_started.md
+      - Comprehensive Guide: developing_nodes/comprehensive_guide.md
+      - Example Control Node: developing_nodes/example_control_node.py
   - Glossary: glossary.md
