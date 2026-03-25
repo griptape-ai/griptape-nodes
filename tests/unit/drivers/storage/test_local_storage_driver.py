@@ -145,3 +145,55 @@ class TestLocalStorageDriverCreateSignedUploadUrl:
             mock_os_manager.on_write_file_request.assert_called_once()
             call_args = mock_os_manager.on_write_file_request.call_args[0][0]
             assert call_args.existing_file_policy == ExistingFilePolicy.OVERWRITE
+
+
+class TestLocalStorageDriverCreateSignedDownloadUrl:
+    """Test LocalStorageDriver.create_signed_download_url() method."""
+
+    @pytest.fixture
+    def local_storage_driver(self) -> LocalStorageDriver:
+        """Create LocalStorageDriver instance for testing."""
+        return LocalStorageDriver(Path("/workspace"))
+
+    def test_internal_file_uses_workspace_relative_url(self, local_storage_driver: LocalStorageDriver) -> None:
+        """Internal files should produce a workspace-relative URL."""
+        with patch("griptape_nodes.drivers.storage.local_storage_driver.time") as mock_time:
+            mock_time.time.return_value = 1000
+            url = local_storage_driver.create_signed_download_url(Path("/workspace/images/photo.png"))
+
+        assert url == "http://localhost:8124/workspace/images/photo.png?t=1000"
+
+    def test_external_unix_file_uses_external_url(self, local_storage_driver: LocalStorageDriver) -> None:
+        """External Unix files should produce a /external/ URL with forward slashes."""
+        with (
+            patch("griptape_nodes.drivers.storage.local_storage_driver.time") as mock_time,
+            patch("griptape_nodes.drivers.storage.local_storage_driver.resolve_workspace_path") as mock_resolve,
+        ):
+            mock_time.time.return_value = 1000
+            external_path = Path("/external/video.mp4")
+            mock_resolve.return_value = external_path
+            url = local_storage_driver.create_signed_download_url(external_path)
+
+        assert url == "http://localhost:8124/external/external/video.mp4?t=1000"
+
+    def test_external_windows_file_uses_forward_slashes_in_url(self, local_storage_driver: LocalStorageDriver) -> None:
+        """External Windows-style files should produce a URL with forward slashes, not backslashes."""
+        with patch("griptape_nodes.drivers.storage.local_storage_driver.time") as mock_time:
+            mock_time.time.return_value = 1000
+
+            # Simulate a Windows absolute path by patching resolve_workspace_path
+            # to return a PurePosixPath that mimics what a Windows Path would look like after as_posix()
+            with patch("griptape_nodes.drivers.storage.local_storage_driver.resolve_workspace_path") as mock_resolve:
+                # On Windows, Path("C:/Users/foo/image.png") has str() = "C:\\Users\\foo\\image.png"
+                # but .as_posix() = "C:/Users/foo/image.png"
+                mock_path = Mock()
+                mock_path.relative_to.side_effect = ValueError("not relative")
+                mock_path.as_posix.return_value = "C:/Users/foo/image.png"
+                mock_path.__str__ = lambda _self: "C:\\Users\\foo\\image.png"
+                mock_resolve.return_value = mock_path
+                url = local_storage_driver.create_signed_download_url(Path("C:/Users/foo/image.png"))
+
+        # The URL must use forward slashes and not have backslashes
+        assert "\\" not in url
+        assert "C:/Users/foo/image.png" in url
+        assert url == "http://localhost:8124/external/C:/Users/foo/image.png?t=1000"

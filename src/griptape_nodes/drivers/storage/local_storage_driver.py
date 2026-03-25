@@ -156,8 +156,9 @@ class LocalStorageDriver(BaseStorageDriver):
             # Internal files: use workspace-relative path
             url = f"{self.base_url}/{workspace_relative_path.as_posix()}"
         except ValueError:
-            # For external files, use /external path and strip leading slash from absolute path
-            path_str = str(absolute_path).removeprefix("/")
+            # For external files, use /external path and strip leading slash from absolute path.
+            # Use as_posix() to normalize backslashes to forward slashes for URLs (important on Windows).
+            path_str = absolute_path.as_posix().removeprefix("/")
             # Build URL with /external prefix, replacing the /workspace part of base_url
             base_without_workspace = self.base_url.rsplit("/workspace", 1)[0]
             url = f"{base_without_workspace}/external/{path_str}"
