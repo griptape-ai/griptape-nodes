@@ -176,13 +176,13 @@ class StaticFilesManager:
             )
         )
 
-        if isinstance(result, GetPreviewForArtifactResultSuccess) and isinstance(result.paths_to_preview, str):
-            preview_path = Path(result.paths_to_preview)
-            logger.debug("Serving thumbnail for %s -> %s", file_path, preview_path)
-            return preview_path, result.artifact_metadata
+        if not isinstance(result, GetPreviewForArtifactResultSuccess) or not isinstance(result.paths_to_preview, str):
+            logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
+            return file_path, None
 
-        logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
-        return file_path, None
+        preview_path = Path(result.paths_to_preview)
+        logger.debug("Serving thumbnail for %s -> %s", file_path, preview_path)
+        return preview_path, result.artifact_metadata
 
     def on_handle_create_static_file_request(
         self,
