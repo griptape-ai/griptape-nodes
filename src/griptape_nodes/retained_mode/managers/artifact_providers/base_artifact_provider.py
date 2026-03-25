@@ -222,3 +222,18 @@ class BaseArtifactProvider(ABC):
             Processed bytes (or original bytes if no processing needed)
         """
         return data
+
+    @classmethod
+    def get_source_metadata(cls, source_path: str) -> dict[str, Any] | None:  # noqa: ARG003
+        """Extract original file metadata to store alongside the preview.
+
+        Override in subclasses to return format-specific metadata (e.g., image
+        dimensions, channels). Default returns None.
+
+        Args:
+            source_path: Absolute path to the source file.
+
+        Returns:
+            Metadata dict or None if not applicable.
+        """
+        return None

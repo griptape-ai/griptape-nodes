@@ -139,6 +139,7 @@ class PreviewMetadata(BaseModel):
     preview_file_names: str | dict[str, str]
     preview_generator_name: str
     preview_generator_parameters: dict[str, Any]
+    original_metadata: dict[str, Any] | None = None
 
 
 class PreviewSettings(BaseModel):
@@ -402,6 +403,7 @@ class ArtifactManager:
                 preview_file_names=preview_file_names,
                 preview_generator_name=generator_name,
                 preview_generator_parameters=deepcopy(request.preview_generator_parameters),
+                original_metadata=provider_class.get_source_metadata(source_path),
             )
 
             # Step 2: Serialize to JSON
@@ -579,6 +581,7 @@ class ArtifactManager:
                         return GetPreviewForArtifactResultSuccess(
                             result_details=f"Preview generated for '{source_path}'",
                             paths_to_preview=generate_result.paths_to_preview,
+                            original_metadata=provider_class.get_source_metadata(str(source_path)),
                         )
                     return GetPreviewForArtifactResultFailure(
                         result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: {generate_result.result_details}"
@@ -731,6 +734,7 @@ class ArtifactManager:
                 return GetPreviewForArtifactResultSuccess(
                     result_details=f"Preview regenerated for '{source_path}'",
                     paths_to_preview=generate_result.paths_to_preview,
+                    original_metadata=provider_class.get_source_metadata(str(source_path)),
                 )
             return GetPreviewForArtifactResultFailure(
                 result_details=f"Attempted to regenerate preview for '{source_path}'. Failed due to: {generate_result.result_details}"
@@ -749,6 +753,7 @@ class ArtifactManager:
         return GetPreviewForArtifactResultSuccess(
             result_details=f"Preview retrieved for '{source_path}'",
             paths_to_preview=paths_to_preview,
+            original_metadata=metadata.original_metadata,
         )
 
     def on_handle_list_artifact_providers_request(

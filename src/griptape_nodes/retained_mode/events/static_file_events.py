@@ -127,15 +127,15 @@ class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
 
     Args:
         file_path: File path or URL. Accepts:
-                   - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
-                   - Absolute paths (e.g., "/absolute/path/to/file.jpg")
-                   - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
-                   - Macro paths (e.g., "{outputs}/file.png")
+            - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
+            - Absolute paths (e.g., "/absolute/path/to/file.jpg")
+            - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
+            - Macro paths (e.g., "{outputs}/file.png")
         macro_variables: Optional variable substitutions for macro paths
-                         (e.g., {"file_name": "output", "file_ext": "png"}).
-                         Ignored for non-macro paths.
-        preview: If True, adds ?preview=true to the URL for images to serve smaller preview versions.
-                 Defaults to False.
+            (e.g., {"file_name": "output", "file_ext": "png"}).
+            Ignored for non-macro paths.
+        preview: If True, generates and returns preview(s) rather than the original file.
+            Defaults to False.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """

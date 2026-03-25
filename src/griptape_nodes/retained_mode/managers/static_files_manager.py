@@ -5,7 +5,6 @@ import threading
 from pathlib import Path
 from typing import NamedTuple
 
-from PIL import Image
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
@@ -46,6 +45,9 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SituationPolicy,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
+    ImageArtifactProvider,
+)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -59,26 +61,6 @@ SAVE_STATIC_FILE_SITUATION = "save_static_file"
 COPY_EXTERNAL_FILE_SITUATION = "copy_external_file"
 
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
-
-# Supported image extensions for preview generation
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
-
-# Maps PIL image mode to (channels, color_space) for original metadata reporting
-_PIL_MODE_INFO: dict[str, tuple[int, str]] = {
-    "L": (1, "Grayscale"),
-    "P": (1, "Palette"),
-    "RGB": (3, "RGB"),
-    "RGBA": (4, "RGBA"),
-    "CMYK": (4, "CMYK"),
-    "YCbCr": (3, "YCbCr"),
-    "LAB": (3, "LAB"),
-    "HSV": (3, "HSV"),
-    "I": (1, "Grayscale"),
-    "F": (1, "Grayscale"),
-    "LA": (2, "Grayscale+Alpha"),
-    "RGBa": (4, "RGBA"),  # spellchecker:disable-line
-    "RGBX": (4, "RGB"),
-}
 
 
 class ResolvedStaticFilePath(NamedTuple):
@@ -166,24 +148,21 @@ class StaticFilesManager:
             )
             # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop static server
 
-    def _generate_preview_if_needed(self, file_path: Path) -> Path:
+    def _generate_preview_if_needed(self, file_path: Path) -> tuple[Path, dict | None]:
         """Generate preview for an image file if needed.
 
-        Returns path to preview file if generated/cached, or original file path if:
-        - File is not an image
-        - Preview generation fails
+        Returns (path, original_metadata) where path is the preview if generated/cached,
+        or the original file path if the file is not an image or preview generation fails.
 
         Args:
             file_path: Path to the original file
 
         Returns:
-            Path to preview file or original file
+            Tuple of (path to serve, original source metadata or None)
         """
-        # Check if file is an image
-        file_extension = file_path.suffix.lower()
-        if file_extension not in IMAGE_EXTENSIONS:
+        if not ImageArtifactProvider.supports_file_extension(file_path.suffix):
             logger.debug("Skipping preview for non-image file: %s", file_path)
-            return file_path
+            return file_path, None
 
         logger.debug("Attempting to generate preview for image: %s", file_path)
         try:
@@ -196,15 +175,15 @@ class StaticFilesManager:
             )
         except Exception as e:
             logger.warning("Failed to generate preview for %s: %s", file_path, e)
-            return file_path
+            return file_path, None
 
         if isinstance(result, GetPreviewForArtifactResultSuccess) and isinstance(result.paths_to_preview, str):
             preview_path = Path(result.paths_to_preview)
             logger.debug("Serving thumbnail for %s -> %s", file_path, preview_path)
-            return preview_path
+            return preview_path, result.original_metadata
 
         logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
-        return file_path
+        return file_path, None
 
     def on_handle_create_static_file_request(
         self,
@@ -312,28 +291,27 @@ class StaticFilesManager:
             static_files_directory=static_files_directory,
         )
 
-    def _resolve_preview_path(self, file_path: Path, *, preview: bool) -> Path:
-        """Return the path to serve, generating a preview when requested.
+    def _resolve_preview_path(self, file_path: Path, *, preview: bool) -> tuple[Path, dict | None]:
+        """Return the path to serve and any source metadata, generating a preview when requested.
 
         Args:
             file_path: Path to the original file.
             preview: Whether to generate and serve a preview.
 
         Returns:
-            Path to the preview file, or original file path if preview is not
-            requested or generation fails.
+            Tuple of (path to serve, original source metadata or None).
         """
         if not preview:
             logger.debug("Serving full image for %s", file_path)
-            return file_path
+            return file_path, None
         try:
-            preview_path = self._generate_preview_if_needed(file_path)
+            preview_path, original_metadata = self._generate_preview_if_needed(file_path)
         except Exception as e:
             logger.warning("Preview generation failed for %s, using original: %s", file_path, e)
-            return file_path
+            return file_path, None
         if preview_path == file_path:
             logger.debug("Serving full image (no thumbnail available) for %s", file_path)
-        return preview_path
+        return preview_path, original_metadata
 
     def on_handle_create_static_file_download_url_from_path_request(
         self,
@@ -383,33 +361,14 @@ class StaticFilesManager:
             # For local paths, convert URI to path
             file_path_for_driver = Path(uri_to_path(file_path))
 
-        # If preview requested, generate preview and get preview path
-        file_path_to_use = self._resolve_preview_path(file_path_for_driver, preview=request.preview)
+        # If preview requested, generate preview and get preview path + source metadata
+        file_path_to_use, original_metadata = self._resolve_preview_path(file_path_for_driver, preview=request.preview)
 
         try:
             url = driver.create_signed_download_url(file_path_to_use)
         except Exception as e:
             msg = f"Failed to create presigned URL for file {file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
-
-        # Extract original image metadata via PIL's lazy header read (no full decode).
-        # Only for local image files when a preview was requested.
-        original_metadata = None
-        if request.preview and bucket_id is None and file_path_for_driver.suffix.lower() in IMAGE_EXTENSIONS:
-            try:
-                with Image.open(file_path_for_driver) as img:
-                    width, height = img.size
-                    channels, color_space = _PIL_MODE_INFO.get(img.mode, (3, img.mode))
-                    original_metadata = {
-                        "width": width,
-                        "height": height,
-                        "format": (img.format or file_path_for_driver.suffix.lstrip(".")).upper(),
-                        "channels": channels,
-                        "color_space": color_space,
-                        "file_size": file_path_for_driver.stat().st_size,
-                    }
-            except Exception as e:
-                logger.debug("Could not read original image metadata for %s: %s", file_path_for_driver, e)
 
         return CreateStaticFileDownloadUrlResultSuccess(
             url=url,
