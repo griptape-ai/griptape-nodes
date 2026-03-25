@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
     InvolvedNodesEvent,
+    NodeErrorEvent,
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
 )
@@ -518,9 +519,18 @@ class ExecuteDagState(State):
             except Exception as e:
                 context.running_tasks_count -= 1  # Decrement on error
                 logger.exception("Error collecting parameter values for node '%s'", node_reference.node_reference.name)
-                context.error_message = (
-                    f"Parameter passthrough failed for node '{node_reference.node_reference.name}': {e}"
+                error_node_name = node_reference.node_reference.name
+                await GriptapeNodes.EventManager().aput_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(
+                            payload=NodeErrorEvent(
+                                node_name=error_node_name,
+                                error_message=str(e),
+                            )
+                        )
+                    )
                 )
+                context.error_message = f"Parameter passthrough failed for node '{error_node_name}': {e}"
                 context.workflow_state = WorkflowState.ERRORED
                 return ErrorState
 
@@ -530,8 +540,19 @@ class ExecuteDagState(State):
             exceptions = node_reference.node_reference.validate_before_node_run()
             if exceptions:
                 context.running_tasks_count -= 1  # Decrement on error
-                msg = f"Node '{node_reference.node_reference.name}' encountered problems: {exceptions}"
+                validation_node_name = node_reference.node_reference.name
+                msg = f"Node '{validation_node_name}' encountered problems: {exceptions}"
                 logger.error("Canceling flow run. %s", msg)
+                await GriptapeNodes.EventManager().aput_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(
+                            payload=NodeErrorEvent(
+                                node_name=validation_node_name,
+                                error_message=str(exceptions),
+                            )
+                        )
+                    )
+                )
                 context.error_message = msg
                 context.workflow_state = WorkflowState.ERRORED
                 return ErrorState
@@ -618,6 +639,16 @@ class ExecuteDagState(State):
                     logger.exception("Error processing node '%s'", node_name)
                     msg = f"Node '{node_name}' encountered a problem: {exc}"
 
+                    await GriptapeNodes.EventManager().aput_event(
+                        ExecutionGriptapeNodeEvent(
+                            wrapped_event=ExecutionEvent(
+                                payload=NodeErrorEvent(
+                                    node_name=node_name,
+                                    error_message=str(exc),
+                                )
+                            )
+                        )
+                    )
                     context.task_to_node.pop(task)
                     context.error_message = msg
                     context.workflow_state = WorkflowState.ERRORED

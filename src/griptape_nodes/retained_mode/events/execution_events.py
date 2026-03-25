@@ -434,6 +434,13 @@ class NodeFinishProcessEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
+class NodeErrorEvent(ExecutionPayload):
+    node_name: str
+    error_message: str
+
+
+@dataclass
+@PayloadRegistry.register
 class InvolvedNodesEvent(ExecutionPayload):
     """Event indicating which nodes are involved in the current execution.
 
