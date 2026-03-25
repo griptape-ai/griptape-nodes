@@ -5,6 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel
+
 from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
     normalize_friendly_name_to_key,
 )
@@ -14,6 +16,13 @@ if TYPE_CHECKING:
         BaseArtifactPreviewGenerator,
     )
     from griptape_nodes.retained_mode.managers.artifact_providers.provider_registry import ProviderRegistry
+
+
+class BaseArtifactMetadata(BaseModel):
+    """Base model for metadata extracted from a source artifact file.
+
+    Subclass and add fields for each artifact type (e.g. ImageArtifactMetadata).
+    """
 
 
 class BaseArtifactProvider(ABC):
@@ -224,16 +233,13 @@ class BaseArtifactProvider(ABC):
         return data
 
     @classmethod
-    def get_artifact_metadata(cls, source_path: str) -> dict[str, Any] | None:  # noqa: ARG003
-        """Extract original file metadata to store alongside the preview.
+    @abstractmethod
+    def get_artifact_metadata(cls, source_path: str) -> BaseArtifactMetadata | None:
+        """Extract metadata from the source file to store alongside the preview.
 
-        Override in subclasses to return format-specific metadata (e.g., image
-        dimensions, channels). Default returns None.
+        Implement in subclasses to return format-specific metadata (e.g., image
+        dimensions and channels for images). Return None if not applicable.
 
         Args:
             source_path: Absolute path to the source file.
-
-        Returns:
-            Metadata dict or None if not applicable.
         """
-        return None

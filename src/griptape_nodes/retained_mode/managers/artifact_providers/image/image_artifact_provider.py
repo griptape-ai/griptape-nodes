@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from PIL import Image
 
@@ -14,6 +14,7 @@ from griptape_nodes.drivers.image_metadata.image_metadata_driver_registry import
 )
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import collect_workflow_metadata
 from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
+    BaseArtifactMetadata,
     BaseArtifactProvider,
 )
 
@@ -24,6 +25,17 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.provider_registry import ProviderRegistry
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class ImageArtifactMetadata(BaseArtifactMetadata):
+    """Metadata extracted from the header of an image source file."""
+
+    width: int
+    height: int
+    format: str
+    channels: int
+    color_space: str
+    file_size: int
 
 
 class ImageArtifactProvider(BaseArtifactProvider):
@@ -77,21 +89,21 @@ class ImageArtifactProvider(BaseArtifactProvider):
         return cls._PIL_MODE_INFO.get(mode, (3, mode))
 
     @classmethod
-    def get_artifact_metadata(cls, source_path: str) -> dict[str, Any] | None:
+    def get_artifact_metadata(cls, source_path: str) -> ImageArtifactMetadata | None:
         """Extract original image metadata via PIL's lazy header read (no full decode)."""
         try:
             path = Path(source_path)
             with Image.open(path) as img:
                 width, height = img.size
                 channels, color_space = cls.get_mode_info(img.mode)
-                return {
-                    "width": width,
-                    "height": height,
-                    "format": (img.format or path.suffix.lstrip(".")).upper(),
-                    "channels": channels,
-                    "color_space": color_space,
-                    "file_size": path.stat().st_size,
-                }
+                return ImageArtifactMetadata(
+                    width=width,
+                    height=height,
+                    format=(img.format or path.suffix.lstrip(".")).upper(),
+                    channels=channels,
+                    color_space=color_space,
+                    file_size=path.stat().st_size,
+                )
         except Exception:
             return None
 
