@@ -152,7 +152,7 @@ class StaticFilesManager:
     def _generate_preview_if_needed(self, file_path: Path) -> tuple[Path, dict | None]:
         """Generate preview for an image file if needed.
 
-        Returns (path, original_metadata) where path is the preview if generated/cached,
+        Returns (path, artifact_metadata) where path is the preview if generated/cached,
         or the original file path if the file is not an image or preview generation fails.
 
         Args:
@@ -179,7 +179,7 @@ class StaticFilesManager:
         if isinstance(result, GetPreviewForArtifactResultSuccess) and isinstance(result.paths_to_preview, str):
             preview_path = Path(result.paths_to_preview)
             logger.debug("Serving thumbnail for %s -> %s", file_path, preview_path)
-            return preview_path, result.original_metadata
+            return preview_path, result.artifact_metadata
 
         logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
         return file_path, None
@@ -298,19 +298,19 @@ class StaticFilesManager:
             preview: Whether to generate and serve a preview.
 
         Returns:
-            Tuple of (path to serve, original source metadata or None).
+            Tuple of (path to serve, artifact metadata or None).
         """
         if not preview:
             logger.debug("Serving full image for %s", file_path)
             return file_path, None
         try:
-            preview_path, original_metadata = self._generate_preview_if_needed(file_path)
+            preview_path, artifact_metadata = self._generate_preview_if_needed(file_path)
         except Exception as e:
             logger.warning("Preview generation failed for %s, using original: %s", file_path, e)
             return file_path, None
         if preview_path == file_path:
             logger.debug("Serving full image (no thumbnail available) for %s", file_path)
-        return preview_path, original_metadata
+        return preview_path, artifact_metadata
 
     def on_handle_create_static_file_download_url_from_path_request(
         self,
@@ -360,8 +360,8 @@ class StaticFilesManager:
             # For local paths, convert URI to path
             file_path_for_driver = Path(uri_to_path(file_path))
 
-        # If preview requested, generate preview and get preview path + source metadata
-        file_path_to_use, original_metadata = self._resolve_preview_path(file_path_for_driver, preview=request.preview)
+        # If preview requested, generate preview and get preview path + artifact metadata
+        file_path_to_use, artifact_metadata = self._resolve_preview_path(file_path_for_driver, preview=request.preview)
 
         try:
             url = driver.create_signed_download_url(file_path_to_use)
@@ -372,7 +372,7 @@ class StaticFilesManager:
         return CreateStaticFileDownloadUrlFromPathResultSuccess(
             url=url,
             file_url=driver.get_asset_url(file_path_for_driver),
-            original_metadata=original_metadata,
+            artifact_metadata=artifact_metadata,
             result_details="Successfully created static file download URL",
         )
 

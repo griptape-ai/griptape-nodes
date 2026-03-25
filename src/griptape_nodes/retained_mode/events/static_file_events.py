@@ -165,12 +165,12 @@ class CreateStaticFileDownloadUrlFromPathResultSuccess(CreateStaticFileDownloadU
     """Static file download URL created successfully from an arbitrary path.
 
     Args:
-        original_metadata: Original properties extracted from the source file header.
+        artifact_metadata: Original properties extracted from the source file header.
             Only populated when preview=True and the file is a local image.
             Contains: width, height, format, channels, color_space, file_size.
     """
 
-    original_metadata: dict | None = None
+    artifact_metadata: dict | None = None
 
 
 @dataclass

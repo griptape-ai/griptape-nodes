@@ -77,7 +77,7 @@ class ImageArtifactProvider(BaseArtifactProvider):
         return cls._PIL_MODE_INFO.get(mode, (3, mode))
 
     @classmethod
-    def get_original_metadata(cls, source_path: str) -> dict[str, Any] | None:
+    def get_artifact_metadata(cls, source_path: str) -> dict[str, Any] | None:
         """Extract original image metadata via PIL's lazy header read (no full decode)."""
         try:
             path = Path(source_path)

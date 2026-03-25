@@ -224,7 +224,7 @@ class BaseArtifactProvider(ABC):
         return data
 
     @classmethod
-    def get_original_metadata(cls, source_path: str) -> dict[str, Any] | None:  # noqa: ARG003
+    def get_artifact_metadata(cls, source_path: str) -> dict[str, Any] | None:  # noqa: ARG003
         """Extract original file metadata to store alongside the preview.
 
         Override in subclasses to return format-specific metadata (e.g., image

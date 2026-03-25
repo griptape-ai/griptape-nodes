@@ -4601,12 +4601,12 @@ class NodeManager:
         # TODO: (griptape-nodes) Don't rely on manually copying metadata fields. https://github.com/griptape-ai/griptape-nodes/issues/2862
         # Copy only position and size from original node's metadata to preserve layout.
         # We don't copy the full metadata because it contains instance-specific data that shouldn't be transferred.
-        original_metadata = all_info_result.metadata
+        artifact_metadata = all_info_result.metadata
         new_node = self.get_node_by_name(new_node_name)
-        if "position" in original_metadata:
-            new_node.metadata["position"] = copy.deepcopy(original_metadata["position"])
-        if "size" in original_metadata:
-            new_node.metadata["size"] = copy.deepcopy(original_metadata["size"])
+        if "position" in artifact_metadata:
+            new_node.metadata["position"] = copy.deepcopy(artifact_metadata["position"])
+        if "size" in artifact_metadata:
+            new_node.metadata["size"] = copy.deepcopy(artifact_metadata["size"])
 
         # NON-FATAL: Attempt to reconnect connections
         failed_incoming: list[IncomingConnection] = []

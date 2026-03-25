@@ -164,12 +164,12 @@ class GetPreviewForArtifactResultSuccess(WorkflowNotAlteredMixin, ResultPayloadS
             - str: Single preview file path (e.g., "/path/to/image.png.webp")
             - dict[str, str]: Multiple preview files with semantic keys
               (e.g., {"mask_r": "/path/to/output_R.png", "mask_g": "/path/to/output_G.png"})
-        original_metadata: Provider-extracted metadata from the source file (e.g., image
+        artifact_metadata: Provider-extracted metadata from the source file (e.g., image
             dimensions, channels). None if not available or not applicable.
     """
 
     paths_to_preview: str | dict[str, str]
-    original_metadata: dict[str, Any] | None = field(default=None)
+    artifact_metadata: dict[str, Any] | None = field(default=None)
 
 
 @dataclass
