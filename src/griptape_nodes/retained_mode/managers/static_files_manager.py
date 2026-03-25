@@ -160,6 +160,9 @@ class StaticFilesManager:
         Returns:
             Tuple of (path to serve, original source metadata or None)
         """
+        # TODO: Ask the Artifact Manager which providers support this file extension,
+        # then route to the correct provider — rather than hardcoding ImageArtifactProvider here.
+        # https://github.com/griptape-ai/griptape-nodes/issues/4251
         if not ImageArtifactProvider.supports_file_extension(file_path.suffix):
             logger.debug("Skipping preview for non-image file: %s", file_path)
             return file_path, None
