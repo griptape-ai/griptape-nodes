@@ -153,13 +153,23 @@ class CreateStaticFileDownloadUrlResultSuccess(WorkflowNotAlteredMixin, ResultPa
     Args:
         url: Presigned URL for downloading the file
         file_url: File URI (file://) for the absolute path to the file that was used to create the download URL
-        original_metadata: Original image properties extracted from the source file header.
-            Only populated when preview=True and the file is a local image.
-            Contains: width, height, format, channels, color_space, file_size.
     """
 
     url: str
     file_url: str = ""
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateStaticFileDownloadUrlFromPathResultSuccess(CreateStaticFileDownloadUrlResultSuccess):
+    """Static file download URL created successfully from an arbitrary path.
+
+    Args:
+        original_metadata: Original properties extracted from the source file header.
+            Only populated when preview=True and the file is a local image.
+            Contains: width, height, format, channels, color_space, file_size.
+    """
+
     original_metadata: dict | None = None
 
 

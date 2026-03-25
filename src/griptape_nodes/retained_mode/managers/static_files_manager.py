@@ -29,6 +29,7 @@ from griptape_nodes.retained_mode.events.project_events import (
 )
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlFromPathRequest,
+    CreateStaticFileDownloadUrlFromPathResultSuccess,
     CreateStaticFileDownloadUrlRequest,
     CreateStaticFileDownloadUrlResultFailure,
     CreateStaticFileDownloadUrlResultSuccess,
@@ -314,7 +315,7 @@ class StaticFilesManager:
     def on_handle_create_static_file_download_url_from_path_request(
         self,
         request: CreateStaticFileDownloadUrlFromPathRequest,
-    ) -> CreateStaticFileDownloadUrlResultSuccess | CreateStaticFileDownloadUrlResultFailure:
+    ) -> CreateStaticFileDownloadUrlFromPathResultSuccess | CreateStaticFileDownloadUrlResultFailure:
         """Handle request to create download URL from arbitrary file path.
 
         Args:
@@ -368,7 +369,7 @@ class StaticFilesManager:
             msg = f"Failed to create presigned URL for file {file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
-        return CreateStaticFileDownloadUrlResultSuccess(
+        return CreateStaticFileDownloadUrlFromPathResultSuccess(
             url=url,
             file_url=driver.get_asset_url(file_path_for_driver),
             original_metadata=original_metadata,
