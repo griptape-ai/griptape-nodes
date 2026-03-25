@@ -4200,7 +4200,7 @@ class WorkflowManager:
             await GriptapeNodes.ahandle_request(SaveWorkflowRequest(file_name=workflow_file_name))
 
             result = await asyncio.to_thread(publishing_handler.handler, request)
-            if isinstance(result, PublishWorkflowResultSuccess):
+            if isinstance(result, PublishWorkflowResultSuccess) and not result.skip_published_workflow_registration:
                 workflow_file = Path(result.published_workflow_file_path)
                 result = self._register_published_workflow_file(workflow_file, result)
 

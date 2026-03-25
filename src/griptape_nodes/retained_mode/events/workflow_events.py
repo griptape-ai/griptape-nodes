@@ -474,6 +474,7 @@ class PublishWorkflowResultSuccess(ResultPayloadSuccess):
 
     published_workflow_file_path: str
     metadata: dict | None = None
+    skip_published_workflow_registration: bool = False
 
 
 @dataclass
