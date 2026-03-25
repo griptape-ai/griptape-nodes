@@ -9,7 +9,7 @@ from griptape_nodes.servers.static import _serve_external_file
 class TestServeExternalFile:
     """Test _serve_external_file() path reconstruction."""
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_unix_path_reconstruction(self, tmp_path: Path) -> None:
         """Unix-style paths (no drive letter) should get a leading slash prepended."""
         test_file = tmp_path / "image.png"
@@ -23,7 +23,7 @@ class TestServeExternalFile:
 
         assert Path(response.path) == test_file
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_absolute_path_not_prepended_with_slash(self) -> None:
         """Paths that are already absolute should not get a leading slash prepended."""
         # On Windows, Path("C:/Users/foo/image.png") is already absolute.
