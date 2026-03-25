@@ -403,7 +403,7 @@ class ArtifactManager:
                 preview_file_names=preview_file_names,
                 preview_generator_name=generator_name,
                 preview_generator_parameters=deepcopy(request.preview_generator_parameters),
-                original_metadata=provider_class.get_source_metadata(source_path),
+                original_metadata=provider_class.get_original_metadata(source_path),
             )
 
             # Step 2: Serialize to JSON
@@ -581,7 +581,7 @@ class ArtifactManager:
                         return GetPreviewForArtifactResultSuccess(
                             result_details=f"Preview generated for '{source_path}'",
                             paths_to_preview=generate_result.paths_to_preview,
-                            original_metadata=provider_class.get_source_metadata(str(source_path)),
+                            original_metadata=provider_class.get_original_metadata(str(source_path)),
                         )
                     return GetPreviewForArtifactResultFailure(
                         result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: {generate_result.result_details}"
@@ -734,7 +734,7 @@ class ArtifactManager:
                 return GetPreviewForArtifactResultSuccess(
                     result_details=f"Preview regenerated for '{source_path}'",
                     paths_to_preview=generate_result.paths_to_preview,
-                    original_metadata=provider_class.get_source_metadata(str(source_path)),
+                    original_metadata=provider_class.get_original_metadata(str(source_path)),
                 )
             return GetPreviewForArtifactResultFailure(
                 result_details=f"Attempted to regenerate preview for '{source_path}'. Failed due to: {generate_result.result_details}"
