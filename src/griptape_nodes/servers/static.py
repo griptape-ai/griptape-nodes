@@ -226,8 +226,14 @@ async def _serve_external_file(file_path: str) -> FileResponse:
         msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
         raise HTTPException(status_code=500, detail=msg)
 
-    # Reconstruct absolute path by adding leading slash
-    absolute_path = Path(f"/{file_path}")
+    # Reconstruct absolute path.
+    # On Windows, the path already starts with a drive letter (e.g., "C:/Users/...") and is absolute.
+    # On Unix, the leading slash was stripped, so it needs to be re-added.
+    candidate = Path(file_path)
+    if candidate.is_absolute():
+        absolute_path = candidate
+    else:
+        absolute_path = Path(f"/{file_path}")
 
     anyio_absolute_path = anyio.Path(absolute_path)
 

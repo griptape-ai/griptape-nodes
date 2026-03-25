@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -22,3 +22,30 @@ class TestServeExternalFile:
             response = await _serve_external_file(file_path_in_url)
 
         assert Path(response.path) == test_file
+
+    @pytest.mark.anyio
+    async def test_absolute_path_not_prepended_with_slash(self) -> None:
+        """Paths that are already absolute should not get a leading slash prepended."""
+        # On Windows, Path("C:/Users/foo/image.png") is already absolute.
+        # Prepending "/" would produce "\C:\Users\..." which is invalid.
+        # We simulate this by patching Path.is_absolute to return True.
+        already_absolute_path = "C:/Users/foo/image.png"
+
+        with (
+            patch("griptape_nodes.servers.static.STATIC_SERVER_ENABLED", True),
+            patch("griptape_nodes.servers.static.Path") as mock_path_cls,
+            patch("griptape_nodes.servers.static.anyio.Path") as mock_anyio_path,
+            patch("griptape_nodes.servers.static.FileResponse") as mock_response,
+        ):
+            mock_candidate = mock_path_cls.return_value
+            mock_candidate.is_absolute.return_value = True
+            mock_anyio_instance = AsyncMock()
+            mock_anyio_instance.exists.return_value = True
+            mock_anyio_instance.is_file.return_value = True
+            mock_anyio_path.return_value = mock_anyio_instance
+
+            await _serve_external_file(already_absolute_path)
+
+            # Path() should have been called with the raw path, not with "/" prepended
+            mock_path_cls.assert_called_once_with(already_absolute_path)
+            mock_response.assert_called_once_with(mock_candidate)
