@@ -2,12 +2,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from huggingface_hub import scan_cache_dir, snapshot_download
+from huggingface_hub import scan_cache_dir
 from huggingface_hub.constants import HF_HUB_CACHE
 
 logger = logging.getLogger("griptape_nodes")
-
-_WEIGHT_FILE_EXTENSIONS = (".bin", ".safetensors")
 
 
 def list_all_repo_revisions_in_cache() -> list[tuple[str, str]]:
@@ -75,38 +73,6 @@ def list_repo_revisions_with_file_in_cache(repo_id: str, file: str) -> list[tupl
                 if any(f.file_name == file for f in revision.files):
                     results.append((repo.repo_id, revision.commit_hash))
     return results
-
-
-def assert_model_has_checkpoint_files(repo_id: str, revision: str) -> None:
-    """Raise ValueError if a cached model's snapshot is missing or has no weight files.
-
-    Prevents cryptic Transformers/Diffusers errors when a model download is incomplete
-    or corrupt. Raises if the snapshot path cannot be resolved or if no weight files
-    (.bin, .safetensors) are present.
-
-    Args:
-        repo_id: HuggingFace repository ID (e.g. 'google/t5-v1_1-xxl')
-        revision: Model revision commit hash
-    """
-    try:
-        snapshot_path = Path(snapshot_download(repo_id=repo_id, revision=revision, local_files_only=True))
-    except Exception as e:
-        msg = (
-            f"Model '{repo_id}' appears to be corrupt or incomplete — "
-            "could not locate its snapshot in the model cache. "
-            "Please delete and re-download the model in the Model Manager."
-        )
-        raise ValueError(msg) from e
-
-    checkpoint_files = [f for ext in _WEIGHT_FILE_EXTENSIONS for f in snapshot_path.glob(f"*{ext}")]
-    if not checkpoint_files:
-        ext_list = ", ".join(_WEIGHT_FILE_EXTENSIONS)
-        msg = (
-            f"Model '{repo_id}' appears to be corrupt or incomplete — "
-            f"no checkpoint files ({ext_list}) found in the model cache. "
-            "Please delete and re-download the model in the Model Manager."
-        )
-        raise ValueError(msg)
 
 
 def quick_scan_diffuser_repos(cache_dir: str) -> list[dict[str, Any]]:
