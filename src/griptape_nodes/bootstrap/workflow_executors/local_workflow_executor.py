@@ -227,6 +227,15 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         # Now let's set the input to the flow
         await self._set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
 
+        # Clear stale parameter_output_values that were pre-populated during
+        # workflow loading (via SetParameterValueRequest with initial_setup=True
+        # and is_output=True). Without this, collect_values_from_upstream_nodes
+        # reads these stale outputs instead of the updated parameter_values
+        # that were just set by _set_input_for_flow.
+        control_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        for node in control_flow.nodes.values():
+            node.parameter_output_values.silent_clear()
+
         if self._project_file_path is not None:
             await self._load_project(self._project_file_path)
 
