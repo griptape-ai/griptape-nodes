@@ -164,18 +164,13 @@ class StaticFilesManager:
             logger.debug("Skipping preview for non-image file: %s", file_path)
             return file_path, None
 
-        logger.debug("Attempting to generate preview for image: %s", file_path)
-        try:
-            result = GriptapeNodes.handle_request(
-                GetPreviewForArtifactRequest(
-                    macro_path=MacroPath(ParsedMacro(str(file_path)), {}),
-                    artifact_provider_name="Image",
-                    preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
-                )
+        result = GriptapeNodes.handle_request(
+            GetPreviewForArtifactRequest(
+                macro_path=MacroPath(ParsedMacro(str(file_path)), {}),
+                artifact_provider_name="Image",
+                preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
             )
-        except Exception as e:
-            logger.warning("Failed to generate preview for %s: %s", file_path, e)
-            return file_path, None
+        )
 
         if isinstance(result, GetPreviewForArtifactResultSuccess) and isinstance(result.paths_to_preview, str):
             preview_path = Path(result.paths_to_preview)
