@@ -468,7 +468,7 @@ class BaseNodeElement:
         badge = self.get_badge()
         return {
             "element_id": self.element_id,
-            "element_type": self.__class__.__name__,
+            "element_type": self.element_type,
             "parent_group_name": self.parent_group_name,
             "badge": badge.to_dict() if badge is not None else None,
             "children": [child.to_dict() for child in self._children],

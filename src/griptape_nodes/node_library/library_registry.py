@@ -486,14 +486,14 @@ class Library:
     ) -> BaseNode:
         """Async version of create_node that supports out-of-process execution.
 
-        When the library is marked as out-of-process, sends a create_node command
+        When the library is marked as out-of-process, sends a CreateNodeRequest
         to the worker subprocess and returns a ProxyNode. Otherwise, delegates to
         the synchronous create_node.
         """
         if not self._is_out_of_process:
             return self.create_node(node_type=node_type, name=name, metadata=metadata)
 
-        from griptape_nodes.exe_types.proxy_node import ProxyNode
+        from griptape_nodes.exe_types.proxy_node import ParameterGroupSchema, ParameterSchema, ProxyNode
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         process_manager = GriptapeNodes.LibraryProcessManager()
@@ -510,11 +510,21 @@ class Library:
             metadata=metadata,
         )
 
+        # Convert serialized schema dicts to schema objects
+        parameter_schemas = []
+        if result.parameter_schemas:
+            parameter_schemas = [ParameterSchema.from_dict(s) for s in result.parameter_schemas]
+
+        parameter_group_schemas = []
+        if result.parameter_group_schemas:
+            parameter_group_schemas = [ParameterGroupSchema.from_dict(s) for s in result.parameter_group_schemas]
+
         return ProxyNode(
             name=name,
             library_name=self._library_data.name,
             node_type=node_type,
-            parameter_schemas=result.parameter_schemas,
+            parameter_schemas=parameter_schemas,
+            parameter_group_schemas=parameter_group_schemas,
             metadata=metadata,
         )
 

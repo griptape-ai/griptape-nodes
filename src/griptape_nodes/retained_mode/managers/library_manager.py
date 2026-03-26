@@ -1445,13 +1445,13 @@ class LibraryManager:
 
                         # Worker subprocesses load libraries in-process (to avoid
                         # recursive worker spawning). The parent engine spawns workers.
-                        is_worker_process = os.environ.get("GRIPTAPE_WORKER_PROCESS")
+                        is_worker_process = os.environ.get("GRIPTAPE_WORKER_PROCESS") == "1"
 
+                        # In-process path: load advanced library and add to sys.path
+                        advanced_library_instance = None
                         if is_worker_process:
-                            # IN-PROCESS PATH: used by worker subprocesses
                             await self._add_library_paths_to_sys_path(library_data.name, file_path, base_dir)
 
-                            advanced_library_instance = None
                             if library_data.advanced_library_path:
                                 try:
                                     advanced_library_instance = self._load_advanced_library_module(
@@ -1471,34 +1471,21 @@ class LibraryManager:
                                     details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed to load Advanced Library module: {err}"
                                     return RegisterLibraryFromFileResultFailure(result_details=details)
 
-                            try:
-                                library = LibraryRegistry.generate_new_library(
-                                    library_data=library_data,
-                                    mark_as_default_library=request.load_as_default_library,
-                                    advanced_library=advanced_library_instance,
-                                )
-                            except KeyError as err:
-                                library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
-                                library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
-                                library_info.problems.append(DuplicateLibraryProblem())
-                                self._library_file_path_to_info[file_path] = library_info
-                                details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
-                                return RegisterLibraryFromFileResultFailure(result_details=details)
-                        else:
-                            # OUT-OF-PROCESS PATH: used by the parent engine
-                            try:
-                                library = LibraryRegistry.generate_new_library(
-                                    library_data=library_data,
-                                    mark_as_default_library=request.load_as_default_library,
-                                )
-                            except KeyError as err:
-                                library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
-                                library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
-                                library_info.problems.append(DuplicateLibraryProblem())
-                                self._library_file_path_to_info[file_path] = library_info
-                                details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
-                                return RegisterLibraryFromFileResultFailure(result_details=details)
+                        try:
+                            library = LibraryRegistry.generate_new_library(
+                                library_data=library_data,
+                                mark_as_default_library=request.load_as_default_library,
+                                advanced_library=advanced_library_instance,
+                            )
+                        except KeyError as err:
+                            library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
+                            library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+                            library_info.problems.append(DuplicateLibraryProblem())
+                            self._library_file_path_to_info[file_path] = library_info
+                            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
+                            return RegisterLibraryFromFileResultFailure(result_details=details)
 
+                        if not is_worker_process:
                             library.is_out_of_process = True
 
                         # Check the library's custom config settings
@@ -2620,7 +2607,7 @@ class LibraryManager:
         # Collect results
         return dict(task.result() for task in tasks)
 
-    async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
+    async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:  # noqa: C901
         if payload.skip_library_loading:
             # Register all secrets even in headless mode
             GriptapeNodes.SecretsManager().register_all_secrets()
@@ -2633,7 +2620,7 @@ class LibraryManager:
             return
 
         # Worker subprocesses only load their target library, not the full config.
-        if os.environ.get("GRIPTAPE_WORKER_PROCESS"):
+        if os.environ.get("GRIPTAPE_WORKER_PROCESS") == "1":
             for lib_path in payload.libraries_to_register:
                 await self.register_library_from_file_request(RegisterLibraryFromFileRequest(file_path=lib_path))
             return

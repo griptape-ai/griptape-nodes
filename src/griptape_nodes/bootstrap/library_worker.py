@@ -2,7 +2,7 @@
 
 This script runs in a library's venv Python process. It bootstraps a full
 GriptapeNodes engine, loads only the target library, connects to the parent
-via WebSocket, and enters a command dispatch loop.
+via WebSocket, and enters an event dispatch loop.
 
 Usage:
     python library_worker.py --library-name NAME --library-file-path PATH --session-id ID
@@ -12,30 +12,34 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import sys
 from argparse import ArgumentParser
 from typing import Any
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_sender import SubprocessWebSocketSenderMixin
-from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.ipc.protocol import (
-    CREATE_NODE,
-    CREATE_NODE_RESULT,
-    DESTROY_NODE,
-    EXECUTE_NODE,
-    EXECUTE_NODE_ERROR,
-    EXECUTE_NODE_RESULT,
-    CreateNodeCommand,
-    CreateNodeResult,
-    DestroyNodeCommand,
-    ExecuteNodeCommand,
-    ExecuteNodeResult,
-    IPCMessage,
-    ParameterSchema,
-)
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+from griptape_nodes.retained_mode.events.base_events import (
+    EventRequest,
+    EventResultFailure,
+    EventResultSuccess,
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
+    ProgressEvent,
+    ResultPayload,
+    deserialize_event,
+)
+from griptape_nodes.retained_mode.events.execution_events import (
+    ExecuteRemoteNodeRequest,
+    ExecuteRemoteNodeResultFailure,
+    ExecuteRemoteNodeResultSuccess,
+    GriptapeEvent,
+)
+from griptape_nodes.retained_mode.events.node_events import (
+    CreateNodeRequest,
+    CreateNodeResultFailure,
+    CreateNodeResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger(__name__)
@@ -45,7 +49,7 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
     """Worker process that hosts a single library's nodes.
 
     Bootstraps a full GriptapeNodes engine, loads only the target library,
-    and processes IPC commands from the parent engine.
+    and processes events from the parent engine.
     """
 
     def __init__(self, library_name: str, library_file_path: str, session_id: str) -> None:
@@ -71,76 +75,84 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
         logger.info("Worker for library '%s' initialized and connected", self._library_name)
 
     async def run(self) -> None:
-        """Subscribe to commands and enter the dispatch loop."""
+        """Subscribe to events and enter the dispatch loop."""
         if self._ws_client is None:
             msg = "WebSocket client not available."
             raise RuntimeError(msg)
 
-        # Signal to the parent that this worker is ready to accept commands
-        self.send_event("worker_ready", json.dumps({"session_id": self._session_id}))
+        # Signal to the parent that this worker is ready to accept events
+        self.send_event("worker_ready", "{}")
 
         topic = f"sessions/{self._session_id}/commands"
         await self._ws_client.subscribe(topic)
 
-        logger.info("Worker for library '%s' listening for commands on topic '%s'", self._library_name, topic)
+        logger.info("Worker for library '%s' listening on topic '%s'", self._library_name, topic)
 
         async for message in self._ws_client.messages:
             try:
-                await self._dispatch_message(message)
+                await self._dispatch_event(message)
             except Exception:
-                logger.exception("Error dispatching message in worker '%s'", self._library_name)
+                logger.exception("Error dispatching event in worker '%s'", self._library_name)
 
     async def shutdown(self) -> None:
         """Clean up resources."""
         await self._stop_websocket_connection()
 
-    async def _dispatch_message(self, message: dict[str, Any]) -> None:
-        """Parse an IPC message and dispatch to the appropriate handler."""
+    async def _dispatch_event(self, message: dict[str, Any]) -> None:
+        """Deserialize an incoming event and dispatch to the appropriate handler."""
         payload = message.get("payload", message)
-        ipc_message = IPCMessage.from_dict(payload)
+        event = deserialize_event(payload)
 
-        logger.debug(
-            "Worker '%s' received command: type=%s, id=%s",
-            self._library_name,
-            ipc_message.message_type,
-            ipc_message.message_id,
-        )
+        if not isinstance(event, EventRequest):
+            logger.warning("Worker '%s' received non-request event: %s", self._library_name, type(event).__name__)
+            return
 
-        response: dict[str, Any]
-        if ipc_message.message_type == CREATE_NODE:
-            response = await self._handle_create_node(ipc_message)
-        elif ipc_message.message_type == EXECUTE_NODE:
-            response = await self._handle_execute_node(ipc_message)
-        elif ipc_message.message_type == DESTROY_NODE:
-            response = await self._handle_destroy_node(ipc_message)
+        request = event.request
+        request_id = event.request_id
+
+        if isinstance(request, CreateNodeRequest):
+            self._handle_create_node(request, request_id=request_id)
+        elif isinstance(request, ExecuteRemoteNodeRequest):
+            await self._handle_execute_remote_node(request, request_id=request_id)
         else:
-            response = {
-                "message_id": ipc_message.message_id,
-                "message_type": "error",
-                "payload": {"error": f"Unknown message type: {ipc_message.message_type}"},
-            }
+            # Forward all other requests through the standard event system
+            result = await GriptapeNodes.ahandle_request(request)
+            self._send_result_event(request, result, request_id=request_id)
 
-        self._send_response(response)
-
-    async def _handle_create_node(self, ipc_message: IPCMessage) -> dict[str, Any]:
-        """Create a node instance and return its parameter schema."""
-        cmd = CreateNodeCommand.from_payload(ipc_message.payload)
-        logger.info("Creating node '%s' (type=%s) in worker '%s'", cmd.node_name, cmd.node_type, self._library_name)
-
+    def _handle_create_node(self, request: CreateNodeRequest, *, request_id: str | None = None) -> None:
+        """Create a node directly via LibraryRegistry and register it locally."""
+        from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+        from griptape_nodes.exe_types.proxy_node import ParameterGroupSchema, ParameterSchema
         from griptape_nodes.node_library.library_registry import LibraryRegistry
 
-        node = await LibraryRegistry.acreate_node(
-            node_type=cmd.node_type,
-            name=cmd.node_name,
-            metadata=cmd.metadata,
-            specific_library_name=self._library_name,
-        )
-        self._nodes[cmd.node_name] = node
+        node_type = request.node_type
+        node_name = request.node_name or node_type
+        logger.info("Creating node '%s' (type=%s) in worker '%s'", node_name, node_type, self._library_name)
 
-        # Serialize parameter schema
+        try:
+            node = LibraryRegistry.create_node(
+                node_type=node_type,
+                name=node_name,
+                metadata=request.metadata,
+                specific_library_name=self._library_name,
+            )
+        except Exception as e:
+            logger.exception("Failed to create node '%s' in worker '%s'", node_name, self._library_name)
+            result = CreateNodeResultFailure(
+                result_details=f"Failed to create node '{node_name}': {e}",
+            )
+            self._send_result_event(request, result, request_id=request_id)
+            return
+
+        self._nodes[node_name] = node
+
+        # Build parameter schemas from the real node
         parameter_schemas = []
         for param in node.parameters:
             if isinstance(param, Parameter):
+                # Determine display_name from ui_options if present
+                display_name = param.ui_options.get("display_name") if param.ui_options else None
+
                 schema = ParameterSchema(
                     name=param.name,
                     type=param.type,
@@ -150,68 +162,75 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
                     default_value=param.default_value,
                     tooltip=param.tooltip if isinstance(param.tooltip, str) else "",
                     ui_options=param.ui_options or None,
+                    element_type=param.element_type,
+                    display_name=display_name,
                 )
-                parameter_schemas.append(schema)
+                parameter_schemas.append(schema.to_dict())
 
-        result = CreateNodeResult(
-            node_name=cmd.node_name,
+        # Build parameter group schemas from the real node
+        parameter_group_schemas = []
+        for group in node.root_ui_element.find_elements_by_type(ParameterGroup):
+            group_schema = ParameterGroupSchema(
+                name=group.name,
+                ui_options=group.ui_options or None,
+            )
+            parameter_group_schemas.append(group_schema.to_dict())
+
+        result = CreateNodeResultSuccess(
+            node_name=node_name,
+            node_type=node_type,
+            specific_library_name=self._library_name,
             parameter_schemas=parameter_schemas,
+            parameter_group_schemas=parameter_group_schemas,
+            result_details=f"Node '{node_name}' created successfully.",
         )
+        self._send_result_event(request, result, request_id=request_id)
 
-        logger.info(
-            "Node '%s' created in worker '%s' with %d parameter(s)",
-            cmd.node_name,
-            self._library_name,
-            len(parameter_schemas),
-        )
+    async def _handle_execute_remote_node(
+        self, request: ExecuteRemoteNodeRequest, *, request_id: str | None = None
+    ) -> None:
+        """Execute a node's aprocess() and return outputs."""
+        node_name = request.node_name
 
-        return {
-            "message_id": ipc_message.message_id,
-            "message_type": CREATE_NODE_RESULT,
-            "payload": result.to_payload(),
-        }
+        if node_name not in self._nodes:
+            logger.warning("Unknown node '%s' in worker '%s'", node_name, self._library_name)
+            result = ExecuteRemoteNodeResultFailure(
+                node_name=node_name,
+                result_details=f"Node '{node_name}' not found in worker '{self._library_name}'.",
+            )
+            self._send_result_event(request, result, request_id=request_id)
+            return
 
-    async def _handle_execute_node(self, ipc_message: IPCMessage) -> dict[str, Any]:
-        """Execute a node and return serialized outputs."""
-        cmd = ExecuteNodeCommand.from_payload(ipc_message.payload)
-
-        if cmd.node_name not in self._nodes:
-            logger.warning("Attempted to execute unknown node '%s' in worker '%s'", cmd.node_name, self._library_name)
-            return {
-                "message_id": ipc_message.message_id,
-                "message_type": EXECUTE_NODE_ERROR,
-                "payload": {"node_name": cmd.node_name, "error": f"Node '{cmd.node_name}' not found."},
-            }
-
-        node = self._nodes[cmd.node_name]
-
-        logger.info("Executing node '%s' in worker '%s'", cmd.node_name, self._library_name)
+        node = self._nodes[node_name]
+        logger.info("Executing node '%s' in worker '%s'", node_name, self._library_name)
 
         # Hydrate parameter values
-        for param_name, value in cmd.parameter_values.items():
+        for param_name, value in request.parameter_values.items():
             node.parameter_values[param_name] = value
 
         # Set entry control parameter if provided
-        if cmd.entry_control_parameter_name:
-            param = node.get_parameter_by_name(cmd.entry_control_parameter_name)
+        if request.entry_control_parameter_name:
+            param = node.get_parameter_by_name(request.entry_control_parameter_name)
             if param is not None:
                 node.set_entry_control_parameter(param)
 
         node.parameter_output_values.silent_clear()
 
-        # Start draining execution events from the worker's EventManager queue
-        # so they can be forwarded to the parent for UI display
+        # Drain execution events from the worker's EventManager queue
+        # and forward them to the parent for UI display
         drain_task = asyncio.create_task(self._drain_event_queue())
 
         try:
             await node.aprocess()
         except Exception as e:
-            logger.exception("Node '%s' execution failed in worker '%s'", cmd.node_name, self._library_name)
-            return {
-                "message_id": ipc_message.message_id,
-                "message_type": EXECUTE_NODE_ERROR,
-                "payload": {"node_name": cmd.node_name, "error": str(e)},
-            }
+            logger.exception("Node '%s' execution failed in worker '%s'", node_name, self._library_name)
+            result = ExecuteRemoteNodeResultFailure(
+                node_name=node_name,
+                result_details=f"Node '{node_name}' execution failed: {e}",
+                exception=e,
+            )
+            self._send_result_event(request, result, request_id=request_id)
+            return
         finally:
             drain_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -221,59 +240,23 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
         next_control = node.get_next_control_output()
         next_control_name = next_control.name if next_control else None
 
-        result = ExecuteNodeResult(
-            node_name=cmd.node_name,
+        result = ExecuteRemoteNodeResultSuccess(
+            node_name=node_name,
             parameter_output_values=dict(node.parameter_output_values),
             next_control_output_name=next_control_name,
+            result_details=f"Node '{node_name}' executed successfully.",
         )
+        self._send_result_event(request, result, request_id=request_id)
 
-        logger.info(
-            "Node '%s' execution complete in worker '%s' with %d output(s)",
-            cmd.node_name,
-            self._library_name,
-            len(result.parameter_output_values),
-        )
-
-        return {
-            "message_id": ipc_message.message_id,
-            "message_type": EXECUTE_NODE_RESULT,
-            "payload": result.to_payload(),
-        }
-
-    async def _handle_destroy_node(self, ipc_message: IPCMessage) -> dict[str, Any]:
-        """Destroy a node instance."""
-        cmd = DestroyNodeCommand.from_payload(ipc_message.payload)
-
-        if cmd.node_name not in self._nodes:
-            return {
-                "message_id": ipc_message.message_id,
-                "message_type": "error",
-                "payload": {"error": f"Node '{cmd.node_name}' not found."},
-            }
-
-        del self._nodes[cmd.node_name]
-        logger.info("Node '%s' destroyed in worker '%s'", cmd.node_name, self._library_name)
-
-        return {
-            "message_id": ipc_message.message_id,
-            "message_type": DESTROY_NODE + "_result",
-            "payload": {"node_name": cmd.node_name},
-        }
+    def register_node(self, node_name: str, node: Any) -> None:
+        """Register a node instance created by the standard event system."""
+        self._nodes[node_name] = node
 
     async def _drain_event_queue(self) -> None:
         """Read events from the worker's EventManager queue and forward to parent.
 
-        Runs as a background task during node execution. Handles the same event
-        types as local_session_workflow_executor.py (ExecutionGriptapeNodeEvent,
-        ProgressEvent).
+        Runs as a background task during node execution.
         """
-        from griptape_nodes.retained_mode.events.base_events import (
-            ExecutionEvent,
-            ExecutionGriptapeNodeEvent,
-            ProgressEvent,
-        )
-        from griptape_nodes.retained_mode.events.execution_events import GriptapeEvent
-
         event_queue = GriptapeNodes.EventManager().event_queue
         while True:
             event = await event_queue.get()
@@ -283,7 +266,7 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
 
             try:
                 if isinstance(event, ExecutionGriptapeNodeEvent):
-                    self.send_event("event_broadcast", event.wrapped_event.json())
+                    self.send_event("execution_event", event.wrapped_event.json())
                 elif isinstance(event, ProgressEvent):
                     payload = GriptapeEvent(
                         node_name=event.node_name,
@@ -292,15 +275,20 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
                         value=event.value,
                     )
                     execution_event = ExecutionEvent(payload=payload)
-                    self.send_event("event_broadcast", execution_event.json())
+                    self.send_event("execution_event", execution_event.json())
             except Exception:
                 logger.exception("Failed to forward event from worker '%s'", self._library_name)
 
             event_queue.task_done()
 
-    def _send_response(self, response: dict[str, Any]) -> None:
-        """Send a response back to the parent via WebSocket."""
-        self.send_event("ipc_response", json.dumps(response))
+    def _send_result_event(self, request: Any, result: ResultPayload, *, request_id: str | None = None) -> None:
+        """Send a result event back to the parent via WebSocket."""
+        if result.succeeded():
+            event = EventResultSuccess(request=request, result=result, request_id=request_id)
+            self.send_event("success_result", event.json())
+        else:
+            event = EventResultFailure(request=request, result=result, request_id=request_id)
+            self.send_event("failure_result", event.json())
 
 
 async def _async_main(library_name: str, library_file_path: str, session_id: str) -> None:

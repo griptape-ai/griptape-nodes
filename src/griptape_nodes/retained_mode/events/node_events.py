@@ -94,6 +94,8 @@ class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
         specific_library_name: Library that provided this node type
         parent_flow_name: Name of the flow the node was created in
         parent_group_name: Name of the group this node belongs to (None if not in a group)
+        parameter_schemas: Serialized parameter definitions for proxy node construction.
+            Populated by library worker subprocesses for out-of-process node creation.
     """
 
     node_name: str
@@ -101,6 +103,8 @@ class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     specific_library_name: str | None = None
     parent_flow_name: str | None = None
     parent_group_name: str | None = None
+    parameter_schemas: list[dict[str, Any]] | None = None
+    parameter_group_schemas: list[dict[str, Any]] | None = None
 
 
 @dataclass

@@ -1,6 +1,6 @@
 """Unit tests for process-isolated library execution components.
 
-Tests for ProxyNode, IPC protocol, and LibraryProcessManager.
+Tests for ProxyNode and event-based communication.
 """
 
 from __future__ import annotations
@@ -10,83 +10,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from griptape_nodes.exe_types.core_types import ParameterMode
-from griptape_nodes.exe_types.proxy_node import ProxyNode
-from griptape_nodes.ipc.protocol import (
-    CREATE_NODE,
-    CreateNodeCommand,
-    CreateNodeResult,
-    ExecuteNodeCommand,
-    ExecuteNodeResult,
-    IPCMessage,
-    ParameterSchema,
+from griptape_nodes.exe_types.proxy_node import ParameterSchema, ProxyNode
+from griptape_nodes.retained_mode.events.execution_events import (
+    ExecuteRemoteNodeRequest,
+    ExecuteRemoteNodeResultSuccess,
 )
 
 
-class TestIPCProtocol:
-    """Tests for IPC message serialization round-trips."""
+class TestParameterSchema:
+    """Tests for ParameterSchema serialization round-trips."""
 
-    def test_ipc_message_roundtrip(self) -> None:
-        msg = IPCMessage(message_id="abc123", message_type=CREATE_NODE, payload={"node_type": "Foo"})
-        data = msg.to_dict()
-        restored = IPCMessage.from_dict(data)
-
-        assert restored.message_id == "abc123"
-        assert restored.message_type == CREATE_NODE
-        assert restored.payload == {"node_type": "Foo"}
-
-    def test_create_node_command_roundtrip(self) -> None:
-        cmd = CreateNodeCommand(node_type="MergeTexts", node_name="merge1", metadata={"library": "standard"})
-        payload = cmd.to_payload()
-        restored = CreateNodeCommand.from_payload(payload)
-
-        assert restored.node_type == "MergeTexts"
-        assert restored.node_name == "merge1"
-        assert restored.metadata == {"library": "standard"}
-
-    def test_execute_node_command_roundtrip(self) -> None:
-        cmd = ExecuteNodeCommand(
-            node_name="merge1",
-            parameter_values={"input_1": "hello", "input_2": "world"},
-            entry_control_parameter_name="exec",
-        )
-        payload = cmd.to_payload()
-        restored = ExecuteNodeCommand.from_payload(payload)
-
-        assert restored.node_name == "merge1"
-        assert restored.parameter_values == {"input_1": "hello", "input_2": "world"}
-        assert restored.entry_control_parameter_name == "exec"
-
-    def test_create_node_result_roundtrip(self) -> None:
-        result = CreateNodeResult(
-            node_name="merge1",
-            parameter_schemas=[
-                ParameterSchema(name="input_1", type="str", input_types=["str"], output_type="str"),
-                ParameterSchema(name="output", type="str", output_type="str", allowed_modes=["OUTPUT"]),
-            ],
-        )
-        payload = result.to_payload()
-        restored = CreateNodeResult.from_payload(payload)
-
-        assert restored.node_name == "merge1"
-        expected_schema_count = 2
-        assert len(restored.parameter_schemas) == expected_schema_count
-        assert restored.parameter_schemas[0].name == "input_1"
-        assert restored.parameter_schemas[1].allowed_modes == ["OUTPUT"]
-
-    def test_execute_node_result_roundtrip(self) -> None:
-        result = ExecuteNodeResult(
-            node_name="merge1",
-            parameter_output_values={"output": "hello world"},
-            next_control_output_name="exec_out",
-        )
-        payload = result.to_payload()
-        restored = ExecuteNodeResult.from_payload(payload)
-
-        assert restored.node_name == "merge1"
-        assert restored.parameter_output_values == {"output": "hello world"}
-        assert restored.next_control_output_name == "exec_out"
-
-    def test_parameter_schema_roundtrip(self) -> None:
+    def test_roundtrip(self) -> None:
         schema = ParameterSchema(
             name="input_1",
             type="str",
@@ -106,6 +40,33 @@ class TestIPCProtocol:
         assert restored.allowed_modes == ["INPUT", "PROPERTY"]
         assert restored.default_value == "default"
         assert restored.tooltip == "A tooltip"
+
+
+class TestExecuteRemoteNodeEvents:
+    """Tests for ExecuteRemoteNodeRequest/Result event types."""
+
+    def test_request_fields(self) -> None:
+        request = ExecuteRemoteNodeRequest(
+            node_name="merge1",
+            parameter_values={"input_1": "hello", "input_2": "world"},
+            entry_control_parameter_name="exec",
+        )
+
+        assert request.node_name == "merge1"
+        assert request.parameter_values == {"input_1": "hello", "input_2": "world"}
+        assert request.entry_control_parameter_name == "exec"
+
+    def test_result_fields(self) -> None:
+        result = ExecuteRemoteNodeResultSuccess(
+            node_name="merge1",
+            parameter_output_values={"output": "hello world"},
+            next_control_output_name="exec_out",
+            result_details="Success",
+        )
+
+        assert result.node_name == "merge1"
+        assert result.parameter_output_values == {"output": "hello world"}
+        assert result.next_control_output_name == "exec_out"
 
 
 class TestProxyNode:
@@ -176,10 +137,11 @@ class TestProxyNode:
         proxy = self._make_proxy()
         proxy.parameter_values["input_1"] = "hello"
 
-        mock_result = ExecuteNodeResult(
+        mock_result = ExecuteRemoteNodeResultSuccess(
             node_name="test_proxy",
             parameter_output_values={"output": "hello world"},
             next_control_output_name=None,
+            result_details="Success",
         )
 
         mock_process_manager = AsyncMock()
@@ -211,10 +173,11 @@ class TestProxyNode:
         ]
         proxy = self._make_proxy(schemas=schemas)
 
-        mock_result = ExecuteNodeResult(
+        mock_result = ExecuteRemoteNodeResultSuccess(
             node_name="test_proxy",
             parameter_output_values={},
             next_control_output_name="exec_out",
+            result_details="Success",
         )
 
         mock_process_manager = AsyncMock()

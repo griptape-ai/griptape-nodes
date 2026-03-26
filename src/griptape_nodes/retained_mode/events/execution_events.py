@@ -458,3 +458,53 @@ class GriptapeEvent(ExecutionPayload):
     parameter_name: str
     type: str
     value: Any
+
+
+# --- Remote node execution (process-isolated libraries) ---
+
+
+@dataclass
+@PayloadRegistry.register
+class ExecuteRemoteNodeRequest(RequestPayload):
+    """Execute a node's aprocess() in a library worker subprocess.
+
+    Sent by ProxyNode to its library's worker. The worker hydrates the
+    real node's parameters, calls aprocess(), and returns outputs.
+
+    Args:
+        node_name: Name of the node instance in the worker.
+        parameter_values: Input parameter values to hydrate before execution.
+        entry_control_parameter_name: Name of the entry control parameter, if any.
+    """
+
+    node_name: str
+    parameter_values: dict[str, Any] = field(default_factory=dict)
+    entry_control_parameter_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ExecuteRemoteNodeResultSuccess(ResultPayloadSuccess):
+    """Successful result from executing a node in a library worker.
+
+    Args:
+        node_name: Name of the executed node.
+        parameter_output_values: Output parameter values from the node.
+        next_control_output_name: Name of the selected control output, if any.
+    """
+
+    node_name: str = ""
+    parameter_output_values: dict[str, Any] = field(default_factory=dict)
+    next_control_output_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ExecuteRemoteNodeResultFailure(ResultPayloadFailure):
+    """Failed result from executing a node in a library worker.
+
+    Args:
+        node_name: Name of the node that failed.
+    """
+
+    node_name: str = ""
