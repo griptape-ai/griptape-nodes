@@ -127,19 +127,22 @@ class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
 
     Args:
         file_path: File path or URL. Accepts:
-                   - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
-                   - Absolute paths (e.g., "/absolute/path/to/file.jpg")
-                   - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
-                   - Macro paths (e.g., "{outputs}/file.png")
+            - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
+            - Absolute paths (e.g., "/absolute/path/to/file.jpg")
+            - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
+            - Macro paths (e.g., "{outputs}/file.png")
         macro_variables: Optional variable substitutions for macro paths
-                         (e.g., {"file_name": "output", "file_ext": "png"}).
-                         Ignored for non-macro paths.
+            (e.g., {"file_name": "output", "file_ext": "png"}).
+            Ignored for non-macro paths.
+        preview: If True, generates and returns preview(s) rather than the original file.
+            Defaults to False.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """
 
     file_path: str
     macro_variables: MacroVariables = field(default_factory=dict)
+    preview: bool = False
 
 
 @dataclass
@@ -154,6 +157,20 @@ class CreateStaticFileDownloadUrlResultSuccess(WorkflowNotAlteredMixin, ResultPa
 
     url: str
     file_url: str = ""
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateStaticFileDownloadUrlFromPathResultSuccess(CreateStaticFileDownloadUrlResultSuccess):
+    """Static file download URL created successfully from an arbitrary path.
+
+    Args:
+        artifact_metadata: Original properties extracted from the source file header.
+            Only populated when preview=True and the file is a local image.
+            Contains: width, height, format, channels, color_space, file_size.
+    """
+
+    artifact_metadata: dict | None = None
 
 
 @dataclass

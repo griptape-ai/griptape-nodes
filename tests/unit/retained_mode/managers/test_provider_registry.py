@@ -53,6 +53,10 @@ class TestProviderRegistry:
             def get_default_preview_generators(cls) -> list:
                 return []
 
+            @classmethod
+            def get_artifact_metadata(cls, _source_path: str) -> None:
+                return None
+
         registry = ProviderRegistry()
         registry.register_provider(TestProvider)
 
@@ -65,7 +69,7 @@ class TestProviderRegistry:
         assert "test" in registry._friendly_name_to_provider_class
         assert registry._friendly_name_to_provider_class["test"] is TestProvider
 
-    def test_register_provider_duplicate_friendly_name_raises(self) -> None:
+    def test_register_provider_duplicate_friendly_name_raises(self) -> None:  # noqa: C901
         """Test that registering a provider with duplicate friendly name raises ValueError."""
 
         class Provider1(BaseArtifactProvider):
@@ -85,6 +89,10 @@ class TestProviderRegistry:
             def get_default_preview_generators(cls) -> list:
                 return []
 
+            @classmethod
+            def get_artifact_metadata(cls, _source_path: str) -> None:
+                return None
+
         class Provider2(BaseArtifactProvider):
             @classmethod
             def get_friendly_name(cls) -> str:
@@ -102,13 +110,17 @@ class TestProviderRegistry:
             def get_default_preview_generators(cls) -> list:
                 return []
 
+            @classmethod
+            def get_artifact_metadata(cls, _source_path: str) -> None:
+                return None
+
         registry = ProviderRegistry()
         registry.register_provider(Provider1)
 
         with pytest.raises(ValueError, match="duplicate friendly name"):
             registry.register_provider(Provider2)
 
-    def test_register_provider_case_insensitive_duplicate_raises(self) -> None:
+    def test_register_provider_case_insensitive_duplicate_raises(self) -> None:  # noqa: C901
         """Test that friendly name duplicate detection is case-insensitive."""
 
         class UpperProvider(BaseArtifactProvider):
@@ -128,6 +140,10 @@ class TestProviderRegistry:
             def get_default_preview_generators(cls) -> list:
                 return []
 
+            @classmethod
+            def get_artifact_metadata(cls, _source_path: str) -> None:
+                return None
+
         class LowerProvider(BaseArtifactProvider):
             @classmethod
             def get_friendly_name(cls) -> str:
@@ -144,6 +160,10 @@ class TestProviderRegistry:
             @classmethod
             def get_default_preview_generators(cls) -> list:
                 return []
+
+            @classmethod
+            def get_artifact_metadata(cls, _source_path: str) -> None:
+                return None
 
         registry = ProviderRegistry()
         registry.register_provider(UpperProvider)
@@ -226,6 +246,10 @@ class TestProviderRegistry:
             def get_default_preview_generators(cls) -> list:
                 return []
 
+            @classmethod
+            def get_artifact_metadata(cls, _source_path: str) -> None:
+                return None
+
         registry = ProviderRegistry()
         registry.register_provider(ImageArtifactProvider)
         registry.register_provider(AlternateImageProvider)
@@ -283,6 +307,10 @@ class TestProviderRegistry:
             def get_default_preview_generators(cls) -> list:
                 return []
 
+            @classmethod
+            def get_artifact_metadata(cls, _source_path: str) -> None:
+                return None
+
         class TestProvider2(BaseArtifactProvider):
             @classmethod
             def get_friendly_name(cls) -> str:
@@ -307,6 +335,10 @@ class TestProviderRegistry:
             @classmethod
             def get_default_preview_generators(cls) -> list:
                 return []
+
+            @classmethod
+            def get_artifact_metadata(cls, _source_path: str) -> None:
+                return None
 
         registry = ProviderRegistry()
         registry.register_provider(TestProvider1)
@@ -347,6 +379,10 @@ class TestProviderRegistry:
             @classmethod
             def get_default_preview_generators(cls) -> list:
                 return []
+
+            @classmethod
+            def get_artifact_metadata(cls, _source_path: str) -> None:
+                return None
 
         registry = ProviderRegistry()
         registry.register_provider(ImageArtifactProvider)

@@ -139,6 +139,7 @@ class PreviewMetadata(BaseModel):
     preview_file_names: str | dict[str, str]
     preview_generator_name: str
     preview_generator_parameters: dict[str, Any]
+    artifact_metadata: dict[str, Any] | None = None
 
 
 class PreviewSettings(BaseModel):
@@ -394,6 +395,7 @@ class ArtifactManager:
                 return GeneratePreviewResultFailure(result_details=error_details)
 
             # Step 1: Create metadata object
+            _artifact_metadata = provider_class.get_artifact_metadata(source_path)
             metadata = PreviewMetadata(
                 version=PreviewMetadata.LATEST_SCHEMA_VERSION,
                 source_macro_path=request.macro_path.parsed_macro.template,
@@ -402,6 +404,7 @@ class ArtifactManager:
                 preview_file_names=preview_file_names,
                 preview_generator_name=generator_name,
                 preview_generator_parameters=deepcopy(request.preview_generator_parameters),
+                artifact_metadata=_artifact_metadata.model_dump() if _artifact_metadata else None,
             )
 
             # Step 2: Serialize to JSON
@@ -576,9 +579,11 @@ class ArtifactManager:
                     generate_result = await self.on_handle_generate_preview_from_defaults_request(generate_request)
 
                     if isinstance(generate_result, GeneratePreviewFromDefaultsResultSuccess):
+                        _artifact_metadata = provider_class.get_artifact_metadata(str(source_path))
                         return GetPreviewForArtifactResultSuccess(
                             result_details=f"Preview generated for '{source_path}'",
                             paths_to_preview=generate_result.paths_to_preview,
+                            artifact_metadata=_artifact_metadata.model_dump() if _artifact_metadata else None,
                         )
                     return GetPreviewForArtifactResultFailure(
                         result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: {generate_result.result_details}"
@@ -728,9 +733,11 @@ class ArtifactManager:
             generate_result = await self.on_handle_generate_preview_from_defaults_request(generate_request)
 
             if isinstance(generate_result, GeneratePreviewFromDefaultsResultSuccess):
+                _artifact_metadata = provider_class.get_artifact_metadata(str(source_path))
                 return GetPreviewForArtifactResultSuccess(
                     result_details=f"Preview regenerated for '{source_path}'",
                     paths_to_preview=generate_result.paths_to_preview,
+                    artifact_metadata=_artifact_metadata.model_dump() if _artifact_metadata else None,
                 )
             return GetPreviewForArtifactResultFailure(
                 result_details=f"Attempted to regenerate preview for '{source_path}'. Failed due to: {generate_result.result_details}"
@@ -749,6 +756,7 @@ class ArtifactManager:
         return GetPreviewForArtifactResultSuccess(
             result_details=f"Preview retrieved for '{source_path}'",
             paths_to_preview=paths_to_preview,
+            artifact_metadata=metadata.artifact_metadata,
         )
 
     def on_handle_list_artifact_providers_request(

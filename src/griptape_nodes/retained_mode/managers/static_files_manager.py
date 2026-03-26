@@ -14,15 +14,22 @@ from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import Griptap
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+from griptape_nodes.retained_mode.events.artifact_events import (
+    GetPreviewForArtifactRequest,
+    GetPreviewForArtifactResultSuccess,
+    PreviewGenerationPolicy,
+)
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
     GetSituationRequest,
     GetSituationResultSuccess,
+    MacroPath,
 )
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlFromPathRequest,
+    CreateStaticFileDownloadUrlFromPathResultSuccess,
     CreateStaticFileDownloadUrlRequest,
     CreateStaticFileDownloadUrlResultFailure,
     CreateStaticFileDownloadUrlResultSuccess,
@@ -39,6 +46,9 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SituationPolicy,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
+    ImageArtifactProvider,
+)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -138,6 +148,41 @@ class StaticFilesManager:
                 self.on_app_initialization_complete,
             )
             # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop static server
+
+    def _generate_preview_if_needed(self, file_path: Path) -> tuple[Path, dict | None]:
+        """Generate preview for an image file if needed.
+
+        Returns (path, artifact_metadata) where path is the preview if generated/cached,
+        or the original file path if the file is not an image or preview generation fails.
+
+        Args:
+            file_path: Path to the original file
+
+        Returns:
+            Tuple of (path to serve, original source metadata or None)
+        """
+        # TODO: Ask the Artifact Manager which providers support this file extension,
+        # then route to the correct provider — rather than hardcoding ImageArtifactProvider here.
+        # https://github.com/griptape-ai/griptape-nodes/issues/4251
+        if not ImageArtifactProvider.supports_file_extension(file_path.suffix):
+            logger.debug("Skipping preview for non-image file: %s", file_path)
+            return file_path, None
+
+        result = GriptapeNodes.handle_request(
+            GetPreviewForArtifactRequest(
+                macro_path=MacroPath(ParsedMacro(str(file_path)), {}),
+                artifact_provider_name="Image",
+                preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
+            )
+        )
+
+        if not isinstance(result, GetPreviewForArtifactResultSuccess) or not isinstance(result.paths_to_preview, str):
+            logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
+            return file_path, None
+
+        preview_path = Path(result.paths_to_preview)
+        logger.debug("Serving thumbnail for %s -> %s", file_path, preview_path)
+        return preview_path, result.artifact_metadata
 
     def on_handle_create_static_file_request(
         self,
@@ -245,19 +290,42 @@ class StaticFilesManager:
             static_files_directory=static_files_directory,
         )
 
+    def _resolve_preview_path(self, file_path: Path, *, preview: bool) -> tuple[Path, dict | None]:
+        """Return the path to serve and any source metadata, generating a preview when requested.
+
+        Args:
+            file_path: Path to the original file.
+            preview: Whether to generate and serve a preview.
+
+        Returns:
+            Tuple of (path to serve, artifact metadata or None).
+        """
+        if not preview:
+            logger.debug("Serving full image for %s", file_path)
+            return file_path, None
+        try:
+            preview_path, artifact_metadata = self._generate_preview_if_needed(file_path)
+        except Exception as e:
+            logger.warning("Preview generation failed for %s, using original: %s", file_path, e)
+            return file_path, None
+        if preview_path == file_path:
+            logger.debug("Serving full image (no thumbnail available) for %s", file_path)
+        return preview_path, artifact_metadata
+
     def on_handle_create_static_file_download_url_from_path_request(
         self,
         request: CreateStaticFileDownloadUrlFromPathRequest,
-    ) -> CreateStaticFileDownloadUrlResultSuccess | CreateStaticFileDownloadUrlResultFailure:
+    ) -> CreateStaticFileDownloadUrlFromPathResultSuccess | CreateStaticFileDownloadUrlResultFailure:
         """Handle request to create download URL from arbitrary file path.
 
         Args:
-            request: Request containing file_path parameter.
+            request: Request containing file_path and preview parameters.
 
         Returns:
             Result with download URL or failure message.
         """
         file_path = request.file_path
+        logger.debug("CreateStaticFileDownloadUrlFromPath: file_path=%s, preview=%s", file_path, request.preview)
 
         # Resolve macro paths (e.g. "{outputs}/file.png") before further processing
         try:
@@ -292,15 +360,19 @@ class StaticFilesManager:
             # For local paths, convert URI to path
             file_path_for_driver = Path(uri_to_path(file_path))
 
+        # If preview requested, generate preview and get preview path + artifact metadata
+        file_path_to_use, artifact_metadata = self._resolve_preview_path(file_path_for_driver, preview=request.preview)
+
         try:
-            url = driver.create_signed_download_url(file_path_for_driver)
+            url = driver.create_signed_download_url(file_path_to_use)
         except Exception as e:
             msg = f"Failed to create presigned URL for file {file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
-        return CreateStaticFileDownloadUrlResultSuccess(
+        return CreateStaticFileDownloadUrlFromPathResultSuccess(
             url=url,
             file_url=driver.get_asset_url(file_path_for_driver),
+            artifact_metadata=artifact_metadata,
             result_details="Successfully created static file download URL",
         )
 
