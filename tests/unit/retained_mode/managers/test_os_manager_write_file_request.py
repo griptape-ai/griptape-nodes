@@ -82,11 +82,11 @@ class TestCreateNewWarningLevelResultDetails:
         assert result.final_file_path != str(file_path)  # Different from requested
         assert (temp_dir / "test_1.txt").exists()
 
-        # Check ResultDetails is WARNING level
+        # Check ResultDetails is DEBUG level
         assert isinstance(result.result_details, ResultDetails)
         assert len(result.result_details.result_details) == 1
         detail = result.result_details.result_details[0]
-        assert detail.level == logging.WARNING
+        assert detail.level == logging.DEBUG
         assert "indexed path" in detail.message.lower()
         assert "already existed" in detail.message.lower()
         assert str(file_path) in detail.message or "test.txt" in detail.message
@@ -117,14 +117,14 @@ class TestCreateNewWarningLevelResultDetails:
         assert "successfully" in detail.message.lower()
 
     def test_create_new_fallback_multiple_times(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test CREATE_NEW generates multiple WARNING messages for multiple fallbacks."""
+        """Test CREATE_NEW generates multiple DEBUG messages for multiple fallbacks."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "output.txt"
 
         # Create original file
         file_path.write_text("Original")
 
-        # First fallback - should get test_1.txt with WARNING
+        # First fallback - should get test_1.txt with DEBUG
         request1 = WriteFileRequest(
             file_path=str(file_path),
             content="Content 1",
@@ -133,9 +133,9 @@ class TestCreateNewWarningLevelResultDetails:
         result1 = os_manager.on_write_file_request(request1)
         assert isinstance(result1, WriteFileResultSuccess)
         assert isinstance(result1.result_details, ResultDetails)
-        assert result1.result_details.result_details[0].level == logging.WARNING
+        assert result1.result_details.result_details[0].level == logging.DEBUG
 
-        # Second fallback - should get test_2.txt with WARNING
+        # Second fallback - should get test_2.txt with DEBUG
         request2 = WriteFileRequest(
             file_path=str(file_path),
             content="Content 2",
@@ -144,7 +144,7 @@ class TestCreateNewWarningLevelResultDetails:
         result2 = os_manager.on_write_file_request(request2)
         assert isinstance(result2, WriteFileResultSuccess)
         assert isinstance(result2.result_details, ResultDetails)
-        assert result2.result_details.result_details[0].level == logging.WARNING
+        assert result2.result_details.result_details[0].level == logging.DEBUG
 
 
 class TestBlanketExceptionHandling:
