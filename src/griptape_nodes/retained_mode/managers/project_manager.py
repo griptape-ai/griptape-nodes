@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from pydantic import ValidationError
+
 from griptape_nodes.common.macro_parser import (
     MacroMatchFailure,
     MacroMatchFailureReason,
@@ -29,7 +31,13 @@ from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.path_utils import resolve_file_path
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
+from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
+    ReadFileRequest,
+    ReadFileResultSuccess,
+    WriteFileRequest,
+    WriteFileResultFailure,
+)
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultFailure,
@@ -64,6 +72,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     ProjectTemplateInfo,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
+    SaveProjectTemplateResultSuccess,
     SetCurrentProjectRequest,
     SetCurrentProjectResultSuccess,
 )
@@ -613,19 +622,58 @@ class ProjectManager:
             result_details=f"Successfully retrieved current project. ID: {self._current_project_id}",
         )
 
-    def on_save_project_template_request(self, request: SaveProjectTemplateRequest) -> SaveProjectTemplateResultFailure:
+    def on_save_project_template_request(
+        self, request: SaveProjectTemplateRequest
+    ) -> SaveProjectTemplateResultSuccess | SaveProjectTemplateResultFailure:
         """Save user customizations to project.yml.
 
         Flow:
-        1. Convert template_data to YAML format
-        2. Issue WriteFileRequest to OSManager
-        3. Handle write result
-        4. Invalidate cache (force reload on next access)
-
-        TODO: Implement saving logic when template system merges
+        1. Validate template_data as a ProjectTemplate model
+        2. Serialize to YAML using ProjectTemplate.to_yaml()
+        3. Issue WriteFileRequest to OSManager (OVERWRITE policy)
+        4. Handle write result
+        5. Invalidate cache (force reload on next access)
         """
-        return SaveProjectTemplateResultFailure(
-            result_details=f"Attempted to save project template to '{request.project_path}'. Failed because template saving not yet implemented",
+        # Step 1: Validate and parse template_data
+        try:
+            template = ProjectTemplate.model_validate(request.template_data)
+        except ValidationError as e:
+            return SaveProjectTemplateResultFailure(
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because template data is invalid: {e}",
+            )
+
+        # Step 2: Serialize to YAML
+        try:
+            yaml_content = template.to_yaml()
+        except Exception as e:  # noqa: BLE001
+            return SaveProjectTemplateResultFailure(
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because YAML serialization failed: {e}",
+            )
+
+        # Step 3: Write to disk via OSManager
+        write_request = WriteFileRequest(
+            file_path=str(request.project_path),
+            content=yaml_content,
+            encoding="utf-8",
+            existing_file_policy=ExistingFilePolicy.OVERWRITE,
+            create_parents=True,
+            skip_metadata_injection=True,
+        )
+        write_result = GriptapeNodes.handle_request(write_request)
+
+        # Step 4: Handle write result
+        if isinstance(write_result, WriteFileResultFailure):
+            return SaveProjectTemplateResultFailure(
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because file write failed: {write_result.result_details}",
+            )
+
+        # Step 5: Invalidate cache so next LoadProjectTemplateRequest reads from disk
+        project_id: ProjectID = str(request.project_path)
+        self._successfully_loaded_project_templates.pop(project_id, None)
+        self._registered_template_status.pop(request.project_path, None)
+
+        return SaveProjectTemplateResultSuccess(
+            result_details=f"Successfully saved project template to '{request.project_path}'",
         )
 
     def on_match_path_against_macro_request(
