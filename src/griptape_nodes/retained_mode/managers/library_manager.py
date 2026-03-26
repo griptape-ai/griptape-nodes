@@ -1443,44 +1443,63 @@ class LibraryManager:
                         json_path = Path(file_path)
                         base_dir = json_path.parent.absolute()
 
-                        # Add library directory and venv site-packages to sys.path
-                        await self._add_library_paths_to_sys_path(library_data.name, file_path, base_dir)
+                        # Worker subprocesses load libraries in-process (to avoid
+                        # recursive worker spawning). The parent engine spawns workers.
+                        is_worker_process = os.environ.get("GRIPTAPE_WORKER_PROCESS")
 
-                        # Load the advanced library module if specified
-                        advanced_library_instance = None
-                        if library_data.advanced_library_path:
+                        if is_worker_process:
+                            # IN-PROCESS PATH: used by worker subprocesses
+                            await self._add_library_paths_to_sys_path(library_data.name, file_path, base_dir)
+
+                            advanced_library_instance = None
+                            if library_data.advanced_library_path:
+                                try:
+                                    advanced_library_instance = self._load_advanced_library_module(
+                                        library_data=library_data,
+                                        base_dir=base_dir,
+                                    )
+                                except Exception as err:
+                                    library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
+                                    library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+                                    library_info.problems.append(
+                                        AdvancedLibraryLoadFailureProblem(
+                                            advanced_library_path=library_data.advanced_library_path,
+                                            error_message=str(err),
+                                        )
+                                    )
+                                    self._library_file_path_to_info[file_path] = library_info
+                                    details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed to load Advanced Library module: {err}"
+                                    return RegisterLibraryFromFileResultFailure(result_details=details)
+
                             try:
-                                advanced_library_instance = self._load_advanced_library_module(
+                                library = LibraryRegistry.generate_new_library(
                                     library_data=library_data,
-                                    base_dir=base_dir,
+                                    mark_as_default_library=request.load_as_default_library,
+                                    advanced_library=advanced_library_instance,
                                 )
-                            except Exception as err:
+                            except KeyError as err:
                                 library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
                                 library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
-                                library_info.problems.append(
-                                    AdvancedLibraryLoadFailureProblem(
-                                        advanced_library_path=library_data.advanced_library_path, error_message=str(err)
-                                    )
-                                )
+                                library_info.problems.append(DuplicateLibraryProblem())
                                 self._library_file_path_to_info[file_path] = library_info
-                                details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed to load Advanced Library module: {err}"
+                                details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
+                                return RegisterLibraryFromFileResultFailure(result_details=details)
+                        else:
+                            # OUT-OF-PROCESS PATH: used by the parent engine
+                            try:
+                                library = LibraryRegistry.generate_new_library(
+                                    library_data=library_data,
+                                    mark_as_default_library=request.load_as_default_library,
+                                )
+                            except KeyError as err:
+                                library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
+                                library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+                                library_info.problems.append(DuplicateLibraryProblem())
+                                self._library_file_path_to_info[file_path] = library_info
+                                details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
                                 return RegisterLibraryFromFileResultFailure(result_details=details)
 
-                        # Create or get the library
-                        try:
-                            library = LibraryRegistry.generate_new_library(
-                                library_data=library_data,
-                                mark_as_default_library=request.load_as_default_library,
-                                advanced_library=advanced_library_instance,
-                            )
-                        except KeyError as err:
-                            # Library already exists
-                            library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
-                            library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
-                            library_info.problems.append(DuplicateLibraryProblem())
-                            self._library_file_path_to_info[file_path] = library_info
-                            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
-                            return RegisterLibraryFromFileResultFailure(result_details=details)
+                            library.is_out_of_process = True
 
                         # Check the library's custom config settings
                         if library_data.settings is not None:
@@ -1537,14 +1556,50 @@ class LibraryManager:
                                         logger.error(details)
                                         continue
 
-                        # Attempt to load nodes from the library (modifies library_info in place)
-                        await asyncio.to_thread(
-                            self._attempt_load_nodes_from_library,
-                            library_data=library_data,
-                            library=library,
-                            base_dir=base_dir,
-                            library_info=library_info,
-                        )
+                        if is_worker_process:
+                            # IN-PROCESS: import and register node classes directly
+                            await asyncio.to_thread(
+                                self._attempt_load_nodes_from_library,
+                                library_data=library_data,
+                                library=library,
+                                base_dir=base_dir,
+                                library_info=library_info,
+                            )
+                        else:
+                            # OUT-OF-PROCESS: register metadata only, then spawn worker
+                            for node_definition in library_data.nodes:
+                                library_problem = library.register_node_type_metadata(
+                                    node_class_name=node_definition.class_name,
+                                    metadata=node_definition.metadata,
+                                )
+                                if library_problem is not None:
+                                    library_info.problems.append(library_problem)
+
+                            if library_data.widgets:
+                                for widget_def in library_data.widgets:
+                                    widget_problem = LibraryRegistry.register_widget_from_library(
+                                        library_name=library_data.name, widget_name=widget_def.name
+                                    )
+                                    if widget_problem is not None:
+                                        library_info.problems.append(widget_problem)
+
+                            venv_path = self._get_library_venv_path(library_data.name, file_path)
+                            if OSManager.is_windows():
+                                python_path = venv_path / "Scripts" / "python.exe"
+                            else:
+                                python_path = venv_path / "bin" / "python"
+
+                            process_manager = GriptapeNodes.LibraryProcessManager()
+                            await process_manager.start_worker(
+                                library_name=library_data.name,
+                                python_path=python_path,
+                                library_base_dir=base_dir,
+                                library_file_path=file_path,
+                            )
+
+                            library_info.fitness = LibraryManager.LibraryFitness.GOOD
+                            library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
+
                         self._library_file_path_to_info[file_path] = library_info
                     else:
                         # SANDBOX LIBRARIES: Full processing here (discovery + registration)
@@ -2575,6 +2630,12 @@ class LibraryManager:
             GriptapeNodes.WorkflowManager().on_libraries_initialization_complete(
                 workflows_to_register=payload.workflows_to_register
             )
+            return
+
+        # Worker subprocesses only load their target library, not the full config.
+        if os.environ.get("GRIPTAPE_WORKER_PROCESS"):
+            for lib_path in payload.libraries_to_register:
+                await self.register_library_from_file_request(RegisterLibraryFromFileRequest(file_path=lib_path))
             return
 
         # Automatically migrate old XDG library paths from config

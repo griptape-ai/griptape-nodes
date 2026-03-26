@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.library_process_manager import LibraryProcessManager
     from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
     from griptape_nodes.retained_mode.managers.model_manager import ModelManager
     from griptape_nodes.retained_mode.managers.node_manager import NodeManager
@@ -99,6 +100,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _user_manager: UserManager
     _project_manager: ProjectManager
     _artifact_manager: ArtifactManager
+    _library_process_manager: LibraryProcessManager
 
     def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -168,6 +170,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._user_manager = UserManager(self._secrets_manager)
             self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
             self._artifact_manager = ArtifactManager(self._event_manager)
+
+            from griptape_nodes.retained_mode.managers.library_process_manager import LibraryProcessManager
+
+            self._library_process_manager = LibraryProcessManager()
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -357,6 +363,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def ArtifactManager(cls) -> ArtifactManager:
         return GriptapeNodes.get_instance()._artifact_manager
+
+    @classmethod
+    def LibraryProcessManager(cls) -> LibraryProcessManager:
+        return GriptapeNodes.get_instance()._library_process_manager
 
     @classmethod
     def clear_data(cls) -> None:

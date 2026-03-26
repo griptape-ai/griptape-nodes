@@ -259,7 +259,8 @@ class NodeExecutor:
                 await self.handle_loop_execution(node)
                 return
 
-            # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
+            # Default to local execution. ProxyNodes handle their own IPC
+            # transparently in their aprocess() implementation.
             await node.aprocess()
         finally:
             current_executing_node_name.reset(token)

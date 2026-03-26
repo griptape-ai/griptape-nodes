@@ -405,7 +405,7 @@ class NodeManager:
         for node_name in node_names:
             self._cleanup_node_on_failed_deserialization(node_name)
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    async def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -455,7 +455,7 @@ class NodeManager:
         # OK, let's try and create the Node.
         node = None
         try:
-            node = LibraryRegistry.create_node(
+            node = await LibraryRegistry.acreate_node(
                 name=final_node_name,
                 node_type=request.node_type,
                 specific_library_name=request.specific_library_name,

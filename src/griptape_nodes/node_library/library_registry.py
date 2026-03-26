@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_validator
 
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
 )
@@ -17,7 +18,6 @@ from griptape_nodes.retained_mode.managers.resource_components.resource_instance
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
 
@@ -338,6 +338,23 @@ class LibraryRegistry(metaclass=SingletonMeta):
         return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
 
     @classmethod
+    async def acreate_node(
+        cls,
+        node_type: str,
+        name: str,
+        metadata: dict[Any, Any] | None = None,
+        specific_library_name: str | None = None,
+    ) -> BaseNode:
+        """Async version of create_node that supports out-of-process libraries."""
+        instance = cls()
+
+        dest_library = instance.get_library_for_node_type(
+            node_type=node_type, specific_library_name=specific_library_name
+        )
+
+        return await dest_library.acreate_node(node_type=node_type, name=name, metadata=metadata)
+
+    @classmethod
     def get_all_library_schemas(cls) -> dict[str, dict]:
         """Get schemas from all loaded libraries.
 
@@ -399,6 +416,16 @@ class Library:
         self._node_types = {}
         self._node_metadata = {}
         self._advanced_library = advanced_library
+        self._is_out_of_process = False
+
+    @property
+    def is_out_of_process(self) -> bool:
+        """Whether this library runs in a separate worker subprocess."""
+        return self._is_out_of_process
+
+    @is_out_of_process.setter
+    def is_out_of_process(self, value: bool) -> None:
+        self._is_out_of_process = value
 
     def register_new_node_type(self, node_class: type[BaseNode], metadata: NodeMetadata) -> LibraryProblem | None:
         """Register a new node type in this library. Returns a LibraryProblem if registration fails, or None if all clear."""
@@ -412,6 +439,18 @@ class Library:
 
         self._node_types[node_class_as_str] = node_class
         self._node_metadata[node_class_as_str] = metadata
+        return library_problem
+
+    def register_node_type_metadata(self, node_class_name: str, metadata: NodeMetadata) -> LibraryProblem | None:
+        """Register a node type by name and metadata only (no class import needed).
+
+        Used for out-of-process libraries where the actual class lives in the worker subprocess.
+        """
+        library_problem = LibraryRegistry.register_node_type_from_library(library=self, node_class_name=node_class_name)
+        # Store BaseNode as a placeholder so has_node_type() works.
+        # acreate_node() for out-of-process libraries never looks up the class.
+        self._node_types[node_class_name] = BaseNode
+        self._node_metadata[node_class_name] = metadata
         return library_problem
 
     def get_library_data(self) -> LibrarySchema:
@@ -438,6 +477,46 @@ class Library:
         metadata["node_type"] = node_type
         node = node_class(name=name, metadata=metadata)
         return node
+
+    async def acreate_node(
+        self,
+        node_type: str,
+        name: str,
+        metadata: dict[Any, Any] | None = None,
+    ) -> BaseNode:
+        """Async version of create_node that supports out-of-process execution.
+
+        When the library is marked as out-of-process, sends a create_node command
+        to the worker subprocess and returns a ProxyNode. Otherwise, delegates to
+        the synchronous create_node.
+        """
+        if not self._is_out_of_process:
+            return self.create_node(node_type=node_type, name=name, metadata=metadata)
+
+        from griptape_nodes.exe_types.proxy_node import ProxyNode
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        process_manager = GriptapeNodes.LibraryProcessManager()
+
+        if metadata is None:
+            metadata = {}
+        metadata["library"] = self._library_data.name
+        metadata["node_type"] = node_type
+
+        result = await process_manager.create_node(
+            library_name=self._library_data.name,
+            node_type=node_type,
+            node_name=name,
+            metadata=metadata,
+        )
+
+        return ProxyNode(
+            name=name,
+            library_name=self._library_data.name,
+            node_type=node_type,
+            parameter_schemas=result.parameter_schemas,
+            metadata=metadata,
+        )
 
     def get_registered_nodes(self) -> list[str]:
         """Get a list of all registered node types."""

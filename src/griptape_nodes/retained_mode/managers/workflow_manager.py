@@ -655,7 +655,9 @@ class WorkflowManager:
             # Now execute the workflow.
             async with await anyio.open_file(Path(complete_file_path), encoding="utf-8") as file:
                 workflow_content = await file.read()
-            exec(workflow_content)  # noqa: S102
+            # Run in a thread so the main event loop stays free for async IPC
+            # with out-of-process library workers.
+            await asyncio.to_thread(exec, workflow_content, {"__builtins__": __builtins__})
 
             # After workflow execution, ensure there's always a current context by pushing
             # the top-level flow if the context is empty. This fixes regressions where
