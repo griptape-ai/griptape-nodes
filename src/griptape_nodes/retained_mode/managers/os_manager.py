@@ -1978,7 +1978,7 @@ class OSManager:
 
         if used_indexed_fallback:
             msg = f"File written to indexed path: {final_file_path} (original path '{path_display}' already existed)"
-            result_details = ResultDetails(message=msg, level=logging.WARNING)
+            result_details = ResultDetails(message=msg, level=logging.DEBUG)
         else:
             result_details = f"File written successfully: {final_file_path}"
 
