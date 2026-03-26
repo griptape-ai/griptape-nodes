@@ -138,7 +138,7 @@ class SyncManager:
                     sync_directory=str(sync_dir),
                     total_workflows=0,
                     result_details=ResultDetails(
-                        message="No workflow files found in cloud storage.", level=logging.INFO
+                        message="No workflow files found in cloud storage.", level=logging.DEBUG
                     ),
                 )
 
@@ -180,7 +180,7 @@ class SyncManager:
             else:
                 logger.debug("File watching disabled - skipping file watching startup")
 
-            logger.info("App initialization complete - starting automatic cloud workflow sync")
+            logger.debug("App initialization complete - starting automatic cloud workflow sync")
 
             # Create and handle the sync request
             sync_request = StartSyncAllCloudWorkflowsRequest()
@@ -189,7 +189,7 @@ class SyncManager:
             result = GriptapeNodes.handle_request(sync_request)
 
             if isinstance(result, StartSyncAllCloudWorkflowsResultSuccess):
-                logger.info(
+                logger.debug(
                     "Automatic cloud workflow sync started successfully - %d workflows will be synced to %s",
                     result.total_workflows,
                     result.sync_directory,
@@ -347,7 +347,7 @@ class SyncManager:
             )
             self._watch_task.start()
 
-            logger.info("Started watching synced workflows directory: %s", sync_dir)
+            logger.debug("Started watching synced workflows directory: %s", sync_dir)
 
         except Exception as e:
             logger.error("Failed to start file watching: %s", str(e))

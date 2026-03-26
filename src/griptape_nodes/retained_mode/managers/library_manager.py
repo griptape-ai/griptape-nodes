@@ -2462,20 +2462,29 @@ class LibraryManager:
             logger.debug("No libraries to download from config")
             return
 
-        logger.info("Starting download of %d libraries from config", len(git_urls))
+        logger.debug("Starting download of %d libraries from config", len(git_urls))
 
         # Use shared download method
         results = await self._download_libraries_from_git_urls(git_urls)
 
-        # Count successes and failures
+        # Count successes, skipped, and failures
         successful = sum(1 for r in results.values() if r["success"])
-        failed = len(results) - successful
+        skipped = sum(1 for r in results.values() if r.get("skipped"))
+        failed = len(results) - successful - skipped
 
-        logger.info(
-            "Completed automatic library downloads: %d successful, %d failed",
-            successful,
-            failed,
-        )
+        if failed:
+            logger.info(
+                "Completed automatic library downloads: %d successful, %d skipped, %d failed",
+                successful,
+                skipped,
+                failed,
+            )
+        else:
+            logger.debug(
+                "Completed automatic library downloads: %d successful, %d skipped",
+                successful,
+                skipped,
+            )
 
     async def _download_libraries_from_git_urls(
         self,
@@ -2515,7 +2524,7 @@ class LibraryManager:
 
             # Skip if already exists
             if target_path.exists():
-                logger.info("Library at '%s' already exists, skipping", target_path)
+                logger.debug("Library at '%s' already exists, skipping", target_path)
                 return git_url_with_ref, {
                     "success": False,
                     "library_name": None,
