@@ -1,5 +1,6 @@
 """Tests for ProjectManager macro event handlers."""
 
+import logging
 import os
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -1825,3 +1826,242 @@ class TestProjectManagerProjectWorkspaces:
 
         mock_config.set_workspace_override.assert_not_called()
         mock_config.load_workspace_config.assert_called_once()
+
+
+class TestRegisterProjectPath:
+    """Test ProjectManager._register_project_path."""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def test_register_new_path_appends_to_empty_list(self, pm: ProjectManager) -> None:
+        """A new project_id is appended when the registered list is empty."""
+        from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = []
+            mock_gn.ConfigManager.return_value = mock_config
+
+            pm._register_project_path("/path/to/project.yml")
+
+        mock_config.set_config_value.assert_called_once_with(
+            PROJECTS_TO_REGISTER_KEY, ["/path/to/project.yml"]
+        )
+
+    def test_register_new_path_appends_to_existing_list(self, pm: ProjectManager) -> None:
+        """A new project_id is appended alongside existing registered paths."""
+        from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = ["/path/to/other.yml"]
+            mock_gn.ConfigManager.return_value = mock_config
+
+            pm._register_project_path("/path/to/project.yml")
+
+        mock_config.set_config_value.assert_called_once_with(
+            PROJECTS_TO_REGISTER_KEY, ["/path/to/other.yml", "/path/to/project.yml"]
+        )
+
+    def test_register_already_present_does_not_modify_list(self, pm: ProjectManager) -> None:
+        """If the project_id is already registered, set_config_value is not called."""
+        project_id = "/path/to/project.yml"
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = [project_id]
+            mock_gn.ConfigManager.return_value = mock_config
+
+            pm._register_project_path(project_id)
+
+        mock_config.set_config_value.assert_not_called()
+
+    def test_register_exception_is_swallowed(self, pm: ProjectManager) -> None:
+        """A config manager exception does not propagate out of _register_project_path."""
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.side_effect = RuntimeError("config failure")
+            mock_gn.ConfigManager.return_value = mock_config
+
+            # Should not raise
+            pm._register_project_path("/path/to/project.yml")
+
+
+class TestLoadRegisteredProjects:
+    """Test ProjectManager._load_registered_projects."""
+
+    VALID_PROJECT_YAML = """\
+project_template_schema_version: "0.1.0"
+name: Registered Project
+situations:
+  save_node_output:
+    macro: "{outputs}/{file_name_base}.{file_extension}"
+    policy:
+      on_collision: create_new
+      create_dirs: true
+"""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def test_empty_list_does_nothing(self, pm: ProjectManager) -> None:
+        """An empty projects_to_register list results in no load attempts."""
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = []
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch.object(pm, "on_load_project_template_request") as mock_load:
+                pm._load_registered_projects()
+                mock_load.assert_not_called()
+
+    def test_none_config_return_does_nothing(self, pm: ProjectManager) -> None:
+        """None from config (treated as empty via 'or []') results in no load attempts."""
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = None
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch.object(pm, "on_load_project_template_request") as mock_load:
+                pm._load_registered_projects()
+                mock_load.assert_not_called()
+
+    def test_already_loaded_path_is_skipped(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Paths already in _successfully_loaded_project_templates are not loaded again."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        existing_path = str(tmp_path / "existing.yml")
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+        project_info = ProjectInfo(
+            project_id=existing_path,
+            project_file_path=Path(existing_path),
+            project_base_dir=tmp_path,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[existing_path] = project_info
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = [existing_path]
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch.object(pm, "on_load_project_template_request") as mock_load:
+                pm._load_registered_projects()
+                mock_load.assert_not_called()
+
+    def test_unloaded_path_is_loaded(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A path not already in memory gets loaded and added to the template registry."""
+        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
+        from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+
+        project_path = tmp_path / "project.yml"
+        yaml_content = self.VALID_PROJECT_YAML
+
+        def get_config_value_side_effect(key: str, **_: object) -> object:
+            if key == PROJECTS_TO_REGISTER_KEY:
+                return [str(project_path)]
+            return []  # for _register_project_path's follow-on call
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
+            mock_gn.ConfigManager.return_value = mock_config
+            mock_gn.handle_request.return_value = ReadFileResultSuccess(
+                content=yaml_content,
+                file_size=len(yaml_content),
+                mime_type="text/plain",
+                encoding="utf-8",
+                result_details="ok",
+            )
+
+            pm._load_registered_projects()
+
+        assert str(project_path) in pm._successfully_loaded_project_templates
+
+    def test_load_failure_is_logged_as_warning(
+        self, pm: ProjectManager, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A failed load is logged as a warning and does not raise."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import LoadProjectTemplateResultFailure
+
+        project_path = str(tmp_path / "missing.yml")
+        failure = LoadProjectTemplateResultFailure(
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.MISSING),
+            result_details="file not found",
+        )
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = [project_path]
+            mock_gn.ConfigManager.return_value = mock_config
+
+            with patch.object(pm, "on_load_project_template_request", return_value=failure):
+                with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+                    pm._load_registered_projects()
+
+        assert project_path not in pm._successfully_loaded_project_templates
+        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("Failed to reload registered project" in msg for msg in warning_messages)
+
+    @pytest.mark.asyncio
+    async def test_app_initialization_complete_loads_registered_projects(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """on_app_initialization_complete loads registered projects after the workspace project."""
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
+        from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+
+        registered_path = tmp_path / "registered.yml"
+        yaml_content = self.VALID_PROJECT_YAML
+
+        def get_config_value_side_effect(key: str, **_: object) -> object:
+            if key == "project_file":
+                return None
+            if key == PROJECTS_TO_REGISTER_KEY:
+                return [str(registered_path)]
+            if "project_workspaces" in key:
+                return {}
+            return str(tmp_path)
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.project_config = {}
+            mock_config.env_config = {}
+            mock_config.merged_config = {}
+            mock_config.get_config_value.side_effect = get_config_value_side_effect
+            mock_gn.ConfigManager.return_value = mock_config
+            mock_gn.handle_request.return_value = ReadFileResultSuccess(
+                content=yaml_content,
+                file_size=len(yaml_content),
+                mime_type="text/plain",
+                encoding="utf-8",
+                result_details="ok",
+            )
+
+            await pm.on_app_initialization_complete(AppInitializationComplete())
+
+        assert str(registered_path) in pm._successfully_loaded_project_templates
