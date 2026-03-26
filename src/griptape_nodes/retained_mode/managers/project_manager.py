@@ -353,7 +353,7 @@ class ProjectManager:
             if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
                 continue
 
-            successfully_loaded.append(ProjectTemplateInfo(project_id=project_id, validation=project_info.validation))
+            successfully_loaded.append(ProjectTemplateInfo(project_id=project_id, validation=project_info.validation, name=project_info.template.name))
 
         # Gather failed templates from _registered_template_status
         # These are tracked by Path, not ProjectID
