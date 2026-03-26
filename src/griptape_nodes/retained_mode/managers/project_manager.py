@@ -363,7 +363,11 @@ class ProjectManager:
             if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
                 continue
 
-            successfully_loaded.append(ProjectTemplateInfo(project_id=project_id, validation=project_info.validation, name=project_info.template.name))
+            successfully_loaded.append(
+                ProjectTemplateInfo(
+                    project_id=project_id, validation=project_info.validation, name=project_info.template.name
+                )
+            )
 
         # Gather failed templates from _registered_template_status
         # These are tracked by Path, not ProjectID
@@ -646,7 +650,7 @@ class ProjectManager:
         # Step 2: Serialize to YAML
         try:
             yaml_content = template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE, include_comments=False)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return SaveProjectTemplateResultFailure(
                 result_details=f"Attempted to save project template to '{request.project_path}'. Failed because YAML serialization failed: {e}",
             )

@@ -44,7 +44,7 @@ class ProjectTemplate(BaseModel):
         """Get a directory definition by logical name."""
         return self.directories.get(directory_name)
 
-    def to_yaml(self, *, include_comments: bool = True) -> str:
+    def to_yaml(self, *, include_comments: bool = True) -> str:  # noqa: C901
         """Export project template to YAML string.
 
         Produces clean, human-readable output:
@@ -127,7 +127,7 @@ class ProjectTemplate(BaseModel):
 
         return yaml_text
 
-    def to_overlay_yaml(self, base: ProjectTemplate, *, include_comments: bool = True) -> str:
+    def to_overlay_yaml(self, base: ProjectTemplate, *, include_comments: bool = True) -> str:  # noqa: C901, PLR0912, PLR0915
         """Export only user customizations relative to a base template as YAML.
 
         Produces a minimal overlay containing only what differs from the base
