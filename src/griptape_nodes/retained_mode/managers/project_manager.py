@@ -76,6 +76,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     SetCurrentProjectResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -322,6 +323,9 @@ class ProjectManager:
 
         # Track validation status for all load attempts (for UI display)
         self._registered_template_status[request.project_path] = validation
+
+        # Persist path so the project survives engine restarts
+        self._register_project_path(project_id)
 
         return LoadProjectTemplateResultSuccess(
             project_id=project_id,
@@ -823,6 +827,9 @@ class ProjectManager:
         # Check workspace for an optional project overlay file
         self._load_workspace_project()
 
+        # Load any additional project templates previously registered by the user
+        self._load_registered_projects()
+
     def on_get_all_situations_for_project_request(
         self, _request: GetAllSituationsForProjectRequest
     ) -> GetAllSituationsForProjectResultSuccess | GetAllSituationsForProjectResultFailure:
@@ -1294,3 +1301,41 @@ class ProjectManager:
             return
 
         logger.info("Successfully loaded workspace project from '%s'", workspace_project_path)
+
+    def _load_registered_projects(self) -> None:
+        """Load project templates from paths persisted in user config.
+
+        Called after workspace project loading so that user-registered paths
+        are available in the template list. Paths already loaded (e.g., the
+        workspace project) are skipped. Missing or invalid files are skipped
+        with a warning rather than raising.
+        """
+        config_manager = GriptapeNodes.ConfigManager()
+        registered_paths: list[str] = config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+        for path_str in registered_paths:
+            if path_str in self._successfully_loaded_project_templates:
+                continue
+            load_request = LoadProjectTemplateRequest(project_path=Path(path_str))
+            result = self.on_load_project_template_request(load_request)
+            if result.failed():
+                logger.warning(
+                    "Failed to reload registered project '%s' on startup: %s",
+                    path_str,
+                    result.result_details,
+                )
+            else:
+                logger.info("Reloaded registered project from '%s'", path_str)
+
+    def _register_project_path(self, project_id: str) -> None:
+        """Persist a project file path so it is reloaded on the next engine restart.
+
+        Appends the path to the projects_to_register config list if not already
+        present. Errors are logged as warnings and do not affect the load result.
+        """
+        try:
+            config_manager = GriptapeNodes.ConfigManager()
+            registered: list[str] = config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            if project_id not in registered:
+                config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
+        except Exception:
+            logger.warning("Failed to persist project path '%s' to config", project_id)
