@@ -25,7 +25,6 @@ from griptape_nodes.common.project_templates import (
     ProjectValidationStatus,
     SituationTemplate,
     load_partial_project_template,
-    load_project_template_from_yaml,
 )
 from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.path_utils import resolve_file_path
@@ -279,14 +278,16 @@ class ProjectManager:
             )
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        template = load_project_template_from_yaml(yaml_text, validation)
+        overlay = load_partial_project_template(yaml_text, validation)
 
-        if template is None:
+        if overlay is None:
             self._registered_template_status[request.project_path] = validation
             return LoadProjectTemplateResultFailure(
                 validation=validation,
                 result_details=f"Attempted to load project template from '{request.project_path}'. Failed because YAML could not be parsed",
             )
+
+        template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
 
         # Generate project_id from file path
         project_file_path = Path(request.project_path)
@@ -644,7 +645,7 @@ class ProjectManager:
 
         # Step 2: Serialize to YAML
         try:
-            yaml_content = template.to_yaml()
+            yaml_content = template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE, include_comments=False)
         except Exception as e:  # noqa: BLE001
             return SaveProjectTemplateResultFailure(
                 result_details=f"Attempted to save project template to '{request.project_path}'. Failed because YAML serialization failed: {e}",

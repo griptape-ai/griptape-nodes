@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import BaseModel, Field, ValidationError
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
 from griptape_nodes.common.project_templates.directory import DirectoryDefinition
 from griptape_nodes.common.project_templates.situation import SituationTemplate
@@ -45,21 +47,187 @@ class ProjectTemplate(BaseModel):
     def to_yaml(self, *, include_comments: bool = True) -> str:
         """Export project template to YAML string.
 
-        If include_comments=True, adds helpful comments explaining each section.
+        Produces clean, human-readable output:
+        - Double-quoted strings for all scalar string values
+        - name field omitted from situations and directories (redundant with dict key)
+        - Blank lines between top-level sections and between individual situations
+        - Section order: schema version, name, description, environment, directories, situations
+        - Long macro strings are never line-wrapped
+
+        If include_comments=True, adds a helpful header comment block.
         """
+
+        def q(s: str) -> DoubleQuotedScalarString:
+            """Wrap a string value in double quotes."""
+            return DoubleQuotedScalarString(s)
+
         yaml = YAML()
-        yaml.preserve_quotes = True
         yaml.default_flow_style = False
+        yaml.width = 4096  # Prevent line-wrapping of long macro strings
 
-        data = self.model_dump(mode="json", exclude_none=True)
+        # Build the document as a CommentedMap so we control key order and blank lines.
+        data: CommentedMap = CommentedMap()
+        data["project_template_schema_version"] = q(self.project_template_schema_version)
+        data["name"] = q(self.name)
+        if self.description is not None:
+            data["description"] = q(self.description)
 
-        # Convert to YAML string
+        # environment section
+        if self.environment:
+            env: CommentedMap = CommentedMap()
+            for k, v in self.environment.items():
+                env[k] = q(v)
+            data["environment"] = env
+            data.yaml_set_comment_before_after_key("environment", before="\n")
+
+        # directories section — name field is the dict key, omit it from the value
+        if self.directories:
+            dirs: CommentedMap = CommentedMap()
+            for dir_name, dir_def in self.directories.items():
+                entry: CommentedMap = CommentedMap()
+                entry["path_macro"] = q(dir_def.path_macro)
+                dirs[dir_name] = entry
+            data["directories"] = dirs
+            data.yaml_set_comment_before_after_key("directories", before="\n")
+
+        # situations section — name field is the dict key, omit it from the value
+        if self.situations:
+            sits: CommentedMap = CommentedMap()
+            for i, (sit_name, sit) in enumerate(self.situations.items()):
+                entry = CommentedMap()
+                entry["macro"] = q(sit.macro)
+                policy: CommentedMap = CommentedMap()
+                policy["on_collision"] = str(sit.policy.on_collision)
+                policy["create_dirs"] = sit.policy.create_dirs
+                entry["policy"] = policy
+                if sit.fallback is not None:
+                    entry["fallback"] = sit.fallback
+                if sit.description is not None:
+                    entry["description"] = q(sit.description)
+                sits[sit_name] = entry
+                # Blank line before each situation except the first
+                if i > 0:
+                    sits.yaml_set_comment_before_after_key(sit_name, before="\n")
+            data["situations"] = sits
+            data.yaml_set_comment_before_after_key("situations", before="\n")
+
         stream = io.StringIO()
         yaml.dump(data, stream)
         yaml_text = stream.getvalue()
 
         if include_comments:
-            # Add helpful header comment
+            header = (
+                "# Project Template\n"
+                f"# Version: {self.project_template_schema_version}\n"
+                "#\n"
+                "# This file defines how files are organized and saved in your project.\n"
+                "# See documentation for details on customizing situations and directories.\n\n"
+            )
+            yaml_text = header + yaml_text
+
+        return yaml_text
+
+    def to_overlay_yaml(self, base: ProjectTemplate, *, include_comments: bool = True) -> str:
+        """Export only user customizations relative to a base template as YAML.
+
+        Produces a minimal overlay containing only what differs from the base
+        (system defaults). Content identical to the base is omitted, keeping
+        the file focused on the user's actual changes.
+
+        Sections with no user content are omitted entirely.
+        Field-level diffing for situations: only changed fields are written.
+
+        Note: deletions of optional fields (fallback, description) that exist
+        in the base are not preserved — they will reappear on next load.
+        """
+
+        def q(s: str) -> DoubleQuotedScalarString:
+            return DoubleQuotedScalarString(s)
+
+        yaml = YAML()
+        yaml.default_flow_style = False
+        yaml.width = 4096
+
+        data: CommentedMap = CommentedMap()
+        data["project_template_schema_version"] = q(self.project_template_schema_version)
+        data["name"] = q(self.name)
+        if self.description is not None:
+            data["description"] = q(self.description)
+
+        # environment: only entries not in base or with a different value
+        user_env: dict[str, str] = {k: v for k, v in self.environment.items() if base.environment.get(k) != v}
+        if user_env:
+            env: CommentedMap = CommentedMap()
+            for k, v in user_env.items():
+                env[k] = q(v)
+            data["environment"] = env
+            data.yaml_set_comment_before_after_key("environment", before="\n")
+
+        # directories: only entries added or whose path_macro changed
+        user_dirs: CommentedMap = CommentedMap()
+        for dir_name, dir_def in self.directories.items():
+            base_dir = base.directories.get(dir_name)
+            if base_dir is None or dir_def.path_macro != base_dir.path_macro:
+                entry: CommentedMap = CommentedMap()
+                entry["path_macro"] = q(dir_def.path_macro)
+                user_dirs[dir_name] = entry
+        if user_dirs:
+            data["directories"] = user_dirs
+            data.yaml_set_comment_before_after_key("directories", before="\n")
+
+        # situations: only entries added or with at least one changed field
+        user_sits: CommentedMap = CommentedMap()
+        first_sit = True
+        for sit_name, sit in self.situations.items():
+            base_sit = base.situations.get(sit_name)
+            if base_sit is None:
+                # Brand-new situation — include all fields
+                entry = CommentedMap()
+                entry["macro"] = q(sit.macro)
+                policy: CommentedMap = CommentedMap()
+                policy["on_collision"] = str(sit.policy.on_collision)
+                policy["create_dirs"] = sit.policy.create_dirs
+                entry["policy"] = policy
+                if sit.fallback is not None:
+                    entry["fallback"] = sit.fallback
+                if sit.description is not None:
+                    entry["description"] = q(sit.description)
+            else:
+                # Existing situation — only include fields that changed
+                sit_diff: CommentedMap = CommentedMap()
+                if sit.macro != base_sit.macro:
+                    sit_diff["macro"] = q(sit.macro)
+                policy_changed = (
+                    sit.policy.on_collision != base_sit.policy.on_collision
+                    or sit.policy.create_dirs != base_sit.policy.create_dirs
+                )
+                if policy_changed:
+                    p: CommentedMap = CommentedMap()
+                    p["on_collision"] = str(sit.policy.on_collision)
+                    p["create_dirs"] = sit.policy.create_dirs
+                    sit_diff["policy"] = p
+                if sit.fallback != base_sit.fallback and sit.fallback is not None:
+                    sit_diff["fallback"] = sit.fallback
+                if sit.description != base_sit.description and sit.description is not None:
+                    sit_diff["description"] = q(sit.description)
+                if not sit_diff:
+                    continue  # Identical to base — skip
+                entry = sit_diff
+
+            user_sits[sit_name] = entry
+            if not first_sit:
+                user_sits.yaml_set_comment_before_after_key(sit_name, before="\n")
+            first_sit = False
+
+        if user_sits:
+            data["situations"] = user_sits
+            data.yaml_set_comment_before_after_key("situations", before="\n")
+
+        stream = io.StringIO()
+        yaml.dump(data, stream)
+        yaml_text = stream.getvalue()
+
+        if include_comments:
             header = (
                 "# Project Template\n"
                 f"# Version: {self.project_template_schema_version}\n"
