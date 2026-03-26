@@ -1852,9 +1852,7 @@ class TestRegisterProjectPath:
 
             pm._register_project_path("/path/to/project.yml")
 
-        mock_config.set_config_value.assert_called_once_with(
-            PROJECTS_TO_REGISTER_KEY, ["/path/to/project.yml"]
-        )
+        mock_config.set_config_value.assert_called_once_with(PROJECTS_TO_REGISTER_KEY, ["/path/to/project.yml"])
 
     def test_register_new_path_appends_to_existing_list(self, pm: ProjectManager) -> None:
         """A new project_id is appended alongside existing registered paths."""
@@ -2018,9 +2016,11 @@ situations:
             mock_config.get_config_value.return_value = [project_path]
             mock_gn.ConfigManager.return_value = mock_config
 
-            with patch.object(pm, "on_load_project_template_request", return_value=failure):
-                with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
-                    pm._load_registered_projects()
+            with (
+                patch.object(pm, "on_load_project_template_request", return_value=failure),
+                caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+            ):
+                pm._load_registered_projects()
 
         assert project_path not in pm._successfully_loaded_project_templates
         warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
