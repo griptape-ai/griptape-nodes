@@ -44,7 +44,7 @@ class ProjectTemplate(BaseModel):
         """Get a directory definition by logical name."""
         return self.directories.get(directory_name)
 
-    def to_overlay_yaml(self, base: ProjectTemplate, *, include_comments: bool = True) -> str:  # noqa: C901, PLR0912, PLR0915
+    def to_overlay_yaml(self, base: ProjectTemplate) -> str:  # noqa: C901, PLR0912, PLR0915
         """Export only user customizations relative to a base template as YAML.
 
         Produces a minimal overlay containing only what differs from the base
@@ -143,16 +143,6 @@ class ProjectTemplate(BaseModel):
         stream = io.StringIO()
         yaml.dump(data, stream)
         yaml_text = stream.getvalue()
-
-        if include_comments:
-            header = (
-                "# Project Template\n"
-                f"# Version: {self.project_template_schema_version}\n"
-                "#\n"
-                "# This file defines how files are organized and saved in your project.\n"
-                "# See documentation for details on customizing situations and directories.\n\n"
-            )
-            yaml_text = header + yaml_text
 
         return yaml_text
 
