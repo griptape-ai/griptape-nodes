@@ -44,7 +44,7 @@ class ProjectTemplate(BaseModel):
         """Get a directory definition by logical name."""
         return self.directories.get(directory_name)
 
-    def to_overlay_yaml(self, base: ProjectTemplate) -> str:  # noqa: C901, PLR0912, PLR0915
+    def to_overlay_yaml(self, base: ProjectTemplate) -> str:
         """Export only user customizations relative to a base template as YAML.
 
         Produces a minimal overlay containing only what differs from the base
@@ -61,84 +61,71 @@ class ProjectTemplate(BaseModel):
         def q(s: str) -> DoubleQuotedScalarString:
             return DoubleQuotedScalarString(s)
 
+        def dict_diff(current: dict, base_dict: dict) -> dict:
+            """Return only entries from current that differ from base_dict (recursively)."""
+            result = {}
+            for k, v in current.items():
+                b = base_dict.get(k)
+                if isinstance(v, dict) and isinstance(b, dict):
+                    sub = dict_diff(v, b)
+                    if sub:
+                        result[k] = sub
+                elif v != b and v is not None:
+                    result[k] = v
+            return result
+
+        def build_map(d: dict, skip_keys: frozenset = frozenset()) -> CommentedMap:
+            """Convert a plain dict to a CommentedMap with double-quoted strings."""
+            m: CommentedMap = CommentedMap()
+            for k, v in d.items():
+                if k in skip_keys:
+                    continue
+                if isinstance(v, str):
+                    m[k] = q(v)
+                elif isinstance(v, dict):
+                    m[k] = build_map(v)
+                else:
+                    m[k] = v  # bools, ints
+            return m
+
+        self_dump = self.model_dump(mode="json")
+        base_dump = base.model_dump(mode="json")
+        diff = dict_diff(self_dump, base_dump)
+
         yaml = YAML()
         yaml.default_flow_style = False
         yaml.width = 4096
 
         data: CommentedMap = CommentedMap()
-        data["project_template_schema_version"] = q(self.project_template_schema_version)
-        data["name"] = q(self.name)
-        if self.description is not None:
-            data["description"] = q(self.description)
+        # Required fields — always present regardless of diff
+        data["project_template_schema_version"] = q(self_dump["project_template_schema_version"])
+        data["name"] = q(self_dump["name"])
+        if "description" in diff:
+            data["description"] = q(diff["description"])
 
-        # environment: only entries not in base or with a different value
-        user_env: dict[str, str] = {k: v for k, v in self.environment.items() if base.environment.get(k) != v}
-        if user_env:
-            env: CommentedMap = CommentedMap()
-            for k, v in user_env.items():
-                env[k] = q(v)
-            data["environment"] = env
-            data.yaml_set_comment_before_after_key("environment", before="\n")
+        # loader injects name from the YAML dict key — exclude it from nested objects
+        nested_skip = frozenset({"name"})
 
-        # directories: only entries added or whose path_macro changed
-        user_dirs: CommentedMap = CommentedMap()
-        for dir_name, dir_def in self.directories.items():
-            base_dir = base.directories.get(dir_name)
-            if base_dir is None or dir_def.path_macro != base_dir.path_macro:
-                entry: CommentedMap = CommentedMap()
-                entry["path_macro"] = q(dir_def.path_macro)
-                user_dirs[dir_name] = entry
-        if user_dirs:
-            data["directories"] = user_dirs
-            data.yaml_set_comment_before_after_key("directories", before="\n")
-
-        # situations: only entries added or with at least one changed field
-        user_sits: CommentedMap = CommentedMap()
-        first_sit = True
-        for sit_name, sit in self.situations.items():
-            base_sit = base.situations.get(sit_name)
-            if base_sit is None:
-                # Brand-new situation — include all fields
-                entry = CommentedMap()
-                entry["macro"] = q(sit.macro)
-                policy: CommentedMap = CommentedMap()
-                policy["on_collision"] = str(sit.policy.on_collision)
-                policy["create_dirs"] = sit.policy.create_dirs
-                entry["policy"] = policy
-                if sit.fallback is not None:
-                    entry["fallback"] = sit.fallback
-                if sit.description is not None:
-                    entry["description"] = q(sit.description)
-            else:
-                # Existing situation — only include fields that changed
-                sit_diff: CommentedMap = CommentedMap()
-                if sit.macro != base_sit.macro:
-                    sit_diff["macro"] = q(sit.macro)
-                policy_changed = (
-                    sit.policy.on_collision != base_sit.policy.on_collision
-                    or sit.policy.create_dirs != base_sit.policy.create_dirs
-                )
-                if policy_changed:
-                    p: CommentedMap = CommentedMap()
-                    p["on_collision"] = str(sit.policy.on_collision)
-                    p["create_dirs"] = sit.policy.create_dirs
-                    sit_diff["policy"] = p
-                if sit.fallback != base_sit.fallback and sit.fallback is not None:
-                    sit_diff["fallback"] = sit.fallback
-                if sit.description != base_sit.description and sit.description is not None:
-                    sit_diff["description"] = q(sit.description)
-                if not sit_diff:
-                    continue  # Identical to base — skip
-                entry = sit_diff
-
-            user_sits[sit_name] = entry
-            if not first_sit:
-                user_sits.yaml_set_comment_before_after_key(sit_name, before="\n")
-            first_sit = False
-
-        if user_sits:
-            data["situations"] = user_sits
-            data.yaml_set_comment_before_after_key("situations", before="\n")
+        for section in ("environment", "directories", "situations"):
+            if section not in diff:
+                continue
+            if section == "situations":
+                sits: CommentedMap = CommentedMap()
+                first = True
+                for sit_name, sit_fields in diff["situations"].items():
+                    sits[sit_name] = build_map(sit_fields, skip_keys=nested_skip)
+                    if not first:
+                        sits.yaml_set_comment_before_after_key(sit_name, before="\n")
+                    first = False
+                data["situations"] = sits
+            elif section == "directories":
+                dirs: CommentedMap = CommentedMap()
+                for dir_name, dir_fields in diff["directories"].items():
+                    dirs[dir_name] = build_map(dir_fields, skip_keys=nested_skip)
+                data["directories"] = dirs
+            else:  # environment: flat string dict
+                data["environment"] = build_map(diff["environment"])
+            data.yaml_set_comment_before_after_key(section, before="\n")
 
         stream = io.StringIO()
         yaml.dump(data, stream)
