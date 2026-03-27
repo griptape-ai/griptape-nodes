@@ -998,3 +998,44 @@ class SaveWorkflowFileFromSerializedFlowResultSuccess(WorkflowNotAlteredMixin, R
 @PayloadRegistry.register
 class SaveWorkflowFileFromSerializedFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Workflow file save failed. Common causes: file system error, permission denied, invalid serialized commands."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveSubflowToWorkflowRequest(RequestPayload):
+    """Serialize a subflow and save it back to its original workflow file.
+
+    Use when: Persisting changes made to a subflow in a modal editor back to
+    the workflow file it was loaded from.
+
+    Args:
+        flow_name: The engine flow name of the subflow to serialize
+        file_path: The target file path to save the workflow to
+        workflow_name: Optional registry key for looking up existing metadata
+
+    Results: SaveSubflowToWorkflowResultSuccess | SaveSubflowToWorkflowResultFailure
+    """
+
+    flow_name: str
+    file_path: str
+    workflow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveSubflowToWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Subflow saved successfully to workflow file.
+
+    Args:
+        file_path: Path where the workflow file was written
+        workflow_metadata: The metadata generated for the saved workflow
+    """
+
+    file_path: str
+    workflow_metadata: WorkflowMetadata
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveSubflowToWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Subflow save to workflow file failed. Common causes: serialization error, file system error, invalid flow name."""

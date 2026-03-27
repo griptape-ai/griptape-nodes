@@ -140,6 +140,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RunWorkflowWithCurrentStateRequest,
     RunWorkflowWithCurrentStateResultFailure,
     RunWorkflowWithCurrentStateResultSuccess,
+    SaveSubflowToWorkflowRequest,
+    SaveSubflowToWorkflowResultFailure,
+    SaveSubflowToWorkflowResultSuccess,
     SaveWorkflowFileFromSerializedFlowRequest,
     SaveWorkflowFileFromSerializedFlowResultFailure,
     SaveWorkflowFileFromSerializedFlowResultSuccess,
@@ -339,6 +342,10 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             SaveWorkflowFileFromSerializedFlowRequest,
             self.on_save_workflow_file_from_serialized_flow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            SaveSubflowToWorkflowRequest,
+            self.on_save_subflow_to_workflow,
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
         event_manager.assign_manager_to_request_type(
@@ -2019,6 +2026,84 @@ class WorkflowManager:
         details = f"Successfully saved workflow file at: {file_path}"
         return SaveWorkflowFileFromSerializedFlowResultSuccess(
             file_path=str(file_path),
+            workflow_metadata=workflow_metadata,
+            result_details=ResultDetails(message=details, level=logging.INFO),
+        )
+
+    async def on_save_subflow_to_workflow(self, request: SaveSubflowToWorkflowRequest) -> ResultPayload:
+        """Save a subflow back to its original workflow file."""
+        file_path_obj = Path(request.file_path)
+        file_name = file_path_obj.stem
+
+        # Derive registry key from caller-provided name or from the file path.
+        if request.workflow_name is not None:
+            registry_key = request.workflow_name
+        else:
+            workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            try:
+                relative = file_path_obj.relative_to(workspace_path)
+                registry_key = derive_registry_key(str(relative))
+            except ValueError:
+                registry_key = derive_registry_key(request.file_path)
+
+        # Serialize the subflow.
+        serialized_flow_result = await GriptapeNodes.ahandle_request(
+            SerializeFlowToCommandsRequest(flow_name=request.flow_name, include_create_flow_command=True)
+        )
+        if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
+            details = f"Attempted to save subflow '{request.flow_name}' to '{request.file_path}'. Failed when serializing flow."
+            return SaveSubflowToWorkflowResultFailure(result_details=details)
+        commands = serialized_flow_result.serialized_flow_commands
+
+        # Strip parent_flow_name so the saved file stands alone as a top-level workflow.
+        if isinstance(commands.flow_initialization_command, CreateFlowRequest):
+            commands.flow_initialization_command.parent_flow_name = None
+
+        # Extract workflow shape from the specific subflow (not the top-level flow).
+        try:
+            workflow_shape_dict = self.extract_workflow_shape(
+                workflow_name=registry_key, flow_name=request.flow_name
+            )
+            workflow_shape = WorkflowShape(
+                inputs=workflow_shape_dict["input"],
+                outputs=workflow_shape_dict["output"],
+            )
+        except ValueError:
+            workflow_shape = None
+
+        # Preserve existing metadata from the registry.
+        existing = self._get_existing_metadata(registry_key)
+        resolved_display_name = existing.display_name
+
+        # Delegate file generation and writing to the existing lower-level handler.
+        save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
+            serialized_flow_commands=commands,
+            file_name=file_name,
+            file_path=request.file_path,
+            display_name=resolved_display_name,
+            description=existing.description,
+            image_path=existing.image,
+            is_template=existing.is_template,
+            execution_flow_name=file_name,
+            workflow_shape=workflow_shape,
+        )
+        save_file_result = await self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
+        if not isinstance(save_file_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
+            details = (
+                f"Attempted to save subflow '{request.flow_name}' to '{request.file_path}'. "
+                f"Failed during file generation: {save_file_result.result_details}"
+            )
+            return SaveSubflowToWorkflowResultFailure(result_details=details)
+
+        workflow_metadata = save_file_result.workflow_metadata
+
+        # Update the registry entry if the workflow is already registered.
+        if WorkflowRegistry.has_workflow_with_name(registry_key):
+            WorkflowRegistry.get_workflow_by_name(registry_key).metadata = workflow_metadata
+
+        details = f"Successfully saved subflow '{request.flow_name}' to: {save_file_result.file_path}"
+        return SaveSubflowToWorkflowResultSuccess(
+            file_path=save_file_result.file_path,
             workflow_metadata=workflow_metadata,
             result_details=ResultDetails(message=details, level=logging.INFO),
         )
@@ -4088,24 +4173,29 @@ class WorkflowManager:
                         workflow_shape[workflow_shape_type][node.name] = {param.name: param_info}
         return workflow_shape
 
-    def extract_workflow_shape(self, workflow_name: str) -> dict[str, Any]:
+    def extract_workflow_shape(self, workflow_name: str, flow_name: str | None = None) -> dict[str, Any]:
         """Extracts the input and output shape for a workflow.
 
         Here we gather information about the Workflow's exposed input and output Parameters
         such that a client invoking the Workflow can understand what values to provide
         as well as what values to expect back as output.
+
+        Args:
+            workflow_name: Registry key used in error messages.
+            flow_name: Specific flow to inspect. If None, the top-level flow is used.
         """
         workflow_shape: dict[str, Any] = {"input": {}, "output": {}}
 
         flow_manager = GriptapeNodes.FlowManager()
-        result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
-        if result.failed():
-            details = f"Workflow '{workflow_name}' does not have a top-level flow."
-            raise ValueError(details)
-        flow_name = cast("GetTopLevelFlowResultSuccess", result).flow_name
         if flow_name is None:
-            details = f"Workflow '{workflow_name}' does not have a top-level flow."
-            raise ValueError(details)
+            result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
+            if result.failed():
+                details = f"Workflow '{workflow_name}' does not have a top-level flow."
+                raise ValueError(details)
+            flow_name = cast("GetTopLevelFlowResultSuccess", result).flow_name
+            if flow_name is None:
+                details = f"Workflow '{workflow_name}' does not have a top-level flow."
+                raise ValueError(details)
 
         control_flow = flow_manager.get_flow_by_name(flow_name)
         nodes = control_flow.nodes
