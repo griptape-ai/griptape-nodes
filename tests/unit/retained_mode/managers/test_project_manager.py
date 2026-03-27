@@ -173,9 +173,7 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/test/output.txt")
 
-    def test_builtin_workspace_dir_resolves_correctly(
-        self, project_manager_with_template: ProjectManager
-    ) -> None:
+    def test_builtin_workspace_dir_resolves_correctly(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {workspace_dir} builtin resolves from ConfigManager."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
@@ -387,9 +385,7 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("staticfiles/output.txt")
 
-    def test_builtin_static_files_dir_resolves_from_config(
-        self, project_manager_with_template: ProjectManager
-    ) -> None:
+    def test_builtin_static_files_dir_resolves_from_config(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {static_files_dir} resolves to the configured static_files_directory setting."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
