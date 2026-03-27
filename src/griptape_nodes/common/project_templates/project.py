@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import BaseModel, Field, ValidationError
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
 from griptape_nodes.common.project_templates.directory import DirectoryDefinition
 from griptape_nodes.common.project_templates.situation import SituationTemplate
@@ -42,32 +44,92 @@ class ProjectTemplate(BaseModel):
         """Get a directory definition by logical name."""
         return self.directories.get(directory_name)
 
-    def to_yaml(self, *, include_comments: bool = True) -> str:
-        """Export project template to YAML string.
+    def to_overlay_yaml(self, base: ProjectTemplate) -> str:  # noqa: C901, PLR0915
+        """Export only user customizations relative to a base template as YAML.
 
-        If include_comments=True, adds helpful comments explaining each section.
+        Produces a minimal overlay containing only what differs from the base
+        (system defaults). Content identical to the base is omitted, keeping
+        the file focused on the user's actual changes.
+
+        Sections with no user content are omitted entirely.
+        Field-level diffing for situations: only changed fields are written.
+
+        Note: deletions of optional fields (fallback, description) that exist
+        in the base are not preserved — they will reappear on next load.
         """
+
+        def q(s: str) -> DoubleQuotedScalarString:
+            return DoubleQuotedScalarString(s)
+
+        def dict_diff(current: dict, base_dict: dict) -> dict:
+            """Return only entries from current that differ from base_dict (recursively)."""
+            result = {}
+            for k, v in current.items():
+                b = base_dict.get(k)
+                if isinstance(v, dict) and isinstance(b, dict):
+                    sub = dict_diff(v, b)
+                    if sub:
+                        result[k] = sub
+                elif v != b and v is not None:
+                    result[k] = v
+            return result
+
+        def build_map(d: dict, skip_keys: frozenset = frozenset()) -> CommentedMap:
+            """Convert a plain dict to a CommentedMap with double-quoted strings."""
+            m: CommentedMap = CommentedMap()
+            for k, v in d.items():
+                if k in skip_keys:
+                    continue
+                if isinstance(v, str):
+                    m[k] = q(v)
+                elif isinstance(v, dict):
+                    m[k] = build_map(v)
+                else:
+                    m[k] = v  # bools, ints
+            return m
+
+        self_dump = self.model_dump(mode="json")
+        base_dump = base.model_dump(mode="json")
+        diff = dict_diff(self_dump, base_dump)
+
         yaml = YAML()
-        yaml.preserve_quotes = True
         yaml.default_flow_style = False
+        yaml.width = 4096
 
-        data = self.model_dump(mode="json", exclude_none=True)
+        data: CommentedMap = CommentedMap()
+        # Required fields — always present regardless of diff
+        data["project_template_schema_version"] = q(self_dump["project_template_schema_version"])
+        data["name"] = q(self_dump["name"])
+        if "description" in diff:
+            data["description"] = q(diff["description"])
 
-        # Convert to YAML string
+        # loader injects name from the YAML dict key — exclude it from nested objects
+        nested_skip = frozenset({"name"})
+
+        for section in ("environment", "directories", "situations"):
+            if section not in diff:
+                continue
+            if section == "situations":
+                sits: CommentedMap = CommentedMap()
+                first = True
+                for sit_name, sit_fields in diff["situations"].items():
+                    sits[sit_name] = build_map(sit_fields, skip_keys=nested_skip)
+                    if not first:
+                        sits.yaml_set_comment_before_after_key(sit_name, before="\n")
+                    first = False
+                data["situations"] = sits
+            elif section == "directories":
+                dirs: CommentedMap = CommentedMap()
+                for dir_name, dir_fields in diff["directories"].items():
+                    dirs[dir_name] = build_map(dir_fields, skip_keys=nested_skip)
+                data["directories"] = dirs
+            else:  # environment: flat string dict
+                data["environment"] = build_map(diff["environment"])
+            data.yaml_set_comment_before_after_key(section, before="\n")
+
         stream = io.StringIO()
         yaml.dump(data, stream)
         yaml_text = stream.getvalue()
-
-        if include_comments:
-            # Add helpful header comment
-            header = (
-                "# Project Template\n"
-                f"# Version: {self.project_template_schema_version}\n"
-                "#\n"
-                "# This file defines how files are organized and saved in your project.\n"
-                "# See documentation for details on customizing situations and directories.\n\n"
-            )
-            yaml_text = header + yaml_text
 
         return yaml_text
 

@@ -536,7 +536,7 @@ class TestSidecarMetadata:
 
         # Create a project template file so sidecar path resolution has a project to use
         project_yml = temp_dir / "project_template.yml"
-        project_yml.write_text(DEFAULT_PROJECT_TEMPLATE.to_yaml(include_comments=False))
+        project_yml.write_text(DEFAULT_PROJECT_TEMPLATE.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE))
         load_result = GriptapeNodes.handle_request(LoadProjectTemplateRequest(project_path=project_yml))
         if isinstance(load_result, LoadProjectTemplateResultSuccess):
             GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=load_result.project_id))
