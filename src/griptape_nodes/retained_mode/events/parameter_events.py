@@ -12,12 +12,11 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.connection_events import IncomingConnection, OutgoingConnection
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    from griptape_nodes.retained_mode.events.connection_events import IncomingConnection, OutgoingConnection
 
 
 @dataclass

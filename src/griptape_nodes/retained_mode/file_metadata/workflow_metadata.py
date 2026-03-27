@@ -8,8 +8,8 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.flow_events import (
     SerializeFlowToCommandsRequest,
     SerializeFlowToCommandsResultSuccess,
@@ -134,7 +134,7 @@ def _collect_parameter_values(node_name: str) -> dict[str, Any] | None:
 
         # Serialize value with error handling
         try:
-            serialized_value = TypeValidator.safe_serialize(value)
+            serialized_value = safe_unstructure(value)
             parameter_values[param.name] = serialized_value
         except Exception as e:
             logger.warning("Failed to serialize parameter '%s' on node '%s': %s", param.name, node_name, e)

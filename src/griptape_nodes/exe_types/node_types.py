@@ -24,13 +24,13 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     ProgressEvent,
     RequestPayload,
 )
+from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     RemoveElementEvent,
@@ -1185,7 +1185,7 @@ class BaseNode(ABC):
                 node_name=self.name,
                 parameter_name=parameter_name,
                 data_type=data_type,
-                value=TypeValidator.safe_serialize(value),
+                value=safe_unstructure(value),
             )
 
             GriptapeNodes.EventManager().put_event(
