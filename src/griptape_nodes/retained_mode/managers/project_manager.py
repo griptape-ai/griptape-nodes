@@ -167,9 +167,9 @@ class ProjectManager:
 
     def __init__(
         self,
-        event_manager: EventManager | None = None,
-        config_manager: ConfigManager | None = None,
-        secrets_manager: SecretsManager | None = None,
+        event_manager: EventManager,
+        config_manager: ConfigManager,
+        secrets_manager: SecretsManager,
     ) -> None:
         """Initialize the ProjectManager.
 
@@ -190,41 +190,32 @@ class ProjectManager:
         self._registered_template_status: dict[Path, ProjectValidationInfo] = {}
 
         # Register event handlers
-        if event_manager is not None:
-            event_manager.assign_manager_to_request_type(
-                LoadProjectTemplateRequest, self.on_load_project_template_request
-            )
-            event_manager.assign_manager_to_request_type(
-                GetProjectTemplateRequest, self.on_get_project_template_request
-            )
-            event_manager.assign_manager_to_request_type(
-                ListProjectTemplatesRequest, self.on_list_project_templates_request
-            )
-            event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
-            event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
-            event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
-            event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
-            event_manager.assign_manager_to_request_type(
-                SaveProjectTemplateRequest, self.on_save_project_template_request
-            )
-            event_manager.assign_manager_to_request_type(
-                AttemptMatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
-            )
-            event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
-            event_manager.assign_manager_to_request_type(
-                GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
-            )
-            event_manager.assign_manager_to_request_type(
-                AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
-            )
+        event_manager.assign_manager_to_request_type(LoadProjectTemplateRequest, self.on_load_project_template_request)
+        event_manager.assign_manager_to_request_type(GetProjectTemplateRequest, self.on_get_project_template_request)
+        event_manager.assign_manager_to_request_type(
+            ListProjectTemplatesRequest, self.on_list_project_templates_request
+        )
+        event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
+        event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
+        event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
+        event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
+        event_manager.assign_manager_to_request_type(SaveProjectTemplateRequest, self.on_save_project_template_request)
+        event_manager.assign_manager_to_request_type(
+            AttemptMatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
+        )
+        event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
+        event_manager.assign_manager_to_request_type(
+            GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
+        )
+        event_manager.assign_manager_to_request_type(
+            AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
+        )
 
-            # Register app initialization listener
-            event_manager.add_listener_to_app_event(
-                AppInitializationComplete,
-                self.on_app_initialization_complete,
-            )
-
-        self._config_manager = self._config_manager
+        # Register app initialization listener
+        event_manager.add_listener_to_app_event(
+            AppInitializationComplete,
+            self.on_app_initialization_complete,
+        )
 
     def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
@@ -525,12 +516,6 @@ class ProjectManager:
                 result_details=f"Attempted to resolve macro path. Failed because missing required variables: {', '.join(sorted(missing))}",
             )
 
-        if self._secrets_manager is None:
-            return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                result_details="Attempted to resolve macro path. Failed because SecretsManager is not available",
-            )
-
         try:
             resolved_string = request.parsed_macro.resolve(resolution_bag, self._secrets_manager)
         except MacroResolutionError as e:
@@ -562,7 +547,7 @@ class ProjectManager:
         """Set which project user has selected."""
         self._current_project_id = request.project_id
 
-        if request.project_id is not None and self._config_manager is not None:
+        if request.project_id is not None:
             project_info = self._successfully_loaded_project_templates.get(request.project_id)
             if project_info is not None and project_info.project_file_path is not None:
                 project_file_path = project_info.project_file_path
@@ -682,11 +667,6 @@ class ProjectManager:
         3. If match succeeds, return success with extracted_variables
         4. If match fails, return success with match_failure (not an error)
         """
-        if self._secrets_manager is None:
-            return AttemptMatchPathAgainstMacroResultFailure(
-                result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Failed because SecretsManager not available",
-            )
-
         extracted = request.parsed_macro.extract_variables(
             request.file_path,
             request.known_variables,
@@ -862,11 +842,6 @@ class ProjectManager:
                 result_details="Attempted to map absolute path. Failed because no current project is set"
             )
 
-        if self._secrets_manager is None:
-            return AttemptMapAbsolutePathToProjectResultFailure(
-                result_details="Attempted to map absolute path. Failed because SecretsManager not available"
-            )
-
         project_info = current_project_result.project_info
 
         # Try to map the path
@@ -993,7 +968,6 @@ class ProjectManager:
                 return str(workflow_file_path.parent)
 
             case "static_files_dir":
-                self._config_manager = self._config_manager
                 return self._config_manager.get_config_value("static_files_directory", default="staticfiles")
 
             case _:
@@ -1034,12 +1008,6 @@ class ProjectManager:
         workspace_dir = os_manager.resolve_path_safely(self._config_manager.workspace_path)
         project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
 
-        # Secrets manager must be available (checked by caller)
-        if self._secrets_manager is None:
-            msg = "SecretsManager not available"
-            raise RuntimeError(msg)
-        secrets_manager = self._secrets_manager
-
         # Collect all variables used across ALL directory macros
         variables_needed: set[str] = set()
         for parsed_macro in project_info.parsed_directory_schemas.values():
@@ -1069,7 +1037,7 @@ class ProjectManager:
                 raise RuntimeError(msg)
 
             try:
-                resolved_path_str = parsed_macro.resolve(builtin_vars, secrets_manager)
+                resolved_path_str = parsed_macro.resolve(builtin_vars, self._secrets_manager)
             except MacroResolutionError as e:
                 msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
                 raise RuntimeError(msg) from e
@@ -1143,8 +1111,7 @@ class ProjectManager:
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         # System defaults use workspace directory as the base directory
-        config_manager = self._config_manager
-        workspace_dir_value = config_manager.get_config_value("workspace_directory")
+        workspace_dir_value = self._config_manager.get_config_value("workspace_directory")
         if workspace_dir_value is None:
             msg = "Attempted to load Project Manager's default project schema. Failed because 'workspace_directory' config value was None"
             raise RuntimeError(msg)
@@ -1185,9 +1152,7 @@ class ProjectManager:
 
         Returns None if no project file should be loaded (missing config, file not found).
         """
-        config_manager = self._config_manager
-
-        project_file_value = config_manager.get_config_value("project_file")
+        project_file_value = self._config_manager.get_config_value("project_file")
         if project_file_value is not None:
             project_path = Path(project_file_value)
             if project_path.exists():
@@ -1197,7 +1162,7 @@ class ProjectManager:
                 project_path,
             )
 
-        workspace_dir_value = config_manager.get_config_value("workspace_directory")
+        workspace_dir_value = self._config_manager.get_config_value("workspace_directory")
         if workspace_dir_value is None:
             logger.debug("Skipping workspace project load: 'workspace_directory' config value is None")
             return None
@@ -1296,8 +1261,7 @@ class ProjectManager:
         workspace project) are skipped. Missing or invalid files are skipped
         with a warning rather than raising.
         """
-        config_manager = self._config_manager
-        registered_paths: list[str] = config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+        registered_paths: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
         for path_str in registered_paths:
             if path_str in self._successfully_loaded_project_templates:
                 continue
@@ -1319,9 +1283,8 @@ class ProjectManager:
         present. Errors are logged as warnings and do not affect the load result.
         """
         try:
-            config_manager = self._config_manager
-            registered: list[str] = config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            registered: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
             if project_id not in registered:
-                config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
+                self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
         except Exception:
             logger.warning("Failed to persist project path '%s' to config", project_id)
