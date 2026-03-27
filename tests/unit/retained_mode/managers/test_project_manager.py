@@ -173,17 +173,13 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/test/output.txt")
 
-    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
     def test_builtin_workspace_dir_resolves_correctly(
-        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+        self, project_manager_with_template: ProjectManager
     ) -> None:
         """Test that {workspace_dir} builtin resolves from ConfigManager."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        mock_config_manager = Mock()
-        mock_config_manager.get_config_value.return_value = "/workspace"
-        mock_config_manager.workspace_path = Path("/workspace")
-        mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
+        project_manager_with_template._config_manager.workspace_path = Path("/workspace")
 
         parsed_macro = ParsedMacro("{workspace_dir}/output.txt")
 
@@ -200,6 +196,8 @@ class TestProjectManagerBuiltinVariables:
     ) -> None:
         """Test that {workflow_name} builtin resolves from ContextManager."""
         from griptape_nodes.common.macro_parser import ParsedMacro
+
+        project_manager_with_template._config_manager.workspace_path = Path("/workspace")
 
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = True
@@ -317,6 +315,8 @@ class TestProjectManagerBuiltinVariables:
         """Test that optional {workflow_dir?:/} is skipped (not an error) when no current workflow."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
+        project_manager_with_template._config_manager.workspace_path = Path("/workspace")
+
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = False
         mock_griptape_nodes.ContextManager.return_value = mock_context_manager
@@ -370,6 +370,8 @@ class TestProjectManagerBuiltinVariables:
         """Test that optional {workflow_dir?:/} falls back gracefully when the workflow is not registered (unsaved)."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
+        project_manager_with_template._config_manager.workspace_path = Path("/workspace")
+
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = True
         mock_context_manager.get_current_workflow_name.return_value = "workflow_5"
@@ -385,17 +387,14 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("staticfiles/output.txt")
 
-    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
     def test_builtin_static_files_dir_resolves_from_config(
-        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+        self, project_manager_with_template: ProjectManager
     ) -> None:
         """Test that {static_files_dir} resolves to the configured static_files_directory setting."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        mock_config_manager = Mock()
-        mock_config_manager.get_config_value.return_value = "my_static"
-        mock_config_manager.workspace_path = Path("/test")
-        mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
+        project_manager_with_template._config_manager.get_config_value.return_value = "my_static"
+        project_manager_with_template._config_manager.workspace_path = Path("/test")
 
         parsed_macro = ParsedMacro("{static_files_dir}/output.png")
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
@@ -968,13 +967,10 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
+        project_manager._config_manager.workspace_path = project_base
+
         # Mock GriptapeNodes.ConfigManager(), ContextManager(), and OSManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
-            mock_config.workspace_path = project_base
-            mock_gn.ConfigManager.return_value = mock_config
-
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
@@ -1032,13 +1028,10 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
+        project_manager._config_manager.workspace_path = project_base
+
         # Mock GriptapeNodes.ConfigManager() and ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
-            mock_config.workspace_path = project_base
-            mock_gn.ConfigManager.return_value = mock_config
-
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
@@ -1111,13 +1104,10 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
+        project_manager._config_manager.workspace_path = project_base
+
         # Mock GriptapeNodes.ConfigManager() and ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
-            mock_config.workspace_path = project_base
-            mock_gn.ConfigManager.return_value = mock_config
-
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
@@ -1175,13 +1165,10 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
+        project_manager._config_manager.workspace_path = project_base
+
         # Mock GriptapeNodes.ConfigManager() and ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
-            mock_config.workspace_path = project_base
-            mock_gn.ConfigManager.return_value = mock_config
-
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
@@ -1237,13 +1224,10 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
+        project_manager._config_manager.workspace_path = project_base
+
         # Mock GriptapeNodes.ConfigManager() and ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.return_value = str(project_base)
-            mock_config.workspace_path = project_base
-            mock_gn.ConfigManager.return_value = mock_config
-
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False
             mock_gn.ContextManager.return_value = mock_context
@@ -1392,12 +1376,9 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            pm._load_workspace_project()
+        pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
@@ -1417,17 +1398,14 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-                mock_file_instance = Mock()
-                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
-                mock_file_cls.return_value = mock_file_instance
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_cls.return_value = mock_file_instance
 
-                pm._load_workspace_project()
+            pm._load_workspace_project()
 
         assert pm._current_project_id == str(workspace_project_path)
         assert str(workspace_project_path) in pm._successfully_loaded_project_templates
@@ -1448,17 +1426,14 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-                mock_file_instance = Mock()
-                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
-                mock_file_cls.return_value = mock_file_instance
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_cls.return_value = mock_file_instance
 
-                pm._load_workspace_project()
+            pm._load_workspace_project()
 
         project_info = pm._successfully_loaded_project_templates[str(workspace_project_path)]
         template = project_info.template
@@ -1490,20 +1465,17 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-                mock_file_instance = Mock()
-                mock_file_instance.read_text.side_effect = FileLoadError(
-                    failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
-                    result_details="permission denied",
-                )
-                mock_file_cls.return_value = mock_file_instance
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.read_text.side_effect = FileLoadError(
+                failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
+                result_details="permission denied",
+            )
+            mock_file_cls.return_value = mock_file_instance
 
-                pm._load_workspace_project()
+            pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
@@ -1523,17 +1495,14 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-                mock_file_instance = Mock()
-                mock_file_instance.read_text.return_value = "not: valid: yaml: ]["
-                mock_file_cls.return_value = mock_file_instance
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.read_text.return_value = "not: valid: yaml: ]["
+            mock_file_cls.return_value = mock_file_instance
 
-                pm._load_workspace_project()
+            pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
@@ -1543,15 +1512,12 @@ situations:
 
         self._setup_system_defaults(pm)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.return_value = None
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.return_value = None
 
-            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-                pm._load_workspace_project()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            pm._load_workspace_project()
 
-                mock_file_cls.assert_not_called()
+            mock_file_cls.assert_not_called()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
@@ -1573,17 +1539,14 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-                mock_file_instance = Mock()
-                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
-                mock_file_cls.return_value = mock_file_instance
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_cls.return_value = mock_file_instance
 
-                await pm.on_app_initialization_complete(AppInitializationComplete())
+            await pm.on_app_initialization_complete(AppInitializationComplete())
 
         assert pm._current_project_id == str(workspace_project_path)
 
@@ -1602,12 +1565,9 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            await pm.on_app_initialization_complete(AppInitializationComplete())
+        await pm.on_app_initialization_complete(AppInitializationComplete())
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
@@ -1627,17 +1587,14 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-                mock_file_instance = Mock()
-                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
-                mock_file_cls.return_value = mock_file_instance
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_cls.return_value = mock_file_instance
 
-                pm._load_workspace_project()
+            pm._load_workspace_project()
 
         assert pm._current_project_id == str(external_project_path)
         assert str(external_project_path) in pm._successfully_loaded_project_templates
@@ -1660,17 +1617,14 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-                mock_file_instance = Mock()
-                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
-                mock_file_cls.return_value = mock_file_instance
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_cls.return_value = mock_file_instance
 
-                pm._load_workspace_project()
+            pm._load_workspace_project()
 
         assert pm._current_project_id == str(workspace_project_path)
 
@@ -1695,17 +1649,14 @@ situations:
                 return {}
             return str(tmp_path)
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
 
-            with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-                mock_file_instance = Mock()
-                mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
-                mock_file_cls.return_value = mock_file_instance
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_cls.return_value = mock_file_instance
 
-                pm._load_workspace_project()
+            pm._load_workspace_project()
 
         assert pm._current_project_id == str(workspace_project_path)
 
@@ -1845,27 +1796,17 @@ class TestRegisterProjectPath:
         """A new project_id is appended when the registered list is empty."""
         from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.return_value = []
-            mock_gn.ConfigManager.return_value = mock_config
-
-            pm._register_project_path("/path/to/project.yml")
-
-        mock_config.set_config_value.assert_called_once_with(PROJECTS_TO_REGISTER_KEY, ["/path/to/project.yml"])
+        pm._config_manager.get_config_value.return_value = []
+        pm._register_project_path("/path/to/project.yml")
+        pm._config_manager.set_config_value.assert_called_once_with(PROJECTS_TO_REGISTER_KEY, ["/path/to/project.yml"])
 
     def test_register_new_path_appends_to_existing_list(self, pm: ProjectManager) -> None:
         """A new project_id is appended alongside existing registered paths."""
         from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.return_value = ["/path/to/other.yml"]
-            mock_gn.ConfigManager.return_value = mock_config
-
-            pm._register_project_path("/path/to/project.yml")
-
-        mock_config.set_config_value.assert_called_once_with(
+        pm._config_manager.get_config_value.return_value = ["/path/to/other.yml"]
+        pm._register_project_path("/path/to/project.yml")
+        pm._config_manager.set_config_value.assert_called_once_with(
             PROJECTS_TO_REGISTER_KEY, ["/path/to/other.yml", "/path/to/project.yml"]
         )
 
@@ -1982,10 +1923,9 @@ situations:
                 return [str(project_path)]
             return []  # for _register_project_path's follow-on call
 
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
+
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
             mock_gn.handle_request.return_value = ReadFileResultSuccess(
                 content=yaml_content,
                 file_size=len(yaml_content),
@@ -2011,20 +1951,17 @@ situations:
             result_details="file not found",
         )
 
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.get_config_value.return_value = [project_path]
-            mock_gn.ConfigManager.return_value = mock_config
+        pm._config_manager.get_config_value.return_value = [project_path]
 
-            with (
-                patch.object(pm, "on_load_project_template_request", return_value=failure),
-                caplog.at_level(logging.WARNING, logger="griptape_nodes"),
-            ):
-                pm._load_registered_projects()
+        with (
+            patch.object(pm, "on_load_project_template_request", return_value=failure),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            pm._load_registered_projects()
 
         assert project_path not in pm._successfully_loaded_project_templates
         warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("Failed to reload registered project" in msg for msg in warning_messages)
+        assert any("Failed to load registered project" in msg for msg in warning_messages)
 
     @pytest.mark.asyncio
     async def test_app_initialization_complete_loads_registered_projects(
@@ -2047,13 +1984,9 @@ situations:
                 return {}
             return str(tmp_path)
 
+        pm._config_manager.get_config_value.side_effect = get_config_value_side_effect
+
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_config = Mock()
-            mock_config.project_config = {}
-            mock_config.env_config = {}
-            mock_config.merged_config = {}
-            mock_config.get_config_value.side_effect = get_config_value_side_effect
-            mock_gn.ConfigManager.return_value = mock_config
             mock_gn.handle_request.return_value = ReadFileResultSuccess(
                 content=yaml_content,
                 file_size=len(yaml_content),

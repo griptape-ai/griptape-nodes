@@ -26,17 +26,11 @@ from griptape_nodes.common.project_templates import (
     SituationTemplate,
     load_partial_project_template,
 )
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.files.path_utils import resolve_file_path
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-from griptape_nodes.retained_mode.events.os_events import (
-    ExistingFilePolicy,
-    ReadFileRequest,
-    ReadFileResultSuccess,
-    WriteFileRequest,
-    WriteFileResultFailure,
-)
+from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultFailure,
@@ -229,6 +223,8 @@ class ProjectManager:
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
             )
+
+        self._config_manager = self._config_manager
 
     def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
@@ -553,7 +549,7 @@ class ProjectManager:
 
         # Make absolute path by resolving against the workspace directory.
         # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        workspace_path = self._config_manager.workspace_path
         absolute_path = resolve_file_path(resolved_string, workspace_path)
 
         return GetPathForMacroResultSuccess(
@@ -638,10 +634,9 @@ class ProjectManager:
 
         Flow:
         1. Validate template_data as a ProjectTemplate model
-        2. Serialize to YAML using ProjectTemplate.to_yaml()
-        3. Issue WriteFileRequest to OSManager (OVERWRITE policy)
-        4. Handle write result
-        5. Invalidate cache (force reload on next access)
+        2. Serialize to YAML using ProjectTemplate.to_overlay_yaml()
+        3. Write to disk via File.write_text
+        4. Invalidate cache (force reload on next access)
         """
         # Step 1: Validate and parse template_data
         try:
@@ -659,24 +654,15 @@ class ProjectManager:
                 result_details=f"Attempted to save project template to '{request.project_path}'. Failed because YAML serialization failed: {e}",
             )
 
-        # Step 3: Write to disk via OSManager
-        write_request = WriteFileRequest(
-            file_path=str(request.project_path),
-            content=yaml_content,
-            encoding="utf-8",
-            existing_file_policy=ExistingFilePolicy.OVERWRITE,
-            create_parents=True,
-            skip_metadata_injection=True,
-        )
-        write_result = GriptapeNodes.handle_request(write_request)
-
-        # Step 4: Handle write result
-        if isinstance(write_result, WriteFileResultFailure):
+        # Step 3: Write to disk
+        try:
+            File(str(request.project_path)).write_text(yaml_content)
+        except FileWriteError as e:
             return SaveProjectTemplateResultFailure(
-                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because file write failed: {write_result.result_details}",
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because file write failed: {e}",
             )
 
-        # Step 5: Invalidate cache so next LoadProjectTemplateRequest reads from disk
+        # Step 4: Invalidate cache so next LoadProjectTemplateRequest reads from disk
         project_id: ProjectID = str(request.project_path)
         self._successfully_loaded_project_templates.pop(project_id, None)
         self._registered_template_status.pop(request.project_path, None)
@@ -983,7 +969,7 @@ class ProjectManager:
                 raise NotImplementedError(msg)
 
             case "workspace_dir":
-                return str(GriptapeNodes.ConfigManager().workspace_path)
+                return str(self._config_manager.workspace_path)
 
             case "workflow_name":
                 context_manager = GriptapeNodes.ContextManager()
@@ -1007,8 +993,8 @@ class ProjectManager:
                 return str(workflow_file_path.parent)
 
             case "static_files_dir":
-                config_manager = GriptapeNodes.ConfigManager()
-                return config_manager.get_config_value("static_files_directory", default="staticfiles")
+                self._config_manager = self._config_manager
+                return self._config_manager.get_config_value("static_files_directory", default="staticfiles")
 
             case _:
                 msg = f"Unknown builtin variable: {var_name}"
@@ -1045,7 +1031,7 @@ class ProjectManager:
         absolute_path = os_manager.resolve_path_safely(absolute_path)
 
         template = project_info.template
-        workspace_dir = os_manager.resolve_path_safely(GriptapeNodes.ConfigManager().workspace_path)
+        workspace_dir = os_manager.resolve_path_safely(self._config_manager.workspace_path)
         project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
 
         # Secrets manager must be available (checked by caller)
@@ -1157,7 +1143,7 @@ class ProjectManager:
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         # System defaults use workspace directory as the base directory
-        config_manager = GriptapeNodes.ConfigManager()
+        config_manager = self._config_manager
         workspace_dir_value = config_manager.get_config_value("workspace_directory")
         if workspace_dir_value is None:
             msg = "Attempted to load Project Manager's default project schema. Failed because 'workspace_directory' config value was None"
@@ -1199,7 +1185,7 @@ class ProjectManager:
 
         Returns None if no project file should be loaded (missing config, file not found).
         """
-        config_manager = GriptapeNodes.ConfigManager()
+        config_manager = self._config_manager
 
         project_file_value = config_manager.get_config_value("project_file")
         if project_file_value is not None:
@@ -1310,7 +1296,7 @@ class ProjectManager:
         workspace project) are skipped. Missing or invalid files are skipped
         with a warning rather than raising.
         """
-        config_manager = GriptapeNodes.ConfigManager()
+        config_manager = self._config_manager
         registered_paths: list[str] = config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
         for path_str in registered_paths:
             if path_str in self._successfully_loaded_project_templates:
@@ -1319,7 +1305,7 @@ class ProjectManager:
             result = self.on_load_project_template_request(load_request)
             if result.failed():
                 logger.warning(
-                    "Failed to reload registered project '%s' on startup: %s",
+                    "Failed to load registered project '%s' on startup: %s",
                     path_str,
                     result.result_details,
                 )
@@ -1327,13 +1313,13 @@ class ProjectManager:
                 logger.info("Reloaded registered project from '%s'", path_str)
 
     def _register_project_path(self, project_id: str) -> None:
-        """Persist a project file path so it is reloaded on the next engine restart.
+        """Persist a project file path so it is loaded on the next engine restart.
 
         Appends the path to the projects_to_register config list if not already
         present. Errors are logged as warnings and do not affect the load result.
         """
         try:
-            config_manager = GriptapeNodes.ConfigManager()
+            config_manager = self._config_manager
             registered: list[str] = config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
             if project_id not in registered:
                 config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
