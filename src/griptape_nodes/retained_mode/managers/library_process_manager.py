@@ -21,7 +21,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     EventResultFailure,
     EventResultSuccess,
-    ExecutionEvent,
     ResultPayload,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
@@ -295,8 +294,8 @@ class LibraryProcessManager(SubprocessWebSocketListenerMixin):
 
         if event_type in ("success_result", "failure_result"):
             self._handle_result_event(event)
-        elif event_type == "execution_event":
-            self._handle_execution_event(event)
+        elif event_type == "queue_event":
+            self._handle_queue_event(event)
         elif event_type == "worker_ready":
             self._handle_worker_ready()
 
@@ -347,24 +346,36 @@ class LibraryProcessManager(SubprocessWebSocketListenerMixin):
 
         logger.warning("Received result event for unknown request_id: %s", request_id)
 
-    def _handle_execution_event(self, event: dict) -> None:
-        """Forward execution events from workers to the parent EventManager."""
-        from griptape_nodes.retained_mode.events.base_events import ExecutionGriptapeNodeEvent
+    def _handle_queue_event(self, event: dict) -> None:
+        """Deserialize a forwarded queue event and put it on the parent's EventManager queue.
+
+        The worker serializes every queued event's inner payload via .json() and
+        sends it as a generic "queue_event". Here we deserialize it back into the
+        correct BaseEvent subclass and re-queue it on the parent so the UI receives it.
+        """
+        from griptape_nodes.retained_mode.events.base_events import (
+            EventResult,
+            ExecutionEvent,
+            ExecutionGriptapeNodeEvent,
+            GriptapeNodeEvent,
+            deserialize_event,
+        )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         payload = event.get("payload", {})
         if isinstance(payload, str):
             payload = json.loads(payload)
 
-        payload_type_name = payload.get("payload_type", "")
-        payload_type = PayloadRegistry.get_type(payload_type_name)
-        if payload_type is None:
-            logger.warning("Unknown execution event payload type: %s", payload_type_name)
+        try:
+            deserialized = deserialize_event(payload)
+        except (TypeError, ValueError):
+            logger.exception("Failed to deserialize queue event from worker")
             return
 
-        execution_event = ExecutionEvent.from_dict(data=payload, payload_type=payload_type)
-        wrapped = ExecutionGriptapeNodeEvent(wrapped_event=execution_event)
-        GriptapeNodes.EventManager().put_event(wrapped)
+        if isinstance(deserialized, ExecutionEvent):
+            GriptapeNodes.EventManager().put_event(ExecutionGriptapeNodeEvent(wrapped_event=deserialized))
+        elif isinstance(deserialized, EventResult):
+            GriptapeNodes.EventManager().put_event(GriptapeNodeEvent(wrapped_event=deserialized))
 
     def _handle_worker_ready(self) -> None:
         """Resolve the ready future for the worker that sent the signal."""

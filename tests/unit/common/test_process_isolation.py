@@ -10,36 +10,41 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from griptape_nodes.exe_types.core_types import ParameterMode
-from griptape_nodes.exe_types.proxy_node import ParameterSchema, ProxyNode
+from griptape_nodes.exe_types.proxy_node import ProxyNode
 from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteRemoteNodeRequest,
     ExecuteRemoteNodeResultSuccess,
 )
 
 
-class TestParameterSchema:
-    """Tests for ParameterSchema serialization round-trips."""
-
-    def test_roundtrip(self) -> None:
-        schema = ParameterSchema(
-            name="input_1",
-            type="str",
-            input_types=["str", "int"],
-            output_type="str",
-            allowed_modes=["INPUT", "PROPERTY"],
-            default_value="default",
-            tooltip="A tooltip",
-        )
-        data = schema.to_dict()
-        restored = ParameterSchema.from_dict(data)
-
-        assert restored.name == "input_1"
-        assert restored.type == "str"
-        assert restored.input_types == ["str", "int"]
-        assert restored.output_type == "str"
-        assert restored.allowed_modes == ["INPUT", "PROPERTY"]
-        assert restored.default_value == "default"
-        assert restored.tooltip == "A tooltip"
+def _make_tree(children: list[dict] | None = None) -> dict:
+    """Build a root_element_tree dict for testing."""
+    if children is None:
+        children = [
+            {
+                "element_type": "Parameter",
+                "name": "input_1",
+                "type": "str",
+                "input_types": ["str"],
+                "output_type": "str",
+                "mode_allowed_input": True,
+                "mode_allowed_property": True,
+                "mode_allowed_output": False,
+                "default_value": "",
+                "tooltip": "First input",
+            },
+            {
+                "element_type": "Parameter",
+                "name": "output",
+                "type": "str",
+                "output_type": "str",
+                "mode_allowed_input": False,
+                "mode_allowed_property": False,
+                "mode_allowed_output": True,
+                "tooltip": "Output value",
+            },
+        ]
+    return {"element_type": "BaseNodeElement", "children": children}
 
 
 class TestExecuteRemoteNodeEvents:
@@ -70,36 +75,19 @@ class TestExecuteRemoteNodeEvents:
 
 
 class TestProxyNode:
-    """Tests for ProxyNode parameter construction and behavior."""
+    """Tests for ProxyNode construction from element tree and behavior."""
 
-    def _make_proxy(self, schemas: list[ParameterSchema] | None = None) -> ProxyNode:
-        if schemas is None:
-            schemas = [
-                ParameterSchema(
-                    name="input_1",
-                    type="str",
-                    input_types=["str"],
-                    output_type="str",
-                    allowed_modes=["INPUT", "PROPERTY"],
-                    default_value="",
-                    tooltip="First input",
-                ),
-                ParameterSchema(
-                    name="output",
-                    type="str",
-                    output_type="str",
-                    allowed_modes=["OUTPUT"],
-                    tooltip="Output value",
-                ),
-            ]
+    def _make_proxy(self, tree: dict | None = None) -> ProxyNode:
+        if tree is None:
+            tree = _make_tree()
         return ProxyNode(
             name="test_proxy",
             library_name="test_lib",
             node_type="TestNode",
-            parameter_schemas=schemas,
+            root_element_tree=tree,
         )
 
-    def test_parameters_created_from_schema(self) -> None:
+    def test_parameters_created_from_tree(self) -> None:
         proxy = self._make_proxy()
 
         param_names = [p.name for p in proxy.parameters]
@@ -132,6 +120,64 @@ class TestProxyNode:
         assert proxy.allow_incoming_connection(mock_node, mock_param, mock_param) is True
         assert proxy.allow_outgoing_connection(mock_param, mock_node, mock_param) is True
 
+    def test_groups_preserve_order_and_nesting(self) -> None:
+        tree = _make_tree(
+            children=[
+                {
+                    "element_type": "Parameter",
+                    "name": "model",
+                    "type": "str",
+                    "mode_allowed_input": False,
+                    "mode_allowed_property": True,
+                    "mode_allowed_output": False,
+                },
+                {
+                    "element_type": "ParameterGroup",
+                    "name": "Settings",
+                    "ui_options": {"collapsed": True},
+                    "children": [
+                        {
+                            "element_type": "Parameter",
+                            "name": "seed",
+                            "type": "int",
+                            "mode_allowed_input": False,
+                            "mode_allowed_property": True,
+                            "mode_allowed_output": False,
+                        },
+                    ],
+                },
+                {
+                    "element_type": "Parameter",
+                    "name": "output",
+                    "type": "str",
+                    "mode_allowed_input": False,
+                    "mode_allowed_property": False,
+                    "mode_allowed_output": True,
+                },
+            ]
+        )
+        proxy = self._make_proxy(tree=tree)
+
+        # All parameters should be found
+        param_names = [p.name for p in proxy.parameters]
+        assert param_names == ["model", "seed", "output"]
+
+        # seed should be inside the Settings group
+        seed_param = proxy.get_parameter_by_name("seed")
+        assert seed_param is not None
+        assert seed_param.parent_group_name == "Settings"
+
+        # model and output should be at root level
+        model_param = proxy.get_parameter_by_name("model")
+        assert model_param is not None
+        assert model_param.parent_group_name is None
+
+        # The root children order should be: model, Settings group, output
+        root_children = proxy.root_ui_element.children
+        assert root_children[0].name == "model"
+        assert root_children[1].name == "Settings"
+        assert root_children[2].name == "output"
+
     @pytest.mark.asyncio
     async def test_aprocess_sends_execute_command(self) -> None:
         proxy = self._make_proxy()
@@ -163,15 +209,20 @@ class TestProxyNode:
 
     @pytest.mark.asyncio
     async def test_aprocess_sets_control_output(self) -> None:
-        schemas = [
-            ParameterSchema(
-                name="exec_out",
-                type="parametercontroltype",
-                output_type="parametercontroltype",
-                allowed_modes=["OUTPUT"],
-            ),
-        ]
-        proxy = self._make_proxy(schemas=schemas)
+        tree = _make_tree(
+            children=[
+                {
+                    "element_type": "Parameter",
+                    "name": "exec_out",
+                    "type": "parametercontroltype",
+                    "output_type": "parametercontroltype",
+                    "mode_allowed_input": False,
+                    "mode_allowed_property": False,
+                    "mode_allowed_output": True,
+                },
+            ]
+        )
+        proxy = self._make_proxy(tree=tree)
 
         mock_result = ExecuteRemoteNodeResultSuccess(
             node_name="test_proxy",

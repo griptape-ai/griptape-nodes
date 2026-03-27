@@ -484,6 +484,22 @@ class EventResultFailure(EventResult[P, R]):
         return False
 
 
+def _parse_event_data(json_data: str | dict | Any) -> dict:
+    """Parse JSON event data into a dictionary."""
+    if isinstance(json_data, str):
+        return json.loads(json_data)
+    if isinstance(json_data, dict):
+        return json_data
+    msg = "Expected json_data to be str or dict"
+    raise TypeError(msg)
+
+
+_RESULT_EVENT_CLASSES: dict[str, type[EventResultSuccess | EventResultFailure]] = {
+    "EventResultSuccess": EventResultSuccess,
+    "EventResultFailure": EventResultFailure,
+}
+
+
 # Helper function to deserialize event from JSON
 def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
     """Deserialize an event from JSON or dict, using the payload type information embedded in the data.
@@ -496,41 +512,33 @@ def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
     """
     from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
-    # Parse the data if it's a string, otherwise use as is
-    if isinstance(json_data, str):
-        data = json.loads(json_data)
-    elif isinstance(json_data, dict):
-        data = json_data
-    else:
-        msg = "Expected json_data to be str or dict"
-        raise TypeError(msg)
-
+    data = _parse_event_data(json_data)
     event_type = data.get("event_type")
 
     # Get payload types from embedded type information
     request_type_name = data.get("request_type")
     result_type_name = data.get("result_type")
-
-    # Look up the actual payload types
     request_type = PayloadRegistry.get_type(request_type_name) if request_type_name else None
     result_type = PayloadRegistry.get_type(result_type_name) if result_type_name else None
 
-    # Determine the event class based on event_type and deserialize
     if event_type == "EventRequest":
-        if request_type:
-            return EventRequest.from_dict(data, request_type)
-        msg = f"Cannot deserialize EventRequest: unknown payload type '{request_type_name}'"
-        raise ValueError(msg)
-    if event_type == "EventResultSuccess":
-        if request_type and result_type:
-            return EventResultSuccess.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResultSuccess: unknown payload types request={request_type_name}, result={result_type_name}"
-        raise ValueError(msg)
-    if event_type == "EventResultFailure":
-        if request_type and result_type:
-            return EventResultFailure.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResultFailure: unknown payload types request={request_type_name}, result={result_type_name}"
-        raise ValueError(msg)
+        if not request_type:
+            msg = f"Cannot deserialize EventRequest: unknown payload type '{request_type_name}'"
+            raise ValueError(msg)
+        return EventRequest.from_dict(data, request_type)
+    if event_type in _RESULT_EVENT_CLASSES:
+        if not request_type or not result_type:
+            msg = f"Cannot deserialize {event_type}: unknown payload types request={request_type_name}, result={result_type_name}"
+            raise ValueError(msg)
+        return _RESULT_EVENT_CLASSES[event_type].from_dict(data, request_type, result_type)
+    if event_type == "ExecutionEvent":
+        payload_type_name = data.get("payload_type")
+        payload_type = PayloadRegistry.get_type(payload_type_name) if payload_type_name else None
+        if not payload_type:
+            msg = f"Cannot deserialize ExecutionEvent: unknown payload type '{payload_type_name}'"
+            raise ValueError(msg)
+        return ExecutionEvent.from_dict(data, payload_type)
+
     msg = f"Unknown/unsupported event type '{event_type}' encountered."
     raise TypeError(msg)
 

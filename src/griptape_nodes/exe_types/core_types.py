@@ -276,7 +276,7 @@ class ParameterType:
 @dataclass(kw_only=True)
 class BaseNodeElement:
     element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
-    element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
+    element_type: str = ""
     name: str = field(default_factory=lambda: str(f"{BaseNodeElement.__name__}_{uuid.uuid4().hex}"))
     parent_group_name: str | None = None
     _changes: dict[str, Any] = field(default_factory=dict)
@@ -292,6 +292,10 @@ class BaseNodeElement:
         return self._children
 
     def __post_init__(self) -> None:
+        # Default element_type to the actual class name if not explicitly set
+        if not self.element_type:
+            self.element_type = self.__class__.__name__
+
         # If there's currently an active element, add this new element as a child
         current = BaseNodeElement.get_current()
         if current is not None:

@@ -8,7 +8,6 @@ to the worker and populates parameter_output_values from the response.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -24,104 +23,33 @@ _MODE_MAP = {
 }
 
 
-@dataclass
-class ParameterSchema:
-    """Serialized parameter definition for proxy node construction.
-
-    Sent from the worker after real node creation so the proxy can mirror
-    the node's parameter interface.
-    """
-
-    name: str
-    type: str | None = None
-    input_types: list[str] | None = None
-    output_type: str | None = None
-    allowed_modes: list[str] | None = None
-    default_value: Any = None
-    tooltip: str = ""
-    ui_options: dict[str, Any] | None = None
-    element_type: str | None = None
-    display_name: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "type": self.type,
-            "input_types": self.input_types,
-            "output_type": self.output_type,
-            "allowed_modes": self.allowed_modes,
-            "default_value": self.default_value,
-            "tooltip": self.tooltip,
-            "ui_options": self.ui_options,
-            "element_type": self.element_type,
-            "display_name": self.display_name,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ParameterSchema:
-        return cls(
-            name=data["name"],
-            type=data.get("type"),
-            input_types=data.get("input_types"),
-            output_type=data.get("output_type"),
-            allowed_modes=data.get("allowed_modes"),
-            default_value=data.get("default_value"),
-            tooltip=data.get("tooltip", ""),
-            ui_options=data.get("ui_options"),
-            element_type=data.get("element_type"),
-            display_name=data.get("display_name"),
-        )
-
-
-@dataclass
-class ParameterGroupSchema:
-    """Serialized parameter group definition for proxy node construction."""
-
-    name: str
-    ui_options: dict[str, Any] | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "ui_options": self.ui_options,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ParameterGroupSchema:
-        return cls(
-            name=data["name"],
-            ui_options=data.get("ui_options"),
-        )
-
-
 class ProxyNode(BaseNode):
     """A proxy that stands in for a node executing in a library worker subprocess.
 
-    Created from a parameter schema received from the worker after the real node
-    is instantiated there. Participates in the DAG like any normal BaseNode.
-    When aprocess() is called, it sends an execute request to the worker and
-    populates parameter_output_values from the response.
+    Created from a serialized root_ui_element tree received from the worker
+    after the real node is instantiated there. Participates in the DAG like
+    any normal BaseNode. When aprocess() is called, it sends an execute request
+    to the worker and populates parameter_output_values from the response.
     """
 
     _library_name: str
     _node_type: str
     _selected_control_output_name: str | None
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         name: str,
         library_name: str,
         node_type: str,
-        parameter_schemas: list[ParameterSchema],
-        parameter_group_schemas: list[ParameterGroupSchema] | None = None,
+        root_element_tree: dict[str, Any] | None = None,
         metadata: dict[Any, Any] | None = None,
     ) -> None:
         super().__init__(name=name, metadata=metadata)
         self._library_name = library_name
         self._node_type = node_type
         self._selected_control_output_name = None
-        self._build_parameter_groups_from_schema(parameter_group_schemas or [])
-        self._build_parameters_from_schema(parameter_schemas)
+        if root_element_tree is not None:
+            self._build_from_element_tree(root_element_tree)
 
     @property
     def library_name(self) -> str:
@@ -131,36 +59,69 @@ class ProxyNode(BaseNode):
     def node_type(self) -> str:
         return self._node_type
 
-    def _build_parameter_groups_from_schema(self, schemas: list[ParameterGroupSchema]) -> None:
-        """Create ParameterGroup objects matching the real node's groups."""
-        for schema in schemas:
-            group = ParameterGroup(name=schema.name, ui_options=schema.ui_options)
+    def _build_from_element_tree(self, tree: dict[str, Any]) -> None:
+        """Reconstruct the node's element hierarchy from the serialized tree.
+
+        Walks the tree in order, creating ParameterGroups and Parameters so
+        that the proxy mirrors the real node's structure exactly.
+        """
+        for child in tree.get("children", []):
+            self._build_element(child, parent_group=None)
+
+    _GROUP_ELEMENT_TYPES = frozenset({"ParameterGroup", "ParameterButtonGroup"})
+
+    def _build_element(self, data: dict[str, Any], parent_group: ParameterGroup | None) -> None:
+        """Recursively build an element from its serialized dict."""
+        element_type = data.get("element_type", "")
+
+        if element_type in self._GROUP_ELEMENT_TYPES:
+            self._build_group(data, parent_group)
+        elif element_type:
+            self._build_parameter(data, parent_group)
+
+    def _build_group(self, data: dict[str, Any], parent_group: ParameterGroup | None) -> None:
+        """Create a ParameterGroup and recursively build its children."""
+        group = ParameterGroup(name=data.get("name", ""), ui_options=data.get("ui_options"))
+
+        if parent_group is not None:
+            parent_group.add_child(group)
+        else:
             self.add_node_element(group)
 
-    def _build_parameters_from_schema(self, schemas: list[ParameterSchema]) -> None:
-        """Create Parameter objects matching the real node's parameters."""
-        for schema in schemas:
-            allowed_modes: set[ParameterMode] | None = None
-            if schema.allowed_modes is not None:
-                allowed_modes = set()
-                for mode_name in schema.allowed_modes:
-                    mode = _MODE_MAP.get(mode_name)
-                    if mode is not None:
-                        allowed_modes.add(mode)
+        for child in data.get("children", []):
+            self._build_element(child, parent_group=group)
 
-            param = Parameter(
-                name=schema.name,
-                type=schema.type,
-                input_types=schema.input_types,
-                output_type=schema.output_type,
-                default_value=schema.default_value,
-                tooltip=schema.tooltip or schema.name,
-                allowed_modes=allowed_modes,
-                ui_options=schema.ui_options,
-                element_type=schema.element_type,
-                display_name=schema.display_name,
-            )
-            self.add_parameter(param)
+    def _build_parameter(self, data: dict[str, Any], parent_group: ParameterGroup | None) -> None:
+        """Create a Parameter from its serialized dict and add it to the node."""
+        allowed_modes: set[ParameterMode] | None = None
+        if data.get("mode_allowed_input") is not None:
+            allowed_modes = set()
+            if data.get("mode_allowed_input"):
+                allowed_modes.add(ParameterMode.INPUT)
+            if data.get("mode_allowed_property"):
+                allowed_modes.add(ParameterMode.PROPERTY)
+            if data.get("mode_allowed_output"):
+                allowed_modes.add(ParameterMode.OUTPUT)
+
+        display_name = None
+        ui_options = data.get("ui_options")
+        if ui_options:
+            display_name = ui_options.get("display_name")
+
+        param = Parameter(
+            name=data.get("name", ""),
+            type=data.get("type"),
+            input_types=data.get("input_types"),
+            output_type=data.get("output_type"),
+            default_value=data.get("default_value"),
+            tooltip=data.get("tooltip") or data.get("name", ""),
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            element_type=data.get("element_type"),
+            display_name=display_name,
+            parent_element_name=parent_group.name if parent_group is not None else None,
+        )
+        self.add_parameter(param)
 
     def get_next_control_output(self) -> Parameter | None:
         """Return the control output selected by the worker's execution."""

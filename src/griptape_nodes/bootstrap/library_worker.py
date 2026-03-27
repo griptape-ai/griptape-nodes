@@ -24,7 +24,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventResultFailure,
     EventResultSuccess,
     ExecutionEvent,
-    ExecutionGriptapeNodeEvent,
     ProgressEvent,
     ResultPayload,
     deserialize_event,
@@ -121,8 +120,6 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
 
     def _handle_create_node(self, request: CreateNodeRequest, *, request_id: str | None = None) -> None:
         """Create a node directly via LibraryRegistry and register it locally."""
-        from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
-        from griptape_nodes.exe_types.proxy_node import ParameterGroupSchema, ParameterSchema
         from griptape_nodes.node_library.library_registry import LibraryRegistry
 
         node_type = request.node_type
@@ -146,42 +143,11 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
 
         self._nodes[node_name] = node
 
-        # Build parameter schemas from the real node
-        parameter_schemas = []
-        for param in node.parameters:
-            if isinstance(param, Parameter):
-                # Determine display_name from ui_options if present
-                display_name = param.ui_options.get("display_name") if param.ui_options else None
-
-                schema = ParameterSchema(
-                    name=param.name,
-                    type=param.type,
-                    input_types=param.input_types,
-                    output_type=param.output_type,
-                    allowed_modes=[m.name for m in param.allowed_modes] if param.allowed_modes else None,
-                    default_value=param.default_value,
-                    tooltip=param.tooltip if isinstance(param.tooltip, str) else "",
-                    ui_options=param.ui_options or None,
-                    element_type=param.element_type,
-                    display_name=display_name,
-                )
-                parameter_schemas.append(schema.to_dict())
-
-        # Build parameter group schemas from the real node
-        parameter_group_schemas = []
-        for group in node.root_ui_element.find_elements_by_type(ParameterGroup):
-            group_schema = ParameterGroupSchema(
-                name=group.name,
-                ui_options=group.ui_options or None,
-            )
-            parameter_group_schemas.append(group_schema.to_dict())
-
         result = CreateNodeResultSuccess(
             node_name=node_name,
             node_type=node_type,
             specific_library_name=self._library_name,
-            parameter_schemas=parameter_schemas,
-            parameter_group_schemas=parameter_group_schemas,
+            root_element_tree=node.root_ui_element.to_dict(),
             result_details=f"Node '{node_name}' created successfully.",
         )
         self._send_result_event(request, result, request_id=request_id)
@@ -265,9 +231,9 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
                 continue
 
             try:
-                if isinstance(event, ExecutionGriptapeNodeEvent):
-                    self.send_event("execution_event", event.wrapped_event.json())
-                elif isinstance(event, ProgressEvent):
+                if isinstance(event, ProgressEvent):
+                    # ProgressEvent is a plain dataclass, convert to an
+                    # ExecutionEvent so it can be serialized and forwarded.
                     payload = GriptapeEvent(
                         node_name=event.node_name,
                         parameter_name=event.parameter_name,
@@ -275,7 +241,9 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
                         value=event.value,
                     )
                     execution_event = ExecutionEvent(payload=payload)
-                    self.send_event("execution_event", execution_event.json())
+                    self.send_event("queue_event", execution_event.json())
+                elif hasattr(event, "wrapped_event"):
+                    self.send_event("queue_event", event.wrapped_event.json())
             except Exception:
                 logger.exception("Failed to forward event from worker '%s'", self._library_name)
 

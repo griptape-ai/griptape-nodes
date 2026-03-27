@@ -493,7 +493,7 @@ class Library:
         if not self._is_out_of_process:
             return self.create_node(node_type=node_type, name=name, metadata=metadata)
 
-        from griptape_nodes.exe_types.proxy_node import ParameterGroupSchema, ParameterSchema, ProxyNode
+        from griptape_nodes.exe_types.proxy_node import ProxyNode
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         process_manager = GriptapeNodes.LibraryProcessManager()
@@ -510,21 +510,11 @@ class Library:
             metadata=metadata,
         )
 
-        # Convert serialized schema dicts to schema objects
-        parameter_schemas = []
-        if result.parameter_schemas:
-            parameter_schemas = [ParameterSchema.from_dict(s) for s in result.parameter_schemas]
-
-        parameter_group_schemas = []
-        if result.parameter_group_schemas:
-            parameter_group_schemas = [ParameterGroupSchema.from_dict(s) for s in result.parameter_group_schemas]
-
         return ProxyNode(
             name=name,
             library_name=self._library_data.name,
             node_type=node_type,
-            parameter_schemas=parameter_schemas,
-            parameter_group_schemas=parameter_group_schemas,
+            root_element_tree=result.root_element_tree,
             metadata=metadata,
         )
 
