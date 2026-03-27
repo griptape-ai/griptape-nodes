@@ -35,6 +35,7 @@ dependencies = [
   "send2trash>=2.1.0",
   "tenacity>=9.0.0",
   "truststore>=0.10.1",
+  "cattrs>=26.1.0",
 ]
 
 [project.optional-dependencies]
@@ -122,6 +123,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "D104"]
 "libraries/**/tests/**" = ["S101", "D104", "INP001"]
+"src/griptape_nodes/retained_mode/events/*" = ["TC001"]
 
 [tool.ruff.lint.flake8-type-checking]
 runtime-evaluated-base-classes = ["pydantic.BaseModel"]

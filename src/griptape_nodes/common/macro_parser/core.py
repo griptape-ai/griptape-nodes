@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.macro_parser.exceptions import (
@@ -12,26 +13,34 @@ from griptape_nodes.common.macro_parser.exceptions import (
 from griptape_nodes.common.macro_parser.matching import extract_unknown_variables
 from griptape_nodes.common.macro_parser.parsing import parse_segments
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
-from griptape_nodes.common.macro_parser.segments import MacroVariables, ParsedStaticValue, ParsedVariable, VariableInfo
+from griptape_nodes.common.macro_parser.segments import (
+    MacroVariables,
+    ParsedSegment,
+    ParsedStaticValue,
+    ParsedVariable,
+    VariableInfo,
+)
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 
+@dataclass
 class ParsedMacro:
     """Parsed macro template with methods for resolving and matching paths.
 
     This is the main API class for working with macro templates.
     """
 
-    def __init__(self, template: str) -> None:
-        """Parse a macro template string, validating syntax."""
-        self.template = template
+    template: str
+    segments: list[ParsedSegment] = field(init=False)
 
+    def __post_init__(self) -> None:
+        """Parse the macro template string, validating syntax."""
         try:
-            segments = parse_segments(template)
+            segments = parse_segments(self.template)
         except MacroSyntaxError as err:
-            msg = f"Attempted to parse template string '{template}'. Failed due to: {err}"
+            msg = f"Attempted to parse template string '{self.template}'. Failed due to: {err}"
             raise MacroSyntaxError(
                 msg,
                 failure_reason=err.failure_reason,

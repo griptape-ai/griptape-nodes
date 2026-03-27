@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
 
+from griptape_nodes.node_library.library_registry import (
+    LibraryMetadata,
+    LibrarySchema,
+    NodeMetadata,
+)
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -15,11 +20,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from griptape_nodes.node_library.library_registry import (
-        LibraryMetadata,
-        LibrarySchema,
-        NodeMetadata,
-    )
+    # Circular import: library_events -> library_manager -> library_events
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
