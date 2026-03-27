@@ -178,7 +178,7 @@ class TestProjectManagerBuiltinVariables:
         """Test that {workspace_dir} builtin resolves from ConfigManager."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        cast(Mock, project_manager_with_template._config_manager).workspace_path = Path("/workspace")
+        cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/workspace")
 
         parsed_macro = ParsedMacro("{workspace_dir}/output.txt")
 
@@ -196,7 +196,7 @@ class TestProjectManagerBuiltinVariables:
         """Test that {workflow_name} builtin resolves from ContextManager."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        cast(Mock, project_manager_with_template._config_manager).workspace_path = Path("/workspace")
+        cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/workspace")
 
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = True
@@ -314,7 +314,7 @@ class TestProjectManagerBuiltinVariables:
         """Test that optional {workflow_dir?:/} is skipped (not an error) when no current workflow."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        cast(Mock, project_manager_with_template._config_manager).workspace_path = Path("/workspace")
+        cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/workspace")
 
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = False
@@ -369,7 +369,7 @@ class TestProjectManagerBuiltinVariables:
         """Test that optional {workflow_dir?:/} falls back gracefully when the workflow is not registered (unsaved)."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        cast(Mock, project_manager_with_template._config_manager).workspace_path = Path("/workspace")
+        cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/workspace")
 
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = True
@@ -390,8 +390,8 @@ class TestProjectManagerBuiltinVariables:
         """Test that {static_files_dir} resolves to the configured static_files_directory setting."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        cast(Mock, project_manager_with_template._config_manager).get_config_value.return_value = "my_static"
-        cast(Mock, project_manager_with_template._config_manager).workspace_path = Path("/test")
+        cast("Mock", project_manager_with_template._config_manager).get_config_value.return_value = "my_static"
+        cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/test")
 
         parsed_macro = ParsedMacro("{static_files_dir}/output.png")
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
@@ -964,7 +964,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
-        cast(Mock, project_manager._config_manager).workspace_path = project_base
+        cast("Mock", project_manager._config_manager).workspace_path = project_base
 
         # Mock GriptapeNodes.ConfigManager(), ContextManager(), and OSManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1025,7 +1025,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
-        cast(Mock, project_manager._config_manager).workspace_path = project_base
+        cast("Mock", project_manager._config_manager).workspace_path = project_base
 
         # Mock GriptapeNodes.ConfigManager() and ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1101,7 +1101,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
-        cast(Mock, project_manager._config_manager).workspace_path = project_base
+        cast("Mock", project_manager._config_manager).workspace_path = project_base
 
         # Mock GriptapeNodes.ConfigManager() and ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1162,7 +1162,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
-        cast(Mock, project_manager._config_manager).workspace_path = project_base
+        cast("Mock", project_manager._config_manager).workspace_path = project_base
 
         # Mock GriptapeNodes.ConfigManager() and ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1221,7 +1221,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
 
-        cast(Mock, project_manager._config_manager).workspace_path = project_base
+        cast("Mock", project_manager._config_manager).workspace_path = project_base
 
         # Mock GriptapeNodes.ConfigManager() and ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1373,7 +1373,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         pm._load_workspace_project()
 
@@ -1395,7 +1395,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1423,7 +1423,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1462,7 +1462,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1492,7 +1492,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1509,7 +1509,7 @@ situations:
 
         self._setup_system_defaults(pm)
 
-        cast(Mock, pm._config_manager).get_config_value.return_value = None
+        cast("Mock", pm._config_manager).get_config_value.return_value = None
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             pm._load_workspace_project()
@@ -1536,7 +1536,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1562,7 +1562,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         await pm.on_app_initialization_complete(AppInitializationComplete())
 
@@ -1584,7 +1584,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1614,7 +1614,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1646,7 +1646,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1793,9 +1793,9 @@ class TestRegisterProjectPath:
         """A new project_id is appended when the registered list is empty."""
         from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
-        cast(Mock, pm._config_manager).get_config_value.return_value = []
+        cast("Mock", pm._config_manager).get_config_value.return_value = []
         pm._register_project_path("/path/to/project.yml")
-        cast(Mock, pm._config_manager).set_config_value.assert_called_once_with(
+        cast("Mock", pm._config_manager).set_config_value.assert_called_once_with(
             PROJECTS_TO_REGISTER_KEY, ["/path/to/project.yml"]
         )
 
@@ -1803,9 +1803,9 @@ class TestRegisterProjectPath:
         """A new project_id is appended alongside existing registered paths."""
         from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
-        cast(Mock, pm._config_manager).get_config_value.return_value = ["/path/to/other.yml"]
+        cast("Mock", pm._config_manager).get_config_value.return_value = ["/path/to/other.yml"]
         pm._register_project_path("/path/to/project.yml")
-        cast(Mock, pm._config_manager).set_config_value.assert_called_once_with(
+        cast("Mock", pm._config_manager).set_config_value.assert_called_once_with(
             PROJECTS_TO_REGISTER_KEY, ["/path/to/other.yml", "/path/to/project.yml"]
         )
 
@@ -1922,7 +1922,7 @@ situations:
                 return [str(project_path)]
             return []  # for _register_project_path's follow-on call
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_gn.handle_request.return_value = ReadFileResultSuccess(
@@ -1950,7 +1950,7 @@ situations:
             result_details="file not found",
         )
 
-        cast(Mock, pm._config_manager).get_config_value.return_value = [project_path]
+        cast("Mock", pm._config_manager).get_config_value.return_value = [project_path]
 
         with (
             patch.object(pm, "on_load_project_template_request", return_value=failure),
@@ -1983,7 +1983,7 @@ situations:
                 return {}
             return str(tmp_path)
 
-        cast(Mock, pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_gn.handle_request.return_value = ReadFileResultSuccess(

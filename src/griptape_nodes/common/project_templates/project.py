@@ -44,7 +44,7 @@ class ProjectTemplate(BaseModel):
         """Get a directory definition by logical name."""
         return self.directories.get(directory_name)
 
-    def to_overlay_yaml(self, base: ProjectTemplate) -> str:
+    def to_overlay_yaml(self, base: ProjectTemplate) -> str:  # noqa: C901, PLR0915
         """Export only user customizations relative to a base template as YAML.
 
         Produces a minimal overlay containing only what differs from the base
