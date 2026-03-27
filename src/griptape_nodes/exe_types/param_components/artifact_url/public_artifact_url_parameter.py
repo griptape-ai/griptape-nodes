@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from typing import Any, ClassVar
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
@@ -125,7 +126,7 @@ class PublicArtifactUrlParameter:
         from griptape_nodes.files.file import File
 
         file_contents = File(url).read_bytes()
-        filename = Path(url).name
+        filename = Path(urlparse(url).path).name
 
         self.gtc_file_path = Path("artifact_url_storage") / uuid4().hex / filename
 
