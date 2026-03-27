@@ -164,10 +164,22 @@ class ProxyNode(BaseNode):
         if self._entry_control_parameter is not None:
             entry_param_name = self._entry_control_parameter.name
 
+        # Collect parameter values, aggregating container children into
+        # their parent values (e.g., ParameterList children become a list).
+        # Child parameter UUIDs differ between the proxy and the real node,
+        # so we must send aggregated values keyed by the parent name.
+        param_values: dict[str, Any] = {}
+        for param in self.parameters:
+            if param.parent_container_name is not None:
+                continue
+            value = self.get_parameter_value(param.name)
+            if value is not None:
+                param_values[param.name] = value
+
         result = await process_manager.execute_node(
             library_name=self._library_name,
             node_name=self.name,
-            parameter_values=dict(self.parameter_values),
+            parameter_values=param_values,
             entry_control_parameter_name=entry_param_name,
         )
 

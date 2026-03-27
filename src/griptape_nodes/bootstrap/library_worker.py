@@ -170,9 +170,36 @@ class LibraryWorker(SubprocessWebSocketSenderMixin):
         node = self._nodes[node_name]
         logger.info("Executing node '%s' in worker '%s'", node_name, self._library_name)
 
-        # Hydrate parameter values
+        # Log the raw parameter values received from the proxy
+        logger.debug(
+            "Raw parameter_values received for node '%s': %s",
+            node_name,
+            {k: (type(v).__name__, v) for k, v in request.parameter_values.items()},
+        )
+
+        # Hydrate parameter values through set_parameter_value so that
+        # converters, validators, and container handling run properly.
         for param_name, value in request.parameter_values.items():
-            node.parameter_values[param_name] = value
+            param = node.get_parameter_by_name(param_name)
+            logger.debug(
+                "Setting parameter '%s' on node '%s': value=%r, type=%s, param_found=%s, param_type=%s",
+                param_name,
+                node_name,
+                value,
+                type(value).__name__,
+                param is not None,
+                type(param).__name__ if param is not None else "N/A",
+            )
+            node.set_parameter_value(param_name, value)
+            # Log what the node actually stored after set
+            stored = node.get_parameter_value(param_name)
+            logger.debug(
+                "After set, node '%s' parameter '%s' stored value: %r (type=%s)",
+                node_name,
+                param_name,
+                stored,
+                type(stored).__name__ if stored is not None else "None",
+            )
 
         # Set entry control parameter if provided
         if request.entry_control_parameter_name:
