@@ -274,5 +274,6 @@ class RequestClient:
             result = payload.get("result", "Success")
             await self._resolve_request(request_id, result)
         else:
-            error_msg = payload.get("result", {}).get("exception", "Unknown error") or "Unknown error"
+            result = payload.get("result", {})
+            error_msg = result.get("exception") or result.get("result_details") or "Unknown error"
             await self._reject_request(request_id, Exception(error_msg))
