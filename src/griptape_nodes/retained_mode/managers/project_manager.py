@@ -648,7 +648,7 @@ class ProjectManager:
 
         # Step 2: Serialize to YAML
         try:
-            yaml_content = template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE, include_comments=False)
+            yaml_content = template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
         except Exception as e:
             return SaveProjectTemplateResultFailure(
                 result_details=f"Attempted to save project template to '{request.project_path}'. Failed because YAML serialization failed: {e}",
