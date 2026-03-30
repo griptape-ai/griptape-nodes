@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 import warnings
@@ -1681,6 +1682,61 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             event_dict["value"] = node.get_parameter_value(self.name)
         return event_dict
 
+    def to_schema(self) -> dict[str, Any]:
+        """Returns all data needed to reconstruct this parameter in a stub class.
+
+        Extends to_dict() with fields required for cross-process reconstruction:
+        param_type (for class dispatch), serializable, private, and settable.
+        default_value is set to None if it is not JSON-serializable.
+        """
+        schema = self.to_dict()
+        schema["param_type"] = self.__class__.__name__
+        schema["serializable"] = self.serializable
+        schema["private"] = self.private
+        schema["settable"] = self._settable
+        try:
+            json.dumps(schema.get("default_value"))
+        except (TypeError, ValueError):
+            schema["default_value"] = None
+        return schema
+
+    @staticmethod
+    def from_schema(schema: dict[str, Any]) -> "Parameter":
+        """Reconstruct a Parameter from a schema dict produced by to_schema().
+
+        Uses object.__new__ + Parameter.__init__ to bypass subclass constructor
+        restrictions, allowing all concrete Parameter subclasses to be reconstructed
+        from the same schema format while preserving the correct Python type.
+        """
+        param_type = schema.get("param_type", "Parameter")
+        param_class = _PARAM_TYPE_REGISTRY.get(param_type, Parameter)
+
+        allowed_modes: set[ParameterMode] = set()
+        if schema.get("mode_allowed_input"):
+            allowed_modes.add(ParameterMode.INPUT)
+        if schema.get("mode_allowed_output"):
+            allowed_modes.add(ParameterMode.OUTPUT)
+        if schema.get("mode_allowed_property"):
+            allowed_modes.add(ParameterMode.PROPERTY)
+
+        instance = object.__new__(param_class)
+        Parameter.__init__(
+            instance,
+            name=schema["name"],
+            tooltip=schema.get("tooltip") or "",
+            type=schema.get("type"),
+            input_types=schema.get("input_types"),
+            output_type=schema.get("output_type"),
+            default_value=schema.get("default_value"),
+            allowed_modes=allowed_modes or None,
+            settable=schema.get("settable", True),
+            serializable=schema.get("serializable", True),
+            user_defined=schema.get("is_user_defined", schema.get("user_defined", False)),
+            private=schema.get("private", False),
+            ui_options=schema.get("ui_options"),
+        )
+        return instance
+
     @property
     def type(self) -> str:
         return self._custom_getter_for_property_type()
@@ -2985,3 +3041,15 @@ class Trait(ABC, BaseNodeElement):
     def validators_for_trait(self) -> list[Callable[[Parameter, Any]]]:
         """Returns a list of methods to be applied as a validator."""
         return []
+
+
+# Registry mapping param_type names to concrete Parameter subclasses.
+# Used by Parameter.from_schema() to reconstruct the correct type from a schema dict.
+_PARAM_TYPE_REGISTRY: dict[str, type[Parameter]] = {
+    "Parameter": Parameter,
+    "ControlParameterInput": ControlParameterInput,
+    "ControlParameterOutput": ControlParameterOutput,
+    "ParameterList": ParameterList,
+    "ParameterKeyValuePair": ParameterKeyValuePair,
+    "ParameterDictionary": ParameterDictionary,
+}

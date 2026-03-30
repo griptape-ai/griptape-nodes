@@ -10,6 +10,7 @@ import platform
 import subprocess
 import sys
 import sysconfig
+import types
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -314,6 +315,7 @@ class LibraryManager:
         library_name: str | None = None
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
+        worker_process: Any = field(default=None, repr=False)
 
     class RegisterLibraryPrerequisites(NamedTuple):
         """Prerequisites established for library loading."""
@@ -1443,12 +1445,19 @@ class LibraryManager:
                         json_path = Path(file_path)
                         base_dir = json_path.parent.absolute()
 
-                        # Add library directory and venv site-packages to sys.path
-                        await self._add_library_paths_to_sys_path(library_data.name, file_path, base_dir)
+                        # Check whether a worker subprocess should handle this library.
+                        # Libraries with a venv get full dependency isolation via a worker;
+                        # libraries without a venv are loaded in-process as before.
+                        venv_python = self._get_venv_python_path(library_data.name, file_path)
+                        use_worker = await anyio.Path(venv_python).exists()
 
-                        # Load the advanced library module if specified
+                        if not use_worker:
+                            # Add library directory and venv site-packages to sys.path
+                            await self._add_library_paths_to_sys_path(library_data.name, file_path, base_dir)
+
+                        # Load the advanced library module if specified (in-process libraries only)
                         advanced_library_instance = None
-                        if library_data.advanced_library_path:
+                        if library_data.advanced_library_path and not use_worker:
                             try:
                                 advanced_library_instance = self._load_advanced_library_module(
                                     library_data=library_data,
@@ -1537,14 +1546,24 @@ class LibraryManager:
                                         logger.error(details)
                                         continue
 
-                        # Attempt to load nodes from the library (modifies library_info in place)
-                        await asyncio.to_thread(
-                            self._attempt_load_nodes_from_library,
-                            library_data=library_data,
-                            library=library,
-                            base_dir=base_dir,
-                            library_info=library_info,
-                        )
+                        if use_worker:
+                            # Start the worker subprocess and register stub node classes
+                            await self._start_worker_and_register_stubs(
+                                library_data=library_data,
+                                library=library,
+                                library_json_path=Path(file_path),
+                                venv_python=venv_python,
+                                library_info=library_info,
+                            )
+                        else:
+                            # Attempt to load nodes from the library (modifies library_info in place)
+                            await asyncio.to_thread(
+                                self._attempt_load_nodes_from_library,
+                                library_data=library_data,
+                                library=library,
+                                base_dir=base_dir,
+                                library_info=library_info,
+                            )
                         self._library_file_path_to_info[file_path] = library_info
                     else:
                         # SANDBOX LIBRARIES: Full processing here (discovery + registration)
@@ -1835,6 +1854,109 @@ class LibraryManager:
         # Create venv relative to the xdg data home
         return xdg_data_home() / "griptape_nodes" / "libraries" / clean_library_name / ".venv"
 
+    def _get_venv_python_path(self, library_name: str, library_file_path: str | None = None) -> Path:
+        """Get the path to the Python executable inside the library's virtual environment."""
+        venv_path = self._get_library_venv_path(library_name, library_file_path)
+        if OSManager.is_windows():
+            return venv_path / "Scripts" / "python.exe"
+        return venv_path / "bin" / "python"
+
+    @staticmethod
+    def _compute_core_pythonpath() -> str:
+        """Build PYTHONPATH so the worker subprocess can import griptape_nodes from the main installation.
+
+        Only griptape_nodes is placed in PYTHONPATH (prepended). Other main-venv packages —
+        including griptape itself — are passed via GRIPTAPE_NODES_MAIN_SITE_PACKAGES and
+        appended to sys.path by the worker, so library-specific packages in the library
+        venv retain priority for conflict isolation.
+        """
+        paths: list[str] = []
+        spec = importlib.util.find_spec("griptape_nodes")
+        if spec and spec.origin:
+            pkg_parent = str(Path(spec.origin).parent.parent)
+            if pkg_parent not in paths:
+                paths.append(pkg_parent)
+        return os.pathsep.join(paths)
+
+    @staticmethod
+    def _compute_main_site_packages() -> str:
+        """Return the main venv's site-packages directories as a pathsep-joined string.
+
+        These are passed to the worker subprocess so that griptape_nodes's own runtime
+        dependencies (semver, anyio, pydantic, etc.) are importable even though they are
+        not installed in the library's venv. The worker appends these paths rather than
+        prepending them, so library-specific packages retain priority for conflict isolation.
+        """
+        paths: list[str] = []
+        for scheme_key in ("purelib", "platlib"):
+            p = sysconfig.get_path(scheme_key)
+            if p and p not in paths:
+                paths.append(p)
+        return os.pathsep.join(paths)
+
+    async def _start_worker_and_register_stubs(
+        self,
+        library_data: Any,
+        library: Any,
+        library_json_path: Path,
+        venv_python: Path,
+        library_info: LibraryManager.LibraryInfo,
+    ) -> None:
+        """Start a worker subprocess for the library and register stub node classes.
+
+        The worker runs with the library's own venv Python so its dependencies are
+        fully isolated from the main process. Stub classes reconstructed from the
+        worker's schemas are registered in the library and in sys.modules under stable
+        namespaces so workflow serialization round-trips work correctly.
+
+        Modifies library_info in place (sets worker_process, may append problems).
+        """
+        from griptape_nodes.retained_mode.managers.library_worker_process import LibraryWorkerProcess
+
+        worker = LibraryWorkerProcess()
+        try:
+            await worker.start(
+                library_json_path=library_json_path,
+                venv_python=venv_python,
+                core_pythonpath=self._compute_core_pythonpath(),
+                main_site_packages=self._compute_main_site_packages(),
+            )
+        except Exception as err:
+            details = f"Failed to start worker for library '{library_data.name}': {err}"
+            logger.error(details)
+            # Worker failed to start; the library will have no registered nodes
+            return
+
+        library_info.worker_process = worker
+
+        try:
+            stubs = await worker.fetch_and_build_stubs()
+        except Exception as err:
+            details = f"Failed to fetch node schemas from worker for library '{library_data.name}': {err}"
+            logger.error(details)
+            stubs = {}
+
+        for node_def in library_data.nodes:
+            stub_class = stubs.get(node_def.class_name)
+            if stub_class is None:
+                continue
+
+            library.register_new_node_type(stub_class, metadata=node_def.metadata)
+
+            # Register stub class under a stable module namespace so workflow
+            # serialization (which imports by module path) can resolve the class.
+            stable_ns = self._create_stable_namespace(library_data.name, Path(node_def.file_path))
+            if stable_ns not in sys.modules:
+                fake_module = types.ModuleType(stable_ns)
+                sys.modules[stable_ns] = fake_module
+            setattr(sys.modules[stable_ns], node_def.class_name, stub_class)
+
+            # Track the stable namespace for cleanup when the library is unloaded
+            library_key = library_data.name
+            if library_key not in self._library_to_stable_modules:
+                self._library_to_stable_modules[library_key] = set()
+            self._library_to_stable_modules[library_key].add(stable_ns)
+
     async def _add_library_paths_to_sys_path(self, library_name: str, library_file_path: str, base_dir: Path) -> None:
         """Add a library's directory and venv site-packages to sys.path.
 
@@ -1903,6 +2025,13 @@ class LibraryManager:
         # up in the table of attempted library loads.
         lib_info = self.get_library_info_by_library_name(request.library_name)
         if lib_info:
+            if lib_info.worker_process is not None:
+                # Schedule worker shutdown without blocking; the process will exit when stdin closes
+                try:
+                    asyncio.ensure_future(lib_info.worker_process.stop())
+                except RuntimeError:
+                    pass
+                lib_info.worker_process = None
             del self._library_file_path_to_info[lib_info.library_path]
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
         return UnloadLibraryFromRegistryResultSuccess(result_details=details)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import base64
+import json
 import logging
 import pickle
 from contextvars import ContextVar
@@ -122,6 +124,22 @@ logger = logging.getLogger("griptape_nodes")
 # Tracks the name of the node currently being executed in this async context.
 # Each asyncio task gets its own copy, so parallel node execution is safe.
 current_executing_node_name: ContextVar[str | None] = ContextVar("current_executing_node_name", default=None)
+
+
+def _serialize_value(value: Any) -> Any:
+    """Serialize a value to JSON-safe format, using pickle+base64 for complex types."""
+    try:
+        json.dumps(value)
+        return value
+    except (TypeError, ValueError):
+        return {"__pickled__": base64.b64encode(pickle.dumps(value)).decode()}
+
+
+def _deserialize_value(value: Any) -> Any:
+    """Deserialize a value from JSON-safe format (reversing _serialize_value)."""
+    if isinstance(value, dict) and "__pickled__" in value:
+        return pickle.loads(base64.b64decode(value["__pickled__"]))  # noqa: S301
+    return value
 
 
 class IterationControlAction(StrEnum):
@@ -260,9 +278,40 @@ class NodeExecutor:
                 return
 
             # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-            await node.aprocess()
+            library_worker = self._get_worker_for_node(node)
+            if library_worker is not None:
+                await self._execute_node_in_worker(node, library_worker)
+            else:
+                await node.aprocess()
         finally:
             current_executing_node_name.reset(token)
+
+    def _get_worker_for_node(self, node: BaseNode) -> Any | None:
+        """Return the LibraryWorkerProcess for a node's library, or None if not using a worker."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        library_name = node.metadata.get("library") if node.metadata else None
+        if not library_name:
+            return None
+        info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
+        if info is None or info.worker_process is None or not info.worker_process.is_running():
+            return None
+        return info.worker_process
+
+    async def _execute_node_in_worker(self, node: BaseNode, worker: Any) -> None:
+        """Execute a node in its library worker subprocess and apply the output values."""
+        parameter_values = {
+            p.name: _serialize_value(node.parameter_values.get(p.name))
+            for p in node.parameters
+        }
+        class_name = node.metadata.get("node_type", node.__class__.__name__) if node.metadata else node.__class__.__name__
+        output_values = await worker.execute_node(
+            class_name=class_name,
+            node_name=node.name,
+            parameter_values=parameter_values,
+        )
+        for param_name, value in output_values.items():
+            node.parameter_output_values[param_name] = _deserialize_value(value)
 
     async def _execute_and_apply_workflow(
         self,
