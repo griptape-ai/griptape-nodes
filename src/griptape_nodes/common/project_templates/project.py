@@ -79,7 +79,9 @@ class ProjectTemplate(BaseModel):
         nested_skip = frozenset({"name"})
 
         def filter_keys(d: dict, skip_keys: frozenset) -> dict:
-            return {k: (filter_keys(v, skip_keys) if isinstance(v, dict) else v) for k, v in d.items() if k not in skip_keys}
+            return {
+                k: (filter_keys(v, skip_keys) if isinstance(v, dict) else v) for k, v in d.items() if k not in skip_keys
+            }
 
         filtered = {k: (filter_keys(v, nested_skip) if isinstance(v, dict) else v) for k, v in output.items()}
 
