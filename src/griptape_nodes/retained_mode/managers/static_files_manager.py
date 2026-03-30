@@ -376,6 +376,18 @@ class StaticFilesManager:
             result_details="Successfully created static file download URL",
         )
 
+    def _is_user_configured_base_url(self) -> bool:
+        """Check whether the user has explicitly configured a custom static_server_base_url.
+
+        A custom URL is one that differs from the default localhost address, indicating the
+        user is using a tunnel (ngrok, cloudflare), reverse proxy, or similar.
+        """
+        default_base_url = self.config_manager.get_config_value(
+            "static_server_base_url", config_source="default_config"
+        )
+        merged_base_url = self.config_manager.get_config_value("static_server_base_url")
+        return merged_base_url != default_base_url
+
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # Start static server in daemon thread if enabled
         if isinstance(self.storage_driver, LocalStorageDriver):
@@ -385,9 +397,16 @@ class StaticFilesManager:
             sock = bind_free_socket(STATIC_SERVER_HOST, STATIC_SERVER_PORT)
             actual_port = sock.getsockname()[1]
 
+            # Check whether the user has set a custom base URL (e.g. a tunnel or reverse proxy)
+            # *before* we overwrite the config with the actual local address.
+            user_has_custom_url = self._is_user_configured_base_url()
+
             actual_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}"
             self.config_manager.set_config_value("static_server_base_url", actual_base_url)
-            self.storage_driver.base_url = f"{actual_base_url}{STATIC_SERVER_URL}"
+
+            if not user_has_custom_url:
+                # No custom URL — update the storage driver to use the actual local address.
+                self.storage_driver.base_url = f"{actual_base_url}{STATIC_SERVER_URL}"
 
             threading.Thread(target=start_static_server, args=(sock,), daemon=True, name="static-server").start()
 
