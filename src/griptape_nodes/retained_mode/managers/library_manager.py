@@ -1445,19 +1445,20 @@ class LibraryManager:
                         json_path = Path(file_path)
                         base_dir = json_path.parent.absolute()
 
-                        # Check whether a worker subprocess should handle this library.
-                        # Libraries with a venv get full dependency isolation via a worker;
-                        # libraries without a venv are loaded in-process as before.
+                        # All libraries require their own venv for dependency isolation.
+                        # A missing venv is a hard failure — there is no in-process fallback.
                         venv_python = self._get_venv_python_path(library_data.name, file_path)
-                        use_worker = await anyio.Path(venv_python).exists()
+                        if not await anyio.Path(venv_python).exists():
+                            library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
+                            library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+                            self._library_file_path_to_info[file_path] = library_info
+                            details = f"Library '{library_data.name}' has no venv at '{venv_python}'. Install the library's dependencies before loading it."
+                            logger.error(details)
+                            return RegisterLibraryFromFileResultFailure(result_details=details)
 
-                        if not use_worker:
-                            # Add library directory and venv site-packages to sys.path
-                            await self._add_library_paths_to_sys_path(library_data.name, file_path, base_dir)
-
-                        # Load the advanced library module if specified (in-process libraries only)
+                        # Load the advanced library module if specified (not supported for worker libraries)
                         advanced_library_instance = None
-                        if library_data.advanced_library_path and not use_worker:
+                        if library_data.advanced_library_path:
                             try:
                                 advanced_library_instance = self._load_advanced_library_module(
                                     library_data=library_data,
@@ -1546,24 +1547,14 @@ class LibraryManager:
                                         logger.error(details)
                                         continue
 
-                        if use_worker:
-                            # Start the worker subprocess and register stub node classes
-                            await self._start_worker_and_register_stubs(
-                                library_data=library_data,
-                                library=library,
-                                library_json_path=Path(file_path),
-                                venv_python=venv_python,
-                                library_info=library_info,
-                            )
-                        else:
-                            # Attempt to load nodes from the library (modifies library_info in place)
-                            await asyncio.to_thread(
-                                self._attempt_load_nodes_from_library,
-                                library_data=library_data,
-                                library=library,
-                                base_dir=base_dir,
-                                library_info=library_info,
-                            )
+                        # Start the worker subprocess and register stub node classes
+                        await self._start_worker_and_register_stubs(
+                            library_data=library_data,
+                            library=library,
+                            library_json_path=Path(file_path),
+                            venv_python=venv_python,
+                            library_info=library_info,
+                        )
                         self._library_file_path_to_info[file_path] = library_info
                     else:
                         # SANDBOX LIBRARIES: Full processing here (discovery + registration)
@@ -1940,6 +1931,11 @@ class LibraryManager:
             stub_class = stubs.get(node_def.class_name)
             if stub_class is None:
                 continue
+
+            # Tag the stub class so the node executor can route execution back to
+            # this worker without relying on instance metadata (which is not set
+            # when nodes are instantiated from workflow files).
+            stub_class._worker_library_name = library_data.name
 
             library.register_new_node_type(stub_class, metadata=node_def.metadata)
 

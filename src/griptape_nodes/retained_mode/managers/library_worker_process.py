@@ -10,12 +10,18 @@ import asyncio
 import json
 import logging
 import os
+import re
 import uuid
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Matches the standard Python logging format "LEVEL:logger_name:message" so we
+# can forward worker stderr lines at their original log level rather than always
+# treating them as WARNING.
+_STDERR_LEVEL_RE = re.compile(r"^(DEBUG|INFO|WARNING|ERROR|CRITICAL):")
 
 # Path to the worker entry point script
 _WORKER_ENTRY_PATH = Path(__file__).parent.parent.parent / "bootstrap" / "workers" / "library_worker_entry.py"
@@ -43,6 +49,7 @@ class LibraryWorkerProcess:
         # Maps request_id → Future that resolves when the worker responds
         self._pending: dict[str, asyncio.Future] = {}
         self._reader_task: asyncio.Task | None = None
+        self._stderr_reader_task: asyncio.Task | None = None
         self._write_lock: asyncio.Lock = asyncio.Lock()
         self._ready_event: asyncio.Event = asyncio.Event()
 
@@ -77,6 +84,8 @@ class LibraryWorkerProcess:
         if main_site_packages:
             env["GRIPTAPE_NODES_MAIN_SITE_PACKAGES"] = main_site_packages
 
+        logger.info("Starting worker subprocess for %s using %s", library_json_path, venv_python)
+
         self._process = await asyncio.create_subprocess_exec(
             str(venv_python),
             str(_WORKER_ENTRY_PATH),
@@ -90,6 +99,7 @@ class LibraryWorkerProcess:
         )
 
         self._reader_task = asyncio.create_task(self._read_loop())
+        self._stderr_reader_task = asyncio.create_task(self._stderr_read_loop())
 
         try:
             await asyncio.wait_for(self._ready_event.wait(), timeout=_STARTUP_TIMEOUT_SECONDS)
@@ -100,6 +110,35 @@ class LibraryWorkerProcess:
                 f"within {_STARTUP_TIMEOUT_SECONDS}s"
             )
             raise RuntimeError(msg) from None
+
+        # _read_loop sets _ready_event on crash too, so check the process is still alive.
+        if not self.is_running():
+            rc = self._process.returncode if self._process else "unknown"
+            msg = f"Worker subprocess for {library_json_path} exited before becoming ready (exit code {rc})"
+            raise RuntimeError(msg)
+
+        logger.info("Worker subprocess ready for %s", library_json_path)
+
+    async def _stderr_read_loop(self) -> None:
+        """Read worker stderr line by line and forward each line at its original log level.
+
+        Standard Python logging emits lines in the format "LEVEL:name:message". We parse
+        that prefix so that WARNING lines stay at WARNING, ERROR lines are surfaced as
+        ERROR, etc. Lines that don't match the format are logged at DEBUG.
+        """
+        assert self._process is not None
+        assert self._process.stderr is not None
+
+        try:
+            async for raw_line in self._process.stderr:
+                line = raw_line.decode("utf-8", errors="replace").rstrip()
+                if not line:
+                    continue
+                m = _STDERR_LEVEL_RE.match(line)
+                level = getattr(logging, m.group(1)) if m else logging.DEBUG
+                logger.log(level, "Worker stderr: %s", line)
+        except Exception:
+            pass
 
     async def _read_loop(self) -> None:
         """Read worker stdout line by line, dispatching messages to pending futures."""
@@ -164,14 +203,9 @@ class LibraryWorkerProcess:
                     future.set_exception(error)
             self._pending.clear()
 
-            # Drain and log stderr — use error level so crashes are visible
-            if self._process is not None and self._process.stderr is not None:
-                try:
-                    stderr_data = await self._process.stderr.read()
-                    if stderr_data:
-                        logger.error("Worker stderr: %s", stderr_data.decode("utf-8", errors="replace"))
-                except Exception:
-                    pass
+            # Unblock start() if the worker crashed before sending "ready".
+            # start() checks is_running() after the event to detect crash-before-ready.
+            self._ready_event.set()
 
     def _forward_event(self, event_class: str, payload_dict: dict, raw_msg: dict) -> None:
         """Reconstruct an event from a worker message and put it into the main event queue."""
@@ -269,15 +303,17 @@ class LibraryWorkerProcess:
             except asyncio.TimeoutError:
                 self._process.kill()
 
-        if self._reader_task is not None:
-            self._reader_task.cancel()
-            try:
-                await self._reader_task
-            except asyncio.CancelledError:
-                pass
+        for task in (self._reader_task, self._stderr_reader_task):
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
         self._process = None
         self._reader_task = None
+        self._stderr_reader_task = None
 
     async def fetch_and_build_stubs(self) -> dict[str, type]:
         """Fetch node schemas from the worker and return a dict of stub node classes.
@@ -348,8 +384,11 @@ def _build_stub_class(class_name: str, schema: dict) -> type:
         _populate_from_element_tree(self, element_tree)
 
     def process(self) -> None:
-        raise NotImplementedError(
-            f"Stub {class_name}: execution is dispatched to the library worker subprocess"
+        library = getattr(self.__class__, "_worker_library_name", "<unknown library>")
+        raise RuntimeError(
+            f"Stub node '{class_name}' (library '{library}') must only be executed via its "
+            f"library worker subprocess. Direct in-process execution is forbidden. "
+            f"This is a fatal bug — the node executor must route this node to its worker."
         )
 
     stub = type(class_name, (base_class,), {"__init__": __init__, "process": process})

@@ -329,7 +329,7 @@ def _main() -> None:
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
 
     # Route all logging to stderr so it never corrupts the stdout IPC channel
-    logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
+    logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
     parser = ArgumentParser(description="Griptape Nodes library worker subprocess")
     parser.add_argument(

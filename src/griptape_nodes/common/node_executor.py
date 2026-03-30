@@ -290,12 +290,33 @@ class NodeExecutor:
         """Return the LibraryWorkerProcess for a node's library, or None if not using a worker."""
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        library_name = node.metadata.get("library") if node.metadata else None
+        # Use the class-level attribute set during stub registration. Instance metadata
+        # is not reliable here because nodes created from workflow files are instantiated
+        # without explicit metadata.
+        library_name = getattr(node.__class__, "_worker_library_name", None)
         if not library_name:
-            return None
+            info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(metadata_library)
+            if info is not None and info.worker_process is not None:
+                raise RuntimeError(
+                    f"Node '{node.name}' (class {node.__class__.__name__}) belongs to library "
+                    f"'{metadata_library}' which uses a worker subprocess, but the class has no "
+                    f"'_worker_library_name' attribute — it was not registered as a stub. "
+                    f"The real node class must not be used in the main process. "
+                    f"This is a fatal stub-registration bug."
+                )
         info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
         if info is None or info.worker_process is None or not info.worker_process.is_running():
-            return None
+            raise RuntimeError(
+                f"Node '{node.name}' (class {node.__class__.__name__}, library '{library_name}') "
+                f"requires a worker subprocess but none is running. "
+                f"The library may have failed to load or the worker crashed."
+            )
+        logger.info(
+            "Routing node '%s' (class %s) to worker for library '%s'",
+            node.name,
+            node.__class__.__name__,
+            library_name,
+        )
         return info.worker_process
 
     async def _execute_node_in_worker(self, node: BaseNode, worker: Any) -> None:
@@ -310,8 +331,21 @@ class NodeExecutor:
             node_name=node.name,
             parameter_values=parameter_values,
         )
+        logger.info(
+            "Worker output for node '%s' (class %s): %s",
+            node.name,
+            class_name,
+            output_values,
+        )
         for param_name, value in output_values.items():
-            node.parameter_output_values[param_name] = _deserialize_value(value)
+            deserialized = _deserialize_value(value)
+            logger.info(
+                "Applying worker output to node '%s': %s = %r",
+                node.name,
+                param_name,
+                deserialized,
+            )
+            node.parameter_output_values[param_name] = deserialized
 
     async def _execute_and_apply_workflow(
         self,
