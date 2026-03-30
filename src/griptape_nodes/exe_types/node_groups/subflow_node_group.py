@@ -11,6 +11,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
     Trait,
 )
+from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
@@ -22,11 +23,13 @@ from griptape_nodes.retained_mode.events.connection_events import (
     DeleteConnectionRequest,
     DeleteConnectionResultSuccess,
 )
+from griptape_nodes.retained_mode.events.flow_events import DeleteFlowRequest
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AddParameterToNodeResultSuccess,
     RemoveParameterFromNodeRequest,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 if TYPE_CHECKING:
@@ -1015,6 +1018,15 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""
+
+    def on_delete(self) -> None:
+        nodes_to_remove = list(self.nodes.values())
+        self.remove_nodes_from_group(nodes_to_remove)
+        subflow_name = self.metadata.get("subflow_name")
+        if subflow_name is not None:
+            subflow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(subflow_name, ControlFlow)
+            if subflow is not None:
+                GriptapeNodes.handle_request(DeleteFlowRequest(flow_name=subflow_name))
 
     def delete_group(self) -> str | None:
         nodes_to_remove = list(self.nodes.values())
