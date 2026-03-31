@@ -1262,15 +1262,35 @@ class ParameterButtonGroup(BaseNodeElement, UIOptionsMixin):
         ui_options: dict | None = None,
         *,
         orientation: Literal["horizontal", "vertical"] = "horizontal",
+        hide_label: bool | None = None,
+        display_name: str | None = None,
         **kwargs,
     ):
         super().__init__(name=name, element_type="ParameterButtonGroup", **kwargs)
+
         if ui_options is None:
             ui_options = {}
         else:
             ui_options = ui_options.copy()
 
-        # Set button group specific UI options
+        if hide_label is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=ui_options, param_name="hide_label", param_value=hide_label
+            )
+        if display_name is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=ui_options, param_name="display_name", param_value=display_name
+            )
+
+        if "hide_label" not in ui_options:
+            if hide_label is not None:
+                ui_options["hide_label"] = hide_label
+            else:
+                ui_options["hide_label"] = True
+
+        if display_name is not None and "display_name" not in ui_options:
+            ui_options["display_name"] = display_name
+
         ui_options["button_group"] = True
         ui_options["orientation"] = orientation
 
@@ -1305,6 +1325,31 @@ class ParameterButtonGroup(BaseNodeElement, UIOptionsMixin):
         """
         self._orientation = value
         self.update_ui_options_key("orientation", value)
+
+    @property
+    def hide_label(self) -> bool:
+        """Whether the button group label is hidden in the UI (defaults to True)."""
+        return self.ui_options.get("hide_label", True)
+
+    @hide_label.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide_label(self, value: bool) -> None:
+        self.update_ui_options_key("hide_label", value)
+
+    @property
+    def display_name(self) -> str | None:
+        """Human-readable label for the button group (overrides the default from `name`)."""
+        return self.ui_options.get("display_name")
+
+    @display_name.setter
+    @BaseNodeElement.emits_update_on_write
+    def display_name(self, value: str | None) -> None:
+        if value is None:
+            ui_options = self.ui_options.copy()
+            ui_options.pop("display_name", None)
+            self.ui_options = ui_options
+        else:
+            self.update_ui_options_key("display_name", value)
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this button group and its children."""
