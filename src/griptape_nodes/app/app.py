@@ -5,6 +5,8 @@ import json
 import logging
 import sys
 import threading
+import time
+import uuid
 from dataclasses import dataclass
 
 import truststore
@@ -84,6 +86,14 @@ LOG_MESSAGE_MAX_LENGTH = 500
 # MVP: at most one entry. Future: WorkerRegistry class with library→worker routing.
 _registered_workers: dict[str, str] = {}  # worker_engine_id → worker_request_topic
 
+# Maps worker_engine_id → monotonic timestamp of last received heartbeat response.
+_worker_last_seen: dict[str, float] = {}
+
+# Orchestrator sends a WorkerHeartbeatRequest to each worker every N seconds.
+# Workers silent longer than the timeout are evicted.
+_WORKER_HEARTBEAT_INTERVAL_S: float = 5.0
+_WORKER_HEARTBEAT_TIMEOUT_S: float = 15.0
+
 # Event types always handled locally by the orchestrator and never forwarded to workers.
 _ORCHESTRATOR_LOCAL_TYPES: tuple[type, ...] = (
     app_events.AppStartSessionRequest,
@@ -92,6 +102,8 @@ _ORCHESTRATOR_LOCAL_TYPES: tuple[type, ...] = (
     app_events.SessionHeartbeatRequest,
     app_events.EngineHeartbeatRequest,
     worker_events.RegisterWorkerRequest,
+    worker_events.WorkerHeartbeatRequest,  # worker handles locally; never forward
+    worker_events.UnregisterWorkerRequest,  # orchestrator handles locally
 )
 
 
@@ -271,9 +283,66 @@ async def _run_websocket_tasks(worker_session_id: str = "") -> None:
             )
             logger.info("Worker %s sent registration to session %s", worker_engine_id, worker_session_id)
 
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(_process_incoming_messages(client, worker_session_id=worker_session_id))
-            tg.create_task(_send_outgoing_messages(client))
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    tg.create_task(_process_incoming_messages(client, worker_session_id=worker_session_id))
+                    tg.create_task(_send_outgoing_messages(client))
+            except BaseException:
+                # Best-effort unregister so the orchestrator can clean up immediately.
+                unregister_event = EventRequest(
+                    request=worker_events.UnregisterWorkerRequest(worker_engine_id=worker_engine_id),
+                    response_topic=None,
+                )
+                try:
+                    await client.publish(
+                        "EventRequest",
+                        json.loads(unregister_event.json()),
+                        f"sessions/{worker_session_id}/request",
+                    )
+                    logger.info("Worker %s sent unregister to session %s", worker_engine_id, worker_session_id)
+                except Exception as e:
+                    logger.debug("Could not send unregister on shutdown: %s", e)
+                raise
+        else:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(_process_incoming_messages(client, worker_session_id=""))
+                tg.create_task(_send_outgoing_messages(client))
+                tg.create_task(_worker_heartbeat_loop())
+
+
+async def _worker_heartbeat_loop() -> None:
+    """Challenge each registered worker on an interval; evict those that go silent."""
+    while True:
+        await asyncio.sleep(_WORKER_HEARTBEAT_INTERVAL_S)
+        if not _registered_workers:
+            continue
+
+        now = time.monotonic()
+        stale = [
+            wid
+            for wid in list(_registered_workers)
+            if now - _worker_last_seen.get(wid, 0) > _WORKER_HEARTBEAT_TIMEOUT_S
+        ]
+        for wid in stale:
+            await _evict_worker(wid)
+
+        session_id = griptape_nodes.get_session_id()
+        for wid, request_topic in list(_registered_workers.items()):
+            hb = EventRequest(
+                request=worker_events.WorkerHeartbeatRequest(heartbeat_id=str(uuid.uuid4())),
+                response_topic=f"sessions/{session_id}/workers/{wid}/response",
+            )
+            await ws_outgoing_queue.put(WebSocketMessage("EventRequest", hb.json(), request_topic))
+
+
+async def _evict_worker(worker_engine_id: str) -> None:
+    """Remove a worker from the registry and unsubscribe from its response topic."""
+    session_id = griptape_nodes.get_session_id()
+    _registered_workers.pop(worker_engine_id, None)
+    _worker_last_seen.pop(worker_engine_id, None)
+    topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
+    await ws_outgoing_queue.put(UnsubscribeCommand(topic))
+    logger.warning("Worker evicted: %s", worker_engine_id)
 
 
 async def _process_incoming_messages(client: Client, worker_session_id: str = "") -> None:
@@ -319,6 +388,16 @@ async def _relay_worker_result(payload: dict) -> None:
     The orchestrator always mediates between workers and the GUI; workers never publish
     directly to the session response topic.
     """
+    # Heartbeat responses update the last-seen timestamp but are not forwarded to the GUI.
+    result_event_type = payload.get("result", {}).get("event_type", "")
+    if result_event_type in ("WorkerHeartbeatResultSuccess", "WorkerHeartbeatResultFailure"):
+        # Derive worker_engine_id from response_topic: "sessions/{id}/workers/{wid}/response"
+        parts = payload.get("response_topic", "").split("/")
+        if len(parts) == 5:  # noqa: PLR2004
+            _worker_last_seen[parts[3]] = time.monotonic()
+            logger.debug("Heartbeat received from worker %s", parts[3])
+        return  # Internal health check — do not forward to GUI
+
     # 1 engine = 1 session — the orchestrator's session response topic is always the right target.
     session_response_topic = _determine_response_topic()
     dest_socket = "success_result" if payload.get("event_type") == "EventResultSuccess" else "failure_result"
@@ -467,6 +546,28 @@ async def _process_app_event(event: AppEvent) -> None:
     await _send_message("app_event", event.json())
 
 
+async def _handle_worker_topic_change(result_event: EventResultSuccess) -> bool:
+    """Subscribe or unsubscribe from a worker response topic based on a registration result.
+
+    Returns True if the event was handled internally and must not be forwarded to the GUI.
+    """
+    if isinstance(result_event.result, worker_events.RegisterWorkerResultSuccess):
+        wid = result_event.result.worker_engine_id
+        session_id = griptape_nodes.get_session_id()
+        topic = f"sessions/{session_id}/workers/{wid}/response"
+        await _subscribe_to_topic(topic)
+        logger.info("Subscribed to worker response topic: %s", topic)
+        return True
+    if isinstance(result_event.result, worker_events.UnregisterWorkerResultSuccess):
+        wid = result_event.result.worker_engine_id
+        session_id = griptape_nodes.get_session_id()
+        topic = f"sessions/{session_id}/workers/{wid}/response"
+        await _unsubscribe_from_topic(topic)
+        logger.info("Unsubscribed from worker response topic: %s", topic)
+        return True
+    return False
+
+
 async def _process_node_event(event: GriptapeNodeEvent) -> None:
     """Process GriptapeNodeEvents and send them to the API (async version)."""
     # Check if events are suppressed
@@ -490,18 +591,15 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
                 topic = f"sessions/{session_id}/request"
                 await _unsubscribe_from_topic(topic)
                 logger.info("Unsubscribed from session topic: %s", topic)
-        elif isinstance(result_event.result, worker_events.RegisterWorkerResultSuccess):
-            # Subscribe to the newly registered worker's response topic so we can relay results.
-            wid = result_event.result.worker_engine_id
-            session_id = griptape_nodes.get_session_id()
-            topic = f"sessions/{session_id}/workers/{wid}/response"
-            await _subscribe_to_topic(topic)
-            logger.info("Subscribed to worker response topic: %s", topic)
-            return  # Internal handshake — do not forward to GUI
+        elif await _handle_worker_topic_change(result_event):
+            return  # Internal worker event — do not forward to GUI
     elif isinstance(result_event, EventResultFailure):
         if isinstance(result_event.result, worker_events.RegisterWorkerResultFailure):
             logger.warning("Worker registration failed: %s", result_event.result)
             return  # Internal handshake — do not forward to GUI
+        if isinstance(result_event.result, worker_events.UnregisterWorkerResultFailure):
+            logger.warning("Worker unregister failed: %s", result_event.result)
+            return  # Internal unregister — do not forward to GUI
         dest_socket = "failure_result"
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
@@ -604,6 +702,7 @@ def _handle_register_worker_request(
     wid = request.worker_engine_id
     session_id = griptape_nodes.get_session_id()
     _registered_workers[wid] = f"sessions/{session_id}/workers/{wid}/request"
+    _worker_last_seen[wid] = time.monotonic()
     logger.info("Worker registered: %s (session %s)", wid, session_id)
     return worker_events.RegisterWorkerResultSuccess(
         worker_engine_id=wid, result_details="Worker registered successfully."
@@ -612,4 +711,35 @@ def _handle_register_worker_request(
 
 griptape_nodes.EventManager().assign_manager_to_request_type(
     worker_events.RegisterWorkerRequest, _handle_register_worker_request
+)
+
+
+def _handle_worker_heartbeat_request(
+    request: worker_events.WorkerHeartbeatRequest,
+) -> worker_events.WorkerHeartbeatResultSuccess:
+    """Respond to an orchestrator heartbeat challenge."""
+    return worker_events.WorkerHeartbeatResultSuccess(
+        heartbeat_id=request.heartbeat_id,
+        result_details="Worker alive.",
+    )
+
+
+griptape_nodes.EventManager().assign_manager_to_request_type(
+    worker_events.WorkerHeartbeatRequest, _handle_worker_heartbeat_request
+)
+
+
+def _handle_unregister_worker_request(
+    request: worker_events.UnregisterWorkerRequest,
+) -> worker_events.UnregisterWorkerResultSuccess | worker_events.UnregisterWorkerResultFailure:
+    """Handle a worker unregister request from a worker engine."""
+    wid = request.worker_engine_id
+    _registered_workers.pop(wid, None)
+    _worker_last_seen.pop(wid, None)
+    logger.info("Worker unregistered: %s", wid)
+    return worker_events.UnregisterWorkerResultSuccess(worker_engine_id=wid, result_details="Worker unregistered.")
+
+
+griptape_nodes.EventManager().assign_manager_to_request_type(
+    worker_events.UnregisterWorkerRequest, _handle_unregister_worker_request
 )
