@@ -2032,6 +2032,19 @@ class LibraryManager:
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
         return UnloadLibraryFromRegistryResultSuccess(result_details=details)
 
+    async def stop_all_workers(self) -> None:
+        """Stop all running library worker subprocesses.
+
+        Called during engine shutdown to prevent orphaned worker processes.
+        """
+        for lib_info in list(self._library_file_path_to_info.values()):
+            if lib_info.worker_process is not None and lib_info.worker_process.is_running():
+                try:
+                    await lib_info.worker_process.stop()
+                except Exception:
+                    logger.debug("Error stopping worker for library '%s'", lib_info.library_name, exc_info=True)
+                lib_info.worker_process = None
+
     def get_all_info_for_all_libraries_request(self, request: GetAllInfoForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         libraries = LibraryRegistry.list_libraries()
 

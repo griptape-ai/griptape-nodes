@@ -190,6 +190,11 @@ async def astart_app() -> None:
         logger.error("Application startup failed: %s", e)
         raise
 
+    finally:
+        # Stop all library worker subprocesses so they don't become orphaned
+        # after the engine exits.
+        await griptape_nodes.LibraryManager().stop_all_workers()
+
 
 def _start_websocket_connection() -> None:
     """Run WebSocket tasks in a separate thread with its own async loop."""
