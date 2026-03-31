@@ -1872,12 +1872,13 @@ class LibraryManager:
 
     @staticmethod
     def _compute_main_site_packages() -> str:
-        """Return the main venv's site-packages directories as a pathsep-joined string.
+        """Return the running griptape-nodes venv's site-packages directories as a pathsep-joined string.
 
-        These are passed to the worker subprocess so that griptape_nodes's own runtime
-        dependencies (semver, anyio, pydantic, etc.) are importable even though they are
-        not installed in the library's venv. The worker appends these paths rather than
-        prepending them, so library-specific packages retain priority for conflict isolation.
+        Injected into every library worker subprocess so that griptape_nodes's runtime
+        dependencies (semver, anyio, pydantic, rich, etc.) are available without libraries
+        needing to declare griptape-nodes as a pip dependency. The worker appends these paths
+        rather than prepending them, so library-specific packages retain priority for conflict
+        isolation.
         """
         paths: list[str] = []
         for scheme_key in ("purelib", "platlib"):

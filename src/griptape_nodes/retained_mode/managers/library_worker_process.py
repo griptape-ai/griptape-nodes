@@ -73,10 +73,11 @@ class StdioWorkerClient(BaseWorkerClient):
             library_json_path: Path to the library JSON definition file.
             venv_python: Path to the library venv's Python executable.
             core_pythonpath: PYTHONPATH string pointing to the main griptape/griptape_nodes packages.
-            main_site_packages: Pathsep-joined list of the main venv's site-packages directories.
-                Passed to the worker as a fallback so griptape_nodes's own runtime dependencies
-                (semver, anyio, pydantic, etc.) are importable. The worker appends these rather
-                than prepending them so library-specific packages retain priority.
+            main_site_packages: Pathsep-joined list of the running griptape-nodes venv's
+                site-packages directories. Injected into the worker so griptape_nodes's own
+                runtime dependencies (semver, anyio, pydantic, etc.) are importable without
+                libraries needing to declare griptape-nodes as a dependency. The worker appends
+                these rather than prepending them so library-specific packages retain priority.
         """
         env = os.environ.copy()
         # Prepend the core package paths so the worker always uses griptape and
@@ -84,8 +85,7 @@ class StdioWorkerClient(BaseWorkerClient):
         existing_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = core_pythonpath + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
         env["PYTHONUNBUFFERED"] = "1"
-        if main_site_packages:
-            env["GRIPTAPE_NODES_MAIN_SITE_PACKAGES"] = main_site_packages
+        env["GRIPTAPE_NODES_MAIN_SITE_PACKAGES"] = main_site_packages
 
         logger.info("Starting worker subprocess for %s using %s", library_json_path, venv_python)
 

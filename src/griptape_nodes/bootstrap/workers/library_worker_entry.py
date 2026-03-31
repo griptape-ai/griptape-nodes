@@ -34,12 +34,25 @@ import traceback
 from argparse import ArgumentParser
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+# Inject the running griptape-nodes venv's site-packages into sys.path before
+# importing griptape_nodes. The engine always sets this env var when launching a
+# worker, making griptape_nodes's runtime deps (pydantic, rich, semver, etc.)
+# available without libraries needing to declare griptape-nodes as a dependency.
+# The paths are appended rather than prepended so library-specific packages keep priority.
+_main_site_packages = os.environ.get("GRIPTAPE_NODES_MAIN_SITE_PACKAGES")
+if _main_site_packages is None:
+    sys.stderr.write(
+        "FATAL: GRIPTAPE_NODES_MAIN_SITE_PACKAGES is not set. "
+        "This worker must be launched by the griptape-nodes engine, not directly.\n"
+    )
+    sys.exit(1)
+for _p in _main_site_packages.split(os.pathsep):
+    if _p and _p not in sys.path:
+        sys.path.append(_p)
 
 from griptape_nodes.bootstrap.workers.base_worker_transport import BaseWorkerTransport
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -331,15 +344,6 @@ def handle_execute_node(msg: dict, node_classes: dict[str, type], transport: Bas
 
 
 def _main() -> None:
-    # The main griptape-nodes venv's site-packages are passed via this env var
-    # so that griptape_nodes's own dependencies (semver, anyio, pydantic, etc.)
-    # are importable. They are appended — not prepended — so library-specific
-    # packages from this venv keep priority for conflict isolation.
-    _fallback = os.environ.get("GRIPTAPE_NODES_MAIN_SITE_PACKAGES", "")
-    for _p in _fallback.split(os.pathsep):
-        if _p and _p not in sys.path:
-            sys.path.append(_p)
-
     # Make stdout line-buffered so each JSON message flushes immediately.
     # stdin stays in its default (line) mode since we read it line by line.
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
