@@ -605,7 +605,9 @@ def _handle_register_worker_request(
     session_id = griptape_nodes.get_session_id()
     _registered_workers[wid] = f"sessions/{session_id}/workers/{wid}/request"
     logger.info("Worker registered: %s (session %s)", wid, session_id)
-    return worker_events.RegisterWorkerResultSuccess(worker_engine_id=wid)
+    return worker_events.RegisterWorkerResultSuccess(
+        worker_engine_id=wid, result_details="Worker registered successfully."
+    )
 
 
 griptape_nodes.EventManager().assign_manager_to_request_type(
