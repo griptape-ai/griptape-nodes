@@ -272,6 +272,9 @@ async def _run_websocket_tasks(worker_session_id: str = "") -> None:
             # Announce this worker to the orchestrator's session request topic.
             # The orchestrator will store our engine_id and subscribe to our response topic.
             worker_engine_id = griptape_nodes.get_engine_id()
+            if not worker_engine_id:
+                msg = "Engine ID is not set; cannot register as a worker."
+                raise RuntimeError(msg)
             reg_event = EventRequest(
                 request=worker_events.RegisterWorkerRequest(worker_engine_id=worker_engine_id),
                 response_topic=None,
