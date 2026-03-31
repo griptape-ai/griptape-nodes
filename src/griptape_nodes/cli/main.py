@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -41,6 +42,14 @@ def main(
     no_update: bool = typer.Option(  # noqa: FBT001
         False, "--no-update", help="Deprecated. Has no effect.", hidden=True
     ),
+    session_id: Annotated[
+        str,
+        typer.Option(
+            "--session-id",
+            envvar="GTN_WORKER_SESSION_ID",
+            help="Session ID of an existing orchestrator session to join as a worker engine.",
+        ),
+    ] = "",
 ) -> None:
     """Griptape Nodes Engine CLI."""
     if no_update:
@@ -53,7 +62,7 @@ def main(
 
     if ctx.invoked_subcommand is None:
         # Default to engine command when no subcommand is specified
-        engine.engine_command()
+        engine.engine_command(session_id=session_id)
 
 
 if __name__ == "__main__":
