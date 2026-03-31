@@ -36,10 +36,37 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from griptape_nodes.bootstrap.workers.base_worker_transport import BaseWorkerTransport
+
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Stdio transport implementation
+# ---------------------------------------------------------------------------
+
+
+class StdioWorkerTransport(BaseWorkerTransport):
+    """Reads from sys.stdin, writes to sys.stdout (JSON lines)."""
+
+    def read_message(self) -> dict | None:
+        """Read the next JSON message from stdin. Returns None on EOF."""
+        for raw_line in sys.stdin:
+            raw_line = raw_line.strip()
+            if raw_line:
+                try:
+                    return json.loads(raw_line)
+                except json.JSONDecodeError:
+                    logger.error("Worker received malformed JSON: %r", raw_line)
+        return None  # EOF
+
+    def write_message(self, msg: dict) -> None:
+        """Write a JSON message to stdout (already line-buffered)."""
+        sys.stdout.write(json.dumps(msg) + "\n")
+        sys.stdout.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -61,17 +88,6 @@ def _deserialize_value(value: Any) -> Any:
     if isinstance(value, dict) and "__pickled__" in value:
         return pickle.loads(base64.b64decode(value["__pickled__"]))  # noqa: S301
     return value
-
-
-# ---------------------------------------------------------------------------
-# Stdout IPC helpers
-# ---------------------------------------------------------------------------
-
-
-def _write_json(msg: dict) -> None:
-    """Write a JSON-encoded message to stdout (must already be line-buffered)."""
-    sys.stdout.write(json.dumps(msg) + "\n")
-    sys.stdout.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -126,8 +142,8 @@ def _serialize_element_tree(element: Any) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _forward_event_to_stdout(request_id: str, event: Any) -> None:
-    """Serialize an event and write it to stdout for forwarding to the parent process."""
+def _forward_event_to_stdout(request_id: str, event: Any, transport: BaseWorkerTransport) -> None:
+    """Serialize an event and write it to the transport for forwarding to the parent process."""
     from griptape_nodes.retained_mode.events.base_events import ExecutionGriptapeNodeEvent, ProgressEvent
 
     try:
@@ -139,7 +155,7 @@ def _forward_event_to_stdout(request_id: str, event: Any) -> None:
                 payload_dict = payload.__dict__
             else:
                 return
-            _write_json({
+            transport.write_message({
                 "type": "event",
                 "request_id": request_id,
                 "event_class": "ExecutionGriptapeNodeEvent",
@@ -147,7 +163,7 @@ def _forward_event_to_stdout(request_id: str, event: Any) -> None:
                 "payload": payload_dict,
             })
         elif isinstance(event, ProgressEvent):
-            _write_json({
+            transport.write_message({
                 "type": "event",
                 "request_id": request_id,
                 "event_class": "ProgressEvent",
@@ -162,8 +178,8 @@ def _forward_event_to_stdout(request_id: str, event: Any) -> None:
         pass
 
 
-def _install_event_forwarder(request_id: str) -> tuple:
-    """Monkey-patch EventManager to forward events to stdout.
+def _install_event_forwarder(request_id: str, transport: BaseWorkerTransport) -> tuple:
+    """Monkey-patch EventManager to forward events via the transport.
 
     Returns the original (put_event, aput_event) for later restoration.
     """
@@ -174,10 +190,10 @@ def _install_event_forwarder(request_id: str) -> tuple:
     original_aput = em.aput_event
 
     def forwarding_put_event(event: Any) -> None:
-        _forward_event_to_stdout(request_id, event)
+        _forward_event_to_stdout(request_id, event, transport)
 
     async def forwarding_aput_event(event: Any) -> None:
-        _forward_event_to_stdout(request_id, event)
+        _forward_event_to_stdout(request_id, event, transport)
 
     em.put_event = forwarding_put_event  # type: ignore[method-assign]
     em.aput_event = forwarding_aput_event  # type: ignore[method-assign]
@@ -241,7 +257,7 @@ def _load_node_classes(library_json_path: Path) -> dict[str, type]:
 # ---------------------------------------------------------------------------
 
 
-def handle_get_all_schemas(node_classes: dict[str, type]) -> None:
+def handle_get_all_schemas(node_classes: dict[str, type], transport: BaseWorkerTransport) -> None:
     """Build schemas from each node class by instantiating it, then send to parent."""
     schemas: dict[str, dict] = {}
     for class_name, node_class in node_classes.items():
@@ -253,10 +269,10 @@ def handle_get_all_schemas(node_classes: dict[str, type]) -> None:
             }
         except Exception as e:
             schemas[class_name] = {"error": str(e), "traceback": traceback.format_exc()}
-    _write_json({"type": "all_schemas", "schemas": schemas})
+    transport.write_message({"type": "all_schemas", "schemas": schemas})
 
 
-def handle_execute_node(msg: dict, node_classes: dict[str, type]) -> None:
+def handle_execute_node(msg: dict, node_classes: dict[str, type], transport: BaseWorkerTransport) -> None:
     """Instantiate and execute a node, streaming events and returning output values."""
     request_id = msg["request_id"]
     class_name = msg["class_name"]
@@ -264,7 +280,7 @@ def handle_execute_node(msg: dict, node_classes: dict[str, type]) -> None:
     parameter_values = msg.get("parameter_values", {})
 
     if class_name not in node_classes:
-        _write_json({
+        transport.write_message({
             "type": "error",
             "request_id": request_id,
             "message": f"Unknown node class: {class_name!r}",
@@ -275,7 +291,7 @@ def handle_execute_node(msg: dict, node_classes: dict[str, type]) -> None:
     try:
         node = node_classes[class_name](name=node_name)
     except Exception as e:
-        _write_json({
+        transport.write_message({
             "type": "error",
             "request_id": request_id,
             "message": f"Failed to instantiate {class_name}: {e}",
@@ -288,11 +304,11 @@ def handle_execute_node(msg: dict, node_classes: dict[str, type]) -> None:
         node.parameter_values[param_name] = _deserialize_value(raw_value)
 
     # Forward all events emitted during execution to the parent process
-    original_put, original_aput = _install_event_forwarder(request_id)
+    original_put, original_aput = _install_event_forwarder(request_id, transport)
     try:
         asyncio.run(node.aprocess())
     except Exception as e:
-        _write_json({
+        transport.write_message({
             "type": "error",
             "request_id": request_id,
             "message": str(e),
@@ -306,7 +322,7 @@ def handle_execute_node(msg: dict, node_classes: dict[str, type]) -> None:
         param_name: _serialize_value(value)
         for param_name, value in node.parameter_output_values.items()
     }
-    _write_json({"type": "output", "request_id": request_id, "parameter_output_values": outputs})
+    transport.write_message({"type": "output", "request_id": request_id, "parameter_output_values": outputs})
 
 
 # ---------------------------------------------------------------------------
@@ -351,27 +367,23 @@ def _main() -> None:
         logger.exception("Failed to load node classes from %s", args.library_json_path)
         sys.exit(1)
 
+    transport = StdioWorkerTransport()
+
     # Signal to parent that the worker is ready to receive messages
-    _write_json({"type": "ready"})
+    transport.write_message({"type": "ready"})
 
-    # Main message loop: read one JSON line per message from parent
-    for raw_line in sys.stdin:
-        raw_line = raw_line.strip()
-        if not raw_line:
-            continue
-
-        try:
-            msg = json.loads(raw_line)
-        except json.JSONDecodeError:
-            logger.error("Worker received malformed JSON: %r", raw_line)
-            continue
+    # Main message loop: read one message per iteration from parent
+    while True:
+        msg = transport.read_message()
+        if msg is None:
+            break  # EOF — parent closed stdin
 
         msg_type = msg.get("type")
 
         if msg_type == "get_all_schemas":
-            handle_get_all_schemas(node_classes)
+            handle_get_all_schemas(node_classes, transport)
         elif msg_type == "execute_node":
-            handle_execute_node(msg, node_classes)
+            handle_execute_node(msg, node_classes, transport)
         elif msg_type == "shutdown":
             break
         else:

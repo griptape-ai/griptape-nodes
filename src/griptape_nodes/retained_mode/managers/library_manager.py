@@ -32,6 +32,7 @@ from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import resolve_workspace_path
+from griptape_nodes.retained_mode.managers.base_worker_client import BaseWorkerClient
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -315,7 +316,7 @@ class LibraryManager:
         library_name: str | None = None
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
-        worker_process: Any = field(default=None, repr=False)
+        worker_process: BaseWorkerClient | None = field(default=None, repr=False)
 
     class RegisterLibraryPrerequisites(NamedTuple):
         """Prerequisites established for library loading."""
@@ -1902,9 +1903,9 @@ class LibraryManager:
 
         Modifies library_info in place (sets worker_process, may append problems).
         """
-        from griptape_nodes.retained_mode.managers.library_worker_process import LibraryWorkerProcess
+        from griptape_nodes.retained_mode.managers.library_worker_process import StdioWorkerClient
 
-        worker = LibraryWorkerProcess()
+        worker = StdioWorkerClient()
         try:
             await worker.start(
                 library_json_path=library_json_path,

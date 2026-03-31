@@ -108,6 +108,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.base_worker_client import BaseWorkerClient
 from griptape_nodes.retained_mode.managers.event_manager import (
     EventSuppressionContext,
     EventTranslationContext,
@@ -286,8 +287,8 @@ class NodeExecutor:
         finally:
             current_executing_node_name.reset(token)
 
-    def _get_worker_for_node(self, node: BaseNode) -> Any | None:
-        """Return the LibraryWorkerProcess for a node's library, or None if not using a worker."""
+    def _get_worker_for_node(self, node: BaseNode) -> BaseWorkerClient | None:
+        """Return the worker client for a node's library, or None if not using a worker."""
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Use the class-level attribute set during stub registration. Instance metadata
@@ -319,7 +320,7 @@ class NodeExecutor:
         )
         return info.worker_process
 
-    async def _execute_node_in_worker(self, node: BaseNode, worker: Any) -> None:
+    async def _execute_node_in_worker(self, node: BaseNode, worker: BaseWorkerClient) -> None:
         """Execute a node in its library worker subprocess and apply the output values."""
         parameter_values = {
             p.name: _serialize_value(node.parameter_values.get(p.name))

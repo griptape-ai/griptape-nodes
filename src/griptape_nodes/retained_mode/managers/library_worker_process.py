@@ -1,7 +1,8 @@
-"""Manages the long-lived worker subprocess for a single library.
+"""StdioWorkerClient: worker subprocess for a single library (stdin/stdout IPC).
 
-Provides IPC with the worker via JSON lines over stdin/stdout, and builds stub
-node classes from worker-provided schemas for use in the main process.
+Manages the long-lived subprocess lifecycle and JSON-lines IPC. Implements
+BaseWorkerClient using a subprocess whose venv Python isolates the library's
+dependencies from the main process.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ import uuid
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any
+
+from griptape_nodes.retained_mode.managers.base_worker_client import BaseWorkerClient
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +40,7 @@ _SHUTDOWN_TIMEOUT_SECONDS = 5.0
 _STDOUT_STREAM_LIMIT_BYTES = 4 * 1024 * 1024  # 4 MB
 
 
-class LibraryWorkerProcess:
+class StdioWorkerClient(BaseWorkerClient):
     """Manages a single long-lived worker subprocess for one library.
 
     The worker runs with the library's venv Python so its dependencies are
@@ -315,82 +318,3 @@ class LibraryWorkerProcess:
         self._reader_task = None
         self._stderr_reader_task = None
 
-    async def fetch_and_build_stubs(self) -> dict[str, type]:
-        """Fetch node schemas from the worker and return a dict of stub node classes.
-
-        Nodes whose schemas contain an "error" key are skipped.
-        """
-        schemas = await self.get_all_schemas()
-        return {
-            class_name: _build_stub_class(class_name, schema)
-            for class_name, schema in schemas.items()
-            if "error" not in schema
-        }
-
-
-# ---------------------------------------------------------------------------
-# Stub class factory (module-level so stubs can be pickled by class reference)
-# ---------------------------------------------------------------------------
-
-
-def _populate_from_element_tree(node: Any, element_tree: dict) -> None:
-    """Walk a serialized element tree and add Parameter elements to the node.
-
-    Recurses into nested containers (e.g., ParameterGroup) to collect all
-    parameters in document order.
-    """
-    from griptape_nodes.exe_types.core_types import Parameter
-
-    for child in element_tree.get("children", []):
-        param_schema = child.get("param_schema")
-        if param_schema is not None:
-            try:
-                param = Parameter.from_schema(param_schema)
-                node.add_parameter(param)
-            except Exception:
-                logger.debug(
-                    "Failed to reconstruct parameter %r from schema",
-                    child.get("name"),
-                    exc_info=True,
-                )
-
-        # Recurse into nested element containers
-        nested_children = child.get("children", [])
-        if nested_children:
-            _populate_from_element_tree(node, child)
-
-
-def _build_stub_class(class_name: str, schema: dict) -> type:
-    """Build a stub BaseNode subclass from a worker-provided node schema.
-
-    The stub's __init__ reconstructs parameters from the schema so the node
-    can participate in connection validation and UI rendering in the main
-    process. Actual execution is dispatched to the worker.
-    """
-    from griptape_nodes.exe_types.node_types import BaseNode, ControlNode, DataNode, EndNode, StartNode
-
-    base_type_map: dict[str, type] = {
-        "DataNode": DataNode,
-        "ControlNode": ControlNode,
-        "StartNode": StartNode,
-        "EndNode": EndNode,
-        "BaseNode": BaseNode,
-    }
-    base_class: type = base_type_map.get(schema.get("base_type", "DataNode"), DataNode)
-    element_tree: dict = schema.get("element_tree", {"children": []})
-
-    def __init__(self, name: str, metadata: Any = None) -> None:
-        base_class.__init__(self, name, metadata)
-        _populate_from_element_tree(self, element_tree)
-
-    def process(self) -> None:
-        library = getattr(self.__class__, "_worker_library_name", "<unknown library>")
-        raise RuntimeError(
-            f"Stub node '{class_name}' (library '{library}') must only be executed via its "
-            f"library worker subprocess. Direct in-process execution is forbidden. "
-            f"This is a fatal bug — the node executor must route this node to its worker."
-        )
-
-    stub = type(class_name, (base_class,), {"__init__": __init__, "process": process})
-    stub.__module__ = f"griptape_nodes.node_libraries.stub.{class_name}"
-    return stub
