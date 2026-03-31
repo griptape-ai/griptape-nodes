@@ -70,8 +70,9 @@ class TestHandleWorkerHeartbeatRequest:
         assert result.heartbeat_id == "hb-001"
 
 
+@pytest.mark.usefixtures("_mock_session_id")
 class TestHandleUnregisterWorkerRequest:
-    def test_removes_worker_from_registered_workers(self, _mock_session_id: MagicMock) -> None:
+    def test_removes_worker_from_registered_workers(self) -> None:
         app_module._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
         app_module._worker_last_seen[_ENGINE] = 999.0
 
@@ -80,7 +81,7 @@ class TestHandleUnregisterWorkerRequest:
 
         assert _ENGINE not in app_module._registered_workers
 
-    def test_removes_worker_from_last_seen(self, _mock_session_id: MagicMock) -> None:
+    def test_removes_worker_from_last_seen(self) -> None:
         app_module._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
         app_module._worker_last_seen[_ENGINE] = 999.0
 
@@ -89,7 +90,7 @@ class TestHandleUnregisterWorkerRequest:
 
         assert _ENGINE not in app_module._worker_last_seen
 
-    def test_returns_success_with_engine_id(self, _mock_session_id: MagicMock) -> None:
+    def test_returns_success_with_engine_id(self) -> None:
         app_module._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
         app_module._worker_last_seen[_ENGINE] = 999.0
 
@@ -111,9 +112,11 @@ class TestHandleUnregisterWorkerRequest:
 class TestRelayWorkerResult:
     @pytest.mark.asyncio
     async def test_heartbeat_success_updates_last_seen(self) -> None:
+        # result_type lives at the outer level — set by BaseEvent.dict(), not inside result{}
         payload = {
             "event_type": "EventResultSuccess",
-            "result": {"event_type": "WorkerHeartbeatResultSuccess"},
+            "result_type": "WorkerHeartbeatResultSuccess",
+            "result": {"heartbeat_id": "hb-1"},
             "response_topic": _WORKER_RESPONSE_TOPIC,
         }
 
@@ -127,7 +130,8 @@ class TestRelayWorkerResult:
     async def test_heartbeat_failure_updates_last_seen(self) -> None:
         payload = {
             "event_type": "EventResultFailure",
-            "result": {"event_type": "WorkerHeartbeatResultFailure"},
+            "result_type": "WorkerHeartbeatResultFailure",
+            "result": {"heartbeat_id": "hb-1"},
             "response_topic": _WORKER_RESPONSE_TOPIC,
         }
 
@@ -141,7 +145,8 @@ class TestRelayWorkerResult:
     async def test_heartbeat_with_malformed_topic_does_not_crash(self) -> None:
         payload = {
             "event_type": "EventResultSuccess",
-            "result": {"event_type": "WorkerHeartbeatResultSuccess"},
+            "result_type": "WorkerHeartbeatResultSuccess",
+            "result": {"heartbeat_id": "hb-1"},
             "response_topic": "bad/topic",
         }
 
@@ -154,7 +159,8 @@ class TestRelayWorkerResult:
     async def test_non_heartbeat_result_is_forwarded_to_gui(self) -> None:
         payload = {
             "event_type": "EventResultSuccess",
-            "result": {"event_type": "SomeOtherResultSuccess"},
+            "result_type": "SomeOtherResultSuccess",
+            "result": {},
             "response_topic": _WORKER_RESPONSE_TOPIC,
         }
 
