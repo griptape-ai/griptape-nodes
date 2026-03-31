@@ -1110,18 +1110,9 @@ class ProjectManager:
         # Create validation info to track that defaults were loaded
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
-        # System defaults use workspace directory as the base directory
-        workspace_dir_value = self._config_manager.get_config_value("workspace_directory")
-        if workspace_dir_value is None:
-            msg = "Attempted to load Project Manager's default project schema. Failed because 'workspace_directory' config value was None"
-            raise RuntimeError(msg)
-
-        try:
-            workspace_dir = Path(workspace_dir_value)
-        except (TypeError, ValueError) as e:
-            msg = f"Attempted to load Project Manager's default project schema with workspace_directory='{workspace_dir_value}'. Failed due to {e}"
-            logger.error(msg)
-            raise RuntimeError(msg) from e
+        # System defaults use workspace directory as the base directory.
+        config_manager = GriptapeNodes.ConfigManager()
+        workspace_dir = config_manager.workspace_path
 
         # Parse all macros BEFORE creating ProjectInfo (system defaults should always be valid)
         situation_schemas = self._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)

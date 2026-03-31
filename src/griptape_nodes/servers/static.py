@@ -41,7 +41,7 @@ async def _create_static_file_upload_url(request: Request) -> dict:
 
     Similar to a presigned URL, but for uploading files to the static server.
     """
-    base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+    base_url = GriptapeNodes.StaticFilesManager().static_server_base_url
 
     body = await request.json()
     file_path = body["file_path"].lstrip("/")
@@ -74,7 +74,7 @@ async def _create_static_file(request: Request, file_path: str) -> dict:
         logger.error(msg)
         raise HTTPException(status_code=500, detail=msg) from e
 
-    base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+    base_url = GriptapeNodes.StaticFilesManager().static_server_base_url
     static_url = urljoin(f"{base_url}{STATIC_SERVER_URL}/", file_path)
     return {"url": static_url}
 
@@ -288,7 +288,7 @@ def start_static_server(sock: socket.socket) -> None:
         "https://editor-nightly.nodes.griptape.ai",
         "http://localhost:5173",
         "http://localhost:5174",
-        GriptapeNodes.ConfigManager().get_config_value("static_server_base_url"),
+        GriptapeNodes.StaticFilesManager().static_server_base_url,
     ]
 
     # Add CORS middleware

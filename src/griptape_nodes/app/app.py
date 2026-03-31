@@ -121,6 +121,10 @@ logging.basicConfig(
     handlers=[RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)],
 )
 
+# Suppress noisy third-party library logging
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("mcp").setLevel(logging.WARNING)
+
 console = Console()
 
 

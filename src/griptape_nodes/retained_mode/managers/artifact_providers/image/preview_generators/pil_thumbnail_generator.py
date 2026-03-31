@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageOps
 from pydantic import PositiveInt  # noqa: TC002 - Runtime validation, not type-only
 
 from griptape_nodes.retained_mode.events.os_events import (
@@ -122,7 +122,9 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
             msg = "Source file is text, not binary image data"
             raise TypeError(msg)
 
-        with Image.open(BytesIO(image_data)) as img:
+        with Image.open(BytesIO(image_data)) as raw_img:
+            # Apply EXIF orientation so rotated images (e.g. phone photos) display correctly
+            img = ImageOps.exif_transpose(raw_img)
             # Calculate thumbnail size (preserves aspect ratio, fits within max dimensions)
             # Access validated parameters via self.params - fully type-safe
             img.thumbnail((self.params.max_width, self.params.max_height), Image.Resampling.LANCZOS)
