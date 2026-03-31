@@ -4,11 +4,8 @@ import asyncio
 import json
 import logging
 import os
-import re
 import sys
 import threading
-import time
-import uuid
 from dataclasses import dataclass
 
 import truststore
@@ -38,6 +35,8 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils import install_file_url_support
+
+from griptape_nodes.app.worker_manager import WorkerManager
 
 
 # WebSocket thread communication message types
@@ -83,37 +82,6 @@ install_file_url_support()
 
 # Maximum length for log messages forwarded to the GUI.
 LOG_MESSAGE_MAX_LENGTH = 500
-
-# Maps worker_engine_id → worker request topic.
-# MVP: at most one entry. Future: WorkerRegistry class with library→worker routing.
-_registered_workers: dict[str, str] = {}  # worker_engine_id → worker_request_topic
-
-# Maps worker_engine_id → monotonic timestamp of last received heartbeat response.
-_worker_last_seen: dict[str, float] = {}
-
-# Orchestrator sends a WorkerHeartbeatRequest to each worker every N seconds.
-# Workers silent longer than the timeout are evicted.
-_WORKER_HEARTBEAT_INTERVAL_S: float = 5.0
-_WORKER_HEARTBEAT_TIMEOUT_S: float = 15.0
-
-# Monotonic timestamp of the last heartbeat received from the orchestrator (worker mode only).
-_worker_heartbeat_last_received_at: float = 0.0
-
-# Matches worker response topics and captures the worker_engine_id.
-# Expected format: sessions/{session_id}/workers/{worker_engine_id}/response
-_WORKER_RESPONSE_TOPIC_RE = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
-
-# Event types always handled locally by the orchestrator and never forwarded to workers.
-_ORCHESTRATOR_LOCAL_TYPES: tuple[type, ...] = (
-    app_events.AppStartSessionRequest,
-    app_events.AppEndSessionRequest,
-    app_events.AppGetSessionRequest,
-    app_events.SessionHeartbeatRequest,
-    app_events.EngineHeartbeatRequest,
-    worker_events.RegisterWorkerRequest,
-    worker_events.WorkerHeartbeatRequest,  # worker handles locally; never forward
-    worker_events.UnregisterWorkerRequest,  # orchestrator handles locally
-)
 
 
 class EventLogHandler(logging.Handler):
@@ -297,9 +265,9 @@ async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
 
             try:
                 async with asyncio.TaskGroup() as tg:
-                    tg.create_task(_process_incoming_messages(client, _get_topics_to_subscribe(is_worker=True)))
+                    tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=True)))
                     tg.create_task(_send_outgoing_messages(client))
-                    tg.create_task(_worker_heartbeat_monitor())
+                    tg.create_task(worker_manager.worker_heartbeat_monitor())
             except BaseException:
                 # Best-effort unregister so the orchestrator can clean up immediately.
                 unregister_event = EventRequest(
@@ -319,80 +287,10 @@ async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
                 os._exit(1)
         else:
             async with asyncio.TaskGroup() as tg:
-                tg.create_task(_process_incoming_messages(client, _get_topics_to_subscribe(is_worker=False)))
+                tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=False)))
                 tg.create_task(_send_outgoing_messages(client))
-                tg.create_task(_worker_heartbeat_loop())
+                tg.create_task(worker_manager.orchestrator_heartbeat_loop())
 
-
-async def _worker_heartbeat_loop() -> None:
-    """Challenge each registered worker on an interval; evict those that go silent."""
-    while True:
-        await asyncio.sleep(_WORKER_HEARTBEAT_INTERVAL_S)
-        if not _registered_workers:
-            continue
-
-        now = time.monotonic()
-        stale = [
-            wid
-            for wid in list(_registered_workers)
-            if now - _worker_last_seen.get(wid, 0) > _WORKER_HEARTBEAT_TIMEOUT_S
-        ]
-        for wid in stale:
-            await _evict_worker(wid)
-
-        session_id = griptape_nodes.get_session_id()
-        for wid, request_topic in list(_registered_workers.items()):
-            hb = EventRequest(
-                request=worker_events.WorkerHeartbeatRequest(heartbeat_id=str(uuid.uuid4())),
-                response_topic=f"sessions/{session_id}/workers/{wid}/response",
-            )
-            await ws_outgoing_queue.put(WebSocketMessage("EventRequest", hb.json(), request_topic))
-
-
-async def _worker_heartbeat_monitor() -> None:
-    """Shut down the worker if orchestrator heartbeats stop arriving."""
-    global _worker_heartbeat_last_received_at  # noqa: PLW0603
-    _worker_heartbeat_last_received_at = time.monotonic()  # seed to avoid immediate timeout
-    while True:
-        await asyncio.sleep(_WORKER_HEARTBEAT_INTERVAL_S)
-        elapsed = time.monotonic() - _worker_heartbeat_last_received_at
-        if elapsed > _WORKER_HEARTBEAT_TIMEOUT_S:
-            msg = f"Orchestrator heartbeat lost ({elapsed:.1f}s since last heartbeat); worker is shutting down."
-            logger.warning(msg)
-            raise RuntimeError(msg)
-
-
-async def _evict_worker(worker_engine_id: str) -> None:
-    """Remove a worker from the registry and unsubscribe from its response topic."""
-    session_id = griptape_nodes.get_session_id()
-    _registered_workers.pop(worker_engine_id, None)
-    _worker_last_seen.pop(worker_engine_id, None)
-    topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
-    await ws_outgoing_queue.put(UnsubscribeCommand(topic))
-    logger.warning("Worker evicted: %s", worker_engine_id)
-
-
-def _get_topics_to_subscribe(is_worker: bool) -> list[str]:  # noqa: FBT001
-    """Build the list of topics to subscribe to at connection start.
-
-    In worker mode (worker_session_id provided) the engine subscribes to its
-    dedicated per-worker request topic. In orchestrator mode it subscribes to the
-    session request topic if a session is already active.
-    """
-    topics: list[str] = ["request"]
-    engine_id = griptape_nodes.get_engine_id()
-    if engine_id:
-        topics.append(f"engines/{engine_id}/request")
-
-    session_id = griptape_nodes.get_session_id()
-    if is_worker:
-        # Subscribe ONLY to this worker's dedicated per-worker request topic.
-        # The orchestrator explicitly routes events here; worker never sees other workers' events.
-        topics.append(f"sessions/{session_id}/workers/{engine_id}/request")
-    elif session_id:
-        topics.append(f"sessions/{session_id}/request")
-
-    return topics
 
 
 async def _process_incoming_messages(client: Client, topics: list[str]) -> None:
@@ -408,7 +306,7 @@ async def _process_incoming_messages(client: Client, topics: list[str]) -> None:
             event_type = payload.get("event_type", "")
             if event_type in ("EventResultSuccess", "EventResultFailure"):
                 # Result from a worker — relay it through the orchestrator.
-                await _relay_worker_result(payload)
+                await worker_manager.relay_worker_result(payload)
             else:
                 await _process_api_event(message)
         except Exception as e:
@@ -417,29 +315,6 @@ async def _process_incoming_messages(client: Client, topics: list[str]) -> None:
                 e,
             )
 
-
-async def _relay_worker_result(payload: dict) -> None:
-    """Relay a result received from a worker back to the GUI session response topic.
-
-    The orchestrator always mediates between workers and the GUI; workers never publish
-    directly to the session response topic.
-    """
-    # Heartbeat responses update the last-seen timestamp but are not forwarded to the GUI.
-    # BaseEvent.dict() adds result_type at the outer level (not inside the result dict).
-    result_event_type = payload.get("result_type", "")
-    if result_event_type == worker_events.WorkerHeartbeatResultSuccess.__name__:
-        if m := _WORKER_RESPONSE_TOPIC_RE.match(payload.get("response_topic", "")):
-            worker_engine_id = m.group("worker_engine_id")
-            _worker_last_seen[worker_engine_id] = time.monotonic()
-            logger.debug("Heartbeat received from worker %s", worker_engine_id)
-        return  # Internal health check — do not forward to GUI
-
-    # 1 engine = 1 session — the orchestrator's session response topic is always the right target.
-    session_response_topic = _determine_response_topic()
-    dest_socket = "success_result" if payload.get("event_type") == "EventResultSuccess" else "failure_result"
-    payload["response_topic"] = session_response_topic
-    logger.debug("Relaying %s to %s", payload.get("event_type"), session_response_topic)
-    await _send_message(dest_socket, json.dumps(payload), topic=session_response_topic)
 
 
 async def _process_api_event(event: dict) -> None:
@@ -548,9 +423,9 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
-    worker = next(iter(_registered_workers.items()), None)
-    if worker and not isinstance(event.request, _ORCHESTRATOR_LOCAL_TYPES):
-        await _forward_event_to_worker(event, worker_engine_id=worker[0], worker_request_topic=worker[1])
+    worker = worker_manager.get_active_worker()
+    if worker and not isinstance(event.request, WorkerManager.LOCAL_REQUEST_TYPES):
+        await worker_manager.forward_event_to_worker(event, worker_engine_id=worker[0], worker_request_topic=worker[1])
         return
 
     result_event = await griptape_nodes.EventManager().ahandle_request(
@@ -560,19 +435,6 @@ async def _process_event_request(event: EventRequest) -> None:
     if event.request.broadcast_result:
         await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 
-
-async def _forward_event_to_worker(event: EventRequest, *, worker_engine_id: str, worker_request_topic: str) -> None:
-    """Route an event to the appropriate worker's dedicated request topic.
-
-    MVP: routes to the single registered worker.
-    Future: consult a WorkerRegistry to select the correct worker based on event type
-    or target library.
-    """
-    session_id = griptape_nodes.get_session_id()
-    worker_response_topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
-    forwarded = event.model_copy(update={"response_topic": worker_response_topic})
-    logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
-    await _send_message("EventRequest", forwarded.json(), topic=worker_request_topic)
 
 
 async def _process_app_event(event: AppEvent) -> None:
@@ -698,58 +560,11 @@ def _determine_response_topic() -> str:
     return "response"
 
 
-async def _handle_register_worker_request(
-    request: worker_events.RegisterWorkerRequest,
-) -> worker_events.RegisterWorkerResultSuccess | worker_events.RegisterWorkerResultFailure:
-    """Handle a worker registration request from a worker engine."""
-    wid = request.worker_engine_id
-    session_id = griptape_nodes.get_session_id()
-    _registered_workers[wid] = f"sessions/{session_id}/workers/{wid}/request"
-    _worker_last_seen[wid] = time.monotonic()
-    response_topic = f"sessions/{session_id}/workers/{wid}/response"
-    await _subscribe_to_topic(response_topic)
-    logger.info("Worker registered: %s (session %s)", wid, session_id)
-    return worker_events.RegisterWorkerResultSuccess(
-        worker_engine_id=wid, result_details="Worker registered successfully."
-    )
-
-
-griptape_nodes.EventManager().assign_manager_to_request_type(
-    worker_events.RegisterWorkerRequest, _handle_register_worker_request
-)
-
-
-def _handle_worker_heartbeat_request(
-    request: worker_events.WorkerHeartbeatRequest,
-) -> worker_events.WorkerHeartbeatResultSuccess:
-    """Respond to an orchestrator heartbeat challenge."""
-    global _worker_heartbeat_last_received_at  # noqa: PLW0603
-    _worker_heartbeat_last_received_at = time.monotonic()
-    return worker_events.WorkerHeartbeatResultSuccess(
-        heartbeat_id=request.heartbeat_id,
-        result_details="Worker alive.",
-    )
-
-
-griptape_nodes.EventManager().assign_manager_to_request_type(
-    worker_events.WorkerHeartbeatRequest, _handle_worker_heartbeat_request
-)
-
-
-async def _handle_unregister_worker_request(
-    request: worker_events.UnregisterWorkerRequest,
-) -> worker_events.UnregisterWorkerResultSuccess | worker_events.UnregisterWorkerResultFailure:
-    """Handle a worker unregister request from a worker engine."""
-    wid = request.worker_engine_id
-    session_id = griptape_nodes.get_session_id()
-    _registered_workers.pop(wid, None)
-    _worker_last_seen.pop(wid, None)
-    response_topic = f"sessions/{session_id}/workers/{wid}/response"
-    await _unsubscribe_from_topic(response_topic)
-    logger.info("Worker unregistered: %s", wid)
-    return worker_events.UnregisterWorkerResultSuccess(worker_engine_id=wid, result_details="Worker unregistered.")
-
-
-griptape_nodes.EventManager().assign_manager_to_request_type(
-    worker_events.UnregisterWorkerRequest, _handle_unregister_worker_request
+worker_manager = WorkerManager(
+    griptape_nodes=griptape_nodes,
+    event_manager=griptape_nodes.EventManager(),
+    ws_outgoing_queue=ws_outgoing_queue,
+    send_message=_send_message,
+    subscribe_to_topic=_subscribe_to_topic,
+    unsubscribe_from_topic=_unsubscribe_from_topic,
 )
