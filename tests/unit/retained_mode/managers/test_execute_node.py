@@ -1,0 +1,112 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.events.execution_events import (
+    ExecuteNodeRequest,
+    ExecuteNodeResultFailure,
+    ExecuteNodeResultSuccess,
+)
+from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+
+
+class TestExecuteNode:
+    def _get_node_manager(self) -> NodeManager:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        return GriptapeNodes.NodeManager()
+
+    def _make_mock_node(self, name: str = "test_node") -> MagicMock:
+        node = MagicMock(spec=BaseNode)
+        node.name = name
+        node.aprocess = AsyncMock()
+        node.parameter_output_values = {"output_param": "output_value"}
+        return node
+
+    @pytest.mark.asyncio
+    async def test_execute_node_not_found(self) -> None:
+        node_manager = self._get_node_manager()
+
+        request = ExecuteNodeRequest(node_name="nonexistent_node")
+        result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultFailure)
+        assert "nonexistent_node" in str(result.result_details)
+        assert "does not exist" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_execute_node_success(self) -> None:
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+
+        with patch.object(node_manager, "get_node_by_name", return_value=mock_node):
+            request = ExecuteNodeRequest(
+                node_name="test_node",
+                parameter_values={"input_param": "input_value"},
+            )
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        assert result.parameter_output_values == {"output_param": "output_value"}
+        mock_node.set_parameter_value.assert_called_once_with("input_param", "input_value")
+        mock_node.aprocess.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_node_success_no_params(self) -> None:
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+
+        with patch.object(node_manager, "get_node_by_name", return_value=mock_node):
+            request = ExecuteNodeRequest(node_name="test_node")
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        mock_node.set_parameter_value.assert_not_called()
+        mock_node.aprocess.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_node_set_parameter_fails(self) -> None:
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+        mock_node.set_parameter_value.side_effect = ValueError("bad value")
+
+        with patch.object(node_manager, "get_node_by_name", return_value=mock_node):
+            request = ExecuteNodeRequest(
+                node_name="test_node",
+                parameter_values={"bad_param": "bad_value"},
+            )
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultFailure)
+        assert "bad_param" in str(result.result_details)
+        mock_node.aprocess.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_execute_node_aprocess_fails(self) -> None:
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+        mock_node.aprocess.side_effect = RuntimeError("process exploded")
+
+        with patch.object(node_manager, "get_node_by_name", return_value=mock_node):
+            request = ExecuteNodeRequest(node_name="test_node")
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultFailure)
+        assert "process exploded" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_execute_node_multiple_params(self) -> None:
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+
+        with patch.object(node_manager, "get_node_by_name", return_value=mock_node):
+            request = ExecuteNodeRequest(
+                node_name="test_node",
+                parameter_values={"param_a": 1, "param_b": "two", "param_c": [3]},
+            )
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        expected_param_count = 3
+        assert mock_node.set_parameter_value.call_count == expected_param_count
