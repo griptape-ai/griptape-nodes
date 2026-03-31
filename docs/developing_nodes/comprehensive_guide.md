@@ -4362,9 +4362,11 @@ Common errors and solutions
 **Full Error:**
 
 ```
+
 ERROR: Attempted to resolve macro path. Failed because missing required variables: file_extension, file_name_base
-ERROR: Attempted to create download URL. Failed with file_path='{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}'
-```
+ERROR: Attempted to create download URL. Failed with file_path='{outputs}/{node_name?:\_}{file_name_base}{\_index?:03}.{file_extension}'
+
+````
 
 **Cause:** Not capturing the return value from `write_bytes()`. Using `dest.location` instead of `saved.location`.
 
@@ -4374,7 +4376,7 @@ ERROR: Attempted to create download URL. Failed with file_path='{outputs}/{node_
 dest = self._output_file.build_file()
 dest.write_bytes(video_bytes)  # ❌ Return value not captured
 artifact = VideoUrlArtifact(dest.location)  # Using dest, not saved file
-```
+````
 
 **Solution:**
 
@@ -4386,7 +4388,7 @@ artifact = VideoUrlArtifact(saved.location)  # Use saved file's resolved locatio
 
 **Explanation:** Macro variables are populated when `write_bytes()` actually saves the file. The `saved` object returned by `write_bytes()` contains the fully resolved path.
 
----
+______________________________________________________________________
 
 #### Error: Type Conversion Issues with Image Parameters
 
@@ -4421,7 +4423,7 @@ ParameterImage(
 - Graceful error handling for various input formats
 - Reduces type conversion errors in complex workflows
 
----
+______________________________________________________________________
 
 FAQ-style troubleshooting guide
 
@@ -4440,7 +4442,8 @@ Where to get help
 ## Version History
 
 Link to CHANGELOG
-```
+
+````
 
 #### Model Comparison Table
 
@@ -4452,7 +4455,7 @@ Always include a comparison table for services with multiple models:
 | V5    | 4 min        | Superior | Fastest | Prompt: 5000, Style: 1000 |
 | V4_5  | 8 min        | High     | Fast    | Prompt: 5000, Style: 1000 |
 | V4    | 4 min        | Best     | Medium  | Prompt: 3000, Style: 200  |
-```
+````
 
 ______________________________________________________________________
 
