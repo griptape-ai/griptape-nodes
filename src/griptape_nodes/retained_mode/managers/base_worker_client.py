@@ -116,18 +116,19 @@ def _build_stub_class(class_name: str, schema: dict) -> type:
     base_class: type = base_type_map.get(schema.get("base_type", "DataNode"), DataNode)
     element_tree: dict = schema.get("element_tree", {"children": []})
 
-    def __init__(self, name: str, metadata: Any = None) -> None:
+    def _init(self: Any, name: str, metadata: Any = None) -> None:
         base_class.__init__(self, name, metadata)
         _populate_from_element_tree(self, element_tree)
 
-    def process(self) -> None:
+    def process(self: Any) -> None:
         library = getattr(self.__class__, "_worker_library_name", "<unknown library>")
-        raise RuntimeError(
+        msg = (
             f"Stub node '{class_name}' (library '{library}') must only be executed via its "
             f"library worker subprocess. Direct in-process execution is forbidden. "
             f"This is a fatal bug — the node executor must route this node to its worker."
         )
+        raise RuntimeError(msg)
 
-    stub = type(class_name, (base_class,), {"__init__": __init__, "process": process})
+    stub = type(class_name, (base_class,), {"__init__": _init, "process": process})
     stub.__module__ = f"griptape_nodes.node_libraries.stub.{class_name}"
     return stub

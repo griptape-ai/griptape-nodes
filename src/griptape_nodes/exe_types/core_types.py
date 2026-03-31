@@ -1701,7 +1701,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         return schema
 
     @staticmethod
-    def from_schema(schema: dict[str, Any]) -> "Parameter":
+    def from_schema(schema: dict[str, Any]) -> Parameter:
         """Reconstruct a Parameter from a schema dict produced by to_schema().
 
         Uses object.__new__ + Parameter.__init__ to bypass subclass constructor

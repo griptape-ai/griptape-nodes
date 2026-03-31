@@ -8,6 +8,7 @@ dependencies from the main process.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -106,12 +107,9 @@ class StdioWorkerClient(BaseWorkerClient):
 
         try:
             await asyncio.wait_for(self._ready_event.wait(), timeout=_STARTUP_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await self.stop()
-            msg = (
-                f"Worker subprocess for {library_json_path} did not become ready "
-                f"within {_STARTUP_TIMEOUT_SECONDS}s"
-            )
+            msg = f"Worker subprocess for {library_json_path} did not become ready within {_STARTUP_TIMEOUT_SECONDS}s"
             raise RuntimeError(msg) from None
 
         # _read_loop sets _ready_event on crash too, so check the process is still alive.
@@ -129,8 +127,8 @@ class StdioWorkerClient(BaseWorkerClient):
         that prefix so that WARNING lines stay at WARNING, ERROR lines are surfaced as
         ERROR, etc. Lines that don't match the format are logged at DEBUG.
         """
-        assert self._process is not None
-        assert self._process.stderr is not None
+        if self._process is None or self._process.stderr is None:
+            return
 
         try:
             async for raw_line in self._process.stderr:
@@ -141,12 +139,49 @@ class StdioWorkerClient(BaseWorkerClient):
                 level = getattr(logging, m.group(1)) if m else logging.DEBUG
                 logger.log(level, "Worker stderr: %s", line)
         except Exception:
-            pass
+            logger.debug("Worker stderr reader ended unexpectedly", exc_info=True)
+
+    def _dispatch_message(self, msg: dict) -> None:
+        """Dispatch a single parsed message from the worker to the appropriate handler."""
+        msg_type = msg.get("type")
+
+        if msg_type == "ready":
+            self._ready_event.set()
+
+        elif msg_type == "all_schemas":
+            request_id = msg.get("request_id", "__get_all_schemas__")
+            future = self._pending.pop(request_id, None)
+            if future is not None and not future.done():
+                future.set_result(msg.get("schemas", {}))
+
+        elif msg_type == "event":
+            self._forward_event(
+                event_class=msg.get("event_class", ""),
+                payload_dict=msg.get("payload", {}),
+                raw_msg=msg,
+            )
+
+        elif msg_type == "output":
+            request_id = msg.get("request_id", "")
+            future = self._pending.pop(request_id, None)
+            if future is not None and not future.done():
+                future.set_result(msg.get("parameter_output_values", {}))
+
+        elif msg_type == "error":
+            request_id = msg.get("request_id", "")
+            future = self._pending.pop(request_id, None)
+            if future is not None and not future.done():
+                error_msg = msg.get("message", "Unknown worker error")
+                tb = msg.get("traceback", "")
+                future.set_exception(RuntimeError(f"{error_msg}\n{tb}".strip()))
+
+        else:
+            logger.debug("Worker sent unknown message type: %r", msg_type)
 
     async def _read_loop(self) -> None:
         """Read worker stdout line by line, dispatching messages to pending futures."""
-        assert self._process is not None
-        assert self._process.stdout is not None
+        if self._process is None or self._process.stdout is None:
+            return
 
         try:
             async for raw_line in self._process.stdout:
@@ -160,40 +195,7 @@ class StdioWorkerClient(BaseWorkerClient):
                     logger.debug("Worker sent non-JSON stdout line: %r", line)
                     continue
 
-                msg_type = msg.get("type")
-
-                if msg_type == "ready":
-                    self._ready_event.set()
-
-                elif msg_type == "all_schemas":
-                    request_id = msg.get("request_id", "__get_all_schemas__")
-                    future = self._pending.pop(request_id, None)
-                    if future is not None and not future.done():
-                        future.set_result(msg.get("schemas", {}))
-
-                elif msg_type == "event":
-                    self._forward_event(
-                        event_class=msg.get("event_class", ""),
-                        payload_dict=msg.get("payload", {}),
-                        raw_msg=msg,
-                    )
-
-                elif msg_type == "output":
-                    request_id = msg.get("request_id", "")
-                    future = self._pending.pop(request_id, None)
-                    if future is not None and not future.done():
-                        future.set_result(msg.get("parameter_output_values", {}))
-
-                elif msg_type == "error":
-                    request_id = msg.get("request_id", "")
-                    future = self._pending.pop(request_id, None)
-                    if future is not None and not future.done():
-                        error_msg = msg.get("message", "Unknown worker error")
-                        tb = msg.get("traceback", "")
-                        future.set_exception(RuntimeError(f"{error_msg}\n{tb}".strip()))
-
-                else:
-                    logger.debug("Worker sent unknown message type: %r", msg_type)
+                self._dispatch_message(msg)
 
         except Exception:
             logger.debug("Worker _read_loop ended", exc_info=True)
@@ -251,8 +253,9 @@ class StdioWorkerClient(BaseWorkerClient):
 
     async def _write_message(self, msg: dict) -> None:
         """Write a JSON message to the worker stdin (serialized via lock)."""
-        assert self._process is not None
-        assert self._process.stdin is not None
+        if self._process is None or self._process.stdin is None:
+            err = "Worker process or stdin is not available"
+            raise RuntimeError(err)
 
         line = json.dumps(msg) + "\n"
         async with self._write_lock:
@@ -285,36 +288,33 @@ class StdioWorkerClient(BaseWorkerClient):
         """
         request_id = str(uuid.uuid4())
         future = self._make_future(request_id)
-        await self._write_message({
-            "type": "execute_node",
-            "request_id": request_id,
-            "class_name": class_name,
-            "node_name": node_name,
-            "parameter_values": parameter_values,
-        })
+        await self._write_message(
+            {
+                "type": "execute_node",
+                "request_id": request_id,
+                "class_name": class_name,
+                "node_name": node_name,
+                "parameter_values": parameter_values,
+            }
+        )
         return await future
 
     async def stop(self) -> None:
         """Shut down the worker subprocess gracefully, killing it if necessary."""
         if self._process is not None and self._process.returncode is None:
-            try:
+            with contextlib.suppress(Exception):
                 await self._write_message({"type": "shutdown"})
-            except Exception:
-                pass
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=_SHUTDOWN_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._process.kill()
 
         for task in (self._reader_task, self._stderr_reader_task):
             if task is not None:
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
 
         self._process = None
         self._reader_task = None
         self._stderr_reader_task = None
-

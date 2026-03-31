@@ -8,9 +8,11 @@ implement this interface without requiring changes to the executor or library ma
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from griptape_nodes.retained_mode.managers.base_worker_client import BaseWorkerClient
 
 

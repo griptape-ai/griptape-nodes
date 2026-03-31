@@ -52,7 +52,7 @@ for _p in _main_site_packages.split(os.pathsep):
     if _p and _p not in sys.path:
         sys.path.append(_p)
 
-from griptape_nodes.bootstrap.workers.base_worker_transport import BaseWorkerTransport
+from griptape_nodes.bootstrap.workers.base_worker_transport import BaseWorkerTransport  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +68,12 @@ class StdioWorkerTransport(BaseWorkerTransport):
     def read_message(self) -> dict | None:
         """Read the next JSON message from stdin. Returns None on EOF."""
         for raw_line in sys.stdin:
-            raw_line = raw_line.strip()
-            if raw_line:
+            line = raw_line.strip()
+            if line:
                 try:
-                    return json.loads(raw_line)
+                    return json.loads(line)
                 except json.JSONDecodeError:
-                    logger.error("Worker received malformed JSON: %r", raw_line)
+                    logger.error("Worker received malformed JSON: %r", line)
         return None  # EOF
 
     def write_message(self, msg: dict) -> None:
@@ -91,9 +91,10 @@ def _serialize_value(value: Any) -> Any:
     """Serialize a value to JSON-safe format, using pickle+base64 for complex types."""
     try:
         json.dumps(value)
-        return value
     except (TypeError, ValueError):
         return {"__pickled__": base64.b64encode(pickle.dumps(value)).decode()}
+    else:
+        return value
 
 
 def _deserialize_value(value: Any) -> Any:
@@ -142,12 +143,11 @@ def _serialize_element_tree(element: Any) -> dict:
             "param_schema": element.to_schema(),
             "children": children,
         }
-    else:
-        return {
-            "element_type": type(element).__name__,
-            "name": element.name,
-            "children": children,
-        }
+    return {
+        "element_type": type(element).__name__,
+        "name": element.name,
+        "children": children,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -168,27 +168,31 @@ def _forward_event_to_stdout(request_id: str, event: Any, transport: BaseWorkerT
                 payload_dict = payload.__dict__
             else:
                 return
-            transport.write_message({
-                "type": "event",
-                "request_id": request_id,
-                "event_class": "ExecutionGriptapeNodeEvent",
-                "wrapped_event_class": type(payload).__name__,
-                "payload": payload_dict,
-            })
+            transport.write_message(
+                {
+                    "type": "event",
+                    "request_id": request_id,
+                    "event_class": "ExecutionGriptapeNodeEvent",
+                    "wrapped_event_class": type(payload).__name__,
+                    "payload": payload_dict,
+                }
+            )
         elif isinstance(event, ProgressEvent):
-            transport.write_message({
-                "type": "event",
-                "request_id": request_id,
-                "event_class": "ProgressEvent",
-                "payload": {
-                    "value": _serialize_value(event.value),
-                    "node_name": event.node_name,
-                    "parameter_name": event.parameter_name,
-                },
-            })
+            transport.write_message(
+                {
+                    "type": "event",
+                    "request_id": request_id,
+                    "event_class": "ProgressEvent",
+                    "payload": {
+                        "value": _serialize_value(event.value),
+                        "node_name": event.node_name,
+                        "parameter_name": event.parameter_name,
+                    },
+                }
+            )
     except Exception:
         # Never let event forwarding crash execution
-        pass
+        logger.debug("Failed to forward event to stdout", exc_info=True)
 
 
 def _install_event_forwarder(request_id: str, transport: BaseWorkerTransport) -> tuple:
@@ -293,23 +297,27 @@ def handle_execute_node(msg: dict, node_classes: dict[str, type], transport: Bas
     parameter_values = msg.get("parameter_values", {})
 
     if class_name not in node_classes:
-        transport.write_message({
-            "type": "error",
-            "request_id": request_id,
-            "message": f"Unknown node class: {class_name!r}",
-            "traceback": "",
-        })
+        transport.write_message(
+            {
+                "type": "error",
+                "request_id": request_id,
+                "message": f"Unknown node class: {class_name!r}",
+                "traceback": "",
+            }
+        )
         return
 
     try:
         node = node_classes[class_name](name=node_name)
     except Exception as e:
-        transport.write_message({
-            "type": "error",
-            "request_id": request_id,
-            "message": f"Failed to instantiate {class_name}: {e}",
-            "traceback": traceback.format_exc(),
-        })
+        transport.write_message(
+            {
+                "type": "error",
+                "request_id": request_id,
+                "message": f"Failed to instantiate {class_name}: {e}",
+                "traceback": traceback.format_exc(),
+            }
+        )
         return
 
     # Populate parameter values sent from the parent process
@@ -321,20 +329,19 @@ def handle_execute_node(msg: dict, node_classes: dict[str, type], transport: Bas
     try:
         asyncio.run(node.aprocess())
     except Exception as e:
-        transport.write_message({
-            "type": "error",
-            "request_id": request_id,
-            "message": str(e),
-            "traceback": traceback.format_exc(),
-        })
+        transport.write_message(
+            {
+                "type": "error",
+                "request_id": request_id,
+                "message": str(e),
+                "traceback": traceback.format_exc(),
+            }
+        )
         return
     finally:
         _uninstall_event_forwarder(original_put, original_aput)
 
-    outputs = {
-        param_name: _serialize_value(value)
-        for param_name, value in node.parameter_output_values.items()
-    }
+    outputs = {param_name: _serialize_value(value) for param_name, value in node.parameter_output_values.items()}
     transport.write_message({"type": "output", "request_id": request_id, "parameter_output_values": outputs})
 
 

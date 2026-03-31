@@ -108,7 +108,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.base_worker_client import BaseWorkerClient
 from griptape_nodes.retained_mode.managers.event_manager import (
     EventSuppressionContext,
     EventTranslationContext,
@@ -118,6 +117,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
+    from griptape_nodes.retained_mode.managers.base_worker_client import BaseWorkerClient
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -131,9 +131,10 @@ def _serialize_value(value: Any) -> Any:
     """Serialize a value to JSON-safe format, using pickle+base64 for complex types."""
     try:
         json.dumps(value)
-        return value
     except (TypeError, ValueError):
         return {"__pickled__": base64.b64encode(pickle.dumps(value)).decode()}
+    else:
+        return value
 
 
 def _deserialize_value(value: Any) -> Any:
@@ -306,11 +307,10 @@ class NodeExecutor:
 
     async def _execute_node_in_worker(self, node: BaseNode, worker: BaseWorkerClient) -> None:
         """Execute a node in its library worker subprocess and apply the output values."""
-        parameter_values = {
-            p.name: _serialize_value(node.parameter_values.get(p.name))
-            for p in node.parameters
-        }
-        class_name = node.metadata.get("node_type", node.__class__.__name__) if node.metadata else node.__class__.__name__
+        parameter_values = {p.name: _serialize_value(node.parameter_values.get(p.name)) for p in node.parameters}
+        class_name = (
+            node.metadata.get("node_type", node.__class__.__name__) if node.metadata else node.__class__.__name__
+        )
         output_values = await worker.execute_node(
             class_name=class_name,
             node_name=node.name,

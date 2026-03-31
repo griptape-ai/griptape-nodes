@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         ArbitraryCodeExecManager,
     )
     from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager
+    from griptape_nodes.retained_mode.managers.base_worker_manager import BaseWorkerManager
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
     from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
@@ -64,7 +65,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.variable_manager import (
         VariablesManager,
     )
-    from griptape_nodes.retained_mode.managers.base_worker_manager import BaseWorkerManager
     from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
         VersionCompatibilityManager,
     )
@@ -126,6 +126,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
         from griptape_nodes.retained_mode.managers.session_manager import SessionManager
+        from griptape_nodes.retained_mode.managers.singleton_worker_manager import SingletonWorkerManager
         from griptape_nodes.retained_mode.managers.static_files_manager import (
             StaticFilesManager,
         )
@@ -134,7 +135,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.variable_manager import (
             VariablesManager,
         )
-        from griptape_nodes.retained_mode.managers.singleton_worker_manager import SingletonWorkerManager
         from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
             VersionCompatibilityManager,
         )

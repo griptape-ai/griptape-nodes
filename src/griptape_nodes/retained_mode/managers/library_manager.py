@@ -2030,7 +2030,20 @@ class LibraryManager:
             try:
                 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-                asyncio.ensure_future(GriptapeNodes.WorkerManager().unregister_library(request.library_name))
+                _cleanup_task = asyncio.ensure_future(
+                    GriptapeNodes.WorkerManager().unregister_library(request.library_name)
+                )
+                _cleanup_task.add_done_callback(
+                    lambda t: (
+                        logger.debug(
+                            "Worker cleanup for library '%s' failed: %s",
+                            request.library_name,
+                            t.exception(),
+                        )
+                        if not t.cancelled() and t.exception()
+                        else None
+                    )
+                )
             except RuntimeError:
                 pass
             del self._library_file_path_to_info[lib_info.library_path]

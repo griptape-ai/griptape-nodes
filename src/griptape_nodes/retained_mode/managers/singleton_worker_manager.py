@@ -8,11 +8,13 @@ user must reload the library.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.managers.base_worker_manager import BaseWorkerManager
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from griptape_nodes.retained_mode.managers.base_worker_client import BaseWorkerClient
 
 logger = logging.getLogger(__name__)
@@ -49,16 +51,13 @@ class SingletonWorkerManager(BaseWorkerManager):
         """
         worker = self._workers.get(library_name)
         if worker is None:
-            msg = (
-                f"No worker registered for library '{library_name}'. "
-                "The library may not have been loaded."
-            )
+            msg = f"No worker registered for library '{library_name}'. The library may not have been loaded."
             raise RuntimeError(msg)
         if not worker.is_running():
             await self.on_worker_crashed(library_name, worker)
         return worker
 
-    async def release_worker(self, library_name: str, worker: BaseWorkerClient) -> None:  # noqa: ARG002
+    async def release_worker(self, library_name: str, worker: BaseWorkerClient) -> None:
         """No-op: the singleton worker is retained between executions."""
 
     async def on_worker_crashed(self, library_name: str, worker: BaseWorkerClient) -> None:  # noqa: ARG002
