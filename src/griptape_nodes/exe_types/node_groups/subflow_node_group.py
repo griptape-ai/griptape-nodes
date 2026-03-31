@@ -1028,12 +1028,6 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             if subflow is not None:
                 GriptapeNodes.handle_request(DeleteFlowRequest(flow_name=subflow_name))
 
-    def delete_group(self) -> str | None:
-        nodes_to_remove = list(self.nodes.values())
-        self.remove_nodes_from_group(nodes_to_remove)
-        subflow_name = self.metadata.get("subflow_name")
-        return subflow_name
-
     @property
     def subflow_execution_component(self) -> SubflowExecutionComponent:
         """Get the subflow execution component for real-time status updates."""

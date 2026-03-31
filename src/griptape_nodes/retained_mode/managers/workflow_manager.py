@@ -2061,9 +2061,7 @@ class WorkflowManager:
 
         # Extract workflow shape from the specific subflow (not the top-level flow).
         try:
-            workflow_shape_dict = self.extract_workflow_shape(
-                workflow_name=registry_key, flow_name=request.flow_name
-            )
+            workflow_shape_dict = self.extract_workflow_shape(workflow_name=registry_key, flow_name=request.flow_name)
             workflow_shape = WorkflowShape(
                 inputs=workflow_shape_dict["input"],
                 outputs=workflow_shape_dict["output"],
