@@ -334,6 +334,13 @@ self.add_parameter(
 )
 ```
 
+**Why `ParameterImage` is better:**
+
+- **Standardized type conversion logic:** Handles ImageArtifact, ImageUrlArtifact, and string inputs consistently
+- **Built-in UI features:** File browser, webcam capture, mask editing
+- **Less boilerplate:** Automatically configures types and options
+- **Robust error handling:** Gracefully handles various input formats (URLs, file paths, data URIs)
+
 **Recommended Pattern:**
 
 ```python
@@ -346,6 +353,8 @@ self.add_parameter(
     )
 )
 ```
+
+`ParameterImage` standardizes how your node handles different image input types, reducing conversion errors and improving reliability.
 
 ##### `ParameterAudio` / `ParameterVideo` / `Parameter3D`
 
@@ -1228,6 +1237,28 @@ class MyVideoNode(ControlNode):
 - Call `build_file()` to get a `ProjectFileDestination` instance
 - Use `write_bytes()` to save the file
 - Access the saved file's URL/path via `saved.location`
+
+**❌ Common Mistake: Not Capturing write_bytes() Return Value**
+
+```python
+# WRONG - Don't do this:
+dest = self._output_video_file.build_file()
+dest.write_bytes(video_bytes)  # ❌ Return value not captured
+artifact = VideoUrlArtifact(dest.location)  # Using dest, not saved file
+
+# This will fail with: "Failed because missing required variables: file_extension, file_name_base"
+```
+
+**Why it fails:** Macro variables like `{file_extension}` and `{file_name_base}` are resolved when `write_bytes()` saves the file and returns the saved file object, not by `build_file()`. Using `dest.location` before writing causes macro resolution errors.
+
+```python
+# CORRECT:
+dest = self._output_video_file.build_file()
+saved = dest.write_bytes(video_bytes)  # ✅ Capture return value
+artifact = VideoUrlArtifact(saved.location)  # Use saved file's resolved location
+```
+
+The `saved` object contains the fully resolved file path with all macros filled in.
 
 #### Pattern 2: ProjectFileDestination Directly (For Utility Functions)
 
@@ -4323,6 +4354,74 @@ Document:
 Common errors and solutions
 
 ## Troubleshooting
+
+### Common Errors and Solutions
+
+#### Error: "Missing required variables: file_extension, file_name_base"
+
+**Full Error:**
+
+```
+ERROR: Attempted to resolve macro path. Failed because missing required variables: file_extension, file_name_base
+ERROR: Attempted to create download URL. Failed with file_path='{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}'
+```
+
+**Cause:** Not capturing the return value from `write_bytes()`. Using `dest.location` instead of `saved.location`.
+
+**Incorrect Code:**
+
+```python
+dest = self._output_file.build_file()
+dest.write_bytes(video_bytes)  # ❌ Return value not captured
+artifact = VideoUrlArtifact(dest.location)  # Using dest, not saved file
+```
+
+**Solution:**
+
+```python
+dest = self._output_file.build_file()
+saved = dest.write_bytes(video_bytes)  # ✅ Capture the saved file
+artifact = VideoUrlArtifact(saved.location)  # Use saved file's resolved location
+```
+
+**Explanation:** Macro variables are populated when `write_bytes()` actually saves the file. The `saved` object returned by `write_bytes()` contains the fully resolved path.
+
+---
+
+#### Error: Type Conversion Issues with Image Parameters
+
+**Symptom:** Image parameters don't handle different input types consistently, or errors occur when passing URLs, file paths, or artifacts between nodes.
+
+**Problem:** Using generic `Parameter` with manual type configuration doesn't standardize type conversion logic:
+
+```python
+# ❌ Inconsistent type handling
+Parameter(
+    name="image",
+    input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
+    type="ImageArtifact",
+)
+```
+
+**Solution:** Use `ParameterImage` for standardized type conversion:
+
+```python
+# ✅ Standardized type handling
+ParameterImage(
+    name="image",
+    tooltip="Input image",
+    allow_output=False,
+)
+```
+
+**Benefits:**
+
+- Handles ImageArtifact, ImageUrlArtifact, and strings consistently
+- Built-in support for URLs, file paths, and data URIs
+- Graceful error handling for various input formats
+- Reduces type conversion errors in complex workflows
+
+---
 
 FAQ-style troubleshooting guide
 
