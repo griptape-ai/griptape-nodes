@@ -7,7 +7,7 @@ filter that keeps internal health-check results off the GUI topic.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -39,26 +39,41 @@ def _mock_session_id() -> Generator[None, None, None]:
 
 @pytest.mark.usefixtures("_mock_session_id")
 class TestHandleRegisterWorkerRequest:
-    def test_adds_worker_to_registered_workers(self) -> None:
+    @pytest.mark.asyncio
+    async def test_adds_worker_to_registered_workers(self) -> None:
         request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
 
-        app_module._handle_register_worker_request(request)
+        with patch("griptape_nodes.app.app._subscribe_to_topic", new_callable=AsyncMock):
+            await app_module._handle_register_worker_request(request)
 
         assert _ENGINE in app_module._registered_workers
         assert app_module._registered_workers[_ENGINE] == _WORKER_REQUEST_TOPIC
 
-    def test_seeds_last_seen_timestamp(self) -> None:
+    @pytest.mark.asyncio
+    async def test_seeds_last_seen_timestamp(self) -> None:
         request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
 
-        app_module._handle_register_worker_request(request)
+        with patch("griptape_nodes.app.app._subscribe_to_topic", new_callable=AsyncMock):
+            await app_module._handle_register_worker_request(request)
 
         assert _ENGINE in app_module._worker_last_seen
         assert app_module._worker_last_seen[_ENGINE] > 0
 
-    def test_returns_success_with_engine_id(self) -> None:
+    @pytest.mark.asyncio
+    async def test_subscribes_to_worker_response_topic(self) -> None:
         request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
 
-        result = app_module._handle_register_worker_request(request)
+        with patch("griptape_nodes.app.app._subscribe_to_topic", new_callable=AsyncMock) as mock_sub:
+            await app_module._handle_register_worker_request(request)
+
+        mock_sub.assert_called_once_with(_WORKER_RESPONSE_TOPIC)
+
+    @pytest.mark.asyncio
+    async def test_returns_success_with_engine_id(self) -> None:
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
+
+        with patch("griptape_nodes.app.app._subscribe_to_topic", new_callable=AsyncMock):
+            result = await app_module._handle_register_worker_request(request)
 
         assert isinstance(result, worker_events.RegisterWorkerResultSuccess)
         assert result.worker_engine_id == _ENGINE
@@ -76,39 +91,58 @@ class TestHandleWorkerHeartbeatRequest:
 
 @pytest.mark.usefixtures("_mock_session_id")
 class TestHandleUnregisterWorkerRequest:
-    def test_removes_worker_from_registered_workers(self) -> None:
+    @pytest.mark.asyncio
+    async def test_removes_worker_from_registered_workers(self) -> None:
         app_module._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
         app_module._worker_last_seen[_ENGINE] = 999.0
 
         request = worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
-        app_module._handle_unregister_worker_request(request)
+        with patch("griptape_nodes.app.app._unsubscribe_from_topic", new_callable=AsyncMock):
+            await app_module._handle_unregister_worker_request(request)
 
         assert _ENGINE not in app_module._registered_workers
 
-    def test_removes_worker_from_last_seen(self) -> None:
+    @pytest.mark.asyncio
+    async def test_removes_worker_from_last_seen(self) -> None:
         app_module._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
         app_module._worker_last_seen[_ENGINE] = 999.0
 
         request = worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
-        app_module._handle_unregister_worker_request(request)
+        with patch("griptape_nodes.app.app._unsubscribe_from_topic", new_callable=AsyncMock):
+            await app_module._handle_unregister_worker_request(request)
 
         assert _ENGINE not in app_module._worker_last_seen
 
-    def test_returns_success_with_engine_id(self) -> None:
+    @pytest.mark.asyncio
+    async def test_unsubscribes_from_worker_response_topic(self) -> None:
         app_module._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
         app_module._worker_last_seen[_ENGINE] = 999.0
 
         request = worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
-        result = app_module._handle_unregister_worker_request(request)
+        with patch("griptape_nodes.app.app._unsubscribe_from_topic", new_callable=AsyncMock) as mock_unsub:
+            await app_module._handle_unregister_worker_request(request)
+
+        mock_unsub.assert_called_once_with(_WORKER_RESPONSE_TOPIC)
+
+    @pytest.mark.asyncio
+    async def test_returns_success_with_engine_id(self) -> None:
+        app_module._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        app_module._worker_last_seen[_ENGINE] = 999.0
+
+        request = worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
+        with patch("griptape_nodes.app.app._unsubscribe_from_topic", new_callable=AsyncMock):
+            result = await app_module._handle_unregister_worker_request(request)
 
         assert isinstance(result, worker_events.UnregisterWorkerResultSuccess)
         assert result.worker_engine_id == _ENGINE
 
-    def test_tolerates_unknown_worker(self) -> None:
+    @pytest.mark.asyncio
+    async def test_tolerates_unknown_worker(self) -> None:
         """Unregistering a worker that is not in the registry must not raise."""
         request = worker_events.UnregisterWorkerRequest(worker_engine_id="ghost-engine")
 
-        result = app_module._handle_unregister_worker_request(request)
+        with patch("griptape_nodes.app.app._unsubscribe_from_topic", new_callable=AsyncMock):
+            result = await app_module._handle_unregister_worker_request(request)
 
         assert isinstance(result, worker_events.UnregisterWorkerResultSuccess)
 
@@ -160,45 +194,6 @@ class TestRelayWorkerResult:
             await app_module._relay_worker_result(payload)
 
         mock_send.assert_called_once()
-
-
-class TestHandleWorkerTopicChange:
-    @pytest.mark.asyncio
-    async def test_subscribes_on_register_success(self) -> None:
-        result_event = MagicMock()
-        result_event.result = worker_events.RegisterWorkerResultSuccess(worker_engine_id=_ENGINE, result_details="ok")
-
-        with (
-            patch.object(app_module.griptape_nodes, "get_session_id", return_value=_SESSION),
-            patch("griptape_nodes.app.app._subscribe_to_topic", new_callable=AsyncMock) as mock_sub,
-        ):
-            handled = await app_module._handle_worker_topic_change(result_event)
-
-        assert handled is True
-        mock_sub.assert_called_once_with(_WORKER_RESPONSE_TOPIC)
-
-    @pytest.mark.asyncio
-    async def test_unsubscribes_on_unregister_success(self) -> None:
-        result_event = MagicMock()
-        result_event.result = worker_events.UnregisterWorkerResultSuccess(worker_engine_id=_ENGINE, result_details="ok")
-
-        with (
-            patch.object(app_module.griptape_nodes, "get_session_id", return_value=_SESSION),
-            patch("griptape_nodes.app.app._unsubscribe_from_topic", new_callable=AsyncMock) as mock_unsub,
-        ):
-            handled = await app_module._handle_worker_topic_change(result_event)
-
-        assert handled is True
-        mock_unsub.assert_called_once_with(_WORKER_RESPONSE_TOPIC)
-
-    @pytest.mark.asyncio
-    async def test_returns_false_for_unrelated_result(self) -> None:
-        result_event = MagicMock()
-        result_event.result = MagicMock()  # not a worker result type
-
-        handled = await app_module._handle_worker_topic_change(result_event)
-
-        assert handled is False
 
 
 class TestEvictWorker:

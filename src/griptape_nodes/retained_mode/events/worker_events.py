@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -23,6 +23,7 @@ class RegisterWorkerRequest(RequestPayload):
     """
 
     worker_engine_id: str
+    broadcast_result: bool = field(default=False, kw_only=True)
 
 
 @dataclass
@@ -80,6 +81,7 @@ class UnregisterWorkerRequest(RequestPayload):
     """
 
     worker_engine_id: str
+    broadcast_result: bool = field(default=False, kw_only=True)
 
 
 @dataclass

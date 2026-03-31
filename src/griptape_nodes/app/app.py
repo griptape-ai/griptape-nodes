@@ -529,7 +529,8 @@ async def _process_event_request(event: EventRequest) -> None:
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},
     )
-    await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
+    if event.request.broadcast_result:
+        await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 
 
 async def _forward_event_to_worker(
@@ -556,28 +557,6 @@ async def _process_app_event(event: AppEvent) -> None:
     await _send_message("app_event", event.json())
 
 
-async def _handle_worker_topic_change(result_event: EventResultSuccess) -> bool:
-    """Subscribe or unsubscribe from a worker response topic based on a registration result.
-
-    Returns True if the event was handled internally and must not be forwarded to the GUI.
-    """
-    if isinstance(result_event.result, worker_events.RegisterWorkerResultSuccess):
-        wid = result_event.result.worker_engine_id
-        session_id = griptape_nodes.get_session_id()
-        topic = f"sessions/{session_id}/workers/{wid}/response"
-        await _subscribe_to_topic(topic)
-        logger.info("Subscribed to worker response topic: %s", topic)
-        return True
-    if isinstance(result_event.result, worker_events.UnregisterWorkerResultSuccess):
-        wid = result_event.result.worker_engine_id
-        session_id = griptape_nodes.get_session_id()
-        topic = f"sessions/{session_id}/workers/{wid}/response"
-        await _unsubscribe_from_topic(topic)
-        logger.info("Unsubscribed from worker response topic: %s", topic)
-        return True
-    return False
-
-
 async def _process_node_event(event: GriptapeNodeEvent) -> None:
     """Process GriptapeNodeEvents and send them to the API (async version)."""
     # Check if events are suppressed
@@ -601,15 +580,7 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
                 topic = f"sessions/{session_id}/request"
                 await _unsubscribe_from_topic(topic)
                 logger.info("Unsubscribed from session topic: %s", topic)
-        elif await _handle_worker_topic_change(result_event):
-            return  # Internal worker event — do not forward to GUI
     elif isinstance(result_event, EventResultFailure):
-        if isinstance(result_event.result, worker_events.RegisterWorkerResultFailure):
-            logger.warning("Worker registration failed: %s", result_event.result)
-            return  # Internal handshake — do not forward to GUI
-        if isinstance(result_event.result, worker_events.UnregisterWorkerResultFailure):
-            logger.warning("Worker unregister failed: %s", result_event.result)
-            return  # Internal unregister — do not forward to GUI
         dest_socket = "failure_result"
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
@@ -701,18 +672,16 @@ def _determine_response_topic() -> str:
     return "response"
 
 
-def _handle_register_worker_request(
+async def _handle_register_worker_request(
     request: worker_events.RegisterWorkerRequest,
 ) -> worker_events.RegisterWorkerResultSuccess | worker_events.RegisterWorkerResultFailure:
-    """Handle a worker registration request from a worker engine.
-
-    Records the worker in the registry. The orchestrator will later subscribe to
-    the worker's response topic (handled in _process_node_event on the result).
-    """
+    """Handle a worker registration request from a worker engine."""
     wid = request.worker_engine_id
     session_id = griptape_nodes.get_session_id()
     _registered_workers[wid] = f"sessions/{session_id}/workers/{wid}/request"
     _worker_last_seen[wid] = time.monotonic()
+    response_topic = f"sessions/{session_id}/workers/{wid}/response"
+    await _subscribe_to_topic(response_topic)
     logger.info("Worker registered: %s (session %s)", wid, session_id)
     return worker_events.RegisterWorkerResultSuccess(
         worker_engine_id=wid, result_details="Worker registered successfully."
@@ -739,13 +708,16 @@ griptape_nodes.EventManager().assign_manager_to_request_type(
 )
 
 
-def _handle_unregister_worker_request(
+async def _handle_unregister_worker_request(
     request: worker_events.UnregisterWorkerRequest,
 ) -> worker_events.UnregisterWorkerResultSuccess | worker_events.UnregisterWorkerResultFailure:
     """Handle a worker unregister request from a worker engine."""
     wid = request.worker_engine_id
+    session_id = griptape_nodes.get_session_id()
     _registered_workers.pop(wid, None)
     _worker_last_seen.pop(wid, None)
+    response_topic = f"sessions/{session_id}/workers/{wid}/response"
+    await _unsubscribe_from_topic(response_topic)
     logger.info("Worker unregistered: %s", wid)
     return worker_events.UnregisterWorkerResultSuccess(worker_engine_id=wid, result_details="Worker unregistered.")
 
