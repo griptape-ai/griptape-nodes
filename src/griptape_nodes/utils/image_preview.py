@@ -4,7 +4,7 @@ import base64
 import io
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from griptape_nodes.retained_mode.griptape_nodes import logger
 
@@ -34,6 +34,8 @@ def create_image_preview(
     try:
         # Open and resize the image
         with Image.open(image_path) as img:
+            # Apply EXIF orientation so rotated images (e.g. phone photos) display correctly
+            img = ImageOps.exif_transpose(img)
             # Convert to RGB if necessary (for WebP/JPEG output)
             if image_format.upper() in ("WEBP", "JPEG") and img.mode in ("RGBA", "LA", "P"):
                 converted_img = img.convert("RGB")
@@ -96,6 +98,8 @@ def create_image_preview_from_bytes(
 
         # Open image from bytes
         with Image.open(io.BytesIO(image_bytes)) as img:
+            # Apply EXIF orientation so rotated images (e.g. phone photos) display correctly
+            img = ImageOps.exif_transpose(img)
             # Convert to RGB if necessary (for WebP/JPEG output)
             if image_format.upper() in ("WEBP", "JPEG") and img.mode in ("RGBA", "LA", "P"):
                 converted_img = img.convert("RGB")
@@ -143,6 +147,7 @@ def get_image_info(image_path: Path) -> dict | None:
     """
     try:
         with Image.open(image_path) as img:
+            img = ImageOps.exif_transpose(img)
             return {
                 "width": img.width,
                 "height": img.height,

@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from griptape_nodes.drivers.image_metadata.image_metadata_driver_registry import (
     ImageMetadataDriverRegistry,
@@ -94,6 +94,7 @@ class ImageArtifactProvider(BaseArtifactProvider):
         try:
             path = Path(source_path)
             with Image.open(path) as img:
+                img = ImageOps.exif_transpose(img)
                 width, height = img.size
                 channels, color_space = cls.get_mode_info(img.mode)
                 return ImageArtifactMetadata(
