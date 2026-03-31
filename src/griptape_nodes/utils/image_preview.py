@@ -33,9 +33,9 @@ def create_image_preview(
 
     try:
         # Open and resize the image
-        with Image.open(image_path) as img:
+        with Image.open(image_path) as raw_img:
             # Apply EXIF orientation so rotated images (e.g. phone photos) display correctly
-            img = ImageOps.exif_transpose(img)
+            img = ImageOps.exif_transpose(raw_img)
             # Convert to RGB if necessary (for WebP/JPEG output)
             if image_format.upper() in ("WEBP", "JPEG") and img.mode in ("RGBA", "LA", "P"):
                 converted_img = img.convert("RGB")
@@ -97,9 +97,9 @@ def create_image_preview_from_bytes(
             return None
 
         # Open image from bytes
-        with Image.open(io.BytesIO(image_bytes)) as img:
+        with Image.open(io.BytesIO(image_bytes)) as raw_img:
             # Apply EXIF orientation so rotated images (e.g. phone photos) display correctly
-            img = ImageOps.exif_transpose(img)
+            img = ImageOps.exif_transpose(raw_img)
             # Convert to RGB if necessary (for WebP/JPEG output)
             if image_format.upper() in ("WEBP", "JPEG") and img.mode in ("RGBA", "LA", "P"):
                 converted_img = img.convert("RGB")
@@ -146,8 +146,8 @@ def get_image_info(image_path: Path) -> dict | None:
         Dictionary with image info (width, height, format, mode), or None if failed
     """
     try:
-        with Image.open(image_path) as img:
-            img = ImageOps.exif_transpose(img)
+        with Image.open(image_path) as raw_img:
+            img = ImageOps.exif_transpose(raw_img)
             return {
                 "width": img.width,
                 "height": img.height,

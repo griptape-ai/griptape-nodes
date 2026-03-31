@@ -93,8 +93,8 @@ class ImageArtifactProvider(BaseArtifactProvider):
         """Extract original image metadata via PIL's lazy header read (no full decode)."""
         try:
             path = Path(source_path)
-            with Image.open(path) as img:
-                img = ImageOps.exif_transpose(img)
+            with Image.open(path) as raw_img:
+                img = ImageOps.exif_transpose(raw_img)
                 width, height = img.size
                 channels, color_space = cls.get_mode_info(img.mode)
                 return ImageArtifactMetadata(
