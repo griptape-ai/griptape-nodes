@@ -88,6 +88,43 @@ class TestHandleWorkerHeartbeatRequest:
         assert isinstance(result, worker_events.WorkerHeartbeatResultSuccess)
         assert result.heartbeat_id == "hb-001"
 
+    def test_updates_last_received_timestamp(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(app_module, "_worker_heartbeat_last_received_at", 0.0)
+        request = worker_events.WorkerHeartbeatRequest(heartbeat_id="hb-002")
+
+        app_module._handle_worker_heartbeat_request(request)
+
+        assert app_module._worker_heartbeat_last_received_at > 0.0
+
+
+class TestWorkerHeartbeatMonitor:
+    @pytest.mark.asyncio
+    async def test_raises_after_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Monitor raises RuntimeError when no heartbeat arrives within the timeout."""
+        monkeypatch.setattr(app_module, "_WORKER_HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(app_module, "_WORKER_HEARTBEAT_TIMEOUT_S", 0.0)
+        monkeypatch.setattr(app_module, "_worker_heartbeat_last_received_at", 0.0)
+
+        with pytest.raises(RuntimeError, match="Orchestrator heartbeat lost"):
+            await app_module._worker_heartbeat_monitor()
+
+    @pytest.mark.asyncio
+    async def test_does_not_raise_while_heartbeats_arrive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Monitor does not raise when the timestamp is kept current."""
+        import asyncio
+
+        monkeypatch.setattr(app_module, "_WORKER_HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(app_module, "_WORKER_HEARTBEAT_TIMEOUT_S", 60.0)
+
+        async def _cancel_after_two_ticks() -> None:
+            await asyncio.sleep(0.05)
+
+        task = asyncio.create_task(app_module._worker_heartbeat_monitor())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
 
 @pytest.mark.usefixtures("_mock_session_id")
 class TestHandleUnregisterWorkerRequest:

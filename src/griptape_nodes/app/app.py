@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 import threading
@@ -94,6 +95,9 @@ _worker_last_seen: dict[str, float] = {}
 # Workers silent longer than the timeout are evicted.
 _WORKER_HEARTBEAT_INTERVAL_S: float = 5.0
 _WORKER_HEARTBEAT_TIMEOUT_S: float = 15.0
+
+# Monotonic timestamp of the last heartbeat received from the orchestrator (worker mode only).
+_worker_heartbeat_last_received_at: float = 0.0
 
 # Matches worker response topics and captures the worker_engine_id.
 # Expected format: sessions/{session_id}/workers/{worker_engine_id}/response
@@ -295,6 +299,7 @@ async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
                 async with asyncio.TaskGroup() as tg:
                     tg.create_task(_process_incoming_messages(client, _get_topics_to_subscribe(is_worker=True)))
                     tg.create_task(_send_outgoing_messages(client))
+                    tg.create_task(_worker_heartbeat_monitor())
             except BaseException:
                 # Best-effort unregister so the orchestrator can clean up immediately.
                 unregister_event = EventRequest(
@@ -310,7 +315,8 @@ async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
                     logger.info("Worker %s sent unregister to session %s", worker_engine_id, worker_session_id)
                 except Exception as e:
                     logger.debug("Could not send unregister on shutdown: %s", e)
-                raise
+                # Terminate the whole process — sys.exit() only exits the calling thread.
+                os._exit(1)
         else:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_process_incoming_messages(client, _get_topics_to_subscribe(is_worker=False)))
@@ -341,6 +347,19 @@ async def _worker_heartbeat_loop() -> None:
                 response_topic=f"sessions/{session_id}/workers/{wid}/response",
             )
             await ws_outgoing_queue.put(WebSocketMessage("EventRequest", hb.json(), request_topic))
+
+
+async def _worker_heartbeat_monitor() -> None:
+    """Shut down the worker if orchestrator heartbeats stop arriving."""
+    global _worker_heartbeat_last_received_at  # noqa: PLW0603
+    _worker_heartbeat_last_received_at = time.monotonic()  # seed to avoid immediate timeout
+    while True:
+        await asyncio.sleep(_WORKER_HEARTBEAT_INTERVAL_S)
+        elapsed = time.monotonic() - _worker_heartbeat_last_received_at
+        if elapsed > _WORKER_HEARTBEAT_TIMEOUT_S:
+            msg = f"Orchestrator heartbeat lost ({elapsed:.1f}s since last heartbeat); worker is shutting down."
+            logger.warning(msg)
+            raise RuntimeError(msg)
 
 
 async def _evict_worker(worker_engine_id: str) -> None:
@@ -704,6 +723,8 @@ def _handle_worker_heartbeat_request(
     request: worker_events.WorkerHeartbeatRequest,
 ) -> worker_events.WorkerHeartbeatResultSuccess:
     """Respond to an orchestrator heartbeat challenge."""
+    global _worker_heartbeat_last_received_at  # noqa: PLW0603
+    _worker_heartbeat_last_received_at = time.monotonic()
     return worker_events.WorkerHeartbeatResultSuccess(
         heartbeat_id=request.heartbeat_id,
         result_details="Worker alive.",
