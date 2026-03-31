@@ -24,7 +24,7 @@ def engine_command(
         str | None,
         typer.Option(
             "--session-id",
-            envvar="GTN_WORKER_SESSION_ID",
+            envvar="GTN_SESSION_ID",
             help="Session ID of an existing orchestrator session to join as a worker engine.",
         ),
     ] = None,
