@@ -2167,10 +2167,26 @@ class ControlParameter(Parameter, ABC):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         ui_options: dict | None = None,
         *,
+        render_control_at_parameter_position: bool | None = None,
         display_name: str | None = None,
         user_defined: bool = False,
         private: bool = False,
     ):
+        # Process ui_options before passing to parent
+        if ui_options is None:
+            processed_ui_options = {}
+        else:
+            processed_ui_options = ui_options.copy()
+
+        # By default, the editor renders all control parameters at the top of the node.
+        # Set render_control_at_parameter_position=True to render them in-line in the order they are defined.
+        # This is useful for nodes with multiple control outputs that need to appear in specific positions.
+        if (
+            render_control_at_parameter_position is not None
+            and "render_control_at_parameter_position" not in processed_ui_options
+        ):
+            processed_ui_options["render_control_at_parameter_position"] = render_control_at_parameter_position
+
         # Call parent with a few explicit tweaks.
         super().__init__(
             type=ParameterTypeBuiltin.CONTROL_TYPE.value,
@@ -2187,7 +2203,7 @@ class ControlParameter(Parameter, ABC):
             traits=traits,
             converters=converters,
             validators=validators,
-            ui_options=ui_options,
+            ui_options=processed_ui_options,
             display_name=display_name,
             user_defined=user_defined,
             private=private,
@@ -2208,6 +2224,7 @@ class ControlParameterInput(ControlParameter):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
+        render_control_at_parameter_position: bool | None = None,
         user_defined: bool = False,
         private: bool = False,
     ):
@@ -2227,6 +2244,7 @@ class ControlParameterInput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
+            render_control_at_parameter_position=render_control_at_parameter_position,
             display_name=display_name,
             user_defined=user_defined,
             private=private,
@@ -2246,6 +2264,7 @@ class ControlParameterOutput(ControlParameter):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
+        render_control_at_parameter_position: bool | None = None,
         user_defined: bool = False,
         private: bool = False,
     ):
@@ -2265,6 +2284,7 @@ class ControlParameterOutput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
+            render_control_at_parameter_position=render_control_at_parameter_position,
             display_name=display_name,
             user_defined=user_defined,
             private=private,
