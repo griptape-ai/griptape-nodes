@@ -22,6 +22,7 @@ _WORKER_RESPONSE_TOPIC = f"sessions/{_SESSION}/workers/{_ENGINE}/response"
 
 @pytest.fixture
 def worker_manager() -> WorkerManager:
+    """Construct a WorkerManager with AsyncMock transport callables for isolated testing."""
     gtn = MagicMock()
     gtn.get_session_id.return_value = _SESSION
     gtn.get_engine_id.return_value = _ENGINE
@@ -60,7 +61,7 @@ class TestHandleRegisterWorkerRequest:
 
         await worker_manager.handle_register_worker_request(request)
 
-        worker_manager._subscribe_to_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)
+        worker_manager._subscribe_to_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_returns_success_with_engine_id(self, worker_manager: WorkerManager) -> None:
@@ -145,7 +146,7 @@ class TestHandleUnregisterWorkerRequest:
         request = worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
         await worker_manager.handle_unregister_worker_request(request)
 
-        worker_manager._unsubscribe_from_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)
+        worker_manager._unsubscribe_from_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_returns_success_with_engine_id(self, worker_manager: WorkerManager) -> None:
@@ -181,7 +182,7 @@ class TestRelayWorkerResult:
 
         await worker_manager.relay_worker_result(payload)
 
-        worker_manager._send_message.assert_not_called()
+        worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
         assert _ENGINE in worker_manager._worker_last_seen
 
     @pytest.mark.asyncio
@@ -195,7 +196,7 @@ class TestRelayWorkerResult:
 
         await worker_manager.relay_worker_result(payload)
 
-        worker_manager._send_message.assert_not_called()
+        worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_non_heartbeat_result_is_forwarded_to_gui(self, worker_manager: WorkerManager) -> None:
@@ -208,7 +209,7 @@ class TestRelayWorkerResult:
 
         await worker_manager.relay_worker_result(payload)
 
-        worker_manager._send_message.assert_called_once()
+        worker_manager._send_message.assert_called_once()  # type: ignore[union-attr]
 
 
 class TestEvictWorker:
@@ -229,7 +230,7 @@ class TestEvictWorker:
 
         await worker_manager.evict_worker(_ENGINE)
 
-        worker_manager._unsubscribe_from_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)
+        worker_manager._unsubscribe_from_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_tolerates_unknown_worker(self, worker_manager: WorkerManager) -> None:

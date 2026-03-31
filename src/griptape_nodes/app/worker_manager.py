@@ -6,16 +6,17 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.retained_mode.events import app_events, worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
-from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+    from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes_app")
 
@@ -34,9 +35,7 @@ class WorkerManager:
     HEARTBEAT_INTERVAL_S: float = 5.0
     HEARTBEAT_TIMEOUT_S: float = 15.0
 
-    _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(
-        r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$"
-    )
+    _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
 
     LOCAL_REQUEST_TYPES: tuple[type, ...] = (
         app_events.AppStartSessionRequest,
@@ -49,7 +48,7 @@ class WorkerManager:
         worker_events.UnregisterWorkerRequest,
     )
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         griptape_nodes: GriptapeNodes,
@@ -190,7 +189,7 @@ class WorkerManager:
         await self._unsubscribe_from_topic(topic)
         logger.warning("Worker evicted: %s", worker_engine_id)
 
-    def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:  # noqa: FBT001
+    def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.
 
         In worker mode the engine subscribes to its dedicated per-worker request topic.

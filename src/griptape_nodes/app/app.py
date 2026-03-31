@@ -15,6 +15,7 @@ from rich.logging import RichHandler
 from rich.panel import Panel
 
 from griptape_nodes.api_client import Client
+from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
 from griptape_nodes.retained_mode.events import app_events, execution_events, worker_events
@@ -35,8 +36,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils import install_file_url_support
-
-from griptape_nodes.app.worker_manager import WorkerManager
 
 
 # WebSocket thread communication message types
@@ -301,7 +300,6 @@ async def _run_orchestrator(client: Client) -> None:
         tg.create_task(worker_manager.orchestrator_heartbeat_loop())
 
 
-
 async def _process_incoming_messages(client: Client, topics: list[str]) -> None:
     """Process incoming WebSocket requests from Nodes API."""
     logger.debug("Processing incoming WebSocket requests from WebSocket connection")
@@ -323,7 +321,6 @@ async def _process_incoming_messages(client: Client, topics: list[str]) -> None:
                 "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
                 e,
             )
-
 
 
 async def _process_api_event(event: dict) -> None:
@@ -443,7 +440,6 @@ async def _process_event_request(event: EventRequest) -> None:
     )
     if event.request.broadcast_result:
         await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
-
 
 
 async def _process_app_event(event: AppEvent) -> None:
