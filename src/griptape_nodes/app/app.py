@@ -293,7 +293,7 @@ async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
 
             try:
                 async with asyncio.TaskGroup() as tg:
-                    tg.create_task(_process_incoming_messages(client, worker_topic_to_subscribe=f"sessions/{worker_session_id}/workers/{worker_engine_id}/request"))
+                    tg.create_task(_process_incoming_messages(client, _get_topics_to_subscribe(is_worker=True)))
                     tg.create_task(_send_outgoing_messages(client))
             except BaseException:
                 # Best-effort unregister so the orchestrator can clean up immediately.
@@ -313,7 +313,7 @@ async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
                 raise
         else:
             async with asyncio.TaskGroup() as tg:
-                tg.create_task(_process_incoming_messages(client))
+                tg.create_task(_process_incoming_messages(client, _get_topics_to_subscribe(is_worker=False)))
                 tg.create_task(_send_outgoing_messages(client))
                 tg.create_task(_worker_heartbeat_loop())
 
@@ -353,23 +353,32 @@ async def _evict_worker(worker_engine_id: str) -> None:
     logger.warning("Worker evicted: %s", worker_engine_id)
 
 
-async def _process_incoming_messages(client: Client, worker_topic_to_subscribe: str | None = None) -> None:
-    """Process incoming WebSocket requests from Nodes API."""
-    logger.debug("Processing incoming WebSocket requests from WebSocket connection")
+def _get_topics_to_subscribe(is_worker: bool) -> list[str]:  # noqa: FBT001
+    """Build the list of topics to subscribe to at connection start.
 
-    topics = ["request"]
+    In worker mode (worker_session_id provided) the engine subscribes to its
+    dedicated per-worker request topic. In orchestrator mode it subscribes to the
+    session request topic if a session is already active.
+    """
+    topics: list[str] = ["request"]
     engine_id = griptape_nodes.get_engine_id()
     if engine_id:
         topics.append(f"engines/{engine_id}/request")
 
-    if worker_topic_to_subscribe:
+    session_id = griptape_nodes.get_session_id()
+    if is_worker:
         # Subscribe ONLY to this worker's dedicated per-worker request topic.
         # The orchestrator explicitly routes events here; worker never sees other workers' events.
-        topics.append(worker_topic_to_subscribe)
-    else:
-        session_id = griptape_nodes.get_session_id()
-        if session_id:
-            topics.append(f"sessions/{session_id}/request")
+        topics.append(f"sessions/{session_id}/workers/{engine_id}/request")
+    elif session_id:
+        topics.append(f"sessions/{session_id}/request")
+
+    return topics
+
+
+async def _process_incoming_messages(client: Client, topics: list[str]) -> None:
+    """Process incoming WebSocket requests from Nodes API."""
+    logger.debug("Processing incoming WebSocket requests from WebSocket connection")
 
     for topic in topics:
         await client.subscribe(topic)
@@ -533,9 +542,7 @@ async def _process_event_request(event: EventRequest) -> None:
         await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 
 
-async def _forward_event_to_worker(
-    event: EventRequest, *, worker_engine_id: str, worker_request_topic: str
-) -> None:
+async def _forward_event_to_worker(event: EventRequest, *, worker_engine_id: str, worker_request_topic: str) -> None:
     """Route an event to the appropriate worker's dedicated request topic.
 
     MVP: routes to the single registered worker.
