@@ -21,19 +21,19 @@ from griptape_nodes.cli.shared import (
 
 def engine_command(
     session_id: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--session-id",
             envvar="GTN_WORKER_SESSION_ID",
             help="Session ID of an existing orchestrator session to join as a worker engine.",
         ),
-    ] = "",
+    ] = None,
 ) -> None:
     """Run the Griptape Nodes engine."""
     _start_engine(worker_session_id=session_id)
 
 
-def _start_engine(worker_session_id: str = "") -> None:
+def _start_engine(worker_session_id: str | None = None) -> None:
     """Starts the Griptape Nodes engine."""
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory

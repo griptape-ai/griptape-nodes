@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sys
 import threading
 import time
@@ -94,6 +95,10 @@ _worker_last_seen: dict[str, float] = {}
 _WORKER_HEARTBEAT_INTERVAL_S: float = 5.0
 _WORKER_HEARTBEAT_TIMEOUT_S: float = 15.0
 
+# Matches worker response topics and captures the worker_engine_id.
+# Expected format: sessions/{session_id}/workers/{worker_engine_id}/response
+_WORKER_RESPONSE_TOPIC_RE = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
+
 # Event types always handled locally by the orchestrator and never forwarded to workers.
 _ORCHESTRATOR_LOCAL_TYPES: tuple[type, ...] = (
     app_events.AppStartSessionRequest,
@@ -183,7 +188,7 @@ def _ensure_api_key() -> str:
     return api_key
 
 
-def start_app(worker_session_id: str = "") -> None:
+def start_app(worker_session_id: str | None = None) -> None:
     """Legacy sync entry point - runs async app."""
     # Use the system certificate store for SSL verification.
     # Called here (not at module level) so it only applies in server mode,
@@ -197,7 +202,7 @@ def start_app(worker_session_id: str = "") -> None:
         logger.error("Application error: %s", e)
 
 
-async def astart_app(worker_session_id: str = "") -> None:
+async def astart_app(worker_session_id: str | None = None) -> None:
     """New async app entry point."""
     # Verify API key is set before starting
     _ensure_api_key()
@@ -222,7 +227,7 @@ async def astart_app(worker_session_id: str = "") -> None:
         raise
 
 
-def _start_websocket_connection(worker_session_id: str = "") -> None:
+def _start_websocket_connection(worker_session_id: str | None = None) -> None:
     """Run WebSocket tasks in a separate thread with its own async loop."""
     global websocket_event_loop  # noqa: PLW0603
     try:
@@ -260,7 +265,7 @@ def _start_websocket_connection(worker_session_id: str = "") -> None:
         websocket_event_loop_ready.clear()
 
 
-async def _run_websocket_tasks(worker_session_id: str = "") -> None:
+async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
     """Run WebSocket tasks - async version."""
     async with Client() as client:
         logger.debug("WebSocket connection established")
@@ -288,7 +293,7 @@ async def _run_websocket_tasks(worker_session_id: str = "") -> None:
 
             try:
                 async with asyncio.TaskGroup() as tg:
-                    tg.create_task(_process_incoming_messages(client, worker_session_id=worker_session_id))
+                    tg.create_task(_process_incoming_messages(client, worker_topic_to_subscribe=f"sessions/{worker_session_id}/workers/{worker_engine_id}/request"))
                     tg.create_task(_send_outgoing_messages(client))
             except BaseException:
                 # Best-effort unregister so the orchestrator can clean up immediately.
@@ -308,7 +313,7 @@ async def _run_websocket_tasks(worker_session_id: str = "") -> None:
                 raise
         else:
             async with asyncio.TaskGroup() as tg:
-                tg.create_task(_process_incoming_messages(client, worker_session_id=""))
+                tg.create_task(_process_incoming_messages(client))
                 tg.create_task(_send_outgoing_messages(client))
                 tg.create_task(_worker_heartbeat_loop())
 
@@ -348,7 +353,7 @@ async def _evict_worker(worker_engine_id: str) -> None:
     logger.warning("Worker evicted: %s", worker_engine_id)
 
 
-async def _process_incoming_messages(client: Client, worker_session_id: str = "") -> None:
+async def _process_incoming_messages(client: Client, worker_topic_to_subscribe: str | None = None) -> None:
     """Process incoming WebSocket requests from Nodes API."""
     logger.debug("Processing incoming WebSocket requests from WebSocket connection")
 
@@ -357,10 +362,10 @@ async def _process_incoming_messages(client: Client, worker_session_id: str = ""
     if engine_id:
         topics.append(f"engines/{engine_id}/request")
 
-    if worker_session_id:
+    if worker_topic_to_subscribe:
         # Subscribe ONLY to this worker's dedicated per-worker request topic.
         # The orchestrator explicitly routes events here; worker never sees other workers' events.
-        topics.append(f"sessions/{worker_session_id}/workers/{engine_id}/request")
+        topics.append(worker_topic_to_subscribe)
     else:
         session_id = griptape_nodes.get_session_id()
         if session_id:
@@ -374,7 +379,7 @@ async def _process_incoming_messages(client: Client, worker_session_id: str = ""
             payload = message.get("payload", {})
             event_type = payload.get("event_type", "")
             if event_type in ("EventResultSuccess", "EventResultFailure"):
-                # Result from a worker — relay it to the GUI session response topic.
+                # Result from a worker — relay it through the orchestrator.
                 await _relay_worker_result(payload)
             else:
                 await _process_api_event(message)
@@ -395,11 +400,10 @@ async def _relay_worker_result(payload: dict) -> None:
     # BaseEvent.dict() adds result_type at the outer level (not inside the result dict).
     result_event_type = payload.get("result_type", "")
     if result_event_type == worker_events.WorkerHeartbeatResultSuccess.__name__:
-        # Derive worker_engine_id from response_topic: "sessions/{id}/workers/{wid}/response"
-        parts = payload.get("response_topic", "").split("/")
-        if len(parts) == 5:  # noqa: PLR2004
-            _worker_last_seen[parts[3]] = time.monotonic()
-            logger.debug("Heartbeat received from worker %s", parts[3])
+        if m := _WORKER_RESPONSE_TOPIC_RE.match(payload.get("response_topic", "")):
+            worker_engine_id = m.group("worker_engine_id")
+            _worker_last_seen[worker_engine_id] = time.monotonic()
+            logger.debug("Heartbeat received from worker %s", worker_engine_id)
         return  # Internal health check — do not forward to GUI
 
     # 1 engine = 1 session — the orchestrator's session response topic is always the right target.
@@ -516,8 +520,9 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
-    if _registered_workers and not isinstance(event.request, _ORCHESTRATOR_LOCAL_TYPES):
-        await _forward_event_to_worker(event)
+    worker = next(iter(_registered_workers.items()), None)
+    if worker and not isinstance(event.request, _ORCHESTRATOR_LOCAL_TYPES):
+        await _forward_event_to_worker(event, worker_engine_id=worker[0], worker_request_topic=worker[1])
         return
 
     result_event = await griptape_nodes.EventManager().ahandle_request(
@@ -527,14 +532,15 @@ async def _process_event_request(event: EventRequest) -> None:
     await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 
 
-async def _forward_event_to_worker(event: EventRequest) -> None:
+async def _forward_event_to_worker(
+    event: EventRequest, *, worker_engine_id: str, worker_request_topic: str
+) -> None:
     """Route an event to the appropriate worker's dedicated request topic.
 
     MVP: routes to the single registered worker.
     Future: consult a WorkerRegistry to select the correct worker based on event type
     or target library.
     """
-    worker_engine_id, worker_request_topic = next(iter(_registered_workers.items()))
     session_id = griptape_nodes.get_session_id()
     worker_response_topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
     forwarded = event.model_copy(update={"response_topic": worker_response_topic})
