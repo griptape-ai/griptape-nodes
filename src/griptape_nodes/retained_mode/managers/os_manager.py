@@ -1583,7 +1583,7 @@ class OSManager:
             mime_type: Image MIME type
 
         Returns:
-            URL string (http://localhost:8124/workspace/...) or data URI
+            URL string ({static_server_base_url}/workspace/...) or data URI
         """
         # Store original bytes for preview creation
         original_image_bytes = content
@@ -1606,7 +1606,8 @@ class OSManager:
                     pass
                 else:
                     # File is in static directory, construct URL directly
-                    static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
+                    static_base_url = GriptapeNodes.StaticFilesManager().static_server_base_url
+                    static_url = f"{static_base_url}/workspace/{file_relative_to_static}"
                     msg = f"Image already in workspace directory, returning URL: {static_url}"
                     logger.debug(msg)
                     return static_url

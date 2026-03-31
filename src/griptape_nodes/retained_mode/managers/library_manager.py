@@ -2013,7 +2013,7 @@ class LibraryManager:
                 len(library_data.widgets),
             )
             # Get the static server base URL for constructing absolute bundle URLs
-            static_server_base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+            static_server_base_url = GriptapeNodes.StaticFilesManager().static_server_base_url
             # Get the library directory so we can hash each bundle file
             library_info_for_path = self.get_library_info_by_library_name(request.library)
             library_dir = Path(library_info_for_path.library_path).parent if library_info_for_path is not None else None
