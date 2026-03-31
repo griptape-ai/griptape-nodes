@@ -394,7 +394,7 @@ async def _relay_worker_result(payload: dict) -> None:
     # Heartbeat responses update the last-seen timestamp but are not forwarded to the GUI.
     # BaseEvent.dict() adds result_type at the outer level (not inside the result dict).
     result_event_type = payload.get("result_type", "")
-    if result_event_type == "WorkerHeartbeatResultSuccess":
+    if result_event_type == worker_events.WorkerHeartbeatResultSuccess.__name__:
         # Derive worker_engine_id from response_topic: "sessions/{id}/workers/{wid}/response"
         parts = payload.get("response_topic", "").split("/")
         if len(parts) == 5:  # noqa: PLR2004
