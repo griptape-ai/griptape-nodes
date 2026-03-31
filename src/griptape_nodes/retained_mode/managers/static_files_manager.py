@@ -4,6 +4,7 @@ import logging
 import threading
 from pathlib import Path
 from typing import NamedTuple
+from urllib.parse import urlparse
 
 from xdg_base_dirs import xdg_config_home
 
@@ -101,8 +102,8 @@ class StaticFilesManager:
         workspace_directory = config_manager.workspace_path
 
         # Build base URL for LocalStorageDriver from configured base URL
-        base_url_config = config_manager.get_config_value("static_server_base_url")
-        base_url = f"{base_url_config}{STATIC_SERVER_URL}"
+        self.static_server_base_url = config_manager.get_config_value("static_server_base_url")
+        base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
 
         match self.storage_backend:
             case StorageBackend.GTC:
@@ -385,9 +386,13 @@ class StaticFilesManager:
             sock = bind_free_socket(STATIC_SERVER_HOST, STATIC_SERVER_PORT)
             actual_port = sock.getsockname()[1]
 
-            actual_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}"
-            self.config_manager.set_config_value("static_server_base_url", actual_base_url)
-            self.storage_driver.base_url = f"{actual_base_url}{STATIC_SERVER_URL}"
+            # Only update the base URL when the user hasn't configured a custom host
+            # (e.g. an ngrok tunnel or reverse proxy). If the configured host matches the
+            # server's bind host, it's a direct connection and we update the port.
+            parsed = urlparse(self.static_server_base_url)
+            if parsed.hostname == STATIC_SERVER_HOST:
+                self.static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}"
+            self.storage_driver.base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
 
             threading.Thread(target=start_static_server, args=(sock,), daemon=True, name="static-server").start()
 
