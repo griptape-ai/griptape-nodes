@@ -1111,8 +1111,7 @@ class ProjectManager:
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         # System defaults use workspace directory as the base directory.
-        config_manager = GriptapeNodes.ConfigManager()
-        workspace_dir = config_manager.workspace_path
+        workspace_dir = self._config_manager.workspace_path
 
         # Parse all macros BEFORE creating ProjectInfo (system defaults should always be valid)
         situation_schemas = self._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
