@@ -6,7 +6,11 @@ filter that keeps internal health-check results off the GUI topic.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 import pytest
 
@@ -28,9 +32,9 @@ def _reset_worker_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def _mock_session_id() -> MagicMock:
-    with patch.object(app_module.griptape_nodes, "get_session_id", return_value=_SESSION) as m:
-        yield m
+def _mock_session_id() -> Generator[None, None, None]:
+    with patch.object(app_module.griptape_nodes, "get_session_id", return_value=_SESSION):
+        yield
 
 
 @pytest.mark.usefixtures("_mock_session_id")
@@ -115,22 +119,7 @@ class TestRelayWorkerResult:
         # result_type lives at the outer level — set by BaseEvent.dict(), not inside result{}
         payload = {
             "event_type": "EventResultSuccess",
-            "result_type": "WorkerHeartbeatResultSuccess",
-            "result": {"heartbeat_id": "hb-1"},
-            "response_topic": _WORKER_RESPONSE_TOPIC,
-        }
-
-        with patch("griptape_nodes.app.app._send_message", new_callable=AsyncMock) as mock_send:
-            await app_module._relay_worker_result(payload)
-
-        mock_send.assert_not_called()
-        assert _ENGINE in app_module._worker_last_seen
-
-    @pytest.mark.asyncio
-    async def test_heartbeat_failure_updates_last_seen(self) -> None:
-        payload = {
-            "event_type": "EventResultFailure",
-            "result_type": "WorkerHeartbeatResultFailure",
+            "result_type": worker_events.WorkerHeartbeatResultSuccess.__name__,
             "result": {"heartbeat_id": "hb-1"},
             "response_topic": _WORKER_RESPONSE_TOPIC,
         }
@@ -145,7 +134,7 @@ class TestRelayWorkerResult:
     async def test_heartbeat_with_malformed_topic_does_not_crash(self) -> None:
         payload = {
             "event_type": "EventResultSuccess",
-            "result_type": "WorkerHeartbeatResultSuccess",
+            "result_type": worker_events.WorkerHeartbeatResultSuccess.__name__,
             "result": {"heartbeat_id": "hb-1"},
             "response_topic": "bad/topic",
         }
@@ -177,9 +166,7 @@ class TestHandleWorkerTopicChange:
     @pytest.mark.asyncio
     async def test_subscribes_on_register_success(self) -> None:
         result_event = MagicMock()
-        result_event.result = worker_events.RegisterWorkerResultSuccess(
-            worker_engine_id=_ENGINE, result_details="ok"
-        )
+        result_event.result = worker_events.RegisterWorkerResultSuccess(worker_engine_id=_ENGINE, result_details="ok")
 
         with (
             patch.object(app_module.griptape_nodes, "get_session_id", return_value=_SESSION),
@@ -193,9 +180,7 @@ class TestHandleWorkerTopicChange:
     @pytest.mark.asyncio
     async def test_unsubscribes_on_unregister_success(self) -> None:
         result_event = MagicMock()
-        result_event.result = worker_events.UnregisterWorkerResultSuccess(
-            worker_engine_id=_ENGINE, result_details="ok"
-        )
+        result_event.result = worker_events.UnregisterWorkerResultSuccess(worker_engine_id=_ENGINE, result_details="ok")
 
         with (
             patch.object(app_module.griptape_nodes, "get_session_id", return_value=_SESSION),

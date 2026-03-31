@@ -9,7 +9,6 @@ from griptape_nodes.retained_mode.events.worker_events import (
     UnregisterWorkerResultFailure,
     UnregisterWorkerResultSuccess,
     WorkerHeartbeatRequest,
-    WorkerHeartbeatResultFailure,
     WorkerHeartbeatResultSuccess,
 )
 
@@ -44,11 +43,6 @@ class TestWorkerHeartbeatEvents:
 
     def test_result_success_stores_heartbeat_id(self) -> None:
         result = WorkerHeartbeatResultSuccess(heartbeat_id="hb-abc", result_details="alive")
-
-        assert result.heartbeat_id == "hb-abc"
-
-    def test_result_failure_stores_heartbeat_id(self) -> None:
-        result = WorkerHeartbeatResultFailure(heartbeat_id="hb-abc", result_details="no response")
 
         assert result.heartbeat_id == "hb-abc"
 

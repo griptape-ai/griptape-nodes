@@ -72,18 +72,6 @@ class WorkerHeartbeatResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
 
 @dataclass
 @PayloadRegistry.register
-class WorkerHeartbeatResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Worker heartbeat failed.
-
-    Args:
-        heartbeat_id: Correlates with the originating WorkerHeartbeatRequest.
-    """
-
-    heartbeat_id: str
-
-
-@dataclass
-@PayloadRegistry.register
 class UnregisterWorkerRequest(RequestPayload):
     """Sent by a worker to the orchestrator's session topic on graceful shutdown.
 
