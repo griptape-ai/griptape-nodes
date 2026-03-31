@@ -22,6 +22,12 @@ class LibraryNameAndNodeType(NamedTuple):
     node_type: str
 
 
+class WorkflowInfo(NamedTuple):
+    metadata: WorkflowMetadata
+    file_path: str
+    is_synced: bool
+
+
 # Type aliases for clarity
 type NodeName = str
 type ParameterName = str
@@ -179,13 +185,17 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         return {key: instance._workflows[key].get_workflow_metadata() for key in instance._workflows}
 
     @classmethod
-    def list_valid_workflows(cls) -> dict[str, dict]:
+    def list_callable_workflows(cls) -> dict[str, WorkflowInfo]:
         """Return only workflows that have a workflow_shape (i.e. contain StartFlow and EndFlow nodes)."""
         instance = cls()
         result = {}
         for key, workflow in instance._workflows.items():
             if workflow.metadata.workflow_shape is not None:
-                result[key] = workflow.get_workflow_metadata()
+                result[key] = WorkflowInfo(
+                    metadata=workflow.metadata,
+                    file_path=workflow.file_path,
+                    is_synced=workflow.is_synced,
+                )
         return result
 
     @classmethod

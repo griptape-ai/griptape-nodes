@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Literal
 
-from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowShape
+from griptape_nodes.node_library.workflow_registry import WorkflowInfo, WorkflowMetadata, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -207,6 +207,24 @@ class ListAllWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class ListAllWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Workflow listing failed. Common causes: registry not initialized, registry error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ListCallableWorkflowsRequest(RequestPayload):
+    """List workflows that have a workflow_shape (i.e. contain StartFlow and EndFlow nodes)."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ListCallableWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    workflows: dict[str, WorkflowInfo]
+
+
+@dataclass
+@PayloadRegistry.register
+class ListCallableWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Callable workflow listing failed."""
 
 
 @dataclass
@@ -1010,15 +1028,13 @@ class SaveSubflowToWorkflowRequest(RequestPayload):
 
     Args:
         flow_name: The engine flow name of the subflow to serialize
-        file_path: The target file path to save the workflow to
-        workflow_name: Optional registry key for looking up existing metadata
+        workflow_name: Registry key for the target workflow (used to derive file path and metadata)
 
     Results: SaveSubflowToWorkflowResultSuccess | SaveSubflowToWorkflowResultFailure
     """
 
     flow_name: str
-    file_path: str
-    workflow_name: str | None = None
+    workflow_name: str
 
 
 @dataclass

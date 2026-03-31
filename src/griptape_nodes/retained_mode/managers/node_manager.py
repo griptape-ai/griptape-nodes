@@ -59,7 +59,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowResultFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
-    DeleteFlowRequest,
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
@@ -910,8 +909,12 @@ class NodeManager:
             if cancel_result is not None:
                 return cancel_result
 
-            # Call on_delete hook for cleanup of a node, implemented by node author.
-            node.on_delete()
+            # Call after_deleted hook for cleanup of a node, implemented by node author.
+            try:
+                node.after_deleted()
+            except ValueError as err:
+                msg = f"Failed to delete node {node_name}, after_deleted method failed to run with error: {err}"
+                return DeleteNodeResultFailure(result_details=msg)
             # Remove all connections from this Node using a loop to handle cascading deletions
             any_connections_remain = True
             while any_connections_remain:

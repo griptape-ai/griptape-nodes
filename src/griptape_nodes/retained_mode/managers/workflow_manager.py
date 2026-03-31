@@ -107,6 +107,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultFailure,
     ListAllWorkflowsResultSuccess,
+    ListCallableWorkflowsRequest,
+    ListCallableWorkflowsResultFailure,
+    ListCallableWorkflowsResultSuccess,
     LoadWorkflowMetadata,
     LoadWorkflowMetadataResultFailure,
     LoadWorkflowMetadataResultSuccess,
@@ -321,6 +324,10 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             ListAllWorkflowsRequest,
             self.on_list_all_workflows_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            ListCallableWorkflowsRequest,
+            self.on_list_callable_workflows_request,
         )
         event_manager.assign_manager_to_request_type(
             DeleteWorkflowRequest,
@@ -842,6 +849,18 @@ class WorkflowManager:
             return ListAllWorkflowsResultFailure(result_details=details)
         return ListAllWorkflowsResultSuccess(
             workflows=workflows, result_details=f"Successfully retrieved {len(workflows)} workflows."
+        )
+
+    async def on_list_callable_workflows_request(self, _request: ListCallableWorkflowsRequest) -> ResultPayload:
+        await self._workflows_loading_complete.wait()
+
+        try:
+            workflows = WorkflowRegistry.list_callable_workflows()
+        except Exception:
+            details = "Failed to list callable workflows."
+            return ListCallableWorkflowsResultFailure(result_details=details)
+        return ListCallableWorkflowsResultSuccess(
+            workflows=workflows, result_details=f"Successfully retrieved {len(workflows)} callable workflows."
         )
 
     async def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
@@ -2032,26 +2051,24 @@ class WorkflowManager:
 
     async def on_save_subflow_to_workflow(self, request: SaveSubflowToWorkflowRequest) -> ResultPayload:
         """Save a subflow back to its original workflow file."""
-        file_path_obj = Path(request.file_path)
-        file_name = file_path_obj.stem
+        registry_key = request.workflow_name
 
-        # Derive registry key from caller-provided name or from the file path.
-        if request.workflow_name is not None:
-            registry_key = request.workflow_name
-        else:
-            workspace_path = GriptapeNodes.ConfigManager().workspace_path
-            try:
-                relative = file_path_obj.relative_to(workspace_path)
-                registry_key = derive_registry_key(str(relative))
-            except ValueError:
-                registry_key = derive_registry_key(request.file_path)
+        if not WorkflowRegistry.has_workflow_with_name(registry_key):
+            details = (
+                f"Attempted to save subflow '{request.flow_name}'. Workflow '{registry_key}' not found in registry."
+            )
+            return SaveSubflowToWorkflowResultFailure(result_details=details)
+
+        workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
+        file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
+        file_name = Path(file_path).stem
 
         # Serialize the subflow.
         serialized_flow_result = await GriptapeNodes.ahandle_request(
             SerializeFlowToCommandsRequest(flow_name=request.flow_name, include_create_flow_command=True)
         )
         if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
-            details = f"Attempted to save subflow '{request.flow_name}' to '{request.file_path}'. Failed when serializing flow."
+            details = f"Attempted to save subflow '{request.flow_name}' to '{file_path}'. Failed when serializing flow."
             return SaveSubflowToWorkflowResultFailure(result_details=details)
         commands = serialized_flow_result.serialized_flow_commands
 
@@ -2068,6 +2085,8 @@ class WorkflowManager:
             )
         except ValueError:
             workflow_shape = None
+            msg = f"The workflow {registry_key} is being saved without Start and End Flow parameters. It will no longer be a callable workflow."
+            logger.warning(msg)
 
         # Preserve existing metadata from the registry.
         existing = self._get_existing_metadata(registry_key)
@@ -2077,7 +2096,7 @@ class WorkflowManager:
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=commands,
             file_name=file_name,
-            file_path=request.file_path,
+            file_path=file_path,
             display_name=resolved_display_name,
             description=existing.description,
             image_path=existing.image,
@@ -2088,16 +2107,15 @@ class WorkflowManager:
         save_file_result = await self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
         if not isinstance(save_file_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
             details = (
-                f"Attempted to save subflow '{request.flow_name}' to '{request.file_path}'. "
+                f"Attempted to save subflow '{request.flow_name}' to '{file_path}'. "
                 f"Failed during file generation: {save_file_result.result_details}"
             )
             return SaveSubflowToWorkflowResultFailure(result_details=details)
 
         workflow_metadata = save_file_result.workflow_metadata
 
-        # Update the registry entry if the workflow is already registered.
-        if WorkflowRegistry.has_workflow_with_name(registry_key):
-            WorkflowRegistry.get_workflow_by_name(registry_key).metadata = workflow_metadata
+        # Update the registry entry with the new metadata.
+        workflow.metadata = workflow_metadata
 
         details = f"Successfully saved subflow '{request.flow_name}' to: {save_file_result.file_path}"
         return SaveSubflowToWorkflowResultSuccess(

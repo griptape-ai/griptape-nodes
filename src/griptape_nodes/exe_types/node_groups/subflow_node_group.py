@@ -23,7 +23,7 @@ from griptape_nodes.retained_mode.events.connection_events import (
     DeleteConnectionRequest,
     DeleteConnectionResultSuccess,
 )
-from griptape_nodes.retained_mode.events.flow_events import DeleteFlowRequest
+from griptape_nodes.retained_mode.events.flow_events import DeleteFlowRequest, DeleteFlowResultFailure
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AddParameterToNodeResultSuccess,
@@ -1019,14 +1019,23 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""
 
-    def on_delete(self) -> None:
+    def after_deleted(self) -> None:
         nodes_to_remove = list(self.nodes.values())
         self.remove_nodes_from_group(nodes_to_remove)
         subflow_name = self.metadata.get("subflow_name")
         if subflow_name is not None:
             subflow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(subflow_name, ControlFlow)
             if subflow is not None:
-                GriptapeNodes.handle_request(DeleteFlowRequest(flow_name=subflow_name))
+                delete_result = GriptapeNodes.handle_request(DeleteFlowRequest(flow_name=subflow_name))
+                if isinstance(delete_result, DeleteFlowResultFailure):
+                    # This will propagate up to DeleteNodeRequest, and prevent the node from deleting.
+                    msg = f"Failed to delete subflow {subflow_name} when deleting node {self.name}"
+                    raise ValueError(msg)
+            else:
+                msg = f"Node {self.name} has a subflow name of {subflow_name} but {subflow_name} doesn't exist. Removing from metadata."
+                logger.warning(msg)
+            # Delete the subflow name since now there is no subflow attached.
+            self.metadata.pop("subflow_name")
 
     @property
     def subflow_execution_component(self) -> SubflowExecutionComponent:
