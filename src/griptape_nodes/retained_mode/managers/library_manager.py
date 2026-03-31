@@ -32,7 +32,6 @@ from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import resolve_workspace_path
-from griptape_nodes.retained_mode.managers.base_worker_client import BaseWorkerClient
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -316,7 +315,6 @@ class LibraryManager:
         library_name: str | None = None
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
-        worker_process: BaseWorkerClient | None = field(default=None, repr=False)
 
     class RegisterLibraryPrerequisites(NamedTuple):
         """Prerequisites established for library loading."""
@@ -1554,7 +1552,6 @@ class LibraryManager:
                             library=library,
                             library_json_path=Path(file_path),
                             venv_python=venv_python,
-                            library_info=library_info,
                         )
                         self._library_file_path_to_info[file_path] = library_info
                     else:
@@ -1893,7 +1890,6 @@ class LibraryManager:
         library: Any,
         library_json_path: Path,
         venv_python: Path,
-        library_info: LibraryManager.LibraryInfo,
     ) -> None:
         """Start a worker subprocess for the library and register stub node classes.
 
@@ -1901,33 +1897,40 @@ class LibraryManager:
         fully isolated from the main process. Stub classes reconstructed from the
         worker's schemas are registered in the library and in sys.modules under stable
         namespaces so workflow serialization round-trips work correctly.
-
-        Modifies library_info in place (sets worker_process, may append problems).
         """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
         from griptape_nodes.retained_mode.managers.library_worker_process import StdioWorkerClient
 
-        worker = StdioWorkerClient()
-        try:
+        core_pythonpath = self._compute_core_pythonpath()
+        main_site_packages = self._compute_main_site_packages()
+
+        async def _factory() -> StdioWorkerClient:
+            worker = StdioWorkerClient()
             await worker.start(
                 library_json_path=library_json_path,
                 venv_python=venv_python,
-                core_pythonpath=self._compute_core_pythonpath(),
-                main_site_packages=self._compute_main_site_packages(),
+                core_pythonpath=core_pythonpath,
+                main_site_packages=main_site_packages,
             )
+            return worker
+
+        try:
+            await GriptapeNodes.WorkerManager().register_library(library_data.name, _factory)
         except Exception as err:
             details = f"Failed to start worker for library '{library_data.name}': {err}"
             logger.error(details)
             # Worker failed to start; the library will have no registered nodes
             return
 
-        library_info.worker_process = worker
-
+        worker = await GriptapeNodes.WorkerManager().acquire_worker(library_data.name)
         try:
             stubs = await worker.fetch_and_build_stubs()
         except Exception as err:
             details = f"Failed to fetch node schemas from worker for library '{library_data.name}': {err}"
             logger.error(details)
             stubs = {}
+        finally:
+            await GriptapeNodes.WorkerManager().release_worker(library_data.name, worker)
 
         for node_def in library_data.nodes:
             stub_class = stubs.get(node_def.class_name)
@@ -2023,29 +2026,16 @@ class LibraryManager:
         # up in the table of attempted library loads.
         lib_info = self.get_library_info_by_library_name(request.library_name)
         if lib_info:
-            if lib_info.worker_process is not None:
-                # Schedule worker shutdown without blocking; the process will exit when stdin closes
-                try:
-                    asyncio.ensure_future(lib_info.worker_process.stop())
-                except RuntimeError:
-                    pass
-                lib_info.worker_process = None
+            # Schedule worker shutdown without blocking; the process will exit when stdin closes
+            try:
+                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+                asyncio.ensure_future(GriptapeNodes.WorkerManager().unregister_library(request.library_name))
+            except RuntimeError:
+                pass
             del self._library_file_path_to_info[lib_info.library_path]
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
         return UnloadLibraryFromRegistryResultSuccess(result_details=details)
-
-    async def stop_all_workers(self) -> None:
-        """Stop all running library worker subprocesses.
-
-        Called during engine shutdown to prevent orphaned worker processes.
-        """
-        for lib_info in list(self._library_file_path_to_info.values()):
-            if lib_info.worker_process is not None and lib_info.worker_process.is_running():
-                try:
-                    await lib_info.worker_process.stop()
-                except Exception:
-                    logger.debug("Error stopping worker for library '%s'", lib_info.library_name, exc_info=True)
-                lib_info.worker_process = None
 
     def get_all_info_for_all_libraries_request(self, request: GetAllInfoForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         libraries = LibraryRegistry.list_libraries()

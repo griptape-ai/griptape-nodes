@@ -278,47 +278,31 @@ class NodeExecutor:
                 await self.handle_loop_execution(node)
                 return
 
-            # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-            library_worker = self._get_worker_for_node(node)
-            if library_worker is not None:
-                await self._execute_node_in_worker(node, library_worker)
-            else:
-                await node.aprocess()
+            # All nodes execute in their library worker subprocess.
+            library_name, worker = await self._acquire_worker_for_node(node)
+            try:
+                await self._execute_node_in_worker(node, worker)
+            finally:
+                await GriptapeNodes.WorkerManager().release_worker(library_name, worker)
         finally:
             current_executing_node_name.reset(token)
 
-    def _get_worker_for_node(self, node: BaseNode) -> BaseWorkerClient | None:
-        """Return the worker client for a node's library, or None if not using a worker."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+    async def _acquire_worker_for_node(self, node: BaseNode) -> tuple[str, BaseWorkerClient]:
+        """Return (library_name, worker) for the given node, or raise if unavailable.
 
-        # Use the class-level attribute set during stub registration. Instance metadata
-        # is not reliable here because nodes created from workflow files are instantiated
-        # without explicit metadata.
-        library_name = getattr(node.__class__, "_worker_library_name", None)
-        if not library_name:
-            info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(metadata_library)
-            if info is not None and info.worker_process is not None:
-                raise RuntimeError(
-                    f"Node '{node.name}' (class {node.__class__.__name__}) belongs to library "
-                    f"'{metadata_library}' which uses a worker subprocess, but the class has no "
-                    f"'_worker_library_name' attribute — it was not registered as a stub. "
-                    f"The real node class must not be used in the main process. "
-                    f"This is a fatal stub-registration bug."
-                )
-        info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
-        if info is None or info.worker_process is None or not info.worker_process.is_running():
-            raise RuntimeError(
-                f"Node '{node.name}' (class {node.__class__.__name__}, library '{library_name}') "
-                f"requires a worker subprocess but none is running. "
-                f"The library may have failed to load or the worker crashed."
-            )
+        Uses the class-level _worker_library_name attribute set during stub registration.
+        Instance metadata is not reliable here because nodes created from workflow files
+        are instantiated without explicit metadata.
+        """
+        library_name: str = node.__class__._worker_library_name  # type: ignore[attr-defined]
+        worker = await GriptapeNodes.WorkerManager().acquire_worker(library_name)
         logger.info(
             "Routing node '%s' (class %s) to worker for library '%s'",
             node.name,
             node.__class__.__name__,
             library_name,
         )
-        return info.worker_process
+        return library_name, worker
 
     async def _execute_node_in_worker(self, node: BaseNode, worker: BaseWorkerClient) -> None:
         """Execute a node in its library worker subprocess and apply the output values."""

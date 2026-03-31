@@ -193,7 +193,7 @@ async def astart_app() -> None:
     finally:
         # Stop all library worker subprocesses so they don't become orphaned
         # after the engine exits.
-        await griptape_nodes.LibraryManager().stop_all_workers()
+        await griptape_nodes.WorkerManager().stop_all()
 
 
 def _start_websocket_connection() -> None:
