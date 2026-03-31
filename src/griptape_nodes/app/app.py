@@ -241,55 +241,64 @@ async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
     """Run WebSocket tasks - async version."""
     async with Client() as client:
         logger.debug("WebSocket connection established")
-
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppInitializationComplete()))
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppConnectionEstablished()))
 
         if worker_session_id:
-            # Announce this worker to the orchestrator's session request topic.
-            # The orchestrator will store our engine_id and subscribe to our response topic.
-            worker_engine_id = griptape_nodes.get_engine_id()
-            if not worker_engine_id:
-                msg = "Engine ID is not set; cannot register as a worker."
-                raise RuntimeError(msg)
-            reg_event = EventRequest(
-                request=worker_events.RegisterWorkerRequest(worker_engine_id=worker_engine_id),
-                response_topic=None,
-            )
+            await _run_worker(client, worker_session_id)
+        else:
+            await _run_orchestrator(client)
+
+
+async def _run_worker(client: Client, worker_session_id: str) -> None:
+    """Run the WebSocket task group for a worker engine."""
+    # Announce this worker to the orchestrator's session request topic.
+    # The orchestrator will store our engine_id and subscribe to our response topic.
+    worker_engine_id = griptape_nodes.get_engine_id()
+    if not worker_engine_id:
+        msg = "Engine ID is not set; cannot register as a worker."
+        raise RuntimeError(msg)
+    reg_event = EventRequest(
+        request=worker_events.RegisterWorkerRequest(worker_engine_id=worker_engine_id),
+        response_topic=None,
+    )
+    await client.publish(
+        "EventRequest",
+        json.loads(reg_event.json()),
+        f"sessions/{worker_session_id}/request",
+    )
+    logger.info("Worker %s sent registration to session %s", worker_engine_id, worker_session_id)
+
+    try:
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=True)))
+            tg.create_task(_send_outgoing_messages(client))
+            tg.create_task(worker_manager.worker_heartbeat_monitor())
+    except BaseException:
+        # Best-effort unregister so the orchestrator can clean up immediately.
+        unregister_event = EventRequest(
+            request=worker_events.UnregisterWorkerRequest(worker_engine_id=worker_engine_id),
+            response_topic=None,
+        )
+        try:
             await client.publish(
                 "EventRequest",
-                json.loads(reg_event.json()),
+                json.loads(unregister_event.json()),
                 f"sessions/{worker_session_id}/request",
             )
-            logger.info("Worker %s sent registration to session %s", worker_engine_id, worker_session_id)
+            logger.info("Worker %s sent unregister to session %s", worker_engine_id, worker_session_id)
+        except Exception as e:
+            logger.debug("Could not send unregister on shutdown: %s", e)
+        # Terminate the whole process — sys.exit() only exits the calling thread.
+        os._exit(1)
 
-            try:
-                async with asyncio.TaskGroup() as tg:
-                    tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=True)))
-                    tg.create_task(_send_outgoing_messages(client))
-                    tg.create_task(worker_manager.worker_heartbeat_monitor())
-            except BaseException:
-                # Best-effort unregister so the orchestrator can clean up immediately.
-                unregister_event = EventRequest(
-                    request=worker_events.UnregisterWorkerRequest(worker_engine_id=worker_engine_id),
-                    response_topic=None,
-                )
-                try:
-                    await client.publish(
-                        "EventRequest",
-                        json.loads(unregister_event.json()),
-                        f"sessions/{worker_session_id}/request",
-                    )
-                    logger.info("Worker %s sent unregister to session %s", worker_engine_id, worker_session_id)
-                except Exception as e:
-                    logger.debug("Could not send unregister on shutdown: %s", e)
-                # Terminate the whole process — sys.exit() only exits the calling thread.
-                os._exit(1)
-        else:
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=False)))
-                tg.create_task(_send_outgoing_messages(client))
-                tg.create_task(worker_manager.orchestrator_heartbeat_loop())
+
+async def _run_orchestrator(client: Client) -> None:
+    """Run the WebSocket task group for an orchestrator engine."""
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=False)))
+        tg.create_task(_send_outgoing_messages(client))
+        tg.create_task(worker_manager.orchestrator_heartbeat_loop())
 
 
 
