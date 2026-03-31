@@ -72,7 +72,7 @@ class ProjectTemplate(BaseModel):
         yaml = YAML()
         yaml.default_flow_style = False
         yaml.width = 4096
-        # Double-quote all strings; bools and ints are left untagged
+        # Double-quote all strings; bools and ints are left untagged: https://yaml.org/spec/1.2.2/
         yaml.representer.add_representer(str, lambda r, d: r.represent_scalar("tag:yaml.org,2002:str", d, style='"'))
 
         # loader injects name from the YAML dict key — exclude it from all nested objects
