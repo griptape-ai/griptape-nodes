@@ -472,12 +472,19 @@ class ExecuteNodeRequest(RequestPayload):
     Args:
         node_name: Name of the node to execute.
         parameter_values: Input parameter values to set before execution.
+        node_type: Node class name (e.g. "SummarizeText"). Required when the
+            receiving engine has not yet created this node; allows on-demand
+            instantiation via LibraryRegistry.
+        library_name: Library owning the node type. Required alongside node_type
+            when on-demand instantiation is needed.
 
     Results: ExecuteNodeResultSuccess | ExecuteNodeResultFailure
     """
 
     node_name: str
     parameter_values: dict[str, Any] = field(default_factory=dict)
+    node_type: str | None = None
+    library_name: str | None = None
 
 
 @dataclass
