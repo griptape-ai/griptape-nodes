@@ -484,7 +484,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None  # noqa: RET501
 
-    def after_deleted(self) -> None:
+    def after_node_deleted(self) -> None:
         """Called before a node is deleted. Override to perform cleanup (e.g. deleting a loaded subflow)."""
         return
 

@@ -1019,7 +1019,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""
 
-    def after_deleted(self) -> None:
+    def after_node_deleted(self) -> None:
         nodes_to_remove = list(self.nodes.values())
         self.remove_nodes_from_group(nodes_to_remove)
         subflow_name = self.metadata.get("subflow_name")

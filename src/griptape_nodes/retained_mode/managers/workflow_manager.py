@@ -855,12 +855,15 @@ class WorkflowManager:
         await self._workflows_loading_complete.wait()
 
         try:
-            workflows = WorkflowRegistry.list_callable_workflows()
+            workflow_names = [
+                key for key, wf in WorkflowRegistry.list_workflows().items() if wf.get("workflow_shape") is not None
+            ]
         except Exception:
             details = "Failed to list callable workflows."
             return ListCallableWorkflowsResultFailure(result_details=details)
         return ListCallableWorkflowsResultSuccess(
-            workflows=workflows, result_details=f"Successfully retrieved {len(workflows)} callable workflows."
+            workflow_names=workflow_names,
+            result_details=f"Successfully retrieved {len(workflow_names)} callable workflows.",
         )
 
     async def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
