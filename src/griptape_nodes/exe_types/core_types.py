@@ -59,8 +59,8 @@ BadgeVariantType = Literal["info", "warning", "error", "success", "tip", "link",
 VALID_BADGE_VARIANTS: frozenset[str] = frozenset(get_args(BadgeVariantType))
 
 # Editor render location for control parameters - controls where they appear in the node UI
-# "top": render at the top (default), "bottom": render at the bottom, "in-position": render in-line with other parameters
-EditorRenderLocation = Literal["top", "bottom", "in-position"]
+# "top": render at the top (default), "bottom": render at the bottom, "in-order": render in-line with other parameters
+EditorRenderLocation = Literal["top", "bottom", "in-order"]
 VALID_EDITOR_RENDER_LOCATIONS: frozenset[str] = frozenset(get_args(EditorRenderLocation))
 
 
@@ -2200,7 +2200,7 @@ class ControlParameter(Parameter, ABC):
         # Set editor_render_location to control where they render:
         # - "top": Render at the top of the node (default for ControlParameter)
         # - "bottom": Render at the bottom of the node
-        # - "in-position": Render in-position in the order they are defined
+        # - "in-order": Render in-order in the order they are defined
         # This is useful for nodes with multiple control outputs that need to appear in specific positions.
         if "editor_render_location" not in processed_ui_options:
             if editor_render_location is not None:
