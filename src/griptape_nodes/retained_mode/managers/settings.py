@@ -145,6 +145,7 @@ class AppEvents(BaseModel):
             "SetConfigCategoryRequest",
             "DeleteWorkflowRequest",
             "ResolveNodeRequest",
+            "ExecuteNodeRequest",
             "StartFlowRequest",
             "CancelFlowRequest",
             "UnresolveFlowRequest",

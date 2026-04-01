@@ -32,7 +32,6 @@ from griptape_nodes.exe_types.node_types import (
     NodeResolutionState,
     TransformedParameterValue,
 )
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
@@ -51,8 +50,12 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeResultSuccess,
     OutgoingConnection,
 )
+from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
+    ExecuteNodeRequest,
+    ExecuteNodeResultFailure,
+    ExecuteNodeResultSuccess,
     ResolveNodeRequest,
     ResolveNodeResultFailure,
     ResolveNodeResultSuccess,
@@ -300,6 +303,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(MigrateParameterRequest, self.on_migrate_parameter_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
+        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
         event_manager.assign_manager_to_request_type(
             GetCompatibleParametersRequest, self.on_get_compatible_parameters_request
@@ -2151,7 +2155,7 @@ class NodeManager:
             input_types=parameter.input_types,
             type=parameter.type,
             output_type=parameter.output_type,
-            value=TypeValidator.safe_serialize(data_value),
+            value=safe_unstructure(data_value),
             result_details=details,
         )
         return result
@@ -2702,6 +2706,39 @@ class NodeManager:
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         return ResolveNodeResultSuccess(result_details=details)
+
+    async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
+        """Execute a node's aprocess() directly with provided parameter values."""
+        node_name = request.node_name
+
+        try:
+            node = self.get_node_by_name(node_name)
+        except ValueError as e:
+            return ExecuteNodeResultFailure(
+                result_details=f"Attempted to execute node '{node_name}'. Failed because node does not exist: {e}",
+            )
+
+        # Hydrate input parameters
+        for param_name, value in request.parameter_values.items():
+            try:
+                node.set_parameter_value(param_name, value)
+            except Exception as e:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
+                )
+
+        # Execute the node
+        try:
+            await node.aprocess()
+        except Exception as e:
+            return ExecuteNodeResultFailure(
+                result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
+            )
+
+        return ExecuteNodeResultSuccess(
+            parameter_output_values=dict(node.parameter_output_values),
+            result_details=f"Node '{node_name}' executed successfully.",
+        )
 
     def on_validate_node_dependencies_request(self, request: ValidateNodeDependenciesRequest) -> ResultPayload:
         node_name = request.node_name
@@ -3766,7 +3803,7 @@ class NodeManager:
 
         Args:
             node: The node whose parameter output values should be serialized
-            use_pickling: If True, use pickle-based serialization; if False, use TypeValidator.safe_serialize
+            use_pickling: If True, use pickle-based serialization; if False, use safe_unstructure
 
         Returns:
             SerializedParameterValues containing:
@@ -3783,7 +3820,7 @@ class NodeManager:
 
     @staticmethod
     def _serialize_without_pickling(node: BaseNode) -> SerializedParameterValues:
-        """Serialize parameter values using simple TypeValidator serialization.
+        """Serialize parameter values using safe_unstructure.
 
         Args:
             node: The node whose parameter values should be serialized
@@ -3797,7 +3834,7 @@ class NodeManager:
                 param_values[param.name] = node.parameter_output_values[param.name]
             else:
                 param_values[param.name] = node.get_parameter_value(param.name)
-        simple_values = TypeValidator.safe_serialize(param_values)
+        simple_values = safe_unstructure(param_values)
         return SerializedParameterValues(simple_values, None)
 
     @staticmethod
