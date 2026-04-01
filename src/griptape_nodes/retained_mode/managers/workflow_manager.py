@@ -4445,9 +4445,14 @@ class WorkflowManager:
         obj_manager = GriptapeNodes.ObjectManager()
         flows_before = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
 
-        # Execute the workflow within the target flow context and referenced context
-        with GriptapeNodes.ContextManager().flow(flow_name):  # noqa: SIM117
-            with self.ReferencedWorkflowContext(self, request.workflow_name):
+        # Execute the workflow within the target flow context.
+        # When track_as_referenced is True, wrap in ReferencedWorkflowContext so the flow
+        # serializes as an import command. When False, the flow serializes as inline content.
+        with GriptapeNodes.ContextManager().flow(flow_name):
+            if request.track_as_referenced:
+                with self.ReferencedWorkflowContext(self, request.workflow_name):
+                    workflow_result = await self.run_workflow(workflow.file_path)
+            else:
                 workflow_result = await self.run_workflow(workflow.file_path)
 
         if not workflow_result.execution_successful:
