@@ -9,8 +9,13 @@ import uuid
 from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
-from griptape_nodes.retained_mode.events import app_events, worker_events
+from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
+from griptape_nodes.retained_mode.events.execution_events import (
+    ExecuteNodeRequest,
+    ExecuteNodeResultFailure,
+    ExecuteNodeResultSuccess,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -36,17 +41,6 @@ class WorkerManager:
     HEARTBEAT_TIMEOUT_S: float = 15.0
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
-
-    LOCAL_REQUEST_TYPES: tuple[type, ...] = (
-        app_events.AppStartSessionRequest,
-        app_events.AppEndSessionRequest,
-        app_events.AppGetSessionRequest,
-        app_events.SessionHeartbeatRequest,
-        app_events.EngineHeartbeatRequest,
-        worker_events.RegisterWorkerRequest,
-        worker_events.WorkerHeartbeatRequest,
-        worker_events.UnregisterWorkerRequest,
-    )
 
     def __init__(  # noqa: PLR0913
         self,
@@ -74,6 +68,9 @@ class WorkerManager:
         # Worker-side: monotonic timestamp of last heartbeat received from the orchestrator
         self._worker_heartbeat_last_received_at: float = 0.0
 
+        # Pending node executions: request_id → Future resolved by relay_worker_result
+        self._pending_node_executions: dict[str, asyncio.Future] = {}
+
         event_manager.assign_manager_to_request_type(
             worker_events.RegisterWorkerRequest, self.handle_register_worker_request
         )
@@ -83,10 +80,6 @@ class WorkerManager:
         event_manager.assign_manager_to_request_type(
             worker_events.UnregisterWorkerRequest, self.handle_unregister_worker_request
         )
-
-    # -------------------------------------------------------------------------
-    # Event handlers
-    # -------------------------------------------------------------------------
 
     async def handle_register_worker_request(
         self,
@@ -129,10 +122,6 @@ class WorkerManager:
         logger.info("Worker unregistered: %s", wid)
         return worker_events.UnregisterWorkerResultSuccess(worker_engine_id=wid, result_details="Worker unregistered.")
 
-    # -------------------------------------------------------------------------
-    # Orchestrator async tasks
-    # -------------------------------------------------------------------------
-
     async def orchestrator_heartbeat_loop(self) -> None:
         """Challenge each registered worker on an interval; evict those that go silent."""
         while True:
@@ -157,10 +146,6 @@ class WorkerManager:
                 )
                 await self._ws_outgoing_queue.put(WebSocketMessage("EventRequest", hb.json(), request_topic))
 
-    # -------------------------------------------------------------------------
-    # Worker async tasks
-    # -------------------------------------------------------------------------
-
     async def worker_heartbeat_monitor(self) -> None:
         """Shut down the worker if orchestrator heartbeats stop arriving."""
         self._worker_heartbeat_last_received_at = time.monotonic()  # seed to avoid immediate timeout
@@ -172,13 +157,56 @@ class WorkerManager:
                 logger.warning(msg)
                 raise RuntimeError(msg)
 
-    # -------------------------------------------------------------------------
-    # Registry helpers
-    # -------------------------------------------------------------------------
-
     def get_active_worker(self) -> tuple[str, str] | None:
         """Return (worker_engine_id, worker_request_topic) for the registered worker, or None."""
         return next(iter(self._registered_workers.items()), None)
+
+    def _select_worker_for_node(self, _node_name: str) -> tuple[str, str] | None:
+        """Return (worker_engine_id, worker_request_topic) for the given node.
+
+        Today returns the single registered worker. Future versions will select
+        based on the node's library or other routing criteria.
+        """
+        return self.get_active_worker()
+
+    async def execute_node(
+        self,
+        *,
+        node_name: str,
+        parameter_values: dict,
+        node_type: str | None = None,
+        library_name: str | None = None,
+    ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+        """Execute a node on the appropriate worker and await the result.
+
+        Selects the worker, synthesizes an ExecuteNodeRequest, stores a Future
+        keyed by request_id, and resolves it when relay_worker_result receives
+        the response.
+        """
+        worker = self._select_worker_for_node(node_name)
+        if worker is None:
+            msg = f"No worker available to execute node '{node_name}'."
+            raise RuntimeError(msg)
+
+        request_id = str(uuid.uuid4())
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        self._pending_node_executions[request_id] = future
+
+        req = EventRequest(
+            request=ExecuteNodeRequest(
+                node_name=node_name,
+                parameter_values=parameter_values,
+                node_type=node_type,
+                library_name=library_name,
+            ),
+            request_id=request_id,
+        )
+        worker_engine_id, worker_request_topic = worker
+        await self.forward_event_to_worker(
+            req, worker_engine_id=worker_engine_id, worker_request_topic=worker_request_topic
+        )
+        return await future
 
     async def evict_worker(self, worker_engine_id: str) -> None:
         """Remove a worker from the registry and unsubscribe from its response topic."""
@@ -209,10 +237,6 @@ class WorkerManager:
             topics.append(f"sessions/{session_id}/request")
 
         return topics
-
-    # -------------------------------------------------------------------------
-    # Event routing
-    # -------------------------------------------------------------------------
 
     async def forward_event_to_worker(
         self,
@@ -249,6 +273,15 @@ class WorkerManager:
                 logger.debug("Heartbeat received from worker %s", worker_engine_id)
             return  # Internal health check — do not forward to GUI
 
+        # Resolve a pending node execution if this result is awaited by NodeExecutor.
+        request_id = payload.get("request_id", "")
+        if request_id and request_id in self._pending_node_executions:
+            future = self._pending_node_executions.pop(request_id)
+            if not future.done():
+                result = self._deserialize_execute_node_result(payload)
+                future.set_result(result)
+            return  # NodeExecutor owns result broadcasting; do not relay to GUI here.
+
         # 1 engine = 1 session — the orchestrator's session response topic is always the right target.
         session_response_topic = self._determine_response_topic()
         dest_socket = "success_result" if payload.get("event_type") == "EventResultSuccess" else "failure_result"
@@ -256,9 +289,15 @@ class WorkerManager:
         logger.debug("Relaying %s to %s", payload.get("event_type"), session_response_topic)
         await self._send_message(dest_socket, json.dumps(payload), session_response_topic)
 
-    # -------------------------------------------------------------------------
-    # Internal helpers
-    # -------------------------------------------------------------------------
+    def _deserialize_execute_node_result(
+        self, payload: dict
+    ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+        """Reconstruct an ExecuteNodeResultSuccess or ExecuteNodeResultFailure from a raw payload dict."""
+        result_type = payload.get("result_type", "")
+        result_data = payload.get("result", {})
+        if result_type == ExecuteNodeResultSuccess.__name__:
+            return ExecuteNodeResultSuccess(**result_data)
+        return ExecuteNodeResultFailure(**result_data)
 
     def _determine_response_topic(self) -> str:
         """Determine the response topic based on current session and engine IDs."""

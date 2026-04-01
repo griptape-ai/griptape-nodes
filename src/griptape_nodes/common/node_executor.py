@@ -53,6 +53,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
+    ExecuteNodeResultSuccess,
     GriptapeEvent,
     InvolvedNodesEvent,
     NodeFinishProcessEvent,
@@ -114,6 +115,7 @@ from griptape_nodes.retained_mode.managers.event_manager import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -208,6 +210,20 @@ class LoopBodyNodes(NamedTuple):
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
+    @property
+    def _worker_manager(self) -> WorkerManager | None:
+        """Return the app-layer WorkerManager if available, otherwise None.
+
+        Uses a lazy import so node_executor.py has no module-level dependency
+        on app.py (which would create a circular import).
+        """
+        try:
+            from griptape_nodes.app import app as _app
+        except (ImportError, AttributeError):
+            return None
+        else:
+            return _app.worker_manager
+
     def get_workflow_handler(self, library_name: str) -> LibraryManager.RegisteredEventHandler:
         """Get the PublishWorkflowRequest handler for a library, or None if not available."""
         library_manager = GriptapeNodes.LibraryManager()
@@ -260,7 +276,21 @@ class NodeExecutor:
                 return
 
             # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-            await node.aprocess()
+            if self._worker_manager is not None and self._worker_manager.get_active_worker() is not None:
+                result = await self._worker_manager.execute_node(
+                    node_name=node.name,
+                    parameter_values=dict(node.parameter_values),
+                    node_type=node.metadata.get("node_type"),
+                    library_name=node.metadata.get("library"),
+                )
+                if isinstance(result, ExecuteNodeResultSuccess):
+                    for name, value in result.parameter_output_values.items():
+                        node.set_parameter_value(name, value)
+                else:
+                    msg = f"Node '{node.name}' failed on worker: {result.result_details}"
+                    raise RuntimeError(msg)
+            else:
+                await node.aprocess()
         finally:
             current_executing_node_name.reset(token)
 

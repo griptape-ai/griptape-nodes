@@ -2713,10 +2713,23 @@ class NodeManager:
 
         try:
             node = self.get_node_by_name(node_name)
-        except ValueError as e:
-            return ExecuteNodeResultFailure(
-                result_details=f"Attempted to execute node '{node_name}'. Failed because node does not exist: {e}",
-            )
+        except ValueError:
+            # Node not in registry. Create it on-demand if type info was provided.
+            if not request.node_type:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Node '{node_name}' not found and no node_type provided for creation.",
+                )
+            try:
+                node = LibraryRegistry.create_node(
+                    node_type=request.node_type,
+                    name=node_name,
+                    metadata={},
+                    specific_library_name=request.library_name,
+                )
+            except Exception as e:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Failed to create node '{node_name}' of type '{request.node_type}': {e}",
+                )
 
         # Hydrate input parameters
         for param_name, value in request.parameter_values.items():
