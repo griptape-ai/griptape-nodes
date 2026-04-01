@@ -270,10 +270,6 @@ async def _run_worker(client: Client, worker_session_id: str) -> None:
     )
     logger.info("Worker %s sent registration to session %s", worker_engine_id, worker_session_id)
 
-    # Set session_id so _determine_response_topic() returns the session topic,
-    # routing intermediate events (AppEvents, ProgressEvents) directly to the GUI.
-    griptape_nodes.SessionManager().active_session_id = worker_session_id
-
     try:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=True)))
@@ -437,6 +433,11 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
+    worker = worker_manager.get_active_worker()
+    if worker and not isinstance(event.request, WorkerManager.LOCAL_REQUEST_TYPES):
+        await worker_manager.forward_event_to_worker(event, worker_engine_id=worker[0], worker_request_topic=worker[1])
+        return
+
     result_event = await griptape_nodes.EventManager().ahandle_request(
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},

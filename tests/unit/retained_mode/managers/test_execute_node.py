@@ -33,6 +33,7 @@ class TestExecuteNode:
 
         assert isinstance(result, ExecuteNodeResultFailure)
         assert "nonexistent_node" in str(result.result_details)
+        assert "does not exist" in str(result.result_details)
 
     @pytest.mark.asyncio
     async def test_execute_node_success(self) -> None:
@@ -109,68 +110,3 @@ class TestExecuteNode:
         assert isinstance(result, ExecuteNodeResultSuccess)
         expected_param_count = 3
         assert mock_node.set_parameter_value.call_count == expected_param_count
-
-    @pytest.mark.asyncio
-    async def test_execute_node_creates_node_when_not_found(self) -> None:
-        """When node is absent but node_type is provided, creates the node on-demand."""
-        node_manager = self._get_node_manager()
-        mock_node = self._make_mock_node(name="missing_node")
-
-        with (
-            patch.object(node_manager, "get_node_by_name", side_effect=ValueError("not found")),
-            patch(
-                "griptape_nodes.retained_mode.managers.node_manager.LibraryRegistry.create_node",
-                return_value=mock_node,
-            ) as mock_create,
-        ):
-            request = ExecuteNodeRequest(
-                node_name="missing_node",
-                parameter_values={},
-                node_type="SomeNodeType",
-                library_name="some_library",
-            )
-            result = await node_manager.on_execute_node_request(request)
-
-        assert isinstance(result, ExecuteNodeResultSuccess)
-        mock_create.assert_called_once_with(
-            node_type="SomeNodeType",
-            name="missing_node",
-            metadata={},
-            specific_library_name="some_library",
-        )
-        mock_node.aprocess.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_execute_node_fails_when_not_found_and_no_type(self) -> None:
-        """When node is absent and no node_type is provided, returns failure."""
-        node_manager = self._get_node_manager()
-
-        request = ExecuteNodeRequest(node_name="nonexistent_node")
-        result = await node_manager.on_execute_node_request(request)
-
-        assert isinstance(result, ExecuteNodeResultFailure)
-        assert "nonexistent_node" in str(result.result_details)
-        assert "no node_type provided" in str(result.result_details)
-
-    @pytest.mark.asyncio
-    async def test_execute_node_fails_when_creation_fails(self) -> None:
-        """When LibraryRegistry.create_node raises, returns failure."""
-        node_manager = self._get_node_manager()
-
-        with (
-            patch.object(node_manager, "get_node_by_name", side_effect=ValueError("not found")),
-            patch(
-                "griptape_nodes.retained_mode.managers.node_manager.LibraryRegistry.create_node",
-                side_effect=RuntimeError("library not loaded"),
-            ),
-        ):
-            request = ExecuteNodeRequest(
-                node_name="missing_node",
-                node_type="SomeNodeType",
-            )
-            result = await node_manager.on_execute_node_request(request)
-
-        assert isinstance(result, ExecuteNodeResultFailure)
-        assert "missing_node" in str(result.result_details)
-        assert "SomeNodeType" in str(result.result_details)
-        assert "library not loaded" in str(result.result_details)

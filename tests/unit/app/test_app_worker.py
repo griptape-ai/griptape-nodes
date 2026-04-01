@@ -1,8 +1,7 @@
 """Tests for WorkerManager.
 
-Covers registration, heartbeat, eviction, unregistration, the relay
-filter that keeps internal health-check results off the GUI topic, and
-the execute_node / pending-future mechanism.
+Covers registration, heartbeat, eviction, unregistration, and the relay
+filter that keeps internal health-check results off the GUI topic.
 """
 
 from __future__ import annotations
@@ -14,10 +13,6 @@ import pytest
 
 from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.retained_mode.events import worker_events
-from griptape_nodes.retained_mode.events.execution_events import (
-    ExecuteNodeResultFailure,
-    ExecuteNodeResultSuccess,
-)
 
 _SESSION = "sess-abc"
 _ENGINE = "eng-xyz"
@@ -241,94 +236,3 @@ class TestEvictWorker:
     async def test_tolerates_unknown_worker(self, worker_manager: WorkerManager) -> None:
         """Evicting a worker not in the registry must not raise."""
         await worker_manager.evict_worker("ghost-engine")
-
-
-class TestRelayWorkerResultPendingFuture:
-    @pytest.mark.asyncio
-    async def test_pending_result_resolves_future_and_does_not_relay_to_gui(
-        self, worker_manager: WorkerManager
-    ) -> None:
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        request_id = "req-123"
-        worker_manager._pending_node_executions[request_id] = future
-
-        payload = {
-            "event_type": "EventResultSuccess",
-            "result_type": ExecuteNodeResultSuccess.__name__,
-            "result": {"parameter_output_values": {"out": 42}, "result_details": "ok"},
-            "request_id": request_id,
-        }
-
-        await worker_manager.relay_worker_result(payload)
-
-        assert future.done()
-        assert isinstance(future.result(), ExecuteNodeResultSuccess)
-        worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
-
-    @pytest.mark.asyncio
-    async def test_pending_failure_resolves_future_with_failure(
-        self, worker_manager: WorkerManager
-    ) -> None:
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        request_id = "req-456"
-        worker_manager._pending_node_executions[request_id] = future
-
-        payload = {
-            "event_type": "EventResultFailure",
-            "result_type": ExecuteNodeResultFailure.__name__,
-            "result": {"result_details": "node exploded"},
-            "request_id": request_id,
-        }
-
-        await worker_manager.relay_worker_result(payload)
-
-        assert future.done()
-        assert isinstance(future.result(), ExecuteNodeResultFailure)
-        worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
-
-    @pytest.mark.asyncio
-    async def test_non_pending_result_still_relays_to_gui(self, worker_manager: WorkerManager) -> None:
-        payload = {
-            "event_type": "EventResultSuccess",
-            "result_type": ExecuteNodeResultSuccess.__name__,
-            "result": {"parameter_output_values": {}, "result_details": "ok"},
-            "request_id": "unknown-id",
-        }
-
-        await worker_manager.relay_worker_result(payload)
-
-        worker_manager._send_message.assert_called_once()  # type: ignore[union-attr]
-
-
-class TestExecuteNode:
-    @pytest.mark.asyncio
-    async def test_raises_when_no_worker_registered(self, worker_manager: WorkerManager) -> None:
-        with pytest.raises(RuntimeError, match="No worker available"):
-            await worker_manager.execute_node(node_name="MyNode", parameter_values={})
-
-    @pytest.mark.asyncio
-    async def test_sends_request_to_worker_and_returns_result(self, worker_manager: WorkerManager) -> None:
-        """execute_node dispatches to the worker and resolves when relay_worker_result fires."""
-        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
-
-        async def resolve_via_relay() -> None:
-            # Yield once so execute_node can store the future before we resolve it.
-            await asyncio.sleep(0)
-            request_id = next(iter(worker_manager._pending_node_executions))
-            payload = {
-                "event_type": "EventResultSuccess",
-                "result_type": ExecuteNodeResultSuccess.__name__,
-                "result": {"parameter_output_values": {"out": 99}, "result_details": "ok"},
-                "request_id": request_id,
-            }
-            await worker_manager.relay_worker_result(payload)
-
-        relay_task = asyncio.create_task(resolve_via_relay())
-        result = await worker_manager.execute_node(node_name="MyNode", parameter_values={"x": 1})
-        await relay_task
-
-        assert isinstance(result, ExecuteNodeResultSuccess)
-        assert result.parameter_output_values == {"out": 99}
-        worker_manager._send_message.assert_called_once()  # type: ignore[union-attr]
