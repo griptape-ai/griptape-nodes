@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.execution_events import ExecutionPayloa
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
+    # Circular import: flow_events <-> workflow_events
     from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
 
 

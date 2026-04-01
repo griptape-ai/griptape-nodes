@@ -8,6 +8,7 @@ import threading
 from dataclasses import dataclass
 
 import truststore
+from cattrs import BaseValidationError, transform_error
 from rich.align import Align
 from rich.console import Console
 from rich.logging import RichHandler
@@ -291,7 +292,10 @@ async def _process_api_event(event: dict) -> None:
     try:
         request_event = deserialize_event(json_data=payload)
     except Exception as e:
-        msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
+        details = str(e)
+        if isinstance(e, BaseValidationError):
+            details = "; ".join(transform_error(e))
+        msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{details}'"
         raise RuntimeError(msg) from None
 
     if not isinstance(request_event, EventRequest):
