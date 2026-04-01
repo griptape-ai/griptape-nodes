@@ -289,7 +289,9 @@ class WorkerManager:
         logger.debug("Relaying %s to %s", payload.get("event_type"), session_response_topic)
         await self._send_message(dest_socket, json.dumps(payload), session_response_topic)
 
-    def _deserialize_execute_node_result(self, payload: dict) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+    def _deserialize_execute_node_result(
+        self, payload: dict
+    ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
         """Reconstruct an ExecuteNodeResultSuccess or ExecuteNodeResultFailure from a raw payload dict."""
         result_type = payload.get("result_type", "")
         result_data = payload.get("result", {})
