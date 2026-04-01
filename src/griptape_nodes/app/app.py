@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import sys
 import threading
 from dataclasses import dataclass
@@ -288,8 +289,7 @@ async def _run_worker(client: Client, worker_session_id: str) -> None:
             logger.info("Worker %s sent unregister to session %s", worker_engine_id, worker_session_id)
         except Exception as e:
             logger.debug("Could not send unregister on shutdown: %s", e)
-        # Terminate the whole process — sys.exit() only exits the calling thread.
-        os._exit(1)
+        os.kill(os.getpid(), signal.SIGINT)
 
 
 async def _run_orchestrator(client: Client) -> None:
