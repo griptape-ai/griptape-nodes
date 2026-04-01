@@ -53,6 +53,9 @@ from griptape_nodes.retained_mode.events.connection_events import (
 from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
+    ExecuteNodeRequest,
+    ExecuteNodeResultFailure,
+    ExecuteNodeResultSuccess,
     ResolveNodeRequest,
     ResolveNodeResultFailure,
     ResolveNodeResultSuccess,
@@ -300,6 +303,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(MigrateParameterRequest, self.on_migrate_parameter_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
+        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
         event_manager.assign_manager_to_request_type(
             GetCompatibleParametersRequest, self.on_get_compatible_parameters_request
@@ -2702,6 +2706,39 @@ class NodeManager:
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         return ResolveNodeResultSuccess(result_details=details)
+
+    async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
+        """Execute a node's aprocess() directly with provided parameter values."""
+        node_name = request.node_name
+
+        try:
+            node = self.get_node_by_name(node_name)
+        except ValueError as e:
+            return ExecuteNodeResultFailure(
+                result_details=f"Attempted to execute node '{node_name}'. Failed because node does not exist: {e}",
+            )
+
+        # Hydrate input parameters
+        for param_name, value in request.parameter_values.items():
+            try:
+                node.set_parameter_value(param_name, value)
+            except Exception as e:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
+                )
+
+        # Execute the node
+        try:
+            await node.aprocess()
+        except Exception as e:
+            return ExecuteNodeResultFailure(
+                result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
+            )
+
+        return ExecuteNodeResultSuccess(
+            parameter_output_values=dict(node.parameter_output_values),
+            result_details=f"Node '{node_name}' executed successfully.",
+        )
 
     def on_validate_node_dependencies_request(self, request: ValidateNodeDependenciesRequest) -> ResultPayload:
         node_name = request.node_name

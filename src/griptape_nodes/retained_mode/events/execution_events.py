@@ -458,3 +458,41 @@ class GriptapeEvent(ExecutionPayload):
     parameter_name: str
     type: str
     value: Any
+
+
+@dataclass
+@PayloadRegistry.register
+class ExecuteNodeRequest(RequestPayload):
+    """Execute a node's aprocess() directly with provided parameter values.
+
+    Hydrates the node's input parameters, calls aprocess(), and returns outputs.
+    Unlike ResolveNodeRequest, this bypasses flow/DAG machinery and executes
+    the node's process method directly.
+
+    Args:
+        node_name: Name of the node to execute.
+        parameter_values: Input parameter values to set before execution.
+
+    Results: ExecuteNodeResultSuccess | ExecuteNodeResultFailure
+    """
+
+    node_name: str
+    parameter_values: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+@PayloadRegistry.register
+class ExecuteNodeResultSuccess(ResultPayloadSuccess):
+    """Successful result from executing a node directly.
+
+    Args:
+        parameter_output_values: Output parameter values from the node.
+    """
+
+    parameter_output_values: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+@PayloadRegistry.register
+class ExecuteNodeResultFailure(ResultPayloadFailure):
+    """Failed result from executing a node directly."""
