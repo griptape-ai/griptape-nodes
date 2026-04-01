@@ -267,9 +267,7 @@ class TestRelayWorkerResultPendingFuture:
         worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
-    async def test_pending_failure_resolves_future_with_failure(
-        self, worker_manager: WorkerManager
-    ) -> None:
+    async def test_pending_failure_resolves_future_with_failure(self, worker_manager: WorkerManager) -> None:
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         request_id = "req-456"
