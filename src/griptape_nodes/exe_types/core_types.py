@@ -58,10 +58,10 @@ N = TypeVar("N", bound="BaseNodeElement")
 BadgeVariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "cloud-upload"]
 VALID_BADGE_VARIANTS: frozenset[str] = frozenset(get_args(BadgeVariantType))
 
-# Editor render location for control parameters - controls where they appear in the node UI
+# Parameter render location for control parameters - controls where they appear in the node UI
 # "top": render at the top (default), "bottom": render at the bottom, "in-order": render in-line with other parameters
-EditorRenderLocation = Literal["top", "bottom", "in-order"]
-VALID_EDITOR_RENDER_LOCATIONS: frozenset[str] = frozenset(get_args(EditorRenderLocation))
+ParameterRenderLocation = Literal["top", "bottom", "in-order"]
+VALID_PARAMETER_RENDER_LOCATIONS: frozenset[str] = frozenset(get_args(ParameterRenderLocation))
 
 
 @dataclass
@@ -2172,7 +2172,7 @@ class ControlParameter(Parameter, ABC):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         ui_options: dict | None = None,
         *,
-        editor_render_location: EditorRenderLocation | None = None,
+        parameter_render_location: ParameterRenderLocation | None = None,
         display_name: str | None = None,
         user_defined: bool = False,
         private: bool = False,
@@ -2184,29 +2184,29 @@ class ControlParameter(Parameter, ABC):
             processed_ui_options = ui_options.copy()
 
         # Validate for conflicts if explicitly provided
-        if editor_render_location is not None:
+        if parameter_render_location is not None:
             self._validate_ui_option_conflict(
                 ui_options_dict=processed_ui_options,
-                param_name="editor_render_location",
-                param_value=editor_render_location,
+                param_name="parameter_render_location",
+                param_value=parameter_render_location,
             )
             # Validate it's a valid value
-            if editor_render_location not in VALID_EDITOR_RENDER_LOCATIONS:
-                msg = f"Invalid editor_render_location '{editor_render_location}' for parameter '{name}'. Valid values: {sorted(VALID_EDITOR_RENDER_LOCATIONS)}. Using 'top'."
+            if parameter_render_location not in VALID_PARAMETER_RENDER_LOCATIONS:
+                msg = f"Invalid parameter_render_location '{parameter_render_location}' for parameter '{name}'. Valid values: {sorted(VALID_PARAMETER_RENDER_LOCATIONS)}. Using 'top'."
                 logger.warning(msg)
-                editor_render_location = "top"
+                parameter_render_location = "top"
 
         # By default, the editor renders all control parameters at the top of the node.
-        # Set editor_render_location to control where they render:
+        # Set parameter_render_location to control where they render:
         # - "top": Render at the top of the node (default for ControlParameter)
         # - "bottom": Render at the bottom of the node
         # - "in-order": Render in-order in the order they are defined
         # This is useful for nodes with multiple control outputs that need to appear in specific positions.
-        if "editor_render_location" not in processed_ui_options:
-            if editor_render_location is not None:
-                processed_ui_options["editor_render_location"] = editor_render_location
+        if "parameter_render_location" not in processed_ui_options:
+            if parameter_render_location is not None:
+                processed_ui_options["parameter_render_location"] = parameter_render_location
             else:
-                processed_ui_options["editor_render_location"] = "top"
+                processed_ui_options["parameter_render_location"] = "top"
 
         # Call parent with a few explicit tweaks.
         super().__init__(
@@ -2245,7 +2245,7 @@ class ControlParameterInput(ControlParameter):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
-        editor_render_location: EditorRenderLocation | None = None,
+        parameter_render_location: ParameterRenderLocation | None = None,
         user_defined: bool = False,
         private: bool = False,
     ):
@@ -2265,7 +2265,7 @@ class ControlParameterInput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
-            editor_render_location=editor_render_location,
+            parameter_render_location=parameter_render_location,
             display_name=display_name,
             user_defined=user_defined,
             private=private,
@@ -2285,7 +2285,7 @@ class ControlParameterOutput(ControlParameter):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
-        editor_render_location: EditorRenderLocation | None = None,
+        parameter_render_location: ParameterRenderLocation | None = None,
         user_defined: bool = False,
         private: bool = False,
     ):
@@ -2305,7 +2305,7 @@ class ControlParameterOutput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
-            editor_render_location=editor_render_location,
+            parameter_render_location=parameter_render_location,
             display_name=display_name,
             user_defined=user_defined,
             private=private,
