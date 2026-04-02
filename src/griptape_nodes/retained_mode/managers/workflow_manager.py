@@ -2076,7 +2076,16 @@ class WorkflowManager:
         commands = serialized_flow_result.serialized_flow_commands
 
         # Strip parent_flow_name so the saved file stands alone as a top-level workflow.
-        if isinstance(commands.flow_initialization_command, CreateFlowRequest):
+        # If the subflow is tracked as a referenced workflow, replace the self-referential
+        # import command with a plain CreateFlowRequest for the standalone save.
+        if isinstance(commands.flow_initialization_command, ImportWorkflowAsReferencedSubFlowRequest):
+            commands.flow_initialization_command = CreateFlowRequest(
+                flow_name=request.flow_name,
+                parent_flow_name=None,
+                set_as_new_context=False,
+                metadata=commands.flow_initialization_command.imported_flow_metadata,
+            )
+        elif isinstance(commands.flow_initialization_command, CreateFlowRequest):
             commands.flow_initialization_command.parent_flow_name = None
 
         # Extract workflow shape from the specific subflow (not the top-level flow).

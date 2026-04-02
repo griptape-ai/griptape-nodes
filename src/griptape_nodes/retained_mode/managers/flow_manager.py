@@ -378,11 +378,13 @@ class FlowManager:
             if parent_name == flow_name:
                 child_flow_names.add(child_name)
 
-        # Build set of all node names in this flow and its direct children
+        # Build set of all node names in this flow and its direct children.
+        # Exclude nodes from referenced workflow children - their internal connections
+        # are not serialized at the parent level (they serialize as a standalone workflow).
         all_node_names = set(flow.nodes.keys())
         for child_flow_name in child_flow_names:
             child_flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(child_flow_name, ControlFlow)
-            if child_flow is not None:
+            if child_flow is not None and not self.is_referenced_workflow(child_flow):
                 all_node_names.update(child_flow.nodes.keys())
 
         # Include connections where both nodes are in this flow hierarchy
