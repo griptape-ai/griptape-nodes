@@ -30,7 +30,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
     ProgressEvent,
     SkipTheLineMixin,
-    deserialize_event,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -290,7 +289,7 @@ async def _process_api_event(event: dict) -> None:
 
     # Now attempt to convert it into an EventRequest.
     try:
-        request_event = deserialize_event(json_data=payload)
+        request_event = EventRequest.from_dict(payload)
     except Exception as e:
         details = str(e)
         if isinstance(e, BaseValidationError):
