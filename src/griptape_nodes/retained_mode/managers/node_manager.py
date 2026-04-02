@@ -12,6 +12,7 @@ from griptape_nodes.exe_types.base_iterative_nodes import (
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     Parameter,
+    ParameterButtonGroup,
     ParameterContainer,
     ParameterGroup,
     ParameterList,
@@ -34,9 +35,11 @@ from griptape_nodes.exe_types.node_types import (
 )
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
+    RequestPayload,
     ResultDetails,
     ResultPayload,
     ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
@@ -144,12 +147,18 @@ from griptape_nodes.retained_mode.events.object_events import (
     RenameObjectResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterButtonGroupToNodeRequest,
+    AddParameterButtonGroupToNodeResultFailure,
+    AddParameterButtonGroupToNodeResultSuccess,
     AddParameterGroupToNodeRequest,
     AddParameterGroupToNodeResultFailure,
     AddParameterGroupToNodeResultSuccess,
     AddParameterToNodeRequest,
     AddParameterToNodeResultFailure,
     AddParameterToNodeResultSuccess,
+    AlterParameterButtonGroupDetailsRequest,
+    AlterParameterButtonGroupDetailsResultFailure,
+    AlterParameterButtonGroupDetailsResultSuccess,
     AlterParameterDetailsRequest,
     AlterParameterDetailsResultFailure,
     AlterParameterDetailsResultSuccess,
@@ -286,7 +295,13 @@ class NodeManager:
             AddParameterGroupToNodeRequest, self.on_add_parameter_group_to_node_request
         )
         event_manager.assign_manager_to_request_type(
+            AddParameterButtonGroupToNodeRequest, self.on_add_parameter_button_group_to_node_request
+        )
+        event_manager.assign_manager_to_request_type(
             AlterParameterGroupDetailsRequest, self.on_alter_parameter_group_details_request
+        )
+        event_manager.assign_manager_to_request_type(
+            AlterParameterButtonGroupDetailsRequest, self.on_alter_parameter_button_group_details_request
         )
         event_manager.assign_manager_to_request_type(
             RemoveParameterFromNodeRequest, self.on_remove_parameter_from_node_request
@@ -1553,19 +1568,22 @@ class NodeManager:
         )
         return result
 
-    def on_add_parameter_group_to_node_request(  # noqa: C901, PLR0911
-        self, request: AddParameterGroupToNodeRequest
-    ) -> ResultPayload:
-        """Handle request to add a ParameterGroup to a node."""
-        node_name = request.node_name
+    def _validate_add_group_request(  # noqa: C901, PLR0911
+        self,
+        group_name: str,
+        node_name: str | None,
+        parent_element_name: str | None,
+        type_label: str,
+    ) -> tuple[BaseNode, str, ParameterGroup | None] | str:
+        """Shared validation for adding ParameterGroup/ParameterButtonGroup.
+
+        Returns (node, node_name, parent_group) on success, or an error message string on failure.
+        """
         node = None
-        parent_group: ParameterGroup | None = None
 
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
-                details = "Attempted to add ParameterGroup to a Node from the Current Context. Failed because the Current Context is empty."
-                return AddParameterGroupToNodeResultFailure(result_details=details)
-
+                return f"Attempted to add {type_label} to a Node from the Current Context. Failed because the Current Context is empty."
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
 
@@ -1573,32 +1591,41 @@ class NodeManager:
             obj_mgr = GriptapeNodes.ObjectManager()
             node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
             if node is None:
-                details = f"Attempted to add ParameterGroup '{request.group_name}' to a Node '{node_name}', but no such Node was found."
-                return AddParameterGroupToNodeResultFailure(result_details=details)
+                return (
+                    f"Attempted to add {type_label} '{group_name}' to a Node '{node_name}', but no such Node was found."
+                )
 
         if node.lock:
-            details = f"Attempted to add ParameterGroup '{request.group_name}' to Node '{node_name}'. Failed because the Node was locked."
-            return AddParameterGroupToNodeResultFailure(result_details=details)
+            return f"Attempted to add {type_label} '{group_name}' to Node '{node_name}'. Failed because the Node was locked."
 
-        if not request.group_name:
-            details = (
-                f"Attempted to add ParameterGroup to node '{node_name}'. Failed because group_name was not defined."
-            )
-            return AddParameterGroupToNodeResultFailure(result_details=details)
+        if not group_name:
+            return f"Attempted to add {type_label} to node '{node_name}'. Failed because group_name was not defined."
 
-        existing_element = node.get_element_by_name_and_type(request.group_name)
+        existing_element = node.get_element_by_name_and_type(group_name)
         if existing_element is not None:
-            details = f"Attempted to add ParameterGroup '{request.group_name}' to node '{node_name}'. Failed because an element with that name already exists."
-            return AddParameterGroupToNodeResultFailure(result_details=details)
+            return f"Attempted to add {type_label} '{group_name}' to node '{node_name}'. Failed because an element with that name already exists."
 
-        if request.parent_element_name is not None:
-            parent_element = node.get_element_by_name_and_type(request.parent_element_name)
+        parent_group: ParameterGroup | None = None
+        if parent_element_name is not None:
+            parent_element = node.get_element_by_name_and_type(parent_element_name)
             if parent_element is None:
-                details = f"Attempted to add ParameterGroup '{request.group_name}' to Parent Element '{request.parent_element_name}' in node '{node_name}'. Failed because parent element didn't exist."
-                return AddParameterGroupToNodeResultFailure(result_details=details)
-
+                return f"Attempted to add {type_label} '{group_name}' to Parent Element '{parent_element_name}' in node '{node_name}'. Failed because parent element didn't exist."
             if isinstance(parent_element, ParameterGroup):
                 parent_group = parent_element
+
+        return (node, node_name, parent_group)
+
+    def on_add_parameter_group_to_node_request(self, request: AddParameterGroupToNodeRequest) -> ResultPayload:
+        """Handle request to add a ParameterGroup to a node."""
+        result = self._validate_add_group_request(
+            group_name=request.group_name,
+            node_name=request.node_name,
+            parent_element_name=request.parent_element_name,
+            type_label="ParameterGroup",
+        )
+        if isinstance(result, str):
+            return AddParameterGroupToNodeResultFailure(result_details=result)
+        node, node_name, parent_group = result
 
         new_group = ParameterGroup(
             name=request.group_name,
@@ -1616,6 +1643,42 @@ class NodeManager:
         logger.debug(details)
 
         return AddParameterGroupToNodeResultSuccess(
+            group_name=new_group.name, node_name=node_name, result_details=details
+        )
+
+    def on_add_parameter_button_group_to_node_request(
+        self, request: AddParameterButtonGroupToNodeRequest
+    ) -> ResultPayload:
+        """Handle request to add a ParameterButtonGroup to a node."""
+        result = self._validate_add_group_request(
+            group_name=request.group_name,
+            node_name=request.node_name,
+            parent_element_name=request.parent_element_name,
+            type_label="ParameterButtonGroup",
+        )
+        if isinstance(result, str):
+            return AddParameterButtonGroupToNodeResultFailure(result_details=result)
+        node, node_name, parent_group = result
+
+        new_group = ParameterButtonGroup(
+            name=request.group_name,
+            ui_options=request.ui_options or {},
+            orientation=request.orientation,
+            display_name=request.display_name,
+            hide_label=request.hide_label,
+            parent_group_name=parent_group.name if parent_group is not None else None,
+            user_defined=request.is_user_defined,
+        )
+
+        if parent_group is not None:
+            parent_group.add_child(new_group)
+        else:
+            node.add_node_element(new_group)
+
+        details = f"Successfully added ParameterButtonGroup '{request.group_name}' to Node '{node_name}'."
+        logger.debug(details)
+
+        return AddParameterButtonGroupToNodeResultSuccess(
             group_name=new_group.name, node_name=node_name, result_details=details
         )
 
@@ -2059,17 +2122,25 @@ class NodeManager:
         result = AlterParameterDetailsResultSuccess(result_details=details)
         return result
 
-    def on_alter_parameter_group_details_request(  # noqa: PLR0911
-        self, request: AlterParameterGroupDetailsRequest
+    def _alter_group_details(  # noqa: PLR0911, PLR0913
+        self,
+        request: RequestPayload,
+        group_name: str,
+        node_name: str | None,
+        ui_options: dict | None,
+        initial_setup: bool,  # noqa: FBT001
+        element_type: type[ParameterGroup],
+        type_label: str,
+        success_type: type[ResultPayloadSuccess],
+        failure_type: type[ResultPayloadFailure],
     ) -> ResultPayload:
-        """Handle requests to alter ParameterGroup details (primarily ui_options)."""
-        node_name = request.node_name
+        """Shared logic for altering ParameterGroup and ParameterButtonGroup details."""
         node = None
 
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
-                details = f"Attempted to alter details for ParameterGroup '{request.group_name}' from node in the Current Context. Failed because there was no such Node."
-                return AlterParameterGroupDetailsResultFailure(result_details=details)
+                details = f"Attempted to alter details for {type_label} '{group_name}' from a Node in the Current Context. Failed because the Current Context is empty."
+                return failure_type(result_details=details)
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
 
@@ -2077,36 +2148,64 @@ class NodeManager:
             obj_mgr = GriptapeNodes.ObjectManager()
             node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
             if node is None:
-                details = f"Attempted to alter details for ParameterGroup '{request.group_name}' from Node '{node_name}', but no such Node was found."
-                return AlterParameterGroupDetailsResultFailure(result_details=details)
+                details = f"Attempted to alter details for {type_label} '{group_name}' from Node '{node_name}'. Failed because no such Node was found."
+                return failure_type(result_details=details)
 
         if node.lock:
-            details = f"Attempted to alter details for ParameterGroup '{request.group_name}' from Node '{node_name}'. Failed because the Node was locked."
-            return AlterParameterGroupDetailsResultFailure(result_details=details)
+            details = f"Attempted to alter details for {type_label} '{group_name}' from Node '{node_name}'. Failed because the Node was locked."
+            return failure_type(result_details=details)
 
-        # Handle ErrorProxyNode parameter group alteration requests
         if isinstance(node, ErrorProxyNode):
-            if request.initial_setup:
+            if initial_setup:
                 node.record_initialization_request(request)
-                details = f"ParameterGroup '{request.group_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
+                details = f"{type_label} '{group_name}' alteration recorded for ErrorProxyNode '{node_name}'."
                 result_details = ResultDetails(message=details, level=logging.WARNING)
-                return AlterParameterGroupDetailsResultSuccess(result_details=result_details)
+                return success_type(result_details=result_details)
 
-            details = f"Cannot modify ParameterGroup '{request.group_name}' on placeholder node '{node_name}'. This placeholder preserves your workflow structure but doesn't allow modifications."
-            return AlterParameterGroupDetailsResultFailure(result_details=details)
+            details = f"Cannot modify {type_label} '{group_name}' on placeholder node '{node_name}'."
+            return failure_type(result_details=details)
 
-        # Find the ParameterGroup
-        group = node.get_element_by_name_and_type(request.group_name, ParameterGroup)
-        if group is None or not isinstance(group, ParameterGroup):
-            details = f"Attempted to alter details for ParameterGroup '{request.group_name}' from Node '{node_name}'. Failed because no such ParameterGroup was found."
-            return AlterParameterGroupDetailsResultFailure(result_details=details)
+        found_element = node.get_element_by_name_and_type(group_name, element_type)
+        if found_element is None or not isinstance(found_element, ParameterGroup):
+            details = f"Attempted to alter details for {type_label} '{group_name}' from Node '{node_name}'. Failed because no such {type_label} was found."
+            return failure_type(result_details=details)
+        group: ParameterGroup = found_element
 
-        # Update ui_options if provided
-        if request.ui_options is not None:
-            group.ui_options = request.ui_options
+        if ui_options is not None:
+            group.ui_options = ui_options
 
-        details = f"Successfully altered details for ParameterGroup '{request.group_name}' from Node '{node_name}'."
-        return AlterParameterGroupDetailsResultSuccess(result_details=details)
+        details = f"Successfully altered details for {type_label} '{group_name}' from Node '{node_name}'."
+        return success_type(result_details=details)
+
+    def on_alter_parameter_group_details_request(self, request: AlterParameterGroupDetailsRequest) -> ResultPayload:
+        """Handle requests to alter ParameterGroup details (primarily ui_options)."""
+        return self._alter_group_details(
+            request=request,
+            group_name=request.group_name,
+            node_name=request.node_name,
+            ui_options=request.ui_options,
+            initial_setup=request.initial_setup,
+            element_type=ParameterGroup,
+            type_label="ParameterGroup",
+            success_type=AlterParameterGroupDetailsResultSuccess,
+            failure_type=AlterParameterGroupDetailsResultFailure,
+        )
+
+    def on_alter_parameter_button_group_details_request(
+        self, request: AlterParameterButtonGroupDetailsRequest
+    ) -> ResultPayload:
+        """Handle request to alter ParameterButtonGroup details. Delegates to shared group alter logic."""
+        return self._alter_group_details(
+            request=request,
+            group_name=request.group_name,
+            node_name=request.node_name,
+            ui_options=request.ui_options,
+            initial_setup=request.initial_setup,
+            element_type=ParameterButtonGroup,
+            type_label="ParameterButtonGroup",
+            success_type=AlterParameterButtonGroupDetailsResultSuccess,
+            failure_type=AlterParameterButtonGroupDetailsResultFailure,
+        )
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
@@ -2976,18 +3075,36 @@ class NodeManager:
             # Now creation or alteration of all of the elements.
             element_modification_commands = []
 
-            # Serialize only user-defined ParameterGroups (like parameters)
+            # Serialize only user-defined ParameterGroups and ParameterButtonGroups.
+            # find_elements_by_type(ParameterGroup) finds both since ParameterButtonGroup
+            # is a subclass. We distinguish them with isinstance to emit the correct request.
             all_groups = node.root_ui_element.find_elements_by_type(ParameterGroup)
             for group in all_groups:
                 if group.user_defined:
-                    add_group_request = AddParameterGroupToNodeRequest(
-                        node_name=node_name,
-                        group_name=group.name,
-                        parent_element_name=group.parent_group_name,
-                        ui_options=group.ui_options or {},
-                        is_user_defined=True,
-                        initial_setup=True,
-                    )
+                    if isinstance(group, ParameterButtonGroup):
+                        add_group_request = AddParameterButtonGroupToNodeRequest(
+                            node_name=node_name,
+                            group_name=group.name,
+                            parent_element_name=group.parent_group_name,
+                            orientation=group.orientation,
+                            ui_options=group.ui_options or {},
+                            display_name=group.display_name,
+                            hide_label=group.hide_label,
+                            is_user_defined=True,
+                            initial_setup=True,
+                        )
+                    elif isinstance(group, ParameterGroup):
+                        add_group_request = AddParameterGroupToNodeRequest(
+                            node_name=node_name,
+                            group_name=group.name,
+                            parent_element_name=group.parent_group_name,
+                            ui_options=group.ui_options or {},
+                            is_user_defined=True,
+                            initial_setup=True,
+                        )
+                    else:
+                        msg = f"Attempted to serialize group '{group.name}' on node '{node_name}'. Unhandled ParameterGroup subclass: {type(group).__name__}."
+                        raise TypeError(msg)
                     element_modification_commands.append(add_group_request)
 
             # Then serialize parameters
@@ -3031,21 +3148,36 @@ class NodeManager:
                         alter_param_request = AlterParameterDetailsRequest.create(**diff)
                         element_modification_commands.append(alter_param_request)
 
-            # Check for ParameterGroup alterations (ui_options changes like collapsed state)
+            # Check for ParameterGroup/ParameterButtonGroup alterations (ui_options changes)
             if reference_node is not None and not isinstance(node, ErrorProxyNode):
-                # Compare ALL groups against the reference node (not just user-defined)
-                # This matches the pattern used for parameter alterations
+                # Compare non-user_defined groups against the reference node.
+                # user_defined groups were already fully emitted as Add requests above.
                 for group in all_groups:
+                    if group.user_defined:
+                        continue
                     diff = NodeManager._manage_alter_group_details(group, reference_node)
+                    if isinstance(group, ParameterButtonGroup):
+                        relevant_params = AlterParameterButtonGroupDetailsRequest.relevant_parameters()
+                    elif isinstance(group, ParameterGroup):
+                        relevant_params = AlterParameterGroupDetailsRequest.relevant_parameters()
+                    else:
+                        msg = f"Attempted to serialize group '{group.name}' on node '{node_name}'. Unhandled ParameterGroup subclass: {type(group).__name__}."
+                        raise TypeError(msg)
                     relevant = False
                     for key in diff:
-                        if key in AlterParameterGroupDetailsRequest.relevant_parameters():
+                        if key in relevant_params:
                             relevant = True
                             break
                     if relevant:
                         diff["group_name"] = group.name
                         diff["initial_setup"] = True
-                        alter_group_request = AlterParameterGroupDetailsRequest(**diff)
+                        if isinstance(group, ParameterButtonGroup):
+                            alter_group_request = AlterParameterButtonGroupDetailsRequest(**diff)
+                        elif isinstance(group, ParameterGroup):
+                            alter_group_request = AlterParameterGroupDetailsRequest(**diff)
+                        else:
+                            msg = f"Attempted to serialize group '{group.name}' on node '{node_name}'. Unhandled ParameterGroup subclass: {type(group).__name__}."
+                            raise TypeError(msg)
                         element_modification_commands.append(alter_group_request)
 
             # Now assignment of values to all of the parameters.
@@ -3239,8 +3371,16 @@ class NodeManager:
         with GriptapeNodes.ContextManager().node(node=node):
             for element_command in request.serialized_node_commands.element_modification_commands:
                 if isinstance(
-                    element_command, (AlterParameterDetailsRequest, AddParameterToNodeRequest)
-                ):  # are there more types of requests we could encounter here?
+                    element_command,
+                    (
+                        AlterParameterDetailsRequest,
+                        AddParameterToNodeRequest,
+                        AddParameterGroupToNodeRequest,
+                        AddParameterButtonGroupToNodeRequest,
+                        AlterParameterGroupDetailsRequest,
+                        AlterParameterButtonGroupDetailsRequest,
+                    ),
+                ):
                     element_command.node_name = node_name
                 element_result = GriptapeNodes().handle_request(element_command)
                 if element_result.failed():
@@ -3601,10 +3741,17 @@ class NodeManager:
     def _manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
         base_param = base_node_obj.get_parameter_by_name(parameter.name)
         if base_param:
-            diff = base_param.equals(parameter)
-        else:
-            return vars(parameter)
-        return diff
+            return base_param.equals(parameter)
+
+        # Non-user_defined parameters should always exist on the reference node,
+        # because the reference is constructed from the same class. If we get here,
+        # it means a parameter appeared on the live node that the canonical __init__
+        # didn't create — that's a bug we need to surface, not silently swallow.
+        # (user_defined parameters are handled earlier via AddParameterToNodeRequest
+        # and never reach this code path.)
+        node_type = type(base_node_obj).__name__
+        msg = f"Attempted to diff parameter '{parameter.name}' against reference node of type '{node_type}'. Parameter does not exist on the reference node. Non-user_defined parameters must be created by the node's __init__."
+        raise ValueError(msg)
 
     @staticmethod
     def _manage_alter_group_details(group: ParameterGroup, base_node_obj: BaseNode) -> dict:
@@ -3619,10 +3766,17 @@ class NodeManager:
         """
         base_group = base_node_obj.get_element_by_name_and_type(group.name, ParameterGroup)
         if base_group and isinstance(base_group, ParameterGroup):
-            diff = base_group.equals(group)
-        else:
-            return {"ui_options": group.ui_options}
-        return diff
+            return base_group.equals(group)
+
+        # Non-user_defined groups should always exist on the reference node,
+        # because the reference is constructed from the same class. If we get here,
+        # it means a group appeared on the live node that the canonical __init__
+        # didn't create — that's a bug we need to surface, not silently swallow.
+        # (user_defined groups are handled earlier via AddParameterGroupToNodeRequest
+        # or AddParameterButtonGroupToNodeRequest and never reach this code path.)
+        node_type = type(base_node_obj).__name__
+        msg = f"Attempted to diff group '{group.name}' against reference node of type '{node_type}'. Group does not exist on the reference node. Non-user_defined groups must be created by the node's __init__."
+        raise ValueError(msg)
 
     @staticmethod
     def _handle_value_hashing(  # noqa: PLR0913

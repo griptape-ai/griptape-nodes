@@ -63,6 +63,9 @@ VALID_BADGE_VARIANTS: frozenset[str] = frozenset(get_args(BadgeVariantType))
 ParameterRenderLocation = Literal["top", "bottom", "in-order"]
 VALID_PARAMETER_RENDER_LOCATIONS: frozenset[str] = frozenset(get_args(ParameterRenderLocation))
 
+# Button group orientation - controls layout direction of buttons within a ParameterButtonGroup
+ButtonGroupOrientation = Literal["horizontal", "vertical"]
+
 
 @dataclass
 class BadgeData:
@@ -1116,13 +1119,15 @@ class DeprecationMessage(ParameterMessage):
 class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     """UI element for a group of parameters."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         ui_options: dict | None = None,
         *,
         collapsed: bool = False,
         user_defined: bool = False,
+        hide_label: bool | None = None,
+        display_name: str | None = None,
         badge: BadgeData
         | None = None,  # Optional BadgeData for initial badge (title, message, variant, and whether to show a clear button).
         **kwargs,
@@ -1136,6 +1141,20 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
         # Add collapsed to ui_options if it's True
         if collapsed:
             ui_options["collapsed"] = collapsed
+
+        if hide_label is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=ui_options, param_name="hide_label", param_value=hide_label
+            )
+            if "hide_label" not in ui_options:
+                ui_options["hide_label"] = hide_label
+
+        if display_name is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=ui_options, param_name="display_name", param_value=display_name
+            )
+            if "display_name" not in ui_options:
+                ui_options["display_name"] = display_name
 
         self._ui_options = ui_options
         self.user_defined = user_defined
@@ -1183,6 +1202,36 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
             ui_options = self._ui_options.copy()
             ui_options.pop("collapsed", None)
             self._ui_options = ui_options
+
+    @property
+    def hide_label(self) -> bool | None:
+        """Whether the group label is hidden in the UI."""
+        return self._ui_options.get("hide_label")
+
+    @hide_label.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide_label(self, value: bool | None) -> None:
+        if value is None:
+            ui_options = self._ui_options.copy()
+            ui_options.pop("hide_label", None)
+            self._ui_options = ui_options
+        else:
+            self.update_ui_options_key("hide_label", value)
+
+    @property
+    def display_name(self) -> str | None:
+        """Human-readable label for the group (overrides the default from `name`)."""
+        return self._ui_options.get("display_name")
+
+    @display_name.setter
+    @BaseNodeElement.emits_update_on_write
+    def display_name(self, value: str | None) -> None:
+        if value is None:
+            ui_options = self._ui_options.copy()
+            ui_options.pop("display_name", None)
+            self._ui_options = ui_options
+        else:
+            self.update_ui_options_key("display_name", value)
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
@@ -1241,11 +1290,12 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
         return super().remove_child(child)
 
 
-class ParameterButtonGroup(BaseNodeElement, UIOptionsMixin):
-    """UI element for grouping buttons together in a row (similar to shadcn ButtonGroup).
+class ParameterButtonGroup(ParameterGroup):
+    """A ParameterGroup specialization that renders as a button bar.
 
-    This class creates a button group container that displays buttons horizontally
-    with proper spacing and styling, similar to shadcn/ui's ButtonGroup component.
+    Displays child buttons horizontally or vertically with proper spacing
+    and styling, similar to shadcn/ui's ButtonGroup component. The frontend
+    distinguishes this from a regular ParameterGroup via element_type.
 
     Example:
         with ParameterButtonGroup(name="actions", orientation="horizontal") as button_group:
@@ -1261,58 +1311,42 @@ class ParameterButtonGroup(BaseNodeElement, UIOptionsMixin):
             )
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         ui_options: dict | None = None,
         *,
-        orientation: Literal["horizontal", "vertical"] = "horizontal",
-        hide_label: bool | None = None,
+        orientation: ButtonGroupOrientation = "horizontal",
+        hide_label: bool | None = True,
         display_name: str | None = None,
+        user_defined: bool = False,
         **kwargs,
     ):
-        super().__init__(name=name, element_type="ParameterButtonGroup", **kwargs)
-
         if ui_options is None:
             ui_options = {}
         else:
             ui_options = ui_options.copy()
 
-        if hide_label is not None:
-            self._validate_ui_option_conflict(
-                ui_options_dict=ui_options, param_name="hide_label", param_value=hide_label
-            )
-        if display_name is not None:
-            self._validate_ui_option_conflict(
-                ui_options_dict=ui_options, param_name="display_name", param_value=display_name
-            )
-
-        if "hide_label" not in ui_options:
-            if hide_label is not None:
-                ui_options["hide_label"] = hide_label
-            else:
-                ui_options["hide_label"] = True
-
-        if display_name is not None and "display_name" not in ui_options:
-            ui_options["display_name"] = display_name
-
         ui_options["button_group"] = True
-        ui_options["orientation"] = orientation
+        self._validate_ui_option_conflict(ui_options_dict=ui_options, param_name="orientation", param_value=orientation)
+        if "orientation" not in ui_options:
+            ui_options["orientation"] = orientation
 
-        self._ui_options = ui_options
-        self._orientation: Literal["horizontal", "vertical"] = orientation
+        super().__init__(
+            name=name,
+            ui_options=ui_options,
+            collapsed=False,
+            user_defined=user_defined,
+            hide_label=hide_label,
+            display_name=display_name,
+            badge=None,
+            element_type="ParameterButtonGroup",
+            **kwargs,
+        )
+        self._orientation: ButtonGroupOrientation = orientation
 
     @property
-    def ui_options(self) -> dict:
-        return self._ui_options
-
-    @ui_options.setter
-    @BaseNodeElement.emits_update_on_write
-    def ui_options(self, value: dict) -> None:
-        self._ui_options = value
-
-    @property
-    def orientation(self) -> Literal["horizontal", "vertical"]:
+    def orientation(self) -> ButtonGroupOrientation:
         """Get the button group orientation.
 
         Returns:
@@ -1322,7 +1356,7 @@ class ParameterButtonGroup(BaseNodeElement, UIOptionsMixin):
 
     @orientation.setter
     @BaseNodeElement.emits_update_on_write
-    def orientation(self, value: Literal["horizontal", "vertical"]) -> None:
+    def orientation(self, value: ButtonGroupOrientation) -> None:
         """Set the button group orientation.
 
         Args:
@@ -1334,53 +1368,12 @@ class ParameterButtonGroup(BaseNodeElement, UIOptionsMixin):
     @property
     def hide_label(self) -> bool:
         """Whether the button group label is hidden in the UI (defaults to True)."""
-        return self.ui_options.get("hide_label", True)
+        return self._ui_options.get("hide_label", True)
 
     @hide_label.setter
     @BaseNodeElement.emits_update_on_write
     def hide_label(self, value: bool) -> None:
         self.update_ui_options_key("hide_label", value)
-
-    @property
-    def display_name(self) -> str | None:
-        """Human-readable label for the button group (overrides the default from `name`)."""
-        return self.ui_options.get("display_name")
-
-    @display_name.setter
-    @BaseNodeElement.emits_update_on_write
-    def display_name(self, value: str | None) -> None:
-        if value is None:
-            ui_options = self.ui_options.copy()
-            ui_options.pop("display_name", None)
-            self.ui_options = ui_options
-        else:
-            self.update_ui_options_key("display_name", value)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Returns a nested dictionary representation of this button group and its children."""
-        our_dict = super().to_dict()
-        our_dict["name"] = self.name
-        our_dict["ui_options"] = self.ui_options
-        return our_dict
-
-    def to_event(self, node: BaseNode) -> dict:
-        event_data = super().to_event(node)
-        event_data["ui_options"] = self.ui_options
-        return event_data
-
-    def add_child(self, child: BaseNodeElement) -> None:
-        child.parent_group_name = self.name
-        return super().add_child(child)
-
-    def remove_child(self, child: BaseNodeElement | str) -> None:
-        if isinstance(child, str):
-            child_from_str = self.find_element_by_name(child)
-            if child_from_str is not None and isinstance(child_from_str, BaseNodeElement):
-                child_from_str.parent_group_name = None
-                return super().remove_child(child_from_str)
-        else:
-            child.parent_group_name = None
-        return super().remove_child(child)
 
 
 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/856

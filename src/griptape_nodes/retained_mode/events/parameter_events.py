@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from griptape_nodes.exe_types.core_types import ParameterMode
+from griptape_nodes.exe_types.core_types import ButtonGroupOrientation, ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
@@ -222,6 +222,99 @@ class AlterParameterGroupDetailsResultSuccess(WorkflowAlteredMixin, ResultPayloa
 @PayloadRegistry.register
 class AlterParameterGroupDetailsResultFailure(ResultPayloadFailure):
     """ParameterGroup details alteration failed. Common causes: node not found, group not found."""
+
+
+@dataclass
+@PayloadRegistry.register
+class AddParameterButtonGroupToNodeRequest(RequestPayload):
+    """Add a new ParameterButtonGroup to a node.
+
+    Use when: Creating button bar UI elements on nodes (e.g., action buttons,
+    condition management buttons). Button groups render as horizontal or vertical
+    button bars rather than collapsible parameter groups.
+
+    Args:
+        group_name: Name of the new button group
+        node_name: Name of the node to add group to (None for current context)
+        parent_element_name: Name of parent element if nested (None for root level)
+        orientation: Layout direction — "horizontal" or "vertical"
+        ui_options: UI configuration options
+        display_name: Human-readable label (overrides name)
+        hide_label: Whether to hide the group label (defaults to True for button groups)
+        is_user_defined: Whether this is a user-defined group (affects serialization)
+        initial_setup: Skip setup work when loading from file
+
+    Results: AddParameterButtonGroupToNodeResultSuccess | AddParameterButtonGroupToNodeResultFailure
+    """
+
+    group_name: str
+    node_name: str | None = None
+    parent_element_name: str | None = None
+    orientation: ButtonGroupOrientation = "horizontal"
+    ui_options: dict = field(default_factory=dict)
+    display_name: str | None = None
+    hide_label: bool | None = None
+    is_user_defined: bool = True
+    initial_setup: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class AddParameterButtonGroupToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """ParameterButtonGroup added successfully to node.
+
+    Args:
+        group_name: Name of the new button group
+        node_name: Name of the node group was added to
+    """
+
+    group_name: str
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class AddParameterButtonGroupToNodeResultFailure(ResultPayloadFailure):
+    """ParameterButtonGroup addition failed. Common causes: node not found, invalid group name, group already exists."""
+
+
+@dataclass
+@PayloadRegistry.register
+class AlterParameterButtonGroupDetailsRequest(RequestPayload):
+    """Alter the details and configuration of a ParameterButtonGroup.
+
+    Use when: Modifying button group UI options (orientation, visibility, etc.),
+    updating group configuration after creation, implementing save/load of group state changes.
+
+    Args:
+        group_name: Name of the ParameterButtonGroup to alter
+        node_name: Name of the node containing the group (None for current context)
+        ui_options: New UI configuration options
+        initial_setup: Skip setup work when loading from file
+
+    Results: AlterParameterButtonGroupDetailsResultSuccess | AlterParameterButtonGroupDetailsResultFailure
+    """
+
+    group_name: str
+    node_name: str | None = None
+    ui_options: dict | None = None
+    initial_setup: bool = False
+
+    @classmethod
+    def relevant_parameters(cls) -> list[str]:
+        return ["group_name", "node_name", "ui_options"]
+
+
+@dataclass
+@PayloadRegistry.register
+class AlterParameterButtonGroupDetailsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """ParameterButtonGroup details altered successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class AlterParameterButtonGroupDetailsResultFailure(ResultPayloadFailure):
+    """ParameterButtonGroup details alteration failed. Common causes: node not found, group not found."""
 
 
 @dataclass
