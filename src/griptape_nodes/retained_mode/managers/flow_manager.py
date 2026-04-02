@@ -4155,11 +4155,14 @@ class FlowManager:
         # Clear and use the global execution queue
         self._global_flow_queue.queue.clear()
 
-        # Get all flows and collect all nodes across all flows
+        # Get all flows and collect all nodes across all flows.
+        # Exclude nodes from referenced subflows - they are executed explicitly via
+        # StartLocalSubflowRequest and should not participate in the top-level queue.
         all_flows = GriptapeNodes.ObjectManager().get_filtered_subset(type=ControlFlow)
         all_nodes = []
         for current_flow in all_flows.values():
-            all_nodes.extend(current_flow.nodes.values())
+            if not self.is_referenced_workflow(current_flow):
+                all_nodes.extend(current_flow.nodes.values())
 
         # if no nodes across all flows, no execution possible
         if not all_nodes:
