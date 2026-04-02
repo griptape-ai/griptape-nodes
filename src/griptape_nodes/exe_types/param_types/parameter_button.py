@@ -1,7 +1,7 @@
 """ParameterButton component for button inputs with enhanced UI options."""
 
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from griptape_nodes.exe_types.core_types import (
     BadgeData,
@@ -63,6 +63,15 @@ class ParameterButton(Parameter):
         param.default_value = "new_data"  # Changes stored value only
         param.variant = "destructive"
     """
+
+    # on_click and get_button_state are runtime callback functions that cannot be serialized.
+    # They are re-wired by the node's initialization code when the workflow is reloaded.
+    _CATTRS_SKIP_PARAMS: ClassVar[frozenset[str]] = Parameter._CATTRS_SKIP_PARAMS | frozenset(
+        {
+            "on_click",
+            "get_button_state",
+        }
+    )
 
     def __init__(  # noqa: PLR0913
         self,

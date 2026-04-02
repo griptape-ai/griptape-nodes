@@ -270,6 +270,11 @@ class ParameterNumber(Parameter):
         self._max_val = max_val
 
     @property
+    def step(self) -> float | None:
+        """Get the step size for numeric input controls."""
+        return self.ui_options.get("step")
+
+    @property
     def slider(self) -> bool:
         """Whether slider trait is active."""
         return any(isinstance(trait, Slider) for trait in self.find_elements_by_type(Trait))

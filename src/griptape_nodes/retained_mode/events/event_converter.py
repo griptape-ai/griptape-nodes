@@ -9,7 +9,7 @@ from typing import Any
 from cattrs.cols import is_namedtuple, namedtuple_dict_structure_factory, namedtuple_dict_unstructure_factory
 from cattrs.gen import make_dict_structure_fn, make_dict_unstructure_fn, override
 from cattrs.preconf.json import make_converter
-from cattrs.strategies import use_class_methods
+from cattrs.strategies import configure_tagged_union, use_class_methods
 from griptape.mixins.serializable_mixin import SerializableMixin
 from pydantic import BaseModel
 
@@ -79,6 +79,72 @@ converter.register_structure_hook_factory(is_namedtuple, namedtuple_dict_structu
 # and/or `_cattrs_unstructure` (instance method) instead of registering hooks here.
 
 use_class_methods(converter, structure_method_name="_cattrs_structure", unstructure_method_name="_cattrs_unstructure")
+
+
+# --- Tagged union for Parameter subclass round-tripping ---
+#
+# Enables lossless serialization of Parameter subclasses (ParameterButton, ParameterString, etc.)
+# by adding an "element_type" discriminator tag. On structure, cattrs dispatches to the correct
+# subclass based on this tag. Missing tags fall back to base Parameter for backward compat.
+#
+# Deferred into a function because importing parameter types at module level creates a circular
+# import: event_converter -> parameter_audio -> artifact_normalization -> griptape_nodes -> ... -> event_converter
+
+AllParameterTypes: Any = None
+
+
+def configure_parameter_tagged_union() -> None:
+    """Configure the cattrs tagged union for all Parameter subclasses.
+
+    Must be called once after all modules are loaded (called from NodeManager.__init__).
+    """
+    global AllParameterTypes  # noqa: PLW0603
+
+    if AllParameterTypes is not None:
+        return
+
+    from griptape_nodes.exe_types.core_types import Parameter
+    from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
+    from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+    from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
+    from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+    from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+    from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+    from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+    from griptape_nodes.exe_types.param_types.parameter_json import ParameterJson
+    from griptape_nodes.exe_types.param_types.parameter_range import ParameterRange
+    from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+    from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+
+    # Parameter3D depends on griptape_nodes_library which may not be installed yet
+    try:
+        from griptape_nodes.exe_types.param_types.parameter_three_d import Parameter3D
+    except (ImportError, ModuleNotFoundError):
+        Parameter3D = None  # type: ignore[assignment, misc]  # noqa: N806
+
+    AllParameterTypes = (
+        Parameter
+        | ParameterString
+        | ParameterBool
+        | ParameterInt
+        | ParameterFloat
+        | ParameterButton
+        | ParameterImage
+        | ParameterVideo
+        | ParameterAudio
+        | ParameterDict
+        | ParameterJson
+        | ParameterRange
+    )
+    if Parameter3D is not None:
+        AllParameterTypes = AllParameterTypes | Parameter3D
+
+    configure_tagged_union(
+        AllParameterTypes,
+        converter,
+        tag_name="element_type",
+        default=Parameter,
+    )
 
 
 # --- Hook factories for dataclasses ---

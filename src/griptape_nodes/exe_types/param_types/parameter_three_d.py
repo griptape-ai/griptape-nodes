@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from typing import Any
 
+# TODO: Move ThreeDUrlArtifact into the core engine (like we did for audio artifact)
+# so parameter_three_d.py doesn't depend on griptape_nodes_library at import time.
 from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact  # pyright: ignore[reportMissingImports]
 
 from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait

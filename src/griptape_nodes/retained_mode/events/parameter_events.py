@@ -108,6 +108,52 @@ class AddParameterToNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class AddParameterFromSerializedRequest(RequestPayload):
+    """Add a parameter from a cattrs-serialized dict. Tagged union reconstructs the correct subclass.
+
+    Use when: Restoring user_defined parameters from saved workflows with full subclass fidelity.
+    The serialized_data dict contains an "element_type" tag that cattrs uses to dispatch to the
+    correct Parameter subclass (ParameterButton, ParameterString, etc.).
+
+    Args:
+        node_name: Name of the node to add parameter to (None for current context)
+        serialized_data: cattrs-unstructured dict with element_type tag
+        parent_element_name: Name of parent element if nested
+        initial_setup: Skip setup work when loading from file
+
+    Results: AddParameterFromSerializedResultSuccess | AddParameterFromSerializedResultFailure
+    """
+
+    node_name: str | None = None
+    serialized_data: dict = field(default_factory=dict)
+    parent_element_name: str | None = None
+    initial_setup: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class AddParameterFromSerializedResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter reconstructed and added successfully from serialized data.
+
+    Args:
+        parameter_name: Name of the new parameter
+        type: Type of the parameter
+        node_name: Name of the node parameter was added to
+    """
+
+    parameter_name: str
+    type: str
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class AddParameterFromSerializedResultFailure(ResultPayloadFailure):
+    """Parameter reconstruction from serialized data failed."""
+
+
+@dataclass
+@PayloadRegistry.register
 class RemoveParameterFromNodeRequest(RequestPayload):
     """Remove a parameter from a node.
 

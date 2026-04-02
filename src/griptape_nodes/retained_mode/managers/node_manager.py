@@ -53,7 +53,12 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeResultSuccess,
     OutgoingConnection,
 )
-from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
+from griptape_nodes.retained_mode.events.event_converter import (
+    AllParameterTypes,
+    configure_parameter_tagged_union,
+    converter,
+    safe_unstructure,
+)
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
     ExecuteNodeRequest,
@@ -150,6 +155,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterButtonGroupToNodeRequest,
     AddParameterButtonGroupToNodeResultFailure,
     AddParameterButtonGroupToNodeResultSuccess,
+    AddParameterFromSerializedRequest,
+    AddParameterFromSerializedResultFailure,
+    AddParameterFromSerializedResultSuccess,
     AddParameterGroupToNodeRequest,
     AddParameterGroupToNodeResultFailure,
     AddParameterGroupToNodeResultSuccess,
@@ -264,6 +272,8 @@ class NodeManager:
     def __init__(self, event_manager: EventManager) -> None:
         self._name_to_parent_flow_name = {}
 
+        configure_parameter_tagged_union()
+
         event_manager.assign_manager_to_request_type(CreateNodeRequest, self.on_create_node_request)
         event_manager.assign_manager_to_request_type(
             AddNodesToNodeGroupRequest, self.on_add_nodes_to_node_group_request
@@ -291,6 +301,9 @@ class NodeManager:
             ListParametersOnNodeRequest, self.on_list_parameters_on_node_request
         )
         event_manager.assign_manager_to_request_type(AddParameterToNodeRequest, self.on_add_parameter_to_node_request)
+        event_manager.assign_manager_to_request_type(
+            AddParameterFromSerializedRequest, self.on_add_parameter_from_serialized_request
+        )
         event_manager.assign_manager_to_request_type(
             AddParameterGroupToNodeRequest, self.on_add_parameter_group_to_node_request
         )
@@ -1567,6 +1580,73 @@ class NodeManager:
             parameter_name=new_param.name, type=new_param.type, node_name=node_name, result_details=details
         )
         return result
+
+    def on_add_parameter_from_serialized_request(  # noqa: C901, PLR0911, PLR0912
+        self, request: AddParameterFromSerializedRequest
+    ) -> ResultPayload:
+        """Handle request to add a parameter from a cattrs-serialized dict.
+
+        Uses the tagged union strategy to reconstruct the correct Parameter subclass
+        from the serialized data, then adds it to the node.
+        """
+        node_name = request.node_name
+        node = None
+        parent_group: ParameterGroup | None = None
+
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = (
+                    "Attempted to add Parameter from serialized data. Failed because the Current Context is empty."
+                )
+                return AddParameterFromSerializedResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        if node is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to add Parameter from serialized data to Node '{node_name}', but no such Node was found."
+                return AddParameterFromSerializedResultFailure(result_details=details)
+
+        if node.lock:
+            details = f"Attempted to add Parameter from serialized data to Node '{node_name}'. Failed because the Node was locked."
+            return AddParameterFromSerializedResultFailure(result_details=details)
+
+        if request.parent_element_name is not None:
+            parent_element = node.get_element_by_name_and_type(request.parent_element_name)
+            if parent_element is None:
+                details = f"Attempted to add Parameter to Parent Element '{request.parent_element_name}' in node '{node_name}'. Failed because element didn't exist."
+                return AddParameterFromSerializedResultFailure(result_details=details)
+            if isinstance(parent_element, ParameterGroup):
+                parent_group = parent_element
+
+        try:
+            new_param = converter.structure(request.serialized_data, AllParameterTypes)  # type: ignore[arg-type]
+        except Exception as e:
+            details = f"Attempted to reconstruct Parameter from serialized data for Node '{node_name}'. Failed: {e}"
+            logger.exception(details)
+            return AddParameterFromSerializedResultFailure(result_details=details)
+
+        # Set parent_element_name on the reconstructed parameter
+        if parent_group is not None:
+            new_param.parent_element_name = parent_group.name
+
+        try:
+            if parent_group is not None:
+                parent_group.add_child(new_param)
+            else:
+                node.add_parameter(new_param)
+        except Exception as e:
+            details = f"Couldn't add reconstructed parameter '{new_param.name}' to Node '{node_name}'. Error: {e}"
+            return AddParameterFromSerializedResultFailure(result_details=details)
+
+        details = f"Successfully added Parameter '{new_param.name}' to Node '{node_name}' from serialized data."
+        logger.debug(details)
+
+        return AddParameterFromSerializedResultSuccess(
+            parameter_name=new_param.name, type=new_param.type, node_name=node_name, result_details=details
+        )
 
     def _validate_add_group_request(  # noqa: C901, PLR0911
         self,
@@ -3111,10 +3191,14 @@ class NodeManager:
             for parameter in node.parameters:
                 # Create the parameter, or alter it on the existing node
                 if parameter.user_defined:
-                    # Always serialize user-defined parameters regardless of node type
-                    param_dict = parameter.to_dict()
-                    param_dict["initial_setup"] = True
-                    add_param_request = AddParameterToNodeRequest.create(**param_dict)
+                    # Serialize user-defined parameters via cattrs tagged union for lossless subclass round-tripping
+                    serialized_data = converter.unstructure(parameter, unstructure_as=AllParameterTypes)  # type: ignore[arg-type]
+                    add_param_request = AddParameterFromSerializedRequest(
+                        node_name=node_name,
+                        serialized_data=serialized_data,
+                        parent_element_name=parameter.parent_element_name,
+                        initial_setup=True,
+                    )
                     element_modification_commands.append(add_param_request)
                 elif isinstance(node, ErrorProxyNode):
                     # For ErrorProxyNode, replay all recorded initialization requests for this parameter
@@ -3375,6 +3459,7 @@ class NodeManager:
                     (
                         AlterParameterDetailsRequest,
                         AddParameterToNodeRequest,
+                        AddParameterFromSerializedRequest,
                         AddParameterGroupToNodeRequest,
                         AddParameterButtonGroupToNodeRequest,
                         AlterParameterGroupDetailsRequest,

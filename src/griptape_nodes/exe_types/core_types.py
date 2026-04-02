@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import uuid
 import warnings
@@ -1429,6 +1430,23 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     # Maximum number of input types to show in tooltip before truncating
     _MAX_TOOLTIP_INPUT_TYPES = 3
 
+    # Constructor params that should NOT be serialized by cattrs.
+    # Subclasses can extend this (e.g. ParameterButton adds "on_click", "get_button_state").
+    _CATTRS_SKIP_PARAMS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "self",
+            "kwargs",
+            "converters",
+            "validators",
+            "traits",
+            "accept_any",
+            "ui_options",
+            "element_id",
+            "element_type",
+            "badge",
+        }
+    )
+
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
     tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
@@ -2121,6 +2139,43 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
                 break
         if list_differences:
             differences[key] = other_value
+
+    def _cattrs_unstructure(self) -> dict[str, Any]:
+        """Serialize to dict via constructor introspection. Works for all subclasses."""
+        data: dict[str, Any] = {}
+        sig = inspect.signature(type(self).__init__)
+        for param_name in sig.parameters:
+            if param_name in self._CATTRS_SKIP_PARAMS:
+                continue
+            if param_name == "allowed_modes":
+                data["allow_input"] = ParameterMode.INPUT in self.allowed_modes
+                data["allow_property"] = ParameterMode.PROPERTY in self.allowed_modes
+                data["allow_output"] = ParameterMode.OUTPUT in self.allowed_modes
+                continue
+            data[param_name] = getattr(self, param_name)
+        return data
+
+    @classmethod
+    def _cattrs_structure(cls, data: dict[str, Any], type_: type | None = None) -> Parameter:  # noqa: ARG003
+        """Reconstruct from dict via constructor introspection. Works for all subclasses."""
+        sig = inspect.signature(cls.__init__)
+        kwargs: dict[str, Any] = {}
+        for param_name in sig.parameters:
+            if param_name in cls._CATTRS_SKIP_PARAMS:
+                continue
+            if param_name == "allowed_modes":
+                modes: set[ParameterMode] = set()
+                if data.get("allow_input", True):
+                    modes.add(ParameterMode.INPUT)
+                if data.get("allow_property", True):
+                    modes.add(ParameterMode.PROPERTY)
+                if data.get("allow_output", True):
+                    modes.add(ParameterMode.OUTPUT)
+                kwargs["allowed_modes"] = modes
+                continue
+            if param_name in data:
+                kwargs[param_name] = data[param_name]
+        return cls(**kwargs)
 
     # intentionally not overwriting __eq__ because I want to return a dict not true or false
     def equals(self, other: Parameter) -> dict:
