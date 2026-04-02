@@ -1447,6 +1447,9 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         }
     )
 
+    # Auto-populated by __init_subclass__. Maps class name -> class for cattrs dispatch.
+    _CATTRS_SUBCLASS_REGISTRY: ClassVar[dict[str, type[Parameter]]] = {}
+
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
     tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
@@ -1640,6 +1643,21 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.output_type = output_type
         self.parent_container_name = parent_container_name
         self.parent_element_name = parent_element_name
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Auto-register Parameter subclasses for cattrs deserialization dispatch.
+
+        Python calls this method automatically whenever a new subclass of Parameter is defined
+        (e.g., ParameterButton, ParameterString, ControlParameterOutput). Each subclass registers
+        its class name in _CATTRS_SUBCLASS_REGISTRY so that _cattrs_structure can look up the
+        correct subclass from the "element_type" tag in serialized data.
+
+        This replaces what would otherwise be a manually maintained mapping of type names to classes,
+        and avoids circular imports since registration happens at class definition time rather than
+        at converter initialization time.
+        """
+        super().__init_subclass__(**kwargs)
+        Parameter._CATTRS_SUBCLASS_REGISTRY[cls.__name__] = cls
 
     def _generate_default_tooltip(
         self,
@@ -2153,11 +2171,19 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
                 data["allow_output"] = ParameterMode.OUTPUT in self.allowed_modes
                 continue
             data[param_name] = getattr(self, param_name)
+        data["element_type"] = type(self).__name__
         return data
 
     @classmethod
-    def _cattrs_structure(cls, data: dict[str, Any], type_: type | None = None) -> Parameter:  # noqa: ARG003
+    def _cattrs_structure(cls, data: dict[str, Any], _type: type | None = None) -> Parameter:
         """Reconstruct from dict via constructor introspection. Works for all subclasses."""
+        # Dispatch to the correct subclass if the data carries an element_type tag
+        element_type = data.pop("element_type", None)
+        if element_type is not None and element_type != cls.__name__:
+            target_cls = cls._CATTRS_SUBCLASS_REGISTRY.get(element_type)
+            if target_cls is not None:
+                return target_cls._cattrs_structure(data, _type)
+
         sig = inspect.signature(cls.__init__)
         kwargs: dict[str, Any] = {}
         for param_name in sig.parameters:
@@ -2278,6 +2304,11 @@ class ControlParameter(Parameter, ABC):
             private=private,
             element_type=self.__class__.__name__,
         )
+
+    @property
+    def parameter_render_location(self) -> ParameterRenderLocation | None:
+        """Get the render location for this control parameter."""
+        return self.ui_options.get("parameter_render_location")
 
 
 class ControlParameterInput(ControlParameter):

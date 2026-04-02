@@ -54,8 +54,6 @@ from griptape_nodes.retained_mode.events.connection_events import (
     OutgoingConnection,
 )
 from griptape_nodes.retained_mode.events.event_converter import (
-    AllParameterTypes,
-    configure_parameter_tagged_union,
     converter,
     safe_unstructure,
 )
@@ -271,8 +269,6 @@ class NodeManager:
 
     def __init__(self, event_manager: EventManager) -> None:
         self._name_to_parent_flow_name = {}
-
-        configure_parameter_tagged_union()
 
         event_manager.assign_manager_to_request_type(CreateNodeRequest, self.on_create_node_request)
         event_manager.assign_manager_to_request_type(
@@ -1622,7 +1618,7 @@ class NodeManager:
                 parent_group = parent_element
 
         try:
-            new_param = converter.structure(request.serialized_data, AllParameterTypes)  # type: ignore[arg-type]
+            new_param = converter.structure(request.serialized_data, Parameter)
         except Exception as e:
             details = f"Attempted to reconstruct Parameter from serialized data for Node '{node_name}'. Failed: {e}"
             logger.exception(details)
@@ -1683,7 +1679,8 @@ class NodeManager:
 
         existing_element = node.get_element_by_name_and_type(group_name)
         if existing_element is not None:
-            return f"Attempted to add {type_label} '{group_name}' to node '{node_name}'. Failed because an element with that name already exists."
+            msg = f"Attempted to add {type_label} '{group_name}' to node '{node_name}'. Failed because an element with that name already exists."
+            return msg
 
         parent_group: ParameterGroup | None = None
         if parent_element_name is not None:
@@ -3163,7 +3160,7 @@ class NodeManager:
                 if group.user_defined:
                     if isinstance(group, ParameterButtonGroup):
                         add_group_request = AddParameterButtonGroupToNodeRequest(
-                            node_name=node_name,
+                            node_name=None,
                             group_name=group.name,
                             parent_element_name=group.parent_group_name,
                             orientation=group.orientation,
@@ -3175,7 +3172,7 @@ class NodeManager:
                         )
                     elif isinstance(group, ParameterGroup):
                         add_group_request = AddParameterGroupToNodeRequest(
-                            node_name=node_name,
+                            node_name=None,
                             group_name=group.name,
                             parent_element_name=group.parent_group_name,
                             ui_options=group.ui_options or {},
@@ -3191,10 +3188,10 @@ class NodeManager:
             for parameter in node.parameters:
                 # Create the parameter, or alter it on the existing node
                 if parameter.user_defined:
-                    # Serialize user-defined parameters via cattrs tagged union for lossless subclass round-tripping
-                    serialized_data = converter.unstructure(parameter, unstructure_as=AllParameterTypes)  # type: ignore[arg-type]
+                    # Serialize user-defined parameters via cattrs for lossless subclass round-tripping
+                    serialized_data = converter.unstructure(parameter)
                     add_param_request = AddParameterFromSerializedRequest(
-                        node_name=node_name,
+                        node_name=None,
                         serialized_data=serialized_data,
                         parent_element_name=parameter.parent_element_name,
                         initial_setup=True,
