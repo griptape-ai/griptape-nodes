@@ -27,16 +27,20 @@ def _resolve_payload_type(event_data: dict[str, Any], type_key: str) -> type:
     Raises:
         ValueError: If the type cannot be resolved.
     """
+    # Lazy import to avoid circular dependency: payload_registry imports Payload from this module.
     from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
     type_name = event_data.pop(type_key, None)
-    if type_name is not None:
-        resolved = PayloadRegistry.get_type(type_name)
-        if resolved is not None:
-            return resolved
+    if type_name is None:
+        msg = f"Cannot resolve payload type: '{type_key}' not found in event data."
+        raise ValueError(msg)
 
-    msg = f"Cannot resolve payload type: '{type_key}' not found or not registered."
-    raise ValueError(msg)
+    resolved = PayloadRegistry.get_type(type_name)
+    if resolved is None:
+        msg = f"Cannot resolve payload type: '{type_name}' is not registered."
+        raise ValueError(msg)
+
+    return resolved
 
 
 @dataclass
