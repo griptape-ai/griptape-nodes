@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -454,6 +455,54 @@ class GetWorkflowRunCommandResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 
 @dataclass
+class PublishOptionField:
+    """Describes a single field to render in the publish dialog."""
+
+    name: str
+    label: str
+    field_type: str  # "dropdown", "text", "file_picker"
+    tooltip: str = ""
+    choices: list[str] | None = None
+    default_value: str | None = None
+    depends_on: str | None = None  # name of another field whose change triggers a re-fetch
+    hidden: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class GetPublishOptionsRequest(RequestPayload):
+    """Get publisher-specific options to display in the publish dialog before publishing.
+
+    Use when: Opening the publish dialog for a specific publisher, refreshing dependent
+    options after a selection change.
+
+    Results: GetPublishOptionsResultSuccess (with fields) | GetPublishOptionsResultFailure
+    """
+
+    workflow_name: str
+    publisher_name: str
+    current_selections: dict | None = None  # current user selections; used for dependent field resolution
+
+
+@dataclass
+@PayloadRegistry.register
+class GetPublishOptionsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Publish options retrieved successfully.
+
+    Args:
+        fields: Ordered list of fields to render in the publish dialog
+    """
+
+    fields: list[PublishOptionField]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetPublishOptionsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Publish options retrieval failed."""
+
+
+@dataclass
 class PublishWorkflowRegisteredEventData:
     """Data specific to registering a PublishWorkflowRequest event handler."""
 
@@ -461,6 +510,7 @@ class PublishWorkflowRegisteredEventData:
     start_flow_node_library_name: str
     end_flow_node_type: str
     end_flow_node_library_name: str
+    get_publish_options: Callable[["GetPublishOptionsRequest"], GetPublishOptionsResultSuccess] | None = None
 
 
 @dataclass
