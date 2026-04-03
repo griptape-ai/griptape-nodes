@@ -120,13 +120,11 @@ def parse_git_url_with_ref(url_with_ref: str) -> GitUrlWithRef:
 
 def _is_github_https_url(url: str) -> bool:
     """Return True if the URL is an HTTP(S) URL whose hostname is github.com."""
-    if not url.startswith(("http://", "https://")):
-        return False
     try:
         parsed = urlparse(url)
     except ValueError:
         return False
-    return parsed.hostname == "github.com"
+    return parsed.scheme in ("http", "https") and parsed.hostname == "github.com"
 
 
 def normalize_github_url(url_or_shorthand: str) -> str:
