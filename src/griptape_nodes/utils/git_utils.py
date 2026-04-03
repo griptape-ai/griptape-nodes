@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import NamedTuple
+from urllib.parse import urlparse
 
 import pygit2
 
@@ -117,6 +118,15 @@ def parse_git_url_with_ref(url_with_ref: str) -> GitUrlWithRef:
     return GitUrlWithRef(url=url_with_ref, ref=None)
 
 
+def _is_github_https_url(url: str) -> bool:
+    """Return True if the URL is an HTTP(S) URL whose hostname is github.com."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and parsed.hostname == "github.com"
+
+
 def normalize_github_url(url_or_shorthand: str) -> str:
     """Normalize a GitHub URL or shorthand to a full HTTPS git URL.
 
@@ -148,8 +158,8 @@ def normalize_github_url(url_or_shorthand: str) -> str:
     if not is_git_url(url) and "/" in url and url.count("/") == 1:
         # Assume GitHub shorthand
         normalized = f"https://github.com/{url}.git"
-    elif "github.com" in url and not url.endswith(".git"):
-        # If it's a GitHub URL, ensure .git suffix
+    elif _is_github_https_url(url) and not url.endswith(".git"):
+        # If it's an HTTPS GitHub URL, ensure .git suffix
         normalized = f"{url}.git"
     else:
         # Pass through all other URLs unchanged
