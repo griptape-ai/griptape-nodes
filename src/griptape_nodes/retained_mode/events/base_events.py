@@ -14,6 +14,35 @@ if TYPE_CHECKING:
     import builtins
 
 
+def _resolve_payload_type(event_data: dict[str, Any], type_key: str) -> type:
+    """Resolve a payload type from a type-name field in the event data.
+
+    Args:
+        event_data: The event dictionary (mutated: the type-name key is popped if used).
+        type_key: The key in event_data that holds the payload type name (e.g. "request_type").
+
+    Returns:
+        The resolved concrete type.
+
+    Raises:
+        ValueError: If the type cannot be resolved.
+    """
+    # Lazy import to avoid circular dependency: payload_registry imports Payload from this module.
+    from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+    type_name = event_data.pop(type_key, None)
+    if type_name is None:
+        msg = f"Cannot resolve payload type: '{type_key}' not found in event data."
+        raise ValueError(msg)
+
+    resolved = PayloadRegistry.get_type(type_name)
+    if resolved is None:
+        msg = f"Cannot resolve payload type: '{type_name}' is not registered."
+        raise ValueError(msg)
+
+    return resolved
+
+
 @dataclass
 class ResultDetail:
     """A single detail about an operation result, including logging level and human readable message."""
@@ -287,16 +316,13 @@ class EventRequest[P: Payload](BaseEvent):
         return self.request
 
     @classmethod
-    def from_dict(cls, data: builtins.dict[str, Any], payload_type: type[P]) -> EventRequest:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_dict(cls, data: builtins.dict[str, Any]) -> EventRequest:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Create an event from a dictionary."""
         event_data = data.copy()
         request_data = event_data.pop("request", {})
+        resolved_type = _resolve_payload_type(event_data, "request_type")
 
-        if not payload_type:
-            msg = "Cannot create EventRequest without a payload type"
-            raise ValueError(msg)
-
-        request_payload = converter.structure(request_data, payload_type)
+        request_payload = converter.structure(request_data, resolved_type)
         return cls(request=request_payload, **event_data)
 
 
@@ -348,23 +374,17 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
         """
 
     @classmethod
-    def from_dict(  # pyright: ignore[reportIncompatibleMethodOverride]
-        cls, data: builtins.dict[str, Any], req_payload_type: type[P], res_payload_type: type[R]
-    ) -> EventResult:
+    def from_dict(cls, data: builtins.dict[str, Any]) -> EventResult:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Create an event from a dictionary."""
         event_data = data.copy()
         request_data = event_data.pop("request", {})
         result_data = event_data.pop("result", {})
 
-        if not req_payload_type:
-            msg = f"Cannot create {cls.__name__} without a request payload type"
-            raise ValueError(msg)
-        if not res_payload_type:
-            msg = f"Cannot create {cls.__name__} without a result payload type"
-            raise ValueError(msg)
+        resolved_req_type = _resolve_payload_type(event_data, "request_type")
+        resolved_res_type = _resolve_payload_type(event_data, "result_type")
 
-        request_payload = converter.structure(request_data, req_payload_type)
-        result_payload = converter.structure(result_data, res_payload_type)
+        request_payload = converter.structure(request_data, resolved_req_type)
+        result_payload = converter.structure(result_data, resolved_res_type)
         return cls(request=request_payload, result=result_payload)
 
 
@@ -392,57 +412,6 @@ class EventResultFailure(EventResult[P, R]):
         return False
 
 
-# Helper function to deserialize event from JSON
-def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
-    """Deserialize an event from JSON or dict, using the payload type information embedded in the data.
-
-    Args:
-        json_data: JSON string or dictionary representing an event
-
-    Returns:
-        The deserialized event with the correct payload
-    """
-    from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-
-    # Parse the data if it's a string, otherwise use as is
-    if isinstance(json_data, str):
-        data = json.loads(json_data)
-    elif isinstance(json_data, dict):
-        data = json_data
-    else:
-        msg = "Expected json_data to be str or dict"
-        raise TypeError(msg)
-
-    event_type = data.get("event_type")
-
-    # Get payload types from embedded type information
-    request_type_name = data.get("request_type")
-    result_type_name = data.get("result_type")
-
-    # Look up the actual payload types
-    request_type = PayloadRegistry.get_type(request_type_name) if request_type_name else None
-    result_type = PayloadRegistry.get_type(result_type_name) if result_type_name else None
-
-    # Determine the event class based on event_type and deserialize
-    if event_type == "EventRequest":
-        if request_type:
-            return EventRequest.from_dict(data, request_type)
-        msg = f"Cannot deserialize EventRequest: unknown payload type '{request_type_name}'"
-        raise ValueError(msg)
-    if event_type == "EventResultSuccess":
-        if request_type and result_type:
-            return EventResultSuccess.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResultSuccess: unknown payload types request={request_type_name}, result={result_type_name}"
-        raise ValueError(msg)
-    if event_type == "EventResultFailure":
-        if request_type and result_type:
-            return EventResultFailure.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResultFailure: unknown payload types request={request_type_name}, result={result_type_name}"
-        raise ValueError(msg)
-    msg = f"Unknown/unsupported event type '{event_type}' encountered."
-    raise TypeError(msg)
-
-
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
 class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     payload: E
@@ -467,16 +436,13 @@ class ExecutionEvent[E: ExecutionPayload](BaseEvent):
         return self.payload
 
     @classmethod
-    def from_dict(cls, data: builtins.dict[str, Any], payload_type: type[E]) -> ExecutionEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_dict(cls, data: builtins.dict[str, Any]) -> ExecutionEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Create an event from a dictionary."""
         event_data = data.copy()
         payload_data = event_data.pop("payload", {})
+        resolved_type = _resolve_payload_type(event_data, "payload_type")
 
-        if not payload_type:
-            msg = "Cannot create ExecutionEvent without a payload type"
-            raise ValueError(msg)
-
-        event_payload = converter.structure(payload_data, payload_type)
+        event_payload = converter.structure(payload_data, resolved_type)
         return cls(payload=event_payload, **event_data)
 
 
@@ -504,16 +470,13 @@ class AppEvent[A: AppPayload](BaseEvent):
         return self.payload
 
     @classmethod
-    def from_dict(cls, data: builtins.dict[str, Any], payload_type: type[E]) -> AppEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_dict(cls, data: builtins.dict[str, Any]) -> AppEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Create an event from a dictionary."""
         event_data = data.copy()
         payload_data = event_data.pop("payload", {})
+        resolved_type = _resolve_payload_type(event_data, "payload_type")
 
-        if not payload_type:
-            msg = "Cannot create AppEvent without a payload type"
-            raise ValueError(msg)
-
-        event_payload = converter.structure(payload_data, payload_type)
+        event_payload = converter.structure(payload_data, resolved_type)
         return cls(payload=event_payload, **event_data)
 
 
