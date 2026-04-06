@@ -20,9 +20,12 @@ class RegisterWorkerRequest(RequestPayload):
 
     Args:
         worker_engine_id: The engine_id of the registering worker.
+        library_name: The library this worker exclusively serves, or None for a
+            general-purpose worker that can handle any request.
     """
 
     worker_engine_id: str
+    library_name: str | None = None
     broadcast_result: bool = field(default=False, kw_only=True)
 
 

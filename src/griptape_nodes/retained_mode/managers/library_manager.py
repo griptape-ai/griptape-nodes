@@ -314,6 +314,9 @@ class LibraryManager:
         library_name: str | None = None
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
+        # True when the library declares worker.enabled = True in its metadata.
+        # Set during the METADATA_LOADED phase.
+        requires_worker: bool = False
 
     class RegisterLibraryPrerequisites(NamedTuple):
         """Prerequisites established for library loading."""
@@ -339,6 +342,8 @@ class LibraryManager:
     _dynamic_to_stable_module_mapping: dict[str, str]  # dynamic_module_name -> stable_namespace
     _stable_to_dynamic_module_mapping: dict[str, str]  # stable_namespace -> dynamic_module_name
     _library_to_stable_modules: dict[str, set[str]]  # library_name -> set of stable_namespaces
+    # Callbacks invoked after each library successfully reaches LOADED state.
+    _library_loaded_callbacks: list[Callable[[LibraryManager.LibraryInfo], None]]
 
     def __init__(self, event_manager: EventManager) -> None:
         self._library_file_path_to_info = {}
@@ -350,6 +355,7 @@ class LibraryManager:
         ] = {}
         self._libraries_loading_complete = asyncio.Event()
         self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
+        self._library_loaded_callbacks: list[Callable[[LibraryManager.LibraryInfo], None]] = []
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -414,6 +420,16 @@ class LibraryManager:
             ConfigChanged,
             self.on_config_changed,
         )
+
+    def register_library_loaded_callback(
+        self, callback: Callable[[LibraryManager.LibraryInfo], None]
+    ) -> None:
+        """Register a callback invoked after each library successfully reaches LOADED state.
+
+        Callbacks are called synchronously, in registration order. Any exception raised by
+        a callback is logged but does not prevent other callbacks from running.
+        """
+        self._library_loaded_callbacks.append(callback)
 
     def print_library_load_status(self) -> None:
         library_file_paths = self.get_libraries_attempted_to_load()
@@ -1365,6 +1381,8 @@ class LibraryManager:
                     # Update library_info with metadata results
                     library_info.library_name = metadata_result.library_schema.name
                     library_info.library_version = metadata_result.library_schema.metadata.library_version
+                    worker_cfg = metadata_result.library_schema.metadata.worker
+                    library_info.requires_worker = bool(worker_cfg and worker_cfg.enabled)
                     library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
                 case LibraryManager.LibraryLifecycleState.METADATA_LOADED:
@@ -2357,7 +2375,14 @@ class LibraryManager:
 
         return node_class
 
-    async def load_all_libraries_from_config(self) -> None:
+    def _library_path_matches_target(self, lib_path: str, target_library_name: str) -> bool:
+        """Return True if the library at lib_path has the given name."""
+        peek = self.load_library_metadata_from_file_request(
+            LoadLibraryMetadataFromFileRequest(file_path=lib_path)
+        )
+        return isinstance(peek, LoadLibraryMetadataFromFileResultSuccess) and peek.library_schema.name == target_library_name
+
+    async def load_all_libraries_from_config(self, target_library_name: str | None = None) -> None:
         self._libraries_loading_complete.clear()
 
         # Discover all available libraries (config + sandbox)
@@ -2386,6 +2411,10 @@ class LibraryManager:
 
         # Load each discovered library by path (RegisterLibraryFromFileRequest will handle metadata loading)
         for current_library_index, lib_path in enumerate(libraries_to_load, start=1):
+            # When running as a dedicated library worker, skip libraries that don't match the target.
+            if target_library_name is not None and not self._library_path_matches_target(lib_path, target_library_name):
+                continue
+
             # Load the library through unified lifecycle using library_path
             # RegisterLibraryFromFileRequest will handle metadata loading internally to get library_name
             load_result = await self.register_library_from_file_request(
@@ -2584,8 +2613,15 @@ class LibraryManager:
         # App just got init'd. First download any missing libraries from git URLs.
         await self._ensure_libraries_from_config()
 
-        # Now load all libraries from config (including newly downloaded ones)
-        await self.load_all_libraries_from_config()
+        # Now load all libraries from config (including newly downloaded ones).
+        # When running as a dedicated library worker, restrict loading to that library.
+        target_library_name: str | None = None
+        try:
+            from griptape_nodes.app import app as _app
+            target_library_name = _app._worker_library_name
+        except (ImportError, AttributeError):
+            pass
+        await self.load_all_libraries_from_config(target_library_name=target_library_name)
 
         # Register all secrets now that libraries are loaded and settings are merged
         GriptapeNodes.SecretsManager().register_all_secrets()
@@ -2862,6 +2898,13 @@ class LibraryManager:
 
         # Update lifecycle state to LOADED
         library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
+
+        # Notify registered callbacks that this library is now loaded.
+        for callback in self._library_loaded_callbacks:
+            try:
+                callback(library_info)
+            except Exception as e:
+                logger.warning("Library-loaded callback raised an exception for '%s': %s", library_info.library_name, e)
 
     async def _attempt_generate_sandbox_library_from_schema(  # noqa: C901
         self,

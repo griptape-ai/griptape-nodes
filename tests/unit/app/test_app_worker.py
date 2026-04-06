@@ -8,7 +8,7 @@ the execute_node / pending-future mechanism.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -298,6 +298,126 @@ class TestRelayWorkerResultPendingFuture:
         await worker_manager.relay_worker_result(payload)
 
         worker_manager._send_message.assert_called_once()  # type: ignore[union-attr]
+
+
+class TestLibraryWorkerRegistration:
+    @pytest.mark.asyncio
+    async def test_library_name_stored_in_library_workers(self, worker_manager: WorkerManager) -> None:
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, library_name="My Library")
+
+        await worker_manager.handle_register_worker_request(request)
+
+        assert "My Library" in worker_manager._library_workers
+        assert any(eid == _ENGINE for eid, _ in worker_manager._library_workers["My Library"])
+
+    @pytest.mark.asyncio
+    async def test_library_name_stored_in_worker_library(self, worker_manager: WorkerManager) -> None:
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, library_name="My Library")
+
+        await worker_manager.handle_register_worker_request(request)
+
+        assert worker_manager._worker_library[_ENGINE] == "My Library"
+
+    @pytest.mark.asyncio
+    async def test_general_worker_has_none_library(self, worker_manager: WorkerManager) -> None:
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
+
+        await worker_manager.handle_register_worker_request(request)
+
+        assert len(worker_manager._library_workers) == 0
+        assert worker_manager._worker_library[_ENGINE] is None
+
+
+class TestGetWorkerForLibrary:
+    @pytest.mark.asyncio
+    async def test_returns_worker_for_registered_library(self, worker_manager: WorkerManager) -> None:
+        worker_manager._library_workers["My Library"] = [(_ENGINE, _WORKER_REQUEST_TOPIC)]
+
+        result = worker_manager.get_worker_for_library("My Library")
+
+        assert result == (_ENGINE, _WORKER_REQUEST_TOPIC)
+
+    def test_returns_none_for_unknown_library(self, worker_manager: WorkerManager) -> None:
+        result = worker_manager.get_worker_for_library("Unknown Library")
+
+        assert result is None
+
+
+class TestLibraryWorkerCleanup:
+    def _seed(self, worker_manager: WorkerManager) -> None:
+        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._worker_last_seen[_ENGINE] = 999.0
+        worker_manager._library_workers["My Library"] = [(_ENGINE, _WORKER_REQUEST_TOPIC)]
+        worker_manager._worker_library[_ENGINE] = "My Library"
+
+    @pytest.mark.asyncio
+    async def test_unregister_removes_from_library_workers(self, worker_manager: WorkerManager) -> None:
+        self._seed(worker_manager)
+
+        await worker_manager.handle_unregister_worker_request(
+            worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
+        )
+
+        assert "My Library" not in worker_manager._library_workers
+        assert _ENGINE not in worker_manager._worker_library
+
+    @pytest.mark.asyncio
+    async def test_evict_removes_from_library_workers(self, worker_manager: WorkerManager) -> None:
+        self._seed(worker_manager)
+
+        await worker_manager.evict_worker(_ENGINE)
+
+        assert "My Library" not in worker_manager._library_workers
+        assert _ENGINE not in worker_manager._worker_library
+
+
+class TestOnLibraryLoaded:
+    def _make_lib_info(self, *, requires_worker: bool, library_name: str | None = "My Library") -> MagicMock:
+        info = MagicMock()
+        info.requires_worker = requires_worker
+        info.library_name = library_name
+        return info
+
+    def test_does_nothing_when_requires_worker_is_false(self, worker_manager: WorkerManager) -> None:
+        info = self._make_lib_info(requires_worker=False)
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            worker_manager.on_library_loaded(info)
+
+        mock_run.assert_not_called()
+
+    def test_does_nothing_when_library_name_is_none(self, worker_manager: WorkerManager) -> None:
+        info = self._make_lib_info(requires_worker=True, library_name=None)
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            worker_manager.on_library_loaded(info)
+
+        mock_run.assert_not_called()
+
+    def test_does_nothing_when_no_session(self, worker_manager: WorkerManager) -> None:
+        worker_manager._griptape_nodes.get_session_id.return_value = None  # type: ignore[union-attr]
+        info = self._make_lib_info(requires_worker=True)
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            worker_manager.on_library_loaded(info)
+
+        mock_run.assert_not_called()
+
+    def test_schedules_spawn_when_all_conditions_met(
+        self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        worker_manager._griptape_nodes.get_session_id.return_value = "sess-123"  # type: ignore[union-attr]
+        mock_loop = MagicMock()
+        monkeypatch.setattr(
+            type(worker_manager), "_websocket_event_loop", property(lambda _: mock_loop)
+        )
+        info = self._make_lib_info(requires_worker=True)
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            worker_manager.on_library_loaded(info)
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args[0][1] is mock_loop
 
 
 class TestExecuteNode:

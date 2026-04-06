@@ -71,6 +71,11 @@ websocket_event_loop: asyncio.AbstractEventLoop | None = None
 # Threading event to signal when websocket_event_loop is ready
 websocket_event_loop_ready = threading.Event()
 
+# When running as a dedicated library worker, this holds the library name so that
+# load_all_libraries_from_config can filter to only that library. Set before
+# AppInitializationComplete is emitted so it is visible to the main-thread handler.
+_worker_library_name: str | None = None
+
 
 # Semaphore to limit concurrent requests
 REQUEST_SEMAPHORE = asyncio.Semaphore(100)
@@ -161,21 +166,21 @@ def _ensure_api_key() -> str:
     return api_key
 
 
-def start_app(worker_session_id: str | None = None) -> None:
+def start_app(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
     """Legacy sync entry point - runs async app."""
     # Use the system certificate store for SSL verification.
     # Called here (not at module level) so it only applies in server mode,
     # not when app.py is imported by headless/subprocess contexts.
     truststore.inject_into_ssl()
     try:
-        asyncio.run(astart_app(worker_session_id=worker_session_id))
+        asyncio.run(astart_app(worker_session_id=worker_session_id, worker_library_name=worker_library_name))
     except KeyboardInterrupt:
         logger.info("Application stopped by user")
     except Exception as e:
         logger.error("Application error: %s", e)
 
 
-async def astart_app(worker_session_id: str | None = None) -> None:
+async def astart_app(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
     """New async app entry point."""
     # Verify API key is set before starting
     _ensure_api_key()
@@ -187,7 +192,7 @@ async def astart_app(worker_session_id: str | None = None) -> None:
         # Start WebSocket tasks in daemon thread
         threading.Thread(
             target=_start_websocket_connection,
-            kwargs={"worker_session_id": worker_session_id},
+            kwargs={"worker_session_id": worker_session_id, "worker_library_name": worker_library_name},
             daemon=True,
             name="websocket-tasks",
         ).start()
@@ -200,7 +205,9 @@ async def astart_app(worker_session_id: str | None = None) -> None:
         raise
 
 
-def _start_websocket_connection(worker_session_id: str | None = None) -> None:
+def _start_websocket_connection(
+    worker_session_id: str | None = None, worker_library_name: str | None = None
+) -> None:
     """Run WebSocket tasks in a separate thread with its own async loop."""
     global websocket_event_loop  # noqa: PLW0603
     try:
@@ -213,7 +220,9 @@ def _start_websocket_connection(worker_session_id: str | None = None) -> None:
         websocket_event_loop_ready.set()
 
         # Run the async WebSocket tasks
-        loop.run_until_complete(_run_websocket_tasks(worker_session_id=worker_session_id))
+        loop.run_until_complete(
+            _run_websocket_tasks(worker_session_id=worker_session_id, worker_library_name=worker_library_name)
+        )
     except ConnectionError:
         # Connection failed - likely due to invalid/missing API key
         message = Panel(
@@ -238,20 +247,26 @@ def _start_websocket_connection(worker_session_id: str | None = None) -> None:
         websocket_event_loop_ready.clear()
 
 
-async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
+async def _run_websocket_tasks(
+    worker_session_id: str | None = None, worker_library_name: str | None = None
+) -> None:
     """Run WebSocket tasks - async version."""
+    global _worker_library_name  # noqa: PLW0603
+    # Set before emitting AppInitializationComplete so the main-thread handler can read it.
+    _worker_library_name = worker_library_name
+
     async with Client() as client:
         logger.debug("WebSocket connection established")
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppInitializationComplete()))
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppConnectionEstablished()))
 
         if worker_session_id:
-            await _run_worker(client, worker_session_id)
+            await _run_worker(client, worker_session_id, worker_library_name)
         else:
             await _run_orchestrator(client)
 
 
-async def _run_worker(client: Client, worker_session_id: str) -> None:
+async def _run_worker(client: Client, worker_session_id: str, worker_library_name: str | None = None) -> None:
     """Run the WebSocket task group for a worker engine."""
     # Announce this worker to the orchestrator's session request topic.
     # The orchestrator will store our engine_id and subscribe to our response topic.
@@ -260,7 +275,10 @@ async def _run_worker(client: Client, worker_session_id: str) -> None:
         msg = "Engine ID is not set; cannot register as a worker."
         raise RuntimeError(msg)
     reg_event = EventRequest(
-        request=worker_events.RegisterWorkerRequest(worker_engine_id=worker_engine_id),
+        request=worker_events.RegisterWorkerRequest(
+            worker_engine_id=worker_engine_id,
+            library_name=worker_library_name,
+        ),
         response_topic=None,
     )
     await client.publish(
@@ -299,6 +317,12 @@ async def _run_worker(client: Client, worker_session_id: str) -> None:
 
 async def _run_orchestrator(client: Client) -> None:
     """Run the WebSocket task group for an orchestrator engine."""
+    # Register worker spawn callback before the task group starts. Library loading
+    # is triggered by AppInitializationComplete (already queued), which runs on the
+    # main thread asynchronously — the callback registration here is guaranteed to
+    # complete before any library reaches LOADED state.
+    griptape_nodes.LibraryManager().register_library_loaded_callback(worker_manager.on_library_loaded)
+
     async with asyncio.TaskGroup() as tg:
         tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=False)))
         tg.create_task(_send_outgoing_messages(client))

@@ -276,12 +276,18 @@ class NodeExecutor:
                 return
 
             # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-            if self._worker_manager is not None and self._worker_manager.get_active_worker() is not None:
+            # Route to a library-specific worker when the node's library has one registered.
+            library_name = node.metadata.get("library")
+            if (
+                self._worker_manager is not None
+                and library_name
+                and self._worker_manager.get_worker_for_library(library_name) is not None
+            ):
                 result = await self._worker_manager.execute_node(
                     node_name=node.name,
                     parameter_values=dict(node.parameter_values),
                     node_type=node.metadata.get("node_type"),
-                    library_name=node.metadata.get("library"),
+                    library_name=library_name,
                 )
                 if isinstance(result, ExecuteNodeResultSuccess):
                     for name, value in result.parameter_output_values.items():

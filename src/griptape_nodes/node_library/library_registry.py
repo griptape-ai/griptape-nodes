@@ -74,6 +74,21 @@ class ResourceRequirements(BaseModel):
         return converted
 
 
+class WorkerConfig(BaseModel):
+    """Configuration for running a library in a dedicated worker process.
+
+    When enabled, the library's nodes execute in a separate Python process,
+    providing full dependency isolation.
+
+    Attributes:
+        enabled: If True, the orchestrator spawns a worker process for this library
+            when the library is loaded.
+    """
+
+    enabled: bool = False
+    # Future expansion: additional fields such as count and spinup_policy can be added here.
+
+
 class LibraryMetadata(BaseModel):
     """Metadata that explains details about the library, including versioning and search details."""
 
@@ -87,6 +102,8 @@ class LibraryMetadata(BaseModel):
     is_griptape_nodes_searchable: bool = True
     # Resource requirements for this library. If None, library is assumed to work on any platform.
     resources: ResourceRequirements | None = None
+    # Worker process configuration. If None or disabled, nodes execute in the orchestrator process.
+    worker: WorkerConfig | None = None
 
 
 class IconVariant(BaseModel):

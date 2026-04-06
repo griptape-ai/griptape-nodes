@@ -28,12 +28,20 @@ def engine_command(
             help="Session ID of an existing orchestrator session to join as a worker engine.",
         ),
     ] = None,
+    library_name: Annotated[
+        str | None,
+        typer.Option(
+            "--library-name",
+            envvar="GTN_LIBRARY_NAME",
+            help="If set, this engine serves only the named library and loads no other libraries.",
+        ),
+    ] = None,
 ) -> None:
     """Run the Griptape Nodes engine."""
-    _start_engine(worker_session_id=session_id)
+    _start_engine(worker_session_id=session_id, worker_library_name=library_name)
 
 
-def _start_engine(worker_session_id: str | None = None) -> None:
+def _start_engine(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
     """Starts the Griptape Nodes engine."""
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory
@@ -53,4 +61,4 @@ def _start_engine(worker_session_id: str | None = None) -> None:
         )
 
     console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
-    start_app(worker_session_id=worker_session_id)
+    start_app(worker_session_id=worker_session_id, worker_library_name=worker_library_name)
