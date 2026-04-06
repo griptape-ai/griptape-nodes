@@ -53,6 +53,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
+    ExecuteNodeRequest,
     ExecuteNodeResultSuccess,
     GriptapeEvent,
     InvolvedNodesEvent,
@@ -115,7 +116,6 @@ from griptape_nodes.retained_mode.managers.event_manager import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -210,21 +210,6 @@ class LoopBodyNodes(NamedTuple):
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
-    @property
-    def _worker_manager(self) -> WorkerManager | None:
-        """Return the app-layer WorkerManager if available, otherwise None.
-
-        Uses a lazy import so node_executor.py has no module-level dependency
-        on app.py (which would create a circular import).
-        """
-        try:
-            from griptape_nodes.app import app as _app
-        except (ImportError, AttributeError) as e:
-            logger.debug("WorkerManager unavailable; falling back to local node execution: %s", e)
-            return None
-        else:
-            return _app.worker_manager
-
     def get_workflow_handler(self, library_name: str) -> LibraryManager.RegisteredEventHandler:
         """Get the PublishWorkflowRequest handler for a library, or None if not available."""
         library_manager = GriptapeNodes.LibraryManager()
@@ -276,22 +261,22 @@ class NodeExecutor:
                 await self.handle_loop_execution(node)
                 return
 
-            # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-            if self._worker_manager is not None and self._worker_manager.get_active_worker() is not None:
-                result = await self._worker_manager.execute_node(
+            # Route through the event system — the registered handler decides
+            # whether to execute locally or forward to a worker.
+            result = await GriptapeNodes.ahandle_request(
+                ExecuteNodeRequest(
                     node_name=node.name,
                     parameter_values=dict(node.parameter_values),
                     node_type=node.metadata.get("node_type"),
                     library_name=node.metadata.get("library"),
                 )
-                if isinstance(result, ExecuteNodeResultSuccess):
-                    for name, value in result.parameter_output_values.items():
-                        node.set_parameter_value(name, value)
-                else:
-                    msg = f"Node '{node.name}' failed on worker: {result.result_details}"
-                    raise RuntimeError(msg)
+            )
+            if isinstance(result, ExecuteNodeResultSuccess):
+                for name, value in result.parameter_output_values.items():
+                    node.set_parameter_value(name, value)
             else:
-                await node.aprocess()
+                msg = f"Node '{node.name}' execution failed: {result.result_details}"
+                raise RuntimeError(msg)  # noqa: TRY004
         finally:
             current_executing_node_name.reset(token)
 

@@ -11,11 +11,6 @@ from typing import TYPE_CHECKING
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.retained_mode.events import app_events, worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
-from griptape_nodes.retained_mode.events.execution_events import (
-    ExecuteNodeRequest,
-    ExecuteNodeResultFailure,
-    ExecuteNodeResultSuccess,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -80,8 +75,8 @@ class WorkerManager:
         # Worker-side: monotonic timestamp of last heartbeat received from the orchestrator
         self._worker_heartbeat_last_received_at: float = 0.0
 
-        # Pending node executions: request_id → Future resolved by relay_worker_result
-        self._pending_node_executions: dict[str, asyncio.Future] = {}
+        # Pending worker requests: request_id → Future resolved by relay_worker_result
+        self._pending_requests: dict[str, asyncio.Future[dict]] = {}
 
         event_manager.assign_manager_to_request_type(
             worker_events.RegisterWorkerRequest, self.handle_register_worker_request
@@ -173,56 +168,33 @@ class WorkerManager:
         """Return (worker_engine_id, worker_request_topic) for the registered worker, or None."""
         return next(iter(self._registered_workers.items()), None)
 
-    def _select_worker_for_node(self, _node_name: str) -> tuple[str, str] | None:
-        """Return (worker_engine_id, worker_request_topic) for the given node.
-
-        Returns the single registered worker. Routing by node library or other
-        criteria is not yet implemented.
-        """
-        return self.get_active_worker()
-
-    async def execute_node(
+    async def route_to_worker(
         self,
-        *,
-        node_name: str,
-        parameter_values: dict,
-        node_type: str | None = None,
-        library_name: str | None = None,
-    ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-        """Execute a node on the appropriate worker and await the result.
+        event_request: EventRequest,
+        worker_engine_id: str,
+        worker_request_topic: str,
+    ) -> dict:
+        """Forward event_request to the named worker and await the raw result payload.
 
-        Selects the worker, synthesizes an ExecuteNodeRequest, stores a Future
-        keyed by request_id, and resolves it when relay_worker_result receives
-        the response.
+        Stores a Future keyed by request_id and resolves it when relay_worker_result
+        receives the corresponding response. The caller is responsible for deserializing
+        the returned dict into the appropriate result type.
         """
-        worker = self._select_worker_for_node(node_name)
-        if worker is None:
-            msg = f"No worker available to execute node '{node_name}'."
-            raise RuntimeError(msg)
-
-        request_id = str(uuid.uuid4())
+        request_id = event_request.request_id or str(uuid.uuid4())
         loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        self._pending_node_executions[request_id] = future
+        future: asyncio.Future[dict] = loop.create_future()
+        self._pending_requests[request_id] = future
 
-        req = EventRequest(
-            request=ExecuteNodeRequest(
-                node_name=node_name,
-                parameter_values=parameter_values,
-                node_type=node_type,
-                library_name=library_name,
-            ),
-            request_id=request_id,
-        )
-        worker_engine_id, worker_request_topic = worker
         await self.forward_event_to_worker(
-            req, worker_engine_id=worker_engine_id, worker_request_topic=worker_request_topic
+            event_request.model_copy(update={"request_id": request_id}),
+            worker_engine_id=worker_engine_id,
+            worker_request_topic=worker_request_topic,
         )
         try:
             return await asyncio.wait_for(future, timeout=WorkerManager.NODE_EXECUTION_TIMEOUT_S)
         except TimeoutError:
-            self._pending_node_executions.pop(request_id, None)
-            msg = f"Node '{node_name}' execution timed out after {WorkerManager.NODE_EXECUTION_TIMEOUT_S:.0f}s."
+            self._pending_requests.pop(request_id, None)
+            msg = f"Worker request timed out after {WorkerManager.NODE_EXECUTION_TIMEOUT_S:.0f}s."
             raise RuntimeError(msg) from None
 
     async def evict_worker(self, worker_engine_id: str) -> None:
@@ -233,11 +205,11 @@ class WorkerManager:
         topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
         await self._unsubscribe_from_topic(topic)
         logger.warning("Worker evicted: %s", worker_engine_id)
-        # Cancel any node executions that were awaiting a result from this worker.
-        for future in self._pending_node_executions.values():
+        # Cancel any requests that were awaiting a result from this worker.
+        for future in self._pending_requests.values():
             if not future.done():
                 future.cancel()
-        self._pending_node_executions.clear()
+        self._pending_requests.clear()
 
     def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.
@@ -295,17 +267,13 @@ class WorkerManager:
                 logger.debug("Heartbeat received from worker %s", worker_engine_id)
             return  # Internal health check — do not forward to GUI
 
-        # Resolve a pending node execution if this result is awaited by NodeExecutor.
+        # Resolve a pending request if a caller is awaiting this result.
         request_id = payload.get("request_id", "")
-        if request_id and request_id in self._pending_node_executions:
-            future = self._pending_node_executions.pop(request_id)
+        if request_id and request_id in self._pending_requests:
+            future = self._pending_requests.pop(request_id)
             if not future.done():
-                try:
-                    result = self._deserialize_execute_node_result(payload)
-                    future.set_result(result)
-                except Exception as e:
-                    future.set_exception(e)
-            return  # NodeExecutor owns result broadcasting; do not relay to GUI here.
+                future.set_result(payload)
+            return  # Caller owns result handling; do not relay to GUI here.
 
         # 1 engine = 1 session — the orchestrator's session response topic is always the right target.
         session_response_topic = self._determine_response_topic()
@@ -313,21 +281,6 @@ class WorkerManager:
         payload["response_topic"] = session_response_topic
         logger.debug("Relaying %s to %s", payload.get("event_type"), session_response_topic)
         await self._send_message(dest_socket, json.dumps(payload), session_response_topic)
-
-    def _deserialize_execute_node_result(self, payload: dict) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-        """Reconstruct an ExecuteNodeResultSuccess or ExecuteNodeResultFailure from a raw payload dict."""
-        result_type = payload.get("result_type", "")
-        result_data = payload.get("result", {})
-        try:
-            if result_type == ExecuteNodeResultSuccess.__name__:
-                return ExecuteNodeResultSuccess(**result_data)
-            if result_type == ExecuteNodeResultFailure.__name__:
-                return ExecuteNodeResultFailure(**result_data)
-        except TypeError as e:
-            msg = f"Failed to deserialize execute-node result (result_type={result_type!r}): {e}"
-            raise ValueError(msg) from e
-        msg = f"Unrecognized execute-node result_type: {result_type!r}"
-        raise ValueError(msg)
 
     def _determine_response_topic(self) -> str:
         """Determine the response topic based on current session and engine IDs."""
