@@ -1,10 +1,13 @@
 name: Code Checks
 
+permissions:
+  contents: read
+
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   merge_group:
     types: [checks_requested]
 
@@ -31,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.12" ]
+        python-version: ["3.12"]
     steps:
       - name: Checkout actions
         uses: actions/checkout@v6
@@ -44,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.12" ]
+        python-version: ["3.12"]
     steps:
       - name: Checkout actions
         uses: actions/checkout@v6
@@ -57,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.12" ]
+        python-version: ["3.12"]
     steps:
       - name: Checkout actions
         uses: actions/checkout@v6

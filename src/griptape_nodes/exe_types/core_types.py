@@ -58,6 +58,11 @@ N = TypeVar("N", bound="BaseNodeElement")
 BadgeVariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "cloud-upload"]
 VALID_BADGE_VARIANTS: frozenset[str] = frozenset(get_args(BadgeVariantType))
 
+# Parameter render location for control parameters - controls where they appear in the node UI
+# "top": render at the top (default), "bottom": render at the bottom, "in-order": render in-line with other parameters
+ParameterRenderLocation = Literal["top", "bottom", "in-order"]
+VALID_PARAMETER_RENDER_LOCATIONS: frozenset[str] = frozenset(get_args(ParameterRenderLocation))
+
 
 @dataclass
 class BadgeData:
@@ -2167,10 +2172,42 @@ class ControlParameter(Parameter, ABC):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         ui_options: dict | None = None,
         *,
+        parameter_render_location: ParameterRenderLocation | None = None,
         display_name: str | None = None,
         user_defined: bool = False,
         private: bool = False,
     ):
+        # Process ui_options before passing to parent
+        if ui_options is None:
+            processed_ui_options = {}
+        else:
+            processed_ui_options = ui_options.copy()
+
+        # Validate for conflicts if explicitly provided
+        if parameter_render_location is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=processed_ui_options,
+                param_name="parameter_render_location",
+                param_value=parameter_render_location,
+            )
+            # Validate it's a valid value
+            if parameter_render_location not in VALID_PARAMETER_RENDER_LOCATIONS:
+                msg = f"Invalid parameter_render_location '{parameter_render_location}' for parameter '{name}'. Valid values: {sorted(VALID_PARAMETER_RENDER_LOCATIONS)}. Using 'top'."
+                logger.warning(msg)
+                parameter_render_location = "top"
+
+        # By default, the editor renders all control parameters at the top of the node.
+        # Set parameter_render_location to control where they render:
+        # - "top": Render at the top of the node (default for ControlParameter)
+        # - "bottom": Render at the bottom of the node
+        # - "in-order": Render in-order in the order they are defined
+        # This is useful for nodes with multiple control outputs that need to appear in specific positions.
+        if "parameter_render_location" not in processed_ui_options:
+            if parameter_render_location is not None:
+                processed_ui_options["parameter_render_location"] = parameter_render_location
+            else:
+                processed_ui_options["parameter_render_location"] = "top"
+
         # Call parent with a few explicit tweaks.
         super().__init__(
             type=ParameterTypeBuiltin.CONTROL_TYPE.value,
@@ -2187,7 +2224,7 @@ class ControlParameter(Parameter, ABC):
             traits=traits,
             converters=converters,
             validators=validators,
-            ui_options=ui_options,
+            ui_options=processed_ui_options,
             display_name=display_name,
             user_defined=user_defined,
             private=private,
@@ -2208,6 +2245,7 @@ class ControlParameterInput(ControlParameter):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
+        parameter_render_location: ParameterRenderLocation | None = None,
         user_defined: bool = False,
         private: bool = False,
     ):
@@ -2227,6 +2265,7 @@ class ControlParameterInput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
+            parameter_render_location=parameter_render_location,
             display_name=display_name,
             user_defined=user_defined,
             private=private,
@@ -2246,6 +2285,7 @@ class ControlParameterOutput(ControlParameter):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
+        parameter_render_location: ParameterRenderLocation | None = None,
         user_defined: bool = False,
         private: bool = False,
     ):
@@ -2265,6 +2305,7 @@ class ControlParameterOutput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
+            parameter_render_location=parameter_render_location,
             display_name=display_name,
             user_defined=user_defined,
             private=private,

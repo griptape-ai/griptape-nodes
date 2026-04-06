@@ -378,11 +378,13 @@ class FlowManager:
             if parent_name == flow_name:
                 child_flow_names.add(child_name)
 
-        # Build set of all node names in this flow and its direct children
+        # Build set of all node names in this flow and its direct children.
+        # Exclude nodes from referenced workflow children - their internal connections
+        # are not serialized at the parent level (they serialize as a standalone workflow).
         all_node_names = set(flow.nodes.keys())
         for child_flow_name in child_flow_names:
             child_flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(child_flow_name, ControlFlow)
-            if child_flow is not None:
+            if child_flow is not None and not self.is_referenced_workflow(child_flow):
                 all_node_names.update(child_flow.nodes.keys())
 
         # Include connections where both nodes are in this flow hierarchy
@@ -4153,11 +4155,14 @@ class FlowManager:
         # Clear and use the global execution queue
         self._global_flow_queue.queue.clear()
 
-        # Get all flows and collect all nodes across all flows
+        # Get all flows and collect all nodes across all flows.
+        # Exclude nodes from referenced subflows - they are executed explicitly via
+        # StartLocalSubflowRequest and should not participate in the top-level queue.
         all_flows = GriptapeNodes.ObjectManager().get_filtered_subset(type=ControlFlow)
         all_nodes = []
         for current_flow in all_flows.values():
-            all_nodes.extend(current_flow.nodes.values())
+            if not self.is_referenced_workflow(current_flow):
+                all_nodes.extend(current_flow.nodes.values())
 
         # if no nodes across all flows, no execution possible
         if not all_nodes:

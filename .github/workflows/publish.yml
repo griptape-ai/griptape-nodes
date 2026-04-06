@@ -1,6 +1,9 @@
 # Adapted from https://docs.github.com/en/actions/use-cases-and-examples/publishing-packages/publishing-docker-images#publishing-images-to-docker-hub-and-github-packages
 name: Publish
 
+permissions:
+  contents: read
+
 on:
   release:
     types: [published]
