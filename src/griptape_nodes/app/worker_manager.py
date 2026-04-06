@@ -213,17 +213,6 @@ class WorkerManager:
             if not self._library_workers[lib]:
                 del self._library_workers[lib]
 
-    def _select_worker_for_node(self, _node_name: str, library_name: str | None = None) -> tuple[str, str] | None:
-        """Return (worker_engine_id, worker_request_topic) for the given node.
-
-        Routes to the worker registered for the node's library when library_name is
-        provided. Returns None if no worker is registered for that library. Falls back
-        to any registered general-purpose worker only when library_name is not given.
-        """
-        if library_name:
-            return self.get_worker_for_library(library_name)
-        return self.get_active_worker()
-
     @property
     def _websocket_event_loop(self) -> asyncio.AbstractEventLoop | None:
         """Return the WebSocket event loop from app.py, or None if not available.

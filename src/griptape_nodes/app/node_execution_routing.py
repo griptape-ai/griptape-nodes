@@ -33,22 +33,49 @@ def _deserialize_execute_node_result(
     raise ValueError(msg)
 
 
-def setup(worker_manager: WorkerManager, event_manager: EventManager) -> None:
-    """Register the ExecuteNodeRequest handler with worker routing.
+def setup(worker_manager: WorkerManager, event_manager: EventManager, *, is_worker: bool = False) -> None:
+    """Register the ExecuteNodeRequest handler.
 
     node_executor.py always dispatches ExecuteNodeRequest through the event system.
-    This handler routes to a worker when one is registered, and falls back to
-    NodeManager.on_execute_node_request for local execution.
+
+    In orchestrator mode this handler routes to a library-specific worker process when
+    one is registered, and falls back to NodeManager.on_execute_node_request for local
+    execution. In worker mode the node is always executed locally — the worker IS the
+    target, so no further routing is needed.
     """
+    if is_worker:
+
+        async def _local_execute_node(
+            request: ExecuteNodeRequest,
+        ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+            return cast(
+                "ExecuteNodeResultSuccess | ExecuteNodeResultFailure",
+                await GriptapeNodes.NodeManager().on_execute_node_request(request),
+            )
+
+        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, _local_execute_node)
+        return
 
     async def _routed_execute_node(
         request: ExecuteNodeRequest,
     ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-        worker = worker_manager.get_active_worker()
+        worker = worker_manager.get_worker_for_library(request.library_name) if request.library_name else None
+
         if worker is None:
-            # No worker registered — execute locally.
+            library_info = (
+                GriptapeNodes.LibraryManager().get_library_info_by_library_name(request.library_name)
+                if request.library_name
+                else None
+            )
+            if library_info is not None and library_info.requires_worker:
+                msg = (
+                    f"Library '{request.library_name}' requires a dedicated worker process "
+                    "that is not yet registered. The worker may still be starting up."
+                )
+                raise RuntimeError(msg)
+            # No worker registered for this library — execute locally.
             return cast(
-                ExecuteNodeResultSuccess | ExecuteNodeResultFailure,
+                "ExecuteNodeResultSuccess | ExecuteNodeResultFailure",
                 await GriptapeNodes.NodeManager().on_execute_node_request(request),
             )
 
