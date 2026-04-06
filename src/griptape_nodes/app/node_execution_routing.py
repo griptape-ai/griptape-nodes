@@ -48,7 +48,7 @@ def setup(worker_manager: WorkerManager, event_manager: EventManager) -> None:
         if worker is None:
             # No worker registered — execute locally.
             return cast(
-                ExecuteNodeResultSuccess | ExecuteNodeResultFailure,
+                "ExecuteNodeResultSuccess | ExecuteNodeResultFailure",
                 await GriptapeNodes.NodeManager().on_execute_node_request(request),
             )
 
