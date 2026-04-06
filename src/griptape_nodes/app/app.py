@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import signal
 import sys
 import threading
 from dataclasses import dataclass
@@ -15,9 +17,10 @@ from rich.logging import RichHandler
 from rich.panel import Panel
 
 from griptape_nodes.api_client import Client
+from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
-from griptape_nodes.retained_mode.events import app_events, execution_events
+from griptape_nodes.retained_mode.events import app_events, execution_events, worker_events
 
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events.base_events import (
@@ -157,21 +160,21 @@ def _ensure_api_key() -> str:
     return api_key
 
 
-def start_app() -> None:
+def start_app(worker_session_id: str | None = None) -> None:
     """Legacy sync entry point - runs async app."""
     # Use the system certificate store for SSL verification.
     # Called here (not at module level) so it only applies in server mode,
     # not when app.py is imported by headless/subprocess contexts.
     truststore.inject_into_ssl()
     try:
-        asyncio.run(astart_app())
+        asyncio.run(astart_app(worker_session_id=worker_session_id))
     except KeyboardInterrupt:
         logger.info("Application stopped by user")
     except Exception as e:
         logger.error("Application error: %s", e)
 
 
-async def astart_app() -> None:
+async def astart_app(worker_session_id: str | None = None) -> None:
     """New async app entry point."""
     # Verify API key is set before starting
     _ensure_api_key()
@@ -181,7 +184,12 @@ async def astart_app() -> None:
 
     try:
         # Start WebSocket tasks in daemon thread
-        threading.Thread(target=_start_websocket_connection, daemon=True, name="websocket-tasks").start()
+        threading.Thread(
+            target=_start_websocket_connection,
+            kwargs={"worker_session_id": worker_session_id},
+            daemon=True,
+            name="websocket-tasks",
+        ).start()
 
         # Run event processing on main thread
         await _process_event_queue()
@@ -191,7 +199,7 @@ async def astart_app() -> None:
         raise
 
 
-def _start_websocket_connection() -> None:
+def _start_websocket_connection(worker_session_id: str | None = None) -> None:
     """Run WebSocket tasks in a separate thread with its own async loop."""
     global websocket_event_loop  # noqa: PLW0603
     try:
@@ -204,7 +212,7 @@ def _start_websocket_connection() -> None:
         websocket_event_loop_ready.set()
 
         # Run the async WebSocket tasks
-        loop.run_until_complete(_run_websocket_tasks())
+        loop.run_until_complete(_run_websocket_tasks(worker_session_id=worker_session_id))
     except ConnectionError:
         # Connection failed - likely due to invalid/missing API key
         message = Panel(
@@ -229,38 +237,85 @@ def _start_websocket_connection() -> None:
         websocket_event_loop_ready.clear()
 
 
-async def _run_websocket_tasks() -> None:
+async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
     """Run WebSocket tasks - async version."""
     async with Client() as client:
         logger.debug("WebSocket connection established")
-
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppInitializationComplete()))
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppConnectionEstablished()))
 
+        if worker_session_id:
+            await _run_worker(client, worker_session_id)
+        else:
+            await _run_orchestrator(client)
+
+
+async def _run_worker(client: Client, worker_session_id: str) -> None:
+    """Run the WebSocket task group for a worker engine."""
+    # Announce this worker to the orchestrator's session request topic.
+    # The orchestrator will store our engine_id and subscribe to our response topic.
+    worker_engine_id = griptape_nodes.get_engine_id()
+    if not worker_engine_id:
+        msg = "Engine ID is not set; cannot register as a worker."
+        raise RuntimeError(msg)
+    reg_event = EventRequest(
+        request=worker_events.RegisterWorkerRequest(worker_engine_id=worker_engine_id),
+        response_topic=None,
+    )
+    await client.publish(
+        "EventRequest",
+        json.loads(reg_event.json()),
+        f"sessions/{worker_session_id}/request",
+    )
+    logger.info("Worker %s sent registration to session %s", worker_engine_id, worker_session_id)
+
+    try:
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(_process_incoming_messages(client))
+            tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=True)))
             tg.create_task(_send_outgoing_messages(client))
+            tg.create_task(worker_manager.worker_heartbeat_monitor())
+    except BaseException:
+        # Best-effort unregister so the orchestrator can clean up immediately.
+        unregister_event = EventRequest(
+            request=worker_events.UnregisterWorkerRequest(worker_engine_id=worker_engine_id),
+            response_topic=None,
+        )
+        try:
+            await client.publish(
+                "EventRequest",
+                json.loads(unregister_event.json()),
+                f"sessions/{worker_session_id}/request",
+            )
+            logger.info("Worker %s sent unregister to session %s", worker_engine_id, worker_session_id)
+        except Exception as e:
+            logger.debug("Could not send unregister on shutdown: %s", e)
+        os.kill(os.getpid(), signal.SIGINT)
 
 
-async def _process_incoming_messages(client: Client) -> None:
+async def _run_orchestrator(client: Client) -> None:
+    """Run the WebSocket task group for an orchestrator engine."""
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=False)))
+        tg.create_task(_send_outgoing_messages(client))
+        tg.create_task(worker_manager.orchestrator_heartbeat_loop())
+
+
+async def _process_incoming_messages(client: Client, topics: list[str]) -> None:
     """Process incoming WebSocket requests from Nodes API."""
     logger.debug("Processing incoming WebSocket requests from WebSocket connection")
-
-    topics = ["request"]
-    engine_id = griptape_nodes.get_engine_id()
-    if engine_id:
-        topics.append(f"engines/{engine_id}/request")
-
-    session_id = griptape_nodes.get_session_id()
-    if session_id:
-        topics.append(f"sessions/{session_id}/request")
 
     for topic in topics:
         await client.subscribe(topic)
 
     async for message in client.messages:
         try:
-            await _process_api_event(message)
+            payload = message.get("payload", {})
+            event_type = payload.get("event_type", "")
+            if event_type in ("EventResultSuccess", "EventResultFailure"):
+                # Result from a worker — relay it through the orchestrator.
+                await worker_manager.relay_worker_result(payload)
+            else:
+                await _process_api_event(message)
         except Exception as e:
             logger.warning(
                 "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
@@ -377,11 +432,17 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
+    worker = worker_manager.get_active_worker()
+    if worker and not isinstance(event.request, WorkerManager.LOCAL_REQUEST_TYPES):
+        await worker_manager.forward_event_to_worker(event, worker_engine_id=worker[0], worker_request_topic=worker[1])
+        return
+
     result_event = await griptape_nodes.EventManager().ahandle_request(
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},
     )
-    await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
+    if event.request.broadcast_result:
+        await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 
 
 async def _process_app_event(event: AppEvent) -> None:
@@ -505,3 +566,13 @@ def _determine_response_topic() -> str:
 
     # Default to generic response topic
     return "response"
+
+
+worker_manager = WorkerManager(
+    griptape_nodes=griptape_nodes,
+    event_manager=griptape_nodes.EventManager(),
+    ws_outgoing_queue=ws_outgoing_queue,
+    send_message=_send_message,
+    subscribe_to_topic=_subscribe_to_topic,
+    unsubscribe_from_topic=_unsubscribe_from_topic,
+)

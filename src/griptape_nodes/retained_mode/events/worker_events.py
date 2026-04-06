@@ -1,0 +1,102 @@
+from dataclasses import dataclass, field
+
+from griptape_nodes.retained_mode.events.base_events import (
+    RequestPayload,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
+    SkipTheLineMixin,
+    WorkflowNotAlteredMixin,
+)
+from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterWorkerRequest(RequestPayload):
+    """Sent by a worker engine to the orchestrator's session topic to announce itself.
+
+    The orchestrator stores the worker's engine_id and subscribes to the worker's
+    dedicated response topic so it can relay results back to the GUI.
+
+    Args:
+        worker_engine_id: The engine_id of the registering worker.
+    """
+
+    worker_engine_id: str
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterWorkerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Worker registration succeeded.
+
+    Args:
+        worker_engine_id: The engine_id of the worker that was registered.
+    """
+
+    worker_engine_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Worker registration failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class WorkerHeartbeatRequest(RequestPayload, SkipTheLineMixin):
+    """Sent by the orchestrator to a worker to verify it is still alive.
+
+    Uses SkipTheLineMixin so the worker processes it immediately without queuing,
+    identical to SessionHeartbeatRequest and EngineHeartbeatRequest.
+
+    Args:
+        heartbeat_id: Correlation token to match request with response.
+    """
+
+    heartbeat_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class WorkerHeartbeatResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Worker heartbeat succeeded — worker is alive.
+
+    Args:
+        heartbeat_id: Correlates with the originating WorkerHeartbeatRequest.
+    """
+
+    heartbeat_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterWorkerRequest(RequestPayload):
+    """Sent by a worker to the orchestrator's session topic on graceful shutdown.
+
+    Args:
+        worker_engine_id: The engine_id of the departing worker.
+    """
+
+    worker_engine_id: str
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterWorkerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Worker unregistration succeeded.
+
+    Args:
+        worker_engine_id: The engine_id of the worker that was removed.
+    """
+
+    worker_engine_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Worker unregistration failed."""
