@@ -197,10 +197,6 @@ class EventManager:
         if request_type in self._request_type_to_manager:
             del self._request_type_to_manager[request_type]
 
-    def get_handler_for_request_type(self, request_type: type[RequestPayload]) -> Callable | None:
-        """Return the currently registered handler for request_type, or None if not registered."""
-        return self._request_type_to_manager.get(request_type)
-
     def _override_result_log_level(self, result: ResultPayload, level: int) -> None:
         """Override the log level on all result details.
 

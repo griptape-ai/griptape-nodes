@@ -302,7 +302,6 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(MigrateParameterRequest, self.on_migrate_parameter_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
-        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
         event_manager.assign_manager_to_request_type(
             GetCompatibleParametersRequest, self.on_get_compatible_parameters_request

@@ -8,6 +8,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.app.worker_manager import WorkerManager
@@ -33,17 +34,12 @@ def _deserialize_execute_node_result(
 
 
 def setup(worker_manager: WorkerManager, event_manager: EventManager) -> None:
-    """Decorate the ExecuteNodeRequest handler with worker routing.
+    """Register the ExecuteNodeRequest handler with worker routing.
 
-    WorkerManager stays event-agnostic; node_executor.py always goes through
-    the event system; the decorated handler decides whether to forward to a
-    worker or run locally.
+    node_executor.py always dispatches ExecuteNodeRequest through the event system.
+    This handler routes to a worker when one is registered, and falls back to
+    NodeManager.on_execute_node_request for local execution.
     """
-    original = event_manager.get_handler_for_request_type(ExecuteNodeRequest)
-    if original is None:
-        msg = "ExecuteNodeRequest handler must be registered before decoration"
-        raise RuntimeError(msg)
-    event_manager.remove_manager_from_request_type(ExecuteNodeRequest)
 
     async def _routed_execute_node(
         request: ExecuteNodeRequest,
@@ -51,7 +47,7 @@ def setup(worker_manager: WorkerManager, event_manager: EventManager) -> None:
         worker = worker_manager.get_active_worker()
         if worker is None:
             # No worker registered — execute locally.
-            return await original(request)
+            return await GriptapeNodes.NodeManager().on_execute_node_request(request)
 
         worker_engine_id, worker_request_topic = worker
         raw = await worker_manager.route_to_worker(
