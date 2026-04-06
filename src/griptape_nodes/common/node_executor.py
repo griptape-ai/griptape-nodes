@@ -219,7 +219,8 @@ class NodeExecutor:
         """
         try:
             from griptape_nodes.app import app as _app
-        except (ImportError, AttributeError):
+        except (ImportError, AttributeError) as e:
+            logger.debug("WorkerManager unavailable; falling back to local node execution: %s", e)
             return None
         else:
             return _app.worker_manager

@@ -39,6 +39,7 @@ class WorkerManager:
 
     HEARTBEAT_INTERVAL_S: float = 5.0
     HEARTBEAT_TIMEOUT_S: float = 15.0
+    NODE_EXECUTION_TIMEOUT_S: float = 300.0
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
 
@@ -175,8 +176,8 @@ class WorkerManager:
     def _select_worker_for_node(self, _node_name: str) -> tuple[str, str] | None:
         """Return (worker_engine_id, worker_request_topic) for the given node.
 
-        Today returns the single registered worker. Future versions will select
-        based on the node's library or other routing criteria.
+        Returns the single registered worker. Routing by node library or other
+        criteria is not yet implemented.
         """
         return self.get_active_worker()
 
@@ -217,7 +218,12 @@ class WorkerManager:
         await self.forward_event_to_worker(
             req, worker_engine_id=worker_engine_id, worker_request_topic=worker_request_topic
         )
-        return await future
+        try:
+            return await asyncio.wait_for(future, timeout=WorkerManager.NODE_EXECUTION_TIMEOUT_S)
+        except TimeoutError:
+            self._pending_node_executions.pop(request_id, None)
+            msg = f"Node '{node_name}' execution timed out after {WorkerManager.NODE_EXECUTION_TIMEOUT_S:.0f}s."
+            raise RuntimeError(msg) from None
 
     async def evict_worker(self, worker_engine_id: str) -> None:
         """Remove a worker from the registry and unsubscribe from its response topic."""
@@ -227,6 +233,11 @@ class WorkerManager:
         topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
         await self._unsubscribe_from_topic(topic)
         logger.warning("Worker evicted: %s", worker_engine_id)
+        # Cancel any node executions that were awaiting a result from this worker.
+        for future in self._pending_node_executions.values():
+            if not future.done():
+                future.cancel()
+        self._pending_node_executions.clear()
 
     def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.
@@ -289,8 +300,11 @@ class WorkerManager:
         if request_id and request_id in self._pending_node_executions:
             future = self._pending_node_executions.pop(request_id)
             if not future.done():
-                result = self._deserialize_execute_node_result(payload)
-                future.set_result(result)
+                try:
+                    result = self._deserialize_execute_node_result(payload)
+                    future.set_result(result)
+                except Exception as e:
+                    future.set_exception(e)
             return  # NodeExecutor owns result broadcasting; do not relay to GUI here.
 
         # 1 engine = 1 session — the orchestrator's session response topic is always the right target.
@@ -304,9 +318,16 @@ class WorkerManager:
         """Reconstruct an ExecuteNodeResultSuccess or ExecuteNodeResultFailure from a raw payload dict."""
         result_type = payload.get("result_type", "")
         result_data = payload.get("result", {})
-        if result_type == ExecuteNodeResultSuccess.__name__:
-            return ExecuteNodeResultSuccess(**result_data)
-        return ExecuteNodeResultFailure(**result_data)
+        try:
+            if result_type == ExecuteNodeResultSuccess.__name__:
+                return ExecuteNodeResultSuccess(**result_data)
+            if result_type == ExecuteNodeResultFailure.__name__:
+                return ExecuteNodeResultFailure(**result_data)
+        except TypeError as e:
+            msg = f"Failed to deserialize execute-node result (result_type={result_type!r}): {e}"
+            raise ValueError(msg) from e
+        msg = f"Unrecognized execute-node result_type: {result_type!r}"
+        raise ValueError(msg)
 
     def _determine_response_topic(self) -> str:
         """Determine the response topic based on current session and engine IDs."""
