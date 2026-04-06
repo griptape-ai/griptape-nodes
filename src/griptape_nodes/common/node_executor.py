@@ -297,6 +297,16 @@ class NodeExecutor:
                     msg = f"Node '{node.name}' failed on worker: {result.result_details}"
                     raise RuntimeError(msg)
             else:
+                # If the library declares it requires a dedicated worker process, refuse to run
+                # locally — falling back would silently violate the library's isolation contract.
+                if library_name and self._worker_manager is not None:
+                    library_info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
+                    if library_info is not None and library_info.requires_worker:
+                        msg = (
+                            f"Library '{library_name}' requires a dedicated worker process "
+                            "that is not yet registered. The worker may still be starting up."
+                        )
+                        raise RuntimeError(msg)
                 await node.aprocess()
         finally:
             current_executing_node_name.reset(token)
