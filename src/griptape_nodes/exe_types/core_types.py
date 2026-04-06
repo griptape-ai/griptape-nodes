@@ -1228,16 +1228,31 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
 
     def add_child(self, child: BaseNodeElement) -> None:
         child.parent_group_name = self.name
+        # Keep parent_element_name in sync with parent_group_name for Parameters.
+        # These two fields track the same relationship but have different origins:
+        # - parent_group_name: set here by add_child(), always correct
+        # - parent_element_name: set by Parameter constructors and handlers, used by
+        #   BaseNode.add_parameter() to look up the group, and by cattrs serialization
+        # Without this sync, Parameters created via the context manager path (which calls
+        # add_child() directly) would have parent_element_name=None, causing them to
+        # serialize without their parent group reference and reload as flat/root-level.
+        if isinstance(child, Parameter):
+            child.parent_element_name = self.name
         return super().add_child(child)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
+        """Clear parent tracking fields (inverse of add_child), then remove from the tree."""
         if isinstance(child, str):
             child_from_str = self.find_element_by_name(child)
             if child_from_str is not None and isinstance(child_from_str, BaseNodeElement):
                 child_from_str.parent_group_name = None
+                if isinstance(child_from_str, Parameter):
+                    child_from_str.parent_element_name = None
                 return super().remove_child(child_from_str)
         else:
             child.parent_group_name = None
+            if isinstance(child, Parameter):
+                child.parent_element_name = None
         return super().remove_child(child)
 
 
@@ -1370,16 +1385,23 @@ class ParameterButtonGroup(BaseNodeElement, UIOptionsMixin):
 
     def add_child(self, child: BaseNodeElement) -> None:
         child.parent_group_name = self.name
+        if isinstance(child, Parameter):
+            child.parent_element_name = self.name
         return super().add_child(child)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
+        """Clear parent tracking fields (inverse of add_child), then remove from the tree."""
         if isinstance(child, str):
             child_from_str = self.find_element_by_name(child)
             if child_from_str is not None and isinstance(child_from_str, BaseNodeElement):
                 child_from_str.parent_group_name = None
+                if isinstance(child_from_str, Parameter):
+                    child_from_str.parent_element_name = None
                 return super().remove_child(child_from_str)
         else:
             child.parent_group_name = None
+            if isinstance(child, Parameter):
+                child.parent_element_name = None
         return super().remove_child(child)
 
 
@@ -1513,6 +1535,15 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             element_id = str(uuid.uuid4().hex)
         if not element_type:
             element_type = self.__class__.__name__
+
+        # Set parent references BEFORE super().__init__(), which triggers __post_init__().
+        # If this Parameter is being created inside a ParameterGroup context manager,
+        # __post_init__() will call add_child() which overwrites these with the correct
+        # group name. Setting them first ensures they exist as attributes, and the context
+        # manager path gets the final say.
+        self.parent_container_name = parent_container_name
+        self.parent_element_name = parent_element_name
+
         super().__init__(element_id=element_id, element_type=element_type)
         self.name = name
 
@@ -1627,8 +1658,6 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
-        self.parent_container_name = parent_container_name
-        self.parent_element_name = parent_element_name
 
     def _generate_default_tooltip(
         self,

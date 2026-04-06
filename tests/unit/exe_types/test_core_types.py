@@ -7,6 +7,7 @@ from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     NodeMessagePayload,
     Parameter,
+    ParameterButtonGroup,
     ParameterGroup,
 )
 
@@ -478,3 +479,171 @@ class TestParameter:
         param_false_dict = param_false.to_dict()
         assert "settable" in param_false_dict
         assert param_false_dict["settable"] is False
+
+
+def _make_param(name: str = "test_param", **kwargs) -> Parameter:
+    """Helper to create a Parameter with minimal required args."""
+    defaults = {"input_types": ["str"], "type": "str", "output_type": "str", "tooltip": "test"}
+    defaults.update(kwargs)
+    return Parameter(name=name, **defaults)
+
+
+class TestParameterGroupParentSync:
+    """Tests that ParameterGroup keeps parent_element_name in sync with parent_group_name."""
+
+    def test_context_manager_sets_both_parent_fields(self) -> None:
+        """Context manager creation sets both parent_group_name and parent_element_name."""
+        with ParameterGroup(name="my_group"):
+            param = _make_param()
+
+        assert param.parent_group_name == "my_group"
+        assert param.parent_element_name == "my_group"
+
+    def test_explicit_add_child_sets_both_parent_fields(self) -> None:
+        """Calling add_child() directly should set both parent fields."""
+        group = ParameterGroup(name="my_group")
+        param = _make_param()
+
+        group.add_child(param)
+
+        assert param.parent_group_name == "my_group"
+        assert param.parent_element_name == "my_group"
+
+    def test_add_child_non_parameter_does_not_set_parent_element_name(self) -> None:
+        """Non-Parameter children get parent_group_name but not parent_element_name."""
+        group = ParameterGroup(name="my_group")
+        element = BaseNodeElement()
+
+        group.add_child(element)
+
+        assert element.parent_group_name == "my_group"
+        assert not hasattr(element, "parent_element_name")
+
+    def test_remove_child_by_reference_clears_both_fields(self) -> None:
+        """Removing a Parameter by reference should clear both parent fields."""
+        group = ParameterGroup(name="my_group")
+        param = _make_param()
+        group.add_child(param)
+
+        group.remove_child(param)
+
+        assert param.parent_group_name is None
+        assert param.parent_element_name is None
+
+    def test_remove_child_by_name_clears_both_fields(self) -> None:
+        """Removing a Parameter by name (string) should clear both parent fields."""
+        group = ParameterGroup(name="my_group")
+        param = _make_param(name="removable")
+        group.add_child(param)
+
+        group.remove_child("removable")
+
+        assert param.parent_group_name is None
+        assert param.parent_element_name is None
+
+    def test_remove_child_non_parameter_does_not_touch_parent_element_name(self) -> None:
+        """Removing a non-Parameter child should clear parent_group_name only."""
+        group = ParameterGroup(name="my_group")
+        element = BaseNodeElement(element_id="child1")
+        group.add_child(element)
+
+        group.remove_child(element)
+
+        assert element.parent_group_name is None
+        assert not hasattr(element, "parent_element_name")
+
+    def test_context_manager_overrides_explicit_none(self) -> None:
+        """Context manager's add_child() overrides an explicit parent_element_name=None."""
+        with ParameterGroup(name="my_group"):
+            param = Parameter(
+                name="test",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                tooltip="test",
+                parent_element_name=None,  # explicit None, should be overridden
+            )
+
+        assert param.parent_element_name == "my_group"
+
+    def test_serialization_includes_parent_element_name(self) -> None:
+        """to_dict() should reflect the synced parent_element_name."""
+        with ParameterGroup(name="my_group"):
+            param = _make_param()
+
+        param_dict = param.to_dict()
+        assert param_dict["parent_element_name"] == "my_group"
+        assert param_dict["parent_group_name"] == "my_group"
+
+
+class TestParameterButtonGroupParentSync:
+    """Same sync behavior for ParameterButtonGroup."""
+
+    def test_context_manager_sets_both_parent_fields(self) -> None:
+        with ParameterButtonGroup(name="btn_group"):
+            param = _make_param()
+
+        assert param.parent_group_name == "btn_group"
+        assert param.parent_element_name == "btn_group"
+
+    def test_explicit_add_child_sets_both_parent_fields(self) -> None:
+        group = ParameterButtonGroup(name="btn_group")
+        param = _make_param()
+
+        group.add_child(param)
+
+        assert param.parent_group_name == "btn_group"
+        assert param.parent_element_name == "btn_group"
+
+    def test_remove_child_by_reference_clears_both_fields(self) -> None:
+        group = ParameterButtonGroup(name="btn_group")
+        param = _make_param()
+        group.add_child(param)
+
+        group.remove_child(param)
+
+        assert param.parent_group_name is None
+        assert param.parent_element_name is None
+
+    def test_remove_child_by_name_clears_both_fields(self) -> None:
+        group = ParameterButtonGroup(name="btn_group")
+        param = _make_param(name="removable")
+        group.add_child(param)
+
+        group.remove_child("removable")
+
+        assert param.parent_group_name is None
+        assert param.parent_element_name is None
+
+
+class TestParameterConstructorOrdering:
+    """Tests that Parameter.__init__ sets parent fields before super().__init__()."""
+
+    def test_constructor_default_without_context(self) -> None:
+        """Without a context manager, parent fields should be None (the default)."""
+        param = _make_param()
+
+        assert param.parent_container_name is None
+        assert param.parent_element_name is None
+
+    def test_constructor_explicit_values_without_context(self) -> None:
+        """Explicit parent values should be preserved when no context manager is active."""
+        param = _make_param(parent_container_name="container1", parent_element_name="group1")
+
+        assert param.parent_container_name == "container1"
+        assert param.parent_element_name == "group1"
+
+    def test_context_manager_wins_over_explicit_none(self) -> None:
+        """Context manager overrides constructor default, proving assignment is before super()."""
+        with ParameterGroup(name="ctx_group"):
+            param = _make_param(parent_element_name=None)
+
+        assert param.parent_element_name == "ctx_group"
+
+    def test_nested_groups_innermost_wins(self) -> None:
+        """When groups are nested, the innermost (active) context should win."""
+        with ParameterGroup(name="outer"), ParameterGroup(name="inner"):
+            param = _make_param()
+
+        assert param.parent_group_name == "inner"
+        assert param.parent_element_name == "inner"
