@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import colorsys
+import functools
+import hashlib
 import json
 import logging
 import os
@@ -112,6 +115,20 @@ class EventLogHandler(logging.Handler):
             griptape_nodes.EventManager().put_event(log_event)
 
 
+@functools.lru_cache(maxsize=None)
+def _prefix_to_color(prefix: str) -> str:
+    """Deterministically map a log prefix to a hex color.
+
+    Uses the first byte of the MD5 digest as a hue value, with fixed lightness
+    and saturation so every color is vivid and readable on dark terminals.
+    Cached so the hash runs once per unique prefix.
+    """
+    digest = hashlib.md5(prefix.encode(), usedforsecurity=False).digest()
+    hue = digest[0] / 255.0
+    r, g, b = colorsys.hls_to_rgb(hue, 0.72, 0.85)
+    return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+
+
 class _EngineRoleFilter(logging.Filter):
     """Injects engine_prefix into every log record to identify which engine produced the log."""
 
@@ -127,7 +144,7 @@ class _EngineRoleFilter(logging.Filter):
 class _EngineRoleHandler(RichHandler):
     """RichHandler that inserts a worker engine designator as its own column between log level and message."""
 
-    _COLUMN_WIDTH = 6  # display width reserved for the first 6 chars of a worker engine ID
+    _COLUMN_WIDTH = 15  # display width for "Orchestrator" (12) or "Worker-XXXXXXXX" (15)
 
     def render(  # type: ignore[override]
         self,
@@ -159,7 +176,7 @@ class _EngineRoleHandler(RichHandler):
         time_format = (None if self.formatter is None else self.formatter.datefmt) or self._log_render.time_format  # type: ignore[attr-defined]
         formatted_time = time_format(log_time) if callable(time_format) else Text(log_time.strftime(time_format))
         level = self.get_level_text(record)
-        designator = Text(f"{prefix:<{self._COLUMN_WIDTH}}", style="bold cyan")
+        designator = Text(f"{prefix:<{self._COLUMN_WIDTH}}", style=f"bold {_prefix_to_color(prefix)}")
         msg_cell: object = Group(message_renderable, traceback) if traceback is not None else message_renderable
 
         output.add_row(formatted_time, level, designator, msg_cell)
@@ -333,7 +350,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     if not worker_engine_id:
         msg = "Engine ID is not set; cannot register as a worker."
         raise RuntimeError(msg)
-    _engine_role_filter.prefix = worker_engine_id[:6]
+    _engine_role_filter.prefix = f"Worker-{worker_engine_id[:8]}"
     reg_event = EventRequest(
         request=worker_events.RegisterWorkerRequest(
             worker_engine_id=worker_engine_id,
@@ -377,6 +394,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
 
 async def _run_orchestrator(client: Client) -> None:
     """Run the WebSocket task group for an orchestrator engine."""
+    _engine_role_filter.prefix = "Orchestrator"
     # Register worker spawn callback before the task group starts. Library loading
     # is triggered by AppInitializationComplete (already queued), which runs on the
     # main thread asynchronously — the callback registration here is guaranteed to
