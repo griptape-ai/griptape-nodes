@@ -17,6 +17,7 @@ from rich.logging import RichHandler
 from rich.panel import Panel
 
 from griptape_nodes.api_client import Client
+from griptape_nodes.app import node_execution_routing
 from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
@@ -33,11 +34,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
     ProgressEvent,
     SkipTheLineMixin,
-)
-from griptape_nodes.retained_mode.events.execution_events import (
-    ExecuteNodeRequest,
-    ExecuteNodeResultFailure,
-    ExecuteNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -587,48 +583,4 @@ worker_manager = WorkerManager(
 )
 
 
-def _deserialize_execute_node_result(
-    payload: dict,
-) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-    """Reconstruct an ExecuteNodeResultSuccess or ExecuteNodeResultFailure from a raw payload dict."""
-    result_type = payload.get("result_type", "")
-    result_data = payload.get("result", {})
-    try:
-        if result_type == ExecuteNodeResultSuccess.__name__:
-            return ExecuteNodeResultSuccess(**result_data)
-        if result_type == ExecuteNodeResultFailure.__name__:
-            return ExecuteNodeResultFailure(**result_data)
-    except TypeError as e:
-        msg = f"Failed to deserialize execute-node result (result_type={result_type!r}): {e}"
-        raise ValueError(msg) from e
-    msg = f"Unrecognized execute-node result_type: {result_type!r}"
-    raise ValueError(msg)
-
-
-# Decorate the ExecuteNodeRequest handler with worker routing so WorkerManager
-# stays event-agnostic. node_executor.py always goes through the event system;
-# the handler below decides whether to forward to a worker or run locally.
-_event_manager = griptape_nodes.EventManager()
-_original_execute_node_handler = _event_manager.get_handler_for_request_type(ExecuteNodeRequest)
-assert _original_execute_node_handler is not None, "ExecuteNodeRequest handler must be registered before decoration"
-_event_manager.remove_manager_from_request_type(ExecuteNodeRequest)
-
-
-async def _worker_routed_execute_node(
-    request: ExecuteNodeRequest,
-) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-    worker = worker_manager.get_active_worker()
-    if worker is None:
-        # No worker registered — execute locally.
-        return await _original_execute_node_handler(request)
-
-    worker_engine_id, worker_request_topic = worker
-    raw = await worker_manager.route_to_worker(
-        EventRequest(request=request),
-        worker_engine_id,
-        worker_request_topic,
-    )
-    return _deserialize_execute_node_result(raw)
-
-
-_event_manager.assign_manager_to_request_type(ExecuteNodeRequest, _worker_routed_execute_node)
+node_execution_routing.setup(worker_manager, griptape_nodes.EventManager())
