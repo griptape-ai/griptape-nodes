@@ -2404,10 +2404,9 @@ class LibraryManager:
         for current_library_index, lib_path in enumerate(libraries_to_load, start=1):
             # When running as a dedicated library worker, skip libraries that don't match the target.
             # library_name is already populated in _library_file_path_to_info from the discovery phase.
-            if target_library_name is not None:
-                lib_info = self._library_file_path_to_info.get(lib_path)
-                if lib_info is None or lib_info.library_name != target_library_name:
-                    continue
+            lib_info = self._library_file_path_to_info.get(lib_path)
+            if target_library_name is not None and (lib_info is None or lib_info.library_name != target_library_name):
+                continue
 
             # Load the library through unified lifecycle using library_path
             # RegisterLibraryFromFileRequest will handle metadata loading internally to get library_name

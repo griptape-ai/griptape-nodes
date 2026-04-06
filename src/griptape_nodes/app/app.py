@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from datetime import UTC
 from typing import TYPE_CHECKING, cast
 
+if TYPE_CHECKING:
+    from rich.traceback import Traceback
+
 import truststore
 from cattrs import BaseValidationError, transform_error
 from rich.align import Align
@@ -44,9 +47,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils import install_file_url_support
-
-if TYPE_CHECKING:
-    from rich.traceback import Traceback
 
 
 # WebSocket thread communication message types
@@ -159,7 +159,7 @@ class _EngineRoleHandler(RichHandler):
 
             return super().render(  # type: ignore[call-arg]
                 record=record,
-                traceback=cast(Traceback | None, traceback),
+                traceback=cast("Traceback | None", traceback),
                 message_renderable=cast("ConsoleRenderable", message_renderable),
             )
 
@@ -181,8 +181,8 @@ class _EngineRoleHandler(RichHandler):
         formatted_time = time_format(log_time) if callable(time_format) else Text(log_time.strftime(time_format))
         level = self.get_level_text(record)
         designator = Text(f"{prefix:<{self._COLUMN_WIDTH}}", style=f"bold {_prefix_to_color(prefix)}")
-        typed_traceback = cast(Traceback | None, traceback)
         typed_message = cast("ConsoleRenderable", message_renderable)
+        typed_traceback = cast("Traceback | None", traceback)
         msg_cell: ConsoleRenderable = (
             Group(typed_message, typed_traceback) if typed_traceback is not None else typed_message
         )

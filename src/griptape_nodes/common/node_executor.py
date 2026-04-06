@@ -277,39 +277,50 @@ class NodeExecutor:
                 return
 
             # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-            # Route to a library-specific worker when the node's library has one registered.
-            library_name = node.metadata.get("library")
-            if (
-                self._worker_manager is not None
-                and library_name
-                and self._worker_manager.get_worker_for_library(library_name) is not None
-            ):
-                result = await self._worker_manager.execute_node(
-                    node_name=node.name,
-                    parameter_values=dict(node.parameter_values),
-                    node_type=node.metadata.get("node_type"),
-                    library_name=library_name,
-                )
-                if isinstance(result, ExecuteNodeResultSuccess):
-                    for name, value in result.parameter_output_values.items():
-                        node.set_parameter_value(name, value)
-                else:
-                    msg = f"Node '{node.name}' failed on worker: {result.result_details}"
-                    raise RuntimeError(msg)
-            else:
-                # If the library declares it requires a dedicated worker process, refuse to run
-                # locally — falling back would silently violate the library's isolation contract.
-                if library_name and self._worker_manager is not None:
-                    library_info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
-                    if library_info is not None and library_info.requires_worker:
-                        msg = (
-                            f"Library '{library_name}' requires a dedicated worker process "
-                            "that is not yet registered. The worker may still be starting up."
-                        )
-                        raise RuntimeError(msg)
-                await node.aprocess()
+            await self._execute_leaf_node(node)
         finally:
             current_executing_node_name.reset(token)
+
+    async def _execute_leaf_node(self, node: BaseNode) -> None:
+        """Execute a leaf node, routing to a library worker when one is registered.
+
+        Falls back to local execution when no worker is available, unless the
+        library declares that a dedicated worker is required.
+
+        Args:
+            node: The leaf node to execute
+        """
+        # Route to a library-specific worker when the node's library has one registered.
+        library_name = node.metadata.get("library")
+        if (
+            self._worker_manager is not None
+            and library_name
+            and self._worker_manager.get_worker_for_library(library_name) is not None
+        ):
+            result = await self._worker_manager.execute_node(
+                node_name=node.name,
+                parameter_values=dict(node.parameter_values),
+                node_type=node.metadata.get("node_type"),
+                library_name=library_name,
+            )
+            if isinstance(result, ExecuteNodeResultSuccess):
+                for name, value in result.parameter_output_values.items():
+                    node.set_parameter_value(name, value)
+            else:
+                msg = f"Node '{node.name}' failed on worker: {result.result_details}"
+                raise RuntimeError(msg)
+        else:
+            # If the library declares it requires a dedicated worker process, refuse to run
+            # locally — falling back would silently violate the library's isolation contract.
+            if library_name and self._worker_manager is not None:
+                library_info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
+                if library_info is not None and library_info.requires_worker:
+                    msg = (
+                        f"Library '{library_name}' requires a dedicated worker process "
+                        "that is not yet registered. The worker may still be starting up."
+                    )
+                    raise RuntimeError(msg)
+            await node.aprocess()
 
     async def _execute_and_apply_workflow(
         self,
