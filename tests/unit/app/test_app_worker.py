@@ -8,6 +8,9 @@ the execute_node / pending-future mechanism.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -448,3 +451,188 @@ class TestExecuteNode:
         assert isinstance(result, ExecuteNodeResultSuccess)
         assert result.parameter_output_values == {"out": 99}
         worker_manager._send_message.assert_called_once()  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_routes_to_library_specific_worker(self, worker_manager: WorkerManager) -> None:
+        """execute_node routes to the library-specific worker when library_name is given."""
+        lib_engine = "lib-eng-1"
+        lib_topic = f"sessions/{_SESSION}/workers/{lib_engine}/request"
+        worker_manager._library_workers["My Library"] = [(lib_engine, lib_topic)]
+        worker_manager._registered_workers[lib_engine] = lib_topic
+
+        async def resolve_via_relay() -> None:
+            await asyncio.sleep(0)
+            request_id = next(iter(worker_manager._pending_node_executions))
+            payload = {
+                "event_type": "EventResultSuccess",
+                "result_type": ExecuteNodeResultSuccess.__name__,
+                "result": {"parameter_output_values": {}, "result_details": "ok"},
+                "request_id": request_id,
+            }
+            await worker_manager.relay_worker_result(payload)
+
+        relay_task = asyncio.create_task(resolve_via_relay())
+        result = await worker_manager.execute_node(node_name="MyNode", parameter_values={}, library_name="My Library")
+        await relay_task
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        sent_topic = worker_manager._send_message.call_args[0][2]  # type: ignore[union-attr]
+        assert sent_topic == lib_topic
+
+
+class TestGetActiveWorker:
+    def test_returns_none_when_no_workers_registered(self, worker_manager: WorkerManager) -> None:
+        result = worker_manager.get_active_worker()
+
+        assert result is None
+
+    def test_returns_first_registered_worker(self, worker_manager: WorkerManager) -> None:
+        worker_manager._registered_workers["eng-1"] = "sessions/s/workers/eng-1/request"
+
+        result = worker_manager.get_active_worker()
+
+        assert result == ("eng-1", "sessions/s/workers/eng-1/request")
+
+
+class TestGetTopicsToSubscribe:
+    def test_always_includes_base_request_topic(self, worker_manager: WorkerManager) -> None:
+        assert "request" in worker_manager.get_topics_to_subscribe(is_worker=True)
+        assert "request" in worker_manager.get_topics_to_subscribe(is_worker=False)
+
+    def test_always_includes_engine_specific_topic(self, worker_manager: WorkerManager) -> None:
+        topics_worker = worker_manager.get_topics_to_subscribe(is_worker=True)
+        topics_orch = worker_manager.get_topics_to_subscribe(is_worker=False)
+
+        assert f"engines/{_ENGINE}/request" in topics_worker
+        assert f"engines/{_ENGINE}/request" in topics_orch
+
+    def test_worker_mode_includes_per_worker_topic(self, worker_manager: WorkerManager) -> None:
+        topics = worker_manager.get_topics_to_subscribe(is_worker=True)
+
+        assert f"sessions/{_SESSION}/workers/{_ENGINE}/request" in topics
+
+    def test_worker_mode_excludes_session_request_topic(self, worker_manager: WorkerManager) -> None:
+        topics = worker_manager.get_topics_to_subscribe(is_worker=True)
+
+        assert f"sessions/{_SESSION}/request" not in topics
+
+    def test_orchestrator_mode_includes_session_request_topic(self, worker_manager: WorkerManager) -> None:
+        topics = worker_manager.get_topics_to_subscribe(is_worker=False)
+
+        assert f"sessions/{_SESSION}/request" in topics
+
+    def test_orchestrator_mode_excludes_per_worker_topic(self, worker_manager: WorkerManager) -> None:
+        topics = worker_manager.get_topics_to_subscribe(is_worker=False)
+
+        assert f"sessions/{_SESSION}/workers/{_ENGINE}/request" not in topics
+
+    def test_orchestrator_mode_no_session_excludes_session_topic(self, worker_manager: WorkerManager) -> None:
+        worker_manager._griptape_nodes.get_session_id.return_value = None  # type: ignore[union-attr]
+
+        topics = worker_manager.get_topics_to_subscribe(is_worker=False)
+
+        assert not any("sessions/" in t for t in topics)
+
+
+class TestForwardEventToWorker:
+    @pytest.mark.asyncio
+    async def test_sends_message_to_worker_request_topic(self, worker_manager: WorkerManager) -> None:
+        from griptape_nodes.retained_mode.events.base_events import EventRequest
+        from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest
+
+        event = EventRequest(request=ExecuteNodeRequest(node_name="TestNode", parameter_values={}))
+
+        await worker_manager.forward_event_to_worker(
+            event, worker_engine_id=_ENGINE, worker_request_topic=_WORKER_REQUEST_TOPIC
+        )
+
+        worker_manager._send_message.assert_called_once()  # type: ignore[union-attr]
+        assert worker_manager._send_message.call_args[0][2] == _WORKER_REQUEST_TOPIC  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_sets_response_topic_to_worker_response_topic(self, worker_manager: WorkerManager) -> None:
+        from griptape_nodes.retained_mode.events.base_events import EventRequest
+        from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest
+
+        event = EventRequest(request=ExecuteNodeRequest(node_name="TestNode", parameter_values={}))
+
+        await worker_manager.forward_event_to_worker(
+            event, worker_engine_id=_ENGINE, worker_request_topic=_WORKER_REQUEST_TOPIC
+        )
+
+        sent_body = worker_manager._send_message.call_args[0][1]  # type: ignore[union-attr]
+        sent_payload = json.loads(sent_body)
+        assert sent_payload.get("response_topic") == _WORKER_RESPONSE_TOPIC
+
+
+class TestDetermineResponseTopic:
+    def test_returns_session_response_topic_when_session_active(self, worker_manager: WorkerManager) -> None:
+        topic = worker_manager._determine_response_topic()
+
+        assert topic == f"sessions/{_SESSION}/response"
+
+    def test_returns_engine_response_topic_when_no_session(self, worker_manager: WorkerManager) -> None:
+        worker_manager._griptape_nodes.get_session_id.return_value = None  # type: ignore[union-attr]
+
+        topic = worker_manager._determine_response_topic()
+
+        assert topic == f"engines/{_ENGINE}/response"
+
+    def test_returns_default_when_no_session_or_engine(self, worker_manager: WorkerManager) -> None:
+        worker_manager._griptape_nodes.get_session_id.return_value = None  # type: ignore[union-attr]
+        worker_manager._griptape_nodes.get_engine_id.return_value = None  # type: ignore[union-attr]
+
+        topic = worker_manager._determine_response_topic()
+
+        assert topic == "response"
+
+
+class TestOrchestratorHeartbeatLoop:
+    @pytest.mark.asyncio
+    async def test_evicts_stale_worker(self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 0.0)
+        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._worker_last_seen[_ENGINE] = 0.0
+
+        task = asyncio.create_task(worker_manager.orchestrator_heartbeat_loop())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        assert _ENGINE not in worker_manager._registered_workers
+
+    @pytest.mark.asyncio
+    async def test_sends_heartbeat_challenge_to_live_worker(
+        self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 60.0)
+        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._worker_last_seen[_ENGINE] = time.monotonic()
+
+        task = asyncio.create_task(worker_manager.orchestrator_heartbeat_loop())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        assert not worker_manager._ws_outgoing_queue.empty()
+
+    @pytest.mark.asyncio
+    async def test_does_not_evict_fresh_worker(
+        self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 60.0)
+        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._worker_last_seen[_ENGINE] = time.monotonic()
+
+        task = asyncio.create_task(worker_manager.orchestrator_heartbeat_loop())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        assert _ENGINE in worker_manager._registered_workers

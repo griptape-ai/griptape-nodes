@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -166,3 +166,32 @@ class TestRegisterLibraryLoadedCallback:
         mgr = _make_library_manager()
 
         assert mgr._library_loaded_callbacks == []
+
+
+class TestMaybePrintEngineReadyBanner:
+    def test_skips_when_target_library_name_is_set(self) -> None:
+        mgr = _make_library_manager()
+
+        with patch("griptape_nodes.retained_mode.managers.library_manager.console") as mock_console:
+            mgr._maybe_print_engine_ready_banner("some-library")
+
+        mock_console.print.assert_not_called()
+
+    def test_prints_panel_when_target_library_name_is_none(self) -> None:
+        mgr = _make_library_manager()
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.get_complete_version_string",
+                return_value="1.0.0",
+            ),
+            patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gtn,
+            patch("griptape_nodes.retained_mode.managers.library_manager.console") as mock_console,
+        ):
+            mock_gtn.get_session_id.return_value = None
+            mock_gtn.UserManager.return_value.user = None
+            mock_gtn.UserManager.return_value.user_organization = None
+
+            mgr._maybe_print_engine_ready_banner(None)
+
+        mock_console.print.assert_called_once()
