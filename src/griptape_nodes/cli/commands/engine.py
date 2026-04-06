@@ -60,5 +60,6 @@ def _start_engine(worker_session_id: str | None = None, worker_library_name: str
             )
         )
 
-    console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
+    if not worker_session_id:
+        console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
     start_app(worker_session_id=worker_session_id, worker_library_name=worker_library_name)

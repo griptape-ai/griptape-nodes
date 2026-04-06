@@ -15,6 +15,7 @@ from rich.align import Align
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from griptape_nodes.api_client import Client
@@ -124,20 +125,45 @@ class _EngineRoleFilter(logging.Filter):
 
 
 class _EngineRoleHandler(RichHandler):
-    """RichHandler that renders the engine role designator before the log message when set."""
+    """RichHandler that inserts a worker engine designator as its own column between log level and message."""
 
-    _COLUMN_WIDTH = 6  # display width of first 6 chars of a worker engine ID
+    _COLUMN_WIDTH = 6  # display width reserved for the first 6 chars of a worker engine ID
 
-    def render_message(self, record: logging.LogRecord, message: str) -> object:  # type: ignore[override]
-        msg_renderable = super().render_message(record, message)
+    def render(  # type: ignore[override]
+        self,
+        *,
+        record: logging.LogRecord,
+        traceback: object,
+        message_renderable: object,
+    ) -> object:
         prefix: str = getattr(record, "engine_prefix", "")
-        if not prefix or not isinstance(msg_renderable, Text):
-            return msg_renderable
-        combined = Text()
-        combined.append(f"{prefix:<{self._COLUMN_WIDTH}}", style="dim")
-        combined.append("  ")
-        combined.append_text(msg_renderable)
-        return combined
+        if not prefix:
+            return super().render(  # type: ignore[call-arg]
+                record=record, traceback=traceback, message_renderable=message_renderable
+            )
+
+        from datetime import datetime
+
+        from rich.console import Group
+
+        output = Table.grid(padding=(0, 1))
+        output.expand = True
+        output.add_column(style="log.time")
+        output.add_column(style="log.level", width=self._log_render.level_width)  # type: ignore[attr-defined]
+        output.add_column(width=self._COLUMN_WIDTH, no_wrap=True)
+        output.add_column(ratio=1, style="log.message", overflow="fold")
+
+        log_time = datetime.fromtimestamp(record.created)
+        # Mirror super().render(): prefer formatter.datefmt (set by logging.basicConfig) over the
+        # handler-level default, so the time column matches orchestrator log formatting.
+        time_format = (None if self.formatter is None else self.formatter.datefmt) or self._log_render.time_format  # type: ignore[attr-defined]
+        formatted_time = time_format(log_time) if callable(time_format) else Text(log_time.strftime(time_format))
+        level = self.get_level_text(record)
+        designator = Text(f"{prefix:<{self._COLUMN_WIDTH}}", style="bold cyan")
+        msg_cell: object = Group(message_renderable, traceback) if traceback is not None else message_renderable
+
+        output.add_row(formatted_time, level, designator, msg_cell)
+        return output
 
 
 _engine_role_filter = _EngineRoleFilter()

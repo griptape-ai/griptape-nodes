@@ -256,15 +256,9 @@ class WorkerManager:
         Registered as a callback with LibraryManager. Spawns a dedicated worker
         subprocess for libraries that declare worker.enabled = True.
         """
-        logger.info(
-            "Library loaded callback: '%s', requires_worker=%s",
-            library_info.library_name,
-            library_info.requires_worker,
-        )
         if not library_info.requires_worker or not library_info.library_name:
             return
         session_id = self._griptape_nodes.get_session_id()
-        logger.info("Session ID for worker spawn: %s", session_id)
         if not session_id:
             logger.warning(
                 "Cannot spawn worker for library '%s': no active session.", library_info.library_name

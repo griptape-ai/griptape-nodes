@@ -315,7 +315,7 @@ class LibraryManager:
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
         # True when the library declares worker.enabled = True in its metadata.
-        # Set during the METADATA_LOADED phase.
+        # Set whenever metadata is first successfully parsed (discovery or lifecycle progression).
         requires_worker: bool = False
 
     class RegisterLibraryPrerequisites(NamedTuple):
@@ -2463,8 +2463,9 @@ class LibraryManager:
                     )
                 )
 
-        # Print 'em all pretty
-        self.print_library_load_status()
+        # Print 'em all pretty — skip for targeted worker loads (they only load one library).
+        if target_library_name is None:
+            self.print_library_load_status()
 
         # Remove any missing libraries AFTER we've printed them for the user.
         user_libraries_section = LIBRARIES_TO_REGISTER_KEY
@@ -2661,33 +2662,34 @@ class LibraryManager:
         # Go tell the Workflow Manager that it's turn is now.
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
-        # Print the engine ready message
-        engine_version = get_complete_version_string()
+        # Only print the engine ready banner for the orchestrator — not for dedicated library workers.
+        if target_library_name is None:
+            engine_version = get_complete_version_string()
 
-        # Get current session ID
-        session_id = GriptapeNodes.get_session_id()
-        session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
+            # Get current session ID
+            session_id = GriptapeNodes.get_session_id()
+            session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
 
-        # Get user and organization
-        user = GriptapeNodes.UserManager().user
-        user_info = f" | User: {user.email if user else 'Not available'}"
+            # Get user and organization
+            user = GriptapeNodes.UserManager().user
+            user_info = f" | User: {user.email if user else 'Not available'}"
 
-        user_organization = GriptapeNodes.UserManager().user_organization
-        org_info = f" | Org: {user_organization.name if user_organization else 'Not available'}"
+            user_organization = GriptapeNodes.UserManager().user_organization
+            org_info = f" | Org: {user_organization.name if user_organization else 'Not available'}"
 
-        nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
-        message = Panel(
-            Align.center(
-                f"[bold green]Engine is ready to receive events[/bold green]\n"
-                f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
-                vertical="middle",
-            ),
-            title="Griptape Nodes Engine Started",
-            subtitle=f"[green]Version: {engine_version}{session_info}{user_info}{org_info}[/green]",
-            border_style="green",
-            padding=(1, 4),
-        )
-        console.print(message)
+            nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
+            message = Panel(
+                Align.center(
+                    f"[bold green]Engine is ready to receive events[/bold green]\n"
+                    f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
+                    vertical="middle",
+                ),
+                title="Griptape Nodes Engine Started",
+                subtitle=f"[green]Version: {engine_version}{session_info}{user_info}{org_info}[/green]",
+                border_style="green",
+                padding=(1, 4),
+            )
+            console.print(message)
 
     async def on_config_changed(self, event: ConfigChanged) -> None:
         """Handle config changes to reload libraries when needed.
@@ -3218,11 +3220,14 @@ class LibraryManager:
 
         library_name = None
         library_version = None
+        requires_worker = False
         lifecycle_state = LibraryManager.LibraryLifecycleState.DISCOVERED
 
         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
             library_name = metadata_result.library_schema.name
             library_version = metadata_result.library_schema.metadata.library_version
+            worker_cfg = metadata_result.library_schema.metadata.worker
+            requires_worker = bool(worker_cfg and worker_cfg.enabled)
             lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
         self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
@@ -3232,6 +3237,7 @@ class LibraryManager:
             is_sandbox=is_sandbox,
             library_name=library_name,
             library_version=library_version,
+            requires_worker=requires_worker,
         )
 
     def discover_libraries_request(
