@@ -115,6 +115,8 @@ class AppInitializationComplete(AppPayload):
     workflows_to_register: list[str] = field(default_factory=list)
     models_to_download: list[str] = field(default_factory=list)
     skip_library_loading: bool = False
+    # When set, restricts library loading to only the named library (dedicated worker mode).
+    worker_library_name: str | None = None
 
 
 @dataclass

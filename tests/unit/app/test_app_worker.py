@@ -470,9 +470,8 @@ class TestExecuteNode:
             }
             await worker_manager.relay_worker_result(payload)
 
-        relay_task = asyncio.create_task(resolve_via_relay())
+        asyncio.create_task(resolve_via_relay())  # noqa: RUF006
         result = await worker_manager.execute_node(node_name="MyNode", parameter_values={}, library_name="My Library")
-        await relay_task
 
         assert isinstance(result, ExecuteNodeResultSuccess)
         sent_topic = worker_manager._send_message.call_args[0][2]  # type: ignore[union-attr]

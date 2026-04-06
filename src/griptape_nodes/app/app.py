@@ -80,11 +80,6 @@ websocket_event_loop: asyncio.AbstractEventLoop | None = None
 # Threading event to signal when websocket_event_loop is ready
 websocket_event_loop_ready = threading.Event()
 
-# When running as a dedicated library worker, this holds the library name so that
-# load_all_libraries_from_config can filter to only that library. Set before
-# AppInitializationComplete is emitted so it is visible to the main-thread handler.
-_worker_library_name: str | None = None
-
 
 # Semaphore to limit concurrent requests
 REQUEST_SEMAPHORE = asyncio.Semaphore(100)
@@ -164,7 +159,7 @@ class _EngineRoleHandler(RichHandler):
 
             return super().render(  # type: ignore[call-arg]
                 record=record,
-                traceback=cast("Traceback | None", traceback),
+                traceback=cast(Traceback | None, traceback),
                 message_renderable=cast("ConsoleRenderable", message_renderable),
             )
 
@@ -186,7 +181,7 @@ class _EngineRoleHandler(RichHandler):
         formatted_time = time_format(log_time) if callable(time_format) else Text(log_time.strftime(time_format))
         level = self.get_level_text(record)
         designator = Text(f"{prefix:<{self._COLUMN_WIDTH}}", style=f"bold {_prefix_to_color(prefix)}")
-        typed_traceback = cast("Traceback | None", traceback)
+        typed_traceback = cast(Traceback | None, traceback)
         typed_message = cast("ConsoleRenderable", message_renderable)
         msg_cell: ConsoleRenderable = (
             Group(typed_message, typed_traceback) if typed_traceback is not None else typed_message
@@ -336,13 +331,11 @@ def _start_websocket_connection(worker_session_id: str | None = None, worker_lib
 
 async def _run_websocket_tasks(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
     """Run WebSocket tasks - async version."""
-    global _worker_library_name  # noqa: PLW0603
-    # Set before emitting AppInitializationComplete so the main-thread handler can read it.
-    _worker_library_name = worker_library_name
-
     async with Client() as client:
         logger.debug("WebSocket connection established")
-        griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppInitializationComplete()))
+        griptape_nodes.EventManager().put_event(
+            AppEvent(payload=app_events.AppInitializationComplete(worker_library_name=worker_library_name))
+        )
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppConnectionEstablished()))
 
         if worker_session_id:
@@ -383,7 +376,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
             tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=True)))
             tg.create_task(_send_outgoing_messages(client))
             tg.create_task(worker_manager.worker_heartbeat_monitor())
-    except BaseException:
+    except Exception:
         # Best-effort unregister so the orchestrator can clean up immediately.
         unregister_event = EventRequest(
             request=worker_events.UnregisterWorkerRequest(worker_engine_id=worker_engine_id),

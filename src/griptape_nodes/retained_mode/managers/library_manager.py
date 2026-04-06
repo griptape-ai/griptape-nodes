@@ -2373,14 +2373,6 @@ class LibraryManager:
 
         return node_class
 
-    def _library_path_matches_target(self, lib_path: str, target_library_name: str) -> bool:
-        """Return True if the library at lib_path has the given name."""
-        peek = self.load_library_metadata_from_file_request(LoadLibraryMetadataFromFileRequest(file_path=lib_path))
-        return (
-            isinstance(peek, LoadLibraryMetadataFromFileResultSuccess)
-            and peek.library_schema.name == target_library_name
-        )
-
     async def load_all_libraries_from_config(self, target_library_name: str | None = None) -> None:
         self._libraries_loading_complete.clear()
 
@@ -2411,8 +2403,11 @@ class LibraryManager:
         # Load each discovered library by path (RegisterLibraryFromFileRequest will handle metadata loading)
         for current_library_index, lib_path in enumerate(libraries_to_load, start=1):
             # When running as a dedicated library worker, skip libraries that don't match the target.
-            if target_library_name is not None and not self._library_path_matches_target(lib_path, target_library_name):
-                continue
+            # library_name is already populated in _library_file_path_to_info from the discovery phase.
+            if target_library_name is not None:
+                lib_info = self._library_file_path_to_info.get(lib_path)
+                if lib_info is None or lib_info.library_name != target_library_name:
+                    continue
 
             # Load the library through unified lifecycle using library_path
             # RegisterLibraryFromFileRequest will handle metadata loading internally to get library_name
@@ -2615,13 +2610,7 @@ class LibraryManager:
 
         # Now load all libraries from config (including newly downloaded ones).
         # When running as a dedicated library worker, restrict loading to that library.
-        target_library_name: str | None = None
-        try:
-            from griptape_nodes.app import app as _app
-
-            target_library_name = _app._worker_library_name
-        except (ImportError, AttributeError):
-            pass
+        target_library_name = payload.worker_library_name
         await self.load_all_libraries_from_config(target_library_name=target_library_name)
 
         # Register all secrets now that libraries are loaded and settings are merged

@@ -150,9 +150,13 @@ class WorkerManager:
         session_id = self._griptape_nodes.get_session_id()
         self._registered_workers.pop(wid, None)
         self._worker_last_seen.pop(wid, None)
+        lib_name = self._worker_library.get(wid)
         self._deregister_worker_library(wid)
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
         await self._unsubscribe_from_topic(response_topic)
+        # Remove the managed process entry so a new worker can be spawned for this library.
+        if lib_name:
+            self._managed_worker_processes.pop(lib_name, None)
         logger.info("Worker unregistered: %s", wid)
         return worker_events.UnregisterWorkerResultSuccess(worker_engine_id=wid, result_details="Worker unregistered.")
 
@@ -244,6 +248,10 @@ class WorkerManager:
         The subprocess runs `gtn engine --session-id <ID> --library-name <NAME>` so it
         connects to the current session and loads only the named library.
         """
+        if library_name in self._managed_worker_processes:
+            logger.debug("Worker for library '%s' already spawned; skipping duplicate spawn.", library_name)
+            return
+
         gtn = shutil.which("gtn")
         if gtn is None:
             msg = "Cannot spawn library worker: 'gtn' not found on PATH."
@@ -344,10 +352,16 @@ class WorkerManager:
         session_id = self._griptape_nodes.get_session_id()
         self._registered_workers.pop(worker_engine_id, None)
         self._worker_last_seen.pop(worker_engine_id, None)
+        lib_name = self._worker_library.get(worker_engine_id)
         self._deregister_worker_library(worker_engine_id)
         topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
         await self._unsubscribe_from_topic(topic)
         logger.warning("Worker evicted: %s", worker_engine_id)
+        # Terminate the managed subprocess for this worker, if any.
+        if lib_name:
+            proc = self._managed_worker_processes.pop(lib_name, None)
+            if proc is not None:
+                proc.terminate()
         # Cancel any node executions that were awaiting a result from this worker.
         for future in self._pending_node_executions.values():
             if not future.done():
