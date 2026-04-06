@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,7 +12,7 @@ from griptape_nodes.node_library.library_registry import LibraryMetadata, Worker
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 
-def _make_metadata(**kwargs: object) -> LibraryMetadata:
+def _make_metadata(**kwargs: Any) -> LibraryMetadata:
     return LibraryMetadata(
         author="test",
         description="test library",

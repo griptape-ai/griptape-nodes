@@ -421,9 +421,7 @@ class LibraryManager:
             self.on_config_changed,
         )
 
-    def register_library_loaded_callback(
-        self, callback: Callable[[LibraryManager.LibraryInfo], None]
-    ) -> None:
+    def register_library_loaded_callback(self, callback: Callable[[LibraryManager.LibraryInfo], None]) -> None:
         """Register a callback invoked after each library successfully reaches LOADED state.
 
         Callbacks are called synchronously, in registration order. Any exception raised by
@@ -2377,10 +2375,11 @@ class LibraryManager:
 
     def _library_path_matches_target(self, lib_path: str, target_library_name: str) -> bool:
         """Return True if the library at lib_path has the given name."""
-        peek = self.load_library_metadata_from_file_request(
-            LoadLibraryMetadataFromFileRequest(file_path=lib_path)
+        peek = self.load_library_metadata_from_file_request(LoadLibraryMetadataFromFileRequest(file_path=lib_path))
+        return (
+            isinstance(peek, LoadLibraryMetadataFromFileResultSuccess)
+            and peek.library_schema.name == target_library_name
         )
-        return isinstance(peek, LoadLibraryMetadataFromFileResultSuccess) and peek.library_schema.name == target_library_name
 
     async def load_all_libraries_from_config(self, target_library_name: str | None = None) -> None:
         self._libraries_loading_complete.clear()
@@ -2619,6 +2618,7 @@ class LibraryManager:
         target_library_name: str | None = None
         try:
             from griptape_nodes.app import app as _app
+
             target_library_name = _app._worker_library_name
         except (ImportError, AttributeError):
             pass
@@ -2663,33 +2663,38 @@ class LibraryManager:
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
         # Only print the engine ready banner for the orchestrator — not for dedicated library workers.
-        if target_library_name is None:
-            engine_version = get_complete_version_string()
+        self._maybe_print_engine_ready_banner(target_library_name)
 
-            # Get current session ID
-            session_id = GriptapeNodes.get_session_id()
-            session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
+    def _maybe_print_engine_ready_banner(self, target_library_name: str | None) -> None:
+        if target_library_name is not None:
+            return
 
-            # Get user and organization
-            user = GriptapeNodes.UserManager().user
-            user_info = f" | User: {user.email if user else 'Not available'}"
+        engine_version = get_complete_version_string()
 
-            user_organization = GriptapeNodes.UserManager().user_organization
-            org_info = f" | Org: {user_organization.name if user_organization else 'Not available'}"
+        # Get current session ID
+        session_id = GriptapeNodes.get_session_id()
+        session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
 
-            nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
-            message = Panel(
-                Align.center(
-                    f"[bold green]Engine is ready to receive events[/bold green]\n"
-                    f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
-                    vertical="middle",
-                ),
-                title="Griptape Nodes Engine Started",
-                subtitle=f"[green]Version: {engine_version}{session_info}{user_info}{org_info}[/green]",
-                border_style="green",
-                padding=(1, 4),
-            )
-            console.print(message)
+        # Get user and organization
+        user = GriptapeNodes.UserManager().user
+        user_info = f" | User: {user.email if user else 'Not available'}"
+
+        user_organization = GriptapeNodes.UserManager().user_organization
+        org_info = f" | Org: {user_organization.name if user_organization else 'Not available'}"
+
+        nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
+        message = Panel(
+            Align.center(
+                f"[bold green]Engine is ready to receive events[/bold green]\n"
+                f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
+                vertical="middle",
+            ),
+            title="Griptape Nodes Engine Started",
+            subtitle=f"[green]Version: {engine_version}{session_info}{user_info}{org_info}[/green]",
+            border_style="green",
+            padding=(1, 4),
+        )
+        console.print(message)
 
     async def on_config_changed(self, event: ConfigChanged) -> None:
         """Handle config changes to reload libraries when needed.

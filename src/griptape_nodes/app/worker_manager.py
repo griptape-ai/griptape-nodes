@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import json
 import logging
 import re
@@ -20,6 +19,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 )
 
 if TYPE_CHECKING:
+    import concurrent.futures
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -108,9 +108,7 @@ class WorkerManager:
         self._worker_library[wid] = request.library_name
         if request.library_name:
             self._library_workers.setdefault(request.library_name, []).append((wid, request_topic))
-            logger.info(
-                "Worker registered: %s → library '%s' (session %s)", wid, request.library_name, session_id
-            )
+            logger.info("Worker registered: %s → library '%s' (session %s)", wid, request.library_name, session_id)
         else:
             logger.info("Worker registered: %s (general-purpose, session %s)", wid, session_id)
 
@@ -260,9 +258,7 @@ class WorkerManager:
             return
         session_id = self._griptape_nodes.get_session_id()
         if not session_id:
-            logger.warning(
-                "Cannot spawn worker for library '%s': no active session.", library_info.library_name
-            )
+            logger.warning("Cannot spawn worker for library '%s': no active session.", library_info.library_name)
             return
         loop = self._websocket_event_loop
         if loop is None:

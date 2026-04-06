@@ -408,9 +408,7 @@ class TestOnLibraryLoaded:
     ) -> None:
         worker_manager._griptape_nodes.get_session_id.return_value = "sess-123"  # type: ignore[union-attr]
         mock_loop = MagicMock()
-        monkeypatch.setattr(
-            type(worker_manager), "_websocket_event_loop", property(lambda _: mock_loop)
-        )
+        monkeypatch.setattr(type(worker_manager), "_websocket_event_loop", property(lambda _: mock_loop))
         info = self._make_lib_info(requires_worker=True)
 
         with patch("asyncio.run_coroutine_threadsafe") as mock_run:

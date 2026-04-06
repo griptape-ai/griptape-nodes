@@ -11,6 +11,8 @@ import signal
 import sys
 import threading
 from dataclasses import dataclass
+from datetime import UTC
+from typing import TYPE_CHECKING, cast
 
 import truststore
 from cattrs import BaseValidationError, transform_error
@@ -42,6 +44,9 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils import install_file_url_support
+
+if TYPE_CHECKING:
+    from rich.traceback import Traceback
 
 
 # WebSocket thread communication message types
@@ -115,7 +120,7 @@ class EventLogHandler(logging.Handler):
             griptape_nodes.EventManager().put_event(log_event)
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _prefix_to_color(prefix: str) -> str:
     """Deterministically map a log prefix to a hex color.
 
@@ -155,13 +160,17 @@ class _EngineRoleHandler(RichHandler):
     ) -> object:
         prefix: str = getattr(record, "engine_prefix", "")
         if not prefix:
+            from rich.console import ConsoleRenderable
+
             return super().render(  # type: ignore[call-arg]
-                record=record, traceback=traceback, message_renderable=message_renderable
+                record=record,
+                traceback=cast("Traceback | None", traceback),
+                message_renderable=cast("ConsoleRenderable", message_renderable),
             )
 
         from datetime import datetime
 
-        from rich.console import Group
+        from rich.console import ConsoleRenderable, Group
 
         output = Table.grid(padding=(0, 1))
         output.expand = True
@@ -170,14 +179,18 @@ class _EngineRoleHandler(RichHandler):
         output.add_column(width=self._COLUMN_WIDTH, no_wrap=True)
         output.add_column(ratio=1, style="log.message", overflow="fold")
 
-        log_time = datetime.fromtimestamp(record.created)
+        log_time = datetime.fromtimestamp(record.created, tz=UTC)
         # Mirror super().render(): prefer formatter.datefmt (set by logging.basicConfig) over the
         # handler-level default, so the time column matches orchestrator log formatting.
         time_format = (None if self.formatter is None else self.formatter.datefmt) or self._log_render.time_format  # type: ignore[attr-defined]
         formatted_time = time_format(log_time) if callable(time_format) else Text(log_time.strftime(time_format))
         level = self.get_level_text(record)
         designator = Text(f"{prefix:<{self._COLUMN_WIDTH}}", style=f"bold {_prefix_to_color(prefix)}")
-        msg_cell: object = Group(message_renderable, traceback) if traceback is not None else message_renderable
+        typed_traceback = cast("Traceback | None", traceback)
+        typed_message = cast("ConsoleRenderable", message_renderable)
+        msg_cell: ConsoleRenderable = (
+            Group(typed_message, typed_traceback) if typed_traceback is not None else typed_message
+        )
 
         output.add_row(formatted_time, level, designator, msg_cell)
         return output
@@ -281,9 +294,7 @@ async def astart_app(worker_session_id: str | None = None, worker_library_name: 
         raise
 
 
-def _start_websocket_connection(
-    worker_session_id: str | None = None, worker_library_name: str | None = None
-) -> None:
+def _start_websocket_connection(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
     """Run WebSocket tasks in a separate thread with its own async loop."""
     global websocket_event_loop  # noqa: PLW0603
     try:
@@ -323,9 +334,7 @@ def _start_websocket_connection(
         websocket_event_loop_ready.clear()
 
 
-async def _run_websocket_tasks(
-    worker_session_id: str | None = None, worker_library_name: str | None = None
-) -> None:
+async def _run_websocket_tasks(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
     """Run WebSocket tasks - async version."""
     global _worker_library_name  # noqa: PLW0603
     # Set before emitting AppInitializationComplete so the main-thread handler can read it.
