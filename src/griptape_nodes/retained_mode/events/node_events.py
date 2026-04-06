@@ -33,6 +33,21 @@ class NewPosition(NamedTuple):
     x: float
     y: float
 
+    @classmethod
+    def _cattrs_structure(cls, data: Any, _type: type) -> NewPosition:
+        """Custom cattrs structuring hook.
+
+        The editor sends positions as plain arrays (e.g. [976.66, 760]) with
+        values that may be ints or floats. The default cattrs NamedTuple
+        structuring cannot resolve the float type annotation because this
+        module uses `from __future__ import annotations`, which turns
+        annotations into ForwardRef strings. This hook handles both list and
+        dict inputs and explicitly coerces values to float.
+        """
+        if isinstance(data, dict):
+            return cls(x=float(data["x"]), y=float(data["y"]))
+        return cls(x=float(data[0]), y=float(data[1]))
+
 
 @dataclass
 @PayloadRegistry.register

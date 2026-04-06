@@ -17,10 +17,8 @@ from griptape_nodes.retained_mode.events.execution_events import (
     NodeResolvedEvent,
     NodeStartProcessEvent,
 )
-from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.events.workflow_events import (
     PublishWorkflowProgressEvent,
-    PublishWorkflowRequest,
     PublishWorkflowResultFailure,
     PublishWorkflowResultSuccess,
 )
@@ -176,14 +174,7 @@ class SubflowExecutionComponent:
             return None
 
         payload = event.get("payload", {})
-        payload_type_name = payload.get("payload_type", "")
-        payload_type = PayloadRegistry.get_type(payload_type_name)
-
-        if payload_type is None:
-            logger.debug("Unknown payload type: %s", payload_type_name)
-            return None
-
-        return ExecutionEvent.from_dict(data=payload, payload_type=payload_type)
+        return ExecutionEvent.from_dict(data=payload)
 
     def handle_publishing_event(self, event: dict) -> None:
         """Handle events from SubprocessWorkflowPublisher.
@@ -223,30 +214,20 @@ class SubflowExecutionComponent:
             event: The event dictionary containing the result
         """
         payload = event.get("payload", {})
-        result_type_name = payload.get("result_type", "")
-        result_payload_type = PayloadRegistry.get_type(result_type_name)
-
-        if result_payload_type is None:
-            logger.debug("Unknown result type: %s", result_type_name)
-            return
-
         result_data = payload.get("result", {})
 
-        if result_payload_type == PublishWorkflowResultSuccess:
-            event_result = EventResultSuccess.from_dict(
-                data=payload, req_payload_type=PublishWorkflowRequest, res_payload_type=PublishWorkflowResultSuccess
+        event_result = EventResultSuccess.from_dict(data=payload)
+        if isinstance(event_result.result, PublishWorkflowResultSuccess):
+            publish_workflow_result_success = event_result.result
+            target_link = (
+                publish_workflow_result_success.metadata.get("publish_target_link")
+                if publish_workflow_result_success.metadata
+                else None
             )
-            if isinstance(event_result.result, PublishWorkflowResultSuccess):
-                publish_workflow_result_success = event_result.result
-                target_link = (
-                    publish_workflow_result_success.metadata.get("publish_target_link")
-                    if publish_workflow_result_success.metadata
-                    else None
-                )
-                if target_link:
-                    self._node.set_parameter_value("publishing_target_link", target_link)
+            if target_link:
+                self._node.set_parameter_value("publishing_target_link", target_link)
 
-        elif result_payload_type == PublishWorkflowResultFailure:
+        elif isinstance(event_result.result, PublishWorkflowResultFailure):
             result_details = result_data.get("result_details", "Unknown error")
             self.append_event(f"Publishing failed: {result_details}")
 

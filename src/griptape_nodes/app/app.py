@@ -33,7 +33,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
     ProgressEvent,
     SkipTheLineMixin,
-    deserialize_event,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -349,7 +348,7 @@ async def _process_api_event(event: dict) -> None:
 
     # Now attempt to convert it into an EventRequest.
     try:
-        request_event = deserialize_event(json_data=payload)
+        request_event = EventRequest.from_dict(payload)
     except Exception as e:
         details = str(e)
         if isinstance(e, BaseValidationError):
@@ -437,6 +436,11 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
+    worker = worker_manager.get_active_worker()
+    if worker and not isinstance(event.request, WorkerManager.LOCAL_REQUEST_TYPES):
+        await worker_manager.forward_event_to_worker(event, worker_engine_id=worker[0], worker_request_topic=worker[1])
+        return
+
     result_event = await griptape_nodes.EventManager().ahandle_request(
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},

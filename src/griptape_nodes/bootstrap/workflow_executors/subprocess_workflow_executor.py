@@ -16,18 +16,18 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventResultFailure,
     EventResultSuccess,
     ExecutionEvent,
-    ResultPayload,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowCancelledEvent,
     ControlFlowResolvedEvent,
     StartFlowRequest,
 )
-from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
+
+    from griptape_nodes.retained_mode.events.base_events import ResultPayload
 
 logger = logging.getLogger(__name__)
 
@@ -143,19 +143,13 @@ class SubprocessWorkflowExecutor(WorkflowExecutor, PythonSubprocessExecutor, Sub
     async def _process_execution_event(self, event: dict) -> None:
         payload = event.get("payload", {})
         event_type = payload.get("event_type", "")
-        payload_type_name = payload.get("payload_type", "")
-        payload_type = PayloadRegistry.get_type(payload_type_name)
 
         # Focusing on ExecutionEvent types for the workflow executor
         if event_type not in ["ExecutionEvent", "EventResultSuccess", "EventResultFailure"]:
             logger.debug("Ignoring event type: %s", event_type)
             return
 
-        if payload_type is None:
-            logger.warning("Unknown payload type: %s", payload_type_name)
-            return
-
-        ex_event = ExecutionEvent.from_dict(data=payload, payload_type=payload_type)
+        ex_event = ExecutionEvent.from_dict(data=payload)
 
         if isinstance(ex_event.payload, ControlFlowResolvedEvent):
             logger.info("Workflow execution completed successfully")
@@ -180,26 +174,14 @@ class SubprocessWorkflowExecutor(WorkflowExecutor, PythonSubprocessExecutor, Sub
 
     async def _process_result_event(self, event: dict) -> None:
         payload = event.get("payload", {})
-        request_type_name = payload.get("request_type", "")
-        response_type_name = payload.get("result_type", "")
-        request_payload_type = PayloadRegistry.get_type(request_type_name)
-        response_payload_type = PayloadRegistry.get_type(response_type_name)
-
-        if request_payload_type is None or response_payload_type is None:
-            logger.warning("Unknown payload types: %s, %s", request_type_name, response_type_name)
-            return
         if payload.get("type", "unknown") == "success_result":
-            result_event = EventResultSuccess.from_dict(
-                data=payload, req_payload_type=request_payload_type, res_payload_type=response_payload_type
-            )
+            result_event = EventResultSuccess.from_dict(data=payload)
         else:
-            result_event = EventResultFailure.from_dict(
-                data=payload, req_payload_type=request_payload_type, res_payload_type=response_payload_type
-            )
+            result_event = EventResultFailure.from_dict(data=payload)
 
         if isinstance(result_event.request, StartFlowRequest):
             logger.info("Received StartFlowRequest result event")
             if self._on_start_flow_result:
                 self._on_start_flow_result(result_event.result)
         else:
-            logger.warning("Ignoring result event for request type: %s", request_type_name)
+            logger.warning("Ignoring result event for request type: %s", type(result_event.request).__name__)

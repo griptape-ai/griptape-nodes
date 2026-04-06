@@ -9,7 +9,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
-from griptape_nodes.retained_mode.events import worker_events
+from griptape_nodes.retained_mode.events import app_events, worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeRequest,
@@ -41,6 +41,17 @@ class WorkerManager:
     HEARTBEAT_TIMEOUT_S: float = 15.0
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
+
+    LOCAL_REQUEST_TYPES: tuple[type, ...] = (
+        app_events.AppStartSessionRequest,
+        app_events.AppEndSessionRequest,
+        app_events.AppGetSessionRequest,
+        app_events.SessionHeartbeatRequest,
+        app_events.EngineHeartbeatRequest,
+        worker_events.RegisterWorkerRequest,
+        worker_events.WorkerHeartbeatRequest,
+        worker_events.UnregisterWorkerRequest,
+    )
 
     def __init__(  # noqa: PLR0913
         self,

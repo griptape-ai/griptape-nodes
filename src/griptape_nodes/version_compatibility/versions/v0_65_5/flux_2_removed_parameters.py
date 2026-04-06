@@ -32,6 +32,8 @@ class Flux2RemovedParametersCheck(SetParameterVersionCompatibilityCheck):
     """
 
     REMOVED_PARAMETERS: ClassVar[set[str]] = {"prompt_upsampling", "aspect_ratio"}
+    # The standard library: https://github.com/griptape-ai/griptape-nodes-library-standard
+    LIBRARY_NAME: ClassVar[str] = "griptape_nodes_library"
 
     def __init__(self) -> None:
         """Initialize the check with an empty set of warned workflows."""
@@ -50,6 +52,9 @@ class Flux2RemovedParametersCheck(SetParameterVersionCompatibilityCheck):
             True if this check should handle this parameter
         """
         if parameter_name not in self.REMOVED_PARAMETERS:
+            return False
+
+        if self.get_node_library_name(node) != self.LIBRARY_NAME:
             return False
 
         return type(node).__name__ == "Flux2ImageGeneration"

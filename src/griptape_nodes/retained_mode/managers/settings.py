@@ -172,12 +172,12 @@ class Settings(BaseModel):
     sandbox_library_directory: str = Field(
         category=FILE_SYSTEM,
         default="sandbox_library",
-        description="Path to the sandbox library directory (useful while developing nodes). If presented as just a directory (e.g., 'sandbox_library') it will be interpreted as being relative to the workspace directory.",
+        description="Path to the sandbox library directory (useful while developing nodes). Relative paths are interpreted relative to the workspace directory. Absolute paths are used as-is.",
     )
     libraries_directory: str = Field(
         category=FILE_SYSTEM,
         default="libraries",
-        description="Path to directory for downloaded libraries. All griptape_nodes_library.json files found recursively will be auto-discovered on startup. Relative paths are interpreted relative to the workspace directory.",
+        description="Path to directory for downloaded libraries. All griptape_nodes_library.json files found recursively will be auto-discovered on startup. Relative paths are interpreted relative to the workspace directory. Absolute paths are used as-is.",
     )
     app_events: AppEvents = Field(
         category=APPLICATION_EVENTS,

@@ -1,6 +1,7 @@
 """Main CLI application using typer."""
 
 import sys
+import warnings
 from pathlib import Path
 
 import typer
@@ -44,7 +45,9 @@ def main(
 ) -> None:
     """Griptape Nodes Engine CLI."""
     if no_update:
-        console.print("[yellow]Warning: --no-update is deprecated and will be removed in a future version.[/yellow]")
+        # Note: as per PEP 565, use FutureWarning for user-visible
+        # deprecations.
+        warnings.warn("--no-update is deprecated and will be removed in a future version.", FutureWarning, stacklevel=2)
 
     if version:
         version_string = get_complete_version_string()

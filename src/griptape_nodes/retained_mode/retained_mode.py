@@ -244,13 +244,14 @@ class RetainedMode:
 
     # NODE OPERATIONS
     @classmethod
-    def create_node(
+    def create_node(  # noqa: PLR0913
         cls,
         node_type: str,
         specific_library_name: str | None = None,
         node_name: str | None = None,
         parent_flow_name: str | None = None,
         metadata: dict[Any, Any] | None = None,
+        parent_group_name: str | None = None,
     ) -> str | CreateNodeResultFailure:
         """Creates a node of the specified type and adds it to the current or a specified parent flow.
 
@@ -262,6 +263,7 @@ class RetainedMode:
             node_name (str, optional): Custom name for the new node.
             parent_flow_name (str, optional): Parent flow to insert the node into (defaults to current).
             metadata (dict, optional): Extra node metadata such as {"position": {"x": 100, "y": 200"}}.
+            parent_group_name (str, optional): Name of the group node to add this node to after creation.
 
         Returns:
             ResultPayload: Contains the name of the created node if successful.
@@ -277,6 +279,7 @@ class RetainedMode:
             specific_library_name=specific_library_name,
             override_parent_flow_name=parent_flow_name,
             metadata=metadata,
+            parent_group_name=parent_group_name,
         )
         result = GriptapeNodes().handle_request(request)
         # Check if result is successful before accessing node_name
@@ -593,7 +596,7 @@ class RetainedMode:
         return result
 
     @classmethod
-    def create_node_relative_to(  # noqa: PLR0911, PLR0913
+    def create_node_relative_to(  # noqa: C901, PLR0911, PLR0913
         cls,
         reference_node_name: str,
         new_node_type: str,
@@ -650,6 +653,16 @@ class RetainedMode:
         reference_position = reference_metadata.get("position", {"x": 0, "y": 0})
         reference_size = reference_metadata.get("size", {"width": 200, "height": 100})
 
+        # Detect if the reference node is in a group so the new node joins the same group
+        parent_group_name = None
+        reference_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(reference_node_name)
+        if (
+            reference_node is not None
+            and hasattr(reference_node, "parent_group")
+            and reference_node.parent_group is not None
+        ):
+            parent_group_name = reference_node.parent_group.name
+
         # Create the new node, optionally with matching size from reference node
         metadata = None
         if match_size:
@@ -659,6 +672,7 @@ class RetainedMode:
             node_name=new_node_name,
             specific_library_name=specific_library_name,
             metadata=metadata,
+            parent_group_name=parent_group_name,
         )
 
         # Check if creation succeeded, create_node returns the node name if successful

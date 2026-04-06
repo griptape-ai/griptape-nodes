@@ -62,7 +62,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowResultFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
-    DeleteFlowRequest,
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
@@ -914,16 +913,12 @@ class NodeManager:
             if cancel_result is not None:
                 return cancel_result
 
-            subflow_name = None
-            # Remove nodes from the node group (if it is one) before deleting connections.
-            if isinstance(node, SubflowNodeGroup):
-                try:
-                    subflow_name = node.delete_group()
-                except ValueError as err:
-                    details = (
-                        f"Attempted to delete NodeGroup '{request.node_name}'. Failed to remove nodes from group: {err}"
-                    )
-                    return DeleteNodeResultFailure(result_details=details)
+            # Call after_node_deleted hook for cleanup of a node, implemented by node author.
+            try:
+                node.after_node_deleted()
+            except ValueError as err:
+                msg = f"Failed to delete node {node_name}, after_node_deleted method failed to run with error: {err}"
+                return DeleteNodeResultFailure(result_details=msg)
             # Remove all connections from this Node using a loop to handle cascading deletions
             any_connections_remain = True
             while any_connections_remain:
@@ -978,6 +973,7 @@ class NodeManager:
             except ValueError as e:
                 details = f"Attempted to delete a Node '{node_name}'. Failed to remove it from the node group: {e}"
                 return DeleteNodeResultFailure(result_details=details)
+
         parent_flow.remove_node(node.name)
 
         # Now remove the record keeping
@@ -988,18 +984,6 @@ class NodeManager:
         if request.node_name is None:
             GriptapeNodes.ContextManager().pop_node()
 
-        # Delete subflow if it has one and it still exists
-        # Note: The subflow may have already been deleted if we're being called as part of
-        # a parent flow deletion (which deletes child flows before nodes)
-        if subflow_name is not None:
-            subflow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(subflow_name, ControlFlow)
-            if subflow is not None:
-                delete_flow_request = DeleteFlowRequest(flow_name=subflow_name)
-                delete_flow_result = GriptapeNodes.handle_request(delete_flow_request)
-
-                if delete_flow_result.failed():
-                    details = f"Attempted to delete NodeGroup '{request.node_name}'. Failed to delete subflow '{subflow_name}': {delete_flow_result.result_details}"
-                    return DeleteNodeResultFailure(result_details=details)
         details = f"Successfully deleted Node '{node_name}'."
         return DeleteNodeResultSuccess(result_details=details)
 

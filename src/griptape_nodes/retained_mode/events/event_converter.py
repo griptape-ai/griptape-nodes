@@ -6,7 +6,6 @@ from dataclasses import is_dataclass
 from datetime import datetime
 from typing import Any
 
-from cattrs.cols import is_namedtuple, namedtuple_dict_structure_factory, namedtuple_dict_unstructure_factory
 from cattrs.gen import make_dict_structure_fn, make_dict_unstructure_fn, override
 from cattrs.preconf.json import make_converter
 from cattrs.strategies import use_class_methods
@@ -51,6 +50,10 @@ converter.register_unstructure_hook(type, lambda t: f"{t.__module__}.{t.__qualna
 
 # --- Structure hooks (deserialization) ---
 
+# The JSON preset strict mode rejects ints for float fields, but JSON has
+# no distinction between int and float, so coerce int -> float on input.
+converter.register_structure_hook(float, lambda v, _: float(v))
+
 # Pydantic BaseModel subclasses
 converter.register_structure_hook_func(
     lambda cls: isinstance(cls, type) and issubclass(cls, BaseModel),
@@ -62,15 +65,6 @@ converter.register_structure_hook_func(
     lambda cls: isinstance(cls, type) and issubclass(cls, Exception),
     lambda obj, cls: cls(obj) if isinstance(obj, str) else cls(str(obj)),
 )
-
-
-# --- Hook factories for NamedTuples ---
-#
-# cattrs passes NamedTuples through unchanged by default. Register the built-in dict
-# factories so NamedTuples are serialized as dicts with recursive field handling.
-
-converter.register_unstructure_hook_factory(is_namedtuple, namedtuple_dict_unstructure_factory)
-converter.register_structure_hook_factory(is_namedtuple, namedtuple_dict_structure_factory)
 
 
 # --- Class-specific (un)structuring methods ---
