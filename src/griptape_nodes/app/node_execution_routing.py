@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.execution_events import (
@@ -47,7 +47,10 @@ def setup(worker_manager: WorkerManager, event_manager: EventManager) -> None:
         worker = worker_manager.get_active_worker()
         if worker is None:
             # No worker registered — execute locally.
-            return await GriptapeNodes.NodeManager().on_execute_node_request(request)
+            return cast(
+                ExecuteNodeResultSuccess | ExecuteNodeResultFailure,
+                await GriptapeNodes.NodeManager().on_execute_node_request(request),
+            )
 
         worker_engine_id, worker_request_topic = worker
         raw = await worker_manager.route_to_worker(
