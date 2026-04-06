@@ -15,6 +15,7 @@ from rich.align import Align
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
+from rich.text import Text
 
 from griptape_nodes.api_client import Client
 from griptape_nodes.app.worker_manager import WorkerManager
@@ -110,6 +111,39 @@ class EventLogHandler(logging.Handler):
             griptape_nodes.EventManager().put_event(log_event)
 
 
+class _EngineRoleFilter(logging.Filter):
+    """Injects engine_prefix into every log record to identify which engine produced the log."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.prefix: str = ""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.engine_prefix = self.prefix  # type: ignore[attr-defined]
+        return True
+
+
+class _EngineRoleHandler(RichHandler):
+    """RichHandler that renders the engine role designator before the log message when set."""
+
+    _COLUMN_WIDTH = 6  # display width of first 6 chars of a worker engine ID
+
+    def render_message(self, record: logging.LogRecord, message: str) -> object:  # type: ignore[override]
+        msg_renderable = super().render_message(record, message)
+        prefix: str = getattr(record, "engine_prefix", "")
+        if not prefix or not isinstance(msg_renderable, Text):
+            return msg_renderable
+        combined = Text()
+        combined.append(f"{prefix:<{self._COLUMN_WIDTH}}", style="dim")
+        combined.append("  ")
+        combined.append_text(msg_renderable)
+        return combined
+
+
+_engine_role_filter = _EngineRoleFilter()
+_rich_handler = _EngineRoleHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
+_rich_handler.addFilter(_engine_role_filter)
+
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
 logger = logging.getLogger("griptape_nodes_app")
 
@@ -126,7 +160,7 @@ logging.basicConfig(
     level=log_level,
     format="%(message)s",
     datefmt="[%X]",
-    handlers=[RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)],
+    handlers=[_rich_handler],
 )
 
 # Suppress noisy third-party library logging
@@ -273,6 +307,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     if not worker_engine_id:
         msg = "Engine ID is not set; cannot register as a worker."
         raise RuntimeError(msg)
+    _engine_role_filter.prefix = worker_engine_id[:6]
     reg_event = EventRequest(
         request=worker_events.RegisterWorkerRequest(
             worker_engine_id=worker_engine_id,

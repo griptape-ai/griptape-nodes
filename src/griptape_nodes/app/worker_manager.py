@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import re
@@ -255,9 +256,15 @@ class WorkerManager:
         Registered as a callback with LibraryManager. Spawns a dedicated worker
         subprocess for libraries that declare worker.enabled = True.
         """
+        logger.info(
+            "Library loaded callback: '%s', requires_worker=%s",
+            library_info.library_name,
+            library_info.requires_worker,
+        )
         if not library_info.requires_worker or not library_info.library_name:
             return
         session_id = self._griptape_nodes.get_session_id()
+        logger.info("Session ID for worker spawn: %s", session_id)
         if not session_id:
             logger.warning(
                 "Cannot spawn worker for library '%s': no active session.", library_info.library_name
@@ -270,10 +277,21 @@ class WorkerManager:
                 library_info.library_name,
             )
             return
-        asyncio.run_coroutine_threadsafe(
+        future = asyncio.run_coroutine_threadsafe(
             self.spawn_worker_for_library(library_info.library_name, session_id),
             loop,
         )
+
+        def _log_spawn_error(f: concurrent.futures.Future) -> None:
+            exc = f.exception()
+            if exc is not None:
+                logger.error(
+                    "Failed to spawn worker for library '%s': %s",
+                    library_info.library_name,
+                    exc,
+                )
+
+        future.add_done_callback(_log_spawn_error)
 
     async def execute_node(
         self,
