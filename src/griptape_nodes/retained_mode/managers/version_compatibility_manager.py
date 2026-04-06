@@ -91,6 +91,18 @@ class WorkflowVersionCompatibilityCheck(ABC):
 class SetParameterVersionCompatibilityCheck(ABC):
     """Abstract base class for runtime parameter set version compatibility checks."""
 
+    @staticmethod
+    def get_node_library_name(node: BaseNode) -> str | None:
+        """Get the library name a node belongs to from its metadata.
+
+        Args:
+            node: The node instance
+
+        Returns:
+            The library name string, or None if not available
+        """
+        return node.metadata.get("library")
+
     @abstractmethod
     def applies_to_set_parameter(self, node: BaseNode, parameter_name: str, value: Any) -> bool:
         """Return True if this check applies to the given parameter set operation.

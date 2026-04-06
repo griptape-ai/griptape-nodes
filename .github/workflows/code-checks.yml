@@ -1,15 +1,15 @@
 name: Code Checks
 
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  merge_group:
-    types: [checks_requested]
-
 permissions:
   contents: read
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.12" ]
+        python-version: ["3.12"]
     steps:
       - name: Checkout actions
         uses: actions/checkout@v6
@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.12" ]
+        python-version: ["3.12"]
     steps:
       - name: Checkout actions
         uses: actions/checkout@v6
@@ -60,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.12" ]
+        python-version: ["3.12"]
     steps:
       - name: Checkout actions
         uses: actions/checkout@v6
