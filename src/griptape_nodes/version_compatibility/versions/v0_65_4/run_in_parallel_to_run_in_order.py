@@ -37,6 +37,7 @@ class RunInParallelToRunInOrderCheck(SetParameterVersionCompatibilityCheck):
     - run_in_parallel=False → run_in_order=True (run sequentially)
     """
 
+    # The standard library: https://github.com/griptape-ai/griptape-nodes-library-standard
     LIBRARY_NAME: ClassVar[str] = "griptape_nodes_library"
 
     def applies_to_set_parameter(self, node: BaseNode, parameter_name: str, _value: Any) -> bool:
