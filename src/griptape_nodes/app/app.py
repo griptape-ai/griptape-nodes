@@ -27,6 +27,7 @@ from rich.table import Table
 from rich.text import Text
 
 from griptape_nodes.api_client import Client
+from griptape_nodes.app import node_execution_routing
 from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
@@ -685,3 +686,6 @@ worker_manager = WorkerManager(
     subscribe_to_topic=_subscribe_to_topic,
     unsubscribe_from_topic=_unsubscribe_from_topic,
 )
+
+
+node_execution_routing.setup(worker_manager, griptape_nodes.EventManager())

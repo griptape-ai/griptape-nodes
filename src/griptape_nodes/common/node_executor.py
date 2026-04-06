@@ -53,6 +53,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
+    ExecuteNodeRequest,
     ExecuteNodeResultSuccess,
     GriptapeEvent,
     InvolvedNodesEvent,
@@ -115,7 +116,6 @@ from griptape_nodes.retained_mode.managers.event_manager import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -210,21 +210,6 @@ class LoopBodyNodes(NamedTuple):
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
-    @property
-    def _worker_manager(self) -> WorkerManager | None:
-        """Return the app-layer WorkerManager if available, otherwise None.
-
-        Uses a lazy import so node_executor.py has no module-level dependency
-        on app.py (which would create a circular import).
-        """
-        try:
-            from griptape_nodes.app import app as _app
-        except (ImportError, AttributeError) as e:
-            logger.debug("WorkerManager unavailable; falling back to local node execution: %s", e)
-            return None
-        else:
-            return _app.worker_manager
-
     def get_workflow_handler(self, library_name: str) -> LibraryManager.RegisteredEventHandler:
         """Get the PublishWorkflowRequest handler for a library, or None if not available."""
         library_manager = GriptapeNodes.LibraryManager()
@@ -276,51 +261,24 @@ class NodeExecutor:
                 await self.handle_loop_execution(node)
                 return
 
-            # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-            await self._execute_leaf_node(node)
-        finally:
-            current_executing_node_name.reset(token)
-
-    async def _execute_leaf_node(self, node: BaseNode) -> None:
-        """Execute a leaf node, routing to a library worker when one is registered.
-
-        Falls back to local execution when no worker is available, unless the
-        library declares that a dedicated worker is required.
-
-        Args:
-            node: The leaf node to execute
-        """
-        # Route to a library-specific worker when the node's library has one registered.
-        library_name = node.metadata.get("library")
-        if (
-            self._worker_manager is not None
-            and library_name
-            and self._worker_manager.get_worker_for_library(library_name) is not None
-        ):
-            result = await self._worker_manager.execute_node(
-                node_name=node.name,
-                parameter_values=dict(node.parameter_values),
-                node_type=node.metadata.get("node_type"),
-                library_name=library_name,
+            # Route through the event system — the registered handler decides
+            # whether to execute locally or forward to a worker.
+            result = await GriptapeNodes.ahandle_request(
+                ExecuteNodeRequest(
+                    node_name=node.name,
+                    parameter_values=dict(node.parameter_values),
+                    node_type=node.metadata.get("node_type"),
+                    library_name=node.metadata.get("library"),
+                )
             )
             if isinstance(result, ExecuteNodeResultSuccess):
                 for name, value in result.parameter_output_values.items():
                     node.set_parameter_value(name, value)
             else:
-                msg = f"Node '{node.name}' failed on worker: {result.result_details}"
-                raise RuntimeError(msg)
-        else:
-            # If the library declares it requires a dedicated worker process, refuse to run
-            # locally — falling back would silently violate the library's isolation contract.
-            if library_name and self._worker_manager is not None:
-                library_info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
-                if library_info is not None and library_info.requires_worker:
-                    msg = (
-                        f"Library '{library_name}' requires a dedicated worker process "
-                        "that is not yet registered. The worker may still be starting up."
-                    )
-                    raise RuntimeError(msg)
-            await node.aprocess()
+                msg = f"Node '{node.name}' execution failed: {result.result_details}"
+                raise RuntimeError(msg)  # noqa: TRY004
+        finally:
+            current_executing_node_name.reset(token)
 
     async def _execute_and_apply_workflow(
         self,

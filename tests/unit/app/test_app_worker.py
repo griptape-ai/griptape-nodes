@@ -2,7 +2,7 @@
 
 Covers registration, heartbeat, eviction, unregistration, the relay
 filter that keeps internal health-check results off the GUI topic, and
-the execute_node / pending-future mechanism.
+the route_to_worker / pending-future mechanism.
 """
 
 from __future__ import annotations
@@ -17,7 +17,9 @@ import pytest
 
 from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.retained_mode.events import worker_events
+from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.execution_events import (
+    ExecuteNodeRequest,
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
 )
@@ -254,7 +256,7 @@ class TestRelayWorkerResultPendingFuture:
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         request_id = "req-123"
-        worker_manager._pending_node_executions[request_id] = future
+        worker_manager._pending_requests[request_id] = future
 
         payload = {
             "event_type": "EventResultSuccess",
@@ -266,7 +268,7 @@ class TestRelayWorkerResultPendingFuture:
         await worker_manager.relay_worker_result(payload)
 
         assert future.done()
-        assert isinstance(future.result(), ExecuteNodeResultSuccess)
+        assert future.result() == payload  # raw dict; caller deserializes
         worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
@@ -274,7 +276,7 @@ class TestRelayWorkerResultPendingFuture:
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         request_id = "req-456"
-        worker_manager._pending_node_executions[request_id] = future
+        worker_manager._pending_requests[request_id] = future
 
         payload = {
             "event_type": "EventResultFailure",
@@ -286,7 +288,7 @@ class TestRelayWorkerResultPendingFuture:
         await worker_manager.relay_worker_result(payload)
 
         assert future.done()
-        assert isinstance(future.result(), ExecuteNodeResultFailure)
+        assert future.result() == payload  # raw dict; caller deserializes
         worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
@@ -421,62 +423,31 @@ class TestOnLibraryLoaded:
         assert mock_run.call_args[0][1] is mock_loop
 
 
-class TestExecuteNode:
+class TestRouteToWorker:
     @pytest.mark.asyncio
-    async def test_raises_when_no_worker_registered(self, worker_manager: WorkerManager) -> None:
-        with pytest.raises(RuntimeError, match="No worker available"):
-            await worker_manager.execute_node(node_name="MyNode", parameter_values={})
-
-    @pytest.mark.asyncio
-    async def test_sends_request_to_worker_and_returns_result(self, worker_manager: WorkerManager) -> None:
-        """execute_node dispatches to the worker and resolves when relay_worker_result fires."""
-        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+    async def test_sends_request_to_worker_and_returns_raw_payload(self, worker_manager: WorkerManager) -> None:
+        """route_to_worker dispatches to the worker and resolves when relay_worker_result fires."""
+        event_request = EventRequest(request=ExecuteNodeRequest(node_name="MyNode", parameter_values={"x": 1}))
+        expected_payload = {
+            "event_type": "EventResultSuccess",
+            "result_type": ExecuteNodeResultSuccess.__name__,
+            "result": {"parameter_output_values": {"out": 99}, "result_details": "ok"},
+            "request_id": "",  # overwritten below
+        }
 
         async def resolve_via_relay() -> None:
-            # Yield once so execute_node can store the future before we resolve it.
+            # Yield once so route_to_worker can store the future before we resolve it.
             await asyncio.sleep(0)
-            request_id = next(iter(worker_manager._pending_node_executions))
-            payload = {
-                "event_type": "EventResultSuccess",
-                "result_type": ExecuteNodeResultSuccess.__name__,
-                "result": {"parameter_output_values": {"out": 99}, "result_details": "ok"},
-                "request_id": request_id,
-            }
+            request_id = next(iter(worker_manager._pending_requests))
+            payload = {**expected_payload, "request_id": request_id}
             await worker_manager.relay_worker_result(payload)
 
         asyncio.create_task(resolve_via_relay())  # noqa: RUF006
-        result = await worker_manager.execute_node(node_name="MyNode", parameter_values={"x": 1})
+        result = await worker_manager.route_to_worker(event_request, _ENGINE, _WORKER_REQUEST_TOPIC)
 
-        assert isinstance(result, ExecuteNodeResultSuccess)
-        assert result.parameter_output_values == {"out": 99}
+        assert result["result_type"] == ExecuteNodeResultSuccess.__name__
+        assert result["result"]["parameter_output_values"] == {"out": 99}
         worker_manager._send_message.assert_called_once()  # type: ignore[union-attr]
-
-    @pytest.mark.asyncio
-    async def test_routes_to_library_specific_worker(self, worker_manager: WorkerManager) -> None:
-        """execute_node routes to the library-specific worker when library_name is given."""
-        lib_engine = "lib-eng-1"
-        lib_topic = f"sessions/{_SESSION}/workers/{lib_engine}/request"
-        worker_manager._library_workers["My Library"] = [(lib_engine, lib_topic)]
-        worker_manager._registered_workers[lib_engine] = lib_topic
-
-        async def resolve_via_relay() -> None:
-            await asyncio.sleep(0)
-            request_id = next(iter(worker_manager._pending_node_executions))
-            payload = {
-                "event_type": "EventResultSuccess",
-                "result_type": ExecuteNodeResultSuccess.__name__,
-                "result": {"parameter_output_values": {}, "result_details": "ok"},
-                "request_id": request_id,
-            }
-            await worker_manager.relay_worker_result(payload)
-
-        asyncio.create_task(resolve_via_relay())  # noqa: RUF006
-        result = await worker_manager.execute_node(node_name="MyNode", parameter_values={}, library_name="My Library")
-
-        assert isinstance(result, ExecuteNodeResultSuccess)
-        sent_topic = worker_manager._send_message.call_args[0][2]  # type: ignore[union-attr]
-        assert sent_topic == lib_topic
-
 
 class TestGetActiveWorker:
     def test_returns_none_when_no_workers_registered(self, worker_manager: WorkerManager) -> None:
