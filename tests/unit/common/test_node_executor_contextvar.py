@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from griptape_nodes.common.node_executor import NodeExecutor, current_executing_node_name
-from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeResultSuccess
+from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest, ExecuteNodeResultSuccess
 
 
 def _make_executor() -> NodeExecutor:
@@ -32,7 +32,7 @@ class TestNodeExecutorContextVar:
         node = _make_node("TestNode")
         captured: list[str | None] = []
 
-        async def mock_handler(request):
+        async def mock_handler(_request: ExecuteNodeRequest) -> ExecuteNodeResultSuccess:
             captured.append(current_executing_node_name.get())
             return ExecuteNodeResultSuccess(result_details="")
 
@@ -62,12 +62,14 @@ class TestNodeExecutorContextVar:
         """The ContextVar is reset to None even when execution raises an exception."""
         node = _make_node("TestNode")
 
-        with pytest.raises(RuntimeError, match="node failed"):
-            with patch(
+        with (
+            pytest.raises(RuntimeError, match="node failed"),
+            patch(
                 "griptape_nodes.common.node_executor.GriptapeNodes.ahandle_request",
                 new=AsyncMock(side_effect=RuntimeError("node failed")),
-            ):
-                await _make_executor().execute(node)
+            ),
+        ):
+            await _make_executor().execute(node)
 
         assert current_executing_node_name.get() is None
 
@@ -76,7 +78,7 @@ class TestNodeExecutorContextVar:
         """Concurrent executions each see only their own node name via asyncio task context isolation."""
         results: dict[str, str | None] = {}
 
-        async def mock_handler(request):
+        async def mock_handler(request: ExecuteNodeRequest) -> ExecuteNodeResultSuccess:
             await asyncio.sleep(0)  # yield to allow interleaving
             results[request.node_name] = current_executing_node_name.get()
             return ExecuteNodeResultSuccess(result_details="")
