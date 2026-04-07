@@ -127,6 +127,7 @@ class RequestClient:
         event_payload = {
             "event_type": "EventRequest",
             "request_type": request_type,
+            "request_id": request_id,
             "request": payload,
             "response_topic": response_topic,
         }
@@ -300,17 +301,10 @@ class RequestClient:
     async def _handle_response(self, message: dict[str, Any]) -> bool:
         """Handle response messages by resolving tracked requests.
 
-        Supports two response formats:
-
-        Format 1 — worker/event-bus responses (orchestrator <-> worker):
+        Expects worker/event-bus response format:
           payload["event_type"] in ("EventResultSuccess", "EventResultFailure")
           payload["request_id"] = UUID (outer event request_id)
           Resolves with the full payload dict.
-
-        Format 2 — external API responses (e.g. MCP server <-> GTN backend):
-          message["type"] in ("success_result", "failure_result")
-          payload["request"]["request_id"] = UUID (inner request's request_id)
-          Resolves with payload["result"].
 
         Args:
             message: WebSocket message containing response
@@ -321,29 +315,24 @@ class RequestClient:
         """
         payload = message.get("payload", {})
 
-        # Format 1: worker/event-bus response — request_id at outer payload level
-        outer_request_id = payload.get("request_id") or ""
-        if outer_request_id and outer_request_id in self._pending_requests:
-            event_type = payload.get("event_type", "")
-            if event_type == "EventResultSuccess":
-                await self._resolve_request(outer_request_id, payload)
-                return True
-            if event_type == "EventResultFailure":
-                error_msg = payload.get("result", {}).get("exception", "Unknown error") or "Unknown error"
-                await self._reject_request(outer_request_id, Exception(error_msg))
-                return True
+        request_id = payload.get("request_id") or ""
+        if not request_id or request_id not in self._pending_requests:
+            return False
 
-        # Format 2: external API response — request_id nested inside the inner request
-        inner_request_id = payload.get("request", {}).get("request_id") or ""
-        if inner_request_id and inner_request_id in self._pending_requests:
-            message_type = message.get("type")
-            if message_type == "success_result":
-                result = payload.get("result", "Success")
-                await self._resolve_request(inner_request_id, result)
-                return True
-            if message_type == "failure_result":
-                error_msg = payload.get("result", {}).get("exception", "Unknown error") or "Unknown error"
-                await self._reject_request(inner_request_id, Exception(error_msg))
-                return True
+        event_type = payload.get("event_type", "")
+        if event_type == "EventResultSuccess":
+            await self._resolve_request(request_id, payload)
+            return True
+        if event_type == "EventResultFailure":
+            result = payload.get("result", {})
+            result_details = result.get("result_details")
+            if isinstance(result_details, str):
+                error_msg = result_details
+            elif isinstance(result_details, list) and result_details:
+                error_msg = result_details[0].get("message", "Unknown error")
+            else:
+                error_msg = result.get("exception") or "Unknown error"
+            await self._reject_request(request_id, Exception(error_msg))
+            return True
 
         return False
