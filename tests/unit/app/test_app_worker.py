@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from griptape_nodes.api_client.request_client import _PendingRequest
 from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
@@ -36,11 +37,11 @@ class _FakeRequestClient:
     """
 
     def __init__(self) -> None:
-        self._pending_requests: dict[str, tuple[asyncio.Future, str]] = {}
+        self._pending_requests: dict[str, _PendingRequest] = {}
 
     async def track_request(self, request_id: str, tag: str = "") -> asyncio.Future:
         future: asyncio.Future = asyncio.Future()
-        self._pending_requests[request_id] = (future, tag)
+        self._pending_requests[request_id] = _PendingRequest(future, tag)
         return future
 
     async def cancel_requests_by_tag(self, tag: str) -> None:
@@ -493,9 +494,9 @@ class TestRouteToWorker:
             # Yield once so route_to_worker can register the future before we resolve it.
             await asyncio.sleep(0)
             request_id = next(iter(fake_rc._pending_requests))
-            future, _ = fake_rc._pending_requests[request_id]
+            entry = fake_rc._pending_requests[request_id]
             payload = {**expected_payload, "request_id": request_id}
-            future.set_result(payload)
+            entry.future.set_result(payload)
 
         asyncio.create_task(resolve_via_future())  # noqa: RUF006
         result = await worker_manager.route_to_worker(event_request, _ENGINE, _WORKER_REQUEST_TOPIC)
