@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import uuid
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
@@ -15,6 +16,12 @@ if TYPE_CHECKING:
     from griptape_nodes.api_client.client import Client
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _PendingRequest:
+    future: asyncio.Future
+    tag: str
 
 
 class RequestClient:
@@ -50,8 +57,8 @@ class RequestClient:
         self.response_topic_fn = response_topic_fn or (lambda: "response")
         self._unhandled_handler = unhandled_handler
 
-        # Map of request_id -> (Future, tag) where tag identifies the originating worker/caller
-        self._pending_requests: dict[str, tuple[asyncio.Future, str]] = {}
+        # Map of request_id -> pending request where tag identifies the originating worker/caller
+        self._pending_requests: dict[str, _PendingRequest] = {}
         self._lock = asyncio.Lock()
 
         # Track subscribed response topics
@@ -180,11 +187,11 @@ class RequestClient:
             tag: The tag value used when track_request was called (e.g. worker_engine_id)
         """
         async with self._lock:
-            to_cancel = [rid for rid, (_, t) in self._pending_requests.items() if t == tag]
+            to_cancel = [rid for rid, entry in self._pending_requests.items() if entry.tag == tag]
             for rid in to_cancel:
-                future, _ = self._pending_requests.pop(rid)
-                if not future.done():
-                    future.cancel()
+                entry = self._pending_requests.pop(rid)
+                if not entry.future.done():
+                    entry.future.cancel()
                     logger.debug("Cancelled request %s (tag=%s)", rid, tag)
 
     async def _track_request(self, request_id: str, tag: str = "") -> asyncio.Future:
@@ -206,9 +213,43 @@ class RequestClient:
                 raise ValueError(msg)
 
             future: asyncio.Future = asyncio.Future()
-            self._pending_requests[request_id] = (future, tag)
+            self._pending_requests[request_id] = _PendingRequest(future, tag)
             logger.debug("Tracking request: %s (tag=%s)", request_id, tag)
             return future
+
+    def _resolve_request_unlocked(self, request_id: str, result: Any) -> None:
+        """Resolve a request's future. Caller must hold self._lock.
+
+        Args:
+            request_id: Request identifier
+            result: Result data to return to the requester
+        """
+        entry = self._pending_requests.pop(request_id, None)
+
+        if entry is None:
+            logger.warning("Received response for unknown request: %s", request_id)
+            return
+
+        if not entry.future.done():
+            entry.future.set_result(result)
+            logger.debug("Resolved request: %s", request_id)
+
+    def _reject_request_unlocked(self, request_id: str, error: Exception) -> None:
+        """Reject a request's future. Caller must hold self._lock.
+
+        Args:
+            request_id: Request identifier
+            error: Exception to raise for the requester
+        """
+        entry = self._pending_requests.pop(request_id, None)
+
+        if entry is None:
+            logger.warning("Received error for unknown request: %s", request_id)
+            return
+
+        if not entry.future.done():
+            entry.future.set_exception(error)
+            logger.debug("Rejected request: %s with error: %s", request_id, error)
 
     async def _resolve_request(self, request_id: str, result: Any) -> None:
         """Mark a request as successful and resolve its future with a result.
@@ -218,16 +259,7 @@ class RequestClient:
             result: Result data to return to the requester
         """
         async with self._lock:
-            entry = self._pending_requests.pop(request_id, None)
-
-            if entry is None:
-                logger.warning("Received response for unknown request: %s", request_id)
-                return
-
-            future, _ = entry
-            if not future.done():
-                future.set_result(result)
-                logger.debug("Resolved request: %s", request_id)
+            self._resolve_request_unlocked(request_id, result)
 
     async def _reject_request(self, request_id: str, error: Exception) -> None:
         """Mark a request as failed and reject its future with an exception.
@@ -237,16 +269,7 @@ class RequestClient:
             error: Exception to raise for the requester
         """
         async with self._lock:
-            entry = self._pending_requests.pop(request_id, None)
-
-            if entry is None:
-                logger.warning("Received error for unknown request: %s", request_id)
-                return
-
-            future, _ = entry
-            if not future.done():
-                future.set_exception(error)
-                logger.debug("Rejected request: %s with error: %s", request_id, error)
+            self._reject_request_unlocked(request_id, error)
 
     async def _cancel_request(self, request_id: str) -> None:
         """Cancel a pending request and clean up its tracking.
@@ -261,9 +284,8 @@ class RequestClient:
                 logger.debug("Request already completed or unknown: %s", request_id)
                 return
 
-            future, _ = entry
-            if not future.done():
-                future.cancel()
+            if not entry.future.done():
+                entry.future.cancel()
                 logger.debug("Cancelled request: %s", request_id)
 
     @property
@@ -316,17 +338,18 @@ class RequestClient:
         payload = message.get("payload", {})
 
         request_id = payload.get("request_id") or ""
-        if not request_id or request_id not in self._pending_requests:
-            return False
+        async with self._lock:
+            if not request_id or request_id not in self._pending_requests:
+                return False
 
-        event_type = payload.get("event_type", "")
-        if event_type == "EventResultSuccess":
-            await self._resolve_request(request_id, payload)
-            return True
-        if event_type == "EventResultFailure":
-            result = payload.get("result", {})
-            error_msg = str(result.get("result_details") or result.get("exception") or "Unknown error")
-            await self._reject_request(request_id, Exception(error_msg))
-            return True
+            event_type = payload.get("event_type", "")
+            if event_type == "EventResultSuccess":
+                self._resolve_request_unlocked(request_id, payload)
+                return True
+            if event_type == "EventResultFailure":
+                result = payload.get("result", {})
+                error_msg = str(result.get("result_details") or result.get("exception") or "Unknown error")
+                self._reject_request_unlocked(request_id, Exception(error_msg))
+                return True
 
         return False
