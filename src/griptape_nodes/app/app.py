@@ -392,7 +392,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     worker_manager.register_execution_routing(
         griptape_nodes.EventManager(),
         is_worker=True,
-        local_handler=GriptapeNodes.NodeManager().on_execute_node_request,
+        local_handler=GriptapeNodes.NodeManager().on_worker_execute_node_request,
     )
     # Announce this worker to the orchestrator's session request topic.
     # The orchestrator will store our engine_id and subscribe to our response topic.

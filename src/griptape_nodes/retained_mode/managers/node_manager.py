@@ -2691,30 +2691,39 @@ class NodeManager:
         return ResolveNodeResultSuccess(result_details=details)
 
     async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
-        """Execute a node's aprocess() directly with provided parameter values."""
+        """Execute a node that already exists in the registry (orchestrator-local path)."""
         node_name = request.node_name
-
         try:
             node = self.get_node_by_name(node_name)
         except ValueError:
-            # Node not in registry. Create it on-demand if type info was provided.
-            if not request.node_type:
-                return ExecuteNodeResultFailure(
-                    result_details=f"Node '{node_name}' not found and no node_type provided for creation.",
-                )
-            try:
-                node = LibraryRegistry.create_node(
-                    node_type=request.node_type,
-                    name=node_name,
-                    metadata={},
-                    specific_library_name=request.library_name,
-                )
-            except Exception as e:
-                return ExecuteNodeResultFailure(
-                    result_details=f"Failed to create node '{node_name}' of type '{request.node_type}': {e}",
-                )
+            return ExecuteNodeResultFailure(
+                result_details=f"Node '{node_name}' not found.",
+            )
+        return await self._hydrate_and_run_node(node, request)
 
-        # Hydrate input parameters
+    async def on_worker_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
+        """Execute a node on a worker by creating it on-demand from the request's type info."""
+        node_name = request.node_name
+        if not request.node_type:
+            return ExecuteNodeResultFailure(
+                result_details=f"Node '{node_name}' cannot be executed: no node_type provided.",
+            )
+        try:
+            node = LibraryRegistry.create_node(
+                node_type=request.node_type,
+                name=node_name,
+                metadata={},
+                specific_library_name=request.library_name,
+            )
+        except Exception as e:
+            return ExecuteNodeResultFailure(
+                result_details=f"Failed to create node '{node_name}' of type '{request.node_type}': {e}",
+            )
+        return await self._hydrate_and_run_node(node, request)
+
+    async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
+        """Hydrate a node's input parameters and execute it."""
+        node_name = request.node_name
         for param_name, value in request.parameter_values.items():
             try:
                 node.set_parameter_value(param_name, value)
@@ -2722,15 +2731,12 @@ class NodeManager:
                 return ExecuteNodeResultFailure(
                     result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
                 )
-
-        # Execute the node
         try:
             await node.aprocess()
         except Exception as e:
             return ExecuteNodeResultFailure(
                 result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
             )
-
         return ExecuteNodeResultSuccess(
             parameter_output_values=dict(node.parameter_output_values),
             result_details=f"Node '{node_name}' executed successfully.",
