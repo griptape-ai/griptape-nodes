@@ -373,6 +373,35 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     # routing intermediate events (AppEvents, ProgressEvents) directly to the GUI.
     griptape_nodes.SessionManager().active_session_id = worker_session_id
 
+    # Register a callback to notify the orchestrator when the worker's library is loaded.
+    # Only needed when this worker is dedicated to a specific library.
+    if worker_library_name:
+        _loop = asyncio.get_running_loop()
+
+        def _on_library_loaded(library_info) -> None:  # noqa: ANN001
+            if library_info.library_name != worker_library_name:
+                return
+            problem_details = griptape_nodes.LibraryManager()._collate_problems_for_lib_info(library_info)
+            notification = EventRequest(
+                request=worker_events.LibraryLoadedOnWorkerRequest(
+                    library_name=library_info.library_name,
+                    fitness=library_info.fitness,
+                    problem_details=problem_details,
+                    broadcast_result=True,
+                ),
+                response_topic=None,
+            )
+            asyncio.run_coroutine_threadsafe(
+                client.publish(
+                    "EventRequest",
+                    json.loads(notification.json()),
+                    f"sessions/{worker_session_id}/request",
+                ),
+                _loop,
+            )
+
+        griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_loaded)
+
     try:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=True)))
@@ -405,6 +434,7 @@ async def _run_orchestrator(client: Client) -> None:
     # main thread asynchronously — the callback registration here is guaranteed to
     # complete before any library reaches LOADED state.
     griptape_nodes.LibraryManager().register_library_loaded_callback(worker_manager.on_library_loaded)
+    worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
 
     async with asyncio.TaskGroup() as tg:
         tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=False)))

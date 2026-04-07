@@ -148,6 +148,11 @@ from griptape_nodes.retained_mode.events.resource_events import (
     ListCompatibleResourceInstancesRequest,
     ListCompatibleResourceInstancesResultSuccess,
 )
+from griptape_nodes.retained_mode.events.worker_events import (
+    LibraryLoadedOnWorkerRequest,
+    LibraryLoadedOnWorkerResultFailure,
+    LibraryLoadedOnWorkerResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     AdvancedLibraryLoadFailureProblem,
@@ -266,6 +271,7 @@ class LibraryManager:
         EVALUATED = "evaluated"
         DEPENDENCIES_INSTALLED = "dependencies_installed"
         WORKER_DELEGATED = "worker_delegated"
+        WORKER_PENDING = "worker_pending"
         LOADED = "loaded"
 
     class LibraryFitness(StrEnum):
@@ -298,7 +304,8 @@ class LibraryManager:
 
         Attributes:
             lifecycle_state: Current phase of the library loading lifecycle (DISCOVERED → METADATA_LOADED →
-                           EVALUATED → DEPENDENCIES_INSTALLED or WORKER_DELEGATED → LOADED or FAILURE at any phase)
+                           EVALUATED → DEPENDENCIES_INSTALLED → LOADED, or EVALUATED → WORKER_DELEGATED →
+                           WORKER_PENDING → LOADED once the worker confirms, or FAILURE at any phase)
             fitness: Health/quality assessment of the library (GOOD, FLAWED, UNUSABLE, MISSING, NOT_EVALUATED)
             library_path: Absolute path to the library JSON file or sandbox directory
             is_sandbox: True if this is a sandbox library (user-created nodes in workspace), False for regular libraries
@@ -415,6 +422,9 @@ class LibraryManager:
         )
         event_manager.assign_manager_to_request_type(SyncLibrariesRequest, self.sync_libraries_request)
         event_manager.assign_manager_to_request_type(InspectLibraryRepoRequest, self.inspect_library_repo_request)
+        event_manager.assign_manager_to_request_type(
+            LibraryLoadedOnWorkerRequest, self.handle_library_loaded_on_worker_request
+        )
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -432,6 +442,54 @@ class LibraryManager:
         a callback is logged but does not prevent other callbacks from running.
         """
         self._library_loaded_callbacks.append(callback)
+
+    async def handle_library_loaded_on_worker_request(
+        self,
+        request: LibraryLoadedOnWorkerRequest,
+    ) -> LibraryLoadedOnWorkerResultSuccess | LibraryLoadedOnWorkerResultFailure:
+        """Update the orchestrator's LibraryInfo.fitness with the worker's actual load outcome.
+
+        Called when a worker finishes loading its designated library and reports back. Allows
+        the orchestrator's view of library health to reflect what actually happened during dep
+        install and node import, not just the pre-worker evaluation fitness.
+        """
+        library_info = self.get_library_info_by_library_name(request.library_name)
+        if library_info is None:
+            return LibraryLoadedOnWorkerResultFailure(
+                result_details=f"Library '{request.library_name}' not found in orchestrator registry."
+            )
+        library_info.fitness = LibraryManager.LibraryFitness(request.fitness)
+        library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
+        if request.problem_details:
+            logger.warning(
+                "Worker reported problems loading library '%s': %s",
+                request.library_name,
+                request.problem_details,
+            )
+        return LibraryLoadedOnWorkerResultSuccess(
+            result_details=f"Updated fitness for library '{request.library_name}' to '{request.fitness}'."
+        )
+
+    def on_worker_evicted(self, worker_engine_id: str, library_name: str | None) -> None:
+        """Called when a worker is evicted by the orchestrator heartbeat monitor.
+
+        Transitions WORKER_PENDING libraries to FAILURE so downstream code and the UI
+        can reflect that the worker did not successfully confirm its library load.
+        The library remains registered in LibraryRegistry so node stubs stay visible.
+        """
+        if not library_name:
+            return
+        library_info = self.get_library_info_by_library_name(library_name)
+        if library_info is None:
+            return
+        if library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.WORKER_PENDING:
+            library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
+            library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+            logger.warning(
+                "Worker '%s' evicted before confirming load of library '%s'; library marked as FAILURE.",
+                worker_engine_id,
+                library_name,
+            )
 
     def print_library_load_status(self) -> None:
         library_file_paths = self.get_libraries_attempted_to_load()
@@ -1345,7 +1403,8 @@ class LibraryManager:
         """Progress library through lifecycle states until LOADED.
 
         Advances library_info through states: DISCOVERED → METADATA_LOADED →
-        EVALUATED → DEPENDENCIES_INSTALLED or WORKER_DELEGATED → LOADED.
+        EVALUATED → DEPENDENCIES_INSTALLED → LOADED, or EVALUATED → WORKER_DELEGATED →
+        WORKER_PENDING (worker confirmation pending, not LOADED yet).
 
         Modifies library_info in place as it progresses through states.
 
@@ -1576,6 +1635,13 @@ class LibraryManager:
                             library_info=library_info,
                         )
                         self._library_file_path_to_info[file_path] = library_info
+
+                        # _attempt_load_nodes_from_library sets lifecycle_state = LOADED and fires
+                        # _library_loaded_callbacks. For worker-delegated libraries on the orchestrator,
+                        # override to WORKER_PENDING -- the library is registered but the worker has not
+                        # yet confirmed successful dep install and node import.
+                        if library_info.requires_worker and self._worker_library_name is None:
+                            library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_PENDING
                     else:
                         # SANDBOX LIBRARIES: Full processing here (discovery + registration)
                         # Load metadata from JSON file (already generated in DISCOVERED → METADATA_LOADED)

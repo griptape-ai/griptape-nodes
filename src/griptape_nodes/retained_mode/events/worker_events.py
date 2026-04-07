@@ -103,3 +103,35 @@ class UnregisterWorkerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class UnregisterWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Worker unregistration failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class LibraryLoadedOnWorkerRequest(RequestPayload):
+    """Sent by a worker after its designated library reaches LOADED state.
+
+    Allows the orchestrator to update its LibraryInfo.fitness to reflect the
+    worker's actual load outcome (dep install + node import results).
+
+    Args:
+        library_name: Name of the library that was loaded.
+        fitness: Worker's final fitness value (LibraryManager.LibraryFitness string).
+        problem_details: Human-readable summary of problems, or None if there are none.
+    """
+
+    library_name: str
+    fitness: str
+    problem_details: str | None = None
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class LibraryLoadedOnWorkerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Orchestrator acknowledged the worker's library load report."""
+
+
+@dataclass
+@PayloadRegistry.register
+class LibraryLoadedOnWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Orchestrator failed to process the worker's library load report."""

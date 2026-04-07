@@ -51,6 +51,7 @@ class WorkerManager:
         worker_events.RegisterWorkerRequest,
         worker_events.WorkerHeartbeatRequest,
         worker_events.UnregisterWorkerRequest,
+        worker_events.LibraryLoadedOnWorkerRequest,
     )
 
     def __init__(  # noqa: PLR0913
@@ -90,6 +91,9 @@ class WorkerManager:
 
         # Pending worker requests: request_id → Future resolved by relay_worker_result
         self._pending_requests: dict[str, asyncio.Future[dict]] = {}
+
+        # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
+        self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
 
         event_manager.assign_manager_to_request_type(
             worker_events.RegisterWorkerRequest, self.handle_register_worker_request
@@ -338,6 +342,27 @@ class WorkerManager:
             if not future.done():
                 future.cancel()
         self._pending_requests.clear()
+
+        # Notify registered callbacks that this worker has been evicted.
+        for cb in self._worker_evicted_callbacks:
+            try:
+                cb(worker_engine_id, lib_name)
+            except Exception:
+                logger.warning(
+                    "Worker-evicted callback raised an exception for worker '%s'", worker_engine_id
+                )
+
+    def register_worker_evicted_callback(
+        self, callback: Callable[[str, str | None], None]
+    ) -> None:
+        """Register a callback invoked when a worker is evicted.
+
+        Callbacks are called synchronously in registration order. Exceptions are logged
+        but do not prevent other callbacks from running.
+
+        Callback signature: (worker_engine_id: str, library_name: str | None) -> None
+        """
+        self._worker_evicted_callbacks.append(callback)
 
     def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.
