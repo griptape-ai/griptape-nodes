@@ -346,6 +346,47 @@ async def _run_websocket_tasks(worker_session_id: str | None = None, worker_libr
             await _run_orchestrator(client)
 
 
+async def _publish_library_loaded(
+    client: Client,
+    worker_session_id: str,
+    worker_library_name: str,
+    library_info: LibraryManager.LibraryInfo,
+) -> None:
+    # collate_problems_for_lib_info runs here on the event loop thread, not the
+    # library-loading thread that invoked this callback.
+    problem_details = griptape_nodes.LibraryManager().collate_problems_for_lib_info(library_info)
+    notification = EventRequest(
+        request=worker_events.LibraryLoadedOnWorkerRequest(
+            library_name=worker_library_name,
+            fitness=library_info.fitness,
+            problem_details=problem_details,
+            broadcast_result=True,
+        ),
+        response_topic=None,
+    )
+    await client.publish(
+        "EventRequest",
+        json.loads(notification.json()),
+        f"sessions/{worker_session_id}/request",
+    )
+
+
+def _on_library_loaded(
+    library_info: LibraryManager.LibraryInfo,
+    *,
+    worker_library_name: str,
+    worker_session_id: str,
+    client: Client,
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    if library_info.library_name != worker_library_name:
+        return
+    asyncio.run_coroutine_threadsafe(
+        _publish_library_loaded(client, worker_session_id, worker_library_name, library_info),
+        loop,
+    )
+
+
 async def _run_worker(client: Client, worker_session_id: str, worker_library_name: str | None = None) -> None:
     """Run the WebSocket task group for a worker engine."""
     worker_manager.register_execution_routing(
@@ -382,33 +423,15 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     # Only needed when this worker is dedicated to a specific library.
     if worker_library_name:
         _loop = asyncio.get_running_loop()
-
-        def _notify_orchestrator_library_loaded(library_info: LibraryManager.LibraryInfo) -> None:
-            if library_info.library_name != worker_library_name:
-                return
-
-            async def _publish() -> None:
-                # collate_problems_for_lib_info runs here on the event loop thread, not the
-                # library-loading thread that invoked this callback.
-                problem_details = griptape_nodes.LibraryManager().collate_problems_for_lib_info(library_info)
-                notification = EventRequest(
-                    request=worker_events.LibraryLoadedOnWorkerRequest(
-                        library_name=worker_library_name,
-                        fitness=library_info.fitness,
-                        problem_details=problem_details,
-                        broadcast_result=True,
-                    ),
-                    response_topic=None,
-                )
-                await client.publish(
-                    "EventRequest",
-                    json.loads(notification.json()),
-                    f"sessions/{worker_session_id}/request",
-                )
-
-            asyncio.run_coroutine_threadsafe(_publish(), _loop)
-
-        griptape_nodes.LibraryManager().register_library_loaded_callback(_notify_orchestrator_library_loaded)
+        griptape_nodes.LibraryManager().register_library_loaded_callback(
+            functools.partial(
+                _on_library_loaded,
+                worker_library_name=worker_library_name,
+                worker_session_id=worker_session_id,
+                client=client,
+                loop=_loop,
+            )
+        )
 
     try:
         async with RequestClient(client, unhandled_handler=_process_api_event) as request_client:
