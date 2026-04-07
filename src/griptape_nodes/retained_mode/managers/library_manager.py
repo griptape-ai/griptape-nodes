@@ -265,6 +265,7 @@ class LibraryManager:
         METADATA_LOADED = "metadata_loaded"
         EVALUATED = "evaluated"
         DEPENDENCIES_INSTALLED = "dependencies_installed"
+        WORKER_DELEGATED = "worker_delegated"
         LOADED = "loaded"
 
     class LibraryFitness(StrEnum):
@@ -297,7 +298,7 @@ class LibraryManager:
 
         Attributes:
             lifecycle_state: Current phase of the library loading lifecycle (DISCOVERED → METADATA_LOADED →
-                           EVALUATED → DEPENDENCIES_INSTALLED → LOADED or FAILURE at any phase)
+                           EVALUATED → DEPENDENCIES_INSTALLED or WORKER_DELEGATED → LOADED or FAILURE at any phase)
             fitness: Health/quality assessment of the library (GOOD, FLAWED, UNUSABLE, MISSING, NOT_EVALUATED)
             library_path: Absolute path to the library JSON file or sandbox directory
             is_sandbox: True if this is a sandbox library (user-created nodes in workspace), False for regular libraries
@@ -1344,7 +1345,7 @@ class LibraryManager:
         """Progress library through lifecycle states until LOADED.
 
         Advances library_info through states: DISCOVERED → METADATA_LOADED →
-        EVALUATED → DEPENDENCIES_INSTALLED → LOADED.
+        EVALUATED → DEPENDENCIES_INSTALLED or WORKER_DELEGATED → LOADED.
 
         Modifies library_info in place as it progresses through states.
 
@@ -1385,16 +1386,6 @@ class LibraryManager:
                     worker_cfg = metadata_result.library_schema.metadata.worker
                     library_info.requires_worker = bool(worker_cfg and worker_cfg.enabled)
                     library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
-
-                    # On the orchestrator (no _worker_library_name), libraries that require a
-                    # dedicated worker are not loaded further here. Firing the callbacks now
-                    # triggers WorkerManager.on_library_loaded to spawn the worker subprocess,
-                    # which installs deps and registers nodes for its own library.
-                    if library_info.requires_worker and self._worker_library_name is None:
-                        self._library_file_path_to_info[library_info.library_path] = library_info
-                        for cb in self._library_loaded_callbacks:
-                            cb(library_info)
-                        return None
 
                 case LibraryManager.LibraryLifecycleState.METADATA_LOADED:
                     # METADATA_LOADED → EVALUATED
@@ -1443,19 +1434,29 @@ class LibraryManager:
                     library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.EVALUATED
 
                 case LibraryManager.LibraryLifecycleState.EVALUATED:
-                    # EVALUATED → DEPENDENCIES_INSTALLED
-                    install_result = await self.install_library_dependencies_request(
-                        InstallLibraryDependenciesRequest(library_file_path=library_info.library_path)
-                    )
-                    if isinstance(install_result, InstallLibraryDependenciesResultFailure):
-                        self._library_file_path_to_info[library_info.library_path] = library_info
-                        return RegisterLibraryFromFileResultFailure(result_details=install_result.result_details)
+                    # EVALUATED → DEPENDENCIES_INSTALLED or WORKER_DELEGATED
+                    # On the orchestrator (no _worker_library_name), skip venv creation and pip
+                    # install for libraries that require a dedicated worker. The lifecycle still
+                    # completes through LOADED so the library is registered in LibraryRegistry
+                    # (needed for the editor and workflow loading). The worker installs its own
+                    # deps in its own process.
+                    if library_info.requires_worker and self._worker_library_name is None:
+                        library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_DELEGATED
+                    else:
+                        install_result = await self.install_library_dependencies_request(
+                            InstallLibraryDependenciesRequest(library_file_path=library_info.library_path)
+                        )
+                        if isinstance(install_result, InstallLibraryDependenciesResultFailure):
+                            self._library_file_path_to_info[library_info.library_path] = library_info
+                            return RegisterLibraryFromFileResultFailure(result_details=install_result.result_details)
 
-                    # Update library_info
-                    library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.DEPENDENCIES_INSTALLED
+                        library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.DEPENDENCIES_INSTALLED
 
-                case LibraryManager.LibraryLifecycleState.DEPENDENCIES_INSTALLED:
-                    # DEPENDENCIES_INSTALLED → LOADED
+                case (
+                    LibraryManager.LibraryLifecycleState.DEPENDENCIES_INSTALLED
+                    | LibraryManager.LibraryLifecycleState.WORKER_DELEGATED
+                ):
+                    # DEPENDENCIES_INSTALLED or WORKER_DELEGATED → LOADED
 
                     if not library_info.is_sandbox:
                         # REGULAR LIBRARIES: Standard registration from JSON file
