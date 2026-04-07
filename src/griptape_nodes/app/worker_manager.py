@@ -7,7 +7,7 @@ import os
 import re
 import time
 import uuid
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.retained_mode.events import worker_events
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.api_client.request_client import RequestClient
-    from griptape_nodes.retained_mode.events.base_events import ResultPayload
+    from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -202,6 +202,52 @@ class WorkerManager:
         workers = self._keyed_workers.get(key, [])
         return workers[0] if workers else None
 
+    def get_worker_for_library(self, library_name: str | None) -> tuple[str, str] | None:
+        """Return (worker_engine_id, worker_request_topic) for a worker serving library_name, or None.
+
+        Raises RuntimeError if the library requires a dedicated worker but none is registered yet.
+        Returns None if no worker is registered and none is required.
+        """
+        if not library_name:
+            return None
+        worker = self.get_worker_for_key(library_name)
+        if worker is not None:
+            return worker
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        library_info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
+        if library_info is not None and library_info.requires_worker:
+            msg = (
+                f"Library '{library_name}' requires a dedicated worker process "
+                "that is not yet registered. The worker may still be starting up."
+            )
+            raise RuntimeError(msg)
+        return None
+
+    async def execute_on_worker(
+        self,
+        node: BaseNode,
+        worker: tuple[str, str],
+    ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+        """Execute node on the given worker and return the typed result.
+
+        Builds an ExecuteNodeRequest from the node's current state, routes it to
+        the worker, and deserializes the response.
+        """
+        worker_engine_id, worker_request_topic = worker
+        request = ExecuteNodeRequest(
+            node_name=node.name,
+            parameter_values=dict(node.parameter_values),
+            node_type=node.metadata.get("node_type"),
+            library_name=node.metadata.get("library"),
+        )
+        raw = await self.route_to_worker(
+            EventRequest(request=request),
+            worker_engine_id,
+            worker_request_topic,
+        )
+        return self._deserialize_execute_node_result(raw)
+
     def _deregister_worker_key(self, worker_engine_id: str) -> None:
         """Remove a worker from the routing tables."""
         key = self._worker_key.pop(worker_engine_id, None)
@@ -322,63 +368,6 @@ class WorkerManager:
             raise ValueError(msg) from e
         msg = f"Unrecognized execute-node result_type: {result_type!r}"
         raise ValueError(msg)
-
-    def register_execution_routing(
-        self,
-        event_manager: EventManager,
-        *,
-        is_worker: bool,
-        local_handler: Callable[[ExecuteNodeRequest], Awaitable[ResultPayload]],
-        requires_dedicated_worker: Callable[[str | None], bool] | None = None,
-    ) -> None:
-        """Register the ExecuteNodeRequest handler with EventManager.
-
-        In worker mode, requests are always executed locally via local_handler.
-        In orchestrator mode, requests are routed to a keyed worker when one is
-        registered, falling back to local_handler otherwise.
-        requires_dedicated_worker is an optional callback that returns True when
-        a request must be handled by a dedicated worker (e.g. library requires_worker).
-        If it returns True and no worker is registered, a RuntimeError is raised.
-        """
-        if is_worker:
-
-            async def _local_execute_node(
-                request: ExecuteNodeRequest,
-            ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-                return cast(
-                    "ExecuteNodeResultSuccess | ExecuteNodeResultFailure",
-                    await local_handler(request),
-                )
-
-            event_manager.assign_manager_to_request_type(ExecuteNodeRequest, _local_execute_node)
-            return
-
-        async def _routed_execute_node(
-            request: ExecuteNodeRequest,
-        ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-            worker = self.get_worker_for_key(request.library_name) if request.library_name else None
-
-            if worker is None:
-                if requires_dedicated_worker is not None and requires_dedicated_worker(request.library_name):
-                    msg = (
-                        f"Library '{request.library_name}' requires a dedicated worker process "
-                        "that is not yet registered. The worker may still be starting up."
-                    )
-                    raise RuntimeError(msg)
-                return cast(
-                    "ExecuteNodeResultSuccess | ExecuteNodeResultFailure",
-                    await local_handler(request),
-                )
-
-            worker_engine_id, worker_request_topic = worker
-            raw = await self.route_to_worker(
-                EventRequest(request=request),
-                worker_engine_id,
-                worker_request_topic,
-            )
-            return self._deserialize_execute_node_result(raw)
-
-        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, _routed_execute_node)
 
     def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.

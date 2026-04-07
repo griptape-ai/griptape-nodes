@@ -28,6 +28,7 @@ from griptape_nodes.utils.metaclasses import SingletonMeta
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
+    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.events.base_events import (
         AppPayload,
         RequestPayload,
@@ -99,6 +100,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _user_manager: UserManager
     _project_manager: ProjectManager
     _artifact_manager: ArtifactManager
+    _worker_manager: WorkerManager | None
 
     def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -168,6 +170,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._user_manager = UserManager(self._secrets_manager)
             self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
             self._artifact_manager = ArtifactManager(self._event_manager)
+            self._worker_manager = None
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -357,6 +360,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def ArtifactManager(cls) -> ArtifactManager:
         return GriptapeNodes.get_instance()._artifact_manager
+
+    @classmethod
+    def WorkerManager(cls) -> WorkerManager | None:
+        return GriptapeNodes.get_instance()._worker_manager
+
+    @classmethod
+    def set_worker_manager(cls, wm: WorkerManager) -> None:
+        GriptapeNodes.get_instance()._worker_manager = wm
 
     @classmethod
     def clear_data(cls) -> None:

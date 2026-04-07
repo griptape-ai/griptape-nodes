@@ -593,3 +593,80 @@ class TestOrchestratorHeartbeatLoop:
         await asyncio.gather(task, return_exceptions=True)
 
         assert _ENGINE in worker_manager._registered_workers
+
+
+class TestGetWorkerForLibrary:
+    def test_returns_worker_when_registered(self, worker_manager: WorkerManager) -> None:
+        worker_manager._keyed_workers["my_lib"] = [(_ENGINE, _WORKER_REQUEST_TOPIC)]
+
+        result = worker_manager.get_worker_for_library("my_lib")
+
+        assert result == (_ENGINE, _WORKER_REQUEST_TOPIC)
+
+    def test_returns_none_for_none_library_name(self, worker_manager: WorkerManager) -> None:
+        result = worker_manager.get_worker_for_library(None)
+
+        assert result is None
+
+    def test_returns_none_when_no_worker_and_not_required(self, worker_manager: WorkerManager) -> None:
+        mock_lib_info = MagicMock()
+        mock_lib_info.requires_worker = False
+
+        with patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes") as mock_gtn:
+            mock_gtn.LibraryManager.return_value.get_library_info_by_library_name.return_value = mock_lib_info
+
+            result = worker_manager.get_worker_for_library("my_lib")
+
+        assert result is None
+
+    def test_raises_when_library_requires_worker_but_none_registered(self, worker_manager: WorkerManager) -> None:
+        mock_lib_info = MagicMock()
+        mock_lib_info.requires_worker = True
+
+        with patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes") as mock_gtn:
+            mock_gtn.LibraryManager.return_value.get_library_info_by_library_name.return_value = mock_lib_info
+
+            with pytest.raises(RuntimeError, match="requires a dedicated worker"):
+                worker_manager.get_worker_for_library("my_lib")
+
+
+class TestExecuteOnWorker:
+    @pytest.mark.asyncio
+    async def test_routes_request_to_worker_and_returns_success(self, worker_manager: WorkerManager) -> None:
+        node = MagicMock()
+        node.name = "my_node"
+        node.parameter_values = {"x": 1}
+        node.metadata = {"node_type": "MyNode", "library": "my_library"}
+        worker = (_ENGINE, _WORKER_REQUEST_TOPIC)
+        raw_result = {
+            "result_type": "ExecuteNodeResultSuccess",
+            "result": {"parameter_output_values": {"out": 42}, "result_details": "ok"},
+        }
+
+        with patch.object(worker_manager, "route_to_worker", new=AsyncMock(return_value=raw_result)):
+            result = await worker_manager.execute_on_worker(node, worker)
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        assert result.parameter_output_values == {"out": 42}
+
+    @pytest.mark.asyncio
+    async def test_builds_execute_node_request_from_node(self, worker_manager: WorkerManager) -> None:
+        node = MagicMock()
+        node.name = "my_node"
+        node.parameter_values = {"x": 1}
+        node.metadata = {"node_type": "MyNode", "library": "my_library"}
+        worker = (_ENGINE, _WORKER_REQUEST_TOPIC)
+        raw_result = {
+            "result_type": "ExecuteNodeResultSuccess",
+            "result": {"parameter_output_values": {}, "result_details": "ok"},
+        }
+
+        with patch.object(worker_manager, "route_to_worker", new=AsyncMock(return_value=raw_result)) as mock_route:
+            await worker_manager.execute_on_worker(node, worker)
+
+        event_request: EventRequest = mock_route.call_args[0][0]
+        assert isinstance(event_request.request, ExecuteNodeRequest)
+        assert event_request.request.node_name == "my_node"
+        assert event_request.request.parameter_values == {"x": 1}
+        assert event_request.request.node_type == "MyNode"
+        assert event_request.request.library_name == "my_library"
