@@ -436,10 +436,13 @@ class LibraryManager:
         )
 
     def register_library_loaded_callback(self, callback: Callable[[LibraryManager.LibraryInfo], None]) -> None:
-        """Register a callback invoked after each library successfully reaches LOADED state.
+        """Register a callback invoked after each library successfully loads.
 
-        Callbacks are called synchronously, in registration order. Any exception raised by
-        a callback is logged but does not prevent other callbacks from running.
+        Callbacks fire with the library's final lifecycle state, which is either LOADED
+        (for libraries loaded directly) or WORKER_PENDING (for worker-delegated libraries
+        on the orchestrator). Callbacks are called synchronously in registration order.
+        Any exception raised by a callback is logged but does not prevent other callbacks
+        from running.
         """
         self._library_loaded_callbacks.append(callback)
 
@@ -1636,12 +1639,28 @@ class LibraryManager:
                         )
                         self._library_file_path_to_info[file_path] = library_info
 
-                        # _attempt_load_nodes_from_library sets lifecycle_state = LOADED and fires
-                        # _library_loaded_callbacks. For worker-delegated libraries on the orchestrator,
-                        # override to WORKER_PENDING -- the library is registered but the worker has not
-                        # yet confirmed successful dep install and node import.
+                        # _attempt_load_nodes_from_library sets lifecycle_state = LOADED on success.
+                        # For worker-delegated libraries on the orchestrator, override to WORKER_PENDING --
+                        # the library is registered but the worker has not yet confirmed successful dep
+                        # install and node import. Callbacks fire after this override so they observe
+                        # the final authoritative state.
                         if library_info.requires_worker and self._worker_library_name is None:
                             library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_PENDING
+
+                        # Fire callbacks with the final authoritative lifecycle state.
+                        if library_info.lifecycle_state in (
+                            LibraryManager.LibraryLifecycleState.LOADED,
+                            LibraryManager.LibraryLifecycleState.WORKER_PENDING,
+                        ):
+                            for callback in self._library_loaded_callbacks:
+                                try:
+                                    callback(library_info)
+                                except Exception as e:
+                                    logger.warning(
+                                        "Library-loaded callback raised an exception for '%s': %s",
+                                        library_info.library_name,
+                                        e,
+                                    )
                     else:
                         # SANDBOX LIBRARIES: Full processing here (discovery + registration)
                         # Load metadata from JSON file (already generated in DISCOVERED → METADATA_LOADED)
@@ -2973,13 +2992,6 @@ class LibraryManager:
 
         # Update lifecycle state to LOADED
         library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
-
-        # Notify registered callbacks that this library is now loaded.
-        for callback in self._library_loaded_callbacks:
-            try:
-                callback(library_info)
-            except Exception as e:
-                logger.warning("Library-loaded callback raised an exception for '%s': %s", library_info.library_name, e)
 
     async def _attempt_generate_sandbox_library_from_schema(  # noqa: C901
         self,
