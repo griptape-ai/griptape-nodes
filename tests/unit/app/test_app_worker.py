@@ -392,6 +392,16 @@ class TestOnLibraryLoaded:
 
         mock_run.assert_not_called()
 
+    def test_does_nothing_when_no_event_loop(self, worker_manager: WorkerManager) -> None:
+        worker_manager._griptape_nodes.get_session_id.return_value = "sess-123"  # type: ignore[union-attr]
+        # _websocket_event_loop defaults to None in the fixture
+        info = self._make_lib_info(requires_worker=True)
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            worker_manager.on_library_loaded(info)
+
+        mock_run.assert_not_called()
+
     def test_schedules_spawn_when_all_conditions_met(self, worker_manager: WorkerManager) -> None:
         worker_manager._griptape_nodes.get_session_id.return_value = "sess-123"  # type: ignore[union-attr]
         mock_loop = MagicMock()
@@ -403,6 +413,66 @@ class TestOnLibraryLoaded:
 
         mock_run.assert_called_once()
         assert mock_run.call_args[0][1] is mock_loop
+
+
+class TestSpawnWorkerForLibrary:
+    @pytest.mark.asyncio
+    async def test_raises_when_gtn_not_on_path(self, worker_manager: WorkerManager) -> None:
+        with (
+            patch("shutil.which", return_value=None),
+            pytest.raises(RuntimeError, match="'gtn' not found on PATH"),
+        ):
+            await worker_manager.spawn_worker_for_library("My Library", "sess-123")
+
+    @pytest.mark.asyncio
+    async def test_duplicate_spawn_is_noop(self, worker_manager: WorkerManager) -> None:
+        worker_manager._managed_worker_processes["My Library"] = MagicMock()
+
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            await worker_manager.spawn_worker_for_library("My Library", "sess-123")
+
+        mock_exec.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_spawns_subprocess_with_correct_args(self, worker_manager: WorkerManager) -> None:
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/gtn"),
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec,
+        ):
+            await worker_manager.spawn_worker_for_library("My Library", "sess-abc")
+
+        mock_exec.assert_called_once()
+        args = mock_exec.call_args[0]
+        assert args[0] == "/usr/local/bin/gtn"
+        assert "--session-id" in args
+        assert "sess-abc" in args
+        assert "--library-name" in args
+        assert "My Library" in args
+        assert worker_manager._managed_worker_processes["My Library"] is mock_proc
+
+
+class TestTerminateManagedWorkers:
+    def test_terminates_all_processes(self, worker_manager: WorkerManager) -> None:
+        proc_a, proc_b = MagicMock(), MagicMock()
+        worker_manager._managed_worker_processes["Lib A"] = proc_a
+        worker_manager._managed_worker_processes["Lib B"] = proc_b
+
+        worker_manager.terminate_managed_workers()
+
+        proc_a.terminate.assert_called_once()
+        proc_b.terminate.assert_called_once()
+        assert worker_manager._managed_worker_processes == {}
+
+    def test_tolerates_already_exited_process(self, worker_manager: WorkerManager) -> None:
+        proc = MagicMock()
+        proc.terminate.side_effect = ProcessLookupError
+        worker_manager._managed_worker_processes["Lib A"] = proc
+
+        worker_manager.terminate_managed_workers()  # must not raise
+
+        assert worker_manager._managed_worker_processes == {}
 
 
 class TestRouteToWorker:
