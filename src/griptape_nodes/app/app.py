@@ -27,7 +27,6 @@ from rich.table import Table
 from rich.text import Text
 
 from griptape_nodes.api_client import Client
-from griptape_nodes.app import node_execution_routing
 from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
@@ -347,7 +346,11 @@ async def _run_websocket_tasks(worker_session_id: str | None = None, worker_libr
 
 async def _run_worker(client: Client, worker_session_id: str, worker_library_name: str | None = None) -> None:
     """Run the WebSocket task group for a worker engine."""
-    node_execution_routing.setup(worker_manager, griptape_nodes.EventManager(), is_worker=True)
+    worker_manager.register_execution_routing(
+        griptape_nodes.EventManager(),
+        is_worker=True,
+        local_handler=GriptapeNodes.NodeManager().on_execute_node_request,
+    )
     # Announce this worker to the orchestrator's session request topic.
     # The orchestrator will store our engine_id and subscribe to our response topic.
     worker_engine_id = griptape_nodes.get_engine_id()
@@ -427,7 +430,11 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
 
 async def _run_orchestrator(client: Client) -> None:
     """Run the WebSocket task group for an orchestrator engine."""
-    node_execution_routing.setup(worker_manager, griptape_nodes.EventManager(), is_worker=False)
+    worker_manager.register_execution_routing(
+        griptape_nodes.EventManager(),
+        is_worker=False,
+        local_handler=GriptapeNodes.NodeManager().on_execute_node_request,
+    )
     _engine_role_filter.prefix = "Orchestrator"
     # Register worker spawn callback before the task group starts. Library loading
     # is triggered by AppInitializationComplete (already queued), which runs on the

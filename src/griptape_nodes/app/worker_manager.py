@@ -8,16 +8,22 @@ import re
 import shutil
 import time
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
+from griptape_nodes.retained_mode.events.execution_events import (
+    ExecuteNodeRequest,
+    ExecuteNodeResultFailure,
+    ExecuteNodeResultSuccess,
+)
 
 if TYPE_CHECKING:
     import concurrent.futures
     from collections.abc import Awaitable, Callable
 
+    from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -351,6 +357,84 @@ class WorkerManager:
         Callback signature: (worker_engine_id: str, library_name: str | None) -> None
         """
         self._worker_evicted_callbacks.append(callback)
+
+    @staticmethod
+    def _deserialize_execute_node_result(
+        payload: dict,
+    ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+        """Reconstruct an ExecuteNodeResultSuccess or ExecuteNodeResultFailure from a raw payload dict."""
+        result_type = payload.get("result_type", "")
+        result_data = payload.get("result", {})
+        try:
+            if result_type == ExecuteNodeResultSuccess.__name__:
+                return ExecuteNodeResultSuccess(**result_data)
+            if result_type == ExecuteNodeResultFailure.__name__:
+                return ExecuteNodeResultFailure(**result_data)
+        except TypeError as e:
+            msg = f"Failed to deserialize execute-node result (result_type={result_type!r}): {e}"
+            raise ValueError(msg) from e
+        msg = f"Unrecognized execute-node result_type: {result_type!r}"
+        raise ValueError(msg)
+
+    def register_execution_routing(
+        self,
+        event_manager: EventManager,
+        *,
+        is_worker: bool,
+        local_handler: Callable[[ExecuteNodeRequest], Awaitable[ResultPayload]],
+    ) -> None:
+        """Register the ExecuteNodeRequest handler with EventManager.
+
+        In worker mode, requests are always executed locally via local_handler.
+        In orchestrator mode, requests are routed to a library-specific worker when
+        one is registered, falling back to local_handler otherwise.
+        """
+        if is_worker:
+
+            async def _local_execute_node(
+                request: ExecuteNodeRequest,
+            ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+                return cast(
+                    "ExecuteNodeResultSuccess | ExecuteNodeResultFailure",
+                    await local_handler(request),
+                )
+
+            event_manager.assign_manager_to_request_type(ExecuteNodeRequest, _local_execute_node)
+            return
+
+        async def _routed_execute_node(
+            request: ExecuteNodeRequest,
+        ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            worker = self.get_worker_for_library(request.library_name) if request.library_name else None
+
+            if worker is None:
+                library_info = (
+                    GriptapeNodes.LibraryManager().get_library_info_by_library_name(request.library_name)
+                    if request.library_name
+                    else None
+                )
+                if library_info is not None and library_info.requires_worker:
+                    msg = (
+                        f"Library '{request.library_name}' requires a dedicated worker process "
+                        "that is not yet registered. The worker may still be starting up."
+                    )
+                    raise RuntimeError(msg)
+                return cast(
+                    "ExecuteNodeResultSuccess | ExecuteNodeResultFailure",
+                    await local_handler(request),
+                )
+
+            worker_engine_id, worker_request_topic = worker
+            raw = await self.route_to_worker(
+                EventRequest(request=request),
+                worker_engine_id,
+                worker_request_topic,
+            )
+            return self._deserialize_execute_node_result(raw)
+
+        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, _routed_execute_node)
 
     def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.
