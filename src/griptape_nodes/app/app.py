@@ -460,9 +460,12 @@ async def _run_orchestrator(client: Client) -> None:
         for topic in worker_manager.get_topics_to_subscribe(is_worker=False):
             await client.subscribe(topic)
 
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(_send_outgoing_messages(client))
-            tg.create_task(worker_manager.orchestrator_heartbeat_loop())
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(_send_outgoing_messages(client))
+                tg.create_task(worker_manager.orchestrator_heartbeat_loop())
+        finally:
+            worker_manager.terminate_managed_workers()
 
 
 async def _unhandled_message_handler(message: dict) -> None:

@@ -242,6 +242,21 @@ class WorkerManager:
         self._managed_worker_processes[library_name] = proc
         logger.info("Spawned worker for library '%s' (pid %s)", library_name, proc.pid)
 
+    def terminate_managed_workers(self) -> None:
+        """Terminate all worker subprocesses spawned by this orchestrator.
+
+        Called on orchestrator shutdown to prevent orphan processes.
+        Best-effort: each process is signalled with SIGTERM; already-exited
+        processes are silently ignored.
+        """
+        for library_name, proc in list(self._managed_worker_processes.items()):
+            try:
+                proc.terminate()
+                logger.debug("Terminated worker process for library '%s' (pid %s)", library_name, proc.pid)
+            except ProcessLookupError:
+                logger.debug("Worker process for library '%s' already exited", library_name)
+        self._managed_worker_processes.clear()
+
     def on_library_loaded(self, library_info: LibraryManager.LibraryInfo) -> None:
         """Called after each library reaches LOADED state.
 
