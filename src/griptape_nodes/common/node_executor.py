@@ -261,8 +261,6 @@ class NodeExecutor:
                 await self.handle_loop_execution(node)
                 return
 
-            # Route through the event system — the registered handler decides
-            # whether to execute locally or forward to a worker.
             result = await GriptapeNodes.ahandle_request(
                 ExecuteNodeRequest(
                     node_name=node.name,
