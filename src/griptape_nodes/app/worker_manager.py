@@ -11,7 +11,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
-from griptape_nodes.retained_mode.events import app_events, worker_events
+from griptape_nodes.retained_mode.events import app_events, library_events, worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 
 if TYPE_CHECKING:
@@ -52,6 +52,15 @@ class WorkerManager:
         worker_events.WorkerHeartbeatRequest,
         worker_events.UnregisterWorkerRequest,
         worker_events.LibraryLoadedOnWorkerRequest,
+        # Library schema queries are answered from the orchestrator's own LibraryRegistry
+        # (populated when the library JSON is loaded). Forwarding them to a worker that
+        # may still be installing dependencies causes spurious "not registered" errors.
+        library_events.GetAllInfoForLibraryRequest,
+        library_events.GetAllInfoForAllLibrariesRequest,
+        library_events.GetLibraryMetadataRequest,
+        library_events.ListNodeTypesInLibraryRequest,
+        library_events.ListCategoriesInLibraryRequest,
+        library_events.GetNodeMetadataFromLibraryRequest,
     )
 
     def __init__(  # noqa: PLR0913
