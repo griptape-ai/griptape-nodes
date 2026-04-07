@@ -437,21 +437,31 @@ class WorkerManager:
     def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.
 
-        In worker mode the engine subscribes to its dedicated per-worker request topic.
-        In orchestrator mode it subscribes to the session request topic if a session is active.
+        In worker mode the engine subscribes only to its dedicated per-worker request topic
+        and its direct-target engine topic. Workers must NOT subscribe to the generic "request"
+        topic, which is where the MCP server broadcasts; doing so causes workers to handle
+        requests intended for the orchestrator.
+
+        In orchestrator mode it subscribes to the generic "request" topic (MCP/API entry point)
+        and the session request topic.
         """
-        topics: list[str] = ["request"]
         engine_id = self._griptape_nodes.get_engine_id()
+        session_id = self._griptape_nodes.get_session_id()
+
+        topics: list[str] = []
         if engine_id:
             topics.append(f"engines/{engine_id}/request")
 
-        session_id = self._griptape_nodes.get_session_id()
         if is_worker:
             # Subscribe ONLY to this worker's dedicated per-worker request topic.
             # The orchestrator explicitly routes events here; worker never sees other workers' events.
-            topics.append(f"sessions/{session_id}/workers/{engine_id}/request")
-        elif session_id:
-            topics.append(f"sessions/{session_id}/request")
+            if session_id and engine_id:
+                topics.append(f"sessions/{session_id}/workers/{engine_id}/request")
+        else:
+            # Orchestrator handles all broadcast requests from the MCP server and the GUI.
+            topics.append("request")
+            if session_id:
+                topics.append(f"sessions/{session_id}/request")
 
         return topics
 
