@@ -574,15 +574,6 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
-    if not isinstance(event.request, WorkerManager.LOCAL_REQUEST_TYPES):
-        library_name = getattr(event.request, "library_name", None) or getattr(event.request, "library", None)
-        worker = worker_manager.get_worker_for_library(library_name) if library_name else None
-        if worker:
-            await worker_manager.forward_event_to_worker(
-                event, worker_engine_id=worker[0], worker_request_topic=worker[1]
-            )
-            return
-
     result_event = await griptape_nodes.EventManager().ahandle_request(
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},
