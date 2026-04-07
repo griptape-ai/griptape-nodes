@@ -392,9 +392,6 @@ def _on_library_loaded(
 
 async def _run_worker(client: Client, worker_session_id: str, worker_library_name: str | None = None) -> None:
     """Run the WebSocket task group for a worker engine."""
-    GriptapeNodes.EventManager().assign_manager_to_request_type(
-        execution_events.ExecuteNodeRequest, GriptapeNodes.NodeManager().on_worker_execute_node_request
-    )
     # Announce this worker to the orchestrator's session request topic.
     # The orchestrator will store our engine_id and subscribe to our response topic.
     worker_engine_id = griptape_nodes.get_engine_id()
@@ -436,7 +433,18 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
 
     try:
         async with RequestClient(client, unhandled_handler=_process_api_event) as request_client:
-            worker_manager._request_client = request_client
+            worker_manager = WorkerManager(
+                griptape_nodes=griptape_nodes,
+                event_manager=griptape_nodes.EventManager(),
+                ws_outgoing_queue=ws_outgoing_queue,
+                send_message=_send_message,
+                subscribe_to_topic=_subscribe_to_topic,
+                unsubscribe_from_topic=_unsubscribe_from_topic,
+                request_client=request_client,
+            )
+            GriptapeNodes.EventManager().assign_manager_to_request_type(
+                execution_events.ExecuteNodeRequest, GriptapeNodes.NodeManager().on_worker_execute_node_request
+            )
             for topic in worker_manager.get_topics_to_subscribe(is_worker=True):
                 await client.subscribe(topic)
 
@@ -463,14 +471,36 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
 
 async def _run_orchestrator(client: Client) -> None:
     """Run the WebSocket task group for an orchestrator engine."""
-    GriptapeNodes.set_worker_manager(worker_manager)
-    GriptapeNodes.EventManager().assign_manager_to_request_type(
-        execution_events.ExecuteNodeRequest, GriptapeNodes.NodeManager().on_execute_node_request
-    )
     _engine_role_filter.prefix = "Orchestrator"
-    # Inject the running loop before registering library callbacks so the spawn
-    # closure can schedule coroutines onto it from library-loading threads.
-    worker_manager._websocket_event_loop = asyncio.get_running_loop()
+    # Capture the running loop so library-loading callbacks (which fire from the
+    # main thread) can schedule coroutines onto the WebSocket event loop.
+    _loop = asyncio.get_running_loop()
+
+    # worker_manager is assigned inside the RequestClient context below. Closures
+    # that reference it are only invoked after it is set.
+    _worker_manager: WorkerManager | None = None
+
+    async def _handle_unmatched(message: dict) -> None:
+        """Handle messages not resolved by RequestClient as pending requests.
+
+        Called by RequestClient._listen_for_responses for every message that did not
+        match a tracked request_id. Routes worker result messages (heartbeats and any
+        unmatched results) to WorkerManager, and all other messages to _process_api_event.
+        """
+        assert _worker_manager is not None
+        try:
+            payload = message.get("payload", {})
+            event_type = payload.get("event_type", "")
+            if event_type in ("EventResultSuccess", "EventResultFailure"):
+                # Heartbeat or unmatched result from a worker — relay via the orchestrator.
+                await _worker_manager.relay_worker_result(payload)
+            else:
+                await _process_api_event(message)
+        except Exception as e:
+            logger.warning(
+                "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
+                e,
+            )
 
     # Register worker spawn callback before the task group starts. Library loading
     # is triggered by AppInitializationComplete (already queued), which runs on the
@@ -487,14 +517,11 @@ async def _run_orchestrator(client: Client) -> None:
         if gtn is None:
             logger.error("Cannot spawn worker for library '%s': 'gtn' not found on PATH.", library_info.library_name)
             return
-        loop = worker_manager._websocket_event_loop
-        if loop is None:
-            logger.warning("Cannot spawn worker for library '%s': event loop not available.", library_info.library_name)
-            return
+        assert _worker_manager is not None
         args = [gtn, "engine", "--session-id", session_id, "--library-name", library_info.library_name]
         future = asyncio.run_coroutine_threadsafe(
-            worker_manager.spawn_worker(args, library_info.library_name),
-            loop,
+            _worker_manager.spawn_worker(args, library_info.library_name),
+            _loop,
         )
 
         def _log_spawn_error(f: concurrent.futures.Future) -> None:
@@ -505,41 +532,31 @@ async def _run_orchestrator(client: Client) -> None:
         future.add_done_callback(_log_spawn_error)
 
     griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_needs_worker)
-    worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
 
-    async with RequestClient(client, unhandled_handler=_unhandled_message_handler) as request_client:
-        worker_manager._request_client = request_client
-        for topic in worker_manager.get_topics_to_subscribe(is_worker=False):
+    async with RequestClient(client, unhandled_handler=_handle_unmatched) as request_client:
+        _worker_manager = WorkerManager(
+            griptape_nodes=griptape_nodes,
+            event_manager=griptape_nodes.EventManager(),
+            ws_outgoing_queue=ws_outgoing_queue,
+            send_message=_send_message,
+            subscribe_to_topic=_subscribe_to_topic,
+            unsubscribe_from_topic=_unsubscribe_from_topic,
+            request_client=request_client,
+        )
+        GriptapeNodes.set_worker_manager(_worker_manager)
+        GriptapeNodes.EventManager().assign_manager_to_request_type(
+            execution_events.ExecuteNodeRequest, GriptapeNodes.NodeManager().on_execute_node_request
+        )
+        _worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
+        for topic in _worker_manager.get_topics_to_subscribe(is_worker=False):
             await client.subscribe(topic)
 
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_send_outgoing_messages(client))
-                tg.create_task(worker_manager.orchestrator_heartbeat_loop())
+                tg.create_task(_worker_manager.orchestrator_heartbeat_loop())
         finally:
-            worker_manager.terminate_managed_workers()
-
-
-async def _unhandled_message_handler(message: dict) -> None:
-    """Handle messages not resolved by RequestClient as pending requests.
-
-    Called by RequestClient._listen_for_responses for every message that did not
-    match a tracked request_id. Routes worker result messages (heartbeats and any
-    unmatched results) to WorkerManager, and all other messages to _process_api_event.
-    """
-    try:
-        payload = message.get("payload", {})
-        event_type = payload.get("event_type", "")
-        if event_type in ("EventResultSuccess", "EventResultFailure"):
-            # Heartbeat or unmatched result from a worker — relay via the orchestrator.
-            await worker_manager.relay_worker_result(payload)
-        else:
-            await _process_api_event(message)
-    except Exception as e:
-        logger.warning(
-            "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
-            e,
-        )
+            _worker_manager.terminate_managed_workers()
 
 
 async def _process_api_event(event: dict) -> None:
@@ -782,11 +799,3 @@ def _determine_response_topic() -> str:
     return "response"
 
 
-worker_manager = WorkerManager(
-    griptape_nodes=griptape_nodes,
-    event_manager=griptape_nodes.EventManager(),
-    ws_outgoing_queue=ws_outgoing_queue,
-    send_message=_send_message,
-    subscribe_to_topic=_subscribe_to_topic,
-    unsubscribe_from_topic=_unsubscribe_from_topic,
-)

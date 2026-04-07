@@ -55,7 +55,7 @@ class WorkerManager:
         send_message: Callable[[str, str, str | None], Awaitable[None]],
         subscribe_to_topic: Callable[[str], Awaitable[None]],
         unsubscribe_from_topic: Callable[[str], Awaitable[None]],
-        request_client: RequestClient | None = None,
+        request_client: RequestClient,
     ) -> None:
         self._griptape_nodes = griptape_nodes
         self._ws_outgoing_queue = ws_outgoing_queue
@@ -85,9 +85,6 @@ class WorkerManager:
 
         # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
         self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
-
-        # Set by app.py before library callbacks can fire. None until _run_orchestrator assigns it.
-        self._websocket_event_loop: asyncio.AbstractEventLoop | None = None
 
         event_manager.assign_manager_to_request_type(
             worker_events.RegisterWorkerRequest, self.handle_register_worker_request
@@ -298,9 +295,6 @@ class WorkerManager:
         the worker response arrives. The caller is responsible for deserializing the
         returned dict into the appropriate result type.
         """
-        if self._request_client is None:
-            msg = "route_to_worker called but no RequestClient is configured."
-            raise RuntimeError(msg)
         request_id = event_request.request_id or str(uuid.uuid4())
         future = await self._request_client.track_request(request_id, tag=worker_engine_id)
 
@@ -331,8 +325,7 @@ class WorkerManager:
             if proc is not None:
                 proc.terminate()
         # Cancel any requests that were awaiting a result from this worker.
-        if self._request_client is not None:
-            await self._request_client.cancel_requests_by_tag(worker_engine_id)
+        await self._request_client.cancel_requests_by_tag(worker_engine_id)
 
         # Notify registered callbacks that this worker has been evicted.
         for cb in self._worker_evicted_callbacks:
