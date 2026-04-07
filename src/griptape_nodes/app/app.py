@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from rich.traceback import Traceback
 
+    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
 import truststore
 from cattrs import BaseValidationError, transform_error
 from rich.align import Align
@@ -381,29 +383,32 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     if worker_library_name:
         _loop = asyncio.get_running_loop()
 
-        def _on_library_loaded(library_info) -> None:  # noqa: ANN001
+        def _notify_orchestrator_library_loaded(library_info: LibraryManager.LibraryInfo) -> None:
             if library_info.library_name != worker_library_name:
                 return
-            problem_details = griptape_nodes.LibraryManager()._collate_problems_for_lib_info(library_info)
-            notification = EventRequest(
-                request=worker_events.LibraryLoadedOnWorkerRequest(
-                    library_name=library_info.library_name,
-                    fitness=library_info.fitness,
-                    problem_details=problem_details,
-                    broadcast_result=True,
-                ),
-                response_topic=None,
-            )
-            asyncio.run_coroutine_threadsafe(
-                client.publish(
+
+            async def _publish() -> None:
+                # _collate_problems_for_lib_info runs here on the event loop thread, not the
+                # library-loading thread that invoked this callback.
+                problem_details = griptape_nodes.LibraryManager()._collate_problems_for_lib_info(library_info)
+                notification = EventRequest(
+                    request=worker_events.LibraryLoadedOnWorkerRequest(
+                        library_name=library_info.library_name,
+                        fitness=library_info.fitness,
+                        problem_details=problem_details,
+                        broadcast_result=True,
+                    ),
+                    response_topic=None,
+                )
+                await client.publish(
                     "EventRequest",
                     json.loads(notification.json()),
                     f"sessions/{worker_session_id}/request",
-                ),
-                _loop,
-            )
+                )
 
-        griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_loaded)
+            asyncio.run_coroutine_threadsafe(_publish(), _loop)
+
+        griptape_nodes.LibraryManager().register_library_loaded_callback(_notify_orchestrator_library_loaded)
 
     try:
         async with RequestClient(client, unhandled_handler=_process_api_event) as request_client:
@@ -414,7 +419,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_send_outgoing_messages(client))
                 tg.create_task(worker_manager.worker_heartbeat_monitor())
-    except Exception:
+    except BaseException:
         # Best-effort unregister so the orchestrator can clean up immediately.
         unregister_event = EventRequest(
             request=worker_events.UnregisterWorkerRequest(worker_engine_id=worker_engine_id),

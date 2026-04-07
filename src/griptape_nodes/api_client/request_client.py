@@ -325,13 +325,7 @@ class RequestClient:
             return True
         if event_type == "EventResultFailure":
             result = payload.get("result", {})
-            result_details = result.get("result_details")
-            if isinstance(result_details, str):
-                error_msg = result_details
-            elif isinstance(result_details, list) and result_details:
-                error_msg = result_details[0].get("message", "Unknown error")
-            else:
-                error_msg = result.get("exception") or "Unknown error"
+            error_msg = str(result.get("result_details") or result.get("exception") or "Unknown error")
             await self._reject_request(request_id, Exception(error_msg))
             return True
 

@@ -453,9 +453,13 @@ class TestGetActiveWorker:
 
 
 class TestGetTopicsToSubscribe:
-    def test_always_includes_base_request_topic(self, worker_manager: WorkerManager) -> None:
-        assert "request" in worker_manager.get_topics_to_subscribe(is_worker=True)
+    def test_orchestrator_includes_base_request_topic(self, worker_manager: WorkerManager) -> None:
         assert "request" in worker_manager.get_topics_to_subscribe(is_worker=False)
+
+    def test_worker_excludes_base_request_topic(self, worker_manager: WorkerManager) -> None:
+        # Workers must NOT subscribe to the broadcast "request" topic — doing so causes
+        # them to receive and attempt to handle every MCP/GUI request, racing the orchestrator.
+        assert "request" not in worker_manager.get_topics_to_subscribe(is_worker=True)
 
     def test_always_includes_engine_specific_topic(self, worker_manager: WorkerManager) -> None:
         topics_worker = worker_manager.get_topics_to_subscribe(is_worker=True)
