@@ -13,6 +13,9 @@ from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMe
 from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.execution_events import (
+    CreateWorkerNodeRequest,
+    CreateWorkerNodeResultFailure,
+    CreateWorkerNodeResultSuccess,
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
@@ -226,24 +229,50 @@ class WorkerManager:
         node: BaseNode,
         worker: tuple[str, str],
     ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-        """Execute node on the given worker and return the typed result.
+        """Execute node on the given worker via a create-then-execute sequence.
 
-        Builds an ExecuteNodeRequest from the node's current state, routes it to
-        the worker, and deserializes the response.
+        Sends CreateWorkerNodeRequest to ensure the node exists on the worker
+        (idempotent — no-op if already present), then sends ExecuteNodeRequest
+        to run it. Two round-trips on first call; one round-trip on subsequent
+        calls to the same node.
         """
         worker_engine_id, worker_request_topic = worker
-        request = ExecuteNodeRequest(
-            node_name=node.name,
-            parameter_values=dict(node.parameter_values),
-            node_type=node.metadata.get("node_type"),
-            library_name=node.metadata.get("library"),
-        )
-        raw = await self.route_to_worker(
-            EventRequest(request=request),
+        node_type = node.metadata.get("node_type")
+        library_name = node.metadata.get("library")
+
+        if not node_type:
+            return ExecuteNodeResultFailure(
+                result_details=f"Node '{node.name}' has no node_type in metadata; cannot ensure it exists on the worker.",
+            )
+
+        create_raw = await self.route_to_worker(
+            EventRequest(
+                request=CreateWorkerNodeRequest(
+                    node_name=node.name,
+                    node_type=node_type,
+                    library_name=library_name,
+                )
+            ),
             worker_engine_id,
             worker_request_topic,
         )
-        return self._deserialize_execute_node_result(raw)
+        create_result = self._deserialize_create_worker_node_result(create_raw)
+        if isinstance(create_result, CreateWorkerNodeResultFailure):
+            return ExecuteNodeResultFailure(
+                result_details=f"Failed to prepare node '{node.name}' on worker: {create_result.result_details}",
+            )
+
+        execute_raw = await self.route_to_worker(
+            EventRequest(
+                request=ExecuteNodeRequest(
+                    node_name=node.name,
+                    parameter_values=dict(node.parameter_values),
+                )
+            ),
+            worker_engine_id,
+            worker_request_topic,
+        )
+        return self._deserialize_execute_node_result(execute_raw)
 
     def _deregister_worker_key(self, worker_engine_id: str) -> None:
         """Remove a worker from the routing tables."""
@@ -343,6 +372,24 @@ class WorkerManager:
         Callback signature: (worker_engine_id: str, library_name: str | None) -> None
         """
         self._worker_evicted_callbacks.append(callback)
+
+    @staticmethod
+    def _deserialize_create_worker_node_result(
+        payload: dict,
+    ) -> CreateWorkerNodeResultSuccess | CreateWorkerNodeResultFailure:
+        """Reconstruct a CreateWorkerNodeResultSuccess or CreateWorkerNodeResultFailure from a raw payload dict."""
+        result_type = payload.get("result_type", "")
+        result_data = payload.get("result", {})
+        try:
+            if result_type == CreateWorkerNodeResultSuccess.__name__:
+                return CreateWorkerNodeResultSuccess(**result_data)
+            if result_type == CreateWorkerNodeResultFailure.__name__:
+                return CreateWorkerNodeResultFailure(**result_data)
+        except TypeError as e:
+            msg = f"Failed to deserialize create-worker-node result (result_type={result_type!r}): {e}"
+            raise ValueError(msg) from e
+        msg = f"Unrecognized create-worker-node result_type: {result_type!r}"
+        raise ValueError(msg)
 
     @staticmethod
     def _deserialize_execute_node_result(

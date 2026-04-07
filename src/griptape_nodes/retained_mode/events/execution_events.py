@@ -472,11 +472,8 @@ class ExecuteNodeRequest(RequestPayload):
     Args:
         node_name: Name of the node to execute.
         parameter_values: Input parameter values to set before execution.
-        node_type: Node class name (e.g. "SummarizeText"). Required when the
-            receiving engine has not yet created this node; allows on-demand
-            instantiation via LibraryRegistry.
-        library_name: Library owning the node type. Required alongside node_type
-            when on-demand instantiation is needed.
+        node_type: Node class name. Retained for wire-protocol compatibility.
+        library_name: Library owning the node type. Retained for wire-protocol compatibility.
 
     Results: ExecuteNodeResultSuccess | ExecuteNodeResultFailure
     """
@@ -503,3 +500,38 @@ class ExecuteNodeResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class ExecuteNodeResultFailure(ResultPayloadFailure):
     """Failed result from executing a node directly."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWorkerNodeRequest(RequestPayload):
+    """Ensure a node exists on a worker engine (no flow context required).
+
+    Idempotent: if a node with node_name already exists in ObjectManager,
+    returns success without re-creating it.
+
+    Args:
+        node_name: Name to assign to the node.
+        node_type: Node class name (e.g. "SummarizeText").
+        library_name: Library owning the node type.
+
+    Results: CreateWorkerNodeResultSuccess | CreateWorkerNodeResultFailure
+    """
+
+    node_name: str
+    node_type: str
+    library_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWorkerNodeResultSuccess(ResultPayloadSuccess):
+    """Successful result from creating a node on a worker."""
+
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWorkerNodeResultFailure(ResultPayloadFailure):
+    """Failed result from creating a node on a worker."""

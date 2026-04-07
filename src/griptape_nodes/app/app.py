@@ -442,9 +442,6 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
                 unsubscribe_from_topic=_unsubscribe_from_topic,
                 request_client=request_client,
             )
-            GriptapeNodes.EventManager().assign_manager_to_request_type(
-                execution_events.ExecuteNodeRequest, GriptapeNodes.NodeManager().on_worker_execute_node_request
-            )
             for topic in worker_manager.get_topics_to_subscribe(is_worker=True):
                 await client.subscribe(topic)
 
@@ -544,9 +541,6 @@ async def _run_orchestrator(client: Client) -> None:
             request_client=request_client,
         )
         GriptapeNodes.set_worker_manager(_worker_manager)
-        GriptapeNodes.EventManager().assign_manager_to_request_type(
-            execution_events.ExecuteNodeRequest, GriptapeNodes.NodeManager().on_execute_node_request
-        )
         _worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
         for topic in _worker_manager.get_topics_to_subscribe(is_worker=False):
             await client.subscribe(topic)
@@ -797,5 +791,3 @@ def _determine_response_topic() -> str:
 
     # Default to generic response topic
     return "response"
-
-

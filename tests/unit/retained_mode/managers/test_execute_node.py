@@ -4,6 +4,9 @@ import pytest
 
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.execution_events import (
+    CreateWorkerNodeRequest,
+    CreateWorkerNodeResultFailure,
+    CreateWorkerNodeResultSuccess,
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
@@ -110,61 +113,92 @@ class TestExecuteNode:
         expected_param_count = 3
         assert mock_node.set_parameter_value.call_count == expected_param_count
 
-    @pytest.mark.asyncio
-    async def test_worker_execute_node_creates_node_on_demand(self) -> None:
-        """Worker path: creates the node on-demand from type info when it doesn't exist locally."""
-        node_manager = self._get_node_manager()
-        mock_node = self._make_mock_node(name="missing_node")
+class TestCreateWorkerNode:
+    def _get_node_manager(self) -> NodeManager:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        with patch(
-            "griptape_nodes.retained_mode.managers.node_manager.LibraryRegistry.create_node",
-            return_value=mock_node,
-        ) as mock_create:
-            request = ExecuteNodeRequest(
-                node_name="missing_node",
-                parameter_values={},
+        return GriptapeNodes.NodeManager()
+
+    def test_creates_and_registers_node(self) -> None:
+        node_manager = self._get_node_manager()
+        mock_node = MagicMock(spec=BaseNode)
+        mock_node.name = "test_node"
+        mock_obj_mgr = MagicMock()
+        mock_obj_mgr.attempt_get_object_by_name_as_type.return_value = None
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.node_manager.GriptapeNodes.ObjectManager",
+                return_value=mock_obj_mgr,
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.node_manager.LibraryRegistry.create_node",
+                return_value=mock_node,
+            ) as mock_create,
+        ):
+            request = CreateWorkerNodeRequest(
+                node_name="test_node",
                 node_type="SomeNodeType",
                 library_name="some_library",
             )
-            result = await node_manager.on_worker_execute_node_request(request)
+            result = node_manager.on_create_worker_node_request(request)
 
-        assert isinstance(result, ExecuteNodeResultSuccess)
+        assert isinstance(result, CreateWorkerNodeResultSuccess)
+        assert result.node_name == "test_node"
         mock_create.assert_called_once_with(
             node_type="SomeNodeType",
-            name="missing_node",
+            name="test_node",
             metadata={},
             specific_library_name="some_library",
         )
-        mock_node.aprocess.assert_awaited_once()
+        mock_obj_mgr.add_object_by_name.assert_called_once_with(mock_node.name, mock_node)
 
-    @pytest.mark.asyncio
-    async def test_worker_execute_node_fails_when_no_type_provided(self) -> None:
-        """Worker path: returns failure when no node_type is provided."""
+    def test_idempotent_when_node_exists(self) -> None:
         node_manager = self._get_node_manager()
+        mock_obj_mgr = MagicMock()
+        mock_obj_mgr.attempt_get_object_by_name_as_type.return_value = MagicMock(spec=BaseNode)
 
-        request = ExecuteNodeRequest(node_name="some_node")
-        result = await node_manager.on_worker_execute_node_request(request)
-
-        assert isinstance(result, ExecuteNodeResultFailure)
-        assert "some_node" in str(result.result_details)
-        assert "no node_type provided" in str(result.result_details)
-
-    @pytest.mark.asyncio
-    async def test_worker_execute_node_fails_when_creation_fails(self) -> None:
-        """Worker path: returns failure when LibraryRegistry.create_node raises."""
-        node_manager = self._get_node_manager()
-
-        with patch(
-            "griptape_nodes.retained_mode.managers.node_manager.LibraryRegistry.create_node",
-            side_effect=RuntimeError("library not loaded"),
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.node_manager.GriptapeNodes.ObjectManager",
+                return_value=mock_obj_mgr,
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.node_manager.LibraryRegistry.create_node",
+            ) as mock_create,
         ):
-            request = ExecuteNodeRequest(
-                node_name="missing_node",
+            request = CreateWorkerNodeRequest(
+                node_name="existing_node",
                 node_type="SomeNodeType",
             )
-            result = await node_manager.on_worker_execute_node_request(request)
+            result = node_manager.on_create_worker_node_request(request)
 
-        assert isinstance(result, ExecuteNodeResultFailure)
-        assert "missing_node" in str(result.result_details)
+        assert isinstance(result, CreateWorkerNodeResultSuccess)
+        assert result.node_name == "existing_node"
+        mock_create.assert_not_called()
+
+    def test_fails_when_create_node_raises(self) -> None:
+        node_manager = self._get_node_manager()
+        mock_obj_mgr = MagicMock()
+        mock_obj_mgr.attempt_get_object_by_name_as_type.return_value = None
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.node_manager.GriptapeNodes.ObjectManager",
+                return_value=mock_obj_mgr,
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.node_manager.LibraryRegistry.create_node",
+                side_effect=RuntimeError("library not loaded"),
+            ),
+        ):
+            request = CreateWorkerNodeRequest(
+                node_name="test_node",
+                node_type="SomeNodeType",
+            )
+            result = node_manager.on_create_worker_node_request(request)
+
+        assert isinstance(result, CreateWorkerNodeResultFailure)
+        assert "test_node" in str(result.result_details)
         assert "SomeNodeType" in str(result.result_details)
         assert "library not loaded" in str(result.result_details)
