@@ -6,17 +6,15 @@ import asyncio
 import contextlib
 import logging
 import uuid
-from typing import TYPE_CHECKING, Any, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
     from types import TracebackType
 
     from griptape_nodes.api_client.client import Client
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 
 class RequestClient:
@@ -26,6 +24,10 @@ class RequestClient:
     pub/sub messaging. Tracks pending requests by request_id and resolves/rejects
     futures when responses arrive. Supports timeouts for requests that don't
     receive responses.
+
+    When used as the sole consumer of client.messages (i.e. no separate
+    _process_incoming_messages loop), pass an unhandled_handler to receive
+    messages that do not match a pending request.
     """
 
     def __init__(
@@ -33,6 +35,7 @@ class RequestClient:
         client: Client,
         request_topic_fn: Callable[[], str] | None = None,
         response_topic_fn: Callable[[], str] | None = None,
+        unhandled_handler: Callable[[dict], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize request/response client.
 
@@ -40,13 +43,15 @@ class RequestClient:
             client: Client instance to use for communication
             request_topic_fn: Function to determine request topic (defaults to "request")
             response_topic_fn: Function to determine response topic (defaults to "response")
+            unhandled_handler: Async callback for messages not matched to a pending request
         """
         self.client = client
         self.request_topic_fn = request_topic_fn or (lambda: "request")
         self.response_topic_fn = response_topic_fn or (lambda: "response")
+        self._unhandled_handler = unhandled_handler
 
-        # Map of request_id -> Future that will be resolved when response arrives
-        self._pending_requests: dict[str, asyncio.Future] = {}
+        # Map of request_id -> (Future, tag) where tag identifies the originating worker/caller
+        self._pending_requests: dict[str, tuple[asyncio.Future, str]] = {}
         self._lock = asyncio.Lock()
 
         # Track subscribed response topics
@@ -75,7 +80,11 @@ class RequestClient:
         logger.debug("RequestClient stopped")
 
     async def request(
-        self, request_type: str, payload: dict[str, Any], timeout_ms: int | None = None
+        self,
+        request_type: str,
+        payload: dict[str, Any],
+        topic: str | None = None,
+        timeout_ms: int | None = None,
     ) -> dict[str, Any]:
         """Send a request and wait for its response.
 
@@ -89,6 +98,7 @@ class RequestClient:
         Args:
             request_type: Type of request to send
             payload: Request payload data
+            topic: Optional per-call request topic override (defaults to request_topic_fn())
             timeout_ms: Optional timeout in milliseconds
 
         Returns:
@@ -105,7 +115,7 @@ class RequestClient:
         response_future = await self._track_request(request_id)
 
         # Determine topics
-        request_topic = self.request_topic_fn()
+        request_topic = topic or self.request_topic_fn()
         response_topic = self.response_topic_fn()
 
         # Subscribe to response topic if not already subscribed
@@ -146,11 +156,42 @@ class RequestClient:
             logger.debug("Request %s completed successfully", request_id)
             return result
 
-    async def _track_request(self, request_id: str) -> asyncio.Future:
+    async def track_request(self, request_id: str, tag: str = "") -> asyncio.Future:
+        """Register a future for an outgoing request and return it.
+
+        Use this when the send path is handled externally (e.g. WorkerManager
+        sends via forward_event_to_worker) and only the future tracking is needed.
+        The future is resolved when _handle_response matches the request_id.
+
+        Args:
+            request_id: Unique identifier for this request
+            tag: Optional tag for grouping related requests (e.g. worker_engine_id)
+
+        Returns:
+            Future that will be resolved when the matching response arrives
+        """
+        return await self._track_request(request_id, tag=tag)
+
+    async def cancel_requests_by_tag(self, tag: str) -> None:
+        """Cancel all pending futures that were registered with the given tag.
+
+        Args:
+            tag: The tag value used when track_request was called (e.g. worker_engine_id)
+        """
+        async with self._lock:
+            to_cancel = [rid for rid, (_, t) in self._pending_requests.items() if t == tag]
+            for rid in to_cancel:
+                future, _ = self._pending_requests.pop(rid)
+                if not future.done():
+                    future.cancel()
+                    logger.debug("Cancelled request %s (tag=%s)", rid, tag)
+
+    async def _track_request(self, request_id: str, tag: str = "") -> asyncio.Future:
         """Start tracking a request and return a future that will be resolved on response.
 
         Args:
             request_id: Unique identifier for this request
+            tag: Optional tag for grouping (e.g. worker_engine_id)
 
         Returns:
             Future that will be resolved when response arrives
@@ -164,8 +205,8 @@ class RequestClient:
                 raise ValueError(msg)
 
             future: asyncio.Future = asyncio.Future()
-            self._pending_requests[request_id] = future
-            logger.debug("Tracking request: %s", request_id)
+            self._pending_requests[request_id] = (future, tag)
+            logger.debug("Tracking request: %s (tag=%s)", request_id, tag)
             return future
 
     async def _resolve_request(self, request_id: str, result: Any) -> None:
@@ -176,12 +217,13 @@ class RequestClient:
             result: Result data to return to the requester
         """
         async with self._lock:
-            future = self._pending_requests.pop(request_id, None)
+            entry = self._pending_requests.pop(request_id, None)
 
-            if future is None:
+            if entry is None:
                 logger.warning("Received response for unknown request: %s", request_id)
                 return
 
+            future, _ = entry
             if not future.done():
                 future.set_result(result)
                 logger.debug("Resolved request: %s", request_id)
@@ -194,12 +236,13 @@ class RequestClient:
             error: Exception to raise for the requester
         """
         async with self._lock:
-            future = self._pending_requests.pop(request_id, None)
+            entry = self._pending_requests.pop(request_id, None)
 
-            if future is None:
+            if entry is None:
                 logger.warning("Received error for unknown request: %s", request_id)
                 return
 
+            future, _ = entry
             if not future.done():
                 future.set_exception(error)
                 logger.debug("Rejected request: %s with error: %s", request_id, error)
@@ -211,12 +254,13 @@ class RequestClient:
             request_id: Request identifier
         """
         async with self._lock:
-            future = self._pending_requests.pop(request_id, None)
+            entry = self._pending_requests.pop(request_id, None)
 
-            if future is None:
+            if entry is None:
                 logger.debug("Request already completed or unknown: %s", request_id)
                 return
 
+            future, _ = entry
             if not future.done():
                 future.cancel()
                 logger.debug("Cancelled request: %s", request_id)
@@ -244,35 +288,62 @@ class RequestClient:
         try:
             async for message in self.client.messages:
                 try:
-                    await self._handle_response(message)
+                    handled = await self._handle_response(message)
+                    if not handled and self._unhandled_handler:
+                        await self._unhandled_handler(message)
                 except Exception as e:
                     logger.error("Error handling response message: %s", e)
         except asyncio.CancelledError:
             logger.debug("Response listener cancelled")
             raise
 
-    async def _handle_response(self, message: dict[str, Any]) -> None:
+    async def _handle_response(self, message: dict[str, Any]) -> bool:
         """Handle response messages by resolving tracked requests.
+
+        Supports two response formats:
+
+        Format 1 — worker/event-bus responses (orchestrator <-> worker):
+          payload["event_type"] in ("EventResultSuccess", "EventResultFailure")
+          payload["request_id"] = UUID (outer event request_id)
+          Resolves with the full payload dict.
+
+        Format 2 — external API responses (e.g. MCP server <-> GTN backend):
+          message["type"] in ("success_result", "failure_result")
+          payload["request"]["request_id"] = UUID (inner request's request_id)
+          Resolves with payload["result"].
 
         Args:
             message: WebSocket message containing response
+
+        Returns:
+            True if the message was matched to a pending request and resolved/rejected,
+            False otherwise (caller may pass to unhandled_handler).
         """
-        message_type = message.get("type")
-
-        # Only handle success/failure result messages
-        if message_type not in ("success_result", "failure_result"):
-            return
-
         payload = message.get("payload", {})
-        request_id = payload.get("request", {}).get("request_id")
 
-        if not request_id:
-            logger.debug("Response message has no request_id")
-            return
+        # Format 1: worker/event-bus response — request_id at outer payload level
+        outer_request_id = payload.get("request_id") or ""
+        if outer_request_id and outer_request_id in self._pending_requests:
+            event_type = payload.get("event_type", "")
+            if event_type == "EventResultSuccess":
+                await self._resolve_request(outer_request_id, payload)
+                return True
+            if event_type == "EventResultFailure":
+                error_msg = payload.get("result", {}).get("exception", "Unknown error") or "Unknown error"
+                await self._reject_request(outer_request_id, Exception(error_msg))
+                return True
 
-        if message_type == "success_result":
-            result = payload.get("result", "Success")
-            await self._resolve_request(request_id, result)
-        else:
-            error_msg = payload.get("result", {}).get("exception", "Unknown error") or "Unknown error"
-            await self._reject_request(request_id, Exception(error_msg))
+        # Format 2: external API response — request_id nested inside the inner request
+        inner_request_id = payload.get("request", {}).get("request_id") or ""
+        if inner_request_id and inner_request_id in self._pending_requests:
+            message_type = message.get("type")
+            if message_type == "success_result":
+                result = payload.get("result", "Success")
+                await self._resolve_request(inner_request_id, result)
+                return True
+            if message_type == "failure_result":
+                error_msg = payload.get("result", {}).get("exception", "Unknown error") or "Unknown error"
+                await self._reject_request(inner_request_id, Exception(error_msg))
+                return True
+
+        return False

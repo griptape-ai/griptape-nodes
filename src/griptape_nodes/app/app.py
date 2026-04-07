@@ -26,7 +26,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from griptape_nodes.api_client import Client
+from griptape_nodes.api_client import Client, RequestClient
 from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
@@ -406,10 +406,14 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
         griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_loaded)
 
     try:
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=True)))
-            tg.create_task(_send_outgoing_messages(client))
-            tg.create_task(worker_manager.worker_heartbeat_monitor())
+        async with RequestClient(client, unhandled_handler=_process_api_event) as request_client:
+            worker_manager._request_client = request_client
+            for topic in worker_manager.get_topics_to_subscribe(is_worker=True):
+                await client.subscribe(topic)
+
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(_send_outgoing_messages(client))
+                tg.create_task(worker_manager.worker_heartbeat_monitor())
     except Exception:
         # Best-effort unregister so the orchestrator can clean up immediately.
         unregister_event = EventRequest(
@@ -443,33 +447,36 @@ async def _run_orchestrator(client: Client) -> None:
     griptape_nodes.LibraryManager().register_library_loaded_callback(worker_manager.on_library_loaded)
     worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
 
-    async with asyncio.TaskGroup() as tg:
-        tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=False)))
-        tg.create_task(_send_outgoing_messages(client))
-        tg.create_task(worker_manager.orchestrator_heartbeat_loop())
+    async with RequestClient(client, unhandled_handler=_unhandled_message_handler) as request_client:
+        worker_manager._request_client = request_client
+        for topic in worker_manager.get_topics_to_subscribe(is_worker=False):
+            await client.subscribe(topic)
+
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(_send_outgoing_messages(client))
+            tg.create_task(worker_manager.orchestrator_heartbeat_loop())
 
 
-async def _process_incoming_messages(client: Client, topics: list[str]) -> None:
-    """Process incoming WebSocket requests from Nodes API."""
-    logger.debug("Processing incoming WebSocket requests from WebSocket connection")
+async def _unhandled_message_handler(message: dict) -> None:
+    """Handle messages not resolved by RequestClient as pending requests.
 
-    for topic in topics:
-        await client.subscribe(topic)
-
-    async for message in client.messages:
-        try:
-            payload = message.get("payload", {})
-            event_type = payload.get("event_type", "")
-            if event_type in ("EventResultSuccess", "EventResultFailure"):
-                # Result from a worker — relay it through the orchestrator.
-                await worker_manager.relay_worker_result(payload)
-            else:
-                await _process_api_event(message)
-        except Exception as e:
-            logger.warning(
-                "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
-                e,
-            )
+    Called by RequestClient._listen_for_responses for every message that did not
+    match a tracked request_id. Routes worker result messages (heartbeats and any
+    unmatched results) to WorkerManager, and all other messages to _process_api_event.
+    """
+    try:
+        payload = message.get("payload", {})
+        event_type = payload.get("event_type", "")
+        if event_type in ("EventResultSuccess", "EventResultFailure"):
+            # Heartbeat or unmatched result from a worker — relay via the orchestrator.
+            await worker_manager.relay_worker_result(payload)
+        else:
+            await _process_api_event(message)
+    except Exception as e:
+        logger.warning(
+            "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
+            e,
+        )
 
 
 async def _process_api_event(event: dict) -> None:

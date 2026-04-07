@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     import concurrent.futures
     from collections.abc import Awaitable, Callable
 
+    from griptape_nodes.api_client.request_client import RequestClient
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -57,12 +58,14 @@ class WorkerManager:
         send_message: Callable[[str, str, str | None], Awaitable[None]],
         subscribe_to_topic: Callable[[str], Awaitable[None]],
         unsubscribe_from_topic: Callable[[str], Awaitable[None]],
+        request_client: RequestClient | None = None,
     ) -> None:
         self._griptape_nodes = griptape_nodes
         self._ws_outgoing_queue = ws_outgoing_queue
         self._send_message = send_message
         self._subscribe_to_topic = subscribe_to_topic
         self._unsubscribe_from_topic = unsubscribe_from_topic
+        self._request_client = request_client
 
         # Orchestrator-side registry: worker_engine_id → worker request topic
         self._registered_workers: dict[str, str] = {}
@@ -82,9 +85,6 @@ class WorkerManager:
 
         # Worker-side: monotonic timestamp of last heartbeat received from the orchestrator
         self._worker_heartbeat_last_received_at: float = 0.0
-
-        # Pending worker requests: request_id → Future resolved by relay_worker_result
-        self._pending_requests: dict[str, asyncio.Future[dict]] = {}
 
         # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
         self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
@@ -295,14 +295,15 @@ class WorkerManager:
     ) -> dict:
         """Forward event_request to the named worker and await the raw result payload.
 
-        Stores a Future keyed by request_id and resolves it when relay_worker_result
-        receives the corresponding response. The caller is responsible for deserializing
-        the returned dict into the appropriate result type.
+        Registers a Future via RequestClient keyed by request_id and resolves it when
+        the worker response arrives. The caller is responsible for deserializing the
+        returned dict into the appropriate result type.
         """
+        if self._request_client is None:
+            msg = "route_to_worker called but no RequestClient is configured."
+            raise RuntimeError(msg)
         request_id = event_request.request_id or str(uuid.uuid4())
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[dict] = loop.create_future()
-        self._pending_requests[request_id] = future
+        future = await self._request_client.track_request(request_id, tag=worker_engine_id)
 
         await self.forward_event_to_worker(
             event_request.model_copy(update={"request_id": request_id}),
@@ -312,7 +313,6 @@ class WorkerManager:
         try:
             return await asyncio.wait_for(future, timeout=WorkerManager.NODE_EXECUTION_TIMEOUT_S)
         except TimeoutError:
-            self._pending_requests.pop(request_id, None)
             msg = f"Worker request timed out after {WorkerManager.NODE_EXECUTION_TIMEOUT_S:.0f}s."
             raise RuntimeError(msg) from None
 
@@ -332,10 +332,8 @@ class WorkerManager:
             if proc is not None:
                 proc.terminate()
         # Cancel any requests that were awaiting a result from this worker.
-        for future in self._pending_requests.values():
-            if not future.done():
-                future.cancel()
-        self._pending_requests.clear()
+        if self._request_client is not None:
+            await self._request_client.cancel_requests_by_tag(worker_engine_id)
 
         # Notify registered callbacks that this worker has been evicted.
         for cb in self._worker_evicted_callbacks:
@@ -477,10 +475,12 @@ class WorkerManager:
         await self._send_message("EventRequest", forwarded.json(), worker_request_topic)
 
     async def relay_worker_result(self, payload: dict) -> None:
-        """Relay a result received from a worker back to the GUI session response topic.
+        """Relay an unmatched worker result to the GUI session response topic.
 
-        The orchestrator always mediates between workers and the GUI; workers never publish
-        directly to the session response topic.
+        Called by the unhandled_handler for worker result messages that were not
+        resolved by RequestClient (heartbeats and any results without a pending request).
+        The orchestrator always mediates between workers and the GUI; workers never
+        publish directly to the session response topic.
         """
         # Heartbeat responses update the last-seen timestamp but are not forwarded to the GUI.
         # BaseEvent.dict() adds result_type at the outer level (not inside the result dict).
@@ -491,14 +491,6 @@ class WorkerManager:
                 self._worker_last_seen[worker_engine_id] = time.monotonic()
                 logger.debug("Heartbeat received from worker %s", worker_engine_id)
             return  # Internal health check — do not forward to GUI
-
-        # Resolve a pending request if a caller is awaiting this result.
-        request_id = payload.get("request_id", "")
-        if request_id and request_id in self._pending_requests:
-            future = self._pending_requests.pop(request_id)
-            if not future.done():
-                future.set_result(payload)
-            return  # Caller owns result handling; do not relay to GUI here.
 
         # 1 engine = 1 session — the orchestrator's session response topic is always the right target.
         session_response_topic = self._determine_response_topic()

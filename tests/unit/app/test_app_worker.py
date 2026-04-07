@@ -20,7 +20,6 @@ from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeRequest,
-    ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
 )
 
@@ -28,6 +27,29 @@ _SESSION = "sess-abc"
 _ENGINE = "eng-xyz"
 _WORKER_REQUEST_TOPIC = f"sessions/{_SESSION}/workers/{_ENGINE}/request"
 _WORKER_RESPONSE_TOPIC = f"sessions/{_SESSION}/workers/{_ENGINE}/response"
+
+
+class _FakeRequestClient:
+    """Minimal RequestClient stand-in for unit tests.
+
+    Implements only the methods WorkerManager calls so tests remain isolated
+    from the real Client/WebSocket machinery.
+    """
+
+    def __init__(self) -> None:
+        self._pending_requests: dict[str, tuple[asyncio.Future, str]] = {}
+
+    async def track_request(self, request_id: str, tag: str = "") -> asyncio.Future:
+        future: asyncio.Future = asyncio.Future()
+        self._pending_requests[request_id] = (future, tag)
+        return future
+
+    async def cancel_requests_by_tag(self, tag: str) -> None:
+        to_cancel = [rid for rid, (_, t) in self._pending_requests.items() if t == tag]
+        for rid in to_cancel:
+            future, _ = self._pending_requests.pop(rid)
+            if not future.done():
+                future.cancel()
 
 
 @pytest.fixture
@@ -43,6 +65,7 @@ def worker_manager() -> WorkerManager:
         send_message=AsyncMock(),
         subscribe_to_topic=AsyncMock(),
         unsubscribe_from_topic=AsyncMock(),
+        request_client=_FakeRequestClient(),  # type: ignore[arg-type]
     )
 
 
@@ -249,47 +272,9 @@ class TestEvictWorker:
 
 
 class TestRelayWorkerResultPendingFuture:
-    @pytest.mark.asyncio
-    async def test_pending_result_resolves_future_and_does_not_relay_to_gui(
-        self, worker_manager: WorkerManager
-    ) -> None:
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        request_id = "req-123"
-        worker_manager._pending_requests[request_id] = future
-
-        payload = {
-            "event_type": "EventResultSuccess",
-            "result_type": ExecuteNodeResultSuccess.__name__,
-            "result": {"parameter_output_values": {"out": 42}, "result_details": "ok"},
-            "request_id": request_id,
-        }
-
-        await worker_manager.relay_worker_result(payload)
-
-        assert future.done()
-        assert future.result() == payload  # raw dict; caller deserializes
-        worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
-
-    @pytest.mark.asyncio
-    async def test_pending_failure_resolves_future_with_failure(self, worker_manager: WorkerManager) -> None:
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        request_id = "req-456"
-        worker_manager._pending_requests[request_id] = future
-
-        payload = {
-            "event_type": "EventResultFailure",
-            "result_type": ExecuteNodeResultFailure.__name__,
-            "result": {"result_details": "node exploded"},
-            "request_id": request_id,
-        }
-
-        await worker_manager.relay_worker_result(payload)
-
-        assert future.done()
-        assert future.result() == payload  # raw dict; caller deserializes
-        worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
+    # Note: future resolution for tracked requests is now handled by
+    # RequestClient._handle_response, not relay_worker_result. The tests
+    # below cover relay_worker_result's remaining responsibilities.
 
     @pytest.mark.asyncio
     async def test_non_pending_result_still_relays_to_gui(self, worker_manager: WorkerManager) -> None:
@@ -426,7 +411,9 @@ class TestOnLibraryLoaded:
 class TestRouteToWorker:
     @pytest.mark.asyncio
     async def test_sends_request_to_worker_and_returns_raw_payload(self, worker_manager: WorkerManager) -> None:
-        """route_to_worker dispatches to the worker and resolves when relay_worker_result fires."""
+        """route_to_worker dispatches to the worker and resolves when RequestClient resolves the future."""
+        assert isinstance(worker_manager._request_client, _FakeRequestClient)
+        fake_rc = worker_manager._request_client
         event_request = EventRequest(request=ExecuteNodeRequest(node_name="MyNode", parameter_values={"x": 1}))
         expected_payload = {
             "event_type": "EventResultSuccess",
@@ -435,14 +422,15 @@ class TestRouteToWorker:
             "request_id": "",  # overwritten below
         }
 
-        async def resolve_via_relay() -> None:
-            # Yield once so route_to_worker can store the future before we resolve it.
+        async def resolve_via_future() -> None:
+            # Yield once so route_to_worker can register the future before we resolve it.
             await asyncio.sleep(0)
-            request_id = next(iter(worker_manager._pending_requests))
+            request_id = next(iter(fake_rc._pending_requests))
+            future, _ = fake_rc._pending_requests[request_id]
             payload = {**expected_payload, "request_id": request_id}
-            await worker_manager.relay_worker_result(payload)
+            future.set_result(payload)
 
-        asyncio.create_task(resolve_via_relay())  # noqa: RUF006
+        asyncio.create_task(resolve_via_future())  # noqa: RUF006
         result = await worker_manager.route_to_worker(event_request, _ENGINE, _WORKER_REQUEST_TOPIC)
 
         assert result["result_type"] == ExecuteNodeResultSuccess.__name__
