@@ -116,9 +116,9 @@ class WorkerManager:
         self._worker_library[wid] = request.library_name
         if request.library_name:
             self._library_workers.setdefault(request.library_name, []).append((wid, request_topic))
-            logger.info("Worker registered: %s → library '%s' (session %s)", wid, request.library_name, session_id)
+            logger.info("Worker registered: %s → library '%s'", wid, request.library_name)
         else:
-            logger.info("Worker registered: %s (general-purpose, session %s)", wid, session_id)
+            logger.info("Worker registered: %s (general-purpose)", wid)
 
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
         await self._subscribe_to_topic(response_topic)

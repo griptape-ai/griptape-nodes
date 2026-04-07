@@ -1164,7 +1164,7 @@ class ProjectManager:
         if workspace_project_path is None:
             return
 
-        logger.info("Found workspace project file at '%s', loading", workspace_project_path)
+        logger.debug("Found workspace project file at '%s', loading", workspace_project_path)
 
         try:
             yaml_text = File(str(workspace_project_path)).read_text()
@@ -1230,4 +1230,4 @@ class ProjectManager:
             )
             return
 
-        logger.info("Successfully loaded workspace project from '%s'", workspace_project_path)
+        logger.debug("Successfully loaded workspace project from '%s'", workspace_project_path)

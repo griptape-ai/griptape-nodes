@@ -367,7 +367,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
         json.loads(reg_event.json()),
         f"sessions/{worker_session_id}/request",
     )
-    logger.info("Worker %s sent registration to session %s", worker_engine_id, worker_session_id)
+    logger.info("Worker %s registered with orchestrator", worker_engine_id)
 
     # Set session_id so _determine_response_topic() returns the session topic,
     # routing intermediate events (AppEvents, ProgressEvents) directly to the GUI.

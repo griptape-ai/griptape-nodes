@@ -1756,7 +1756,7 @@ class LibraryManager:
         Returns:
             IncompatibleRequirementsProblem if requirements are not met, None if they are met
         """
-        logger.info("Checking requirements for library '%s': %s", library_name, requirements)
+        logger.debug("Checking requirements for library '%s': %s", library_name, requirements)
 
         os_keys = {"platform", "arch", "version"}
         compute_keys = {"compute"}
@@ -4037,7 +4037,7 @@ class LibraryManager:
 
         if not library_metadata.dependencies or not library_metadata.dependencies.pip_dependencies:
             details = f"Library '{library_name}' has no dependencies to install"
-            logger.info(details)
+            logger.debug(details)
             return InstallLibraryDependenciesResultSuccess(
                 library_name=library_name, dependencies_installed=0, result_details=details
             )
@@ -4092,7 +4092,7 @@ class LibraryManager:
             details = f"Failed to install dependencies for library '{library_name}': return code={e.returncode}, stderr={e.stderr}"
             return InstallLibraryDependenciesResultFailure(result_details=details)
 
-        details = f"Successfully installed {len(pip_dependencies)} dependencies for library '{library_name}'"
+        details = f"Installed {len(pip_dependencies)} dependencies for library '{library_name}'"
         logger.info(details)
         return InstallLibraryDependenciesResultSuccess(
             library_name=library_name, dependencies_installed=len(pip_dependencies), result_details=details
