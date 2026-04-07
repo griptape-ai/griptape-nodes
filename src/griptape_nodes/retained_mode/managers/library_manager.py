@@ -549,7 +549,7 @@ class LibraryManager:
             library_name_with_details.overflow = "fold"
 
             # Problems column - collate by type then format
-            collated = self._collate_problems_for_lib_info(lib_info)
+            collated = self.collate_problems_for_lib_info(lib_info)
             problems = collated if collated is not None else "No problems detected."
 
             # Add the row to the table
@@ -573,7 +573,7 @@ class LibraryManager:
                 return library_info
         return None
 
-    def _collate_problems_for_lib_info(self, lib_info: LibraryInfo) -> str | None:
+    def collate_problems_for_lib_info(self, lib_info: LibraryInfo) -> str | None:
         """Return a collated display string for a LibraryInfo's problems, or None if there are none."""
         if not lib_info.problems:
             return None
@@ -600,7 +600,7 @@ class LibraryManager:
         library_info = self.get_library_info_by_library_name(library_name)
         if library_info is None:
             return None
-        return self._collate_problems_for_lib_info(library_info)
+        return self.collate_problems_for_lib_info(library_info)
 
     def on_register_event_handler(
         self,

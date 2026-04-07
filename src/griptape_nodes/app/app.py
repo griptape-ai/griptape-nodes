@@ -388,9 +388,9 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
                 return
 
             async def _publish() -> None:
-                # _collate_problems_for_lib_info runs here on the event loop thread, not the
+                # collate_problems_for_lib_info runs here on the event loop thread, not the
                 # library-loading thread that invoked this callback.
-                problem_details = griptape_nodes.LibraryManager()._collate_problems_for_lib_info(library_info)
+                problem_details = griptape_nodes.LibraryManager().collate_problems_for_lib_info(library_info)
                 notification = EventRequest(
                     request=worker_events.LibraryLoadedOnWorkerRequest(
                         library_name=worker_library_name,
