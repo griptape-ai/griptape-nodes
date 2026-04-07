@@ -340,13 +340,9 @@ class WorkerManager:
             try:
                 cb(worker_engine_id, lib_name)
             except Exception:
-                logger.warning(
-                    "Worker-evicted callback raised an exception for worker '%s'", worker_engine_id
-                )
+                logger.warning("Worker-evicted callback raised an exception for worker '%s'", worker_engine_id)
 
-    def register_worker_evicted_callback(
-        self, callback: Callable[[str, str | None], None]
-    ) -> None:
+    def register_worker_evicted_callback(self, callback: Callable[[str, str | None], None]) -> None:
         """Register a callback invoked when a worker is evicted.
 
         Callbacks are called synchronously in registration order. Exceptions are logged

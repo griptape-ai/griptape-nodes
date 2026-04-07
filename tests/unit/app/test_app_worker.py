@@ -437,6 +437,7 @@ class TestRouteToWorker:
         assert result["result"]["parameter_output_values"] == {"out": 99}
         worker_manager._send_message.assert_called_once()  # type: ignore[union-attr]
 
+
 class TestGetActiveWorker:
     def test_returns_none_when_no_workers_registered(self, worker_manager: WorkerManager) -> None:
         result = worker_manager.get_active_worker()

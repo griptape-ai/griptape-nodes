@@ -727,5 +727,3 @@ worker_manager = WorkerManager(
     subscribe_to_topic=_subscribe_to_topic,
     unsubscribe_from_topic=_unsubscribe_from_topic,
 )
-
-
