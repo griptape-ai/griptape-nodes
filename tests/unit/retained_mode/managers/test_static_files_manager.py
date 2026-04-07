@@ -348,6 +348,7 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
             "storage_backend": "local",
             "workspace_directory": "/mock/workspace",
             "static_files_directory": "staticfiles",
+            "static_server_base_url": "http://localhost:8124",
         }.get(key, default)
         mock_config.workspace_path = Path("/mock/workspace")
         return mock_config
@@ -884,3 +885,39 @@ class TestStaticFilesManagerCreateUploadUrl:
         mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once_with(
             resolved_path, file_metadata=mock_metadata
         )
+
+
+class TestStaticFilesManagerBaseUrlTrailingSlash:
+    """Test that static_server_base_url trailing slashes are stripped."""
+
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Mock:
+        """Mock SecretsManager for StaticFilesManager initialization."""
+        return Mock()
+
+    @pytest.mark.parametrize(
+        ("configured_url", "expected_url"),
+        [
+            ("http://localhost:8124", "http://localhost:8124"),
+            ("http://localhost:8124/", "http://localhost:8124"),
+            ("http://localhost:8124///", "http://localhost:8124"),
+            ("https://my-tunnel.ngrok.io/", "https://my-tunnel.ngrok.io"),
+        ],
+    )
+    def test_init_strips_trailing_slashes(
+        self, mock_secrets_manager: Mock, configured_url: str, expected_url: str
+    ) -> None:
+        """Trailing slashes on static_server_base_url are stripped during init."""
+        mock_config = Mock()
+        mock_config.get_config_value.side_effect = lambda key, default=None: {
+            "storage_backend": "local",
+            "static_server_base_url": configured_url,
+        }.get(key, default)
+        mock_config.workspace_path = Path("/mock/workspace")
+
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            manager = StaticFilesManager(
+                config_manager=mock_config, secrets_manager=mock_secrets_manager, event_manager=None
+            )
+
+        assert manager.static_server_base_url == expected_url
