@@ -393,7 +393,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
                 problem_details = griptape_nodes.LibraryManager()._collate_problems_for_lib_info(library_info)
                 notification = EventRequest(
                     request=worker_events.LibraryLoadedOnWorkerRequest(
-                        library_name=library_info.library_name,
+                        library_name=worker_library_name,
                         fitness=library_info.fitness,
                         problem_details=problem_details,
                         broadcast_result=True,
