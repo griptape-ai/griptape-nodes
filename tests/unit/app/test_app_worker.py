@@ -8,7 +8,6 @@ the route_to_worker / pending-future mechanism.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -560,8 +559,7 @@ class TestOrchestratorHeartbeatLoop:
         task = asyncio.create_task(worker_manager.orchestrator_heartbeat_loop())
         await asyncio.sleep(0.05)
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        await asyncio.gather(task, return_exceptions=True)
 
         assert _ENGINE not in worker_manager._registered_workers
 
@@ -577,8 +575,7 @@ class TestOrchestratorHeartbeatLoop:
         task = asyncio.create_task(worker_manager.orchestrator_heartbeat_loop())
         await asyncio.sleep(0.05)
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        await asyncio.gather(task, return_exceptions=True)
 
         assert not worker_manager._ws_outgoing_queue.empty()
 
@@ -594,7 +591,6 @@ class TestOrchestratorHeartbeatLoop:
         task = asyncio.create_task(worker_manager.orchestrator_heartbeat_loop())
         await asyncio.sleep(0.05)
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        await asyncio.gather(task, return_exceptions=True)
 
         assert _ENGINE in worker_manager._registered_workers
