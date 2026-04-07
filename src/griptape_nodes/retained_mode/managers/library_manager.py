@@ -356,6 +356,9 @@ class LibraryManager:
         self._libraries_loading_complete = asyncio.Event()
         self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
         self._library_loaded_callbacks: list[Callable[[LibraryManager.LibraryInfo], None]] = []
+        # When set, this process is a dedicated worker for a single library.
+        # None means orchestrator context (load all libraries, skip worker-bound deps).
+        self._worker_library_name: str | None = None
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -1382,6 +1385,16 @@ class LibraryManager:
                     worker_cfg = metadata_result.library_schema.metadata.worker
                     library_info.requires_worker = bool(worker_cfg and worker_cfg.enabled)
                     library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
+
+                    # On the orchestrator (no _worker_library_name), libraries that require a
+                    # dedicated worker are not loaded further here. Firing the callbacks now
+                    # triggers WorkerManager.on_library_loaded to spawn the worker subprocess,
+                    # which installs deps and registers nodes for its own library.
+                    if library_info.requires_worker and self._worker_library_name is None:
+                        self._library_file_path_to_info[library_info.library_path] = library_info
+                        for cb in self._library_loaded_callbacks:
+                            cb(library_info)
+                        return None
 
                 case LibraryManager.LibraryLifecycleState.METADATA_LOADED:
                     # METADATA_LOADED → EVALUATED
@@ -2609,8 +2622,8 @@ class LibraryManager:
 
         # Now load all libraries from config (including newly downloaded ones).
         # When running as a dedicated library worker, restrict loading to that library.
-        target_library_name = payload.worker_library_name
-        await self.load_all_libraries_from_config(target_library_name=target_library_name)
+        self._worker_library_name = payload.worker_library_name
+        await self.load_all_libraries_from_config(target_library_name=self._worker_library_name)
 
         # Register all secrets now that libraries are loaded and settings are merged
         GriptapeNodes.SecretsManager().register_all_secrets()
@@ -2651,7 +2664,7 @@ class LibraryManager:
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
         # Only print the engine ready banner for the orchestrator — not for dedicated library workers.
-        self._maybe_print_engine_ready_banner(target_library_name)
+        self._maybe_print_engine_ready_banner(self._worker_library_name)
 
     def _maybe_print_engine_ready_banner(self, target_library_name: str | None) -> None:
         if target_library_name is not None:
@@ -3190,8 +3203,9 @@ class LibraryManager:
                 logger.error(details)
                 return ReloadAllLibrariesResultFailure(result_details=details)
 
-        # Load (or reload, which should trigger a hot reload) all libraries
-        await self.load_all_libraries_from_config()
+        # Load (or reload, which should trigger a hot reload) all libraries.
+        # Pass _worker_library_name so workers reload only their designated library.
+        await self.load_all_libraries_from_config(target_library_name=self._worker_library_name)
 
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."

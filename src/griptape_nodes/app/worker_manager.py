@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import shutil
 import time
@@ -248,6 +249,7 @@ class WorkerManager:
             session_id,
             "--library-name",
             library_name,
+            env={**os.environ, "GTN_ENGINE_ID": str(uuid.uuid4())},
         )
         self._managed_worker_processes[library_name] = proc
         logger.info("Spawned worker for library '%s' (pid %s)", library_name, proc.pid)
