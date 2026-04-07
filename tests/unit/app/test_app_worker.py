@@ -392,12 +392,10 @@ class TestOnLibraryLoaded:
 
         mock_run.assert_not_called()
 
-    def test_schedules_spawn_when_all_conditions_met(
-        self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_schedules_spawn_when_all_conditions_met(self, worker_manager: WorkerManager) -> None:
         worker_manager._griptape_nodes.get_session_id.return_value = "sess-123"  # type: ignore[union-attr]
         mock_loop = MagicMock()
-        monkeypatch.setattr(type(worker_manager), "_websocket_event_loop", property(lambda _: mock_loop))
+        worker_manager._websocket_event_loop = mock_loop
         info = self._make_lib_info(requires_worker=True)
 
         with patch("asyncio.run_coroutine_threadsafe") as mock_run:

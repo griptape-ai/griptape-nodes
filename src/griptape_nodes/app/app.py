@@ -445,6 +445,9 @@ async def _run_orchestrator(client: Client) -> None:
         local_handler=GriptapeNodes.NodeManager().on_execute_node_request,
     )
     _engine_role_filter.prefix = "Orchestrator"
+    # Inject the running loop so on_library_loaded can schedule coroutines without
+    # reaching back into app.py via a lazy import.
+    worker_manager._websocket_event_loop = asyncio.get_running_loop()
     # Register worker spawn callback before the task group starts. Library loading
     # is triggered by AppInitializationComplete (already queued), which runs on the
     # main thread asynchronously — the callback registration here is guaranteed to

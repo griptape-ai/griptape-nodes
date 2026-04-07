@@ -89,6 +89,9 @@ class WorkerManager:
         # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
         self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
 
+        # Set by app.py before library callbacks can fire. None until _run_orchestrator assigns it.
+        self._websocket_event_loop: asyncio.AbstractEventLoop | None = None
+
         event_manager.assign_manager_to_request_type(
             worker_events.RegisterWorkerRequest, self.handle_register_worker_request
         )
@@ -211,19 +214,6 @@ class WorkerManager:
             ]
             if not self._library_workers[lib]:
                 del self._library_workers[lib]
-
-    @property
-    def _websocket_event_loop(self) -> asyncio.AbstractEventLoop | None:
-        """Return the WebSocket event loop from app.py, or None if not available.
-
-        Uses a lazy import to avoid a circular dependency between worker_manager and app.
-        """
-        try:
-            from griptape_nodes.app import app as _app
-        except (ImportError, AttributeError):
-            return None
-        else:
-            return _app.websocket_event_loop
 
     async def spawn_worker_for_library(self, library_name: str, session_id: str) -> None:
         """Spawn a dedicated worker subprocess for the given library.
