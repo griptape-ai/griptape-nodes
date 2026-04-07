@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import signal
 import sys
 import threading
@@ -15,6 +16,8 @@ from datetime import UTC
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+    import concurrent.futures
+
     from rich.traceback import Traceback
 
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -466,16 +469,49 @@ async def _run_orchestrator(client: Client) -> None:
         griptape_nodes.EventManager(),
         is_worker=False,
         local_handler=GriptapeNodes.NodeManager().on_execute_node_request,
+        requires_dedicated_worker=lambda name: name is not None and (
+            (info := GriptapeNodes.LibraryManager().get_library_info_by_library_name(name)) is not None
+            and info.requires_worker
+        ),
     )
     _engine_role_filter.prefix = "Orchestrator"
-    # Inject the running loop so on_library_loaded can schedule coroutines without
-    # reaching back into app.py via a lazy import.
+    # Inject the running loop before registering library callbacks so the spawn
+    # closure can schedule coroutines onto it from library-loading threads.
     worker_manager._websocket_event_loop = asyncio.get_running_loop()
+
     # Register worker spawn callback before the task group starts. Library loading
     # is triggered by AppInitializationComplete (already queued), which runs on the
     # main thread asynchronously — the callback registration here is guaranteed to
-    # complete before any library reaches LOADED state.
-    griptape_nodes.LibraryManager().register_library_loaded_callback(worker_manager.on_library_loaded)
+    # complete before any library reaches LOADED or WORKER_PENDING state.
+    def _on_library_needs_worker(library_info: LibraryManager.LibraryInfo) -> None:
+        if not library_info.requires_worker or not library_info.library_name:
+            return
+        session_id = griptape_nodes.get_session_id()
+        if not session_id:
+            logger.warning("Cannot spawn worker for library '%s': no active session.", library_info.library_name)
+            return
+        gtn = shutil.which("gtn")
+        if gtn is None:
+            logger.error("Cannot spawn worker for library '%s': 'gtn' not found on PATH.", library_info.library_name)
+            return
+        loop = worker_manager._websocket_event_loop
+        if loop is None:
+            logger.warning("Cannot spawn worker for library '%s': event loop not available.", library_info.library_name)
+            return
+        args = [gtn, "engine", "--session-id", session_id, "--library-name", library_info.library_name]
+        future = asyncio.run_coroutine_threadsafe(
+            worker_manager.spawn_worker(args, library_info.library_name),
+            loop,
+        )
+
+        def _log_spawn_error(f: concurrent.futures.Future) -> None:
+            exc = f.exception()
+            if exc is not None:
+                logger.error("Failed to spawn worker for library '%s': %s", library_info.library_name, exc)
+
+        future.add_done_callback(_log_spawn_error)
+
+    griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_needs_worker)
     worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
 
     async with RequestClient(client, unhandled_handler=_unhandled_message_handler) as request_client:

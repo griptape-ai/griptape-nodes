@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import time
 import uuid
 from typing import TYPE_CHECKING, cast
@@ -20,14 +19,12 @@ from griptape_nodes.retained_mode.events.execution_events import (
 )
 
 if TYPE_CHECKING:
-    import concurrent.futures
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.api_client.request_client import RequestClient
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 logger = logging.getLogger("griptape_nodes_app")
 
@@ -70,12 +67,12 @@ class WorkerManager:
         # Orchestrator-side registry: worker_engine_id → worker request topic
         self._registered_workers: dict[str, str] = {}
 
-        # Orchestrator-side: library_name → list of (engine_id, request_topic) tuples.
-        # Today: at most one entry per library. Future: N workers per library.
-        self._library_workers: dict[str, list[tuple[str, str]]] = {}
+        # Orchestrator-side: worker_key → list of (engine_id, request_topic) tuples.
+        # Today: at most one entry per key. Future: N workers per key.
+        self._keyed_workers: dict[str, list[tuple[str, str]]] = {}
 
-        # Orchestrator-side reverse lookup: worker_engine_id → library_name (or None for general workers)
-        self._worker_library: dict[str, str | None] = {}
+        # Orchestrator-side reverse lookup: worker_engine_id → worker_key (or None for general workers)
+        self._worker_key: dict[str, str | None] = {}
 
         # Subprocesses spawned by this orchestrator (library_name → process)
         self._managed_worker_processes: dict[str, asyncio.subprocess.Process] = {}
@@ -113,10 +110,10 @@ class WorkerManager:
         self._registered_workers[wid] = request_topic
         self._worker_last_seen[wid] = time.monotonic()
 
-        # Track library association for library-aware routing.
-        self._worker_library[wid] = request.library_name
+        # Track worker key association for routing.
+        self._worker_key[wid] = request.library_name
         if request.library_name:
-            self._library_workers.setdefault(request.library_name, []).append((wid, request_topic))
+            self._keyed_workers.setdefault(request.library_name, []).append((wid, request_topic))
             logger.info("Worker registered: %s → library '%s'", wid, request.library_name)
         else:
             logger.info("Worker registered: %s (general-purpose)", wid)
@@ -147,8 +144,8 @@ class WorkerManager:
         session_id = self._griptape_nodes.get_session_id()
         self._registered_workers.pop(wid, None)
         self._worker_last_seen.pop(wid, None)
-        lib_name = self._worker_library.get(wid)
-        self._deregister_worker_library(wid)
+        lib_name = self._worker_key.get(wid)
+        self._deregister_worker_key(wid)
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
         await self._unsubscribe_from_topic(response_topic)
         # Remove the managed process entry so a new worker can be spawned for this library.
@@ -196,51 +193,37 @@ class WorkerManager:
         """Return (worker_engine_id, worker_request_topic) for the registered worker, or None."""
         return next(iter(self._registered_workers.items()), None)
 
-    def get_worker_for_library(self, library_name: str) -> tuple[str, str] | None:
-        """Return (worker_engine_id, worker_request_topic) for a worker serving library_name, or None.
+    def get_worker_for_key(self, key: str) -> tuple[str, str] | None:
+        """Return (worker_engine_id, worker_request_topic) for a worker registered under key, or None.
 
-        Today returns the first registered worker for the library. Future versions can
-        load-balance across multiple workers for the same library.
+        Today returns the first registered worker for the key. Future versions can
+        load-balance across multiple workers for the same key.
         """
-        workers = self._library_workers.get(library_name, [])
+        workers = self._keyed_workers.get(key, [])
         return workers[0] if workers else None
 
-    def _deregister_worker_library(self, worker_engine_id: str) -> None:
-        """Remove a worker from the library routing tables."""
-        lib = self._worker_library.pop(worker_engine_id, None)
-        if lib and lib in self._library_workers:
-            self._library_workers[lib] = [
-                (eid, topic) for eid, topic in self._library_workers[lib] if eid != worker_engine_id
+    def _deregister_worker_key(self, worker_engine_id: str) -> None:
+        """Remove a worker from the routing tables."""
+        key = self._worker_key.pop(worker_engine_id, None)
+        if key and key in self._keyed_workers:
+            self._keyed_workers[key] = [
+                (eid, topic) for eid, topic in self._keyed_workers[key] if eid != worker_engine_id
             ]
-            if not self._library_workers[lib]:
-                del self._library_workers[lib]
+            if not self._keyed_workers[key]:
+                del self._keyed_workers[key]
 
-    async def spawn_worker_for_library(self, library_name: str, session_id: str) -> None:
-        """Spawn a dedicated worker subprocess for the given library.
+    async def spawn_worker(self, args: list[str], worker_key: str) -> None:
+        """Spawn a worker subprocess using the given command args.
 
-        The subprocess runs `gtn engine --session-id <ID> --library-name <NAME>` so it
-        connects to the current session and loads only the named library.
+        worker_key is an opaque identifier used to track the process and prevent
+        duplicate spawns. Callers are responsible for constructing the args list.
         """
-        if library_name in self._managed_worker_processes:
-            logger.debug("Worker for library '%s' already spawned; skipping duplicate spawn.", library_name)
+        if worker_key in self._managed_worker_processes:
+            logger.debug("Worker for key '%s' already spawned; skipping duplicate spawn.", worker_key)
             return
-
-        gtn = shutil.which("gtn")
-        if gtn is None:
-            msg = "Cannot spawn library worker: 'gtn' not found on PATH."
-            raise RuntimeError(msg)
-
-        proc = await asyncio.create_subprocess_exec(
-            gtn,
-            "engine",
-            "--session-id",
-            session_id,
-            "--library-name",
-            library_name,
-            env={**os.environ, "GTN_ENGINE_ID": str(uuid.uuid4())},
-        )
-        self._managed_worker_processes[library_name] = proc
-        logger.info("Spawned worker for library '%s' (pid %s)", library_name, proc.pid)
+        proc = await asyncio.create_subprocess_exec(*args, env={**os.environ, "GTN_ENGINE_ID": str(uuid.uuid4())})
+        self._managed_worker_processes[worker_key] = proc
+        logger.info("Spawned worker for key '%s' (pid %s)", worker_key, proc.pid)
 
     def terminate_managed_workers(self) -> None:
         """Terminate all worker subprocesses spawned by this orchestrator.
@@ -256,41 +239,6 @@ class WorkerManager:
             except ProcessLookupError:
                 logger.debug("Worker process for library '%s' already exited", library_name)
         self._managed_worker_processes.clear()
-
-    def on_library_loaded(self, library_info: LibraryManager.LibraryInfo) -> None:
-        """Called after each library reaches LOADED state.
-
-        Registered as a callback with LibraryManager. Spawns a dedicated worker
-        subprocess for libraries that declare worker.enabled = True.
-        """
-        if not library_info.requires_worker or not library_info.library_name:
-            return
-        session_id = self._griptape_nodes.get_session_id()
-        if not session_id:
-            logger.warning("Cannot spawn worker for library '%s': no active session.", library_info.library_name)
-            return
-        loop = self._websocket_event_loop
-        if loop is None:
-            logger.warning(
-                "Cannot spawn worker for library '%s': WebSocket event loop not available.",
-                library_info.library_name,
-            )
-            return
-        future = asyncio.run_coroutine_threadsafe(
-            self.spawn_worker_for_library(library_info.library_name, session_id),
-            loop,
-        )
-
-        def _log_spawn_error(f: concurrent.futures.Future) -> None:
-            exc = f.exception()
-            if exc is not None:
-                logger.error(
-                    "Failed to spawn worker for library '%s': %s",
-                    library_info.library_name,
-                    exc,
-                )
-
-        future.add_done_callback(_log_spawn_error)
 
     async def route_to_worker(
         self,
@@ -326,8 +274,8 @@ class WorkerManager:
         session_id = self._griptape_nodes.get_session_id()
         self._registered_workers.pop(worker_engine_id, None)
         self._worker_last_seen.pop(worker_engine_id, None)
-        lib_name = self._worker_library.get(worker_engine_id)
-        self._deregister_worker_library(worker_engine_id)
+        lib_name = self._worker_key.get(worker_engine_id)
+        self._deregister_worker_key(worker_engine_id)
         topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
         await self._unsubscribe_from_topic(topic)
         logger.warning("Worker evicted: %s", worker_engine_id)
@@ -381,12 +329,16 @@ class WorkerManager:
         *,
         is_worker: bool,
         local_handler: Callable[[ExecuteNodeRequest], Awaitable[ResultPayload]],
+        requires_dedicated_worker: Callable[[str | None], bool] | None = None,
     ) -> None:
         """Register the ExecuteNodeRequest handler with EventManager.
 
         In worker mode, requests are always executed locally via local_handler.
-        In orchestrator mode, requests are routed to a library-specific worker when
-        one is registered, falling back to local_handler otherwise.
+        In orchestrator mode, requests are routed to a keyed worker when one is
+        registered, falling back to local_handler otherwise.
+        requires_dedicated_worker is an optional callback that returns True when
+        a request must be handled by a dedicated worker (e.g. library requires_worker).
+        If it returns True and no worker is registered, a RuntimeError is raised.
         """
         if is_worker:
 
@@ -404,17 +356,10 @@ class WorkerManager:
         async def _routed_execute_node(
             request: ExecuteNodeRequest,
         ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            worker = self.get_worker_for_library(request.library_name) if request.library_name else None
+            worker = self.get_worker_for_key(request.library_name) if request.library_name else None
 
             if worker is None:
-                library_info = (
-                    GriptapeNodes.LibraryManager().get_library_info_by_library_name(request.library_name)
-                    if request.library_name
-                    else None
-                )
-                if library_info is not None and library_info.requires_worker:
+                if requires_dedicated_worker is not None and requires_dedicated_worker(request.library_name):
                     msg = (
                         f"Library '{request.library_name}' requires a dedicated worker process "
                         "that is not yet registered. The worker may still be starting up."
