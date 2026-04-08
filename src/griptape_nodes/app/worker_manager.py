@@ -12,12 +12,17 @@ from typing import TYPE_CHECKING
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import (
+    WORKER_HEARTBEAT_INTERVAL_KEY,
+    WORKER_HEARTBEAT_TIMEOUT_KEY,
+    WORKER_NODE_EXECUTION_TIMEOUT_KEY,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.api_client.request_client import RequestClient
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes_app")
@@ -34,9 +39,9 @@ class WorkerManager:
     as callables so this class has no direct dependency on WebSocket plumbing.
     """
 
-    HEARTBEAT_INTERVAL_S: float = 5.0
-    HEARTBEAT_TIMEOUT_S: float = 15.0
-    NODE_EXECUTION_TIMEOUT_S: float = 300.0
+    DEFAULT_HEARTBEAT_INTERVAL_S: float = 5.0
+    DEFAULT_HEARTBEAT_TIMEOUT_S: float = 15.0
+    DEFAULT_NODE_EXECUTION_TIMEOUT_S: float = 300.0
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
 
@@ -79,6 +84,17 @@ class WorkerManager:
 
         # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
         self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
+
+        config = GriptapeNodes.ConfigManager()
+        self.HEARTBEAT_INTERVAL_S: float = config.get_config_value(
+            WORKER_HEARTBEAT_INTERVAL_KEY, default=WorkerManager.DEFAULT_HEARTBEAT_INTERVAL_S, cast_type=float
+        )
+        self.HEARTBEAT_TIMEOUT_S: float = config.get_config_value(
+            WORKER_HEARTBEAT_TIMEOUT_KEY, default=WorkerManager.DEFAULT_HEARTBEAT_TIMEOUT_S, cast_type=float
+        )
+        self.NODE_EXECUTION_TIMEOUT_S: float = config.get_config_value(
+            WORKER_NODE_EXECUTION_TIMEOUT_KEY, default=WorkerManager.DEFAULT_NODE_EXECUTION_TIMEOUT_S, cast_type=float
+        )
 
         event_manager.assign_manager_to_request_type(
             worker_events.RegisterWorkerRequest, self.handle_register_worker_request
@@ -148,7 +164,7 @@ class WorkerManager:
     async def orchestrator_heartbeat_loop(self) -> None:
         """Challenge each registered worker on an interval; evict those that go silent."""
         while True:
-            await asyncio.sleep(WorkerManager.HEARTBEAT_INTERVAL_S)
+            await asyncio.sleep(self.HEARTBEAT_INTERVAL_S)
             if not self._registered_workers:
                 continue
 
@@ -156,7 +172,7 @@ class WorkerManager:
             stale = [
                 wid
                 for wid in list(self._registered_workers)
-                if now - self._worker_last_seen.get(wid, 0) > WorkerManager.HEARTBEAT_TIMEOUT_S
+                if now - self._worker_last_seen.get(wid, 0) > self.HEARTBEAT_TIMEOUT_S
             ]
             for wid in stale:
                 await self.evict_worker(wid)
@@ -173,9 +189,9 @@ class WorkerManager:
         """Shut down the worker if orchestrator heartbeats stop arriving."""
         self._worker_heartbeat_last_received_at = time.monotonic()  # seed to avoid immediate timeout
         while True:
-            await asyncio.sleep(WorkerManager.HEARTBEAT_INTERVAL_S)
+            await asyncio.sleep(self.HEARTBEAT_INTERVAL_S)
             elapsed = time.monotonic() - self._worker_heartbeat_last_received_at
-            if elapsed > WorkerManager.HEARTBEAT_TIMEOUT_S:
+            if elapsed > self.HEARTBEAT_TIMEOUT_S:
                 msg = f"Orchestrator heartbeat lost ({elapsed:.1f}s since last heartbeat); worker is shutting down."
                 logger.warning(msg)
                 raise RuntimeError(msg)
@@ -252,9 +268,9 @@ class WorkerManager:
             worker_request_topic=worker_request_topic,
         )
         try:
-            return await asyncio.wait_for(future, timeout=WorkerManager.NODE_EXECUTION_TIMEOUT_S)
+            return await asyncio.wait_for(future, timeout=self.NODE_EXECUTION_TIMEOUT_S)
         except TimeoutError:
-            msg = f"Worker request timed out after {WorkerManager.NODE_EXECUTION_TIMEOUT_S:.0f}s."
+            msg = f"Worker request timed out after {self.NODE_EXECUTION_TIMEOUT_S:.0f}s."
             raise RuntimeError(msg) from None
 
     async def evict_worker(self, worker_engine_id: str) -> None:

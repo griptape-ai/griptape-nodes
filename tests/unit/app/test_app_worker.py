@@ -128,8 +128,8 @@ class TestWorkerHeartbeatMonitor:
     @pytest.mark.asyncio
     async def test_raises_after_timeout(self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch) -> None:
         """Monitor raises RuntimeError when no heartbeat arrives within the timeout."""
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 0.0)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_TIMEOUT_S", 0.0)
         worker_manager._worker_heartbeat_last_received_at = 0.0
 
         with pytest.raises(RuntimeError, match="Orchestrator heartbeat lost"):
@@ -140,8 +140,8 @@ class TestWorkerHeartbeatMonitor:
         self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Monitor does not raise when the timestamp is kept current."""
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 60.0)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_TIMEOUT_S", 60.0)
 
         task = asyncio.create_task(worker_manager.worker_heartbeat_monitor())
         await asyncio.sleep(0.05)
@@ -550,8 +550,8 @@ class TestDetermineResponseTopic:
 class TestOrchestratorHeartbeatLoop:
     @pytest.mark.asyncio
     async def test_evicts_stale_worker(self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 0.0)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_TIMEOUT_S", 0.0)
         worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
         worker_manager._worker_last_seen[_ENGINE] = 0.0
 
@@ -566,8 +566,8 @@ class TestOrchestratorHeartbeatLoop:
     async def test_sends_heartbeat_challenge_to_live_worker(
         self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 60.0)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_TIMEOUT_S", 60.0)
         worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
         worker_manager._worker_last_seen[_ENGINE] = time.monotonic()
 
@@ -582,8 +582,8 @@ class TestOrchestratorHeartbeatLoop:
     async def test_does_not_evict_fresh_worker(
         self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 60.0)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_INTERVAL_S", 0.01)
+        monkeypatch.setattr(worker_manager, "HEARTBEAT_TIMEOUT_S", 60.0)
         worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
         worker_manager._worker_last_seen[_ENGINE] = time.monotonic()
 
