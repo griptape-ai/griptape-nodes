@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from pydantic import ValidationError
+
 from griptape_nodes.common.macro_parser import (
     MacroMatchFailure,
     MacroMatchFailureReason,
@@ -23,9 +25,8 @@ from griptape_nodes.common.project_templates import (
     ProjectValidationStatus,
     SituationTemplate,
     load_partial_project_template,
-    load_project_template_from_yaml,
 )
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.files.path_utils import resolve_file_path
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
@@ -64,10 +65,12 @@ from griptape_nodes.retained_mode.events.project_events import (
     ProjectTemplateInfo,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
+    SaveProjectTemplateResultSuccess,
     SetCurrentProjectRequest,
     SetCurrentProjectResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -164,9 +167,9 @@ class ProjectManager:
 
     def __init__(
         self,
-        event_manager: EventManager | None = None,
-        config_manager: ConfigManager | None = None,
-        secrets_manager: SecretsManager | None = None,
+        event_manager: EventManager,
+        config_manager: ConfigManager,
+        secrets_manager: SecretsManager,
     ) -> None:
         """Initialize the ProjectManager.
 
@@ -187,39 +190,32 @@ class ProjectManager:
         self._registered_template_status: dict[Path, ProjectValidationInfo] = {}
 
         # Register event handlers
-        if event_manager is not None:
-            event_manager.assign_manager_to_request_type(
-                LoadProjectTemplateRequest, self.on_load_project_template_request
-            )
-            event_manager.assign_manager_to_request_type(
-                GetProjectTemplateRequest, self.on_get_project_template_request
-            )
-            event_manager.assign_manager_to_request_type(
-                ListProjectTemplatesRequest, self.on_list_project_templates_request
-            )
-            event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
-            event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
-            event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
-            event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
-            event_manager.assign_manager_to_request_type(
-                SaveProjectTemplateRequest, self.on_save_project_template_request
-            )
-            event_manager.assign_manager_to_request_type(
-                AttemptMatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
-            )
-            event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
-            event_manager.assign_manager_to_request_type(
-                GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
-            )
-            event_manager.assign_manager_to_request_type(
-                AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
-            )
+        event_manager.assign_manager_to_request_type(LoadProjectTemplateRequest, self.on_load_project_template_request)
+        event_manager.assign_manager_to_request_type(GetProjectTemplateRequest, self.on_get_project_template_request)
+        event_manager.assign_manager_to_request_type(
+            ListProjectTemplatesRequest, self.on_list_project_templates_request
+        )
+        event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
+        event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
+        event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
+        event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
+        event_manager.assign_manager_to_request_type(SaveProjectTemplateRequest, self.on_save_project_template_request)
+        event_manager.assign_manager_to_request_type(
+            AttemptMatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
+        )
+        event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
+        event_manager.assign_manager_to_request_type(
+            GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
+        )
+        event_manager.assign_manager_to_request_type(
+            AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
+        )
 
-            # Register app initialization listener
-            event_manager.add_listener_to_app_event(
-                AppInitializationComplete,
-                self.on_app_initialization_complete,
-            )
+        # Register app initialization listener
+        event_manager.add_listener_to_app_event(
+            AppInitializationComplete,
+            self.on_app_initialization_complete,
+        )
 
     def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
@@ -270,14 +266,16 @@ class ProjectManager:
             )
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        template = load_project_template_from_yaml(yaml_text, validation)
+        overlay = load_partial_project_template(yaml_text, validation)
 
-        if template is None:
+        if overlay is None:
             self._registered_template_status[request.project_path] = validation
             return LoadProjectTemplateResultFailure(
                 validation=validation,
                 result_details=f"Attempted to load project template from '{request.project_path}'. Failed because YAML could not be parsed",
             )
+
+        template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
 
         # Generate project_id from file path
         project_file_path = Path(request.project_path)
@@ -312,6 +310,9 @@ class ProjectManager:
 
         # Track validation status for all load attempts (for UI display)
         self._registered_template_status[request.project_path] = validation
+
+        # Persist path so the project survives engine restarts
+        self._register_project_path(project_id)
 
         return LoadProjectTemplateResultSuccess(
             project_id=project_id,
@@ -353,7 +354,11 @@ class ProjectManager:
             if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
                 continue
 
-            successfully_loaded.append(ProjectTemplateInfo(project_id=project_id, validation=project_info.validation))
+            successfully_loaded.append(
+                ProjectTemplateInfo(
+                    project_id=project_id, validation=project_info.validation, name=project_info.template.name
+                )
+            )
 
         # Gather failed templates from _registered_template_status
         # These are tracked by Path, not ProjectID
@@ -511,12 +516,6 @@ class ProjectManager:
                 result_details=f"Attempted to resolve macro path. Failed because missing required variables: {', '.join(sorted(missing))}",
             )
 
-        if self._secrets_manager is None:
-            return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                result_details="Attempted to resolve macro path. Failed because SecretsManager is not available",
-            )
-
         try:
             resolved_string = request.parsed_macro.resolve(resolution_bag, self._secrets_manager)
         except MacroResolutionError as e:
@@ -535,7 +534,7 @@ class ProjectManager:
 
         # Make absolute path by resolving against the workspace directory.
         # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        workspace_path = self._config_manager.workspace_path
         absolute_path = resolve_file_path(resolved_string, workspace_path)
 
         return GetPathForMacroResultSuccess(
@@ -548,7 +547,7 @@ class ProjectManager:
         """Set which project user has selected."""
         self._current_project_id = request.project_id
 
-        if request.project_id is not None and self._config_manager is not None:
+        if request.project_id is not None:
             project_info = self._successfully_loaded_project_templates.get(request.project_id)
             if project_info is not None and project_info.project_file_path is not None:
                 project_file_path = project_info.project_file_path
@@ -613,19 +612,48 @@ class ProjectManager:
             result_details=f"Successfully retrieved current project. ID: {self._current_project_id}",
         )
 
-    def on_save_project_template_request(self, request: SaveProjectTemplateRequest) -> SaveProjectTemplateResultFailure:
+    def on_save_project_template_request(
+        self, request: SaveProjectTemplateRequest
+    ) -> SaveProjectTemplateResultSuccess | SaveProjectTemplateResultFailure:
         """Save user customizations to project.yml.
 
         Flow:
-        1. Convert template_data to YAML format
-        2. Issue WriteFileRequest to OSManager
-        3. Handle write result
+        1. Validate template_data as a ProjectTemplate model
+        2. Serialize to YAML using ProjectTemplate.to_overlay_yaml()
+        3. Write to disk via File.write_text
         4. Invalidate cache (force reload on next access)
-
-        TODO: Implement saving logic when template system merges
         """
-        return SaveProjectTemplateResultFailure(
-            result_details=f"Attempted to save project template to '{request.project_path}'. Failed because template saving not yet implemented",
+        # Step 1: Validate and parse template_data
+        try:
+            template = ProjectTemplate.model_validate(request.template_data)
+        except ValidationError as e:
+            return SaveProjectTemplateResultFailure(
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because template data is invalid: {e}",
+            )
+
+        # Step 2: Serialize to YAML
+        try:
+            yaml_content = template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+        except Exception as e:
+            return SaveProjectTemplateResultFailure(
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because YAML serialization failed: {e}",
+            )
+
+        # Step 3: Write to disk
+        try:
+            File(str(request.project_path)).write_text(yaml_content)
+        except FileWriteError as e:
+            return SaveProjectTemplateResultFailure(
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because file write failed: {e}",
+            )
+
+        # Step 4: Invalidate cache so next LoadProjectTemplateRequest reads from disk
+        project_id: ProjectID = str(request.project_path)
+        self._successfully_loaded_project_templates.pop(project_id, None)
+        self._registered_template_status.pop(request.project_path, None)
+
+        return SaveProjectTemplateResultSuccess(
+            result_details=f"Successfully saved project template to '{request.project_path}'",
         )
 
     def on_match_path_against_macro_request(
@@ -639,11 +667,6 @@ class ProjectManager:
         3. If match succeeds, return success with extracted_variables
         4. If match fails, return success with match_failure (not an error)
         """
-        if self._secrets_manager is None:
-            return AttemptMatchPathAgainstMacroResultFailure(
-                result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Failed because SecretsManager not available",
-            )
-
         extracted = request.parsed_macro.extract_variables(
             request.file_path,
             request.known_variables,
@@ -770,6 +793,9 @@ class ProjectManager:
         # Check workspace for an optional project overlay file
         self._load_workspace_project()
 
+        # Load any additional project templates previously registered by the user
+        self._load_registered_projects()
+
     def on_get_all_situations_for_project_request(
         self, _request: GetAllSituationsForProjectRequest
     ) -> GetAllSituationsForProjectResultSuccess | GetAllSituationsForProjectResultFailure:
@@ -814,11 +840,6 @@ class ProjectManager:
         if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
             return AttemptMapAbsolutePathToProjectResultFailure(
                 result_details="Attempted to map absolute path. Failed because no current project is set"
-            )
-
-        if self._secrets_manager is None:
-            return AttemptMapAbsolutePathToProjectResultFailure(
-                result_details="Attempted to map absolute path. Failed because SecretsManager not available"
             )
 
         project_info = current_project_result.project_info
@@ -923,7 +944,7 @@ class ProjectManager:
                 raise NotImplementedError(msg)
 
             case "workspace_dir":
-                return str(GriptapeNodes.ConfigManager().workspace_path)
+                return str(self._config_manager.workspace_path)
 
             case "workflow_name":
                 context_manager = GriptapeNodes.ContextManager()
@@ -947,8 +968,7 @@ class ProjectManager:
                 return str(workflow_file_path.parent)
 
             case "static_files_dir":
-                config_manager = GriptapeNodes.ConfigManager()
-                return config_manager.get_config_value("static_files_directory", default="staticfiles")
+                return self._config_manager.get_config_value("static_files_directory", default="staticfiles")
 
             case _:
                 msg = f"Unknown builtin variable: {var_name}"
@@ -985,14 +1005,8 @@ class ProjectManager:
         absolute_path = os_manager.resolve_path_safely(absolute_path)
 
         template = project_info.template
-        workspace_dir = os_manager.resolve_path_safely(GriptapeNodes.ConfigManager().workspace_path)
+        workspace_dir = os_manager.resolve_path_safely(self._config_manager.workspace_path)
         project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
-
-        # Secrets manager must be available (checked by caller)
-        if self._secrets_manager is None:
-            msg = "SecretsManager not available"
-            raise RuntimeError(msg)
-        secrets_manager = self._secrets_manager
 
         # Collect all variables used across ALL directory macros
         variables_needed: set[str] = set()
@@ -1023,7 +1037,7 @@ class ProjectManager:
                 raise RuntimeError(msg)
 
             try:
-                resolved_path_str = parsed_macro.resolve(builtin_vars, secrets_manager)
+                resolved_path_str = parsed_macro.resolve(builtin_vars, self._secrets_manager)
             except MacroResolutionError as e:
                 msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
                 raise RuntimeError(msg) from e
@@ -1097,8 +1111,7 @@ class ProjectManager:
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         # System defaults use workspace directory as the base directory.
-        config_manager = GriptapeNodes.ConfigManager()
-        workspace_dir = config_manager.workspace_path
+        workspace_dir = self._config_manager.workspace_path
 
         # Parse all macros BEFORE creating ProjectInfo (system defaults should always be valid)
         situation_schemas = self._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
@@ -1129,9 +1142,7 @@ class ProjectManager:
 
         Returns None if no project file should be loaded (missing config, file not found).
         """
-        config_manager = GriptapeNodes.ConfigManager()
-
-        project_file_value = config_manager.get_config_value("project_file")
+        project_file_value = self._config_manager.get_config_value("project_file")
         if project_file_value is not None:
             project_path = Path(project_file_value)
             if project_path.exists():
@@ -1141,7 +1152,7 @@ class ProjectManager:
                 project_path,
             )
 
-        workspace_dir_value = config_manager.get_config_value("workspace_directory")
+        workspace_dir_value = self._config_manager.get_config_value("workspace_directory")
         if workspace_dir_value is None:
             logger.debug("Skipping workspace project load: 'workspace_directory' config value is None")
             return None
@@ -1231,3 +1242,39 @@ class ProjectManager:
             return
 
         logger.info("Successfully loaded workspace project from '%s'", workspace_project_path)
+
+    def _load_registered_projects(self) -> None:
+        """Load project templates from paths persisted in user config.
+
+        Called after workspace project loading so that user-registered paths
+        are available in the template list. Paths already loaded (e.g., the
+        workspace project) are skipped. Missing or invalid files are skipped
+        with a warning rather than raising.
+        """
+        registered_paths: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+        for path_str in registered_paths:
+            if path_str in self._successfully_loaded_project_templates:
+                continue
+            load_request = LoadProjectTemplateRequest(project_path=Path(path_str))
+            result = self.on_load_project_template_request(load_request)
+            if result.failed():
+                logger.warning(
+                    "Failed to load registered project '%s' on startup: %s",
+                    path_str,
+                    result.result_details,
+                )
+            else:
+                logger.info("Reloaded registered project from '%s'", path_str)
+
+    def _register_project_path(self, project_id: str) -> None:
+        """Persist a project file path so it is loaded on the next engine restart.
+
+        Appends the path to the projects_to_register config list if not already
+        present. Errors are logged as warnings and do not affect the load result.
+        """
+        try:
+            registered: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            if project_id not in registered:
+                self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
+        except Exception:
+            logger.warning("Failed to persist project path '%s' to config", project_id)
