@@ -168,16 +168,84 @@ class TestRegisterLibraryLoadedCallback:
         assert mgr._library_loaded_callbacks == []
 
 
+class TestGetWorkerForLibrary:
+    def test_returns_none_for_none_library_name(self) -> None:
+        mgr = _make_library_manager()
+
+        result = mgr.get_worker_for_library(None)
+
+        assert result is None
+
+    def test_returns_worker_when_registered(self) -> None:
+        mgr = _make_library_manager()
+        worker_engine_id = "eng-xyz"
+        worker_request_topic = "sessions/s/workers/eng-xyz/request"
+        lib_info = LibraryManager.LibraryInfo(
+            lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
+            fitness=LibraryManager.LibraryFitness.GOOD,
+            library_path="/some/path.json",
+            is_sandbox=False,
+            library_name="my_lib",
+            requires_worker=True,
+        )
+
+        with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gtn:
+            mock_gtn.WorkerManager.return_value.get_worker_for_key.return_value = (
+                worker_engine_id,
+                worker_request_topic,
+            )
+            mgr._library_file_path_to_info["/some/path.json"] = lib_info
+            result = mgr.get_worker_for_library("my_lib")
+
+        assert result == (worker_engine_id, worker_request_topic)
+
+    def test_returns_none_when_no_worker_and_not_required(self) -> None:
+        mgr = _make_library_manager()
+        lib_info = LibraryManager.LibraryInfo(
+            lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
+            fitness=LibraryManager.LibraryFitness.GOOD,
+            library_path="/some/path.json",
+            is_sandbox=False,
+            library_name="my_lib",
+            requires_worker=False,
+        )
+
+        with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gtn:
+            mock_gtn.WorkerManager.return_value.get_worker_for_key.return_value = None
+            mgr._library_file_path_to_info["/some/path.json"] = lib_info
+            result = mgr.get_worker_for_library("my_lib")
+
+        assert result is None
+
+    def test_raises_when_library_requires_worker_but_none_registered(self) -> None:
+        mgr = _make_library_manager()
+        lib_info = LibraryManager.LibraryInfo(
+            lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
+            fitness=LibraryManager.LibraryFitness.GOOD,
+            library_path="/some/path.json",
+            is_sandbox=False,
+            library_name="my_lib",
+            requires_worker=True,
+        )
+
+        with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gtn:
+            mock_gtn.WorkerManager.return_value.get_worker_for_key.return_value = None
+            mgr._library_file_path_to_info["/some/path.json"] = lib_info
+
+            with pytest.raises(RuntimeError, match="requires a dedicated worker"):
+                mgr.get_worker_for_library("my_lib")
+
+
 class TestMaybePrintEngineReadyBanner:
-    def test_skips_when_target_library_name_is_set(self) -> None:
+    def test_skips_when_is_worker(self) -> None:
         mgr = _make_library_manager()
 
         with patch("griptape_nodes.retained_mode.managers.library_manager.console") as mock_console:
-            mgr._maybe_print_engine_ready_banner("some-library")
+            mgr._maybe_print_engine_ready_banner(is_worker=True)
 
         mock_console.print.assert_not_called()
 
-    def test_prints_panel_when_target_library_name_is_none(self) -> None:
+    def test_prints_panel_when_not_worker(self) -> None:
         mgr = _make_library_manager()
 
         with (
@@ -192,6 +260,6 @@ class TestMaybePrintEngineReadyBanner:
             mock_gtn.UserManager.return_value.user = None
             mock_gtn.UserManager.return_value.user_organization = None
 
-            mgr._maybe_print_engine_ready_banner(None)
+            mgr._maybe_print_engine_ready_banner(is_worker=False)
 
         mock_console.print.assert_called_once()
