@@ -1671,8 +1671,7 @@ class TestLoadSystemDefaults:
         mock_config_manager.get_config_value.return_value = {}
         return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
-    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
-    def test_project_base_dir_uses_resolved_workspace_path(self, mock_griptape_nodes: Mock, pm: ProjectManager) -> None:
+    def test_project_base_dir_uses_resolved_workspace_path(self, pm: ProjectManager) -> None:
         """Test that _load_system_defaults uses config_manager.workspace_path (resolved) for project_base_dir.
 
         This ensures project_base_dir matches the resolved paths used for macro resolution,
@@ -1681,17 +1680,14 @@ class TestLoadSystemDefaults:
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         resolved_path = Path("/Users/testuser/GriptapeNodes")
-        mock_config = Mock()
-        mock_config.workspace_path = resolved_path
-        mock_griptape_nodes.ConfigManager.return_value = mock_config
+        pm._config_manager.workspace_path = resolved_path
 
         pm._load_system_defaults()
 
         project_info = pm._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY]
         assert project_info.project_base_dir == resolved_path
 
-    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
-    def test_project_base_dir_not_raw_config_value(self, mock_griptape_nodes: Mock, pm: ProjectManager) -> None:
+    def test_project_base_dir_not_raw_config_value(self, pm: ProjectManager) -> None:
         """Test that _load_system_defaults does NOT use the raw config value with ~ for project_base_dir.
 
         Previously, _load_system_defaults used get_config_value("workspace_directory") which
@@ -1701,10 +1697,8 @@ class TestLoadSystemDefaults:
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         resolved_path = Path("/Users/testuser/GriptapeNodes")
-        mock_config = Mock()
-        mock_config.workspace_path = resolved_path
-        mock_config.get_config_value.return_value = "~/GriptapeNodes"
-        mock_griptape_nodes.ConfigManager.return_value = mock_config
+        pm._config_manager.workspace_path = resolved_path
+        pm._config_manager.get_config_value.return_value = "~/GriptapeNodes"
 
         pm._load_system_defaults()
 
