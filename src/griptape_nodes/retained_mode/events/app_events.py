@@ -115,9 +115,10 @@ class AppInitializationComplete(AppPayload):
     workflows_to_register: list[str] = field(default_factory=list)
     models_to_download: list[str] = field(default_factory=list)
     skip_library_loading: bool = False
-    # When set, this process loads only the named library instead of all libraries. Each worker
-    # process is dedicated to one library; multiple workers can run simultaneously for different libraries.
-    worker_library_name: str | None = None
+    # When True, this process is a dedicated library worker. The library to load is
+    # taken from the first entry in libraries_to_register. Multiple workers can run
+    # simultaneously for different libraries.
+    is_worker: bool = False
 
 
 @dataclass

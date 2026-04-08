@@ -339,7 +339,12 @@ async def _run_websocket_tasks(worker_session_id: str | None = None, worker_libr
     async with Client() as client:
         logger.debug("WebSocket connection established")
         griptape_nodes.EventManager().put_event(
-            AppEvent(payload=app_events.AppInitializationComplete(worker_library_name=worker_library_name))
+            AppEvent(
+                payload=app_events.AppInitializationComplete(
+                    is_worker=bool(worker_library_name),
+                    libraries_to_register=[worker_library_name] if worker_library_name else [],
+                )
+            )
         )
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppConnectionEstablished()))
 

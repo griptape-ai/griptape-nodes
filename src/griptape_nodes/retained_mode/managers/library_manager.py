@@ -364,9 +364,10 @@ class LibraryManager:
         self._libraries_loading_complete = asyncio.Event()
         self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
         self._library_loaded_callbacks: list[Callable[[LibraryManager.LibraryInfo], None]] = []
-        # When set, this process is a dedicated worker for a single library.
-        # None means orchestrator context (load all libraries, skip worker-bound deps).
-        self._worker_library_name: str | None = None
+        # True when this process is a dedicated worker for a single library.
+        self._is_worker: bool = False
+        # The library this process is restricted to loading (set on workers).
+        self._target_library_name: str | None = None
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -1497,12 +1498,12 @@ class LibraryManager:
 
                 case LibraryManager.LibraryLifecycleState.EVALUATED:
                     # EVALUATED → DEPENDENCIES_INSTALLED or WORKER_DELEGATED
-                    # On the orchestrator (no _worker_library_name), skip venv creation and pip
+                    # On the orchestrator (_is_worker is False), skip venv creation and pip
                     # install for libraries that require a dedicated worker. The lifecycle still
                     # completes through LOADED so the library is registered in LibraryRegistry
                     # (needed for the editor and workflow loading). The worker installs its own
                     # deps in its own process.
-                    if library_info.requires_worker and self._worker_library_name is None:
+                    if library_info.requires_worker and not self._is_worker:
                         library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_DELEGATED
                     else:
                         install_result = await self.install_library_dependencies_request(
@@ -1644,7 +1645,7 @@ class LibraryManager:
                         # the library is registered but the worker has not yet confirmed successful dep
                         # install and node import. Callbacks fire after this override so they observe
                         # the final authoritative state.
-                        if library_info.requires_worker and self._worker_library_name is None:
+                        if library_info.requires_worker and not self._is_worker:
                             library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_PENDING
 
                         # Fire callbacks with the final authoritative lifecycle state.
@@ -2708,8 +2709,9 @@ class LibraryManager:
 
         # Now load all libraries from config (including newly downloaded ones).
         # When running as a dedicated library worker, restrict loading to that library.
-        self._worker_library_name = payload.worker_library_name
-        await self.load_all_libraries_from_config(target_library_name=self._worker_library_name)
+        self._is_worker = payload.is_worker
+        self._target_library_name = payload.libraries_to_register[0] if payload.is_worker and payload.libraries_to_register else None
+        await self.load_all_libraries_from_config(target_library_name=self._target_library_name)
 
         # Register all secrets now that libraries are loaded and settings are merged
         GriptapeNodes.SecretsManager().register_all_secrets()
@@ -2750,10 +2752,10 @@ class LibraryManager:
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
         # Only print the engine ready banner for the orchestrator — not for dedicated library workers.
-        self._maybe_print_engine_ready_banner(self._worker_library_name)
+        self._maybe_print_engine_ready_banner(is_worker=self._is_worker)
 
-    def _maybe_print_engine_ready_banner(self, target_library_name: str | None) -> None:
-        if target_library_name is not None:
+    def _maybe_print_engine_ready_banner(self, *, is_worker: bool) -> None:
+        if is_worker:
             return
 
         engine_version = get_complete_version_string()
@@ -3283,8 +3285,8 @@ class LibraryManager:
                 return ReloadAllLibrariesResultFailure(result_details=details)
 
         # Load (or reload, which should trigger a hot reload) all libraries.
-        # Pass _worker_library_name so workers reload only their designated library.
-        await self.load_all_libraries_from_config(target_library_name=self._worker_library_name)
+        # Pass _target_library_name so workers reload only their designated library.
+        await self.load_all_libraries_from_config(target_library_name=self._target_library_name)
 
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
