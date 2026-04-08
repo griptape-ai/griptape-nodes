@@ -1680,7 +1680,7 @@ class TestLoadSystemDefaults:
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         resolved_path = Path("/Users/testuser/GriptapeNodes")
-        pm._config_manager.workspace_path = resolved_path
+        cast("Mock", pm._config_manager).workspace_path = resolved_path
 
         pm._load_system_defaults()
 
@@ -1697,8 +1697,8 @@ class TestLoadSystemDefaults:
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         resolved_path = Path("/Users/testuser/GriptapeNodes")
-        pm._config_manager.workspace_path = resolved_path
-        pm._config_manager.get_config_value.return_value = "~/GriptapeNodes"
+        cast("Mock", pm._config_manager).workspace_path = resolved_path
+        cast("Mock", pm._config_manager).get_config_value.return_value = "~/GriptapeNodes"
 
         pm._load_system_defaults()
 
