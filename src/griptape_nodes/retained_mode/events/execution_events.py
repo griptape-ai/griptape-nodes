@@ -504,8 +504,8 @@ class ExecuteNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CreateWorkerNodeRequest(RequestPayload):
-    """Ensure a node exists on a worker engine (no flow context required).
+class UpsertNodeRequest(RequestPayload):
+    """Ensure a node exists on an engine (no flow context required).
 
     Idempotent: if a node with node_name already exists in ObjectManager,
     returns success without re-creating it.
@@ -515,7 +515,7 @@ class CreateWorkerNodeRequest(RequestPayload):
         node_type: Node class name (e.g. "SummarizeText").
         library_name: Library owning the node type.
 
-    Results: CreateWorkerNodeResultSuccess | CreateWorkerNodeResultFailure
+    Results: UpsertNodeResultSuccess | UpsertNodeResultFailure
     """
 
     node_name: str
@@ -525,13 +525,13 @@ class CreateWorkerNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateWorkerNodeResultSuccess(ResultPayloadSuccess):
-    """Successful result from creating a node on a worker."""
+class UpsertNodeResultSuccess(ResultPayloadSuccess):
+    """Successful result from upserting a node."""
 
     node_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class CreateWorkerNodeResultFailure(ResultPayloadFailure):
-    """Failed result from creating a node on a worker."""
+class UpsertNodeResultFailure(ResultPayloadFailure):
+    """Failed result from upserting a node."""

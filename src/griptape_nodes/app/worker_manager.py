@@ -13,12 +13,12 @@ from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMe
 from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.execution_events import (
-    CreateWorkerNodeRequest,
-    CreateWorkerNodeResultFailure,
-    CreateWorkerNodeResultSuccess,
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
+    UpsertNodeRequest,
+    UpsertNodeResultFailure,
+    UpsertNodeResultSuccess,
 )
 
 if TYPE_CHECKING:
@@ -231,7 +231,7 @@ class WorkerManager:
     ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
         """Execute node on the given worker via a create-then-execute sequence.
 
-        Sends CreateWorkerNodeRequest to ensure the node exists on the worker
+        Sends UpsertNodeRequest to ensure the node exists on the worker
         (idempotent — no-op if already present), then sends ExecuteNodeRequest
         to run it. Two round-trips on first call; one round-trip on subsequent
         calls to the same node.
@@ -247,7 +247,7 @@ class WorkerManager:
 
         create_raw = await self.route_to_worker(
             EventRequest(
-                request=CreateWorkerNodeRequest(
+                request=UpsertNodeRequest(
                     node_name=node.name,
                     node_type=node_type,
                     library_name=library_name,
@@ -256,8 +256,8 @@ class WorkerManager:
             worker_engine_id,
             worker_request_topic,
         )
-        create_result = self._deserialize_create_worker_node_result(create_raw)
-        if isinstance(create_result, CreateWorkerNodeResultFailure):
+        create_result = self._deserialize_upsert_node_result(create_raw)
+        if isinstance(create_result, UpsertNodeResultFailure):
             return ExecuteNodeResultFailure(
                 result_details=f"Failed to prepare node '{node.name}' on worker: {create_result.result_details}",
             )
@@ -374,21 +374,21 @@ class WorkerManager:
         self._worker_evicted_callbacks.append(callback)
 
     @staticmethod
-    def _deserialize_create_worker_node_result(
+    def _deserialize_upsert_node_result(
         payload: dict,
-    ) -> CreateWorkerNodeResultSuccess | CreateWorkerNodeResultFailure:
-        """Reconstruct a CreateWorkerNodeResultSuccess or CreateWorkerNodeResultFailure from a raw payload dict."""
+    ) -> UpsertNodeResultSuccess | UpsertNodeResultFailure:
+        """Reconstruct a UpsertNodeResultSuccess or UpsertNodeResultFailure from a raw payload dict."""
         result_type = payload.get("result_type", "")
         result_data = payload.get("result", {})
         try:
-            if result_type == CreateWorkerNodeResultSuccess.__name__:
-                return CreateWorkerNodeResultSuccess(**result_data)
-            if result_type == CreateWorkerNodeResultFailure.__name__:
-                return CreateWorkerNodeResultFailure(**result_data)
+            if result_type == UpsertNodeResultSuccess.__name__:
+                return UpsertNodeResultSuccess(**result_data)
+            if result_type == UpsertNodeResultFailure.__name__:
+                return UpsertNodeResultFailure(**result_data)
         except TypeError as e:
-            msg = f"Failed to deserialize create-worker-node result (result_type={result_type!r}): {e}"
+            msg = f"Failed to deserialize upsert-node result (result_type={result_type!r}): {e}"
             raise ValueError(msg) from e
-        msg = f"Unrecognized create-worker-node result_type: {result_type!r}"
+        msg = f"Unrecognized upsert-node result_type: {result_type!r}"
         raise ValueError(msg)
 
     @staticmethod

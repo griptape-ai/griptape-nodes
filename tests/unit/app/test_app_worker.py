@@ -20,12 +20,12 @@ from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.execution_events import (
-    CreateWorkerNodeRequest,
-    CreateWorkerNodeResultFailure,
-    CreateWorkerNodeResultSuccess,
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
+    UpsertNodeRequest,
+    UpsertNodeResultFailure,
+    UpsertNodeResultSuccess,
 )
 
 _SESSION = "sess-abc"
@@ -644,7 +644,7 @@ class TestExecuteOnWorker:
         return node
 
     _CREATE_RAW_SUCCESS: ClassVar[dict] = {
-        "result_type": CreateWorkerNodeResultSuccess.__name__,
+        "result_type": UpsertNodeResultSuccess.__name__,
         "result": {"node_name": "my_node", "result_details": "created"},
     }
     _EXECUTE_RAW_SUCCESS: ClassVar[dict] = {
@@ -652,7 +652,7 @@ class TestExecuteOnWorker:
         "result": {"parameter_output_values": {"out": 42}, "result_details": "ok"},
     }
     _CREATE_RAW_FAILURE: ClassVar[dict] = {
-        "result_type": CreateWorkerNodeResultFailure.__name__,
+        "result_type": UpsertNodeResultFailure.__name__,
         "result": {"result_details": "type not found"},
     }
 
@@ -669,7 +669,7 @@ class TestExecuteOnWorker:
         assert mock_route.call_count == expected_calls
         first_request: EventRequest = mock_route.call_args_list[0][0][0]
         second_request: EventRequest = mock_route.call_args_list[1][0][0]
-        assert isinstance(first_request.request, CreateWorkerNodeRequest)
+        assert isinstance(first_request.request, UpsertNodeRequest)
         assert first_request.request.node_name == "my_node"
         assert first_request.request.node_type == "MyNode"
         assert first_request.request.library_name == "my_library"

@@ -4,12 +4,12 @@ import pytest
 
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.execution_events import (
-    CreateWorkerNodeRequest,
-    CreateWorkerNodeResultFailure,
-    CreateWorkerNodeResultSuccess,
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
+    UpsertNodeRequest,
+    UpsertNodeResultFailure,
+    UpsertNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
@@ -114,7 +114,7 @@ class TestExecuteNode:
         assert mock_node.set_parameter_value.call_count == expected_param_count
 
 
-class TestCreateWorkerNode:
+class TestUpsertNode:
     def _get_node_manager(self) -> NodeManager:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -137,14 +137,14 @@ class TestCreateWorkerNode:
                 return_value=mock_node,
             ) as mock_create,
         ):
-            request = CreateWorkerNodeRequest(
+            request = UpsertNodeRequest(
                 node_name="test_node",
                 node_type="SomeNodeType",
                 library_name="some_library",
             )
-            result = node_manager.on_create_worker_node_request(request)
+            result = node_manager.on_upsert_node_request(request)
 
-        assert isinstance(result, CreateWorkerNodeResultSuccess)
+        assert isinstance(result, UpsertNodeResultSuccess)
         assert result.node_name == "test_node"
         mock_create.assert_called_once_with(
             node_type="SomeNodeType",
@@ -168,13 +168,13 @@ class TestCreateWorkerNode:
                 "griptape_nodes.retained_mode.managers.node_manager.LibraryRegistry.create_node",
             ) as mock_create,
         ):
-            request = CreateWorkerNodeRequest(
+            request = UpsertNodeRequest(
                 node_name="existing_node",
                 node_type="SomeNodeType",
             )
-            result = node_manager.on_create_worker_node_request(request)
+            result = node_manager.on_upsert_node_request(request)
 
-        assert isinstance(result, CreateWorkerNodeResultSuccess)
+        assert isinstance(result, UpsertNodeResultSuccess)
         assert result.node_name == "existing_node"
         mock_create.assert_not_called()
 
@@ -193,13 +193,13 @@ class TestCreateWorkerNode:
                 side_effect=RuntimeError("library not loaded"),
             ),
         ):
-            request = CreateWorkerNodeRequest(
+            request = UpsertNodeRequest(
                 node_name="test_node",
                 node_type="SomeNodeType",
             )
-            result = node_manager.on_create_worker_node_request(request)
+            result = node_manager.on_upsert_node_request(request)
 
-        assert isinstance(result, CreateWorkerNodeResultFailure)
+        assert isinstance(result, UpsertNodeResultFailure)
         assert "test_node" in str(result.result_details)
         assert "SomeNodeType" in str(result.result_details)
         assert "library not loaded" in str(result.result_details)

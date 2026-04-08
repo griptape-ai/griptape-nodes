@@ -53,9 +53,6 @@ from griptape_nodes.retained_mode.events.connection_events import (
 from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
-    CreateWorkerNodeRequest,
-    CreateWorkerNodeResultFailure,
-    CreateWorkerNodeResultSuccess,
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
@@ -63,6 +60,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ResolveNodeResultFailure,
     ResolveNodeResultSuccess,
     StartFlowResultFailure,
+    UpsertNodeRequest,
+    UpsertNodeResultFailure,
+    UpsertNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowRequest,
@@ -337,7 +337,7 @@ class NodeManager:
             BatchSetNodeLockStateRequest, self.on_batch_set_lock_node_state_request
         )
         event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
-        event_manager.assign_manager_to_request_type(CreateWorkerNodeRequest, self.on_create_worker_node_request)
+        event_manager.assign_manager_to_request_type(UpsertNodeRequest, self.on_upsert_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -2706,14 +2706,14 @@ class NodeManager:
             )
         return await self._hydrate_and_run_node(node, request)
 
-    def on_create_worker_node_request(self, request: CreateWorkerNodeRequest) -> ResultPayload:
-        """Create a standalone node on a worker without requiring a flow context.
+    def on_upsert_node_request(self, request: UpsertNodeRequest) -> ResultPayload:
+        """Create a standalone node without requiring a flow context.
 
         Idempotent: if a node with this name already exists in ObjectManager, returns success.
         """
         obj_mgr = GriptapeNodes.ObjectManager()
         if obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode) is not None:
-            return CreateWorkerNodeResultSuccess(
+            return UpsertNodeResultSuccess(
                 node_name=request.node_name,
                 result_details=f"Node '{request.node_name}' already exists.",
             )
@@ -2725,11 +2725,11 @@ class NodeManager:
                 specific_library_name=request.library_name,
             )
         except Exception as e:
-            return CreateWorkerNodeResultFailure(
+            return UpsertNodeResultFailure(
                 result_details=f"Failed to create node '{request.node_name}' of type '{request.node_type}': {e}",
             )
         obj_mgr.add_object_by_name(node.name, node)
-        return CreateWorkerNodeResultSuccess(
+        return UpsertNodeResultSuccess(
             node_name=node.name,
             result_details=f"Node '{node.name}' created.",
         )
