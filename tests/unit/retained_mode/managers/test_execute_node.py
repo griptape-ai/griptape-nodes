@@ -113,6 +113,7 @@ class TestExecuteNode:
         expected_param_count = 3
         assert mock_node.set_parameter_value.call_count == expected_param_count
 
+
 class TestCreateWorkerNode:
     def _get_node_manager(self) -> NodeManager:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes

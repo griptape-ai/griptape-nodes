@@ -466,6 +466,34 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
         os.kill(os.getpid(), signal.SIGINT)
 
 
+async def _handle_orchestrator_unmatched(message: dict, worker_manager: WorkerManager) -> None:
+    """Handle messages not resolved by RequestClient as pending requests.
+
+    Called by RequestClient._listen_for_responses for every message that did not
+    match a tracked request_id. Routes worker result messages (heartbeats and any
+    unmatched results) to WorkerManager, and all other messages to _process_api_event.
+    """
+    try:
+        payload = message.get("payload", {})
+        event_type = payload.get("event_type", "")
+        if event_type in ("EventResultSuccess", "EventResultFailure"):
+            # Heartbeat or unmatched result from a worker — relay via the orchestrator.
+            await worker_manager.relay_worker_result(payload)
+        else:
+            await _process_api_event(message)
+    except Exception as e:
+        logger.warning(
+            "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
+            e,
+        )
+
+
+def _log_worker_spawn_error(f: concurrent.futures.Future, library_name: str) -> None:
+    exc = f.exception()
+    if exc is not None:
+        logger.error("Failed to spawn worker for library '%s': %s", library_name, exc)
+
+
 async def _run_orchestrator(client: Client) -> None:
     """Run the WebSocket task group for an orchestrator engine."""
     _engine_role_filter.prefix = "Orchestrator"
@@ -478,26 +506,10 @@ async def _run_orchestrator(client: Client) -> None:
     _worker_manager: WorkerManager | None = None
 
     async def _handle_unmatched(message: dict) -> None:
-        """Handle messages not resolved by RequestClient as pending requests.
-
-        Called by RequestClient._listen_for_responses for every message that did not
-        match a tracked request_id. Routes worker result messages (heartbeats and any
-        unmatched results) to WorkerManager, and all other messages to _process_api_event.
-        """
-        assert _worker_manager is not None
-        try:
-            payload = message.get("payload", {})
-            event_type = payload.get("event_type", "")
-            if event_type in ("EventResultSuccess", "EventResultFailure"):
-                # Heartbeat or unmatched result from a worker — relay via the orchestrator.
-                await _worker_manager.relay_worker_result(payload)
-            else:
-                await _process_api_event(message)
-        except Exception as e:
-            logger.warning(
-                "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
-                e,
-            )
+        if _worker_manager is None:
+            msg = "WorkerManager not yet initialized"
+            raise RuntimeError(msg)
+        await _handle_orchestrator_unmatched(message, _worker_manager)
 
     # Register worker spawn callback before the task group starts. Library loading
     # is triggered by AppInitializationComplete (already queued), which runs on the
@@ -514,19 +526,15 @@ async def _run_orchestrator(client: Client) -> None:
         if gtn is None:
             logger.error("Cannot spawn worker for library '%s': 'gtn' not found on PATH.", library_info.library_name)
             return
-        assert _worker_manager is not None
+        if _worker_manager is None:
+            msg = "WorkerManager not yet initialized"
+            raise RuntimeError(msg)
         args = [gtn, "engine", "--session-id", session_id, "--library-name", library_info.library_name]
         future = asyncio.run_coroutine_threadsafe(
             _worker_manager.spawn_worker(args, library_info.library_name),
             _loop,
         )
-
-        def _log_spawn_error(f: concurrent.futures.Future) -> None:
-            exc = f.exception()
-            if exc is not None:
-                logger.error("Failed to spawn worker for library '%s': %s", library_info.library_name, exc)
-
-        future.add_done_callback(_log_spawn_error)
+        future.add_done_callback(functools.partial(_log_worker_spawn_error, library_name=library_info.library_name))
 
     griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_needs_worker)
 

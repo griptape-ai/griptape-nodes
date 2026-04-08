@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from typing import ClassVar
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
@@ -642,15 +643,15 @@ class TestExecuteOnWorker:
         node.metadata = {"node_type": node_type, "library": library}
         return node
 
-    _CREATE_RAW_SUCCESS = {
+    _CREATE_RAW_SUCCESS: ClassVar[dict] = {
         "result_type": CreateWorkerNodeResultSuccess.__name__,
         "result": {"node_name": "my_node", "result_details": "created"},
     }
-    _EXECUTE_RAW_SUCCESS = {
+    _EXECUTE_RAW_SUCCESS: ClassVar[dict] = {
         "result_type": ExecuteNodeResultSuccess.__name__,
         "result": {"parameter_output_values": {"out": 42}, "result_details": "ok"},
     }
-    _CREATE_RAW_FAILURE = {
+    _CREATE_RAW_FAILURE: ClassVar[dict] = {
         "result_type": CreateWorkerNodeResultFailure.__name__,
         "result": {"result_details": "type not found"},
     }
@@ -664,7 +665,8 @@ class TestExecuteOnWorker:
         with patch.object(worker_manager, "route_to_worker", new=mock_route):
             await worker_manager.execute_on_worker(node, worker)
 
-        assert mock_route.call_count == 2
+        expected_calls = 2  # one create + one execute
+        assert mock_route.call_count == expected_calls
         first_request: EventRequest = mock_route.call_args_list[0][0][0]
         second_request: EventRequest = mock_route.call_args_list[1][0][0]
         assert isinstance(first_request.request, CreateWorkerNodeRequest)
