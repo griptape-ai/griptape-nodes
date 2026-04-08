@@ -132,6 +132,7 @@ class TestProjectManagerBuiltinVariables:
         from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
+        mock_config.workspace_path = Path("/workspace")
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
