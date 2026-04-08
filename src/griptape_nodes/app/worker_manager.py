@@ -12,20 +12,11 @@ from typing import TYPE_CHECKING
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
-from griptape_nodes.retained_mode.events.execution_events import (
-    ExecuteNodeRequest,
-    ExecuteNodeResultFailure,
-    ExecuteNodeResultSuccess,
-    UpsertNodeRequest,
-    UpsertNodeResultFailure,
-    UpsertNodeResultSuccess,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.api_client.request_client import RequestClient
-    from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -202,78 +193,6 @@ class WorkerManager:
         workers = self._keyed_workers.get(key, [])
         return workers[0] if workers else None
 
-    def get_worker_for_library(self, library_name: str | None) -> tuple[str, str] | None:
-        """Return (worker_engine_id, worker_request_topic) for a worker serving library_name, or None.
-
-        Raises RuntimeError if the library requires a dedicated worker but none is registered yet.
-        Returns None if no worker is registered and none is required.
-        """
-        if not library_name:
-            return None
-        worker = self.get_worker_for_key(library_name)
-        if worker is not None:
-            return worker
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        library_info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
-        if library_info is not None and library_info.requires_worker:
-            msg = (
-                f"Library '{library_name}' requires a dedicated worker process "
-                "that is not yet registered. The worker may still be starting up."
-            )
-            raise RuntimeError(msg)
-        return None
-
-    async def execute_on_worker(
-        self,
-        node: BaseNode,
-        worker: tuple[str, str],
-    ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-        """Execute node on the given worker via a create-then-execute sequence.
-
-        Sends UpsertNodeRequest to ensure the node exists on the worker
-        (idempotent — no-op if already present), then sends ExecuteNodeRequest
-        to run it. Two round-trips on first call; one round-trip on subsequent
-        calls to the same node.
-        """
-        worker_engine_id, worker_request_topic = worker
-        node_type = node.metadata.get("node_type")
-        library_name = node.metadata.get("library")
-
-        if not node_type:
-            return ExecuteNodeResultFailure(
-                result_details=f"Node '{node.name}' has no node_type in metadata; cannot ensure it exists on the worker.",
-            )
-
-        create_raw = await self.route_to_worker(
-            EventRequest(
-                request=UpsertNodeRequest(
-                    node_name=node.name,
-                    node_type=node_type,
-                    library_name=library_name,
-                )
-            ),
-            worker_engine_id,
-            worker_request_topic,
-        )
-        create_result = self._deserialize_upsert_node_result(create_raw)
-        if isinstance(create_result, UpsertNodeResultFailure):
-            return ExecuteNodeResultFailure(
-                result_details=f"Failed to prepare node '{node.name}' on worker: {create_result.result_details}",
-            )
-
-        execute_raw = await self.route_to_worker(
-            EventRequest(
-                request=ExecuteNodeRequest(
-                    node_name=node.name,
-                    parameter_values=dict(node.parameter_values),
-                )
-            ),
-            worker_engine_id,
-            worker_request_topic,
-        )
-        return self._deserialize_execute_node_result(execute_raw)
-
     def _deregister_worker_key(self, worker_engine_id: str) -> None:
         """Remove a worker from the routing tables."""
         key = self._worker_key.pop(worker_engine_id, None)
@@ -372,42 +291,6 @@ class WorkerManager:
         Callback signature: (worker_engine_id: str, library_name: str | None) -> None
         """
         self._worker_evicted_callbacks.append(callback)
-
-    @staticmethod
-    def _deserialize_upsert_node_result(
-        payload: dict,
-    ) -> UpsertNodeResultSuccess | UpsertNodeResultFailure:
-        """Reconstruct a UpsertNodeResultSuccess or UpsertNodeResultFailure from a raw payload dict."""
-        result_type = payload.get("result_type", "")
-        result_data = payload.get("result", {})
-        try:
-            if result_type == UpsertNodeResultSuccess.__name__:
-                return UpsertNodeResultSuccess(**result_data)
-            if result_type == UpsertNodeResultFailure.__name__:
-                return UpsertNodeResultFailure(**result_data)
-        except TypeError as e:
-            msg = f"Failed to deserialize upsert-node result (result_type={result_type!r}): {e}"
-            raise ValueError(msg) from e
-        msg = f"Unrecognized upsert-node result_type: {result_type!r}"
-        raise ValueError(msg)
-
-    @staticmethod
-    def _deserialize_execute_node_result(
-        payload: dict,
-    ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-        """Reconstruct an ExecuteNodeResultSuccess or ExecuteNodeResultFailure from a raw payload dict."""
-        result_type = payload.get("result_type", "")
-        result_data = payload.get("result", {})
-        try:
-            if result_type == ExecuteNodeResultSuccess.__name__:
-                return ExecuteNodeResultSuccess(**result_data)
-            if result_type == ExecuteNodeResultFailure.__name__:
-                return ExecuteNodeResultFailure(**result_data)
-        except TypeError as e:
-            msg = f"Failed to deserialize execute-node result (result_type={result_type!r}): {e}"
-            raise ValueError(msg) from e
-        msg = f"Unrecognized execute-node result_type: {result_type!r}"
-        raise ValueError(msg)
 
     def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.

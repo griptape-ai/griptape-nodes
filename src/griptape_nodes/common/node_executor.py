@@ -41,7 +41,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
-from griptape_nodes.retained_mode.events.base_events import ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import EventRequest, ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -53,6 +53,8 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
+    ExecuteNodeRequest,
+    ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
     GriptapeEvent,
     InvolvedNodesEvent,
@@ -66,6 +68,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartLocalSubflowRequest,
     StartLocalSubflowResultFailure,
     StartLocalSubflowResultSuccess,
+    UpsertNodeRequest,
+    UpsertNodeResultFailure,
+    UpsertNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowResultFailure,
@@ -115,6 +120,7 @@ from griptape_nodes.retained_mode.managers.event_manager import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -206,6 +212,89 @@ class LoopBodyNodes(NamedTuple):
     node_group_name: str | None
 
 
+def _deserialize_upsert_node_result(payload: dict) -> UpsertNodeResultSuccess | UpsertNodeResultFailure:
+    """Reconstruct a UpsertNodeResultSuccess or UpsertNodeResultFailure from a raw payload dict."""
+    result_type = payload.get("result_type", "")
+    result_data = payload.get("result", {})
+    try:
+        if result_type == UpsertNodeResultSuccess.__name__:
+            return UpsertNodeResultSuccess(**result_data)
+        if result_type == UpsertNodeResultFailure.__name__:
+            return UpsertNodeResultFailure(**result_data)
+    except TypeError as e:
+        msg = f"Failed to deserialize upsert-node result (result_type={result_type!r}): {e}"
+        raise ValueError(msg) from e
+    msg = f"Unrecognized upsert-node result_type: {result_type!r}"
+    raise ValueError(msg)
+
+
+def _deserialize_execute_node_result(payload: dict) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+    """Reconstruct an ExecuteNodeResultSuccess or ExecuteNodeResultFailure from a raw payload dict."""
+    result_type = payload.get("result_type", "")
+    result_data = payload.get("result", {})
+    try:
+        if result_type == ExecuteNodeResultSuccess.__name__:
+            return ExecuteNodeResultSuccess(**result_data)
+        if result_type == ExecuteNodeResultFailure.__name__:
+            return ExecuteNodeResultFailure(**result_data)
+    except TypeError as e:
+        msg = f"Failed to deserialize execute-node result (result_type={result_type!r}): {e}"
+        raise ValueError(msg) from e
+    msg = f"Unrecognized execute-node result_type: {result_type!r}"
+    raise ValueError(msg)
+
+
+async def _execute_node_on_worker(
+    wm: WorkerManager,
+    node: BaseNode,
+    worker: tuple[str, str],
+) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+    """Execute a node on a worker via a create-then-execute sequence.
+
+    Sends UpsertNodeRequest to ensure the node exists on the worker
+    (idempotent — no-op if already present), then sends ExecuteNodeRequest
+    to run it. Two round-trips on first call; one round-trip on subsequent
+    calls to the same node.
+    """
+    worker_engine_id, worker_request_topic = worker
+    node_type = node.metadata.get("node_type")
+    library_name = node.metadata.get("library")
+
+    if not node_type:
+        return ExecuteNodeResultFailure(
+            result_details=f"Node '{node.name}' has no node_type in metadata; cannot ensure it exists on the worker.",
+        )
+
+    create_raw = await wm.route_to_worker(
+        EventRequest(
+            request=UpsertNodeRequest(
+                node_name=node.name,
+                node_type=node_type,
+                library_name=library_name,
+            )
+        ),
+        worker_engine_id,
+        worker_request_topic,
+    )
+    create_result = _deserialize_upsert_node_result(create_raw)
+    if isinstance(create_result, UpsertNodeResultFailure):
+        return ExecuteNodeResultFailure(
+            result_details=f"Failed to prepare node '{node.name}' on worker: {create_result.result_details}",
+        )
+
+    execute_raw = await wm.route_to_worker(
+        EventRequest(
+            request=ExecuteNodeRequest(
+                node_name=node.name,
+                parameter_values=dict(node.parameter_values),
+            )
+        ),
+        worker_engine_id,
+        worker_request_topic,
+    )
+    return _deserialize_execute_node_result(execute_raw)
+
+
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
@@ -262,8 +351,8 @@ class NodeExecutor:
 
             wm = GriptapeNodes.WorkerManager()
             library_name = node.metadata.get("library")
-            if wm and library_name and (worker := wm.get_worker_for_library(library_name)):
-                result = await wm.execute_on_worker(node, worker)
+            if wm and library_name and (worker := GriptapeNodes.LibraryManager().get_worker_for_library(library_name)):
+                result = await _execute_node_on_worker(wm, node, worker)
                 if isinstance(result, ExecuteNodeResultSuccess):
                     for name, value in result.parameter_output_values.items():
                         node.set_parameter_value(name, value)

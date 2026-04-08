@@ -474,6 +474,32 @@ class LibraryManager:
             result_details=f"Updated fitness for library '{request.library_name}' to '{request.fitness}'."
         )
 
+    def get_worker_for_library(self, library_name: str | None) -> tuple[str, str] | None:
+        """Return (worker_engine_id, worker_request_topic) for the worker serving library_name, or None.
+
+        Raises RuntimeError if the library requires a dedicated worker but none is registered yet.
+        Returns None if no worker is registered and none is required.
+        """
+        if library_name:
+            library_info = self.get_library_info_by_library_name(library_name)
+            if library_info and library_info.requires_worker:
+                wm = GriptapeNodes.WorkerManager()
+                if wm:
+                    worker = wm.get_worker_for_key(library_name)
+                    if worker:
+                        return worker
+                    msg = (
+                        f"Library '{library_name}' requires a dedicated worker process "
+                        "that is not yet registered. The worker may still be starting up."
+                    )
+                    raise RuntimeError(msg)
+                msg = (
+                    f"Library '{library_name}' requires a dedicated worker process. "
+                    "The Worker Manager is not available."
+                )
+                raise RuntimeError(msg)
+        return None
+
     def on_worker_evicted(self, worker_engine_id: str, library_name: str | None) -> None:
         """Called when a worker is evicted by the orchestrator heartbeat monitor.
 
@@ -2710,7 +2736,9 @@ class LibraryManager:
         # Now load all libraries from config (including newly downloaded ones).
         # When running as a dedicated library worker, restrict loading to that library.
         self._is_worker = payload.is_worker
-        self._target_library_name = payload.libraries_to_register[0] if payload.is_worker and payload.libraries_to_register else None
+        self._target_library_name = (
+            payload.libraries_to_register[0] if payload.is_worker and payload.libraries_to_register else None
+        )
         await self.load_all_libraries_from_config(target_library_name=self._target_library_name)
 
         # Register all secrets now that libraries are loaded and settings are merged
