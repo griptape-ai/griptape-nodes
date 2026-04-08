@@ -3,42 +3,44 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from griptape.artifacts import BaseArtifact
-from griptape.mixins.serializable_mixin import SerializableMixin
-from griptape.structures import Structure
-from griptape.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
+
+from griptape_nodes.retained_mode.events.event_converter import converter, safe_unstructure
 
 if TYPE_CHECKING:
     import builtins
 
 
-def default_json_encoder(obj: Any) -> Any:
-    """Custom JSON encoder for various object types.
-
-    Attempts the following encodings in order:
-    1. If the object is a SerializableMixin, call to_dict()
-    2. If the object is a Pydantic model, call model_dump()
-    3. Attempt to use the default JSON encoder
-    4. If all else fails, return the string representation of the object
+def _resolve_payload_type(event_data: dict[str, Any], type_key: str) -> type:
+    """Resolve a payload type from a type-name field in the event data.
 
     Args:
-        obj: The object to encode
+        event_data: The event dictionary (mutated: the type-name key is popped if used).
+        type_key: The key in event_data that holds the payload type name (e.g. "request_type").
 
     Returns:
-        JSON-serializable representation of the object
+        The resolved concrete type.
+
+    Raises:
+        ValueError: If the type cannot be resolved.
     """
-    if isinstance(obj, SerializableMixin):
-        return obj.to_dict()
-    if isinstance(obj, BaseModel):
-        return obj.model_dump()
-    try:
-        return json.JSONEncoder().default(obj)
-    except TypeError:
-        return str(obj)
+    # Lazy import to avoid circular dependency: payload_registry imports Payload from this module.
+    from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+    type_name = event_data.pop(type_key, None)
+    if type_name is None:
+        msg = f"Cannot resolve payload type: '{type_key}' not found in event data."
+        raise ValueError(msg)
+
+    resolved = PayloadRegistry.get_type(type_name)
+    if resolved is None:
+        msg = f"Cannot resolve payload type: '{type_name}' is not registered."
+        raise ValueError(msg)
+
+    return resolved
 
 
 @dataclass
@@ -91,6 +93,13 @@ class ResultDetails:
         """
         return "\n".join(detail.message for detail in self.result_details)
 
+    def _cattrs_unstructure(self, converter: Any) -> dict[str, Any]:
+        return {"result_details": [converter.unstructure(d) for d in self.result_details]}
+
+    @classmethod
+    def _cattrs_structure(cls, data: dict[str, Any], converter: Any) -> ResultDetails:
+        return cls(*[converter.structure(item, ResultDetail) for item in data["result_details"]])
+
 
 # The Payload class is a marker interface
 class Payload(ABC):  # noqa: B024
@@ -102,15 +111,7 @@ class Payload(ABC):  # noqa: B024
         Returns:
             JSON string representation of the payload
         """
-        # Convert payload to dict
-        if is_dataclass(self):
-            payload_dict = asdict(self)
-        elif hasattr(self, "__dict__"):
-            payload_dict = self.__dict__
-        else:
-            payload_dict = str(self)
-
-        return json.dumps(payload_dict, default=default_json_encoder, **kwargs)
+        return json.dumps(safe_unstructure(self), default=str, **kwargs)
 
 
 # Request payload base class with optional request ID
@@ -132,7 +133,7 @@ class RequestPayload(Payload, ABC):
     """
 
     broadcast_result: bool = True
-    request_id: int | None = None
+    request_id: str | None = None
     failure_log_level: int | None = None
 
 
@@ -249,16 +250,7 @@ class BaseEvent(BaseModel, ABC):
     engine_id: str | None = Field(default_factory=lambda: BaseEvent._engine_id)
     session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
 
-    # Custom JSON encoder for the payload
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True,
-        json_encoders={
-            # Use to_dict() methods for Griptape objects
-            BaseArtifact: lambda obj: obj.to_dict(),
-            BaseTool: lambda obj: obj.to_dict(),
-            Structure: lambda obj: obj.to_dict(),
-        },
-    )
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization and add event_type."""
@@ -276,7 +268,17 @@ class BaseEvent(BaseModel, ABC):
 
     def json(self, **kwargs) -> str:
         """Serialize to JSON string."""
-        return json.dumps(self.dict(), default=default_json_encoder, **kwargs)
+        logger = logging.getLogger(__name__)
+
+        def _default(obj: Any) -> str:
+            logger.debug(
+                "json.dumps fallback hit: type=%s, value=%r",
+                type(obj).__name__,
+                obj,
+            )
+            return str(obj)
+
+        return json.dumps(self.dict(), default=_default, **kwargs)
 
     @abstractmethod
     def get_request(self) -> Payload:
@@ -302,15 +304,7 @@ class EventRequest[P: Payload](BaseEvent):
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization."""
         result = super().dict(*args, **kwargs)
-
-        if hasattr(self.request, "__dict__"):
-            result["request"] = self.request.__dict__
-        elif is_dataclass(self.request):
-            result["request"] = asdict(self.request)
-        else:
-            # Handle other object types if needed
-            result["request"] = str(self.request)
-
+        result["request"] = safe_unstructure(self.request)
         return result
 
     def get_request(self) -> P:
@@ -322,32 +316,13 @@ class EventRequest[P: Payload](BaseEvent):
         return self.request
 
     @classmethod
-    def from_dict(cls, data: builtins.dict[str, Any], payload_type: type[P]) -> EventRequest:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_dict(cls, data: builtins.dict[str, Any]) -> EventRequest:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Create an event from a dictionary."""
-        # Make a copy to avoid modifying the input
         event_data = data.copy()
-
-        # Extract payload data
         request_data = event_data.pop("request", {})
+        resolved_type = _resolve_payload_type(event_data, "request_type")
 
-        # Create and attach the request payload
-        if payload_type:
-            if is_dataclass(payload_type):
-                # Create dataclass instance
-                request_payload = payload_type(**request_data)
-            elif issubclass(payload_type, BaseModel):
-                # Handle Pydantic models
-                request_payload = payload_type.model_validate(request_data)
-            else:
-                # For regular classes, create an instance and set attributes
-                request_payload = payload_type()
-                for key, value in request_data.items():
-                    setattr(request_payload, key, value)
-        else:
-            msg = "Cannot create EventRequest without a payload type"
-            raise ValueError(msg)
-
-        # Create the event instance with the payload
+        request_payload = converter.structure(request_data, resolved_type)
         return cls(request=request_payload, **event_data)
 
 
@@ -368,27 +343,10 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization."""
         result = super().dict(*args, **kwargs)
-
-        if hasattr(self.request, "__dict__"):
-            result["request"] = self.request.__dict__
-        elif is_dataclass(self.request):
-            result["request"] = asdict(self.request)
-        else:
-            result["request"] = str(self.request)
-
-        # Handle result payload
-        if is_dataclass(self.result):
-            try:
-                result["result"] = asdict(self.result)
-            except TypeError:
-                result["result"] = self.result.__dict__
-        elif hasattr(self.result, "__dict__"):
-            result["result"] = self.result.__dict__
-        else:
-            result["result"] = str(self.result)
+        result["request"] = safe_unstructure(self.request)
+        result["result"] = safe_unstructure(self.result)
         if self.retained_mode:
             result["retained_mode"] = self.retained_mode
-
         return result
 
     def get_request(self) -> P:
@@ -416,47 +374,17 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
         """
 
     @classmethod
-    def _create_payload_instance(cls, payload_type: type, payload_data: dict[str, Any]) -> Any:
-        """Create a payload instance from data, handling dataclass init=False fields."""
-        if is_dataclass(payload_type):
-            # Filter out fields that have init=False to avoid TypeError
-            init_fields = {f.name for f in fields(payload_type) if f.init}
-            filtered_data = {k: v for k, v in payload_data.items() if k in init_fields}
-            return payload_type(**filtered_data)
-        if issubclass(payload_type, BaseModel):
-            return payload_type.model_validate(payload_data)
-        instance = payload_type()
-        for key, value in payload_data.items():
-            setattr(instance, key, value)
-        return instance
-
-    @classmethod
-    def from_dict(  # pyright: ignore[reportIncompatibleMethodOverride]
-        cls, data: builtins.dict[str, Any], req_payload_type: type[P], res_payload_type: type[R]
-    ) -> EventResult:
+    def from_dict(cls, data: builtins.dict[str, Any]) -> EventResult:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Create an event from a dictionary."""
-        # Make a copy to avoid modifying the input
         event_data = data.copy()
-
-        # Extract payload data
         request_data = event_data.pop("request", {})
         result_data = event_data.pop("result", {})
 
-        # Process request payload
-        if req_payload_type:
-            request_payload = cls._create_payload_instance(req_payload_type, request_data)
-        else:
-            msg = f"Cannot create {cls.__name__} without a request payload type"
-            raise ValueError(msg)
+        resolved_req_type = _resolve_payload_type(event_data, "request_type")
+        resolved_res_type = _resolve_payload_type(event_data, "result_type")
 
-        # Process result payload
-        if res_payload_type:
-            result_payload = cls._create_payload_instance(res_payload_type, result_data)
-        else:
-            msg = f"Cannot create {cls.__name__} without a result payload type"
-            raise ValueError(msg)
-
-        # Create the event instance with all required fields
+        request_payload = converter.structure(request_data, resolved_req_type)
+        result_payload = converter.structure(result_data, resolved_res_type)
         return cls(request=request_payload, result=result_payload)
 
 
@@ -484,57 +412,6 @@ class EventResultFailure(EventResult[P, R]):
         return False
 
 
-# Helper function to deserialize event from JSON
-def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
-    """Deserialize an event from JSON or dict, using the payload type information embedded in the data.
-
-    Args:
-        json_data: JSON string or dictionary representing an event
-
-    Returns:
-        The deserialized event with the correct payload
-    """
-    from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-
-    # Parse the data if it's a string, otherwise use as is
-    if isinstance(json_data, str):
-        data = json.loads(json_data)
-    elif isinstance(json_data, dict):
-        data = json_data
-    else:
-        msg = "Expected json_data to be str or dict"
-        raise TypeError(msg)
-
-    event_type = data.get("event_type")
-
-    # Get payload types from embedded type information
-    request_type_name = data.get("request_type")
-    result_type_name = data.get("result_type")
-
-    # Look up the actual payload types
-    request_type = PayloadRegistry.get_type(request_type_name) if request_type_name else None
-    result_type = PayloadRegistry.get_type(result_type_name) if result_type_name else None
-
-    # Determine the event class based on event_type and deserialize
-    if event_type == "EventRequest":
-        if request_type:
-            return EventRequest.from_dict(data, request_type)
-        msg = f"Cannot deserialize EventRequest: unknown payload type '{request_type_name}'"
-        raise ValueError(msg)
-    if event_type == "EventResultSuccess":
-        if request_type and result_type:
-            return EventResultSuccess.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResultSuccess: unknown payload types request={request_type_name}, result={result_type_name}"
-        raise ValueError(msg)
-    if event_type == "EventResultFailure":
-        if request_type and result_type:
-            return EventResultFailure.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResultFailure: unknown payload types request={request_type_name}, result={result_type_name}"
-        raise ValueError(msg)
-    msg = f"Unknown/unsupported event type '{event_type}' encountered."
-    raise TypeError(msg)
-
-
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
 class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     payload: E
@@ -547,15 +424,7 @@ class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization."""
         result = super().dict(*args, **kwargs)
-
-        # Convert Payload object to dict
-        if hasattr(self.payload, "__dict__"):
-            result["payload"] = self.payload.__dict__
-        elif is_dataclass(self.payload):
-            result["payload"] = asdict(self.payload)
-        else:
-            # Handle other object types if needed
-            result["payload"] = str(self.payload)
+        result["payload"] = safe_unstructure(self.payload)
         return result
 
     def get_request(self) -> E:
@@ -567,32 +436,13 @@ class ExecutionEvent[E: ExecutionPayload](BaseEvent):
         return self.payload
 
     @classmethod
-    def from_dict(cls, data: builtins.dict[str, Any], payload_type: type[E]) -> ExecutionEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_dict(cls, data: builtins.dict[str, Any]) -> ExecutionEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Create an event from a dictionary."""
-        # Make a copy to avoid modifying the input
         event_data = data.copy()
-
-        # Extract payload data
         payload_data = event_data.pop("payload", {})
+        resolved_type = _resolve_payload_type(event_data, "payload_type")
 
-        # Create and attach the payload
-        if payload_type:
-            if is_dataclass(payload_type):
-                # Create dataclass instance
-                event_payload = payload_type(**payload_data)
-            elif issubclass(payload_type, BaseModel):
-                # Handle Pydantic models
-                event_payload = payload_type.model_validate(payload_data)
-            else:
-                # For regular classes, create an instance and set attributes
-                event_payload = payload_type()
-                for key, value in payload_data.items():
-                    setattr(event_payload, key, value)
-        else:
-            msg = "Cannot create ExecutionEvent without a payload type"
-            raise ValueError(msg)
-
-        # Create the event instance with the payload
+        event_payload = converter.structure(payload_data, resolved_type)
         return cls(payload=event_payload, **event_data)
 
 
@@ -608,16 +458,7 @@ class AppEvent[A: AppPayload](BaseEvent):
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization."""
         result = super().dict(*args, **kwargs)
-
-        if isinstance(self.payload, list) and all(hasattr(item, "__dict__") for item in self.payload):
-            result["payload"] = [
-                {k: v for k, v in item.__dict__.items() if not k.startswith("_")} for item in self.payload
-            ]
-        elif hasattr(self.payload, "__dict__"):
-            result["payload"] = self.payload.__dict__
-        else:
-            # Handle other object types if needed
-            result["payload"] = str(self.payload)
+        result["payload"] = safe_unstructure(self.payload)
         return result
 
     def get_request(self) -> A:
@@ -629,32 +470,13 @@ class AppEvent[A: AppPayload](BaseEvent):
         return self.payload
 
     @classmethod
-    def from_dict(cls, data: builtins.dict[str, Any], payload_type: type[E]) -> AppEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_dict(cls, data: builtins.dict[str, Any]) -> AppEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Create an event from a dictionary."""
-        # Make a copy to avoid modifying the input
         event_data = data.copy()
-
-        # Extract payload data
         payload_data = event_data.pop("payload", {})
+        resolved_type = _resolve_payload_type(event_data, "payload_type")
 
-        # Create and attach the payload
-        if payload_type:
-            if is_dataclass(payload_type):
-                # Create dataclass instance
-                event_payload = payload_type(**payload_data)
-            elif issubclass(payload_type, BaseModel):
-                # Handle Pydantic models
-                event_payload = payload_type.model_validate(payload_data)
-            else:
-                # For regular classes, create an instance and set attributes
-                event_payload = payload_type()
-                for key, value in payload_data.items():
-                    setattr(event_payload, key, value)
-        else:
-            msg = "Cannot create AppEvent without a payload type"
-            raise ValueError(msg)
-
-        # Create the event instance with the payload
+        event_payload = converter.structure(payload_data, resolved_type)
         return cls(payload=event_payload, **event_data)
 
 

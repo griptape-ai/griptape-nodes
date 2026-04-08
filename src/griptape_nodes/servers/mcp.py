@@ -26,6 +26,7 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    ExecuteNodeRequest,
     ResolveNodeRequest,
     StartFlowFromNodeRequest,
     StartFlowRequest,
@@ -66,6 +67,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "ListCategoriesInLibraryRequest": ListCategoriesInLibraryRequest,
     # Execution
     "ResolveNodeRequest": ResolveNodeRequest,
+    "ExecuteNodeRequest": ExecuteNodeRequest,
     "StartFlowRequest": StartFlowRequest,
     "StartFlowFromNodeRequest": StartFlowFromNodeRequest,
     # Nodes

@@ -102,7 +102,7 @@ class StaticFilesManager:
         workspace_directory = config_manager.workspace_path
 
         # Build base URL for LocalStorageDriver from configured base URL
-        self.static_server_base_url = config_manager.get_config_value("static_server_base_url")
+        self.static_server_base_url = config_manager.get_config_value("static_server_base_url").rstrip("/")
         base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
 
         match self.storage_backend:
@@ -391,7 +391,7 @@ class StaticFilesManager:
             # server's bind host, it's a direct connection and we update the port.
             parsed = urlparse(self.static_server_base_url)
             if parsed.hostname == STATIC_SERVER_HOST:
-                self.static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}"
+                self.static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}".rstrip("/")
             self.storage_driver.base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
 
             threading.Thread(target=start_static_server, args=(sock,), daemon=True, name="static-server").start()

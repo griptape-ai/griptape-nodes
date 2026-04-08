@@ -32,7 +32,6 @@ from griptape_nodes.exe_types.node_types import (
     NodeResolutionState,
     TransformedParameterValue,
 )
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
@@ -51,15 +50,18 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeResultSuccess,
     OutgoingConnection,
 )
+from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
+    ExecuteNodeRequest,
+    ExecuteNodeResultFailure,
+    ExecuteNodeResultSuccess,
     ResolveNodeRequest,
     ResolveNodeResultFailure,
     ResolveNodeResultSuccess,
     StartFlowResultFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
-    DeleteFlowRequest,
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
@@ -300,6 +302,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(MigrateParameterRequest, self.on_migrate_parameter_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
+        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
         event_manager.assign_manager_to_request_type(
             GetCompatibleParametersRequest, self.on_get_compatible_parameters_request
@@ -910,16 +913,12 @@ class NodeManager:
             if cancel_result is not None:
                 return cancel_result
 
-            subflow_name = None
-            # Remove nodes from the node group (if it is one) before deleting connections.
-            if isinstance(node, SubflowNodeGroup):
-                try:
-                    subflow_name = node.delete_group()
-                except ValueError as err:
-                    details = (
-                        f"Attempted to delete NodeGroup '{request.node_name}'. Failed to remove nodes from group: {err}"
-                    )
-                    return DeleteNodeResultFailure(result_details=details)
+            # Call after_node_deleted hook for cleanup of a node, implemented by node author.
+            try:
+                node.after_node_deleted()
+            except ValueError as err:
+                msg = f"Failed to delete node {node_name}, after_node_deleted method failed to run with error: {err}"
+                return DeleteNodeResultFailure(result_details=msg)
             # Remove all connections from this Node using a loop to handle cascading deletions
             any_connections_remain = True
             while any_connections_remain:
@@ -974,6 +973,7 @@ class NodeManager:
             except ValueError as e:
                 details = f"Attempted to delete a Node '{node_name}'. Failed to remove it from the node group: {e}"
                 return DeleteNodeResultFailure(result_details=details)
+
         parent_flow.remove_node(node.name)
 
         # Now remove the record keeping
@@ -984,18 +984,6 @@ class NodeManager:
         if request.node_name is None:
             GriptapeNodes.ContextManager().pop_node()
 
-        # Delete subflow if it has one and it still exists
-        # Note: The subflow may have already been deleted if we're being called as part of
-        # a parent flow deletion (which deletes child flows before nodes)
-        if subflow_name is not None:
-            subflow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(subflow_name, ControlFlow)
-            if subflow is not None:
-                delete_flow_request = DeleteFlowRequest(flow_name=subflow_name)
-                delete_flow_result = GriptapeNodes.handle_request(delete_flow_request)
-
-                if delete_flow_result.failed():
-                    details = f"Attempted to delete NodeGroup '{request.node_name}'. Failed to delete subflow '{subflow_name}': {delete_flow_result.result_details}"
-                    return DeleteNodeResultFailure(result_details=details)
         details = f"Successfully deleted Node '{node_name}'."
         return DeleteNodeResultSuccess(result_details=details)
 
@@ -2151,7 +2139,7 @@ class NodeManager:
             input_types=parameter.input_types,
             type=parameter.type,
             output_type=parameter.output_type,
-            value=TypeValidator.safe_serialize(data_value),
+            value=safe_unstructure(data_value),
             result_details=details,
         )
         return result
@@ -2702,6 +2690,39 @@ class NodeManager:
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         return ResolveNodeResultSuccess(result_details=details)
+
+    async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
+        """Execute a node's aprocess() directly with provided parameter values."""
+        node_name = request.node_name
+
+        try:
+            node = self.get_node_by_name(node_name)
+        except ValueError as e:
+            return ExecuteNodeResultFailure(
+                result_details=f"Attempted to execute node '{node_name}'. Failed because node does not exist: {e}",
+            )
+
+        # Hydrate input parameters
+        for param_name, value in request.parameter_values.items():
+            try:
+                node.set_parameter_value(param_name, value)
+            except Exception as e:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
+                )
+
+        # Execute the node
+        try:
+            await node.aprocess()
+        except Exception as e:
+            return ExecuteNodeResultFailure(
+                result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
+            )
+
+        return ExecuteNodeResultSuccess(
+            parameter_output_values=dict(node.parameter_output_values),
+            result_details=f"Node '{node_name}' executed successfully.",
+        )
 
     def on_validate_node_dependencies_request(self, request: ValidateNodeDependenciesRequest) -> ResultPayload:
         node_name = request.node_name
@@ -3766,7 +3787,7 @@ class NodeManager:
 
         Args:
             node: The node whose parameter output values should be serialized
-            use_pickling: If True, use pickle-based serialization; if False, use TypeValidator.safe_serialize
+            use_pickling: If True, use pickle-based serialization; if False, use safe_unstructure
 
         Returns:
             SerializedParameterValues containing:
@@ -3783,7 +3804,7 @@ class NodeManager:
 
     @staticmethod
     def _serialize_without_pickling(node: BaseNode) -> SerializedParameterValues:
-        """Serialize parameter values using simple TypeValidator serialization.
+        """Serialize parameter values using safe_unstructure.
 
         Args:
             node: The node whose parameter values should be serialized
@@ -3797,7 +3818,7 @@ class NodeManager:
                 param_values[param.name] = node.parameter_output_values[param.name]
             else:
                 param_values[param.name] = node.get_parameter_value(param.name)
-        simple_values = TypeValidator.safe_serialize(param_values)
+        simple_values = safe_unstructure(param_values)
         return SerializedParameterValues(simple_values, None)
 
     @staticmethod

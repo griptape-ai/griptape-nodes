@@ -10,6 +10,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
+    # Circular import: resource_events -> resource_manager -> resource_events
     from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
     from griptape_nodes.retained_mode.managers.resource_components.resource_type import ResourceType
     from griptape_nodes.retained_mode.managers.resource_manager import ResourceStatus

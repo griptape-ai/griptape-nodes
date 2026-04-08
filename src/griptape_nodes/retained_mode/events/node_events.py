@@ -2,30 +2,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, NamedTuple, NewType
+from typing import Any, NamedTuple, NewType
 from uuid import uuid4
 
-from griptape_nodes.exe_types.node_types import NodeResolutionState
-
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.core_types import NodeMessagePayload
-    from griptape_nodes.exe_types.node_types import NodeDependencies
-    from griptape_nodes.retained_mode.events.connection_events import (
-        IncomingConnection,
-        ListConnectionsForNodeResultSuccess,
-        OutgoingConnection,
-    )
-    from griptape_nodes.retained_mode.events.parameter_events import (
-        GetParameterDetailsResultSuccess,
-        GetParameterValueResultSuccess,
-        SetParameterValueRequest,
-    )
+from griptape_nodes.exe_types.core_types import NodeMessagePayload
+from griptape_nodes.exe_types.node_types import NodeDependencies, NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
+)
+from griptape_nodes.retained_mode.events.connection_events import (
+    IncomingConnection,
+    ListConnectionsForNodeResultSuccess,
+    OutgoingConnection,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    GetParameterDetailsResultSuccess,
+    GetParameterValueResultSuccess,
+    SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -35,6 +32,21 @@ class NewPosition(NamedTuple):
 
     x: float
     y: float
+
+    @classmethod
+    def _cattrs_structure(cls, data: Any, _type: type) -> NewPosition:
+        """Custom cattrs structuring hook.
+
+        The editor sends positions as plain arrays (e.g. [976.66, 760]) with
+        values that may be ints or floats. The default cattrs NamedTuple
+        structuring cannot resolve the float type annotation because this
+        module uses `from __future__ import annotations`, which turns
+        annotations into ForwardRef strings. This hook handles both list and
+        dict inputs and explicitly coerces values to float.
+        """
+        if isinstance(data, dict):
+            return cls(x=float(data["x"]), y=float(data["y"]))
+        return cls(x=float(data[0]), y=float(data[1]))
 
 
 @dataclass

@@ -1199,14 +1199,18 @@ class ArtifactManager:
         generator_key = provider_class.get_preview_generator_config_key()
 
         # Check format validity
-        format_result = GriptapeNodes.handle_request(GetConfigValueRequest(category_and_key=format_key))
+        format_result = GriptapeNodes.handle_request(
+            GetConfigValueRequest(category_and_key=format_key, failure_log_level=logging.DEBUG)
+        )
         format_valid = (
             isinstance(format_result, GetConfigValueResultSuccess)
             and format_result.value in provider_class.get_preview_formats()
         )
 
         # Check generator validity
-        generator_result = GriptapeNodes.handle_request(GetConfigValueRequest(category_and_key=generator_key))
+        generator_result = GriptapeNodes.handle_request(
+            GetConfigValueRequest(category_and_key=generator_key, failure_log_level=logging.DEBUG)
+        )
         registered_generators = self._registry.get_preview_generators_for_provider(provider_class)
         registered_names = [gen.get_friendly_name() for gen in registered_generators]
         generator_valid = (
@@ -1249,7 +1253,7 @@ class ArtifactManager:
         """
         # Step 1: Read format from config (or use default if missing)
         format_config_key = provider_class.get_preview_format_config_key()
-        format_request = GetConfigValueRequest(category_and_key=format_config_key)
+        format_request = GetConfigValueRequest(category_and_key=format_config_key, failure_log_level=logging.DEBUG)
         format_result = GriptapeNodes.handle_request(format_request)
 
         if isinstance(format_result, GetConfigValueResultSuccess):
@@ -1261,7 +1265,9 @@ class ArtifactManager:
 
         # Step 2: Read generator from config (or use default if missing/invalid)
         generator_config_key = provider_class.get_preview_generator_config_key()
-        generator_request = GetConfigValueRequest(category_and_key=generator_config_key)
+        generator_request = GetConfigValueRequest(
+            category_and_key=generator_config_key, failure_log_level=logging.DEBUG
+        )
         generator_result = GriptapeNodes.handle_request(generator_request)
 
         registered_generators = self._registry.get_preview_generators_for_provider(provider_class)
@@ -1303,7 +1309,7 @@ class ArtifactManager:
             params_config_key = (
                 f"{provider_class.get_config_key_prefix()}.preview_generator_configurations.{generator_key}"
             )
-            params_request = GetConfigValueRequest(category_and_key=params_config_key)
+            params_request = GetConfigValueRequest(category_and_key=params_config_key, failure_log_level=logging.DEBUG)
             params_result = GriptapeNodes.handle_request(params_request)
 
             if isinstance(params_result, GetConfigValueResultSuccess):

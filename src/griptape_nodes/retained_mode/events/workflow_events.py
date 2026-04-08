@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.execution_events import ExecutionPayloa
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
+    # Circular import: flow_events <-> workflow_events
     from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
 
 
@@ -211,6 +212,24 @@ class ListAllWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
+class ListCallableWorkflowsRequest(RequestPayload):
+    """List workflows that have a workflow_shape (i.e. contain StartFlow and EndFlow nodes)."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ListCallableWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    workflow_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class ListCallableWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Callable workflow listing failed."""
+
+
+@dataclass
+@PayloadRegistry.register
 class DeleteWorkflowRequest(RequestPayload):
     """Delete a workflow from the registry.
 
@@ -312,6 +331,7 @@ class ImportWorkflowAsReferencedSubFlowRequest(RequestPayload):
     workflow_name: str
     flow_name: str | None = None  # If None, import into current context flow
     imported_flow_metadata: dict | None = None  # Metadata to apply to the imported flow
+    track_as_referenced: bool = True  # If False, the flow serializes as inline content instead of an import command
 
 
 @dataclass
@@ -999,3 +1019,42 @@ class SaveWorkflowFileFromSerializedFlowResultSuccess(WorkflowNotAlteredMixin, R
 @PayloadRegistry.register
 class SaveWorkflowFileFromSerializedFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Workflow file save failed. Common causes: file system error, permission denied, invalid serialized commands."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveSubflowToWorkflowRequest(RequestPayload):
+    """Serialize a subflow and save it back to its original workflow file.
+
+    Use when: Persisting changes made to a subflow in a modal editor back to
+    the workflow file it was loaded from.
+
+    Args:
+        flow_name: The engine flow name of the subflow to serialize
+        workflow_name: Registry key for the target workflow (used to derive file path and metadata)
+
+    Results: SaveSubflowToWorkflowResultSuccess | SaveSubflowToWorkflowResultFailure
+    """
+
+    flow_name: str
+    workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveSubflowToWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Subflow saved successfully to workflow file.
+
+    Args:
+        file_path: Path where the workflow file was written
+        workflow_metadata: The metadata generated for the saved workflow
+    """
+
+    file_path: str
+    workflow_metadata: WorkflowMetadata
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveSubflowToWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Subflow save to workflow file failed. Common causes: serialization error, file system error, invalid flow name."""

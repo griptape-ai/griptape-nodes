@@ -11,7 +11,6 @@ from griptape_nodes.exe_types.node_types import (
     BaseNode,
     NodeResolutionState,
 )
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.machines.fsm import FSM, State, WorkflowState
 from griptape_nodes.machines.node_priority_queue import NodePriorityQueue
@@ -20,6 +19,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
 )
+from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
@@ -178,8 +178,8 @@ class ExecuteDagState(State):
         if logger.level <= logging.DEBUG:
             logger.debug(
                 "INPUTS: %s\nOUTPUTS: %s",
-                TypeValidator.safe_serialize(current_node.parameter_values),
-                TypeValidator.safe_serialize(current_node.parameter_output_values),
+                safe_unstructure(current_node.parameter_values),
+                safe_unstructure(current_node.parameter_output_values),
             )
 
         for parameter_name, value in current_node.parameter_output_values.items():
@@ -198,7 +198,7 @@ class ExecuteDagState(State):
                             node_name=current_node.name,
                             parameter_name=parameter_name,
                             data_type=data_type,
-                            value=TypeValidator.safe_serialize(value),
+                            value=safe_unstructure(value),
                         )
                     ),
                 )
@@ -215,7 +215,7 @@ class ExecuteDagState(State):
                 wrapped_event=ExecutionEvent(
                     payload=NodeResolvedEvent(
                         node_name=current_node.name,
-                        parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
+                        parameter_output_values=safe_unstructure(current_node.parameter_output_values),
                         node_type=current_node.__class__.__name__,
                         specific_library_name=library_name,
                     )

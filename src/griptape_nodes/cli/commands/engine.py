@@ -1,5 +1,9 @@
 """Engine command for Griptape Nodes CLI."""
 
+from typing import Annotated
+
+import typer
+
 from griptape_nodes.app import start_app
 from griptape_nodes.cli.commands.init import _run_init
 from griptape_nodes.cli.shared import (
@@ -15,12 +19,21 @@ from griptape_nodes.cli.shared import (
 )
 
 
-def engine_command() -> None:
+def engine_command(
+    session_id: Annotated[
+        str | None,
+        typer.Option(
+            "--session-id",
+            envvar="GTN_SESSION_ID",
+            help="Session ID of an existing orchestrator session to join as a worker engine.",
+        ),
+    ] = None,
+) -> None:
     """Run the Griptape Nodes engine."""
-    _start_engine()
+    _start_engine(worker_session_id=session_id)
 
 
-def _start_engine() -> None:
+def _start_engine(worker_session_id: str | None = None) -> None:
     """Starts the Griptape Nodes engine."""
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory
@@ -40,4 +53,4 @@ def _start_engine() -> None:
         )
 
     console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
-    start_app()
+    start_app(worker_session_id=worker_session_id)
