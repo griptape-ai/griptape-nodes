@@ -1262,3 +1262,90 @@ class TestGeneratorValidation:
             assert "description" in param_schema
             assert isinstance(param_schema["type"], str)
             assert isinstance(param_schema["description"], str)
+
+
+class TestProviderRegistrationConfigLogLevels:
+    """Test that config reads during provider registration use DEBUG-level failure logging.
+
+    On a fresh install with no config, reading config values will fail. These failures
+    are expected and should not produce ERROR-level logs that alarm users.
+    """
+
+    def test_read_generator_config_uses_debug_failure_log_level(self) -> None:
+        """Test that _read_generator_config uses failure_log_level=DEBUG in GetConfigCategoryRequest."""
+        import logging
+
+        from griptape_nodes.retained_mode.events.config_events import (
+            GetConfigCategoryRequest,
+        )
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
+        )
+
+        manager = ArtifactManager()
+        captured_requests: list[RequestPayload] = []
+
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        original = GriptapeNodes.handle_request
+
+        def capture_requests(request: RequestPayload) -> ResultPayload:
+            captured_requests.append(request)
+            return original(request)
+
+        try:
+            GriptapeNodes.handle_request = staticmethod(capture_requests)
+            manager._read_generator_config(ImageArtifactProvider, PILThumbnailGenerator)
+        finally:
+            GriptapeNodes.handle_request = original
+
+        category_requests = [r for r in captured_requests if isinstance(r, GetConfigCategoryRequest)]
+        assert len(category_requests) == 1
+        assert category_requests[0].failure_log_level == logging.DEBUG
+
+    def test_validate_and_write_provider_settings_uses_debug_failure_log_level(self) -> None:
+        """Test that _validate_and_write_provider_settings uses failure_log_level=DEBUG."""
+        import logging
+
+        from griptape_nodes.retained_mode.events.config_events import (
+            GetConfigValueRequest,
+        )
+
+        manager = ArtifactManager()
+        captured_requests: list[RequestPayload] = []
+
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        original = GriptapeNodes.handle_request
+
+        def capture_requests(request: RequestPayload) -> ResultPayload:
+            captured_requests.append(request)
+            return original(request)
+
+        try:
+            GriptapeNodes.handle_request = staticmethod(capture_requests)
+            manager._validate_and_write_provider_settings(ImageArtifactProvider)
+        finally:
+            GriptapeNodes.handle_request = original
+
+        value_requests = [r for r in captured_requests if isinstance(r, GetConfigValueRequest)]
+        assert len(value_requests) >= 2  # noqa: PLR2004
+        for req in value_requests:
+            assert req.failure_log_level == logging.DEBUG
+
+    @pytest.mark.asyncio
+    async def test_provider_registration_does_not_log_errors(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Test that registering providers on fresh config does not produce ERROR-level logs."""
+        import logging
+
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+
+        manager = ArtifactManager()
+
+        with caplog.at_level(logging.DEBUG, logger="griptape_nodes"):
+            await manager.on_app_initialization_complete(AppInitializationComplete())
+
+        error_records = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert error_records == [], (
+            f"Provider registration produced ERROR-level logs: {[r.message for r in error_records]}"
+        )
