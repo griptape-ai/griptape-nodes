@@ -151,6 +151,25 @@ class EngineInitializationProgress(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
+class LibraryLoadedNotification(AppPayload):
+    """Notification that a library has finished loading, including its fitness outcome.
+
+    Emitted after a library reaches LOADED state. The orchestrator re-broadcasts it so
+    all listeners (including the GUI) can update their view of library health.
+
+    Args:
+        library_name: Name of the library that was loaded.
+        fitness: Final fitness value (LibraryManager.LibraryFitness string).
+        problem_details: Human-readable summary of problems, or None if there are none.
+    """
+
+    library_name: str
+    fitness: str
+    problem_details: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
 class ConfigChanged(AppPayload):
     """Configuration value changed notification.
 

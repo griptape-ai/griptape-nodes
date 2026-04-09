@@ -274,17 +274,15 @@ async def _publish_library_loaded(
     # collate_problems_for_lib_info runs here on the event loop thread, not the
     # library-loading thread that invoked this callback.
     problem_details = griptape_nodes.LibraryManager().collate_problems_for_lib_info(library_info)
-    notification = EventRequest(
-        request=worker_events.LibraryLoadedOnWorkerRequest(
+    notification = AppEvent(
+        payload=app_events.LibraryLoadedNotification(
             library_name=worker_library_name,
             fitness=library_info.fitness,
             problem_details=problem_details,
-            broadcast_result=True,
-        ),
-        response_topic=None,
+        )
     )
     await client.publish(
-        "EventRequest",
+        "AppEvent",
         json.loads(notification.json()),
         f"sessions/{worker_session_id}/request",
     )
@@ -296,13 +294,11 @@ def _on_library_loaded(
     worker_library_name: str,
     worker_session_id: str,
     client: Client,
-    loop: asyncio.AbstractEventLoop,
 ) -> None:
     if library_info.library_name != worker_library_name:
         return
-    asyncio.run_coroutine_threadsafe(
-        _publish_library_loaded(client, worker_session_id, worker_library_name, library_info),
-        loop,
+    asyncio.get_running_loop().create_task(
+        _publish_library_loaded(client, worker_session_id, worker_library_name, library_info)
     )
 
 
@@ -336,14 +332,12 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     # Register a callback to notify the orchestrator when the worker's library is loaded.
     # Only needed when this worker is dedicated to a specific library.
     if worker_library_name:
-        _loop = asyncio.get_running_loop()
         griptape_nodes.LibraryManager().register_library_loaded_callback(
             functools.partial(
                 _on_library_loaded,
                 worker_library_name=worker_library_name,
                 worker_session_id=worker_session_id,
                 client=client,
-                loop=_loop,
             )
         )
 
@@ -478,18 +472,31 @@ async def _process_api_event(event: dict) -> None:
     payload = event.get("payload", {})
 
     try:
+        event_type = payload["event_type"]
+    except KeyError:
+        msg = "Error: 'event_type' not found in request."
+        raise RuntimeError(msg) from None
+
+    if event_type == "AppEvent":
+        try:
+            app_event = AppEvent.from_dict(payload)
+        except Exception as e:
+            details = str(e)
+            if isinstance(e, BaseValidationError):
+                details = "; ".join(transform_error(e))
+            msg = f"Unable to convert request JSON into a valid AppEvent object. Error Message: '{details}'"
+            raise RuntimeError(msg) from None
+        griptape_nodes.EventManager().put_event(app_event)
+        return
+
+    try:
         payload["request"]
     except KeyError:
         msg = "Error: 'request' was expected but not found."
         raise RuntimeError(msg) from None
 
-    try:
-        event_type = payload["event_type"]
-        if event_type != "EventRequest":
-            msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
-            raise RuntimeError(msg) from None
-    except KeyError:
-        msg = "Error: 'event_type' not found in request."
+    if event_type != "EventRequest":
+        msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
         raise RuntimeError(msg) from None
 
     # Now attempt to convert it into an EventRequest.

@@ -48,6 +48,7 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionResultSuccess,
     InitializationPhase,
     InitializationStatus,
+    LibraryLoadedNotification,
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
@@ -147,11 +148,6 @@ from griptape_nodes.retained_mode.events.resource_events import (
     GetResourceInstanceStatusResultSuccess,
     ListCompatibleResourceInstancesRequest,
     ListCompatibleResourceInstancesResultSuccess,
-)
-from griptape_nodes.retained_mode.events.worker_events import (
-    LibraryLoadedOnWorkerRequest,
-    LibraryLoadedOnWorkerResultFailure,
-    LibraryLoadedOnWorkerResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
@@ -426,10 +422,11 @@ class LibraryManager:
         )
         event_manager.assign_manager_to_request_type(SyncLibrariesRequest, self.sync_libraries_request)
         event_manager.assign_manager_to_request_type(InspectLibraryRepoRequest, self.inspect_library_repo_request)
-        event_manager.assign_manager_to_request_type(
-            LibraryLoadedOnWorkerRequest, self.handle_library_loaded_on_worker_request
-        )
 
+        event_manager.add_listener_to_app_event(
+            LibraryLoadedNotification,
+            self._on_library_loaded_notification,
+        )
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
             self.on_app_initialization_complete,
@@ -459,32 +456,23 @@ class LibraryManager:
         """
         self._session_ready_event.set()
 
-    async def handle_library_loaded_on_worker_request(
-        self,
-        request: LibraryLoadedOnWorkerRequest,
-    ) -> LibraryLoadedOnWorkerResultSuccess | LibraryLoadedOnWorkerResultFailure:
-        """Update the orchestrator's LibraryInfo.fitness with the worker's actual load outcome.
-
-        Called when a worker finishes loading its designated library and reports back. Allows
-        the orchestrator's view of library health to reflect what actually happened during dep
-        install and node import, not just the pre-worker evaluation fitness.
-        """
-        library_info = self.get_library_info_by_library_name(request.library_name)
+    async def _on_library_loaded_notification(self, notification: LibraryLoadedNotification) -> None:
+        """Update LibraryInfo fitness and state when a library load outcome is reported."""
+        library_info = self.get_library_info_by_library_name(notification.library_name)
         if library_info is None:
-            return LibraryLoadedOnWorkerResultFailure(
-                result_details=f"Library '{request.library_name}' not found in orchestrator registry."
+            logger.warning(
+                "Received LibraryLoadedNotification for unknown library '%s'.",
+                notification.library_name,
             )
-        library_info.fitness = LibraryManager.LibraryFitness(request.fitness)
+            return
+        library_info.fitness = LibraryManager.LibraryFitness(notification.fitness)
         library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
-        if request.problem_details:
+        if notification.problem_details:
             logger.warning(
                 "Worker reported problems loading library '%s': %s",
-                request.library_name,
-                request.problem_details,
+                notification.library_name,
+                notification.problem_details,
             )
-        return LibraryLoadedOnWorkerResultSuccess(
-            result_details=f"Updated fitness for library '{request.library_name}' to '{request.fitness}'."
-        )
 
     def get_worker_for_library(self, library_name: str | None) -> tuple[str, str] | None:
         """Return (worker_engine_id, worker_request_topic) for the worker serving library_name, or None.
