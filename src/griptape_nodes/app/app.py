@@ -13,8 +13,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import concurrent.futures
-
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 import truststore
@@ -406,7 +404,7 @@ async def _handle_orchestrator_unmatched(message: dict, worker_manager: WorkerMa
         )
 
 
-def _log_worker_spawn_error(f: concurrent.futures.Future, library_name: str) -> None:
+def _log_worker_spawn_error(f: asyncio.Future, library_name: str) -> None:
     exc = f.exception()
     if exc is not None:
         logger.error("Failed to spawn worker for library '%s': %s", library_name, exc)
@@ -415,9 +413,6 @@ def _log_worker_spawn_error(f: concurrent.futures.Future, library_name: str) -> 
 async def _run_orchestrator(client: Client) -> None:
     """Run the WebSocket task group for an orchestrator engine."""
     _engine_role_filter.prefix = "Orchestrator"
-    # Capture the running loop so library-loading callbacks (which fire from the
-    # main thread) can schedule coroutines onto the WebSocket event loop.
-    _loop = asyncio.get_running_loop()
 
     # worker_manager is assigned inside the RequestClient context below. Closures
     # that reference it are only invoked after it is set.
@@ -448,11 +443,10 @@ async def _run_orchestrator(client: Client) -> None:
             msg = "WorkerManager not yet initialized"
             raise RuntimeError(msg)
         args = [gtn, "engine", "--session-id", session_id, "--library-name", library_info.library_name]
-        future = asyncio.run_coroutine_threadsafe(
-            _worker_manager.spawn_worker(args, library_info.library_name),
-            _loop,
+        task = asyncio.get_running_loop().create_task(
+            _worker_manager.spawn_worker(args, library_info.library_name)
         )
-        future.add_done_callback(functools.partial(_log_worker_spawn_error, library_name=library_info.library_name))
+        task.add_done_callback(functools.partial(_log_worker_spawn_error, library_name=library_info.library_name))
 
     griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_needs_worker)
 
