@@ -364,10 +364,10 @@ class LibraryManager:
         self._libraries_loading_complete = asyncio.Event()
         self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
         self._library_loaded_callbacks: list[Callable[[LibraryManager.LibraryInfo], None]] = []
-        # True when this process is a dedicated worker for a single library.
+        # True when this process is a dedicated worker
         self._is_worker: bool = False
-        # The library this process is restricted to loading (set on workers).
-        self._target_library_name: str | None = None
+        # The libraries this process is restricted to loading (set on workers).
+        self._target_library_names: list[str] | None = None
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -2499,7 +2499,7 @@ class LibraryManager:
 
         return node_class
 
-    async def load_all_libraries_from_config(self, target_library_name: str | None = None) -> None:
+    async def load_all_libraries_from_config(self, target_library_names: list[str] | None = None) -> None:
         self._libraries_loading_complete.clear()
 
         # Discover all available libraries (config + sandbox)
@@ -2531,7 +2531,9 @@ class LibraryManager:
             # When running as a dedicated library worker, skip libraries that don't match the target.
             # library_name is already populated in _library_file_path_to_info from the discovery phase.
             lib_info = self._library_file_path_to_info.get(lib_path)
-            if target_library_name is not None and (lib_info is None or lib_info.library_name != target_library_name):
+            if target_library_names is not None and (
+                lib_info is None or lib_info.library_name not in target_library_names
+            ):
                 continue
 
             # Load the library through unified lifecycle using library_path
@@ -2582,8 +2584,8 @@ class LibraryManager:
                     )
                 )
 
-        # Print 'em all pretty — skip for targeted worker loads (they only load one library).
-        if target_library_name is None:
+        # Print 'em all pretty — skip for targeted worker loads.
+        if target_library_names is None:
             self.print_library_load_status()
 
         # Remove any missing libraries AFTER we've printed them for the user.
@@ -2734,12 +2736,10 @@ class LibraryManager:
         await self._ensure_libraries_from_config()
 
         # Now load all libraries from config (including newly downloaded ones).
-        # When running as a dedicated library worker, restrict loading to that library.
+        # When running as a dedicated library worker, restrict loading to those libraries.
         self._is_worker = payload.is_worker
-        self._target_library_name = (
-            payload.libraries_to_register[0] if payload.is_worker and payload.libraries_to_register else None
-        )
-        await self.load_all_libraries_from_config(target_library_name=self._target_library_name)
+        self._target_library_names = payload.libraries_to_register if payload.is_worker else None
+        await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
 
         # Register all secrets now that libraries are loaded and settings are merged
         GriptapeNodes.SecretsManager().register_all_secrets()
@@ -3313,8 +3313,8 @@ class LibraryManager:
                 return ReloadAllLibrariesResultFailure(result_details=details)
 
         # Load (or reload, which should trigger a hot reload) all libraries.
-        # Pass _target_library_name so workers reload only their designated library.
-        await self.load_all_libraries_from_config(target_library_name=self._target_library_name)
+        # Pass _target_library_names so workers reload only their designated libraries.
+        await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
 
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
