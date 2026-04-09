@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Required, TypedDict
 
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
@@ -460,6 +460,13 @@ class GriptapeEvent(ExecutionPayload):
     value: Any
 
 
+class NodeMetadata(TypedDict, total=False):
+    """Metadata dict carried on nodes. node_type and library are required; all other keys are optional."""
+
+    node_type: Required[str]
+    library: Required[str]
+
+
 @dataclass
 @PayloadRegistry.register
 class ExecuteNodeRequest(RequestPayload):
@@ -469,19 +476,23 @@ class ExecuteNodeRequest(RequestPayload):
     Unlike ResolveNodeRequest, this bypasses flow/DAG machinery and executes
     the node's process method directly.
 
+    If the node does not already exist in ObjectManager and node_metadata is provided,
+    the node is created first (idempotent: no-op if already present). This covers both
+    orchestrator-local execution (node always exists) and worker execution (created on
+    first call, reused on subsequent calls).
+
     Args:
         node_name: Name of the node to execute.
         parameter_values: Input parameter values to set before execution.
-        node_type: Node class name. Retained for wire-protocol compatibility.
-        library_name: Library owning the node type. Retained for wire-protocol compatibility.
+        node_metadata: Full node metadata from the orchestrator. When provided and the
+            node does not exist, it is created from this metadata.
 
     Results: ExecuteNodeResultSuccess | ExecuteNodeResultFailure
     """
 
     node_name: str
     parameter_values: dict[str, Any] = field(default_factory=dict)
-    node_type: str | None = None
-    library_name: str | None = None
+    node_metadata: NodeMetadata | None = None
 
 
 @dataclass
@@ -502,36 +513,3 @@ class ExecuteNodeResultFailure(ResultPayloadFailure):
     """Failed result from executing a node directly."""
 
 
-@dataclass
-@PayloadRegistry.register
-class UpsertNodeRequest(RequestPayload):
-    """Ensure a node exists on an engine (no flow context required).
-
-    Idempotent: if a node with node_name already exists in ObjectManager,
-    returns success without re-creating it.
-
-    Args:
-        node_name: Name to assign to the node.
-        node_type: Node class name (e.g. "SummarizeText").
-        library_name: Library owning the node type.
-
-    Results: UpsertNodeResultSuccess | UpsertNodeResultFailure
-    """
-
-    node_name: str
-    node_type: str
-    library_name: str | None = None
-
-
-@dataclass
-@PayloadRegistry.register
-class UpsertNodeResultSuccess(ResultPayloadSuccess):
-    """Successful result from upserting a node."""
-
-    node_name: str
-
-
-@dataclass
-@PayloadRegistry.register
-class UpsertNodeResultFailure(ResultPayloadFailure):
-    """Failed result from upserting a node."""

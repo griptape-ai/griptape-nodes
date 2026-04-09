@@ -40,7 +40,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
-from griptape_nodes.retained_mode.events.base_events import EventRequest, EventResultFailure, EventResultSuccess, ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import EventRequest, ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -58,6 +58,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     GriptapeEvent,
     InvolvedNodesEvent,
     NodeFinishProcessEvent,
+    NodeMetadata,
     NodeResolvedEvent,
     NodeStartProcessEvent,
     NodeUnresolvedEvent,
@@ -67,8 +68,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartLocalSubflowRequest,
     StartLocalSubflowResultFailure,
     StartLocalSubflowResultSuccess,
-    UpsertNodeRequest,
-    UpsertNodeResultFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowResultFailure,
@@ -217,59 +216,28 @@ async def _execute_node_on_worker(
     node: BaseNode,
     worker: tuple[str, str],
 ) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-    """Execute a node on a worker via a create-then-execute sequence.
+    """Execute a node on a worker.
 
-    Sends UpsertNodeRequest to ensure the node exists on the worker
-    (idempotent — no-op if already present), then sends ExecuteNodeRequest
-    to run it. Two round-trips on first call; one round-trip on subsequent
-    calls to the same node.
+    Sends a single ExecuteNodeRequest carrying node_metadata. The worker creates
+    the node on first call (idempotent — no-op if already present) then executes it.
     """
     worker_engine_id, worker_request_topic = worker
-    node_type = node.metadata.get("node_type")
-    library_name = node.metadata.get("library")
-
-    if not node_type:
-        return ExecuteNodeResultFailure(
-            result_details=f"Node '{node.name}' has no node_type in metadata; cannot ensure it exists on the worker.",
-        )
-
-    create_raw = await wm.route_to_worker(
-        EventRequest(
-            request=UpsertNodeRequest(
-                node_name=node.name,
-                node_type=node_type,
-                library_name=library_name,
-            )
-        ),
-        worker_engine_id,
-        worker_request_topic,
-    )
-    try:
-        if create_raw.get("event_type") == EventResultSuccess.__name__:
-            create_result = EventResultSuccess.from_dict(create_raw).result
-        else:
-            create_result = EventResultFailure.from_dict(create_raw).result
-    except Exception:
-        logger.exception("Failed to deserialize upsert-node result. Raw: %s", create_raw)
-        raise
-    if isinstance(create_result, UpsertNodeResultFailure):
-        return ExecuteNodeResultFailure(
-            result_details=f"Failed to prepare node '{node.name}' on worker: {create_result.result_details}",
-        )
-
     execute_raw = await wm.route_to_worker(
         EventRequest(
             request=ExecuteNodeRequest(
                 node_name=node.name,
                 parameter_values=dict(node.parameter_values),
+                node_metadata=cast(NodeMetadata, dict(node.metadata)),
             )
         ),
         worker_engine_id,
         worker_request_topic,
     )
-    if execute_raw.get("event_type") == EventResultSuccess.__name__:
-        return cast(ExecuteNodeResultSuccess | ExecuteNodeResultFailure, EventResultSuccess.from_dict(execute_raw).result)
-    return cast(ExecuteNodeResultSuccess | ExecuteNodeResultFailure, EventResultFailure.from_dict(execute_raw).result)
+    result_type_name = execute_raw.get("result_type", "")
+    result_data = execute_raw.get("result", {})
+    if result_type_name == ExecuteNodeResultSuccess.__name__:
+        return ExecuteNodeResultSuccess(**result_data)
+    return ExecuteNodeResultFailure(**result_data)
 
 
 class NodeExecutor:
@@ -330,14 +298,20 @@ class NodeExecutor:
             library_name = node.metadata.get("library")
             if wm and library_name and (worker := GriptapeNodes.LibraryManager().get_worker_for_library(library_name)):
                 result = await _execute_node_on_worker(wm, node, worker)
-                if isinstance(result, ExecuteNodeResultSuccess):
-                    for name, value in result.parameter_output_values.items():
-                        node.set_parameter_value(name, value)
-                else:
-                    msg = f"Node '{node.name}' execution failed: {result.result_details}"
-                    raise RuntimeError(msg)
             else:
-                await node.aprocess()
+                result = await GriptapeNodes.ahandle_request(
+                    ExecuteNodeRequest(
+                        node_name=node.name,
+                        parameter_values=dict(node.parameter_values),
+                        node_metadata=cast(NodeMetadata, dict(node.metadata)),
+                    )
+                )
+            if isinstance(result, ExecuteNodeResultSuccess):
+                for name, value in result.parameter_output_values.items():
+                    node.set_parameter_value(name, value)
+            else:
+                msg = f"Node '{node.name}' execution failed: {result.result_details}"
+                raise RuntimeError(msg)
         finally:
             current_executing_node_name.reset(token)
 

@@ -60,9 +60,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ResolveNodeResultFailure,
     ResolveNodeResultSuccess,
     StartFlowResultFailure,
-    UpsertNodeRequest,
-    UpsertNodeResultFailure,
-    UpsertNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowRequest,
@@ -337,7 +334,6 @@ class NodeManager:
             BatchSetNodeLockStateRequest, self.on_batch_set_lock_node_state_request
         )
         event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
-        event_manager.assign_manager_to_request_type(UpsertNodeRequest, self.on_upsert_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -2696,43 +2692,39 @@ class NodeManager:
         return ResolveNodeResultSuccess(result_details=details)
 
     async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
-        """Execute a node that already exists in the registry (orchestrator-local path)."""
-        node_name = request.node_name
-        try:
-            node = self.get_node_by_name(node_name)
-        except ValueError:
-            return ExecuteNodeResultFailure(
-                result_details=f"Node '{node_name}' not found.",
-            )
-        return await self._hydrate_and_run_node(node, request)
+        """Execute a node, creating it first if it does not yet exist.
 
-    def on_upsert_node_request(self, request: UpsertNodeRequest) -> ResultPayload:
-        """Create a standalone node without requiring a flow context.
-
-        Idempotent: if a node with this name already exists in ObjectManager, returns success.
+        Idempotent: if the node already exists in ObjectManager it is reused.
+        When the node is absent and node_metadata is provided, the node is created
+        from the metadata (which must contain "node_type" and "library" keys).
         """
+        node_name = request.node_name
         obj_mgr = GriptapeNodes.ObjectManager()
-        if obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode) is not None:
-            return UpsertNodeResultSuccess(
-                node_name=request.node_name,
-                result_details=f"Node '{request.node_name}' already exists.",
-            )
-        try:
-            node = LibraryRegistry.create_node(
-                node_type=request.node_type,
-                name=request.node_name,
-                metadata={},
-                specific_library_name=request.library_name,
-            )
-        except Exception as e:
-            return UpsertNodeResultFailure(
-                result_details=f"Failed to create node '{request.node_name}' of type '{request.node_type}': {e}",
-            )
-        obj_mgr.add_object_by_name(node.name, node)
-        return UpsertNodeResultSuccess(
-            node_name=node.name,
-            result_details=f"Node '{node.name}' created.",
-        )
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            if not request.node_metadata:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Node '{node_name}' not found and no node_metadata provided to create it.",
+                )
+            node_type = request.node_metadata.get("node_type")
+            library_name = request.node_metadata.get("library")
+            if not node_type:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Node '{node_name}' not found and node_metadata is missing 'node_type'.",
+                )
+            try:
+                node = LibraryRegistry.create_node(
+                    node_type=node_type,
+                    name=node_name,
+                    metadata=dict(request.node_metadata),
+                    specific_library_name=library_name,
+                )
+            except Exception as e:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Failed to create node '{node_name}' of type '{node_type}': {e}",
+                )
+            obj_mgr.add_object_by_name(node.name, node)
+        return await self._hydrate_and_run_node(node, request)
 
     async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         """Hydrate a node's input parameters and execute it."""
