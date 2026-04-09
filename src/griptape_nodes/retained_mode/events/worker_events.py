@@ -103,5 +103,3 @@ class UnregisterWorkerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class UnregisterWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Worker unregistration failed."""
-
-

@@ -1,3 +1,4 @@
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7,6 +8,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
+    NodeMetadata,
 )
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
@@ -57,7 +59,7 @@ class TestExecuteNode:
         ):
             request = ExecuteNodeRequest(
                 node_name="some_node",
-                node_metadata={"library": "some_library"},
+                node_metadata=cast("NodeMetadata", {"library": "some_library"}),
             )
             result = await node_manager.on_execute_node_request(request)
 
@@ -165,7 +167,7 @@ class TestExecuteNode:
             "griptape_nodes.retained_mode.managers.node_manager.GriptapeNodes.ObjectManager",
             return_value=mock_obj_mgr,
         ):
-            request = ExecuteNodeRequest(node_name="test_node", node_metadata={"node_type": "T"})
+            request = ExecuteNodeRequest(node_name="test_node", node_metadata=cast("NodeMetadata", {"node_type": "T"}))
             result = await node_manager.on_execute_node_request(request)
 
         assert isinstance(result, ExecuteNodeResultSuccess)

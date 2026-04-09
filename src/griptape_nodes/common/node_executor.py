@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import anyio
+
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types import node_types
@@ -209,8 +210,6 @@ class LoopBodyNodes(NamedTuple):
     node_group_name: str | None
 
 
-
-
 async def _execute_node_on_worker(
     wm: WorkerManager,
     node: BaseNode,
@@ -227,7 +226,7 @@ async def _execute_node_on_worker(
             request=ExecuteNodeRequest(
                 node_name=node.name,
                 parameter_values=dict(node.parameter_values),
-                node_metadata=cast(NodeMetadata, dict(node.metadata)),
+                node_metadata=cast("NodeMetadata", dict(node.metadata)),
             )
         ),
         worker_engine_id,
@@ -303,7 +302,7 @@ class NodeExecutor:
                     ExecuteNodeRequest(
                         node_name=node.name,
                         parameter_values=dict(node.parameter_values),
-                        node_metadata=cast(NodeMetadata, dict(node.metadata)),
+                        node_metadata=cast("NodeMetadata", dict(node.metadata)),
                     )
                 )
             if isinstance(result, ExecuteNodeResultSuccess):
@@ -311,7 +310,7 @@ class NodeExecutor:
                     node.set_parameter_value(name, value)
             else:
                 msg = f"Node '{node.name}' execution failed: {result.result_details}"
-                raise RuntimeError(msg)
+                raise RuntimeError(msg)  # noqa: TRY004
         finally:
             current_executing_node_name.reset(token)
 

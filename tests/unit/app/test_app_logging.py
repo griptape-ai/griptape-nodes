@@ -9,7 +9,7 @@ import pytest
 from rich.table import Table
 from rich.text import Text
 
-from griptape_nodes.app.app import _EngineRoleFilter, _EngineRoleHandler, _prefix_to_color
+from griptape_nodes.app.engine_log import _EngineRoleFilter, _EngineRoleHandler, _prefix_to_color
 
 
 def _make_record(prefix: str = "", msg: str = "test message") -> logging.LogRecord:

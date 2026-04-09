@@ -511,5 +511,3 @@ class ExecuteNodeResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class ExecuteNodeResultFailure(ResultPayloadFailure):
     """Failed result from executing a node directly."""
-
-

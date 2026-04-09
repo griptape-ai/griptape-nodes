@@ -437,9 +437,7 @@ async def _run_orchestrator(client: Client) -> None:
             msg = "WorkerManager not yet initialized"
             raise RuntimeError(msg)
         args = [gtn, "engine", "--session-id", session_id, "--library-name", library_info.library_name]
-        task = asyncio.get_running_loop().create_task(
-            _worker_manager.spawn_worker(args, library_info.library_name)
-        )
+        task = asyncio.get_running_loop().create_task(_worker_manager.spawn_worker(args, library_info.library_name))
         task.add_done_callback(functools.partial(_log_worker_spawn_error, library_name=library_info.library_name))
 
     griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_needs_worker)
@@ -468,6 +466,18 @@ async def _run_orchestrator(client: Client) -> None:
             _worker_manager.terminate_managed_workers()
 
 
+def _deserialize_app_event(payload: dict) -> AppEvent:
+    """Deserialize an AppEvent from a raw payload dict."""
+    try:
+        return AppEvent.from_dict(payload)
+    except Exception as e:
+        details = str(e)
+        if isinstance(e, BaseValidationError):
+            details = "; ".join(transform_error(e))
+        msg = f"Unable to convert request JSON into a valid AppEvent object. Error Message: '{details}'"
+        raise RuntimeError(msg) from None
+
+
 async def _process_api_event(event: dict) -> None:
     """Process API events and add to async queue."""
     payload = event.get("payload", {})
@@ -479,15 +489,7 @@ async def _process_api_event(event: dict) -> None:
         raise RuntimeError(msg) from None
 
     if event_type == "AppEvent":
-        try:
-            app_event = AppEvent.from_dict(payload)
-        except Exception as e:
-            details = str(e)
-            if isinstance(e, BaseValidationError):
-                details = "; ".join(transform_error(e))
-            msg = f"Unable to convert request JSON into a valid AppEvent object. Error Message: '{details}'"
-            raise RuntimeError(msg) from None
-        griptape_nodes.EventManager().put_event(app_event)
+        griptape_nodes.EventManager().put_event(_deserialize_app_event(payload))
         return
 
     try:
