@@ -621,6 +621,8 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
             topic = f"sessions/{session_id}/request"
             await _subscribe_to_topic(topic)
             logger.info("Subscribed to session topic: %s", topic)
+            # Unblock any worker libraries that were waiting for a session to exist.
+            griptape_nodes.LibraryManager().set_session_ready()
         elif isinstance(result_event.result, app_events.AppEndSessionResultSuccess):
             session_id = result_event.result.session_id
             if session_id is not None:
