@@ -131,6 +131,7 @@ class ProjectTemplateInfo:
 
     project_id: ProjectID
     validation: ProjectValidationInfo
+    name: str | None = None
 
 
 @dataclass

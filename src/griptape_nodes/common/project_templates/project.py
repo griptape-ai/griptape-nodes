@@ -15,6 +15,7 @@ from griptape_nodes.common.project_templates.validation import (
     ProjectOverrideCategory,
     ProjectValidationInfo,
 )
+from griptape_nodes.utils.dict_utils import dict_diff
 
 if TYPE_CHECKING:
     from griptape_nodes.common.project_templates.loader import ProjectOverlayData
@@ -27,12 +28,12 @@ class ProjectTemplate(BaseModel):
 
     project_template_schema_version: str = Field(description="Schema version for the project template")
     name: str = Field(description="Name of the project")
+    description: str | None = Field(default=None, description="Description of the project")
     situations: dict[str, SituationTemplate] = Field(description="Situation templates (situation_name -> template)")
     directories: dict[str, DirectoryDefinition] = Field(
         description="Directory definitions (logical_name -> definition)",
     )
     environment: dict[str, str] = Field(default_factory=dict, description="Custom environment variables")
-    description: str | None = Field(default=None, description="Description of the project")
 
     def get_situation(self, situation_name: str) -> SituationTemplate | None:
         """Get a situation by name, returns None if not found."""
@@ -42,34 +43,51 @@ class ProjectTemplate(BaseModel):
         """Get a directory definition by logical name."""
         return self.directories.get(directory_name)
 
-    def to_yaml(self, *, include_comments: bool = True) -> str:
-        """Export project template to YAML string.
+    def to_overlay_yaml(self, base: ProjectTemplate) -> str:
+        """Export only user customizations relative to a base template as YAML.
 
-        If include_comments=True, adds helpful comments explaining each section.
+        Produces a minimal overlay containing only what differs from the base
+        (system defaults). Content identical to the base is omitted, keeping
+        the file focused on the user's actual changes.
+
+        Sections with no user content are omitted entirely.
+        Field-level diffing for situations: only changed fields are written.
+
+        Note: deletions of optional fields (fallback, description) that exist
+        in the base are not preserved — they will reappear on next load.
         """
+        self_dump = self.model_dump(mode="json")
+        base_dump = base.model_dump(mode="json")
+        diff = dict_diff(self_dump, base_dump)
+
+        # Required fields must always be present even if unchanged from base.
+        # Seed output with them first so they appear at the top; dict.update then
+        # appends remaining diff entries in model declaration order after them.
+        output: dict = {
+            "project_template_schema_version": self_dump["project_template_schema_version"],
+            "name": self_dump["name"],
+        }
+        output.update(diff)
+
         yaml = YAML()
-        yaml.preserve_quotes = True
         yaml.default_flow_style = False
+        yaml.width = 4096
+        # Double-quote all strings; bools and ints are left untagged: https://yaml.org/spec/1.2.2/
+        yaml.representer.add_representer(str, lambda r, d: r.represent_scalar("tag:yaml.org,2002:str", d, style='"'))
 
-        data = self.model_dump(mode="json", exclude_none=True)
+        # loader injects name from the YAML dict key — exclude it from all nested objects
+        nested_skip = frozenset({"name"})
 
-        # Convert to YAML string
+        def filter_keys(d: dict, skip_keys: frozenset) -> dict:
+            return {
+                k: (filter_keys(v, skip_keys) if isinstance(v, dict) else v) for k, v in d.items() if k not in skip_keys
+            }
+
+        filtered = {k: (filter_keys(v, nested_skip) if isinstance(v, dict) else v) for k, v in output.items()}
+
         stream = io.StringIO()
-        yaml.dump(data, stream)
-        yaml_text = stream.getvalue()
-
-        if include_comments:
-            # Add helpful header comment
-            header = (
-                "# Project Template\n"
-                f"# Version: {self.project_template_schema_version}\n"
-                "#\n"
-                "# This file defines how files are organized and saved in your project.\n"
-                "# See documentation for details on customizing situations and directories.\n\n"
-            )
-            yaml_text = header + yaml_text
-
-        return yaml_text
+        yaml.dump(filtered, stream)
+        return stream.getvalue()
 
     @staticmethod
     def merge(  # noqa: C901, PLR0912
