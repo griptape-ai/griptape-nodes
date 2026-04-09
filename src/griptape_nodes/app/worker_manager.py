@@ -226,7 +226,7 @@ class WorkerManager:
         duplicate spawns. Callers are responsible for constructing the args list.
         """
         if worker_key in self._managed_worker_processes:
-            logger.debug("Worker for key '%s' already spawned; skipping duplicate spawn.", worker_key)
+            logger.error("Worker for key '%s' already spawned; refusing duplicate spawn.", worker_key)
             return
         proc = await asyncio.create_subprocess_exec(*args, env={**os.environ, "GTN_ENGINE_ID": str(uuid.uuid4())})
         self._managed_worker_processes[worker_key] = proc
@@ -246,6 +246,24 @@ class WorkerManager:
             except ProcessLookupError:
                 logger.debug("Worker process for library '%s' already exited", library_name)
         self._managed_worker_processes.clear()
+
+    def reset_workers(self) -> None:
+        """Terminate all managed worker processes and clear all registration state.
+
+        Used before a library reload so that freshly spawned workers start with a
+        clean slate and there are no stale entries in the routing tables.
+        """
+        for library_name, proc in list(self._managed_worker_processes.items()):
+            try:
+                proc.terminate()
+                logger.debug("Terminated worker process for library '%s' (pid %s)", library_name, proc.pid)
+            except ProcessLookupError:
+                logger.debug("Worker process for library '%s' already exited", library_name)
+        self._managed_worker_processes.clear()
+        self._registered_workers.clear()
+        self._keyed_workers.clear()
+        self._worker_key.clear()
+        self._worker_last_seen.clear()
 
     async def route_to_worker(
         self,

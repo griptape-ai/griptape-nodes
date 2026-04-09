@@ -456,6 +456,7 @@ async def _run_orchestrator(client: Client) -> None:
         )
         GriptapeNodes.set_worker_manager(_worker_manager)
         _worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
+        griptape_nodes.LibraryManager().register_pre_reload_callback(_worker_manager.reset_workers)
         for topic in _worker_manager.get_topics_to_subscribe(is_worker=False):
             await client.subscribe(topic)
 

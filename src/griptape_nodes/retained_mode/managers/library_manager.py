@@ -348,6 +348,8 @@ class LibraryManager:
     _library_to_stable_modules: dict[str, set[str]]  # library_name -> set of stable_namespaces
     # Callbacks invoked after each library successfully reaches LOADED state.
     _library_loaded_callbacks: list[Callable[[LibraryManager.LibraryInfo], None]]
+    # Callbacks invoked immediately before all libraries are reloaded.
+    _pre_reload_callbacks: list[Callable[[], None]]
     # Signalled when a session becomes available, gating worker library loading.
     _session_ready_event: asyncio.Event
 
@@ -363,6 +365,7 @@ class LibraryManager:
         self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
         self._session_ready_event = asyncio.Event()
         self._library_loaded_callbacks: list[Callable[[LibraryManager.LibraryInfo], None]] = []
+        self._pre_reload_callbacks: list[Callable[[], None]] = []
         # True when this process is a dedicated worker
         self._is_worker: bool = False
         # The libraries this process is restricted to loading (set on workers).
@@ -446,6 +449,16 @@ class LibraryManager:
         from running.
         """
         self._library_loaded_callbacks.append(callback)
+
+    def register_pre_reload_callback(self, callback: Callable[[], None]) -> None:
+        """Register a callback invoked immediately before all libraries are reloaded.
+
+        Callbacks fire after all libraries have been unloaded, before
+        load_all_libraries_from_config runs. Use this to clean up state
+        (e.g. terminate worker processes) that must be reset for the reload to
+        succeed.
+        """
+        self._pre_reload_callbacks.append(callback)
 
     def set_session_ready(self) -> None:
         """Signal that a session is available, unblocking worker library loading.
@@ -3337,6 +3350,14 @@ class LibraryManager:
                 details = f"When preparing to reload all libraries, failed to unload library '{library_name}'."
                 logger.error(details)
                 return ReloadAllLibrariesResultFailure(result_details=details)
+
+        # Notify pre-reload callbacks (e.g. to terminate worker processes) before
+        # load_all_libraries_from_config runs so that workers can be cleanly restarted.
+        for callback in self._pre_reload_callbacks:
+            try:
+                callback()
+            except Exception as e:
+                logger.warning("Pre-reload callback raised an exception: %s", e)
 
         # Load (or reload, which should trigger a hot reload) all libraries.
         # Pass _target_library_names so workers reload only their designated libraries.
