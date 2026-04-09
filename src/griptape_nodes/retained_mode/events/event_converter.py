@@ -67,14 +67,6 @@ converter.register_structure_hook_func(
 )
 
 
-# --- Class-specific (un)structuring methods ---
-#
-# Classes that need custom serialization can define `_cattrs_structure` (classmethod)
-# and/or `_cattrs_unstructure` (instance method) instead of registering hooks here.
-
-use_class_methods(converter, structure_method_name="_cattrs_structure", unstructure_method_name="_cattrs_unstructure")
-
-
 # --- Hook factories for dataclasses ---
 #
 # Some event dataclasses have circular imports that force TYPE_CHECKING-only imports
@@ -141,6 +133,15 @@ converter.register_structure_hook_factory(
     lambda cls: is_dataclass(cls) and isinstance(cls, type),
     _make_dataclass_structure_fn,
 )
+
+# --- Class-specific (un)structuring methods ---
+#
+# Classes that define `_cattrs_structure` (classmethod) and/or `_cattrs_unstructure`
+# (instance method) use those for custom serialization.  Registered after the dataclass
+# factories so that `use_class_methods` has higher priority (cattrs checks factories in
+# reverse registration order), ensuring _cattrs_structure/_cattrs_unstructure take
+# precedence over the generated dataclass code.
+use_class_methods(converter, structure_method_name="_cattrs_structure", unstructure_method_name="_cattrs_unstructure")
 
 
 def safe_unstructure(obj: Any) -> Any:

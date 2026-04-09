@@ -8,10 +8,9 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import anyio
-
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types import node_types
@@ -41,7 +40,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
-from griptape_nodes.retained_mode.events.base_events import EventRequest, ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import EventRequest, EventResultFailure, EventResultSuccess, ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -70,7 +69,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartLocalSubflowResultSuccess,
     UpsertNodeRequest,
     UpsertNodeResultFailure,
-    UpsertNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowResultFailure,
@@ -212,36 +210,6 @@ class LoopBodyNodes(NamedTuple):
     node_group_name: str | None
 
 
-def _deserialize_upsert_node_result(payload: dict) -> UpsertNodeResultSuccess | UpsertNodeResultFailure:
-    """Reconstruct a UpsertNodeResultSuccess or UpsertNodeResultFailure from a raw payload dict."""
-    result_type = payload.get("result_type", "")
-    result_data = payload.get("result", {})
-    try:
-        if result_type == UpsertNodeResultSuccess.__name__:
-            return UpsertNodeResultSuccess(**result_data)
-        if result_type == UpsertNodeResultFailure.__name__:
-            return UpsertNodeResultFailure(**result_data)
-    except TypeError as e:
-        msg = f"Failed to deserialize upsert-node result (result_type={result_type!r}): {e}"
-        raise ValueError(msg) from e
-    msg = f"Unrecognized upsert-node result_type: {result_type!r}"
-    raise ValueError(msg)
-
-
-def _deserialize_execute_node_result(payload: dict) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-    """Reconstruct an ExecuteNodeResultSuccess or ExecuteNodeResultFailure from a raw payload dict."""
-    result_type = payload.get("result_type", "")
-    result_data = payload.get("result", {})
-    try:
-        if result_type == ExecuteNodeResultSuccess.__name__:
-            return ExecuteNodeResultSuccess(**result_data)
-        if result_type == ExecuteNodeResultFailure.__name__:
-            return ExecuteNodeResultFailure(**result_data)
-    except TypeError as e:
-        msg = f"Failed to deserialize execute-node result (result_type={result_type!r}): {e}"
-        raise ValueError(msg) from e
-    msg = f"Unrecognized execute-node result_type: {result_type!r}"
-    raise ValueError(msg)
 
 
 async def _execute_node_on_worker(
@@ -276,7 +244,14 @@ async def _execute_node_on_worker(
         worker_engine_id,
         worker_request_topic,
     )
-    create_result = _deserialize_upsert_node_result(create_raw)
+    try:
+        if create_raw.get("event_type") == EventResultSuccess.__name__:
+            create_result = EventResultSuccess.from_dict(create_raw).result
+        else:
+            create_result = EventResultFailure.from_dict(create_raw).result
+    except Exception:
+        logger.exception("Failed to deserialize upsert-node result. Raw: %s", create_raw)
+        raise
     if isinstance(create_result, UpsertNodeResultFailure):
         return ExecuteNodeResultFailure(
             result_details=f"Failed to prepare node '{node.name}' on worker: {create_result.result_details}",
@@ -292,7 +267,9 @@ async def _execute_node_on_worker(
         worker_engine_id,
         worker_request_topic,
     )
-    return _deserialize_execute_node_result(execute_raw)
+    if execute_raw.get("event_type") == EventResultSuccess.__name__:
+        return cast(ExecuteNodeResultSuccess | ExecuteNodeResultFailure, EventResultSuccess.from_dict(execute_raw).result)
+    return cast(ExecuteNodeResultSuccess | ExecuteNodeResultFailure, EventResultFailure.from_dict(execute_raw).result)
 
 
 class NodeExecutor:
