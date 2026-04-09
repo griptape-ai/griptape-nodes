@@ -21,6 +21,7 @@ from dotenv import set_key
 from dotenv.main import DotEnv
 
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_model_parameter import HuggingFaceModelParameter
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
@@ -290,7 +291,7 @@ class WorkflowPackager:
                 pkg_dir = Path(str(dist.locate_file(""))).resolve()
                 git_root = next(p for p in (pkg_dir, *pkg_dir.parents) if (p / ".git").is_dir())
                 commit = (
-                    subprocess.check_output(  # noqa: S603, S607
+                    subprocess.check_output(
                         ["git", "rev-parse", "--short", "HEAD"],
                         cwd=git_root,
                         stderr=subprocess.DEVNULL,
@@ -377,20 +378,39 @@ dependencies = [
 
     @staticmethod
     def gather_static_file_references(nodes: list[BaseNode]) -> list[tuple[str, str]]:
-        """Scan nodes for SelectFromProject file references.
+        """Scan nodes for static file references.
+
+        Collects file references from:
+        1. SelectFromProject nodes (legacy metadata-based detection)
+        2. Any node's NodeDependencies.static_files (extensible mechanism)
 
         Returns:
             List of (node_name, value_string) tuples for parameters with non-empty values.
         """
         results: list[tuple[str, str]] = []
+        seen_values: set[str] = set()
+
+        # Legacy: SelectFromProject metadata scan
         for node in nodes:
             if (
                 node.metadata.get("library") == SELECT_FROM_PROJECT_LIBRARY_NAME
                 and node.metadata.get("node_type") == SELECT_FROM_PROJECT_NODE_TYPE
             ):
                 value = node.get_parameter_value(SELECT_FROM_PROJECT_PARAM_NAME)
-                if value and isinstance(value, str):
+                if value and isinstance(value, str) and value not in seen_values:
+                    seen_values.add(value)
                     results.append((node.name, value))
+
+        # Also collect from any node that declares static files via get_node_dependencies()
+        for node in nodes:
+            deps = node.get_node_dependencies()
+            if deps is None:
+                continue
+            for file_ref in deps.static_files:
+                if file_ref and file_ref not in seen_values:
+                    seen_values.add(file_ref)
+                    results.append((node.name, file_ref))
+
         return results
 
     @staticmethod
@@ -441,6 +461,48 @@ dependencies = [
             copied.add(absolute_path)
             logger.info("Copied static file for node '%s': %s -> %s", node_name, absolute_path, dest)
 
+    # -- HuggingFace model download --
+
+    @staticmethod
+    def collect_huggingface_download_commands(nodes: list[BaseNode]) -> list[str]:
+        """Collect huggingface-cli download commands for all HuggingFace model parameters in the workflow."""
+        workflow_manager = GriptapeNodes.WorkflowManager()
+        commands: list[str] = []
+        seen: set[str] = set()
+        for node in nodes:
+            hf_params: list[HuggingFaceModelParameter] = []
+
+            def collect_hf_param(_cls: type, obj: Any, _hf_params: list = hf_params) -> None:
+                if isinstance(obj, HuggingFaceModelParameter):
+                    _hf_params.append(obj)
+
+            workflow_manager._walk_object_tree(node, collect_hf_param)
+            for hf_param in hf_params:
+                for cmd in hf_param.get_download_commands():
+                    if cmd not in seen:
+                        seen.add(cmd)
+                        commands.append(cmd)
+        return commands
+
+    def write_download_models_script(self, nodes: list[BaseNode], destination: Path) -> bool:
+        """Write a download_models.py script to destination if HuggingFace models are required.
+
+        Returns True if a script was written, False if no models are needed.
+        """
+        commands = self.collect_huggingface_download_commands(nodes)
+        if not commands:
+            return False
+
+        template_path = Path(__file__).parent / "download_models_script.py"
+        template = template_path.read_text(encoding="utf-8")
+        commands_repr = ", ".join(repr(cmd) for cmd in commands)
+        script_content = template.replace(
+            '["REPLACE_DOWNLOAD_COMMANDS"]',
+            f"[{commands_repr}]",
+        )
+        (destination / "download_models.py").write_text(script_content, encoding="utf-8")
+        return True
+
     # -- Convenience: full standard bundle --
 
     def package_to_folder(self, destination: Path, workflow: Workflow) -> list[str]:
@@ -475,12 +537,16 @@ dependencies = [
         self.emit_progress(3.0, "Writing project template...")
         self.write_project_template(destination)
 
-        # Copy static files
+        # Copy static files and check HuggingFace model dependencies
         self.emit_progress(5.0, "Copying static files...")
         all_nodes = self.collect_all_nodes()
         file_refs = self.gather_static_file_references(all_nodes)
         if file_refs:
             self.copy_static_files(file_refs, destination)
+
+        # Write HuggingFace model download script if needed
+        self.emit_progress(3.0, "Checking for HuggingFace model dependencies...")
+        self.write_download_models_script(all_nodes, destination)
 
         # Write .env
         self.emit_progress(5.0, "Writing environment file...")
