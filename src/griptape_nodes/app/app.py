@@ -556,8 +556,11 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
             worker_manager = GriptapeNodes.WorkerManager()
             if worker_manager is not None:
                 worker_manager.set_session_ready()
-            # Spawn workers for all libraries that require one.
-            await GriptapeNodes.LibraryManager().start_workers()
+                # Spawn workers for all libraries that require one.  Covers the fresh-start
+                # case (workers were scheduled at init but blocked on _session_ready_event)
+                # and session re-starts after an AppEndSession (workers were terminated and
+                # need to be re-spawned).
+                await GriptapeNodes.LibraryManager().start_workers()
         elif isinstance(result_event.result, app_events.AppEndSessionResultSuccess):
             session_id = result_event.result.session_id
             if session_id is not None:

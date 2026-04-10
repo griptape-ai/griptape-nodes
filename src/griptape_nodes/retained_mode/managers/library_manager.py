@@ -2776,6 +2776,25 @@ class LibraryManager:
         # Only print the engine ready banner for the orchestrator — not for dedicated library workers.
         self._maybe_print_engine_ready_banner(is_worker=self._is_worker)
 
+        # When the orchestrator restarts into an already-active session, the GUI will not
+        # send AppStartSessionRequest again, so workers must be started here rather than
+        # waiting for that event.
+        await self._maybe_start_workers_for_existing_session()
+
+    async def _maybe_start_workers_for_existing_session(self) -> None:
+        """Start workers if the orchestrator restarted into an already-active session.
+
+        In a normal fresh start the GUI sends AppStartSessionRequest which triggers worker
+        spawning.  When the engine restarts mid-session the GUI does not send that request,
+        so this method handles the case at the end of library initialization.
+        """
+        if self._is_worker or not GriptapeNodes.get_session_id():
+            return
+        worker_manager = GriptapeNodes.WorkerManager()
+        if worker_manager is not None:
+            worker_manager.set_session_ready()
+            await self.start_workers()
+
     def _maybe_print_engine_ready_banner(self, *, is_worker: bool) -> None:
         if is_worker:
             return
