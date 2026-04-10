@@ -295,7 +295,8 @@ class NodeExecutor:
 
             wm = GriptapeNodes.WorkerManager()
             library_name = node.metadata.get("library")
-            if wm and library_name and (worker := GriptapeNodes.LibraryManager().get_worker_for_library(library_name)):
+            worker = GriptapeNodes.LibraryManager().get_worker_for_library(library_name) if library_name else None
+            if wm and worker:
                 result = await _execute_node_on_worker(wm, node, worker)
             else:
                 result = await GriptapeNodes.ahandle_request(
