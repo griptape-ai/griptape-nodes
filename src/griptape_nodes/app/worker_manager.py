@@ -151,13 +151,13 @@ class WorkerManager:
         session_id = self._griptape_nodes.get_session_id()
         self._registered_workers.pop(wid, None)
         self._worker_last_seen.pop(wid, None)
-        lib_name = self._worker_key.get(wid)
+        worker_key = self._worker_key.get(wid)
         self._deregister_worker_key(wid)
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
         await self._unsubscribe_from_topic(response_topic)
-        # Remove the managed process entry so a new worker can be spawned for this library.
-        if lib_name:
-            self._managed_worker_processes.pop(lib_name, None)
+        # Remove the managed process entry so a new worker can be spawned for this key.
+        if worker_key:
+            self._managed_worker_processes.pop(worker_key, None)
         logger.info("Worker unregistered: %s", wid)
         return worker_events.UnregisterWorkerResultSuccess(worker_engine_id=wid, result_details="Worker unregistered.")
 
