@@ -2524,6 +2524,7 @@ class LibraryManager:
                         current=index,
                         total=total,
                         error=error_message,
+                        is_worker=self._is_worker,
                     )
                 )
             )
@@ -2536,6 +2537,7 @@ class LibraryManager:
                         status=InitializationStatus.COMPLETE,
                         current=index,
                         total=total,
+                        is_worker=self._is_worker,
                     )
                 )
             )
@@ -3552,6 +3554,7 @@ class LibraryManager:
                         status=InitializationStatus.LOADING,
                         current=current_library_index,
                         total=total_libraries,
+                        is_worker=self._is_worker,
                     )
                 )
             )
@@ -3568,6 +3571,7 @@ class LibraryManager:
                             status=InitializationStatus.COMPLETE,
                             current=current_library_index,
                             total=total_libraries,
+                            is_worker=self._is_worker,
                         )
                     )
                 )
@@ -3590,6 +3594,7 @@ class LibraryManager:
                             current=current_library_index,
                             total=total_libraries,
                             error=error_message,
+                            is_worker=self._is_worker,
                         )
                     )
                 )

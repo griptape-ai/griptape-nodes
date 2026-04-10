@@ -147,6 +147,7 @@ class EngineInitializationProgress(AppPayload):
     current: int
     total: int
     error: str | None = None
+    is_worker: bool = False
 
 
 @dataclass
