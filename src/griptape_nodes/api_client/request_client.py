@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Callable
     from types import TracebackType
 
     from griptape_nodes.api_client.client import Client
@@ -32,9 +31,9 @@ class RequestClient:
     futures when responses arrive. Supports timeouts for requests that don't
     receive responses.
 
-    When used as the sole consumer of client.messages (i.e. no separate
-    _process_incoming_messages loop), pass an unhandled_handler to receive
-    messages that do not match a pending request.
+    Registers _try_match as a message filter on the Client so that response
+    messages are claimed before reaching the client's message queue. Messages
+    not matched to a pending request are left for the queue's normal consumers.
     """
 
     def __init__(
@@ -42,7 +41,6 @@ class RequestClient:
         client: Client,
         request_topic_fn: Callable[[], str] | None = None,
         response_topic_fn: Callable[[], str] | None = None,
-        unhandled_handler: Callable[[dict], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize request/response client.
 
@@ -50,12 +48,10 @@ class RequestClient:
             client: Client instance to use for communication
             request_topic_fn: Function to determine request topic (defaults to "request")
             response_topic_fn: Function to determine response topic (defaults to "response")
-            unhandled_handler: Async callback for messages not matched to a pending request
         """
         self.client = client
         self.request_topic_fn = request_topic_fn or (lambda: "request")
         self.response_topic_fn = response_topic_fn or (lambda: "response")
-        self._unhandled_handler = unhandled_handler
 
         # Map of request_id -> pending request where tag identifies the originating worker/caller
         self._pending_requests: dict[str, _PendingRequest] = {}
@@ -64,12 +60,9 @@ class RequestClient:
         # Track subscribed response topics
         self._subscribed_response_topics: set[str] = set()
 
-        # Background task for listening to responses
-        self._response_listener_task: asyncio.Task | None = None
-
     async def __aenter__(self) -> Self:
-        """Async context manager entry: start response listener."""
-        self._response_listener_task = asyncio.create_task(self._listen_for_responses())
+        """Async context manager entry: register response filter on Client."""
+        self.client.add_message_filter(self._try_match)
         logger.debug("RequestClient started")
         return self
 
@@ -79,11 +72,8 @@ class RequestClient:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Async context manager exit: stop response listener."""
-        if self._response_listener_task:
-            self._response_listener_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._response_listener_task
+        """Async context manager exit: deregister response filter from Client."""
+        self.client.remove_message_filter(self._try_match)
         logger.debug("RequestClient stopped")
 
     async def request(
@@ -169,7 +159,7 @@ class RequestClient:
 
         Use this when the send path is handled externally (e.g. WorkerManager
         sends via forward_event_to_worker) and only the future tracking is needed.
-        The future is resolved when _handle_response matches the request_id.
+        The future is resolved when _try_match claims the response message.
 
         Args:
             request_id: Unique identifier for this request
@@ -306,22 +296,12 @@ class RequestClient:
         """
         return list(self._pending_requests.keys())
 
-    async def _listen_for_responses(self) -> None:
-        """Listen for response messages from subscribed topics."""
-        try:
-            async for message in self.client.messages:
-                try:
-                    handled = await self._handle_response(message)
-                    if not handled and self._unhandled_handler:
-                        await self._unhandled_handler(message)
-                except Exception as e:
-                    logger.error("Error handling response message: %s", e)
-        except asyncio.CancelledError:
-            logger.debug("Response listener cancelled")
-            raise
+    async def _try_match(self, message: dict[str, Any]) -> bool:
+        """Attempt to match an incoming message to a pending request.
 
-    async def _handle_response(self, message: dict[str, Any]) -> bool:
-        """Handle response messages by resolving tracked requests.
+        Registered as a Client message filter so response messages are claimed
+        before reaching the client's message queue. Messages not matched to a
+        pending request return False and are left for queue consumers.
 
         Expects worker/event-bus response format:
           payload["event_type"] in ("EventResultSuccess", "EventResultFailure")
@@ -329,11 +309,10 @@ class RequestClient:
           Resolves with the full payload dict.
 
         Args:
-            message: WebSocket message containing response
+            message: WebSocket message to inspect
 
         Returns:
-            True if the message was matched to a pending request and resolved/rejected,
-            False otherwise (caller may pass to unhandled_handler).
+            True if the message was matched and resolved/rejected, False otherwise.
         """
         payload = message.get("payload", {})
 

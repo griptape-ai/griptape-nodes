@@ -379,8 +379,8 @@ class WorkerManager:
     async def relay_worker_result(self, payload: dict) -> None:
         """Relay an unmatched worker result to the GUI session response topic.
 
-        Called by the unhandled_handler for worker result messages that were not
-        resolved by RequestClient (heartbeats and any results without a pending request).
+        Called for worker result messages not claimed by RequestClient
+        (heartbeats and any results without a pending request).
         The orchestrator always mediates between workers and the GUI; workers never
         publish directly to the session response topic.
         """

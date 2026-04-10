@@ -341,8 +341,15 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
             )
         )
 
+    async def _consume_messages() -> None:
+        async for message in client.messages:
+            try:
+                await _process_api_event(message)
+            except Exception as e:
+                logger.error("Error handling message: %s", e)
+
     try:
-        async with RequestClient(client, unhandled_handler=_process_api_event) as request_client:
+        async with RequestClient(client) as request_client:
             worker_manager = WorkerManager(
                 griptape_nodes=griptape_nodes,
                 event_manager=griptape_nodes.EventManager(),
@@ -358,6 +365,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_send_outgoing_messages(client))
                 tg.create_task(worker_manager.worker_heartbeat_monitor())
+                tg.create_task(_consume_messages())
     except BaseException:
         # Best-effort unregister so the orchestrator can clean up immediately.
         unregister_event = EventRequest(
@@ -379,9 +387,9 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
 async def _handle_orchestrator_unmatched(message: dict, worker_manager: WorkerManager) -> None:
     """Handle messages not resolved by RequestClient as pending requests.
 
-    Called by RequestClient._listen_for_responses for every message that did not
-    match a tracked request_id. Routes worker result messages (heartbeats and any
-    unmatched results) to WorkerManager, and all other messages to _process_api_event.
+    Called for every message not claimed by RequestClient's response filter.
+    Routes worker result messages (heartbeats and any unmatched results) to
+    WorkerManager, and all other messages to _process_api_event.
     """
     try:
         payload = message.get("payload", {})
@@ -442,7 +450,11 @@ async def _run_orchestrator(client: Client) -> None:
 
     griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_needs_worker)
 
-    async with RequestClient(client, unhandled_handler=_handle_unmatched) as request_client:
+    async def _consume_messages() -> None:
+        async for message in client.messages:
+            await _handle_unmatched(message)
+
+    async with RequestClient(client) as request_client:
         _worker_manager = WorkerManager(
             griptape_nodes=griptape_nodes,
             event_manager=griptape_nodes.EventManager(),
@@ -462,6 +474,7 @@ async def _run_orchestrator(client: Client) -> None:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_send_outgoing_messages(client))
                 tg.create_task(_worker_manager.orchestrator_heartbeat_loop())
+                tg.create_task(_consume_messages())
         finally:
             _worker_manager.terminate_managed_workers()
 
