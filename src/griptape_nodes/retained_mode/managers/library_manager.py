@@ -3337,6 +3337,9 @@ class LibraryManager:
         # Pass _target_library_names so workers reload only their designated libraries.
         await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
 
+        # Re-spawn workers for libraries that require them; reset_workers terminated them above.
+        await self._maybe_start_workers_for_existing_session()
+
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
         )
