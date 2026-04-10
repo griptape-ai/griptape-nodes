@@ -1,8 +1,7 @@
-"""Tests for library worker configuration and LibraryManager callback mechanism."""
+"""Tests for library worker configuration."""
 
 from __future__ import annotations
 
-import contextlib
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -96,76 +95,6 @@ class TestLibraryInfoRequiresWorker:
         )
 
         assert info.requires_worker is True
-
-
-class TestRegisterLibraryLoadedCallback:
-    def test_registers_single_callback(self) -> None:
-        mgr = _make_library_manager()
-        cb = MagicMock()
-
-        mgr.register_library_loaded_callback(cb)
-
-        assert cb in mgr._library_loaded_callbacks
-
-    def test_multiple_callbacks_all_registered(self) -> None:
-        mgr = _make_library_manager()
-        cb1, cb2 = MagicMock(), MagicMock()
-
-        mgr.register_library_loaded_callback(cb1)
-        mgr.register_library_loaded_callback(cb2)
-
-        assert cb1 in mgr._library_loaded_callbacks
-        assert cb2 in mgr._library_loaded_callbacks
-
-    def test_callbacks_invoked_in_registration_order(self) -> None:
-        mgr = _make_library_manager()
-        call_order: list[int] = []
-
-        mgr.register_library_loaded_callback(lambda _: call_order.append(1))
-        mgr.register_library_loaded_callback(lambda _: call_order.append(2))
-
-        info = LibraryManager.LibraryInfo(
-            lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
-            fitness=LibraryManager.LibraryFitness.GOOD,
-            library_path="/test.json",
-            is_sandbox=False,
-        )
-        for cb in mgr._library_loaded_callbacks:
-            cb(info)
-
-        assert call_order == [1, 2]
-
-    def test_failing_callback_does_not_prevent_others(self) -> None:
-        """A callback that raises must not stop subsequent callbacks from running."""
-        mgr = _make_library_manager()
-        second_cb = MagicMock()
-
-        def bad_callback(_: LibraryManager.LibraryInfo) -> None:
-            msg = "boom"
-            raise ValueError(msg)
-
-        mgr.register_library_loaded_callback(bad_callback)
-        mgr.register_library_loaded_callback(second_cb)
-
-        info = LibraryManager.LibraryInfo(
-            lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
-            fitness=LibraryManager.LibraryFitness.GOOD,
-            library_path="/test.json",
-            is_sandbox=False,
-        )
-
-        # Simulate what _attempt_load_nodes_from_library does
-        for cb in mgr._library_loaded_callbacks:
-            with contextlib.suppress(Exception):
-                cb(info)
-
-        second_cb.assert_called_once_with(info)
-
-    @pytest.mark.asyncio
-    async def test_no_callbacks_by_default(self) -> None:
-        mgr = _make_library_manager()
-
-        assert mgr._library_loaded_callbacks == []
 
 
 class TestGetWorkerForLibrary:

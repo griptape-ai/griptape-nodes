@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
     from griptape_nodes.api_client.request_client import RequestClient
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 logger = logging.getLogger("griptape_nodes_app")
 
@@ -88,6 +87,9 @@ class WorkerManager:
         # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
         self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
 
+        # Set when an active session becomes available; gates worker spawning.
+        self._session_ready_event: asyncio.Event = asyncio.Event()
+
         config = GriptapeNodes.ConfigManager()
         self.HEARTBEAT_INTERVAL_S: float = config.get_config_value(
             WORKER_HEARTBEAT_INTERVAL_KEY, default=WorkerManager.DEFAULT_HEARTBEAT_INTERVAL_S, cast_type=float
@@ -108,6 +110,7 @@ class WorkerManager:
         event_manager.assign_manager_to_request_type(
             worker_events.UnregisterWorkerRequest, self.handle_unregister_worker_request
         )
+        event_manager.assign_manager_to_request_type(worker_events.StartWorkerRequest, self.handle_start_worker_request)
 
     async def handle_register_worker_request(
         self,
@@ -329,29 +332,36 @@ class WorkerManager:
         """
         self._worker_evicted_callbacks.append(callback)
 
-    def register_spawn_callbacks(self) -> None:
-        """Register LibraryManager callbacks for spawning worker subprocesses as needed.
+    def set_session_ready(self) -> None:
+        """Signal that a session is available, unblocking any pending worker spawns."""
+        self._session_ready_event.set()
 
-        Should be called after this WorkerManager is fully constructed and before the
-        task group starts, so no library-loaded event is missed.
+    async def handle_start_worker_request(
+        self, request: worker_events.StartWorkerRequest
+    ) -> worker_events.StartWorkerResultSuccess | worker_events.StartWorkerResultFailure:
+        """Schedule a worker subprocess spawn for the given library.
+
+        Returns immediately; the actual spawn runs once a session becomes available.
         """
-        self._griptape_nodes.LibraryManager().register_library_loaded_callback(self._on_library_needs_worker)
+        task = asyncio.get_running_loop().create_task(self._spawn_when_session_ready(request.library_name))
+        task.add_done_callback(functools.partial(self._log_spawn_error, library_name=request.library_name))
+        return worker_events.StartWorkerResultSuccess(result_details="Worker spawn scheduled.")
 
-    def _on_library_needs_worker(self, library_info: LibraryManager.LibraryInfo) -> None:
-        """Spawn a worker subprocess when a library that requires one is loaded."""
-        if not library_info.requires_worker or not library_info.library_name:
-            return
+    async def _spawn_when_session_ready(self, library_name: str) -> None:
+        """Wait for an active session then spawn a worker subprocess for the given library."""
+        # If a session is already active, skip the wait entirely.
+        if not self._griptape_nodes.get_session_id():
+            await self._session_ready_event.wait()
         session_id = self._griptape_nodes.get_session_id()
         if not session_id:
-            logger.warning("Cannot spawn worker for library '%s': no active session.", library_info.library_name)
+            logger.error("Session event set but no session ID available for library '%s'.", library_name)
             return
         gtn = shutil.which("gtn")
         if gtn is None:
-            logger.error("Cannot spawn worker for library '%s': 'gtn' not found on PATH.", library_info.library_name)
+            logger.error("Cannot spawn worker for library '%s': 'gtn' not found on PATH.", library_name)
             return
-        args = [gtn, "engine", "--session-id", session_id, "--library-name", library_info.library_name]
-        task = asyncio.get_running_loop().create_task(self.spawn_worker(args, library_info.library_name))
-        task.add_done_callback(functools.partial(self._log_spawn_error, library_name=library_info.library_name))
+        args = [gtn, "engine", "--session-id", session_id, "--library-name", library_name]
+        await self.spawn_worker(args, library_name)
 
     @staticmethod
     def _log_spawn_error(task: asyncio.Task, library_name: str) -> None:

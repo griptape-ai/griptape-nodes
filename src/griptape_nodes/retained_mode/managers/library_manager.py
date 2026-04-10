@@ -149,6 +149,7 @@ from griptape_nodes.retained_mode.events.resource_events import (
     ListCompatibleResourceInstancesRequest,
     ListCompatibleResourceInstancesResultSuccess,
 )
+from griptape_nodes.retained_mode.events.worker_events import StartWorkerRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     AdvancedLibraryLoadFailureProblem,
@@ -346,12 +347,8 @@ class LibraryManager:
     _dynamic_to_stable_module_mapping: dict[str, str]  # dynamic_module_name -> stable_namespace
     _stable_to_dynamic_module_mapping: dict[str, str]  # stable_namespace -> dynamic_module_name
     _library_to_stable_modules: dict[str, set[str]]  # library_name -> set of stable_namespaces
-    # Callbacks invoked after each library successfully reaches LOADED state.
-    _library_loaded_callbacks: list[Callable[[LibraryManager.LibraryInfo], None]]
     # Callbacks invoked immediately before all libraries are reloaded.
     _pre_reload_callbacks: list[Callable[[], None]]
-    # Signalled when a session becomes available, gating worker library loading.
-    _session_ready_event: asyncio.Event
 
     def __init__(self, event_manager: EventManager) -> None:
         self._library_file_path_to_info = {}
@@ -363,8 +360,6 @@ class LibraryManager:
         ] = {}
         self._libraries_loading_complete = asyncio.Event()
         self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
-        self._session_ready_event = asyncio.Event()
-        self._library_loaded_callbacks: list[Callable[[LibraryManager.LibraryInfo], None]] = []
         self._pre_reload_callbacks: list[Callable[[], None]] = []
         # True when this process is a dedicated worker
         self._is_worker: bool = False
@@ -439,17 +434,6 @@ class LibraryManager:
             self.on_config_changed,
         )
 
-    def register_library_loaded_callback(self, callback: Callable[[LibraryManager.LibraryInfo], None]) -> None:
-        """Register a callback invoked after each library successfully loads.
-
-        Callbacks fire with the library's final lifecycle state, which is either LOADED
-        (for libraries loaded directly) or WORKER_PENDING (for worker-delegated libraries
-        on the orchestrator). Callbacks are called synchronously in registration order.
-        Any exception raised by a callback is logged but does not prevent other callbacks
-        from running.
-        """
-        self._library_loaded_callbacks.append(callback)
-
     def register_pre_reload_callback(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked immediately before all libraries are reloaded.
 
@@ -459,15 +443,6 @@ class LibraryManager:
         succeed.
         """
         self._pre_reload_callbacks.append(callback)
-
-    def set_session_ready(self) -> None:
-        """Signal that a session is available, unblocking worker library loading.
-
-        Worker libraries wait at the EVALUATED state until a session exists so that
-        the worker spawn callback always has a valid session ID to work with.
-        Call this when a session becomes active (new session or restored from disk).
-        """
-        self._session_ready_event.set()
 
     async def _on_library_loaded_notification(self, notification: LibraryLoadedNotification) -> None:
         """Update LibraryInfo fitness and state when a library load outcome is reported."""
@@ -1543,16 +1518,6 @@ class LibraryManager:
                     # (needed for the editor and workflow loading). The worker installs its own
                     # deps in its own process.
                     if library_info.requires_worker and not self._is_worker:
-                        # Wait for a session before proceeding so the worker spawn callback
-                        # always has a valid session ID. Skip the wait if a session is already
-                        # available (e.g., restored from disk on restart). This unblocks when
-                        # set_session_ready() is called from the session-start result handler.
-                        if GriptapeNodes.SessionManager().active_session_id is None:
-                            logger.info(
-                                "Library '%s' requires a worker; waiting for a session before spawning.",
-                                library_info.library_name,
-                            )
-                            await self._session_ready_event.wait()
                         library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_DELEGATED
                     else:
                         install_result = await self.install_library_dependencies_request(
@@ -1692,25 +1657,19 @@ class LibraryManager:
                         # _attempt_load_nodes_from_library sets lifecycle_state = LOADED on success.
                         # For worker-delegated libraries on the orchestrator, override to WORKER_PENDING --
                         # the library is registered but the worker has not yet confirmed successful dep
-                        # install and node import. Callbacks fire after this override so they observe
-                        # the final authoritative state.
+                        # install and node import.
                         if library_info.requires_worker and not self._is_worker:
                             library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_PENDING
 
-                        # Fire callbacks with the final authoritative lifecycle state.
-                        if library_info.lifecycle_state in (
-                            LibraryManager.LibraryLifecycleState.LOADED,
-                            LibraryManager.LibraryLifecycleState.WORKER_PENDING,
+                        # Request a worker spawn for worker-delegated libraries on the orchestrator.
+                        # WorkerManager handles session readiness and the actual subprocess launch.
+                        if (
+                            library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.WORKER_PENDING
+                            and library_info.library_name
                         ):
-                            for callback in self._library_loaded_callbacks:
-                                try:
-                                    callback(library_info)
-                                except Exception as e:
-                                    logger.warning(
-                                        "Library-loaded callback raised an exception for '%s': %s",
-                                        library_info.library_name,
-                                        e,
-                                    )
+                            await GriptapeNodes.ahandle_request(
+                                StartWorkerRequest(library_name=library_info.library_name)
+                            )
 
                         # On a worker process, broadcast the notification so app.py can relay it
                         # to the orchestrator over MQTT.
@@ -2605,11 +2564,6 @@ class LibraryManager:
         # Calculate total libraries for progress tracking
         total_libraries = len(libraries_to_load)
 
-        # Worker libraries that require a session before spawning are loaded concurrently
-        # so they can await the session event without blocking the rest of library loading.
-        # Non-worker libraries are loaded sequentially as before.
-        worker_library_tasks: list[asyncio.Task] = []
-
         for current_library_index, lib_path in enumerate(libraries_to_load, start=1):
             # When running as a dedicated library worker, skip libraries that don't match the target.
             # library_name is already populated in _library_file_path_to_info from the discovery phase.
@@ -2619,24 +2573,7 @@ class LibraryManager:
             ):
                 continue
 
-            if (
-                lib_info
-                and lib_info.requires_worker
-                and not self._is_worker
-                and GriptapeNodes.SessionManager().active_session_id is None
-            ):
-                # No session yet — spawn concurrently. The task will await _session_ready_event
-                # inside _progress_library_through_lifecycle and complete once a session starts.
-                task = asyncio.create_task(
-                    self._load_and_track_library(lib_path, current_library_index, total_libraries)
-                )
-                worker_library_tasks.append(task)
-            else:
-                await self._load_and_track_library(lib_path, current_library_index, total_libraries)
-
-        # Wait for any worker libraries that were held pending a session.
-        if worker_library_tasks:
-            await asyncio.gather(*worker_library_tasks, return_exceptions=True)
+            await self._load_and_track_library(lib_path, current_library_index, total_libraries)
 
         # Print 'em all pretty — skip for targeted worker loads.
         if target_library_names is None:

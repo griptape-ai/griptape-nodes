@@ -377,11 +377,6 @@ async def _run_orchestrator(client: Client) -> None:
         GriptapeNodes.set_worker_manager(worker_manager)
         worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
         griptape_nodes.LibraryManager().register_pre_reload_callback(worker_manager.reset_workers)
-        # Register worker spawn callbacks before the task group starts. Library loading
-        # is triggered by AppInitializationComplete (already queued), which runs on the
-        # main thread asynchronously — the registration here is guaranteed to complete
-        # before any library reaches LOADED or WORKER_PENDING state.
-        worker_manager.register_spawn_callbacks()
         for topic in worker_manager.get_topics_to_subscribe(is_worker=False):
             await client.subscribe(topic)
 
@@ -560,8 +555,10 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
             topic = f"sessions/{session_id}/request"
             await _subscribe_to_topic(topic)
             logger.info("Subscribed to session topic: %s", topic)
-            # Unblock any worker libraries that were waiting for a session to exist.
-            griptape_nodes.LibraryManager().set_session_ready()
+            # Unblock any worker spawns that were waiting for a session to become available.
+            worker_manager = GriptapeNodes.WorkerManager()
+            if worker_manager is not None:
+                worker_manager.set_session_ready()
         elif isinstance(result_event.result, app_events.AppEndSessionResultSuccess):
             session_id = result_event.result.session_id
             if session_id is not None:
