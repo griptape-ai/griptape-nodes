@@ -3979,17 +3979,14 @@ class LibraryManager:
         library_name = library_data.name
         library_metadata = library_data.metadata
 
-        if not library_metadata.dependencies or not library_metadata.dependencies.pip_dependencies:
-            details = f"Library '{library_name}' has no dependencies to install"
-            logger.info(details)
-            return InstallLibraryDependenciesResultSuccess(
-                library_name=library_name, dependencies_installed=0, result_details=details
-            )
+        pip_dependencies = []
+        pip_install_flags = []
+        if library_metadata.dependencies:
+            pip_dependencies = library_metadata.dependencies.pip_dependencies or []
+            pip_install_flags = library_metadata.dependencies.pip_install_flags or []
 
-        pip_dependencies = library_metadata.dependencies.pip_dependencies
-        pip_install_flags = library_metadata.dependencies.pip_install_flags or []
-
-        # Get venv path and initialize it
+        # Always initialize the venv, even if there are no dependencies to install.
+        # Advanced library hooks (before_library_nodes_loaded) expect the venv to exist.
         venv_path = self._get_library_venv_path(library_name, library_file_path)
 
         try:
@@ -4010,6 +4007,13 @@ class LibraryManager:
             error_msg = OSManager.format_disk_space_error(Path(venv_path))
             details = f"Insufficient disk space for dependencies (requires {min_space_gb} GB) for library '{library_name}': {error_msg}"
             return InstallLibraryDependenciesResultFailure(result_details=details)
+
+        if not pip_dependencies:
+            details = f"Library '{library_name}' has no dependencies to install"
+            logger.info(details)
+            return InstallLibraryDependenciesResultSuccess(
+                library_name=library_name, dependencies_installed=0, result_details=details
+            )
 
         # Install dependencies
         logger.info("Installing %d dependencies for library '%s'", len(pip_dependencies), library_name)
