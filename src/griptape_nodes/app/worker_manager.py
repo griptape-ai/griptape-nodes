@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
 import re
+import shutil
 import time
 import uuid
 from typing import TYPE_CHECKING
@@ -24,6 +26,7 @@ if TYPE_CHECKING:
 
     from griptape_nodes.api_client.request_client import RequestClient
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 logger = logging.getLogger("griptape_nodes_app")
 
@@ -325,6 +328,36 @@ class WorkerManager:
         Callback signature: (worker_engine_id: str, library_name: str | None) -> None
         """
         self._worker_evicted_callbacks.append(callback)
+
+    def register_spawn_callbacks(self) -> None:
+        """Register LibraryManager callbacks for spawning worker subprocesses as needed.
+
+        Should be called after this WorkerManager is fully constructed and before the
+        task group starts, so no library-loaded event is missed.
+        """
+        self._griptape_nodes.LibraryManager().register_library_loaded_callback(self._on_library_needs_worker)
+
+    def _on_library_needs_worker(self, library_info: LibraryManager.LibraryInfo) -> None:
+        """Spawn a worker subprocess when a library that requires one is loaded."""
+        if not library_info.requires_worker or not library_info.library_name:
+            return
+        session_id = self._griptape_nodes.get_session_id()
+        if not session_id:
+            logger.warning("Cannot spawn worker for library '%s': no active session.", library_info.library_name)
+            return
+        gtn = shutil.which("gtn")
+        if gtn is None:
+            logger.error("Cannot spawn worker for library '%s': 'gtn' not found on PATH.", library_info.library_name)
+            return
+        args = [gtn, "engine", "--session-id", session_id, "--library-name", library_info.library_name]
+        task = asyncio.get_running_loop().create_task(self.spawn_worker(args, library_info.library_name))
+        task.add_done_callback(functools.partial(self._log_spawn_error, library_name=library_info.library_name))
+
+    @staticmethod
+    def _log_spawn_error(task: asyncio.Task, library_name: str) -> None:
+        exc = task.exception()
+        if exc is not None:
+            logger.error("Failed to spawn worker for library '%s': %s", library_name, exc)
 
     def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.

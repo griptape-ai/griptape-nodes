@@ -1,19 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import json
 import logging
 import os
-import shutil
 import signal
 import sys
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 import truststore
 from cattrs import BaseValidationError, transform_error
@@ -366,56 +360,12 @@ async def _handle_orchestrator_unmatched(message: dict, worker_manager: WorkerMa
         )
 
 
-def _log_worker_spawn_error(f: asyncio.Future, library_name: str) -> None:
-    exc = f.exception()
-    if exc is not None:
-        logger.error("Failed to spawn worker for library '%s': %s", library_name, exc)
-
-
 async def _run_orchestrator(client: Client) -> None:
     """Run the WebSocket task group for an orchestrator engine."""
     _engine_role_filter.prefix = "Orchestrator"
 
-    # worker_manager is assigned inside the RequestClient context below. Closures
-    # that reference it are only invoked after it is set.
-    _worker_manager: WorkerManager | None = None
-
-    async def _handle_unmatched(message: dict) -> None:
-        if _worker_manager is None:
-            msg = "WorkerManager not yet initialized"
-            raise RuntimeError(msg)
-        await _handle_orchestrator_unmatched(message, _worker_manager)
-
-    # Register worker spawn callback before the task group starts. Library loading
-    # is triggered by AppInitializationComplete (already queued), which runs on the
-    # main thread asynchronously — the callback registration here is guaranteed to
-    # complete before any library reaches LOADED or WORKER_PENDING state.
-    def _on_library_needs_worker(library_info: LibraryManager.LibraryInfo) -> None:
-        if not library_info.requires_worker or not library_info.library_name:
-            return
-        session_id = griptape_nodes.get_session_id()
-        if not session_id:
-            logger.warning("Cannot spawn worker for library '%s': no active session.", library_info.library_name)
-            return
-        gtn = shutil.which("gtn")
-        if gtn is None:
-            logger.error("Cannot spawn worker for library '%s': 'gtn' not found on PATH.", library_info.library_name)
-            return
-        if _worker_manager is None:
-            msg = "WorkerManager not yet initialized"
-            raise RuntimeError(msg)
-        args = [gtn, "engine", "--session-id", session_id, "--library-name", library_info.library_name]
-        task = asyncio.get_running_loop().create_task(_worker_manager.spawn_worker(args, library_info.library_name))
-        task.add_done_callback(functools.partial(_log_worker_spawn_error, library_name=library_info.library_name))
-
-    griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_needs_worker)
-
-    async def _consume_messages() -> None:
-        async for message in client.messages:
-            await _handle_unmatched(message)
-
     async with RequestClient(client) as request_client:
-        _worker_manager = WorkerManager(
+        worker_manager = WorkerManager(
             griptape_nodes=griptape_nodes,
             event_manager=griptape_nodes.EventManager(),
             ws_outgoing_queue=ws_outgoing_queue,
@@ -424,19 +374,31 @@ async def _run_orchestrator(client: Client) -> None:
             unsubscribe_from_topic=_unsubscribe_from_topic,
             request_client=request_client,
         )
-        GriptapeNodes.set_worker_manager(_worker_manager)
-        _worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
-        griptape_nodes.LibraryManager().register_pre_reload_callback(_worker_manager.reset_workers)
-        for topic in _worker_manager.get_topics_to_subscribe(is_worker=False):
+        GriptapeNodes.set_worker_manager(worker_manager)
+        worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
+        griptape_nodes.LibraryManager().register_pre_reload_callback(worker_manager.reset_workers)
+        # Register worker spawn callbacks before the task group starts. Library loading
+        # is triggered by AppInitializationComplete (already queued), which runs on the
+        # main thread asynchronously — the registration here is guaranteed to complete
+        # before any library reaches LOADED or WORKER_PENDING state.
+        worker_manager.register_spawn_callbacks()
+        for topic in worker_manager.get_topics_to_subscribe(is_worker=False):
             await client.subscribe(topic)
+
+        async def _handle_unmatched(message: dict) -> None:
+            await _handle_orchestrator_unmatched(message, worker_manager)
+
+        async def _consume_messages() -> None:
+            async for message in client.messages:
+                await _handle_unmatched(message)
 
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_send_outgoing_messages(client))
-                tg.create_task(_worker_manager.orchestrator_heartbeat_loop())
+                tg.create_task(worker_manager.orchestrator_heartbeat_loop())
                 tg.create_task(_consume_messages())
         finally:
-            _worker_manager.terminate_managed_workers()
+            worker_manager.terminate_managed_workers()
 
 
 def _deserialize_app_event(payload: dict) -> AppEvent:
