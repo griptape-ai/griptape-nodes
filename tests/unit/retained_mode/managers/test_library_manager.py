@@ -11,6 +11,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetAllInfoForAllLibrariesRequest,
     GetAllInfoForAllLibrariesResultFailure,
     GetAllInfoForAllLibrariesResultSuccess,
+    InstallLibraryDependenciesRequest,
     InstallLibraryDependenciesResultFailure,
     InstallLibraryDependenciesResultSuccess,
     ListRegisteredLibrariesRequest,
@@ -540,6 +541,159 @@ class TestLibraryManagerRegisterLibraryFromFile:
             # Verify failure result with expected error message
             assert isinstance(result, RegisterLibraryFromFileResultFailure)
             assert "Install failed" in str(result.result_details)
+
+
+class TestLibraryManagerInstallLibraryDependencies:
+    """Tests for install_library_dependencies_request."""
+
+    def _metadata_result(self, schema: MagicMock) -> LoadLibraryMetadataFromFileResultSuccess:
+        return LoadLibraryMetadataFromFileResultSuccess(
+            library_schema=schema,
+            file_path="/mock.json",
+            git_remote=None,
+            git_ref=None,
+            result_details=ResultDetails(message="OK", level=20),
+        )
+
+    @pytest.mark.asyncio
+    async def test_creates_venv_when_pip_dependencies_is_empty(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that the venv is created even when pip_dependencies is empty."""
+        mgr = griptape_nodes.LibraryManager()
+        schema = MagicMock()
+        schema.name = "test_lib"
+        schema.metadata.library_version = "1.0.0"
+        schema.metadata.dependencies.pip_dependencies = []
+        schema.metadata.dependencies.pip_install_flags = []
+        mock_python_path = MagicMock()
+
+        with (
+            patch.object(mgr, "load_library_metadata_from_file_request", return_value=self._metadata_result(schema)),
+            patch.object(mgr, "_get_library_venv_path", return_value=MagicMock()),
+            patch.object(
+                mgr, "_init_library_venv", new_callable=AsyncMock, return_value=mock_python_path
+            ) as mock_init_venv,
+            patch.object(mgr, "_can_write_to_venv_location", return_value=True),
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.OSManager.check_available_disk_space",
+                return_value=True,
+            ),
+            patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=5.0),
+        ):
+            result = await mgr.install_library_dependencies_request(
+                InstallLibraryDependenciesRequest(library_file_path="/mock.json")
+            )
+
+        mock_init_venv.assert_called_once()
+        assert isinstance(result, InstallLibraryDependenciesResultSuccess)
+        assert result.dependencies_installed == 0
+
+    @pytest.mark.asyncio
+    async def test_creates_venv_when_dependencies_is_none(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that the venv is created even when the dependencies section is absent."""
+        mgr = griptape_nodes.LibraryManager()
+        schema = MagicMock()
+        schema.name = "test_lib"
+        schema.metadata.library_version = "1.0.0"
+        schema.metadata.dependencies = None
+        mock_python_path = MagicMock()
+
+        with (
+            patch.object(mgr, "load_library_metadata_from_file_request", return_value=self._metadata_result(schema)),
+            patch.object(mgr, "_get_library_venv_path", return_value=MagicMock()),
+            patch.object(
+                mgr, "_init_library_venv", new_callable=AsyncMock, return_value=mock_python_path
+            ) as mock_init_venv,
+            patch.object(mgr, "_can_write_to_venv_location", return_value=True),
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.OSManager.check_available_disk_space",
+                return_value=True,
+            ),
+            patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=5.0),
+        ):
+            result = await mgr.install_library_dependencies_request(
+                InstallLibraryDependenciesRequest(library_file_path="/mock.json")
+            )
+
+        mock_init_venv.assert_called_once()
+        assert isinstance(result, InstallLibraryDependenciesResultSuccess)
+        assert result.dependencies_installed == 0
+
+    @pytest.mark.asyncio
+    async def test_returns_failure_when_venv_creation_fails_with_no_deps(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that venv creation failure returns failure even when pip_dependencies is empty."""
+        mgr = griptape_nodes.LibraryManager()
+        schema = MagicMock()
+        schema.name = "test_lib"
+        schema.metadata.library_version = "1.0.0"
+        schema.metadata.dependencies.pip_dependencies = []
+        schema.metadata.dependencies.pip_install_flags = []
+
+        with (
+            patch.object(mgr, "load_library_metadata_from_file_request", return_value=self._metadata_result(schema)),
+            patch.object(mgr, "_get_library_venv_path", return_value=MagicMock()),
+            patch.object(mgr, "_init_library_venv", new_callable=AsyncMock, side_effect=RuntimeError("disk full")),
+        ):
+            result = await mgr.install_library_dependencies_request(
+                InstallLibraryDependenciesRequest(library_file_path="/mock.json")
+            )
+
+        assert isinstance(result, InstallLibraryDependenciesResultFailure)
+        assert "disk full" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_returns_failure_when_venv_unwritable_with_no_deps(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that an unwritable venv returns failure even when pip_dependencies is empty."""
+        mgr = griptape_nodes.LibraryManager()
+        schema = MagicMock()
+        schema.name = "test_lib"
+        schema.metadata.library_version = "1.0.0"
+        schema.metadata.dependencies.pip_dependencies = []
+        schema.metadata.dependencies.pip_install_flags = []
+
+        with (
+            patch.object(mgr, "load_library_metadata_from_file_request", return_value=self._metadata_result(schema)),
+            patch.object(mgr, "_get_library_venv_path", return_value=MagicMock()),
+            patch.object(mgr, "_init_library_venv", new_callable=AsyncMock, return_value=MagicMock()),
+            patch.object(mgr, "_can_write_to_venv_location", return_value=False),
+        ):
+            result = await mgr.install_library_dependencies_request(
+                InstallLibraryDependenciesRequest(library_file_path="/mock.json")
+            )
+
+        assert isinstance(result, InstallLibraryDependenciesResultFailure)
+
+    @pytest.mark.asyncio
+    async def test_returns_failure_when_insufficient_disk_space_with_no_deps(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """Test that insufficient disk space returns failure even when pip_dependencies is empty."""
+        mgr = griptape_nodes.LibraryManager()
+        schema = MagicMock()
+        schema.name = "test_lib"
+        schema.metadata.library_version = "1.0.0"
+        schema.metadata.dependencies.pip_dependencies = []
+        schema.metadata.dependencies.pip_install_flags = []
+
+        with (
+            patch.object(mgr, "load_library_metadata_from_file_request", return_value=self._metadata_result(schema)),
+            patch.object(mgr, "_get_library_venv_path", return_value=MagicMock()),
+            patch.object(mgr, "_init_library_venv", new_callable=AsyncMock, return_value=MagicMock()),
+            patch.object(mgr, "_can_write_to_venv_location", return_value=True),
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.OSManager.check_available_disk_space",
+                return_value=False,
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.OSManager.format_disk_space_error",
+                return_value="not enough space",
+            ),
+            patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=5.0),
+        ):
+            result = await mgr.install_library_dependencies_request(
+                InstallLibraryDependenciesRequest(library_file_path="/mock.json")
+            )
+
+        assert isinstance(result, InstallLibraryDependenciesResultFailure)
 
 
 class TestLibraryManagerConfigChangeHandling:
