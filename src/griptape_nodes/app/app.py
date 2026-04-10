@@ -288,19 +288,6 @@ async def _publish_library_loaded(
     )
 
 
-def _on_library_loaded(
-    library_info: LibraryManager.LibraryInfo,
-    *,
-    worker_library_name: str,
-    worker_session_id: str,
-    client: Client,
-) -> None:
-    if library_info.library_name != worker_library_name:
-        return
-    asyncio.get_running_loop().create_task(
-        _publish_library_loaded(client, worker_session_id, worker_library_name, library_info)
-    )
-
 
 async def _run_worker(client: Client, worker_session_id: str, worker_library_name: str | None = None) -> None:
     """Run the WebSocket task group for a worker engine."""
@@ -332,14 +319,14 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     # Register a callback to notify the orchestrator when the worker's library is loaded.
     # Only needed when this worker is dedicated to a specific library.
     if worker_library_name:
-        griptape_nodes.LibraryManager().register_library_loaded_callback(
-            functools.partial(
-                _on_library_loaded,
-                worker_library_name=worker_library_name,
-                worker_session_id=worker_session_id,
-                client=client,
+        def _on_library_loaded(library_info: LibraryManager.LibraryInfo) -> None:
+            if library_info.library_name != worker_library_name:
+                return
+            asyncio.get_running_loop().create_task(
+                _publish_library_loaded(client, worker_session_id, worker_library_name, library_info)
             )
-        )
+
+        griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_loaded)
 
     async def _consume_messages() -> None:
         async for message in client.messages:
