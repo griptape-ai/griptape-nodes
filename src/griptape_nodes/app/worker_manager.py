@@ -336,6 +336,10 @@ class WorkerManager:
         """Signal that a session is available, unblocking any pending worker spawns."""
         self._session_ready_event.set()
 
+    def clear_session_ready(self) -> None:
+        """Clear the session-ready gate so future worker spawns wait for a new session."""
+        self._session_ready_event.clear()
+
     async def handle_start_worker_request(
         self, request: worker_events.StartWorkerRequest
     ) -> worker_events.StartWorkerResultSuccess | worker_events.StartWorkerResultFailure:

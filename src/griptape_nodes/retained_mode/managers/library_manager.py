@@ -488,6 +488,18 @@ class LibraryManager:
                 raise RuntimeError(msg)
         return None
 
+    async def start_workers(self) -> None:
+        """Issue StartWorkerRequest for every library that requires a dedicated worker.
+
+        Sets each matching library back to WORKER_PENDING and asks WorkerManager to
+        spawn a subprocess.  Used on session start (both initial and subsequent) so
+        that worker creation is always tied to an active session.
+        """
+        for library_info in self._library_file_path_to_info.values():
+            if library_info.requires_worker and library_info.library_name and not self._is_worker:
+                library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_PENDING
+                await GriptapeNodes.ahandle_request(StartWorkerRequest(library_name=library_info.library_name))
+
     def on_worker_evicted(self, worker_engine_id: str, library_name: str | None) -> None:
         """Called when a worker is evicted by the orchestrator heartbeat monitor.
 
@@ -1657,19 +1669,10 @@ class LibraryManager:
                         # _attempt_load_nodes_from_library sets lifecycle_state = LOADED on success.
                         # For worker-delegated libraries on the orchestrator, override to WORKER_PENDING --
                         # the library is registered but the worker has not yet confirmed successful dep
-                        # install and node import.
+                        # install and node import.  The actual worker spawn is deferred to
+                        # start_workers(), called when a session becomes available.
                         if library_info.requires_worker and not self._is_worker:
                             library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_PENDING
-
-                        # Request a worker spawn for worker-delegated libraries on the orchestrator.
-                        # WorkerManager handles session readiness and the actual subprocess launch.
-                        if (
-                            library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.WORKER_PENDING
-                            and library_info.library_name
-                        ):
-                            await GriptapeNodes.ahandle_request(
-                                StartWorkerRequest(library_name=library_info.library_name)
-                            )
 
                         # On a worker process, broadcast the notification so app.py can relay it
                         # to the orchestrator over MQTT.

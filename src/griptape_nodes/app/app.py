@@ -556,12 +556,19 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
             worker_manager = GriptapeNodes.WorkerManager()
             if worker_manager is not None:
                 worker_manager.set_session_ready()
+            # Spawn workers for all libraries that require one.
+            await GriptapeNodes.LibraryManager().start_workers()
         elif isinstance(result_event.result, app_events.AppEndSessionResultSuccess):
             session_id = result_event.result.session_id
             if session_id is not None:
                 topic = f"sessions/{session_id}/request"
                 await _unsubscribe_from_topic(topic)
                 logger.info("Unsubscribed from session topic: %s", topic)
+            # Terminate workers so they are recreated when the next session starts.
+            worker_manager = GriptapeNodes.WorkerManager()
+            if worker_manager is not None:
+                worker_manager.reset_workers()
+                worker_manager.clear_session_ready()
     elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"
     else:
