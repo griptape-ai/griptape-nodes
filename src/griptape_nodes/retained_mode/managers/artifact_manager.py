@@ -1076,7 +1076,7 @@ class ArtifactManager:
         """
         key_prefix = generator_class.get_config_key_prefix(provider_class.get_friendly_name())
 
-        request = GetConfigCategoryRequest(category=key_prefix)
+        request = GetConfigCategoryRequest(category=key_prefix, failure_log_level=logging.DEBUG)
         result = GriptapeNodes.handle_request(request)
 
         # Config category doesn't exist - no settings written yet
