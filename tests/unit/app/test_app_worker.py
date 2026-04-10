@@ -201,6 +201,21 @@ class TestHandleUnregisterWorkerRequest:
 
         assert isinstance(result, worker_events.UnregisterWorkerResultSuccess)
 
+    @pytest.mark.asyncio
+    async def test_removes_managed_process_for_library(self, worker_manager: WorkerManager) -> None:
+        proc = MagicMock()
+        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._worker_last_seen[_ENGINE] = 999.0
+        worker_manager._worker_key[_ENGINE] = "My Library"
+        worker_manager._keyed_workers["My Library"] = [(_ENGINE, _WORKER_REQUEST_TOPIC)]
+        worker_manager._managed_worker_processes["My Library"] = proc
+
+        await worker_manager.handle_unregister_worker_request(
+            worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
+        )
+
+        assert "My Library" not in worker_manager._managed_worker_processes
+
 
 class TestRelayWorkerResult:
     @pytest.mark.asyncio
@@ -269,6 +284,20 @@ class TestEvictWorker:
     async def test_tolerates_unknown_worker(self, worker_manager: WorkerManager) -> None:
         """Evicting a worker not in the registry must not raise."""
         await worker_manager.evict_worker("ghost-engine")
+
+    @pytest.mark.asyncio
+    async def test_terminates_managed_subprocess_for_library(self, worker_manager: WorkerManager) -> None:
+        proc = MagicMock()
+        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._worker_last_seen[_ENGINE] = 100.0
+        worker_manager._worker_key[_ENGINE] = "My Library"
+        worker_manager._keyed_workers["My Library"] = [(_ENGINE, _WORKER_REQUEST_TOPIC)]
+        worker_manager._managed_worker_processes["My Library"] = proc
+
+        await worker_manager.evict_worker(_ENGINE)
+
+        proc.terminate.assert_called_once()
+        assert "My Library" not in worker_manager._managed_worker_processes
 
 
 class TestRelayWorkerResultPendingFuture:
@@ -384,6 +413,49 @@ class TestSpawnWorker:
         assert worker_manager._managed_worker_processes["My Library"] is mock_proc
 
 
+class TestResetWorkers:
+    def test_terminates_all_processes(self, worker_manager: WorkerManager) -> None:
+        proc_a, proc_b = MagicMock(), MagicMock()
+        worker_manager._managed_worker_processes["Lib A"] = proc_a
+        worker_manager._managed_worker_processes["Lib B"] = proc_b
+
+        worker_manager.reset_workers()
+
+        proc_a.terminate.assert_called_once()
+        proc_b.terminate.assert_called_once()
+
+    def test_clears_all_tracking_state(self, worker_manager: WorkerManager) -> None:
+        worker_manager._managed_worker_processes["Lib A"] = MagicMock()
+        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._keyed_workers["Lib A"] = [(_ENGINE, _WORKER_REQUEST_TOPIC)]
+        worker_manager._worker_key[_ENGINE] = "Lib A"
+        worker_manager._worker_last_seen[_ENGINE] = 999.0
+
+        worker_manager.reset_workers()
+
+        assert worker_manager._managed_worker_processes == {}
+        assert worker_manager._registered_workers == {}
+        assert worker_manager._keyed_workers == {}
+        assert worker_manager._worker_key == {}
+        assert worker_manager._worker_last_seen == {}
+
+    def test_does_not_clear_session_ready_event(self, worker_manager: WorkerManager) -> None:
+        worker_manager._session_ready_event.set()
+
+        worker_manager.reset_workers()
+
+        assert worker_manager._session_ready_event.is_set()
+
+    def test_tolerates_already_exited_process(self, worker_manager: WorkerManager) -> None:
+        proc = MagicMock()
+        proc.terminate.side_effect = ProcessLookupError
+        worker_manager._managed_worker_processes["Lib A"] = proc
+
+        worker_manager.reset_workers()
+
+        assert worker_manager._managed_worker_processes == {}
+
+
 class TestTerminateManagedWorkers:
     def test_terminates_all_processes(self, worker_manager: WorkerManager) -> None:
         proc_a, proc_b = MagicMock(), MagicMock()
@@ -404,6 +476,113 @@ class TestTerminateManagedWorkers:
         worker_manager.terminate_managed_workers()  # must not raise
 
         assert worker_manager._managed_worker_processes == {}
+
+
+class TestSetSessionReady:
+    def test_sets_session_ready_event(self, worker_manager: WorkerManager) -> None:
+        assert not worker_manager._session_ready_event.is_set()
+
+        worker_manager.set_session_ready()
+
+        assert worker_manager._session_ready_event.is_set()
+
+    def test_calling_twice_does_not_raise(self, worker_manager: WorkerManager) -> None:
+        worker_manager.set_session_ready()
+        worker_manager.set_session_ready()
+
+
+class TestHandleStartWorkerRequest:
+    @pytest.mark.asyncio
+    async def test_returns_success_immediately(self, worker_manager: WorkerManager) -> None:
+        request = worker_events.StartWorkerRequest(library_name="My Library")
+
+        with patch.object(worker_manager, "_spawn_when_session_ready", new=AsyncMock()):
+            result = await worker_manager.handle_start_worker_request(request)
+
+        assert isinstance(result, worker_events.StartWorkerResultSuccess)
+
+
+class TestSpawnWhenSessionReady:
+    @pytest.mark.asyncio
+    async def test_skips_wait_when_session_already_active(self, worker_manager: WorkerManager) -> None:
+        """If a session is already active, spawn proceeds without waiting for the event."""
+        worker_manager._griptape_nodes.get_session_id.return_value = _SESSION  # type: ignore[union-attr]
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/gtn"),
+            patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as mock_spawn,
+        ):
+            await worker_manager._spawn_when_session_ready("My Library")
+
+        mock_spawn.assert_called_once()
+        assert not worker_manager._session_ready_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_waits_then_spawns_after_session_ready(self, worker_manager: WorkerManager) -> None:
+        """If no session yet, waits for the event and spawns once the session is available."""
+        # First call (pre-check) returns None; second call (post-wait) returns session ID.
+        worker_manager._griptape_nodes.get_session_id.side_effect = [None, _SESSION]  # type: ignore[union-attr]
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/gtn"),
+            patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as mock_spawn,
+        ):
+            task = asyncio.create_task(worker_manager._spawn_when_session_ready("My Library"))
+            await asyncio.sleep(0)  # let the task start and reach the event wait
+            worker_manager._session_ready_event.set()
+            await task
+
+        mock_spawn.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_logs_error_when_no_session_after_event(self, worker_manager: WorkerManager) -> None:
+        """If the session event fires but get_session_id still returns None, spawn is not attempted."""
+        worker_manager._griptape_nodes.get_session_id.side_effect = [None, None]  # type: ignore[union-attr]
+        worker_manager._session_ready_event.set()
+
+        with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as mock_spawn:
+            await worker_manager._spawn_when_session_ready("My Library")
+
+        mock_spawn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_logs_error_when_gtn_not_on_path(self, worker_manager: WorkerManager) -> None:
+        """If gtn is not on PATH, spawn is not attempted."""
+        worker_manager._griptape_nodes.get_session_id.return_value = _SESSION  # type: ignore[union-attr]
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as mock_spawn,
+        ):
+            await worker_manager._spawn_when_session_ready("My Library")
+
+        mock_spawn.assert_not_called()
+
+
+class TestWorkerEvictedCallbacks:
+    @pytest.mark.asyncio
+    async def test_callback_called_with_worker_id_and_library_name(self, worker_manager: WorkerManager) -> None:
+        callback = MagicMock()
+        worker_manager.register_worker_evicted_callback(callback)
+        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._worker_key[_ENGINE] = "My Library"
+        worker_manager._keyed_workers["My Library"] = [(_ENGINE, _WORKER_REQUEST_TOPIC)]
+
+        await worker_manager.evict_worker(_ENGINE)
+
+        callback.assert_called_once_with(_ENGINE, "My Library")
+
+    @pytest.mark.asyncio
+    async def test_exception_in_callback_does_not_prevent_others(self, worker_manager: WorkerManager) -> None:
+        first = MagicMock(side_effect=RuntimeError("boom"))
+        second = MagicMock()
+        worker_manager.register_worker_evicted_callback(first)
+        worker_manager.register_worker_evicted_callback(second)
+        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+
+        await worker_manager.evict_worker(_ENGINE)
+
+        second.assert_called_once()
 
 
 class TestRouteToWorker:

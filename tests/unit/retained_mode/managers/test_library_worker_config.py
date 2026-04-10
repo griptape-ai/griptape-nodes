@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from griptape_nodes.node_library.library_registry import LibraryMetadata, WorkerConfig
+from griptape_nodes.retained_mode.events.app_events import LibraryLoadedNotification
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 
@@ -192,3 +193,64 @@ class TestMaybePrintEngineReadyBanner:
             mgr._maybe_print_engine_ready_banner(is_worker=False)
 
         mock_console.print.assert_called_once()
+
+
+class TestOnLibraryLoadedNotification:
+    def _make_lib_info(self, library_name: str) -> LibraryManager.LibraryInfo:
+        return LibraryManager.LibraryInfo(
+            lifecycle_state=LibraryManager.LibraryLifecycleState.WORKER_PENDING,
+            fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
+            library_path="/some/path.json",
+            is_sandbox=False,
+            library_name=library_name,
+        )
+
+    @pytest.mark.asyncio
+    async def test_updates_fitness_and_lifecycle_to_loaded(self) -> None:
+        mgr = _make_library_manager()
+        lib_info = self._make_lib_info("my_lib")
+        mgr._library_file_path_to_info["/some/path.json"] = lib_info
+
+        await mgr._on_library_loaded_notification(LibraryLoadedNotification(library_name="my_lib", fitness="GOOD"))
+
+        assert lib_info.lifecycle_state == LibraryManager.LibraryLifecycleState.LOADED
+        assert lib_info.fitness == LibraryManager.LibraryFitness.GOOD
+
+    @pytest.mark.asyncio
+    async def test_accepts_flawed_fitness(self) -> None:
+        mgr = _make_library_manager()
+        lib_info = self._make_lib_info("my_lib")
+        mgr._library_file_path_to_info["/some/path.json"] = lib_info
+
+        await mgr._on_library_loaded_notification(
+            LibraryLoadedNotification(library_name="my_lib", fitness="FLAWED", problem_details="some issue")
+        )
+
+        assert lib_info.lifecycle_state == LibraryManager.LibraryLifecycleState.LOADED
+        assert lib_info.fitness == LibraryManager.LibraryFitness.FLAWED
+
+    @pytest.mark.asyncio
+    async def test_does_nothing_for_unknown_library(self) -> None:
+        mgr = _make_library_manager()
+
+        await mgr._on_library_loaded_notification(LibraryLoadedNotification(library_name="unknown_lib", fitness="GOOD"))
+
+
+class TestRegisterPreReloadCallback:
+    def test_callback_is_appended(self) -> None:
+        mgr = _make_library_manager()
+        callback = MagicMock()
+
+        mgr.register_pre_reload_callback(callback)
+
+        assert callback in mgr._pre_reload_callbacks
+
+    def test_multiple_callbacks_registered_in_order(self) -> None:
+        mgr = _make_library_manager()
+        first, second = MagicMock(), MagicMock()
+
+        mgr.register_pre_reload_callback(first)
+        mgr.register_pre_reload_callback(second)
+
+        assert mgr._pre_reload_callbacks[0] is first
+        assert mgr._pre_reload_callbacks[1] is second
