@@ -1,11 +1,15 @@
 """Tests for current_executing_node_name ContextVar in NodeExecutor.execute()."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from griptape_nodes.common.node_executor import NodeExecutor, current_executing_node_name
+from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeResultSuccess
+
+_GRIPTAPE_NODES_PATH = "griptape_nodes.common.node_executor.GriptapeNodes"
 
 
 def _make_executor() -> NodeExecutor:
@@ -15,8 +19,14 @@ def _make_executor() -> NodeExecutor:
 def _make_node(name: str) -> MagicMock:
     node = MagicMock()
     node.name = name
+    # Use a real dict so metadata.get("library") returns None, skipping the worker branch.
+    node.metadata = {}
     node.aprocess = AsyncMock()
     return node
+
+
+def _success_result() -> ExecuteNodeResultSuccess:
+    return ExecuteNodeResultSuccess(result_details="ok", parameter_output_values={})
 
 
 class TestCurrentExecutingNodeNameDefault:
@@ -27,16 +37,18 @@ class TestCurrentExecutingNodeNameDefault:
 class TestNodeExecutorContextVar:
     @pytest.mark.asyncio
     async def test_contextvar_holds_node_name_during_aprocess(self) -> None:
-        """The ContextVar holds the node name while execute() is running aprocess()."""
+        """The ContextVar holds the node name while execute() is running."""
         captured: list[str | None] = []
         node = _make_node("TestNode")
 
-        async def capture_contextvar() -> None:
+        async def fake_handle(_req: Any) -> ExecuteNodeResultSuccess:
             captured.append(current_executing_node_name.get())
+            return _success_result()
 
-        node.aprocess = capture_contextvar
-
-        await _make_executor().execute(node)
+        with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
+            mock_gn.WorkerManager.return_value = None
+            mock_gn.ahandle_request = AsyncMock(side_effect=fake_handle)
+            await _make_executor().execute(node)
 
         assert captured == ["TestNode"]
 
@@ -45,18 +57,24 @@ class TestNodeExecutorContextVar:
         """The ContextVar is reset to None after execute() completes successfully."""
         node = _make_node("TestNode")
 
-        await _make_executor().execute(node)
+        with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
+            mock_gn.WorkerManager.return_value = None
+            mock_gn.ahandle_request = AsyncMock(return_value=_success_result())
+            await _make_executor().execute(node)
 
         assert current_executing_node_name.get() is None
 
     @pytest.mark.asyncio
     async def test_contextvar_reset_to_none_when_aprocess_raises(self) -> None:
-        """The ContextVar is reset to None even when aprocess() raises an exception."""
+        """The ContextVar is reset to None even when execution raises an exception."""
         node = _make_node("TestNode")
-        node.aprocess = AsyncMock(side_effect=RuntimeError("node failed"))
 
-        with pytest.raises(RuntimeError, match="node failed"):
-            await _make_executor().execute(node)
+        with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
+            mock_gn.WorkerManager.return_value = None
+            mock_gn.ahandle_request = AsyncMock(side_effect=RuntimeError("node failed"))
+
+            with pytest.raises(RuntimeError, match="node failed"):
+                await _make_executor().execute(node)
 
         assert current_executing_node_name.get() is None
 
@@ -68,22 +86,20 @@ class TestNodeExecutorContextVar:
         node_a = _make_node("NodeA")
         node_b = _make_node("NodeB")
 
-        async def capture_a() -> None:
+        async def fake_handle(req: Any) -> ExecuteNodeResultSuccess:
             await asyncio.sleep(0)  # yield to allow interleaving
-            results["NodeA"] = current_executing_node_name.get()
+            results[req.node_name] = current_executing_node_name.get()
+            return _success_result()
 
-        async def capture_b() -> None:
-            await asyncio.sleep(0)  # yield to allow interleaving
-            results["NodeB"] = current_executing_node_name.get()
+        with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
+            mock_gn.WorkerManager.return_value = None
+            mock_gn.ahandle_request = AsyncMock(side_effect=fake_handle)
 
-        node_a.aprocess = capture_a
-        node_b.aprocess = capture_b
-
-        executor = _make_executor()
-        await asyncio.gather(
-            executor.execute(node_a),
-            executor.execute(node_b),
-        )
+            executor = _make_executor()
+            await asyncio.gather(
+                executor.execute(node_a),
+                executor.execute(node_b),
+            )
 
         assert results["NodeA"] == "NodeA"
         assert results["NodeB"] == "NodeB"
