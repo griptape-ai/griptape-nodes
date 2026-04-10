@@ -8,6 +8,10 @@ import signal
 import sys
 import threading
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import truststore
 from cattrs import BaseValidationError, transform_error
@@ -396,15 +400,15 @@ async def _run_orchestrator(client: Client) -> None:
             worker_manager.terminate_managed_workers()
 
 
-def _deserialize_app_event(payload: dict) -> AppEvent:
-    """Deserialize an AppEvent from a raw payload dict."""
+def _deserialize_event[T](from_dict: Callable[[dict], T], payload: dict, label: str) -> T:
+    """Deserialize an event from a raw payload dict, wrapping errors with context."""
     try:
-        return AppEvent.from_dict(payload)
+        return from_dict(payload)
     except Exception as e:
         details = str(e)
         if isinstance(e, BaseValidationError):
             details = "; ".join(transform_error(e))
-        msg = f"Unable to convert request JSON into a valid AppEvent object. Error Message: '{details}'"
+        msg = f"Unable to convert request JSON into a valid {label} object. Error Message: '{details}'"
         raise RuntimeError(msg) from None
 
 
@@ -419,7 +423,7 @@ async def _process_api_event(event: dict) -> None:
         raise RuntimeError(msg) from None
 
     if event_type == "AppEvent":
-        griptape_nodes.EventManager().put_event(_deserialize_app_event(payload))
+        griptape_nodes.EventManager().put_event(_deserialize_event(AppEvent.from_dict, payload, "AppEvent"))
         return
 
     try:
@@ -433,14 +437,7 @@ async def _process_api_event(event: dict) -> None:
         raise RuntimeError(msg) from None
 
     # Now attempt to convert it into an EventRequest.
-    try:
-        request_event = EventRequest.from_dict(payload)
-    except Exception as e:
-        details = str(e)
-        if isinstance(e, BaseValidationError):
-            details = "; ".join(transform_error(e))
-        msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{details}'"
-        raise RuntimeError(msg) from None
+    request_event = _deserialize_event(EventRequest.from_dict, payload, "EventRequest")
 
     if not isinstance(request_event, EventRequest):
         msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
