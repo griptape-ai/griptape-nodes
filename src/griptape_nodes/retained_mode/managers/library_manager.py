@@ -1711,6 +1711,21 @@ class LibraryManager:
                                         library_info.library_name,
                                         e,
                                     )
+
+                        # On a worker process, broadcast the notification so app.py can relay it
+                        # to the orchestrator over MQTT.
+                        if (
+                            self._is_worker
+                            and library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.LOADED
+                            and library_info.library_name
+                        ):
+                            await GriptapeNodes.abroadcast_app_event(
+                                LibraryLoadedNotification(
+                                    library_name=library_info.library_name,
+                                    fitness=library_info.fitness,
+                                    problem_details=self.collate_problems_for_lib_info(library_info),
+                                )
+                            )
                     else:
                         # SANDBOX LIBRARIES: Full processing here (discovery + registration)
                         # Load metadata from JSON file (already generated in DISCOVERED → METADATA_LOADED)

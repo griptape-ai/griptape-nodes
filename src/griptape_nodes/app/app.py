@@ -265,30 +265,6 @@ async def _run_websocket_tasks(worker_session_id: str | None = None, worker_libr
             await _run_orchestrator(client)
 
 
-async def _publish_library_loaded(
-    client: Client,
-    worker_session_id: str,
-    worker_library_name: str,
-    library_info: LibraryManager.LibraryInfo,
-) -> None:
-    # collate_problems_for_lib_info runs here on the event loop thread, not the
-    # library-loading thread that invoked this callback.
-    problem_details = griptape_nodes.LibraryManager().collate_problems_for_lib_info(library_info)
-    notification = AppEvent(
-        payload=app_events.LibraryLoadedNotification(
-            library_name=worker_library_name,
-            fitness=library_info.fitness,
-            problem_details=problem_details,
-        )
-    )
-    await client.publish(
-        "AppEvent",
-        json.loads(notification.json()),
-        f"sessions/{worker_session_id}/request",
-    )
-
-
-
 async def _run_worker(client: Client, worker_session_id: str, worker_library_name: str | None = None) -> None:
     """Run the WebSocket task group for a worker engine."""
     # Announce this worker to the orchestrator's session request topic.
@@ -316,17 +292,14 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     # routing intermediate events (AppEvents, ProgressEvents) directly to the GUI.
     griptape_nodes.SessionManager().active_session_id = worker_session_id
 
-    # Register a callback to notify the orchestrator when the worker's library is loaded.
-    # Only needed when this worker is dedicated to a specific library.
-    if worker_library_name:
-        def _on_library_loaded(library_info: LibraryManager.LibraryInfo) -> None:
-            if library_info.library_name != worker_library_name:
-                return
-            asyncio.get_running_loop().create_task(
-                _publish_library_loaded(client, worker_session_id, worker_library_name, library_info)
-            )
+    # Relay LibraryLoadedNotification events to the orchestrator over MQTT.
+    # LibraryManager broadcasts these when a library finishes loading on this worker;
+    # publishing them to the session request topic lets the orchestrator update its state.
+    async def _relay_library_loaded(notification: app_events.LibraryLoadedNotification) -> None:
+        relay = AppEvent(payload=notification)
+        await client.publish("AppEvent", json.loads(relay.json()), f"sessions/{worker_session_id}/request")
 
-        griptape_nodes.LibraryManager().register_library_loaded_callback(_on_library_loaded)
+    griptape_nodes.EventManager().add_listener_to_app_event(app_events.LibraryLoadedNotification, _relay_library_loaded)
 
     async def _consume_messages() -> None:
         async for message in client.messages:
