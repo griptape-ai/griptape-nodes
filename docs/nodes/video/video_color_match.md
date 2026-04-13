@@ -130,13 +130,13 @@ Different algorithms produce distinct aesthetic results:
 
 ### Strength Guidelines
 
-| Strength | Use Case |
-|----------|----------|
+| Strength | Use Case                                             |
+| -------- | ---------------------------------------------------- |
 | 0.3-0.5  | Very subtle color correction, slight mood adjustment |
-| 0.6-0.8  | Noticeable but natural color grading |
-| 0.9-1.1  | Full color transfer, dramatic look change |
-| 1.2-2.0  | Stylized, artistic effects |
-| > 2.0    | Experimental, heavily exaggerated results |
+| 0.6-0.8  | Noticeable but natural color grading                 |
+| 0.9-1.1  | Full color transfer, dramatic look change            |
+| 1.2-2.0  | Stylized, artistic effects                           |
+| > 2.0    | Experimental, heavily exaggerated results            |
 
 ### Workflow Recommendations
 
