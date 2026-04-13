@@ -60,7 +60,13 @@ class ArbitraryCodeExecManager:
                     request.python_string, namespace, namespace
                 )
 
-            captured_output = strip_ansi_codes(string_buffer.getvalue())
+            if request.local_variable_to_capture is not None:
+                var_name = request.local_variable_to_capture
+                if var_name not in namespace:
+                    raise NameError(f"Local variable '{var_name}' was not found after execution.")
+                captured_output = str(namespace[var_name])
+            else:
+                captured_output = strip_ansi_codes(string_buffer.getvalue())
             result = RunArbitraryPythonStringResultSuccess(
                 python_output=captured_output, result_details="Successfully executed Python string"
             )

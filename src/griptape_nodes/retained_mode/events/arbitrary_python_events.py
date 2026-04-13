@@ -22,11 +22,13 @@ class RunArbitraryPythonStringRequest(RequestPayload):
 
     Args:
         python_string: Python code string to execute
+        local_variable_to_capture: Optional name of a local variable in the executed code to capture and return as output instead of stdout.
 
     Results: RunArbitraryPythonStringResultSuccess (with output) | RunArbitraryPythonStringResultFailure (execution error)
     """
 
     python_string: str
+    local_variable_to_capture: str | None = None  # Optional: specify a local variable name to capture and return as output instead of stdout
 
 
 @dataclass
