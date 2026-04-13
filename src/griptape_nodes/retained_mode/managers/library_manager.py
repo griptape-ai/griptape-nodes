@@ -306,7 +306,7 @@ class LibraryManager:
             lifecycle_state: Current phase of the library loading lifecycle (DISCOVERED → METADATA_LOADED →
                            EVALUATED → DEPENDENCIES_INSTALLED → LOADED, or EVALUATED → WORKER_DELEGATED →
                            WORKER_PENDING → LOADED once the worker confirms, or FAILURE at any phase)
-            fitness: Health/quality assessment of the library (GOOD, FLAWED, UNUSABLE, MISSING, NOT_EVALUATED)
+            fitness: Health/quality assessment of the library (GOOD, FLAWED, UNUSABLE, NOT_EVALUATED)
             library_path: Absolute path to the library JSON file or sandbox directory
             is_sandbox: True if this is a sandbox library (user-created nodes in workspace), False for regular libraries
             library_name: Name of the library from metadata (None until METADATA_LOADED phase)
