@@ -29,6 +29,7 @@ from rich.text import Text
 from semver import Version
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
@@ -49,10 +50,12 @@ from griptape_nodes.retained_mode.events.app_events import (
     InitializationPhase,
     InitializationStatus,
     LibraryLoadedNotification,
+    WorkerNodeSchema,
+    WorkerParameterSchema,
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails, ResultPayloadFailure
+from griptape_nodes.retained_mode.events.base_events import AppEvent, EventRequest, ResultDetails, ResultPayloadFailure
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -322,6 +325,10 @@ class LibraryManager:
         # True when the library declares worker.enabled = True in its metadata.
         # Set whenever metadata is first successfully parsed (discovery or lifecycle progression).
         requires_worker: bool = False
+        # Set when the library enters WORKER_PENDING state. The orchestrator waits on this
+        # event before returning RegisterLibraryFromFileResultSuccess so callers see the real
+        # fitness once the worker has loaded and reported back.
+        worker_ready: asyncio.Event | None = field(default=None, repr=False)
 
     class RegisterLibraryPrerequisites(NamedTuple):
         """Prerequisites established for library loading."""
@@ -461,6 +468,14 @@ class LibraryManager:
                 notification.library_name,
                 notification.problem_details,
             )
+        # Register stub node classes from the worker-reported schemas so the orchestrator
+        # can display nodes in the sidebar and recreate them during workflow loading.
+        # Skip on the worker itself -- it already has the real node classes registered.
+        if notification.node_schemas and not self._is_worker:
+            self._register_nodes_from_worker_schemas(notification.library_name, notification.node_schemas)
+        # Unblock any code awaiting this library's worker_ready event.
+        if library_info.worker_ready is not None:
+            library_info.worker_ready.set()
 
     def get_worker_for_library(self, library_name: str | None) -> tuple[str, str] | None:
         """Return (worker_engine_id, worker_request_topic) for the worker serving library_name, or None.
@@ -498,6 +513,8 @@ class LibraryManager:
         for library_info in self._library_file_path_to_info.values():
             if library_info.requires_worker and library_info.library_name and not self._is_worker:
                 library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_PENDING
+                # Create (or reset) the worker_ready event for this spawn.
+                library_info.worker_ready = asyncio.Event()
                 await GriptapeNodes.ahandle_request(StartWorkerRequest(library_name=library_info.library_name))
 
     def on_worker_evicted(self, worker_engine_id: str, library_name: str | None) -> None:
@@ -515,6 +532,9 @@ class LibraryManager:
         if library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.WORKER_PENDING:
             library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
             library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+            # Unblock any code awaiting this library's worker_ready event.
+            if library_info.worker_ready is not None:
+                library_info.worker_ready.set()
             logger.warning(
                 "Worker '%s' evicted before confirming load of library '%s'; library marked as FAILURE.",
                 worker_engine_id,
@@ -549,6 +569,7 @@ class LibraryManager:
             LibraryManager.LibraryFitness.FLAWED: "[yellow]![/yellow]",
             LibraryManager.LibraryFitness.UNUSABLE: "[red]X[/red]",
             LibraryManager.LibraryFitness.MISSING: "[red]?[/red]",
+            LibraryManager.LibraryFitness.NOT_EVALUATED: "[cyan]...[/cyan]",
         }
 
         # Status text mapping (colored)
@@ -557,6 +578,7 @@ class LibraryManager:
             LibraryManager.LibraryFitness.FLAWED: "[yellow](FLAWED)[/yellow]",
             LibraryManager.LibraryFitness.UNUSABLE: "[red](UNUSABLE)[/red]",
             LibraryManager.LibraryFitness.MISSING: "[red](MISSING)[/red]",
+            LibraryManager.LibraryFitness.NOT_EVALUATED: "[cyan](PENDING)[/cyan]",
         }
 
         # Add rows for each library info
@@ -1247,7 +1269,7 @@ class LibraryManager:
         )
         return result
 
-    async def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: PLR0911 (result determination needs returns)
+    async def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: PLR0911 (result determination needs multiple returns)
         """Register a library by name or path, progressing through all lifecycle phases.
 
         Supports loading by library_name OR file_path (mutually exclusive), with optional
@@ -1306,6 +1328,18 @@ class LibraryManager:
             case LibraryManager.LibraryFitness.UNUSABLE:
                 details = f"Attempted to load Library JSON file from '{file_path}'. Failed because no nodes were loaded. Check the log for more details."
                 return RegisterLibraryFromFileResultFailure(result_details=details)
+            case LibraryManager.LibraryFitness.NOT_EVALUATED:
+                # Worker-delegated libraries on the orchestrator: node imports are skipped
+                # and fitness will be updated once the worker reports back via
+                # LibraryLoadedNotification. Workers are started asynchronously (either by
+                # AppStartSessionRequest or by _maybe_start_workers_for_existing_session)
+                # so we must NOT block here -- doing so would prevent the orchestrator from
+                # sending heartbeats to the worker process, causing it to self-terminate.
+                details = f"Successfully registered Library '{library_info.library_name}' from '{file_path}'. Node loading is delegated to a worker process."
+                return RegisterLibraryFromFileResultSuccess(
+                    library_name=library_info.library_name,
+                    result_details=ResultDetails(message=details, level=logging.INFO),
+                )
             case _:
                 details = f"Attempted to load Library JSON file from '{file_path}'. Failed because an unknown/unexpected fitness '{library_info.fitness}' was returned."
                 return RegisterLibraryFromFileResultFailure(result_details=details)
@@ -1656,36 +1690,42 @@ class LibraryManager:
                                         logger.error(details)
                                         continue
 
-                        # Attempt to load nodes from the library (modifies library_info in place)
-                        await asyncio.to_thread(
-                            self._attempt_load_nodes_from_library,
-                            library_data=library_data,
-                            library=library,
-                            base_dir=base_dir,
-                            library_info=library_info,
-                        )
-                        self._library_file_path_to_info[file_path] = library_info
-
-                        # _attempt_load_nodes_from_library sets lifecycle_state = LOADED on success.
-                        # For worker-delegated libraries on the orchestrator, override to WORKER_PENDING --
-                        # the library is registered but the worker has not yet confirmed successful dep
-                        # install and node import.  The actual worker spawn is deferred to
-                        # start_workers(), called when a session becomes available.
+                        # For worker-delegated libraries on the orchestrator, skip node module
+                        # imports entirely -- importing them would pull heavy deps (torch, triton,
+                        # etc.) into the orchestrator process.  The library is already registered
+                        # in LibraryRegistry (for the editor and workflow loading); the worker
+                        # process handles node loading and will report fitness via
+                        # LibraryLoadedNotification once it finishes.
                         if library_info.requires_worker and not self._is_worker:
+                            library_info.fitness = LibraryManager.LibraryFitness.NOT_EVALUATED
                             library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_PENDING
+                            self._library_file_path_to_info[file_path] = library_info
+                        else:
+                            # Attempt to load nodes from the library (modifies library_info in place)
+                            await asyncio.to_thread(
+                                self._attempt_load_nodes_from_library,
+                                library_data=library_data,
+                                library=library,
+                                base_dir=base_dir,
+                                library_info=library_info,
+                            )
+                            self._library_file_path_to_info[file_path] = library_info
 
                         # On a worker process, broadcast the notification so app.py can relay it
-                        # to the orchestrator over MQTT.
+                        # to the orchestrator over MQTT. Include serialized node schemas so the
+                        # orchestrator can register stub classes without importing the library.
                         if (
                             self._is_worker
                             and library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.LOADED
                             and library_info.library_name
                         ):
+                            node_schemas = self._serialize_library_node_schemas(library_info.library_name)
                             await GriptapeNodes.abroadcast_app_event(
                                 LibraryLoadedNotification(
                                     library_name=library_info.library_name,
                                     fitness=library_info.fitness,
                                     problem_details=self.collate_problems_for_lib_info(library_info),
+                                    node_schemas=node_schemas,
                                 )
                             )
                     else:
@@ -2543,7 +2583,10 @@ class LibraryManager:
             )
 
     async def load_all_libraries_from_config(self, target_library_names: list[str] | None = None) -> None:
-        self._libraries_loading_complete.clear()
+        # Recreate the event bound to the current event loop. Calling .clear() on an event
+        # created by a previous asyncio.run() call raises RuntimeError when awaited from
+        # the new loop (asyncio.Event objects are bound to the loop they were created on).
+        self._libraries_loading_complete = asyncio.Event()
 
         # Discover all available libraries (config + sandbox)
         discover_result = self.discover_libraries_request(DiscoverLibrariesRequest())
@@ -2580,15 +2623,10 @@ class LibraryManager:
 
             await self._load_and_track_library(lib_path, current_library_index, total_libraries)
 
-        # Print 'em all pretty — skip for targeted worker loads.
-        if target_library_names is None:
-            self.print_library_load_status()
-
-        # Remove any missing libraries AFTER we've printed them for the user.
+        # Remove any missing libraries AFTER we've loaded them for the user.
         user_libraries_section = LIBRARIES_TO_REGISTER_KEY
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
-        # Mark libraries loading as complete
         self._libraries_loading_complete.set()
 
     async def _ensure_libraries_from_config(self) -> None:
@@ -2737,39 +2775,30 @@ class LibraryManager:
         self._target_library_names = payload.libraries_to_register if payload.is_worker else None
         await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
 
+        # When the orchestrator restarts into an already-active session, the GUI will not
+        # send AppStartSessionRequest again, so workers must be started here.
+        await self._maybe_start_workers_for_existing_session()
+
+        # Wait for workers only when restarting into an existing session (workers were just
+        # spawned above). On a fresh boot there is no session yet -- workers start later
+        # when AppStartSessionRequest arrives and will finish before the user can open a
+        # workflow. Awaiting here on fresh boot would wait 120s for workers that haven't
+        # started yet.
+        if GriptapeNodes.get_session_id():
+            await self._await_pending_workers()
+
+        # Print library status after workers have had a chance to report back so worker
+        # libraries show their real fitness rather than NOT_EVALUATED.
+        if not self._is_worker:
+            self.print_library_load_status()
+
         # Register all secrets now that libraries are loaded and settings are merged
         GriptapeNodes.SecretsManager().register_all_secrets()
 
         # We have to load all libraries before we attempt to load workflows.
 
-        # Load workflows specified by libraries.
-        library_workflow_files_to_register = []
-        library_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
-        if isinstance(library_result, ListRegisteredLibrariesResultSuccess):
-            for library_name in library_result.libraries:
-                try:
-                    library = LibraryRegistry.get_library(name=library_name)
-                except KeyError:
-                    # Skip it.
-                    logger.error("Could not find library '%s'", library_name)
-                    continue
-                library_data = library.get_library_data()
-                if library_data.workflows:
-                    # Prepend the library's JSON path to the list, as the workflows are stored
-                    # relative to it.
-                    # Find the library info with that name.
-                    for library_info in self._library_file_path_to_info.values():
-                        if library_info.library_name == library_name:
-                            library_path = Path(library_info.library_path)
-                            base_dir = library_path.parent.absolute()
-                            # Add the directory to the Python path to allow for relative imports.
-                            sys.path.insert(0, str(base_dir))
-                            for workflow in library_data.workflows:
-                                final_workflow_path = base_dir / workflow
-                                library_workflow_files_to_register.append(str(final_workflow_path))
-                            # WE DONE HERE (at least, for this library).
-                            break
         # This will (attempts to) load all workflows specified by LIBRARIES. User workflows are loaded later.
+        library_workflow_files_to_register = await self._collect_library_workflow_files()
         GriptapeNodes.WorkflowManager().register_list_of_workflows(library_workflow_files_to_register)
 
         # Go tell the Workflow Manager that it's turn is now.
@@ -2778,10 +2807,35 @@ class LibraryManager:
         # Only print the engine ready banner for the orchestrator — not for dedicated library workers.
         self._maybe_print_engine_ready_banner(is_worker=self._is_worker)
 
-        # When the orchestrator restarts into an already-active session, the GUI will not
-        # send AppStartSessionRequest again, so workers must be started here rather than
-        # waiting for that event.
-        await self._maybe_start_workers_for_existing_session()
+    async def _collect_library_workflow_files(self) -> list[str]:
+        """Collect workflow file paths declared by all registered libraries.
+
+        Returns absolute paths to workflow files, adding each library's base directory
+        to sys.path so relative imports work when the workflow is loaded.
+        """
+        workflow_files: list[str] = []
+        library_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
+        if not isinstance(library_result, ListRegisteredLibrariesResultSuccess):
+            return workflow_files
+        for library_name in library_result.libraries:
+            try:
+                library = LibraryRegistry.get_library(name=library_name)
+            except KeyError:
+                logger.error("Could not find library '%s'", library_name)
+                continue
+            library_data = library.get_library_data()
+            if not library_data.workflows:
+                continue
+            # Workflows are stored relative to the library JSON; find the library's path.
+            for library_info in self._library_file_path_to_info.values():
+                if library_info.library_name == library_name:
+                    library_path = Path(library_info.library_path)
+                    base_dir = library_path.parent.absolute()
+                    # Add the directory to the Python path to allow for relative imports.
+                    sys.path.insert(0, str(base_dir))
+                    workflow_files.extend(str(base_dir / workflow) for workflow in library_data.workflows)
+                    break
+        return workflow_files
 
     async def _maybe_start_workers_for_existing_session(self) -> None:
         """Start workers if the orchestrator restarted into an already-active session.
@@ -2796,6 +2850,138 @@ class LibraryManager:
         if worker_manager is not None:
             worker_manager.set_session_ready()
             await self.start_workers()
+
+    async def _await_pending_workers(self, wait_seconds: float = 120) -> None:
+        """Wait for all WORKER_PENDING libraries to report back via LibraryLoadedNotification.
+
+        On timeout, marks remaining pending libraries as FAILURE/UNUSABLE so the rest of
+        initialization can continue. Per-library worker_ready events are set by
+        _on_library_loaded_notification when the worker sends its LibraryLoadedNotification.
+        """
+        pending_events = [
+            info.worker_ready
+            for info in self._library_file_path_to_info.values()
+            if info.worker_ready is not None and not info.worker_ready.is_set()
+        ]
+        if not pending_events:
+            return
+
+        timed_out = False
+        try:
+            with anyio.fail_after(wait_seconds):
+                await asyncio.gather(*[e.wait() for e in pending_events])
+        except TimeoutError:
+            timed_out = True
+
+        if timed_out:
+            for info in self._library_file_path_to_info.values():
+                if (
+                    info.worker_ready is not None
+                    and not info.worker_ready.is_set()
+                    and info.lifecycle_state == LibraryManager.LibraryLifecycleState.WORKER_PENDING
+                ):
+                    info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
+                    info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+                    info.worker_ready.set()
+                    logger.warning(
+                        "Worker for library '%s' timed out after %s seconds; marked as FAILURE.",
+                        info.library_name,
+                        wait_seconds,
+                    )
+
+    def _register_nodes_from_worker_schemas(self, library_name: str, node_schemas: list[WorkerNodeSchema]) -> None:
+        """Register stub node classes on the orchestrator from worker-reported schemas.
+
+        Creates a minimal dynamic class for each node type so that LibraryRegistry can
+        instantiate nodes (for workflow loading, sidebar display, etc.) without importing
+        the worker library's Python modules.
+        """
+        try:
+            library = LibraryRegistry.get_library(library_name)
+        except KeyError:
+            logger.warning("Cannot register worker node schemas: library '%s' not found in registry.", library_name)
+            return
+
+        # Build a lookup from class_name -> NodeMetadata using the library JSON schema.
+        library_data = library.get_library_data()
+        metadata_by_class: dict[str, NodeMetadata] = {
+            node_def.class_name: node_def.metadata for node_def in library_data.nodes
+        }
+
+        for node_schema in node_schemas:
+            metadata = metadata_by_class.get(node_schema.class_name)
+            if metadata is None:
+                logger.warning(
+                    "Worker reported node '%s' for library '%s' but it has no metadata entry; skipping.",
+                    node_schema.class_name,
+                    library_name,
+                )
+                continue
+
+            stub_class = self._make_worker_stub_class(node_schema.class_name, node_schema.parameters)
+            library_problem = library.register_new_node_type(stub_class, metadata=metadata)
+            if library_problem is not None:
+                logger.warning(
+                    "Problem registering worker stub for node '%s': %s",
+                    node_schema.class_name,
+                    library_problem,
+                )
+
+        # Register widgets declared by the library.
+        if library_data.widgets:
+            for widget_def in library_data.widgets:
+                widget_problem = LibraryRegistry.register_widget_from_library(library_name, widget_def.name)
+                if widget_problem is not None:
+                    logger.warning(
+                        "Problem registering widget '%s' from library '%s': %s",
+                        widget_def.name,
+                        library_name,
+                        widget_problem,
+                    )
+
+    @staticmethod
+    def _make_worker_stub_class(class_name: str, param_schemas: list[WorkerParameterSchema]) -> type[BaseNode]:
+        """Create a dynamic BaseNode subclass from worker-reported parameter schemas.
+
+        The stub registers the correct parameters so the GUI can display them and
+        workflow loading can restore saved values. Execution always runs on the worker,
+        so process() is a no-op.
+        """
+
+        def stub_init(self: BaseNode, name: str, metadata: dict | None = None) -> None:  # type: ignore[override]
+            BaseNode.__init__(self, name=name, metadata=metadata)
+            for schema in param_schemas:
+                allowed_modes = set()
+                if schema.mode_allowed_input:
+                    allowed_modes.add(ParameterMode.INPUT)
+                if schema.mode_allowed_property:
+                    allowed_modes.add(ParameterMode.PROPERTY)
+                if schema.mode_allowed_output:
+                    allowed_modes.add(ParameterMode.OUTPUT)
+                self.add_parameter(
+                    Parameter(
+                        name=schema.name,
+                        default_value=schema.default_value,
+                        type=schema.type or None,
+                        input_types=schema.input_types or None,
+                        output_type=schema.output_type or None,
+                        tooltip=schema.tooltip,
+                        tooltip_as_input=schema.tooltip_as_input,
+                        tooltip_as_property=schema.tooltip_as_property,
+                        tooltip_as_output=schema.tooltip_as_output,
+                        allowed_modes=allowed_modes,
+                        settable=schema.settable,
+                        serializable=schema.serializable,
+                        user_defined=schema.user_defined,
+                        private=schema.private,
+                        ui_options=schema.ui_options,
+                    )
+                )
+
+        def stub_process(_: BaseNode) -> None:
+            pass
+
+        return type(class_name, (BaseNode,), {"__init__": stub_init, "process": stub_process})
 
     def _maybe_print_engine_ready_banner(self, *, is_worker: bool) -> None:
         if is_worker:
@@ -2834,18 +3020,23 @@ class LibraryManager:
         Responds to:
         - libraries_to_register changes: Full library reload
         """
-        if event.key == LIBRARIES_TO_REGISTER_KEY:
+        if event.key == LIBRARIES_TO_REGISTER_KEY and event.old_value != event.new_value:
+            if self._is_worker:
+                # Workers only load their designated library once; they should not reload
+                # themselves in response to config changes.
+                return
+
             logger.info("Config change detected for %s, triggering library reload", event.key)
 
-            # Use existing ReloadAllLibrariesRequest instead of manual reload
-            # This clears workflow state and does a full reload (safer when libraries change)
-            reload_request = ReloadAllLibrariesRequest()
-            reload_result = await GriptapeNodes.ahandle_request(reload_request)
-
-            if reload_result.succeeded():
-                logger.info("Successfully reloaded libraries after %s change", event.key)
-            else:
-                logger.error("Failed to reload libraries after %s change: %s", event.key, reload_result.result_details)
+            # Enqueue the reload as a new EventRequest on loop A rather than awaiting it inline.
+            # Awaiting inline runs via broadcast_app_event's ThreadRunner, which blocks loop A's
+            # thread entirely. While blocked, loop A cannot process worker notifications
+            # (_on_library_loaded_notification), so _await_pending_workers inside
+            # reload_libraries_request never unblocks and times out after 120 seconds.
+            # Enqueueing here returns immediately; loop A processes the reload normally and
+            # remains free to handle worker notifications concurrently.
+            reload_request = ReloadAllLibrariesRequest(broadcast_result=False)
+            GriptapeNodes.EventManager().put_event(EventRequest(request=reload_request))
 
     def _load_advanced_library_module(
         self,
@@ -3037,6 +3228,68 @@ class LibraryManager:
 
         # Update lifecycle state to LOADED
         library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
+
+    def _serialize_library_node_schemas(self, library_name: str) -> list[WorkerNodeSchema]:
+        """Serialize node parameter schemas for a loaded library.
+
+        Called on the worker process after library nodes are loaded. Probes each
+        registered node type to extract its parameter layout, so the orchestrator
+        can create stub classes without importing the library's Python modules.
+        """
+        try:
+            library = LibraryRegistry.get_library(library_name)
+        except KeyError:
+            logger.warning("Cannot serialize schemas: library '%s' not found in registry.", library_name)
+            return []
+
+        node_schemas: list[WorkerNodeSchema] = []
+        for class_name in library.get_registered_nodes():
+            node_class = library._node_types.get(class_name)
+            if node_class is None:
+                continue
+            try:
+                probe = node_class(name="__schema_probe__")
+            except Exception:
+                logger.debug("Could not probe node class '%s' for schema serialization.", class_name, exc_info=True)
+                continue
+
+            param_schemas: list[WorkerParameterSchema] = []
+            for param in probe.parameters:
+                allowed_modes = param.allowed_modes
+                param_schemas.append(
+                    WorkerParameterSchema(
+                        name=param.name,
+                        type=param._type or "",
+                        input_types=list(param._input_types or []),
+                        output_type=param._output_type or "",
+                        default_value=self._try_json_serialize(param.default_value),
+                        tooltip=param.tooltip,
+                        tooltip_as_input=param.tooltip_as_input,
+                        tooltip_as_property=param.tooltip_as_property,
+                        tooltip_as_output=param.tooltip_as_output,
+                        mode_allowed_input=ParameterMode.INPUT in allowed_modes,
+                        mode_allowed_property=ParameterMode.PROPERTY in allowed_modes,
+                        mode_allowed_output=ParameterMode.OUTPUT in allowed_modes,
+                        user_defined=param.user_defined,
+                        settable=param.settable,
+                        serializable=param.serializable,
+                        private=param.private,
+                        ui_options=self._try_json_serialize(param.ui_options) if param.ui_options else None,
+                    )
+                )
+            node_schemas.append(WorkerNodeSchema(class_name=class_name, parameters=param_schemas))
+
+        return node_schemas
+
+    @staticmethod
+    def _try_json_serialize(value: Any) -> Any:
+        """Return value if it is JSON-serializable, otherwise return None."""
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError):
+            return None
+        else:
+            return value
 
     async def _attempt_generate_sandbox_library_from_schema(  # noqa: C901
         self,
@@ -3341,6 +3594,14 @@ class LibraryManager:
 
         # Re-spawn workers for libraries that require them; reset_workers terminated them above.
         await self._maybe_start_workers_for_existing_session()
+
+        # Wait for worker-delegated libraries to finish loading before returning. The GUI
+        # opens the current workflow immediately on receiving the result, so all node types
+        # must be registered before we respond.
+        await self._await_pending_workers()
+
+        # Print after workers have reported back so their real fitness is shown.
+        self.print_library_load_status()
 
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."

@@ -151,6 +151,41 @@ class EngineInitializationProgress(AppPayload):
 
 
 @dataclass
+class WorkerParameterSchema:
+    """Serialized parameter from a worker-loaded node.
+
+    Contains the fields needed to reconstruct a Parameter on the orchestrator
+    without importing the worker library's Python modules.
+    """
+
+    name: str
+    type: str
+    input_types: list[str]
+    output_type: str
+    default_value: Any
+    tooltip: Any
+    tooltip_as_input: Any
+    tooltip_as_property: Any
+    tooltip_as_output: Any
+    mode_allowed_input: bool
+    mode_allowed_property: bool
+    mode_allowed_output: bool
+    user_defined: bool
+    settable: bool
+    serializable: bool
+    private: bool
+    ui_options: dict | None
+
+
+@dataclass
+class WorkerNodeSchema:
+    """Serialized node from a worker-loaded library."""
+
+    class_name: str
+    parameters: list[WorkerParameterSchema]
+
+
+@dataclass
 @PayloadRegistry.register
 class LibraryLoadedNotification(AppPayload):
     """Notification that a library has finished loading, including its fitness outcome.
@@ -162,11 +197,14 @@ class LibraryLoadedNotification(AppPayload):
         library_name: Name of the library that was loaded.
         fitness: Final fitness value (LibraryManager.LibraryFitness string).
         problem_details: Human-readable summary of problems, or None if there are none.
+        node_schemas: Serialized node/parameter schemas from the worker process, or None
+            if this notification was not produced by a worker.
     """
 
     library_name: str
     fitness: str
     problem_details: str | None = None
+    node_schemas: list[WorkerNodeSchema] | None = None
 
 
 @dataclass

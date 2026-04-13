@@ -44,6 +44,11 @@ class WorkerManager:
     DEFAULT_HEARTBEAT_INTERVAL_S: float = 5.0
     DEFAULT_HEARTBEAT_TIMEOUT_S: float = 15.0
     DEFAULT_NODE_EXECUTION_TIMEOUT_S: float = 300.0
+    # How long after spawn to wait before enforcing heartbeat timeout.
+    # Workers install venv deps and import modules before receiving heartbeats;
+    # this matches the _await_pending_workers() ceiling so a worker never kills
+    # itself before the orchestrator gives up waiting for it.
+    DEFAULT_HEARTBEAT_STARTUP_GRACE_S: float = 120.0
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
 
@@ -100,6 +105,7 @@ class WorkerManager:
         self.NODE_EXECUTION_TIMEOUT_S: float = config.get_config_value(
             WORKER_NODE_EXECUTION_TIMEOUT_KEY, default=WorkerManager.DEFAULT_NODE_EXECUTION_TIMEOUT_S, cast_type=float
         )
+        self.HEARTBEAT_STARTUP_GRACE_S: float = WorkerManager.DEFAULT_HEARTBEAT_STARTUP_GRACE_S
 
         event_manager.assign_manager_to_request_type(
             worker_events.RegisterWorkerRequest, self.handle_register_worker_request
@@ -163,7 +169,11 @@ class WorkerManager:
         await self._unsubscribe_from_topic(response_topic)
         # Remove the managed process entry so a new worker can be spawned for this key.
         if worker_key:
-            self._managed_worker_processes.pop(worker_key, None)
+            removed = self._managed_worker_processes.pop(worker_key, None)
+            if removed is not None:
+                logger.debug(
+                    "Worker unregistered: removed managed process for key '%s' (pid %s)", worker_key, removed.pid
+                )
         logger.info("Worker unregistered: %s", wid)
         return worker_events.UnregisterWorkerResultSuccess(worker_engine_id=wid, result_details="Worker unregistered.")
 
@@ -192,8 +202,17 @@ class WorkerManager:
                 await self._ws_outgoing_queue.put(WebSocketMessage("EventRequest", hb.json(), request_topic))
 
     async def worker_heartbeat_monitor(self) -> None:
-        """Shut down the worker if orchestrator heartbeats stop arriving."""
-        self._worker_heartbeat_last_received_at = time.monotonic()  # seed to avoid immediate timeout
+        """Shut down the worker if orchestrator heartbeats stop arriving.
+
+        A startup grace period is added to the initial seed so the worker does not
+        time out during library loading (venv creation, pip install, module import).
+        Once the first heartbeat arrives the timer resets to normal operation.
+        """
+        # Seed with extra time so the first timeout cannot fire until after the
+        # startup grace period.  Library loading can take tens of seconds; we do
+        # not want the worker to kill itself before the orchestrator even has a
+        # chance to start sending challenges.
+        self._worker_heartbeat_last_received_at = time.monotonic() + self.HEARTBEAT_STARTUP_GRACE_S
         while True:
             await asyncio.sleep(self.HEARTBEAT_INTERVAL_S)
             elapsed = time.monotonic() - self._worker_heartbeat_last_received_at
@@ -259,12 +278,17 @@ class WorkerManager:
         Used before a library reload so that freshly spawned workers start with a
         clean slate and there are no stale entries in the routing tables.
         """
+        logger.debug(
+            "reset_workers called: %d managed process(es) tracked (%s)",
+            len(self._managed_worker_processes),
+            list(self._managed_worker_processes.keys()),
+        )
         for library_name, proc in list(self._managed_worker_processes.items()):
             try:
                 proc.terminate()
-                logger.debug("Terminated worker process for library '%s' (pid %s)", library_name, proc.pid)
+                logger.info("Terminated worker for key '%s' (pid %s)", library_name, proc.pid)
             except ProcessLookupError:
-                logger.debug("Worker process for library '%s' already exited", library_name)
+                logger.debug("Worker for key '%s' already exited before termination", library_name)
         self._managed_worker_processes.clear()
         self._registered_workers.clear()
         self._keyed_workers.clear()
@@ -312,6 +336,7 @@ class WorkerManager:
             proc = self._managed_worker_processes.pop(lib_name, None)
             if proc is not None:
                 proc.terminate()
+                logger.info("Eviction: terminated managed process for key '%s' (pid %s)", lib_name, proc.pid)
         # Cancel any requests that were awaiting a result from this worker.
         await self._request_client.cancel_requests_by_tag(worker_engine_id)
 

@@ -293,9 +293,14 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     # Relay LibraryLoadedNotification events to the orchestrator over MQTT.
     # LibraryManager broadcasts these when a library finishes loading on this worker;
     # publishing them to the session request topic lets the orchestrator update its state.
+    #
+    # IMPORTANT: abroadcast_app_event is called from the main event loop (loop A), but
+    # client and its WebSocket are bound to the WebSocket event loop (loop B). Calling
+    # client.publish() directly from loop A would silently fail or hang. Use _send_message()
+    # instead -- it enqueues via run_coroutine_threadsafe and is safe to call from loop A.
     async def _relay_library_loaded(notification: app_events.LibraryLoadedNotification) -> None:
         relay = AppEvent(payload=notification)
-        await client.publish("AppEvent", json.loads(relay.json()), f"sessions/{worker_session_id}/request")
+        await _send_message("AppEvent", relay.json(), f"sessions/{worker_session_id}/request")
 
     griptape_nodes.EventManager().add_listener_to_app_event(app_events.LibraryLoadedNotification, _relay_library_loaded)
 
