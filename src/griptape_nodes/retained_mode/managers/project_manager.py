@@ -30,6 +30,10 @@ from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.files.path_utils import resolve_file_path
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+from griptape_nodes.retained_mode.events.library_events import (
+    ReloadAllLibrariesRequest,
+    ReloadAllLibrariesResultFailure,
+)
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
@@ -63,20 +67,20 @@ from griptape_nodes.retained_mode.events.project_events import (
     LoadProjectTemplateResultSuccess,
     PathResolutionFailureReason,
     ProjectTemplateInfo,
-    RefreshWorkspaceWorkflowsRequest,
-    RefreshWorkspaceWorkflowsResultFailure,
-    RefreshWorkspaceWorkflowsResultSuccess,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
     SaveProjectTemplateResultSuccess,
     SetCurrentProjectRequest,
     SetCurrentProjectResultSuccess,
+    SwitchCurrentProjectRequest,
+    SwitchCurrentProjectResultFailure,
+    SwitchCurrentProjectResultSuccess,
     UnregisterProjectTemplateRequest,
     UnregisterProjectTemplateResultFailure,
     UnregisterProjectTemplateResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY, WORKFLOWS_TO_REGISTER_KEY
+from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -204,6 +208,9 @@ class ProjectManager:
         event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
         event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
         event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
+        event_manager.assign_manager_to_request_type(
+            SwitchCurrentProjectRequest, self.on_switch_current_project_request
+        )
         event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
         event_manager.assign_manager_to_request_type(SaveProjectTemplateRequest, self.on_save_project_template_request)
         event_manager.assign_manager_to_request_type(
@@ -218,9 +225,6 @@ class ProjectManager:
         )
         event_manager.assign_manager_to_request_type(
             UnregisterProjectTemplateRequest, self.on_unregister_project_template_request
-        )
-        event_manager.assign_manager_to_request_type(
-            RefreshWorkspaceWorkflowsRequest, self.on_refresh_workspace_workflows_request
         )
 
         # Register app initialization listener
@@ -609,6 +613,35 @@ class ProjectManager:
             result_details=f"Successfully set current project. ID: {request.project_id}",
         )
 
+    async def on_switch_current_project_request(
+        self, request: SwitchCurrentProjectRequest
+    ) -> SwitchCurrentProjectResultSuccess | SwitchCurrentProjectResultFailure:
+        """Switch the active project and reload the engine.
+
+        Step 1: Update config layers (project config, workspace override, workspace config).
+        Step 2: Reload libraries (clear object state, reload Python modules/node types).
+        Step 3: Re-register workflows from config and the new workspace.
+        """
+        set_result = self.on_set_current_project_request(SetCurrentProjectRequest(project_id=request.project_id))
+        if set_result.failed():
+            return SwitchCurrentProjectResultFailure(
+                result_details=f"Attempted to switch to project '{request.project_id}'. "
+                f"Failed when setting project: {set_result.result_details}",
+            )
+
+        reload_result = await GriptapeNodes.ahandle_request(ReloadAllLibrariesRequest())
+        if isinstance(reload_result, ReloadAllLibrariesResultFailure):
+            return SwitchCurrentProjectResultFailure(
+                result_details=f"Attempted to switch to project '{request.project_id}'. "
+                f"Project set but library reload failed: {reload_result.result_details}",
+            )
+
+        GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
+
+        return SwitchCurrentProjectResultSuccess(
+            result_details=f"Successfully switched to project '{request.project_id}' and reloaded engine.",
+        )
+
     def on_get_current_project_request(
         self, _request: GetCurrentProjectRequest
     ) -> GetCurrentProjectResultSuccess | GetCurrentProjectResultFailure:
@@ -712,30 +745,6 @@ class ProjectManager:
 
         return UnregisterProjectTemplateResultSuccess(
             result_details=f"Successfully unregistered project template '{project_id}'",
-        )
-
-    def on_refresh_workspace_workflows_request(
-        self, _request: RefreshWorkspaceWorkflowsRequest
-    ) -> RefreshWorkspaceWorkflowsResultSuccess | RefreshWorkspaceWorkflowsResultFailure:
-        """Clear stale workspace workflows and repopulate, mirroring engine startup.
-
-        Removes all non-library workflows from the registry, then re-registers from
-        both the persisted config list and the current workspace directory — the same
-        two sources used by on_libraries_initialization_complete at startup.
-        """
-        if self._current_project_id is None:
-            return RefreshWorkspaceWorkflowsResultFailure(
-                result_details="Attempted to refresh workspace workflows. Failed because no current project is set.",
-            )
-
-        WorkflowRegistry.clear_workspace_workflows()
-
-        config_workflows: list[str] = self._config_manager.get_config_value(WORKFLOWS_TO_REGISTER_KEY, default=[])
-        workspace_path = self._config_manager.workspace_path
-        GriptapeNodes.WorkflowManager().register_list_of_workflows([*config_workflows, str(workspace_path)])
-
-        return RefreshWorkspaceWorkflowsResultSuccess(
-            result_details=f"Successfully refreshed workspace workflows from '{workspace_path}'",
         )
 
     def on_match_path_against_macro_request(

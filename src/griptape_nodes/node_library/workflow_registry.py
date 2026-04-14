@@ -197,12 +197,11 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         return instance._workflows.pop(name)
 
     @classmethod
-    def clear_workspace_workflows(cls) -> None:
+    def clear_user_workflows(cls) -> None:
         """Remove all non-library workflows from the registry.
 
         Library-provided workflows (is_griptape_provided=True) are preserved.
-        Workspace-scanned and user-configured workflows are removed so that
-        a subsequent workspace scan can populate the registry from the new workspace.
+        Called before re-registering workflows so that a workspace change takes effect cleanly.
         """
         instance = cls()
         keys_to_remove = [

@@ -12,6 +12,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -273,6 +274,33 @@ class SetCurrentProjectRequest(RequestPayload):
 @PayloadRegistry.register
 class SetCurrentProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Current project set successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SwitchCurrentProjectRequest(RequestPayload):
+    """Switch the active project and reload the engine to reflect the new context.
+
+    Combines SetCurrentProjectRequest (config layer switch) with
+    ReloadAllLibrariesRequest (clear state, reload libraries, re-register workflows).
+    The frontend only needs to handle save/restore of the active workflow around this call.
+
+    Results: SwitchCurrentProjectResultSuccess | SwitchCurrentProjectResultFailure
+    """
+
+    project_id: ProjectID
+
+
+@dataclass
+@PayloadRegistry.register
+class SwitchCurrentProjectResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Project switched and engine reloaded successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SwitchCurrentProjectResultFailure(ResultPayloadFailure):
+    """Project switch failed."""
 
 
 @dataclass
@@ -576,27 +604,3 @@ class GetAllSituationsForProjectResultSuccess(WorkflowNotAlteredMixin, ResultPay
 @PayloadRegistry.register
 class GetAllSituationsForProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Failure result when cannot get situations."""
-
-
-@dataclass
-@PayloadRegistry.register
-class RefreshWorkspaceWorkflowsRequest(RequestPayload):
-    """Clear stale workspace workflows and rescan the current project's workspace.
-
-    Use when: After switching the active project, to ensure listAllWorkflows
-    returns only workflows from the new project's workspace directory.
-
-    Results: RefreshWorkspaceWorkflowsResultSuccess | RefreshWorkspaceWorkflowsResultFailure
-    """
-
-
-@dataclass
-@PayloadRegistry.register
-class RefreshWorkspaceWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Workspace workflows refreshed successfully."""
-
-
-@dataclass
-@PayloadRegistry.register
-class RefreshWorkspaceWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Workspace workflows refresh failed (no current project set)."""
