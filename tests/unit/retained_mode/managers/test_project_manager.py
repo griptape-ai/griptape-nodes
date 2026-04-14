@@ -1361,7 +1361,8 @@ situations:
         pm._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
         pm._current_project_id = SYSTEM_DEFAULTS_KEY
 
-    def test_load_workspace_project_not_present(self, pm: ProjectManager, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_load_workspace_project_not_present(self, pm: ProjectManager, tmp_path: Path) -> None:
         """No project file in workspace leaves system defaults as current project."""
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
@@ -1376,11 +1377,12 @@ situations:
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
 
-        pm._load_workspace_project()
+        await pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
-    def test_load_workspace_project_loads_and_sets_current(self, pm: ProjectManager, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_load_workspace_project_loads_and_sets_current(self, pm: ProjectManager, tmp_path: Path) -> None:
         """Valid griptape-nodes-project.yml is loaded and set as current project."""
         from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
 
@@ -1403,12 +1405,13 @@ situations:
             mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
             mock_file_cls.return_value = mock_file_instance
 
-            pm._load_workspace_project()
+            await pm._load_workspace_project()
 
         assert pm._current_project_id == str(workspace_project_path)
         assert str(workspace_project_path) in pm._successfully_loaded_project_templates
 
-    def test_load_workspace_project_merges_with_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_load_workspace_project_merges_with_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
         """Workspace project merges on top of defaults, preserving unoverridden situations."""
         from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
 
@@ -1431,7 +1434,7 @@ situations:
             mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
             mock_file_cls.return_value = mock_file_instance
 
-            pm._load_workspace_project()
+            await pm._load_workspace_project()
 
         project_info = pm._successfully_loaded_project_templates[str(workspace_project_path)]
         template = project_info.template
@@ -1444,7 +1447,8 @@ situations:
         assert "save_griptape_nodes_preview" in template.situations
         assert "copy_external_file" in template.situations
 
-    def test_load_workspace_project_read_failure_keeps_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_load_workspace_project_read_failure_keeps_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
         """A file read failure leaves system defaults as current project."""
         from griptape_nodes.files.file import FileLoadError
         from griptape_nodes.retained_mode.events.os_events import FileIOFailureReason
@@ -1473,11 +1477,12 @@ situations:
             )
             mock_file_cls.return_value = mock_file_instance
 
-            pm._load_workspace_project()
+            await pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
-    def test_load_workspace_project_invalid_yaml_keeps_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_load_workspace_project_invalid_yaml_keeps_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
         """Invalid YAML in project file leaves system defaults as current project."""
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, WORKSPACE_PROJECT_FILE
 
@@ -1500,11 +1505,12 @@ situations:
             mock_file_instance.read_text.return_value = "not: valid: yaml: ]["
             mock_file_cls.return_value = mock_file_instance
 
-            pm._load_workspace_project()
+            await pm._load_workspace_project()
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
-    def test_load_workspace_project_none_workspace_dir_skips(self, pm: ProjectManager) -> None:
+    @pytest.mark.asyncio
+    async def test_load_workspace_project_none_workspace_dir_skips(self, pm: ProjectManager) -> None:
         """None workspace_directory config value skips loading without error."""
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
@@ -1513,7 +1519,7 @@ situations:
         cast("Mock", pm._config_manager).get_config_value.return_value = None
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
-            pm._load_workspace_project()
+            await pm._load_workspace_project()
 
             mock_file_cls.assert_not_called()
 
@@ -1569,7 +1575,8 @@ situations:
 
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
-    def test_load_workspace_project_uses_project_file_setting(self, pm: ProjectManager, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_load_workspace_project_uses_project_file_setting(self, pm: ProjectManager, tmp_path: Path) -> None:
         """When project_file config is set, that path is used instead of workspace default."""
         self._setup_system_defaults(pm, str(tmp_path))
 
@@ -1592,12 +1599,13 @@ situations:
             mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
             mock_file_cls.return_value = mock_file_instance
 
-            pm._load_workspace_project()
+            await pm._load_workspace_project()
 
         assert pm._current_project_id == str(external_project_path)
         assert str(external_project_path) in pm._successfully_loaded_project_templates
 
-    def test_load_workspace_project_uses_workspace_default_when_no_project_file_setting(
+    @pytest.mark.asyncio
+    async def test_load_workspace_project_uses_workspace_default_when_no_project_file_setting(
         self, pm: ProjectManager, tmp_path: Path
     ) -> None:
         """When project_file config is None, falls back to workspace/griptape-nodes-project.yml."""
@@ -1622,11 +1630,12 @@ situations:
             mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
             mock_file_cls.return_value = mock_file_instance
 
-            pm._load_workspace_project()
+            await pm._load_workspace_project()
 
         assert pm._current_project_id == str(workspace_project_path)
 
-    def test_load_workspace_project_project_file_setting_nonexistent_falls_back_to_workspace(
+    @pytest.mark.asyncio
+    async def test_load_workspace_project_project_file_setting_nonexistent_falls_back_to_workspace(
         self, pm: ProjectManager, tmp_path: Path
     ) -> None:
         """When project_file config points to a nonexistent file, falls back to the workspace default."""
@@ -1654,7 +1663,7 @@ situations:
             mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
             mock_file_cls.return_value = mock_file_instance
 
-            pm._load_workspace_project()
+            await pm._load_workspace_project()
 
         assert pm._current_project_id == str(workspace_project_path)
 
@@ -1739,7 +1748,8 @@ class TestProjectManagerProjectWorkspaces:
         pm._successfully_loaded_project_templates[project_id] = project_info
         return pm
 
-    def test_project_workspaces_overrides_workspace(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_project_workspaces_overrides_workspace(self, tmp_path: Path) -> None:
         """Test that a matching project_workspaces entry calls set_workspace_override with the mapped value."""
         import tempfile
 
@@ -1757,12 +1767,13 @@ class TestProjectManagerProjectWorkspaces:
 
         from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
 
-        pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
         mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
         mock_config.load_workspace_config.assert_called_once()
 
-    def test_project_workspaces_key_resolved_before_lookup(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_project_workspaces_key_resolved_before_lookup(self, tmp_path: Path) -> None:
         """Test that project_workspaces keys are resolved before matching, so symlinks and relative paths work."""
         import tempfile
 
@@ -1781,12 +1792,13 @@ class TestProjectManagerProjectWorkspaces:
 
         from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
 
-        pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
         mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
         mock_config.load_workspace_config.assert_called_once()
 
-    def test_project_workspaces_no_match_falls_back_to_project_dir(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_project_workspaces_no_match_falls_back_to_project_dir(self, tmp_path: Path) -> None:
         """Test that when no project_workspaces entry matches, set_workspace_override is called with project dir."""
         project_file = tmp_path / "project.yml"
         project_file.touch()
@@ -1801,12 +1813,13 @@ class TestProjectManagerProjectWorkspaces:
 
         from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
 
-        pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
         mock_config.set_workspace_override.assert_called_once_with(project_file.parent)
         mock_config.load_workspace_config.assert_called_once()
 
-    def test_project_workspaces_project_adjacent_config_not_overridden_when_set(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_project_workspaces_project_adjacent_config_not_overridden_when_set(self, tmp_path: Path) -> None:
         """Test that set_workspace_override is not called when project-adjacent config sets workspace_directory."""
         project_file = tmp_path / "project.yml"
         project_file.touch()
@@ -1821,10 +1834,155 @@ class TestProjectManagerProjectWorkspaces:
 
         from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
 
-        pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
         mock_config.set_workspace_override.assert_not_called()
         mock_config.load_workspace_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_initialization_incomplete_skips_reload(self, tmp_path: Path) -> None:
+        """When _initialization_complete is False, no library reload or workflow re-registration occurs."""
+        from unittest.mock import AsyncMock, patch
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(project_file, mock_config)
+        # _initialization_complete starts False
+
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = AsyncMock()
+            await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+            mock_gn.ahandle_request.assert_not_called()
+            mock_gn.WorkflowManager.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_initialization_complete_same_workspace_reloads_libraries_only(self, tmp_path: Path) -> None:
+        """When workspace is unchanged, libraries are reloaded but workflows are NOT re-registered."""
+        from unittest.mock import AsyncMock, patch
+
+        from griptape_nodes.retained_mode.events.library_events import (
+            ReloadAllLibrariesResultSuccess,
+        )
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+        # Same workspace before and after
+        mock_config.workspace_path = str(tmp_path)
+
+        pm = self._make_project_manager_with_project(project_file, mock_config)
+        pm._initialization_complete = True
+
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        mock_workflow_manager = Mock()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = AsyncMock(return_value=ReloadAllLibrariesResultSuccess(result_details="ok"))
+            mock_gn.WorkflowManager.return_value = mock_workflow_manager
+
+            result = await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+
+        mock_gn.ahandle_request.assert_called_once()
+        mock_workflow_manager.refresh_workflow_registry.assert_not_called()
+        assert not result.altered_workflow_state
+
+    @pytest.mark.asyncio
+    async def test_initialization_complete_different_workspace_reloads_and_re_registers(self, tmp_path: Path) -> None:
+        """When workspace changes, both library reload and workflow re-registration occur."""
+        import tempfile
+        from unittest.mock import AsyncMock, patch
+
+        from griptape_nodes.retained_mode.events.library_events import (
+            ReloadAllLibrariesResultSuccess,
+        )
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+        new_workspace = Path(tempfile.mkdtemp())
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(project_file, mock_config)
+        pm._initialization_complete = True
+
+        # workspace_path returns different values before and after config changes
+        old_ws = str(tmp_path / "old_workspace")
+        new_ws = str(new_workspace)
+        mock_config.workspace_path = old_ws
+
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        mock_workflow_manager = Mock()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = AsyncMock(return_value=ReloadAllLibrariesResultSuccess(result_details="ok"))
+            mock_gn.WorkflowManager.return_value = mock_workflow_manager
+
+            # Simulate workspace changing after config is applied
+            def side_effect_set_workspace_override(_: object) -> None:
+                mock_config.workspace_path = new_ws
+
+            mock_config.set_workspace_override.side_effect = side_effect_set_workspace_override
+
+            result = await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+
+        mock_gn.ahandle_request.assert_called_once()
+        mock_workflow_manager.refresh_workflow_registry.assert_called_once()
+        assert result.altered_workflow_state
+
+    @pytest.mark.asyncio
+    async def test_library_reload_failure_returns_failure(self, tmp_path: Path) -> None:
+        """When library reload fails, SetCurrentProjectResultFailure is returned."""
+        from unittest.mock import AsyncMock, patch
+
+        from griptape_nodes.retained_mode.events.library_events import (
+            ReloadAllLibrariesResultFailure,
+        )
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+        mock_config.workspace_path = str(tmp_path)
+
+        pm = self._make_project_manager_with_project(project_file, mock_config)
+        pm._initialization_complete = True
+
+        from griptape_nodes.retained_mode.events.project_events import (
+            SetCurrentProjectRequest,
+            SetCurrentProjectResultFailure,
+        )
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = AsyncMock(
+                return_value=ReloadAllLibrariesResultFailure(result_details="reload failed")
+            )
+
+            result = await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+
+        assert isinstance(result, SetCurrentProjectResultFailure)
+        assert "reload failed" in str(result.result_details)
 
 
 class TestRegisterProjectPath:

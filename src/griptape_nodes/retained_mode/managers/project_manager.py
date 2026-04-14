@@ -71,10 +71,8 @@ from griptape_nodes.retained_mode.events.project_events import (
     SaveProjectTemplateResultFailure,
     SaveProjectTemplateResultSuccess,
     SetCurrentProjectRequest,
+    SetCurrentProjectResultFailure,
     SetCurrentProjectResultSuccess,
-    SwitchCurrentProjectRequest,
-    SwitchCurrentProjectResultFailure,
-    SwitchCurrentProjectResultSuccess,
     UnregisterProjectTemplateRequest,
     UnregisterProjectTemplateResultFailure,
     UnregisterProjectTemplateResultSuccess,
@@ -194,6 +192,9 @@ class ProjectManager:
         # Consolidated project information storage
         self._successfully_loaded_project_templates: dict[ProjectID, ProjectInfo] = {}
         self._current_project_id: ProjectID | None = None
+        # Set to True at end of on_app_initialization_complete. Guards workspace switch
+        # logic so expensive reloads don't fire during startup.
+        self._initialization_complete: bool = False
 
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
         # This allows UI to query why a project failed to load
@@ -208,9 +209,6 @@ class ProjectManager:
         event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
         event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
         event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
-        event_manager.assign_manager_to_request_type(
-            SwitchCurrentProjectRequest, self.on_switch_current_project_request
-        )
         event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
         event_manager.assign_manager_to_request_type(SaveProjectTemplateRequest, self.on_save_project_template_request)
         event_manager.assign_manager_to_request_type(
@@ -559,8 +557,48 @@ class ProjectManager:
             result_details=f"Successfully resolved macro path. Result: {resolved_path}",
         )
 
-    def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> SetCurrentProjectResultSuccess:
-        """Set which project user has selected."""
+    def _find_workspace_override(self, project_file_path: Path, project_workspaces: dict[str, str]) -> str | None:
+        """Return the user-configured workspace override for a project file, or None if not mapped."""
+        resolved_project_path = str(project_file_path.resolve())
+        return next(
+            (v for k, v in project_workspaces.items() if str(Path(k).resolve()) == resolved_project_path),
+            None,
+        )
+
+    async def _reload_after_project_switch(
+        self, project_id: str | None, *, workspace_changed: bool
+    ) -> SetCurrentProjectResultFailure | None:
+        """Reload libraries and optionally re-register workflows after a project switch.
+
+        Always reloads libraries (project config can affect env vars and library behavior).
+        Only re-registers workflows when the workspace directory actually changed.
+
+        Returns a failure result if library reload fails, otherwise None.
+        """
+        reload_result = await GriptapeNodes.ahandle_request(ReloadAllLibrariesRequest())
+        if isinstance(reload_result, ReloadAllLibrariesResultFailure):
+            return SetCurrentProjectResultFailure(
+                result_details=f"Attempted to set project '{project_id}'. "
+                f"Config updated but library reload failed: {reload_result.result_details}",
+            )
+        if workspace_changed:
+            GriptapeNodes.WorkflowManager().refresh_workflow_registry()
+        return None
+
+    async def on_set_current_project_request(
+        self, request: SetCurrentProjectRequest
+    ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
+        """Set which project user has selected.
+
+        Captures workspace path before and after config layer changes. If the
+        workspace actually changed and startup is complete, performs an expensive
+        workspace switch: reloads all libraries and re-registers workflows.
+        During startup, LibraryManager handles library loading concurrently, so
+        the workspace switch is skipped.
+        """
+        # Capture workspace BEFORE config changes for comparison after
+        old_workspace = self._config_manager.workspace_path
+
         self._current_project_id = request.project_id
 
         if request.project_id is not None:
@@ -580,11 +618,7 @@ class ProjectManager:
                     config_source="user_config",
                     default={},
                 )
-                resolved_project_path = str(project_file_path.resolve())
-                workspace_override = next(
-                    (v for k, v in project_workspaces.items() if str(Path(k).resolve()) == resolved_project_path),
-                    None,
-                )
+                workspace_override = self._find_workspace_override(project_file_path, project_workspaces)
 
                 if workspace_override is not None:
                     self._config_manager.set_workspace_override(Path(workspace_override))
@@ -604,43 +638,25 @@ class ProjectManager:
                 self._config_manager.set_workspace_override(None)
                 self._config_manager.load_configs()
 
+        new_workspace = self._config_manager.workspace_path
+        workspace_changed = old_workspace != new_workspace
+
+        if self._initialization_complete:
+            failure = await self._reload_after_project_switch(request.project_id, workspace_changed=workspace_changed)
+            if failure is not None:
+                return failure
+
         if request.project_id is None:
             return SetCurrentProjectResultSuccess(
                 result_details="Successfully set current project. No project selected",
             )
 
-        return SetCurrentProjectResultSuccess(
+        result = SetCurrentProjectResultSuccess(
             result_details=f"Successfully set current project. ID: {request.project_id}",
         )
-
-    async def on_switch_current_project_request(
-        self, request: SwitchCurrentProjectRequest
-    ) -> SwitchCurrentProjectResultSuccess | SwitchCurrentProjectResultFailure:
-        """Switch the active project and reload the engine.
-
-        Step 1: Update config layers (project config, workspace override, workspace config).
-        Step 2: Reload libraries (clear object state, reload Python modules/node types).
-        Step 3: Re-register workflows from config and the new workspace.
-        """
-        set_result = self.on_set_current_project_request(SetCurrentProjectRequest(project_id=request.project_id))
-        if set_result.failed():
-            return SwitchCurrentProjectResultFailure(
-                result_details=f"Attempted to switch to project '{request.project_id}'. "
-                f"Failed when setting project: {set_result.result_details}",
-            )
-
-        reload_result = await GriptapeNodes.ahandle_request(ReloadAllLibrariesRequest())
-        if isinstance(reload_result, ReloadAllLibrariesResultFailure):
-            return SwitchCurrentProjectResultFailure(
-                result_details=f"Attempted to switch to project '{request.project_id}'. "
-                f"Project set but library reload failed: {reload_result.result_details}",
-            )
-
-        GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
-
-        return SwitchCurrentProjectResultSuccess(
-            result_details=f"Successfully switched to project '{request.project_id}' and reloaded engine.",
-        )
+        if workspace_changed and self._initialization_complete:
+            result.altered_workflow_state = True
+        return result
 
     def on_get_current_project_request(
         self, _request: GetCurrentProjectRequest
@@ -873,7 +889,7 @@ class ProjectManager:
 
         # Set system defaults as current project (using synthetic key for system defaults)
         set_request = SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY)
-        result = self.on_set_current_project_request(set_request)
+        result = await self.on_set_current_project_request(set_request)
 
         if result.failed():
             logger.error("Failed to set default project as current: %s", result.result_details)
@@ -882,10 +898,14 @@ class ProjectManager:
         logger.debug("Successfully loaded default project template")
 
         # Check workspace for an optional project overlay file
-        self._load_workspace_project()
+        await self._load_workspace_project()
 
         # Load any additional project templates previously registered by the user
         self._load_registered_projects()
+
+        # Mark initialization complete so subsequent project switches trigger
+        # workspace detection and library reload when the workspace actually changes.
+        self._initialization_complete = True
 
     def on_get_all_situations_for_project_request(
         self, _request: GetAllSituationsForProjectRequest
@@ -1255,7 +1275,7 @@ class ProjectManager:
 
         return workspace_project_path
 
-    def _load_workspace_project(self) -> None:
+    async def _load_workspace_project(self) -> None:
         """Load workspace-level project template overlay if present.
 
         Checks for a project file using _resolve_project_file_path. If found, loads
@@ -1322,7 +1342,7 @@ class ProjectManager:
         self._registered_template_status[workspace_project_path] = validation
 
         set_request = SetCurrentProjectRequest(project_id=project_id)
-        set_result = self.on_set_current_project_request(set_request)
+        set_result = await self.on_set_current_project_request(set_request)
 
         if set_result.failed():
             logger.error(

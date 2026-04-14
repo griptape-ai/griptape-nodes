@@ -12,7 +12,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
-    WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -261,10 +260,14 @@ class SetCurrentProjectRequest(RequestPayload):
 
     Use when: User switches between projects, opens a new workspace.
 
+    If the workspace directory changes as a result of setting the project,
+    and startup is complete, this handler automatically reloads all libraries
+    and re-registers workflows from config and the new workspace.
+
     Args:
         project_id: Identifier of the project to set as current (None to clear)
 
-    Results: SetCurrentProjectResultSuccess
+    Results: SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure
     """
 
     project_id: ProjectID | None
@@ -278,29 +281,8 @@ class SetCurrentProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
 
 @dataclass
 @PayloadRegistry.register
-class SwitchCurrentProjectRequest(RequestPayload):
-    """Switch the active project and reload the engine to reflect the new context.
-
-    Combines SetCurrentProjectRequest (config layer switch) with
-    ReloadAllLibrariesRequest (clear state, reload libraries, re-register workflows).
-    The frontend only needs to handle save/restore of the active workflow around this call.
-
-    Results: SwitchCurrentProjectResultSuccess | SwitchCurrentProjectResultFailure
-    """
-
-    project_id: ProjectID
-
-
-@dataclass
-@PayloadRegistry.register
-class SwitchCurrentProjectResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Project switched and engine reloaded successfully."""
-
-
-@dataclass
-@PayloadRegistry.register
-class SwitchCurrentProjectResultFailure(ResultPayloadFailure):
-    """Project switch failed."""
+class SetCurrentProjectResultFailure(ResultPayloadFailure):
+    """Current project set failed."""
 
 
 @dataclass

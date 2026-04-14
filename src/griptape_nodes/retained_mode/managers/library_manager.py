@@ -2572,7 +2572,7 @@ class LibraryManager:
 
             # Still need to tell WorkflowManager to register workflows
             # Pass the specific workflows if provided, otherwise it will scan workspace
-            GriptapeNodes.WorkflowManager().on_libraries_initialization_complete(
+            GriptapeNodes.WorkflowManager().refresh_workflow_registry(
                 workflows_to_register=payload.workflows_to_register
             )
             return
@@ -2623,7 +2623,7 @@ class LibraryManager:
         GriptapeNodes.WorkflowManager().register_list_of_workflows(library_workflow_files_to_register)
 
         # Go tell the Workflow Manager that it's turn is now.
-        GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
+        GriptapeNodes.WorkflowManager().refresh_workflow_registry()
 
         # Print the engine ready message
         engine_version = get_complete_version_string()

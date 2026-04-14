@@ -425,7 +425,7 @@ class WorkflowManager:
         """
         return self._referenced_workflow_stack[-1]
 
-    def on_libraries_initialization_complete(self, workflows_to_register: list[str] | None = None) -> None:
+    def refresh_workflow_registry(self, workflows_to_register: list[str] | None = None) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
         # Clear any previously registered user/workspace workflows before re-registering, so that
         # a workspace change (e.g. project switch) takes effect cleanly. Library-provided workflows
