@@ -116,14 +116,12 @@ class TestWorkflowManager:
                 return_value=RegisterWorkflowResultSuccess(workflow_name="workflow", result_details="Success"),
             ),
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/full/path/to/workflow.py"),
-            patch.object(griptape_nodes.ConfigManager(), "save_user_workflow_json") as mock_save,
         ):
             result = workflow_manager.on_import_workflow_request(request)
 
             assert isinstance(result, ImportWorkflowResultSuccess)
             # Registry key is derived from the file path (minus extension), not from metadata.name.
             assert result.workflow_name == "workflow"
-            mock_save.assert_called_once_with("/full/path/to/workflow.py")
 
     def test_on_import_workflow_request_already_registered(self, griptape_nodes: GriptapeNodes) -> None:
         """Test import when workflow is already registered."""
@@ -189,40 +187,6 @@ class TestWorkflowManager:
             assert isinstance(result, ImportWorkflowResultFailure)
             assert isinstance(result.result_details, ResultDetails)
             assert result.result_details.result_details[0].message == "Registration failed"
-
-    def test_on_import_workflow_request_config_save_failure(self, griptape_nodes: GriptapeNodes) -> None:
-        """Test import when saving to user configuration fails."""
-        workflow_manager = griptape_nodes.WorkflowManager()
-        request = ImportWorkflowRequest(file_path="/path/to/workflow.py")
-
-        mock_metadata = MagicMock()
-        mock_metadata.name = "test_workflow"
-
-        with (
-            patch.object(
-                workflow_manager,
-                "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
-            ),
-            patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=False),
-            patch.object(
-                workflow_manager,
-                "on_register_workflow_request",
-                return_value=RegisterWorkflowResultSuccess(workflow_name="test_workflow", result_details="Success"),
-            ),
-            patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/full/path/to/workflow.py"),
-            patch.object(
-                griptape_nodes.ConfigManager(), "save_user_workflow_json", side_effect=Exception("Config save failed")
-            ),
-        ):
-            result = workflow_manager.on_import_workflow_request(request)
-
-            assert isinstance(result, ImportWorkflowResultFailure)
-            assert isinstance(result.result_details, ResultDetails)
-            error_message = result.result_details.result_details[0].message
-            # Registry key is derived from file path (minus extension), so the error message uses the registry key.
-            assert "Failed to add workflow '/path/to/workflow' to user configuration" in error_message
-            assert "Config save failed" in error_message
 
     def test_get_workflow_metadata_success(self, griptape_nodes: GriptapeNodes) -> None:
         """Ensure GetWorkflowMetadataRequest returns workflow.metadata directly."""
@@ -331,17 +295,12 @@ class TestWorkflowManager:
             ),
             patch.object(Path, "write_text"),
             patch.object(WorkflowRegistry, "generate_new_workflow"),
-            patch.object(
-                griptape_nodes.ConfigManager(),
-                "save_user_workflow_json",
-            ) as mock_save,
         ):
             result = workflow_manager.on_create_workflow_from_template_request(request)
 
         assert isinstance(result, CreateWorkflowFromTemplateResultSuccess)
         assert result.workflow_name == "my_template_1"
         assert result.file_path == new_full_path
-        mock_save.assert_called_once_with(new_full_path)
 
     def test_on_create_workflow_from_template_request_absolute_file_path(self, griptape_nodes: GriptapeNodes) -> None:
         """Test that templates with absolute file paths save the new workflow in the workspace, not at the template path."""
@@ -397,10 +356,6 @@ class TestWorkflowManager:
             ),
             patch.object(Path, "write_text"),
             patch.object(WorkflowRegistry, "generate_new_workflow"),
-            patch.object(
-                griptape_nodes.ConfigManager(),
-                "save_user_workflow_json",
-            ),
         ):
             result = workflow_manager.on_create_workflow_from_template_request(request)
 
@@ -533,7 +488,6 @@ class TestWorkflowManager:
             patch.object(Path, "rename"),
             patch.object(WorkflowRegistry, "rekey_workflow") as mock_rekey,
             patch.object(config_mgr, "delete_user_workflow"),
-            patch.object(config_mgr, "save_user_workflow_json"),
         ):
             result = workflow_manager.on_move_workflow_request(request)
 
@@ -560,7 +514,6 @@ class TestWorkflowManager:
             patch.object(Path, "rename"),
             patch.object(WorkflowRegistry, "rekey_workflow") as mock_rekey,
             patch.object(config_mgr, "delete_user_workflow"),
-            patch.object(config_mgr, "save_user_workflow_json"),
         ):
             result = workflow_manager.on_move_workflow_request(request)
 
@@ -585,7 +538,6 @@ class TestWorkflowManager:
             patch.object(Path, "rename"),
             patch.object(WorkflowRegistry, "rekey_workflow"),
             patch.object(config_mgr, "delete_user_workflow"),
-            patch.object(config_mgr, "save_user_workflow_json"),
             patch.object(context_mgr, "has_current_workflow", return_value=True),
             patch.object(context_mgr, "get_current_workflow_name", return_value="my_workflow"),
             patch.object(context_mgr, "set_current_workflow_name") as mock_set_name,
@@ -614,7 +566,6 @@ class TestWorkflowManager:
             patch.object(Path, "rename"),
             patch.object(WorkflowRegistry, "rekey_workflow"),
             patch.object(config_mgr, "delete_user_workflow"),
-            patch.object(config_mgr, "save_user_workflow_json"),
             patch.object(context_mgr, "has_current_workflow", return_value=True),
             patch.object(context_mgr, "get_current_workflow_name", return_value="other_workflow"),
             patch.object(context_mgr, "set_current_workflow_name") as mock_set_name,
