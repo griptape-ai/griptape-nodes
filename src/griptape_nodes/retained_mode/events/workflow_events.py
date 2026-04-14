@@ -491,9 +491,13 @@ class GetPublishOptionsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
 
     Args:
         fields: Ordered list of fields to render in the publish dialog
+        title: Optional dialog title (e.g. "Update Published Gizmo"). None uses the frontend default.
+        button_label: Optional publish button label (e.g. "Update"). None uses the frontend default.
     """
 
     fields: list[PublishOptionField]
+    title: str | None = None
+    button_label: str | None = None
 
 
 @dataclass
