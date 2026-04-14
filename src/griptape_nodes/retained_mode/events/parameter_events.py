@@ -244,7 +244,7 @@ class SetParameterValueRequest(RequestPayload):
     """
 
     parameter_name: str
-    value: str | int | float | bool | dict | None
+    value: str | int | float | bool | dict | list | None
     # If node name is None, use the Current Context
     node_name: str | None = None
     data_type: str | None = None
