@@ -47,9 +47,6 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SituationPolicy,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
-    ImageArtifactProvider,
-)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -151,10 +148,10 @@ class StaticFilesManager:
             # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop static server
 
     def _generate_preview_if_needed(self, file_path: Path) -> tuple[Path, dict | None]:
-        """Generate preview for an image file if needed.
+        """Generate preview for a file if needed.
 
         Returns (path, artifact_metadata) where path is the preview if generated/cached,
-        or the original file path if the file is not an image or preview generation fails.
+        or the original file path if no provider supports the format or preview generation fails.
 
         Args:
             file_path: Path to the original file
@@ -162,17 +159,22 @@ class StaticFilesManager:
         Returns:
             Tuple of (path to serve, original source metadata or None)
         """
-        # TODO: Ask the Artifact Manager which providers support this file extension,
-        # then route to the correct provider — rather than hardcoding ImageArtifactProvider here.
-        # https://github.com/griptape-ai/griptape-nodes/issues/4251
-        if not ImageArtifactProvider.supports_file_extension(file_path.suffix):
-            logger.debug("Skipping preview for non-image file: %s", file_path)
+        extension = file_path.suffix.lstrip(".").lower()
+        if not extension:
             return file_path, None
+
+        registry = GriptapeNodes.ArtifactManager()._registry
+        provider_classes = registry.get_provider_classes_by_format(extension)
+        if not provider_classes:
+            logger.debug("Skipping preview for unsupported file format: %s", file_path)
+            return file_path, None
+
+        provider_name = provider_classes[0].get_friendly_name()
 
         result = GriptapeNodes.handle_request(
             GetPreviewForArtifactRequest(
                 macro_path=MacroPath(ParsedMacro(str(file_path)), {}),
-                artifact_provider_name="Image",
+                artifact_provider_name=provider_name,
                 preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
             )
         )
@@ -182,7 +184,7 @@ class StaticFilesManager:
             return file_path, None
 
         preview_path = Path(result.paths_to_preview)
-        logger.debug("Serving thumbnail for %s -> %s", file_path, preview_path)
+        logger.debug("Serving preview for %s -> %s", file_path, preview_path)
         return preview_path, result.artifact_metadata
 
     def on_handle_create_static_file_request(
