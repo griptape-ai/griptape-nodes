@@ -63,11 +63,17 @@ from griptape_nodes.retained_mode.events.project_events import (
     LoadProjectTemplateResultSuccess,
     PathResolutionFailureReason,
     ProjectTemplateInfo,
+    RefreshWorkspaceWorkflowsRequest,
+    RefreshWorkspaceWorkflowsResultFailure,
+    RefreshWorkspaceWorkflowsResultSuccess,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
     SaveProjectTemplateResultSuccess,
     SetCurrentProjectRequest,
     SetCurrentProjectResultSuccess,
+    UnregisterProjectTemplateRequest,
+    UnregisterProjectTemplateResultFailure,
+    UnregisterProjectTemplateResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
@@ -209,6 +215,12 @@ class ProjectManager:
         )
         event_manager.assign_manager_to_request_type(
             AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
+        )
+        event_manager.assign_manager_to_request_type(
+            UnregisterProjectTemplateRequest, self.on_unregister_project_template_request
+        )
+        event_manager.assign_manager_to_request_type(
+            RefreshWorkspaceWorkflowsRequest, self.on_refresh_workspace_workflows_request
         )
 
         # Register app initialization listener
@@ -654,6 +666,69 @@ class ProjectManager:
 
         return SaveProjectTemplateResultSuccess(
             result_details=f"Successfully saved project template to '{request.project_path}'",
+        )
+
+    def on_unregister_project_template_request(
+        self, request: UnregisterProjectTemplateRequest
+    ) -> UnregisterProjectTemplateResultSuccess | UnregisterProjectTemplateResultFailure:
+        """Remove a registered project template from in-memory caches and persisted config.
+
+        Flow:
+        1. Verify the project_id is known
+        2. Remove from _successfully_loaded_project_templates and _registered_template_status
+        3. Remove from PROJECTS_TO_REGISTER_KEY in user config
+        4. If this was the current project, clear the current project
+        """
+        project_id = request.project_id
+
+        if (
+            project_id not in self._successfully_loaded_project_templates
+            and Path(project_id) not in self._registered_template_status
+        ):
+            return UnregisterProjectTemplateResultFailure(
+                result_details=f"Attempted to unregister project template '{project_id}'. Failed because it is not registered.",
+            )
+
+        # Remove from in-memory caches
+        self._successfully_loaded_project_templates.pop(project_id, None)
+        self._registered_template_status.pop(Path(project_id), None)
+
+        # Remove from persisted config so it is not reloaded on restart
+        try:
+            registered: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            updated = [p for p in registered if p != project_id]
+            self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, updated)
+        except Exception:
+            logger.warning("Failed to remove project path '%s' from persisted config", project_id)
+
+        # If this was the active project, clear the current project
+        if self._current_project_id == project_id:
+            self._current_project_id = None
+
+        return UnregisterProjectTemplateResultSuccess(
+            result_details=f"Successfully unregistered project template '{project_id}'",
+        )
+
+    def on_refresh_workspace_workflows_request(
+        self, _request: RefreshWorkspaceWorkflowsRequest
+    ) -> RefreshWorkspaceWorkflowsResultSuccess | RefreshWorkspaceWorkflowsResultFailure:
+        """Clear stale workspace workflows and rescan the current project's workspace.
+
+        Removes all non-library workflows from the registry, then scans the current
+        workspace directory to populate the registry with the correct set of workflows
+        for the active project.
+        """
+        if self._current_project_id is None:
+            return RefreshWorkspaceWorkflowsResultFailure(
+                result_details="Attempted to refresh workspace workflows. Failed because no current project is set.",
+            )
+
+        WorkflowRegistry.clear_workspace_workflows()
+        workspace_path = self._config_manager.workspace_path
+        GriptapeNodes.WorkflowManager().register_list_of_workflows([str(workspace_path)])
+
+        return RefreshWorkspaceWorkflowsResultSuccess(
+            result_details=f"Successfully refreshed workspace workflows from '{workspace_path}'",
         )
 
     def on_match_path_against_macro_request(

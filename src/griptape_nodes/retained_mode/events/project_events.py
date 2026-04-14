@@ -523,6 +523,43 @@ class AttemptMapAbsolutePathToProjectResultFailure(WorkflowNotAlteredMixin, Resu
 
 @dataclass
 @PayloadRegistry.register
+class UnregisterProjectTemplateRequest(RequestPayload):
+    """Remove a registered project template from the engine.
+
+    Removes the template from in-memory caches and from the persisted
+    projects_to_register config list so it is not reloaded on restart.
+
+    If the template is currently active, the current project is cleared.
+
+    Use when: User wants to remove a stale or unwanted project template reference.
+
+    Args:
+        project_id: Identifier of the project template to unregister
+
+    Results: UnregisterProjectTemplateResultSuccess | UnregisterProjectTemplateResultFailure
+    """
+
+    project_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Project template unregistered successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Project template unregistration failed.
+
+    Common causes:
+    - project_id not found in registered templates
+    """
+
+
+@dataclass
+@PayloadRegistry.register
 class GetAllSituationsForProjectRequest(RequestPayload):
     """Get all situation names and schemas from current project template."""
 
@@ -539,3 +576,27 @@ class GetAllSituationsForProjectResultSuccess(WorkflowNotAlteredMixin, ResultPay
 @PayloadRegistry.register
 class GetAllSituationsForProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Failure result when cannot get situations."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RefreshWorkspaceWorkflowsRequest(RequestPayload):
+    """Clear stale workspace workflows and rescan the current project's workspace.
+
+    Use when: After switching the active project, to ensure listAllWorkflows
+    returns only workflows from the new project's workspace directory.
+
+    Results: RefreshWorkspaceWorkflowsResultSuccess | RefreshWorkspaceWorkflowsResultFailure
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class RefreshWorkspaceWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workspace workflows refreshed successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RefreshWorkspaceWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workspace workflows refresh failed (no current project set)."""
