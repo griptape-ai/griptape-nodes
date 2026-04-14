@@ -311,6 +311,16 @@ class ConfigManager:
         self.load_configs()
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
+        # Workflows inside the current workspace are discovered by directory scan on startup
+        # and on project switch; an explicit config entry would be redundant and would cause
+        # the workflow to appear in every project's list regardless of active workspace.
+        try:
+            Path(workflow_file_name).resolve().relative_to(Path(self.workspace_path).resolve())
+        except ValueError:
+            pass
+        else:
+            return
+
         config_loc = WORKFLOWS_TO_REGISTER_KEY
         existing_workflows = self.get_config_value(config_loc)
         if not existing_workflows:
