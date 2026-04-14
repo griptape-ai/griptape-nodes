@@ -62,7 +62,7 @@ converter.register_structure_hook(float, lambda v, _: float(v))
 _JSON_PRIMITIVE_TYPES = frozenset({str, int, float, bool, dict, list, type(None)})
 
 
-def _is_json_primitive_union(cls: type) -> bool:
+def _is_json_primitive_union(cls: Any) -> bool:
     origin = get_origin(cls)
     if origin is Union or origin is types.UnionType:
         return all(arg in _JSON_PRIMITIVE_TYPES for arg in get_args(cls))
