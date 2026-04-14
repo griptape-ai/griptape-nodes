@@ -28,7 +28,9 @@ class RunArbitraryPythonStringRequest(RequestPayload):
     """
 
     python_string: str
-    local_variable_to_capture: str | None = None  # Optional: specify a local variable name to capture and return as output instead of stdout
+    local_variable_to_capture: str | None = (
+        None  # Optional: specify a local variable name to capture and return as output instead of stdout
+    )
 
 
 @dataclass
