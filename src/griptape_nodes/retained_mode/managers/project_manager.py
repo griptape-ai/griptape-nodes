@@ -594,6 +594,11 @@ class ProjectManager:
 
                 # Load workspace config layer from the resolved workspace directory.
                 self._config_manager.load_workspace_config(self._config_manager.workspace_path)
+            elif project_info is not None and project_info.project_file_path is None:
+                # Switching to system defaults: clear any project-specific workspace override
+                # and reload configs so workspace_path resolves from default config layers.
+                self._config_manager.set_workspace_override(None)
+                self._config_manager.load_configs()
 
         if request.project_id is None:
             return SetCurrentProjectResultSuccess(
