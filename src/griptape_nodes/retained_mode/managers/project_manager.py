@@ -76,7 +76,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     UnregisterProjectTemplateResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY, WORKFLOWS_TO_REGISTER_KEY
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -717,11 +717,11 @@ class ProjectManager:
     def on_refresh_workspace_workflows_request(
         self, _request: RefreshWorkspaceWorkflowsRequest
     ) -> RefreshWorkspaceWorkflowsResultSuccess | RefreshWorkspaceWorkflowsResultFailure:
-        """Clear stale workspace workflows and rescan the current project's workspace.
+        """Clear stale workspace workflows and repopulate, mirroring engine startup.
 
-        Removes all non-library workflows from the registry, then scans the current
-        workspace directory to populate the registry with the correct set of workflows
-        for the active project.
+        Removes all non-library workflows from the registry, then re-registers from
+        both the persisted config list and the current workspace directory — the same
+        two sources used by on_libraries_initialization_complete at startup.
         """
         if self._current_project_id is None:
             return RefreshWorkspaceWorkflowsResultFailure(
@@ -729,8 +729,10 @@ class ProjectManager:
             )
 
         WorkflowRegistry.clear_workspace_workflows()
+
+        config_workflows: list[str] = self._config_manager.get_config_value(WORKFLOWS_TO_REGISTER_KEY, default=[])
         workspace_path = self._config_manager.workspace_path
-        GriptapeNodes.WorkflowManager().register_list_of_workflows([str(workspace_path)])
+        GriptapeNodes.WorkflowManager().register_list_of_workflows([*config_workflows, str(workspace_path)])
 
         return RefreshWorkspaceWorkflowsResultSuccess(
             result_details=f"Successfully refreshed workspace workflows from '{workspace_path}'",
