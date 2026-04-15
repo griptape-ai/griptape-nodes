@@ -424,7 +424,7 @@ class ArtifactManager:
                 content=metadata_content,
                 create_parents=True,
                 existing_file_policy=ExistingFilePolicy.OVERWRITE,
-                file_metadata=resolved_path.file_metadata,
+                file_metadata=None,
             )
             metadata_write_result = GriptapeNodes.handle_request(metadata_write_request)
 

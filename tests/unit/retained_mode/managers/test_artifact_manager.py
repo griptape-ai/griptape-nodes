@@ -715,6 +715,138 @@ class TestGeneratePreview:
         assert isinstance(metadata.preview_generator_parameters, dict)
 
 
+class TestPreviewMetadataDoesNotCreateSidecar:
+    """Tests that preview metadata JSON files do not trigger sidecar creation.
+
+    When a preview is generated with metadata, the metadata JSON file is written
+    to .griptape-nodes-previews/ via WriteFileRequest. That request must NOT
+    pass file_metadata, otherwise write_sidecar() creates a redundant sidecar
+    in .griptape-nodes-metadata/ with a nested .griptape-nodes-previews/ directory
+    and .json.json double extensions.
+    """
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create temporary directory for test files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture
+    def mock_project(self, temp_dir: Path) -> None:
+        """Set up a real project in ProjectManager with temp_dir as workspace."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        project_manager = GriptapeNodes.ProjectManager()
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = project_manager._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = project_manager._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id="test_project",
+            project_file_path=temp_dir / "project.yml",
+            project_base_dir=temp_dir,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        project_manager._successfully_loaded_project_templates["test_project"] = project_info
+        project_manager._current_project_id = "test_project"
+
+    @pytest.fixture
+    def test_image_path(self, temp_dir: Path) -> Path:
+        """Create a real test image file."""
+        image_path = temp_dir / "test_source.jpg"
+        img = Image.new("RGB", (100, 100), color="red")
+        img.save(str(image_path), format="JPEG")
+        return image_path
+
+    @pytest.fixture
+    def test_macro_path(self, test_image_path: Path) -> MacroPath:
+        """Create MacroPath for test image."""
+        parsed_macro = ParsedMacro(str(test_image_path))
+        return MacroPath(parsed_macro=parsed_macro, variables={})
+
+    @pytest.fixture
+    def artifact_manager(self, mock_project: None, temp_dir: Path) -> ArtifactManager:  # noqa: ARG002
+        """Create ArtifactManager instance with ImageArtifactProvider registered."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        manager = ArtifactManager()
+        request = RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        manager.on_handle_register_artifact_provider_request(request)
+        GriptapeNodes.ConfigManager().workspace_path = temp_dir
+        return manager
+
+    @pytest.mark.asyncio
+    async def test_no_sidecar_created_for_preview_metadata_json(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, temp_dir: Path
+    ) -> None:
+        """Test that generating a preview with metadata does not create a sidecar for the metadata JSON."""
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            artifact_provider_name="Image",
+            format=None,
+            generate_preview_metadata_json=True,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        metadata_dir = anyio.Path(temp_dir / ".griptape-nodes-metadata")
+        if await metadata_dir.exists():
+            sidecar_files = [f async for f in metadata_dir.rglob("*") if await f.is_file()]
+            assert sidecar_files == [], (
+                f"Sidecar files were created in .griptape-nodes-metadata/ for preview metadata: {sidecar_files}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_nested_previews_dir_in_metadata(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, temp_dir: Path
+    ) -> None:
+        """Test that .griptape-nodes-metadata/ does not contain a nested .griptape-nodes-previews/ dir."""
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            artifact_provider_name="Image",
+            format=None,
+            generate_preview_metadata_json=True,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        nested_previews = anyio.Path(temp_dir / ".griptape-nodes-metadata" / ".griptape-nodes-previews")
+        assert not await nested_previews.exists(), (
+            ".griptape-nodes-previews/ was nested inside .griptape-nodes-metadata/"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_double_json_extension_files(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, temp_dir: Path
+    ) -> None:
+        """Test that no .json.json files are created anywhere in the project."""
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            artifact_provider_name="Image",
+            format=None,
+            generate_preview_metadata_json=True,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        double_json_files = [f async for f in anyio.Path(temp_dir).rglob("*.json.json")]
+        assert double_json_files == [], f"Files with .json.json double extension were created: {double_json_files}"
+
+
 class TestGetPreviewForArtifact:
     """Tests for preview retrieval functionality."""
 
