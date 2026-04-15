@@ -96,7 +96,7 @@ class WorkflowPackager:
     def copy_file(source_path: str | Path, destination_path: str | Path) -> None:
         """Copy a single file using the engine's OS event system."""
         result = GriptapeNodes.handle_request(
-            CopyFileRequest(source_path=str(source_path), destination_path=str(destination_path))
+            CopyFileRequest(source_path=str(source_path), destination_path=str(destination_path), overwrite=True)
         )
         if not isinstance(result, CopyFileResultSuccess):
             msg = f"Failed to copy file from '{source_path}' to '{destination_path}'."
@@ -114,7 +114,7 @@ class WorkflowPackager:
             CopyTreeRequest(
                 source_path=str(source_path),
                 destination_path=str(destination_path),
-                ignore_patterns=ignore_patterns or [".venv", "__pycache__"],
+                ignore_patterns=ignore_patterns or [".venv", "__pycache__", ".git"],
                 dirs_exist_ok=True,
             )
         )
