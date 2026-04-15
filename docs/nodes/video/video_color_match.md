@@ -40,7 +40,7 @@ Use the VideoColorMatch node when:
     - **ffmpeg-haldclut**: Fast HALD CLUT-based transfer (10-50x faster, default) - Applies color matching once to a lookup table, then uses ffmpeg to process the entire video in one pass
     - **frame-by-frame**: Process each frame individually (slower, more memory intensive) - Extracts and processes each frame separately using the color-matcher library
 
-- **method**: The color transfer algorithm to use
+- **transfer_algorithm**: The color transfer algorithm to use
 
     - **mkl**: Monge-Kantorovich Linearization (fast, good quality, default)
     - **hm**: Histogram Matching (fast, moderate quality)
@@ -75,7 +75,7 @@ Apply the color palette from a cinematic movie poster to your video:
 1. Add a VideoColorMatch node to your workflow
 1. Connect a LoadImage node with your reference movie poster to "reference_image"
 1. Connect a LoadVideo node with your video to "target_video"
-1. Keep the default "mkl" method
+1. Keep the default "mkl" transfer_algorithm
 1. Set "strength" to 1.0 for full color transfer
 1. Run the workflow - your video will match the color palette of the movie poster
 
@@ -85,16 +85,16 @@ Apply a subtle vintage film look:
 
 1. Load a vintage photograph as the reference image
 1. Connect your modern video as the target
-1. Set "method" to "reinhard" for natural luminance preservation
+1. Set "transfer_algorithm" to "reinhard" for natural luminance preservation
 1. Set "strength" to 0.7 for a subtle effect
 1. Run the workflow - the result will have a nostalgic vintage aesthetic
 
 ### Experimenting with Methods
 
-Try different methods to see which aesthetic you prefer:
+Try different algorithms to see which aesthetic you prefer:
 
-1. Process a short clip (2-3 seconds) with "mkl" method
-1. Process the same clip with "hm-mvgd-hm" method
+1. Process a short clip (2-3 seconds) with "mkl" algorithm
+1. Process the same clip with "hm-mvgd-hm" algorithm
 1. Compare the results to choose your preferred look
 1. Apply to the full video
 
@@ -165,7 +165,7 @@ Different algorithms produce distinct aesthetic results:
 ### Workflow Recommendations
 
 1. **Test with short clips first**: Process a 2-3 second clip before running on full videos to preview the effect
-1. **Method comparison**: Try 2-3 different color methods with the same reference to see which aesthetic you prefer
+1. **Algorithm comparison**: Try 2-3 different color algorithms with the same reference to see which aesthetic you prefer
 1. **Batch processing**: Use the same reference image across multiple video clips for consistent look
 1. **Strength refinement**: Start at 1.0, then adjust up or down based on results
 
@@ -175,24 +175,24 @@ Different algorithms produce distinct aesthetic results:
 
 - **Solution**: Reduce "strength" to 0.6-0.8
 - Or choose a less saturated reference image
-- Or try "reinhard" method which preserves more original luminance
+- Or try "reinhard" algorithm which preserves more original luminance
 
 ### Not enough color change
 
 - **Solution**: Increase "strength" to 1.2-1.5
 - Or choose a reference with more distinct colors
-- Or try "hm-mvgd-hm" method for stronger transfer
+- Or try "hm-mvgd-hm" algorithm for stronger transfer
 
 ### Processing takes too long
 
 - **Solution**: Ensure you're using "ffmpeg-haldclut" transfer method (default, 10-50x faster)
-- Or use "mkl" color method (fastest color transfer algorithm)
+- Or use "mkl" color algorithm (fastest color transfer algorithm)
 - Or pre-trim your video to the desired section using Split Video node
 - Or reduce video resolution before processing using Resize Video node
 
 ### Output looks different than expected
 
-- **Solution**: Try different color matching methods - each produces different results
+- **Solution**: Try different color matching algorithms - each produces different results
 - Ensure your reference image has the color characteristics you actually want
 - Adjust strength to find the sweet spot for your specific content
 
@@ -204,7 +204,7 @@ Processing time with **ffmpeg-haldclut** is very fast and depends primarily on:
 
 - **Video length**: Scales linearly with duration
 - **Resolution**: Higher resolutions take longer but still much faster than frame-by-frame
-- **Color method**: All methods are fast since color matching happens once on the HALD CLUT
+- **Color algorithm**: All algorithms are fast since color matching happens once on the HALD CLUT
 
 Approximate processing time for 1080p video at 30fps on modern hardware:
 
@@ -220,7 +220,7 @@ Processing time with **frame-by-frame** depends on:
 - **Video length**: Longer videos take proportionally longer to process
 - **Resolution**: Higher resolution videos (4K vs 1080p) take significantly longer
 - **Frame rate**: Higher frame rates mean more frames to process
-- **Color method**: Compound methods (hm-mvgd-hm, hm-mkl-hm) take longer than simple methods (mkl, hm)
+- **Color algorithm**: Compound algorithms (hm-mvgd-hm, hm-mkl-hm) take longer than simple algorithms (mkl, hm)
 
 Approximate processing time for 1080p video at 30fps on modern hardware:
 
@@ -239,27 +239,27 @@ Approximate processing time for 1080p video at 30fps on modern hardware:
 ### Cinematic Grading
 
 - **Reference**: Movie still with teal/orange color grading
-- **Method**: hm-mvgd-hm
+- **Algorithm**: hm-mvgd-hm
 - **Strength**: 0.9
 - **Result**: Professional cinematic look with complementary color palette
 
 ### Vintage Film Effect
 
 - **Reference**: 1970s photograph with warm, faded colors
-- **Method**: reinhard
+- **Algorithm**: reinhard
 - **Strength**: 0.7
 - **Result**: Nostalgic vintage aesthetic with authentic film look
 
 ### Day-to-Night Conversion
 
 - **Reference**: Nighttime city photo with cool blue tones
-- **Method**: mkl
+- **Algorithm**: mkl
 - **Strength**: 1.2
 - **Result**: Daytime video with nighttime color palette and mood
 
 ### Consistent Multi-Clip Grading
 
 - **Reference**: Single color-graded frame from your best clip
-- **Method**: mkl
+- **Algorithm**: mkl
 - **Strength**: 1.0
 - **Result**: All clips match the color palette for seamless editing
