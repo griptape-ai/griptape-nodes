@@ -7,7 +7,7 @@ import os
 import signal
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -536,6 +536,13 @@ async def _process_app_event(event: AppEvent) -> None:
     """Process AppEvents and send them to the API (async version)."""
     # Let Griptape Nodes broadcast it.
     await griptape_nodes.abroadcast_app_event(event.payload)
+
+    # Strip node_schemas before forwarding LibraryLoadedNotification to the GUI.
+    # The orchestrator has already consumed the schemas to register stub classes;
+    # the GUI has no use for them and the payload can exceed 100 KB for large libraries.
+    payload = event.payload
+    if isinstance(payload, app_events.LibraryLoadedNotification) and payload.node_schemas:
+        event = AppEvent(payload=replace(payload, node_schemas=None))
 
     await _send_message("app_event", event.json())
 
