@@ -704,23 +704,17 @@ class TestLibraryManagerConfigChangeHandling:
         """Test that libraries are reloaded when libraries_to_register config changes."""
         # Import here to avoid circular imports
         from griptape_nodes.retained_mode.events.app_events import ConfigChanged
-        from griptape_nodes.retained_mode.events.library_events import (
-            ReloadAllLibrariesRequest,
-            ReloadAllLibrariesResultSuccess,
-        )
+        from griptape_nodes.retained_mode.events.base_events import EventRequest
+        from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesRequest
         from griptape_nodes.retained_mode.managers.library_manager import LIBRARIES_TO_REGISTER_KEY, LibraryManager
 
         # Create a mock library manager
         library_manager = MagicMock(spec=LibraryManager)
+        library_manager._is_worker = False
         library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
 
-        mock_result = ReloadAllLibrariesResultSuccess(
-            result_details=ResultDetails(message="Libraries reloaded", level=20)
-        )
-
-        with patch.object(
-            GriptapeNodes, "ahandle_request", new_callable=AsyncMock, return_value=mock_result
-        ) as mock_handle:
+        mock_event_manager = MagicMock()
+        with patch.object(GriptapeNodes, "EventManager", return_value=mock_event_manager):
             event = ConfigChanged(
                 key=LIBRARIES_TO_REGISTER_KEY,
                 old_value=["/old/path"],
@@ -729,9 +723,11 @@ class TestLibraryManagerConfigChangeHandling:
 
             await library_manager.on_config_changed(event)
 
-            mock_handle.assert_called_once()
-            request = mock_handle.call_args[0][0]
-            assert isinstance(request, ReloadAllLibrariesRequest)
+            event_request_calls = [
+                c for c in mock_event_manager.put_event.call_args_list if isinstance(c[0][0], EventRequest)
+            ]
+            assert len(event_request_calls) == 1
+            assert isinstance(event_request_calls[0][0][0].request, ReloadAllLibrariesRequest)
 
     @pytest.mark.asyncio
     async def test_on_config_changed_ignores_non_library_config_changes(self) -> None:
@@ -750,21 +746,18 @@ class TestLibraryManagerConfigChangeHandling:
             mock_handle.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_on_config_changed_logs_success(self) -> None:
-        """Test that successful library reload is logged."""
+    async def test_on_config_changed_logs_config_change(self) -> None:
+        """Test that a library config change is logged when reload is enqueued."""
         from griptape_nodes.retained_mode.events.app_events import ConfigChanged
-        from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesResultSuccess
         from griptape_nodes.retained_mode.managers.library_manager import LIBRARIES_TO_REGISTER_KEY, LibraryManager
 
         library_manager = MagicMock(spec=LibraryManager)
+        library_manager._is_worker = False
         library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
 
-        mock_result = ReloadAllLibrariesResultSuccess(
-            result_details=ResultDetails(message="Libraries reloaded", level=20)
-        )
-
+        mock_event_manager = MagicMock()
         with (
-            patch.object(GriptapeNodes, "ahandle_request", new_callable=AsyncMock, return_value=mock_result),
+            patch.object(GriptapeNodes, "EventManager", return_value=mock_event_manager),
             patch("griptape_nodes.retained_mode.managers.library_manager.logger") as mock_logger,
         ):
             event = ConfigChanged(
@@ -775,27 +768,22 @@ class TestLibraryManagerConfigChangeHandling:
 
             await library_manager.on_config_changed(event)
 
-            assert mock_logger.info.call_count == 2  # noqa: PLR2004
-            info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
-            assert any("Config change detected" in msg for msg in info_calls)
-            assert any("Successfully reloaded libraries" in msg for msg in info_calls)
+            assert mock_logger.info.call_count == 1
+            info_msg = mock_logger.info.call_args[0][0]
+            assert "Config change detected" in info_msg
 
     @pytest.mark.asyncio
-    async def test_on_config_changed_logs_failure(self) -> None:
-        """Test that failed library reload is logged."""
+    async def test_on_config_changed_skips_enqueue_for_worker(self) -> None:
+        """Test that worker processes do not enqueue a library reload on config change."""
         from griptape_nodes.retained_mode.events.app_events import ConfigChanged
-        from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesResultFailure
         from griptape_nodes.retained_mode.managers.library_manager import LIBRARIES_TO_REGISTER_KEY, LibraryManager
 
         library_manager = MagicMock(spec=LibraryManager)
+        library_manager._is_worker = True
         library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
 
-        mock_result = ReloadAllLibrariesResultFailure(result_details="Reload failed")
-
-        with (
-            patch.object(GriptapeNodes, "ahandle_request", new_callable=AsyncMock, return_value=mock_result),
-            patch("griptape_nodes.retained_mode.managers.library_manager.logger") as mock_logger,
-        ):
+        mock_event_manager = MagicMock()
+        with patch.object(GriptapeNodes, "EventManager", return_value=mock_event_manager):
             event = ConfigChanged(
                 key=LIBRARIES_TO_REGISTER_KEY,
                 old_value=["/old/path"],
@@ -804,9 +792,7 @@ class TestLibraryManagerConfigChangeHandling:
 
             await library_manager.on_config_changed(event)
 
-            mock_logger.error.assert_called_once()
-            error_msg = mock_logger.error.call_args[0][0]
-            assert "Failed to reload libraries" in error_msg
+            mock_event_manager.put_event.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_on_config_changed_handles_exact_key_match(self) -> None:
@@ -832,24 +818,18 @@ class TestLibraryManagerConfigChangeHandling:
 
     @pytest.mark.asyncio
     async def test_on_config_changed_uses_reload_all_libraries_request(self) -> None:
-        """Test that the handler uses ReloadAllLibrariesRequest for safe reload."""
+        """Test that the handler enqueues a ReloadAllLibrariesRequest for safe reload."""
         from griptape_nodes.retained_mode.events.app_events import ConfigChanged
-        from griptape_nodes.retained_mode.events.library_events import (
-            ReloadAllLibrariesRequest,
-            ReloadAllLibrariesResultSuccess,
-        )
+        from griptape_nodes.retained_mode.events.base_events import EventRequest
+        from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesRequest
         from griptape_nodes.retained_mode.managers.library_manager import LIBRARIES_TO_REGISTER_KEY, LibraryManager
 
         library_manager = MagicMock(spec=LibraryManager)
+        library_manager._is_worker = False
         library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
 
-        mock_result = ReloadAllLibrariesResultSuccess(
-            result_details=ResultDetails(message="Libraries reloaded", level=20)
-        )
-
-        with patch.object(
-            GriptapeNodes, "ahandle_request", new_callable=AsyncMock, return_value=mock_result
-        ) as mock_handle:
+        mock_event_manager = MagicMock()
+        with patch.object(GriptapeNodes, "EventManager", return_value=mock_event_manager):
             event = ConfigChanged(
                 key=LIBRARIES_TO_REGISTER_KEY,
                 old_value=["/old/path"],
@@ -858,9 +838,11 @@ class TestLibraryManagerConfigChangeHandling:
 
             await library_manager.on_config_changed(event)
 
-            mock_handle.assert_called_once()
-            request = mock_handle.call_args[0][0]
-            assert isinstance(request, ReloadAllLibrariesRequest)
+            event_request_calls = [
+                c for c in mock_event_manager.put_event.call_args_list if isinstance(c[0][0], EventRequest)
+            ]
+            assert len(event_request_calls) == 1
+            assert isinstance(event_request_calls[0][0][0].request, ReloadAllLibrariesRequest)
 
 
 class TestListRegisteredLibraries:
