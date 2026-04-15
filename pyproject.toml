@@ -75,7 +75,7 @@ griptape-nodes = "griptape_nodes:main"
 gtn = "griptape_nodes:main"
 
 [build-system]
-requires = ["uv_build"]
+requires = ["uv_build>=0.7.2,<0.12"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
