@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The VideoColorMatch node transfers color characteristics from a reference image to a video frame-by-frame using color matching algorithms. This allows you to apply color grading to videos by matching the color palette of a reference image, useful for creating consistent visual styles, matching footage to a specific aesthetic, or applying cinematic color grading.
+The VideoColorMatch node transfers color characteristics from a reference image to a video using advanced color matching algorithms. By default, it uses a fast HALD CLUT (Color Lookup Table) method that applies the color transformation to the entire video in one pass, making it 10-50x faster than traditional frame-by-frame processing. This allows you to apply color grading to videos by matching the color palette of a reference image, useful for creating consistent visual styles, matching footage to a specific aesthetic, or applying cinematic color grading.
 
 ## When would I use it?
 
@@ -34,6 +34,11 @@ Use the VideoColorMatch node when:
 - **target_video**: The video to apply color transfer to (supports VideoArtifact and VideoUrlArtifact)
 
 #### Color Match Settings
+
+- **transfer_method**: The processing method to use
+
+    - **ffmpeg-haldclut**: Fast HALD CLUT-based transfer (10-50x faster, default) - Applies color matching once to a lookup table, then uses ffmpeg to process the entire video in one pass
+    - **frame-by-frame**: Process each frame individually (slower, more memory intensive) - Extracts and processes each frame separately using the color-matcher library
 
 - **method**: The color transfer algorithm to use
 
@@ -95,11 +100,15 @@ Try different methods to see which aesthetic you prefer:
 
 ## Important Notes
 
-- **Processing Time**: Video processing is done frame-by-frame and can take several minutes depending on video length and resolution. A 10-second 1080p video at 30fps (300 frames) may take 3-5 minutes to process.
-- **Progress Bar**: The progress bar shows 0-90% for frame processing and 90-100% for video reassembly.
+- **Processing Time**:
+    - **ffmpeg-haldclut (default)**: Very fast processing - a 10-second 1080p video at 30fps typically processes in seconds. Recommended for most use cases.
+    - **frame-by-frame**: Slower processing - the same 10-second video may take 3-5 minutes. Useful if you need pixel-perfect control or encounter issues with the HALD CLUT method.
+- **Progress Bar**:
+    - **ffmpeg-haldclut**: Shows 10% for HALD generation, 20% for color matching, and 70% for video processing.
+    - **frame-by-frame**: Shows 0-90% for frame processing and 90-100% for video reassembly.
 - **Video Properties**: All original video properties (format, resolution, frame rate, duration) are preserved in the output.
-- **Audio Preservation**: The original audio track is preserved and re-encoded with AAC codec at 192kbps for compatibility.
-- **Memory Usage**: Frames are processed sequentially to manage memory efficiently.
+- **Audio Preservation**: The original audio track is preserved (copied with ffmpeg-haldclut, re-encoded with AAC at 192kbps for frame-by-frame).
+- **Memory Usage**: Both methods process efficiently - ffmpeg-haldclut streams through video, frame-by-frame processes sequentially.
 
 ## Algorithm Details
 
@@ -138,10 +147,25 @@ Different algorithms produce distinct aesthetic results:
 | 1.2-2.0  | Stylized, artistic effects                           |
 | > 2.0    | Experimental, heavily exaggerated results            |
 
+### Transfer Method Selection
+
+**When to use ffmpeg-haldclut (default):**
+
+✓ For most use cases - it's fast and produces excellent results
+✓ When processing longer videos or high-resolution footage
+✓ When you want to preview results quickly
+✓ For batch processing multiple videos
+
+**When to use frame-by-frame:**
+
+- If you encounter unexpected visual artifacts with HALD CLUT (rare)
+- For troubleshooting or comparison purposes
+- When you need to verify processing against the legacy method
+
 ### Workflow Recommendations
 
 1. **Test with short clips first**: Process a 2-3 second clip before running on full videos to preview the effect
-1. **Method comparison**: Try 2-3 different methods with the same reference to see which aesthetic you prefer
+1. **Method comparison**: Try 2-3 different color methods with the same reference to see which aesthetic you prefer
 1. **Batch processing**: Use the same reference image across multiple video clips for consistent look
 1. **Strength refinement**: Start at 1.0, then adjust up or down based on results
 
@@ -161,7 +185,8 @@ Different algorithms produce distinct aesthetic results:
 
 ### Processing takes too long
 
-- **Solution**: Use "mkl" method (fastest)
+- **Solution**: Ensure you're using "ffmpeg-haldclut" transfer method (default, 10-50x faster)
+- Or use "mkl" color method (fastest color transfer algorithm)
 - Or pre-trim your video to the desired section using Split Video node
 - Or reduce video resolution before processing using Resize Video node
 
@@ -173,12 +198,29 @@ Different algorithms produce distinct aesthetic results:
 
 ## Performance Considerations
 
-Processing time depends on:
+### HALD CLUT Method (Default - Recommended)
+
+Processing time with **ffmpeg-haldclut** is very fast and depends primarily on:
+
+- **Video length**: Scales linearly with duration
+- **Resolution**: Higher resolutions take longer but still much faster than frame-by-frame
+- **Color method**: All methods are fast since color matching happens once on the HALD CLUT
+
+Approximate processing time for 1080p video at 30fps on modern hardware:
+
+- 5 seconds: ~2-5 seconds
+- 10 seconds: ~3-8 seconds
+- 30 seconds: ~10-20 seconds
+- 60 seconds: ~20-40 seconds
+
+### Frame-by-Frame Method (Legacy)
+
+Processing time with **frame-by-frame** depends on:
 
 - **Video length**: Longer videos take proportionally longer to process
 - **Resolution**: Higher resolution videos (4K vs 1080p) take significantly longer
 - **Frame rate**: Higher frame rates mean more frames to process
-- **Method**: Compound methods (hm-mvgd-hm, hm-mkl-hm) take longer than simple methods (mkl, hm)
+- **Color method**: Compound methods (hm-mvgd-hm, hm-mkl-hm) take longer than simple methods (mkl, hm)
 
 Approximate processing time for 1080p video at 30fps on modern hardware:
 
