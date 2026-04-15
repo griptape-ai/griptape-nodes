@@ -100,7 +100,7 @@ class TestArtifactManager:
         await manager.on_app_initialization_complete(AppInitializationComplete())
 
         # Now default providers should be registered
-        assert len(manager._registry._provider_classes) == 1
+        assert len(manager._registry._provider_classes) == 2  # noqa: PLR2004
         assert isinstance(manager._registry._file_format_to_provider_class, dict)
         assert len(manager._registry._file_format_to_provider_class) > 0
         assert isinstance(manager._registry._provider_instances, dict)
@@ -189,7 +189,7 @@ class TestArtifactManager:
         await manager.on_app_initialization_complete(AppInitializationComplete())
 
         # Now providers should be registered
-        assert len(manager._registry._provider_classes) == 1
+        assert len(manager._registry._provider_classes) == 2  # noqa: PLR2004
         assert "jpg" in manager._registry._file_format_to_provider_class
 
     def test_multiple_providers_can_handle_same_format(self) -> None:

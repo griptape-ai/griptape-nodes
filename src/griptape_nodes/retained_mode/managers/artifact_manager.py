@@ -84,6 +84,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseGeneratorParameters,
     ImageArtifactProvider,
     ProviderRegistry,
+    VideoArtifactProvider,
 )
 from griptape_nodes.retained_mode.managers.artifact_providers.artifact_schema_models import (
     ArtifactSchemas,
@@ -245,7 +246,7 @@ class ArtifactManager:
         # Register default providers (order matters: Image, Video, Audio)
         # Generator settings are now registered automatically via _register_provider_settings()
         failures = []
-        for provider_class in [ImageArtifactProvider]:
+        for provider_class in [ImageArtifactProvider, VideoArtifactProvider]:
             request = RegisterArtifactProviderRequest(provider_class=provider_class)
             result = self.on_handle_register_artifact_provider_request(request)
             if isinstance(result, RegisterArtifactProviderResultFailure):

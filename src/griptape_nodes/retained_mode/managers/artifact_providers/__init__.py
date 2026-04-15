@@ -16,6 +16,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.provider_registry 
 from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
     normalize_friendly_name_to_key,
 )
+from griptape_nodes.retained_mode.managers.artifact_providers.video import VideoArtifactProvider
 
 __all__ = [
     "BaseArtifactPreviewGenerator",
@@ -23,5 +24,6 @@ __all__ = [
     "BaseGeneratorParameters",
     "ImageArtifactProvider",
     "ProviderRegistry",
+    "VideoArtifactProvider",
     "normalize_friendly_name_to_key",
 ]
