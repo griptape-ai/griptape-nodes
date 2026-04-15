@@ -43,6 +43,7 @@ from griptape_nodes.node_library.library_registry import (
 )
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
+    AppSessionStartedEvent,
     ConfigChanged,
     EngineInitializationProgress,
     GetEngineVersionRequest,
@@ -440,6 +441,10 @@ class LibraryManager:
             ConfigChanged,
             self.on_config_changed,
         )
+        event_manager.add_listener_to_app_event(
+            AppSessionStartedEvent,
+            self._on_session_started,
+        )
 
     def register_pre_reload_callback(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked immediately before all libraries are reloaded.
@@ -503,7 +508,7 @@ class LibraryManager:
                 raise RuntimeError(msg)
         return None
 
-    async def start_workers(self) -> None:
+    async def _start_workers(self) -> None:
         """Issue StartWorkerRequest for every library that requires a dedicated worker.
 
         Sets each matching library back to WORKER_PENDING and asks WorkerManager to
@@ -2837,19 +2842,34 @@ class LibraryManager:
                     break
         return workflow_files
 
+    async def _on_session_started(self, _event: AppSessionStartedEvent) -> None:
+        """Spawn workers for all libraries that require one now that a session is active.
+
+        Two cases:
+        1. Fresh start: libraries finished loading before a session existed, so their
+           worker spawns were blocked on _session_ready_event. WorkerManager.set_session_ready()
+           unblocks them, but _start_workers() catches any that slipped through.
+        2. Session restart: workers were terminated by AppEndSession and need to be
+           re-spawned now that a new session is available.
+        """
+        if self._is_worker:
+            return
+        await self._start_workers()
+
     async def _maybe_start_workers_for_existing_session(self) -> None:
         """Start workers if the orchestrator restarted into an already-active session.
 
         In a normal fresh start the GUI sends AppStartSessionRequest which triggers worker
-        spawning.  When the engine restarts mid-session the GUI does not send that request,
-        so this method handles the case at the end of library initialization.
+        spawning via _on_session_started. When the engine restarts mid-session the GUI does
+        not send that request, so this method handles the case at the end of library
+        initialization.
         """
         if self._is_worker or not GriptapeNodes.get_session_id():
             return
         worker_manager = GriptapeNodes.WorkerManager()
         if worker_manager is not None:
             worker_manager.set_session_ready()
-            await self.start_workers()
+            await self._start_workers()
 
     async def _await_pending_workers(self, wait_seconds: float = 120) -> None:
         """Wait for all WORKER_PENDING libraries to report back via LibraryLoadedNotification.

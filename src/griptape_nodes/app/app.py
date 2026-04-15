@@ -557,15 +557,12 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
             topic = f"sessions/{session_id}/request"
             await _subscribe_to_topic(topic)
             logger.info("Subscribed to session topic: %s", topic)
-            # Unblock any worker spawns that were waiting for a session to become available.
+            # Unblock any worker spawns that were waiting for a session to become available,
+            # then broadcast so interested managers (e.g. LibraryManager) can react.
             worker_manager = GriptapeNodes.WorkerManager()
             if worker_manager is not None:
                 worker_manager.set_session_ready()
-                # Spawn workers for all libraries that require one.  Covers the fresh-start
-                # case (workers were scheduled at init but blocked on _session_ready_event)
-                # and session re-starts after an AppEndSession (workers were terminated and
-                # need to be re-spawned).
-                await GriptapeNodes.LibraryManager().start_workers()
+            await GriptapeNodes.abroadcast_app_event(app_events.AppSessionStartedEvent(session_id=session_id))
         elif isinstance(result_event.result, app_events.AppEndSessionResultSuccess):
             session_id = result_event.result.session_id
             if session_id is not None:

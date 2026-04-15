@@ -129,6 +129,14 @@ class AppConnectionEstablished(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
+class AppSessionStartedEvent(AppPayload):
+    """Notification that a session has started and workers can be spawned."""
+
+    session_id: str
+
+
+@dataclass
+@PayloadRegistry.register
 class EngineInitializationProgress(AppPayload):
     """Real-time progress updates during engine initialization (libraries and workflows loading).
 
