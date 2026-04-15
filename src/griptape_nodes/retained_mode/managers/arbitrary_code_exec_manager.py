@@ -38,9 +38,6 @@ class ArbitraryCodeExecManager:
 
     def on_run_arbitrary_python_string_request(self, request: RunArbitraryPythonStringRequest) -> ResultPayload:
 
-        def raise_name_error(msg: str) -> None:
-            raise NameError(msg)
-
         try:
             string_buffer = io.StringIO()
             with redirect_stdout(string_buffer):
@@ -67,7 +64,8 @@ class ArbitraryCodeExecManager:
             if request.local_variable_to_capture is not None:
                 var_name = request.local_variable_to_capture
                 if var_name not in namespace:
-                    raise_name_error(f"Local variable '{var_name}' was not found after execution.")
+                    msg = f"Local variable '{var_name}' was not found after execution."
+                    raise NameError(msg)
                 captured_output = str(namespace[var_name])
             else:
                 captured_output = strip_ansi_codes(string_buffer.getvalue())
