@@ -1,7 +1,6 @@
 """Tests for FFmpegPreviewGenerator."""
 
 import json
-import shutil
 import subprocess
 import tempfile
 from collections.abc import Generator
@@ -9,13 +8,20 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from static_ffmpeg import run as static_ffmpeg_run
 
 from griptape_nodes.retained_mode.managers.artifact_providers.video.preview_generators.ffmpeg_preview_generator import (
     FFmpegPreviewGenerator,
 )
 from griptape_nodes.utils.async_utils import subprocess_run
 
-FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
+try:
+    _FFMPEG_PATH, _FFPROBE_PATH = static_ffmpeg_run.get_or_fetch_platform_executables_else_raise()
+    FFMPEG_AVAILABLE = True
+except Exception:
+    _FFMPEG_PATH = ""
+    _FFPROBE_PATH = ""
+    FFMPEG_AVAILABLE = False
 
 
 @pytest.fixture
@@ -25,8 +31,8 @@ def temp_test_video() -> Generator[str, None, None]:
         temp_path = f.name
 
     subprocess.run(  # noqa: S603
-        [  # noqa: S607
-            "ffmpeg",
+        [
+            _FFMPEG_PATH,
             "-f",
             "lavfi",
             "-i",
@@ -238,7 +244,7 @@ class TestFFmpegPreviewGeneratorGeneration:
         # Verify dimensions via ffprobe
         result = await subprocess_run(
             [
-                "ffprobe",
+                _FFPROBE_PATH,
                 "-v",
                 "quiet",
                 "-print_format",

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
-import shutil
 from pathlib import Path
 from typing import Any
 
 import anyio
 from pydantic import PositiveInt  # noqa: TC002 - Runtime validation, not type-only
+from static_ffmpeg import run as static_ffmpeg_run
 
 from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
     BaseArtifactPreviewGenerator,
@@ -106,9 +106,11 @@ class FFmpegPreviewGenerator(BaseArtifactPreviewGenerator):
             OSError: If preview generation fails
         """
         # FAILURE CASE: ffmpeg not available
-        if shutil.which("ffmpeg") is None:
-            msg = "ffmpeg not found on system PATH. Install ffmpeg to generate video previews."
-            raise FileNotFoundError(msg)
+        try:
+            ffmpeg_path, _ffprobe_path = static_ffmpeg_run.get_or_fetch_platform_executables_else_raise()
+        except Exception as e:
+            msg = f"Attempted to get ffmpeg binary via static-ffmpeg. Failed because: {e}"
+            raise FileNotFoundError(msg) from e
 
         # FAILURE CASE: source file does not exist
         source_path = anyio.Path(self.source_file_location)
@@ -128,7 +130,7 @@ class FFmpegPreviewGenerator(BaseArtifactPreviewGenerator):
         )
 
         cmd = [
-            "ffmpeg",
+            ffmpeg_path,
             "-i",
             self.source_file_location,
             # Video: H.264 codec for broad browser compatibility
@@ -154,11 +156,15 @@ class FFmpegPreviewGenerator(BaseArtifactPreviewGenerator):
             str(destination_path),
         ]
 
-        result = await subprocess_run(
-            cmd,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = await subprocess_run(
+                cmd,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as e:
+            msg = f"Attempted to run ffmpeg for preview generation. Failed because: {e}"
+            raise OSError(msg) from e
 
         # FAILURE CASE: ffmpeg exited with error
         if result.returncode != 0:

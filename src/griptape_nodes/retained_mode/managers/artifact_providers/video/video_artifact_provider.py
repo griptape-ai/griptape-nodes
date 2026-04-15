@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from static_ffmpeg import run as static_ffmpeg_run
 
 from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
     BaseArtifactMetadata,
@@ -81,14 +82,25 @@ class VideoArtifactProvider(BaseArtifactProvider):
     @classmethod
     def get_artifact_metadata(cls, source_path: str) -> VideoArtifactMetadata | None:
         """Extract video metadata via ffprobe."""
-        if shutil.which("ffprobe") is None:
-            logger.warning("ffprobe not found on system PATH")
+        probe_data = cls._run_ffprobe(source_path)
+        if probe_data is None:
+            return None
+
+        return cls._parse_probe_data(probe_data, source_path)
+
+    @classmethod
+    def _run_ffprobe(cls, source_path: str) -> dict | None:
+        """Run ffprobe on a video file and return parsed JSON output."""
+        try:
+            _ffmpeg_path, ffprobe_path = static_ffmpeg_run.get_or_fetch_platform_executables_else_raise()
+        except Exception:
+            logger.warning("Attempted to get ffprobe binary via static-ffmpeg. Failed to fetch platform executables.")
             return None
 
         try:
             result = subprocess.run(  # noqa: S603
-                [  # noqa: S607
-                    "ffprobe",
+                [
+                    ffprobe_path,
                     # Suppress all log output
                     "-v",
                     "quiet",
@@ -97,58 +109,73 @@ class VideoArtifactProvider(BaseArtifactProvider):
                     "json",
                     # Include per-stream info (codec, dimensions, frame rate, etc.)
                     "-show_streams",
+                    # Only the first video stream
+                    "-select_streams",
+                    "v:0",
                     # Include container-level info (duration, size, etc.)
                     "-show_format",
                     source_path,
                 ],
                 capture_output=True,
                 text=True,
-                timeout=30,
-                check=False,
+                timeout=120,
+                check=True,
             )
-
-            if result.returncode != 0:
-                return None
-
-            probe_data = json.loads(result.stdout)
-
-            # Find the first video stream
-            video_stream = None
-            for stream in probe_data.get("streams", []):
-                if stream.get("codec_type") == "video":
-                    video_stream = stream
-                    break
-
-            if video_stream is None:
-                return None
-
-            width = int(video_stream.get("width", 0))
-            height = int(video_stream.get("height", 0))
-            codec = video_stream.get("codec_name", "unknown")
-
-            # Parse frame rate from r_frame_rate (e.g., "30/1" or "24000/1001")
-            frame_rate = 0.0
-            r_frame_rate = video_stream.get("r_frame_rate", "0/1")
-            if "/" in r_frame_rate:
-                num, den = r_frame_rate.split("/")
-                if int(den) != 0:
-                    frame_rate = int(num) / int(den)
-
-            # Duration from stream or format level
-            duration_seconds = float(video_stream.get("duration", 0.0))
-            if duration_seconds == 0.0:
-                format_info = probe_data.get("format", {})
-                duration_seconds = float(format_info.get("duration", 0.0))
-
-            file_size = Path(source_path).stat().st_size
-
-            return VideoArtifactMetadata(
-                width=width,
-                height=height,
-                duration_seconds=duration_seconds,
-                codec=codec,
-                frame_rate=round(frame_rate, 3),
-                file_size=file_size,
-            )
-        except Exception:
+        except subprocess.TimeoutExpired:
+            logger.warning("Attempted to probe video metadata for '%s'. ffprobe timed out.", source_path)
             return None
+        except subprocess.CalledProcessError as e:
+            logger.warning("Attempted to probe video metadata for '%s'. ffprobe failed: %s", source_path, e.stderr)
+            return None
+        except OSError as e:
+            logger.warning("Attempted to run ffprobe for '%s'. Failed because: %s", source_path, e)
+            return None
+
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError:
+            logger.warning("Attempted to parse ffprobe output for '%s'. Failed to decode JSON.", source_path)
+            return None
+
+    @classmethod
+    def _parse_probe_data(cls, probe_data: dict, source_path: str) -> VideoArtifactMetadata | None:
+        """Parse ffprobe JSON output into VideoArtifactMetadata."""
+        # Find the first video stream
+        video_stream = None
+        for stream in probe_data.get("streams", []):
+            if stream.get("codec_type") == "video":
+                video_stream = stream
+                break
+
+        if video_stream is None:
+            logger.warning("Attempted to find video stream in '%s'. No video stream found.", source_path)
+            return None
+
+        width = int(video_stream.get("width", 0))
+        height = int(video_stream.get("height", 0))
+        codec = video_stream.get("codec_name", "unknown")
+
+        # Parse frame rate from r_frame_rate (e.g., "30/1" or "24000/1001")
+        frame_rate = 0.0
+        r_frame_rate = video_stream.get("r_frame_rate", "0/1")
+        if "/" in r_frame_rate:
+            num, den = r_frame_rate.split("/")
+            if int(den) != 0:
+                frame_rate = int(num) / int(den)
+
+        # Duration from stream or format level
+        duration_seconds = float(video_stream.get("duration", 0.0))
+        if duration_seconds == 0.0:
+            format_info = probe_data.get("format", {})
+            duration_seconds = float(format_info.get("duration", 0.0))
+
+        file_size = Path(source_path).stat().st_size
+
+        return VideoArtifactMetadata(
+            width=width,
+            height=height,
+            duration_seconds=duration_seconds,
+            codec=codec,
+            frame_rate=round(frame_rate, 3),
+            file_size=file_size,
+        )
