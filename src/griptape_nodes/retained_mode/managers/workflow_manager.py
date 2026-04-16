@@ -27,7 +27,9 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
+from griptape_nodes.files.file import FileLoadError
 from griptape_nodes.files.path_utils import derive_registry_key, resolve_workspace_path
+from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
     WorkflowMetadata,
@@ -1674,6 +1676,46 @@ class WorkflowManager:
         success: bool
         error_details: str
 
+    class WorkflowSavePath(NamedTuple):
+        """Absolute save path and its registry-relative form."""
+
+        file_path: Path
+        relative_file_path: str
+
+    def _build_workflow_save_path(self, relative_file_path: str) -> WorkflowSavePath:
+        """Resolve a workflow save path via the ``save_workflow`` situation.
+
+        Returns the absolute save path plus a registry-relative form. When the
+        resolved path lives inside the workspace the relative form stays
+        workspace-relative; otherwise it falls back to the absolute path string
+        so registry lookups land at the same location. If the situation cannot
+        resolve (e.g., no project loaded), we fall through to the plain
+        workspace path.
+        """
+        relative_path = Path(relative_file_path)
+        parent_str = str(relative_path.parent)
+        extra_vars: dict[str, str | int] = {}
+        if parent_str not in (".", ""):
+            extra_vars["sub_dirs"] = parent_str
+
+        destination = ProjectFileDestination.from_situation(relative_path.name, "save_workflow", **extra_vars)
+        try:
+            resolved = Path(destination.resolve())
+        except FileLoadError:
+            workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            return WorkflowManager.WorkflowSavePath(
+                file_path=workspace_path.joinpath(relative_file_path),
+                relative_file_path=relative_file_path,
+            )
+
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        try:
+            workspace_relative = resolved.relative_to(workspace_path)
+        except ValueError:
+            return WorkflowManager.WorkflowSavePath(file_path=resolved, relative_file_path=str(resolved))
+
+        return WorkflowManager.WorkflowSavePath(file_path=resolved, relative_file_path=str(workspace_relative))
+
     def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
         """Write workflow content to file with proper validation and error handling.
 
@@ -1935,8 +1977,7 @@ class WorkflowManager:
             file_name = self._generate_unique_filename(base_name)
             creation_date = datetime.now(tz=UTC)
             branched_from = None
-            relative_file_path = f"{file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py")
 
         elif target_workflow:
             # Requested name exists in registry → overwrite it
@@ -1958,10 +1999,10 @@ class WorkflowManager:
             # If current_dir is absolute, the workflow lives outside the workspace;
             # save the copy to the workspace root so the registry key stays relative.
             if current_dir.is_absolute():
-                relative_file_path = f"{file_name}.py"
+                requested_relative = f"{file_name}.py"
             else:
-                relative_file_path = str(current_dir / f"{file_name}.py")
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+                requested_relative = str(current_dir / f"{file_name}.py")
+            file_path, relative_file_path = self._build_workflow_save_path(requested_relative)
 
         else:
             # No requested name or no current workflow → first save
@@ -1969,8 +2010,7 @@ class WorkflowManager:
             file_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
             creation_date = datetime.now(tz=UTC)
             branched_from = None
-            relative_file_path = f"{file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py")
 
         # Ensure creation date is valid (backcompat)
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
@@ -1994,9 +2034,8 @@ class WorkflowManager:
             # Use provided file path
             file_path = Path(request.file_path)
         else:
-            # Default to workspace path
-            relative_file_path = f"{request.file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            # Resolve via the save_workflow situation (workspace-relative by default).
+            file_path = self._build_workflow_save_path(f"{request.file_name}.py").file_path
 
         # Use provided creation date or default to current time
         creation_date = request.creation_date

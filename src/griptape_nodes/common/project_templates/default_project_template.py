@@ -38,6 +38,10 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="griptape-nodes-thumbnails",
             path_macro=".griptape-nodes-thumbnails",
         ),
+        "workflows": DirectoryDefinition(
+            name="workflows",
+            path_macro="workflows",
+        ),
     },
     environment={},
     situations={
@@ -105,6 +109,16 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="save_griptape_nodes_metadata",
             description="Save sidecar metadata file with preserved directory hierarchy",
             macro="{griptape-nodes-metadata}/{source_relative_path?:/}{source_file_name}.json",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.OVERWRITE,
+                create_dirs=True,
+            ),
+            fallback="save_file",
+        ),
+        "save_workflow": SituationTemplate(
+            name="save_workflow",
+            description="Save a workflow Python file into the workspace workflows directory, preserving any sub-directory hierarchy",
+            macro="{workflows}/{sub_dirs?:/}{file_name_base}.{file_extension}",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.OVERWRITE,
                 create_dirs=True,
