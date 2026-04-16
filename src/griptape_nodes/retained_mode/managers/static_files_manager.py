@@ -57,7 +57,6 @@ from griptape_nodes.utils.url_utils import uri_to_path
 logger = logging.getLogger("griptape_nodes")
 
 SAVE_STATIC_FILE_SITUATION = "save_static_file"
-COPY_EXTERNAL_FILE_SITUATION = "copy_external_file"
 
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
 
@@ -220,10 +219,11 @@ class StaticFilesManager:
             A result object indicating success or failure.
         """
         file_name = request.file_name
+        situation_name = request.situation_name
 
-        resolved = self._resolve_static_file_path(file_name, COPY_EXTERNAL_FILE_SITUATION)
+        resolved = self._resolve_static_file_path(file_name, situation_name)
         if resolved is None:
-            msg = f"Attempted to create upload URL for '{file_name}'. Failed because the project template is missing the '{COPY_EXTERNAL_FILE_SITUATION}' situation."
+            msg = f"Attempted to create upload URL for '{file_name}'. Failed because the project template is missing the '{situation_name}' situation."
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
         try:
@@ -252,9 +252,10 @@ class StaticFilesManager:
         Returns:
             A result object indicating success or failure.
         """
-        resolved = self._resolve_static_file_path(request.file_name, COPY_EXTERNAL_FILE_SITUATION)
+        situation_name = request.situation_name
+        resolved = self._resolve_static_file_path(request.file_name, situation_name)
         if resolved is None:
-            msg = f"Attempted to create download URL for '{request.file_name}'. Failed because the project template is missing the '{COPY_EXTERNAL_FILE_SITUATION}' situation."
+            msg = f"Attempted to create download URL for '{request.file_name}'. Failed because the project template is missing the '{situation_name}' situation."
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         try:
