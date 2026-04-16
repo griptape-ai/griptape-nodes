@@ -337,13 +337,17 @@ class ExtractFlowCommandsFromImageMetadataRequest(RequestPayload):
 class ExtractFlowCommandsFromImageMetadataResultSuccess(ResultPayloadSuccess):
     """Flow commands extracted successfully from image metadata.
 
+    An image without embedded flow commands is still a success: the image simply
+    carries no workflow payload, which is a valid state. In that case
+    serialized_flow_commands is None.
+
     Args:
-        serialized_flow_commands: The extracted and decoded SerializedFlowCommands object
+        serialized_flow_commands: The extracted and decoded SerializedFlowCommands object, or None if the image has no embedded flow commands
         flow_name: Name of the deserialized flow (only present if deserialize=True)
         node_name_mappings: Mapping from original to deserialized node names (only present if deserialize=True)
     """
 
-    serialized_flow_commands: SerializedFlowCommands
+    serialized_flow_commands: SerializedFlowCommands | None = None
     flow_name: str | None = None
     node_name_mappings: dict[str, str] = field(default_factory=dict)
 
