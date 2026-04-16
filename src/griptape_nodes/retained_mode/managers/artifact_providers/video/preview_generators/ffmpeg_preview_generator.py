@@ -17,7 +17,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.base_generator_par
     BaseGeneratorParameters,
     Field,
 )
-from griptape_nodes.utils.async_utils import subprocess_run
+from griptape_nodes.utils.async_utils import subprocess_run, to_thread
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -106,8 +106,10 @@ class FFmpegPreviewGenerator(BaseArtifactPreviewGenerator):
             OSError: If preview generation fails
         """
         # FAILURE CASE: ffmpeg not available
+        # Run in a thread because the first call downloads and extracts the ffmpeg binary,
+        # which would otherwise block the event loop long enough to disconnect WebSocket clients.
         try:
-            ffmpeg_path, _ffprobe_path = static_ffmpeg_run.get_or_fetch_platform_executables_else_raise()
+            ffmpeg_path, _ffprobe_path = await to_thread(static_ffmpeg_run.get_or_fetch_platform_executables_else_raise)
         except Exception as e:
             msg = f"Attempted to get ffmpeg binary via static-ffmpeg. Failed because: {e}"
             raise FileNotFoundError(msg) from e
