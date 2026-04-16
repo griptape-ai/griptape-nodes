@@ -1751,7 +1751,7 @@ class WorkflowManager:
         branched_from = save_target.branched_from
         registry_key = derive_registry_key(relative_file_path)
 
-        logger.info(
+        logger.debug(
             "Save workflow: scenario=%s, file_name=%s, file_path=%s, branched_from=%s",
             save_target.scenario.value,
             file_name,
