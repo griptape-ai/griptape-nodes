@@ -197,6 +197,20 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         return instance._workflows.pop(name)
 
     @classmethod
+    def clear_user_workflows(cls) -> None:
+        """Remove all non-library workflows from the registry.
+
+        Library-provided workflows (is_griptape_provided=True) are preserved.
+        Called before re-registering workflows so that a workspace change takes effect cleanly.
+        """
+        instance = cls()
+        keys_to_remove = [
+            key for key, workflow in instance._workflows.items() if not workflow.metadata.is_griptape_provided
+        ]
+        for key in keys_to_remove:
+            del instance._workflows[key]
+
+    @classmethod
     def rekey_workflow(cls, old_key: str, new_key: str) -> None:
         """Re-key a workflow in the registry from old_key to new_key."""
         instance = cls()
