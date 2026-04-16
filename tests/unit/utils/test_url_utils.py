@@ -243,3 +243,22 @@ class TestUriToPath:
         result = uri_to_path("file:///any/path")
         assert isinstance(result, Path)
         assert hasattr(result, "exists")  # Verify it's a Path with Path methods
+
+    def test_windows_drive_letter_path_preserved(self) -> None:
+        """Windows drive letters must not be treated as URI schemes."""
+        result = uri_to_path(r"Z:\Griptape\inputs\REX_MC_10_10_Image.jpg")
+        assert isinstance(result, Path)
+        # The drive letter "Z:" must be preserved, not parsed away as a URI scheme
+        assert str(result).startswith("Z:")
+
+    def test_plain_absolute_path_preserved(self) -> None:
+        """Plain absolute paths (no file:// scheme) must pass through unchanged."""
+        result = uri_to_path("/home/user/file.txt")
+        assert isinstance(result, Path)
+        assert result.as_posix() == "/home/user/file.txt"
+
+    def test_plain_relative_path_preserved(self) -> None:
+        """Plain relative paths must pass through unchanged."""
+        result = uri_to_path("relative/path/file.txt")
+        assert isinstance(result, Path)
+        assert result.as_posix() == "relative/path/file.txt"
