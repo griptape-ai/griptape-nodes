@@ -180,6 +180,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     WorkflowNotFoundProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY
 from griptape_nodes.utils.string_utils import normalize_display_name
 
 if TYPE_CHECKING:
@@ -424,8 +425,13 @@ class WorkflowManager:
         """
         return self._referenced_workflow_stack[-1]
 
-    def on_libraries_initialization_complete(self, workflows_to_register: list[str] | None = None) -> None:
+    def refresh_workflow_registry(self, workflows_to_register: list[str] | None = None) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
+        # Clear any previously registered user/workspace workflows before re-registering, so that
+        # a workspace change (e.g. project switch) takes effect cleanly. Library-provided workflows
+        # (is_griptape_provided=True) registered above this call are preserved.
+        WorkflowRegistry.clear_user_workflows()
+
         # Discover workflows from both config and workspace.
         self._workflows_loading_complete.clear()
 
@@ -823,14 +829,19 @@ class WorkflowManager:
         if not isinstance(register_result, RegisterWorkflowResultSuccess):
             return ImportWorkflowResultFailure(result_details=register_result.result_details)
 
-        # Add the workflow to the user configuration
+        # Persist external workflows to global config so they survive restarts and appear in all projects.
+        # Workspace workflows are discovered by directory scan and don't need an explicit entry.
+        full_path = WorkflowRegistry.get_complete_file_path(request.file_path)
+        config_manager = GriptapeNodes.ConfigManager()
         try:
-            full_path = WorkflowRegistry.get_complete_file_path(request.file_path)
-            GriptapeNodes.ConfigManager().save_user_workflow_json(full_path)
-        except Exception as e:
-            details = f"Failed to add workflow '{workflow_name}' to user configuration: {e}"
-
-            return ImportWorkflowResultFailure(result_details=details)
+            Path(full_path).resolve().relative_to(Path(config_manager.workspace_path).resolve())
+        except ValueError:
+            existing_workflows = config_manager.get_config_value(WORKFLOWS_TO_REGISTER_KEY)
+            if not existing_workflows:
+                existing_workflows = []
+            if full_path not in existing_workflows:
+                existing_workflows.append(full_path)
+            config_manager.set_config_value(WORKFLOWS_TO_REGISTER_KEY, existing_workflows)
 
         return ImportWorkflowResultSuccess(
             workflow_name=register_result.workflow_name,
@@ -1280,9 +1291,8 @@ class WorkflowManager:
             # Update workflow registry with new file path
             workflow.file_path = new_relative_path
 
-            # Update configuration - remove old path and add new path
+            # Remove old config entry if it existed (e.g. workflow was externally imported)
             config_manager.delete_user_workflow(old_relative_path)
-            config_manager.save_user_workflow_json(str(new_absolute_path))
 
             # Update registry key if directory changed
             if old_registry_key != new_registry_key:
@@ -1809,9 +1819,6 @@ class WorkflowManager:
 
         registered_workflows = WorkflowRegistry.list_workflows()
         if registry_key not in registered_workflows:
-            error_details = self._ensure_user_workflow_json_saved(relative_file_path, file_path, registry_key)
-            if error_details:
-                return SaveWorkflowResultFailure(result_details=error_details)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
 
         existing_workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
@@ -1845,17 +1852,6 @@ class WorkflowManager:
                 image=existing.metadata.image,
                 is_template=existing.metadata.is_template,
             )
-
-    def _ensure_user_workflow_json_saved(self, relative_file_path: str, file_path: Path, file_name: str) -> str | None:
-        """Save user workflow JSON when needed; return error details on failure, else None."""
-        if Path(relative_file_path).is_absolute():
-            return None
-        try:
-            GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
-        except OSError as e:
-            return f"Attempted to save workflow '{file_name}'. Failed when saving configuration: {e}"
-        else:
-            return None
 
     def _generate_unique_filename(self, base_name: str) -> str:
         """Generate a unique filename for a workflow, avoiding collisions.
@@ -4581,10 +4577,6 @@ class WorkflowManager:
             # Now create the branch workflow in registry (file must exist on disk first)
             WorkflowRegistry.generate_new_workflow(metadata=branch_metadata, file_path=branch_file_path)
 
-            # Register the branch in user configuration
-            config_manager = GriptapeNodes.ConfigManager()
-            config_manager.save_user_workflow_json(branch_full_path)
-
             details = f"Successfully branched workflow '{request.workflow_name}' as '{branch_name}'"
             return BranchWorkflowResultSuccess(
                 branched_workflow_name=branch_name,
@@ -4659,8 +4651,6 @@ class WorkflowManager:
         new_full_path = WorkflowRegistry.get_complete_file_path(relative_file_path)
         Path(new_full_path).write_text(new_content, encoding="utf-8")
         WorkflowRegistry.generate_new_workflow(metadata=new_metadata, file_path=relative_file_path)
-        config_manager = GriptapeNodes.ConfigManager()
-        config_manager.save_user_workflow_json(new_full_path)
 
         details = f"Successfully created workflow '{new_file_name}' from template '{request.template_name}'"
         return CreateWorkflowFromTemplateResultSuccess(

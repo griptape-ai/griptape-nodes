@@ -30,6 +30,10 @@ from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.files.path_utils import resolve_file_path
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+from griptape_nodes.retained_mode.events.library_events import (
+    ReloadAllLibrariesRequest,
+    ReloadAllLibrariesResultFailure,
+)
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
@@ -67,7 +71,11 @@ from griptape_nodes.retained_mode.events.project_events import (
     SaveProjectTemplateResultFailure,
     SaveProjectTemplateResultSuccess,
     SetCurrentProjectRequest,
+    SetCurrentProjectResultFailure,
     SetCurrentProjectResultSuccess,
+    UnregisterProjectTemplateRequest,
+    UnregisterProjectTemplateResultFailure,
+    UnregisterProjectTemplateResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
@@ -184,6 +192,9 @@ class ProjectManager:
         # Consolidated project information storage
         self._successfully_loaded_project_templates: dict[ProjectID, ProjectInfo] = {}
         self._current_project_id: ProjectID | None = None
+        # Set to True at end of on_app_initialization_complete. Guards workspace switch
+        # logic so expensive reloads don't fire during startup.
+        self._initialization_complete: bool = False
 
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
         # This allows UI to query why a project failed to load
@@ -209,6 +220,9 @@ class ProjectManager:
         )
         event_manager.assign_manager_to_request_type(
             AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
+        )
+        event_manager.assign_manager_to_request_type(
+            UnregisterProjectTemplateRequest, self.on_unregister_project_template_request
         )
 
         # Register app initialization listener
@@ -543,8 +557,48 @@ class ProjectManager:
             result_details=f"Successfully resolved macro path. Result: {resolved_path}",
         )
 
-    def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> SetCurrentProjectResultSuccess:
-        """Set which project user has selected."""
+    def _find_workspace_override(self, project_file_path: Path, project_workspaces: dict[str, str]) -> str | None:
+        """Return the user-configured workspace override for a project file, or None if not mapped."""
+        resolved_project_path = str(project_file_path.resolve())
+        return next(
+            (v for k, v in project_workspaces.items() if str(Path(k).resolve()) == resolved_project_path),
+            None,
+        )
+
+    async def _reload_after_project_switch(
+        self, project_id: str | None, *, workspace_changed: bool
+    ) -> SetCurrentProjectResultFailure | None:
+        """Reload libraries and optionally re-register workflows after a project switch.
+
+        Always reloads libraries (project config can affect env vars and library behavior).
+        Only re-registers workflows when the workspace directory actually changed.
+
+        Returns a failure result if library reload fails, otherwise None.
+        """
+        reload_result = await GriptapeNodes.ahandle_request(ReloadAllLibrariesRequest())
+        if isinstance(reload_result, ReloadAllLibrariesResultFailure):
+            return SetCurrentProjectResultFailure(
+                result_details=f"Attempted to set project '{project_id}'. "
+                f"Config updated but library reload failed: {reload_result.result_details}",
+            )
+        if workspace_changed:
+            GriptapeNodes.WorkflowManager().refresh_workflow_registry()
+        return None
+
+    async def on_set_current_project_request(
+        self, request: SetCurrentProjectRequest
+    ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
+        """Set which project user has selected.
+
+        Captures workspace path before and after config layer changes. If the
+        workspace actually changed and startup is complete, performs an expensive
+        workspace switch: reloads all libraries and re-registers workflows.
+        During startup, LibraryManager handles library loading concurrently, so
+        the workspace switch is skipped.
+        """
+        # Capture workspace BEFORE config changes for comparison after
+        old_workspace = self._config_manager.workspace_path
+
         self._current_project_id = request.project_id
 
         if request.project_id is not None:
@@ -564,11 +618,7 @@ class ProjectManager:
                     config_source="user_config",
                     default={},
                 )
-                resolved_project_path = str(project_file_path.resolve())
-                workspace_override = next(
-                    (v for k, v in project_workspaces.items() if str(Path(k).resolve()) == resolved_project_path),
-                    None,
-                )
+                workspace_override = self._find_workspace_override(project_file_path, project_workspaces)
 
                 if workspace_override is not None:
                     self._config_manager.set_workspace_override(Path(workspace_override))
@@ -582,15 +632,31 @@ class ProjectManager:
 
                 # Load workspace config layer from the resolved workspace directory.
                 self._config_manager.load_workspace_config(self._config_manager.workspace_path)
+            elif project_info is not None and project_info.project_file_path is None:
+                # Switching to system defaults: clear any project-specific workspace override
+                # and reload configs so workspace_path resolves from default config layers.
+                self._config_manager.set_workspace_override(None)
+                self._config_manager.load_configs()
+
+        new_workspace = self._config_manager.workspace_path
+        workspace_changed = old_workspace != new_workspace
+
+        if self._initialization_complete:
+            failure = await self._reload_after_project_switch(request.project_id, workspace_changed=workspace_changed)
+            if failure is not None:
+                return failure
 
         if request.project_id is None:
             return SetCurrentProjectResultSuccess(
                 result_details="Successfully set current project. No project selected",
             )
 
-        return SetCurrentProjectResultSuccess(
+        result = SetCurrentProjectResultSuccess(
             result_details=f"Successfully set current project. ID: {request.project_id}",
         )
+        if workspace_changed and self._initialization_complete:
+            result.altered_workflow_state = True
+        return result
 
     def on_get_current_project_request(
         self, _request: GetCurrentProjectRequest
@@ -654,6 +720,47 @@ class ProjectManager:
 
         return SaveProjectTemplateResultSuccess(
             result_details=f"Successfully saved project template to '{request.project_path}'",
+        )
+
+    def on_unregister_project_template_request(
+        self, request: UnregisterProjectTemplateRequest
+    ) -> UnregisterProjectTemplateResultSuccess | UnregisterProjectTemplateResultFailure:
+        """Remove a registered project template from in-memory caches and persisted config.
+
+        Flow:
+        1. Verify the project_id is known
+        2. Remove from _successfully_loaded_project_templates and _registered_template_status
+        3. Remove from PROJECTS_TO_REGISTER_KEY in user config
+        4. If this was the current project, clear the current project
+        """
+        project_id = request.project_id
+
+        if (
+            project_id not in self._successfully_loaded_project_templates
+            and Path(project_id) not in self._registered_template_status
+        ):
+            return UnregisterProjectTemplateResultFailure(
+                result_details=f"Attempted to unregister project template '{project_id}'. Failed because it is not registered.",
+            )
+
+        # Remove from in-memory caches
+        self._successfully_loaded_project_templates.pop(project_id, None)
+        self._registered_template_status.pop(Path(project_id), None)
+
+        # Remove from persisted config so it is not reloaded on restart
+        try:
+            registered: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            updated = [p for p in registered if p != project_id]
+            self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, updated)
+        except Exception:
+            logger.warning("Failed to remove project path '%s' from persisted config", project_id)
+
+        # If this was the active project, clear the current project
+        if self._current_project_id == project_id:
+            self._current_project_id = None
+
+        return UnregisterProjectTemplateResultSuccess(
+            result_details=f"Successfully unregistered project template '{project_id}'",
         )
 
     def on_match_path_against_macro_request(
@@ -782,7 +889,7 @@ class ProjectManager:
 
         # Set system defaults as current project (using synthetic key for system defaults)
         set_request = SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY)
-        result = self.on_set_current_project_request(set_request)
+        result = await self.on_set_current_project_request(set_request)
 
         if result.failed():
             logger.error("Failed to set default project as current: %s", result.result_details)
@@ -791,10 +898,14 @@ class ProjectManager:
         logger.debug("Successfully loaded default project template")
 
         # Check workspace for an optional project overlay file
-        self._load_workspace_project()
+        await self._load_workspace_project()
 
         # Load any additional project templates previously registered by the user
         self._load_registered_projects()
+
+        # Mark initialization complete so subsequent project switches trigger
+        # workspace detection and library reload when the workspace actually changes.
+        self._initialization_complete = True
 
     def on_get_all_situations_for_project_request(
         self, _request: GetAllSituationsForProjectRequest
@@ -1164,7 +1275,7 @@ class ProjectManager:
 
         return workspace_project_path
 
-    def _load_workspace_project(self) -> None:
+    async def _load_workspace_project(self) -> None:
         """Load workspace-level project template overlay if present.
 
         Checks for a project file using _resolve_project_file_path. If found, loads
@@ -1231,7 +1342,7 @@ class ProjectManager:
         self._registered_template_status[workspace_project_path] = validation
 
         set_request = SetCurrentProjectRequest(project_id=project_id)
-        set_result = self.on_set_current_project_request(set_request)
+        set_result = await self.on_set_current_project_request(set_request)
 
         if set_result.failed():
             logger.error(
