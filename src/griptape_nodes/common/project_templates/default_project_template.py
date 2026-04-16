@@ -34,6 +34,10 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="griptape-nodes-metadata",
             path_macro=".griptape-nodes-metadata",
         ),
+        "griptape-nodes-thumbnails": DirectoryDefinition(
+            name="griptape-nodes-thumbnails",
+            path_macro=".griptape-nodes-thumbnails",
+        ),
     },
     environment={},
     situations={
@@ -106,6 +110,16 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
                 create_dirs=True,
             ),
             fallback="save_file",
+        ),
+        "save_workflow_thumbnail": SituationTemplate(
+            name="save_workflow_thumbnail",
+            description="Save a workflow thumbnail image into the hidden workspace thumbnails directory",
+            macro="{griptape-nodes-thumbnails}/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.OVERWRITE,
+                create_dirs=True,
+            ),
+            fallback="save_static_file",
         ),
     },
 )
