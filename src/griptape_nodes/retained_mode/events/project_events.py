@@ -260,10 +260,14 @@ class SetCurrentProjectRequest(RequestPayload):
 
     Use when: User switches between projects, opens a new workspace.
 
+    If the workspace directory changes as a result of setting the project,
+    and startup is complete, this handler automatically reloads all libraries
+    and re-registers workflows from config and the new workspace.
+
     Args:
         project_id: Identifier of the project to set as current (None to clear)
 
-    Results: SetCurrentProjectResultSuccess
+    Results: SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure
     """
 
     project_id: ProjectID | None
@@ -273,6 +277,12 @@ class SetCurrentProjectRequest(RequestPayload):
 @PayloadRegistry.register
 class SetCurrentProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Current project set successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SetCurrentProjectResultFailure(ResultPayloadFailure):
+    """Current project set failed."""
 
 
 @dataclass
@@ -518,6 +528,43 @@ class AttemptMapAbsolutePathToProjectResultFailure(WorkflowNotAlteredMixin, Resu
 
         Secrets manager unavailable:
             result_details = "Attempted to map absolute path. Failed because SecretsManager not available"
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterProjectTemplateRequest(RequestPayload):
+    """Remove a registered project template from the engine.
+
+    Removes the template from in-memory caches and from the persisted
+    projects_to_register config list so it is not reloaded on restart.
+
+    If the template is currently active, the current project is cleared.
+
+    Use when: User wants to remove a stale or unwanted project template reference.
+
+    Args:
+        project_id: Identifier of the project template to unregister
+
+    Results: UnregisterProjectTemplateResultSuccess | UnregisterProjectTemplateResultFailure
+    """
+
+    project_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Project template unregistered successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Project template unregistration failed.
+
+    Common causes:
+    - project_id not found in registered templates
     """
 
 
