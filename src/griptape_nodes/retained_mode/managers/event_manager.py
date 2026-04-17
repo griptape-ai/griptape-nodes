@@ -15,18 +15,24 @@ from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
+    EventRequest,
     EventResultFailure,
     EventResultSuccess,
+    ForwardFromWorkerMixin,
     ProgressEvent,
     RequestPayload,
     ResultDetails,
     ResultPayload,
 )
+from griptape_nodes.retained_mode.events.event_converter import converter
+from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.utils.async_utils import call_function
 
 if TYPE_CHECKING:
     import types
     from collections.abc import Awaitable, Callable
+
+    from griptape_nodes.api_client.request_client import RequestClient
 
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
@@ -58,6 +64,14 @@ class EventManager:
         self._event_loop: asyncio.AbstractEventLoop | None = None
         # Per-event reference counting for event suppression
         self._event_suppression_counts: dict[type, int] = {}
+        # Worker-to-orchestrator forwarding state. Inert until
+        # configure_worker_forwarding() is called at worker startup.
+        self._worker_forwarding_enabled: bool = False
+        self._worker_request_client: RequestClient | None = None
+        self._orchestrator_request_topic: str | None = None
+        self._worker_response_topic: str | None = None
+        self._websocket_event_loop: asyncio.AbstractEventLoop | None = None
+        self._forward_timeout_ms: int | None = None
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -188,6 +202,106 @@ class EventManager:
             raise ValueError(msg)
         self._request_type_to_manager[request_type] = callback
 
+    def configure_worker_forwarding(
+        self,
+        *,
+        request_client: RequestClient,
+        orchestrator_request_topic: str,
+        worker_response_topic: str,
+        websocket_event_loop: asyncio.AbstractEventLoop,
+        timeout_ms: int | None = None,
+    ) -> None:
+        """Enable worker -> orchestrator forwarding for requests marked with ForwardFromWorkerMixin.
+
+        Called once at worker startup after the RequestClient is constructed and topics
+        are subscribed. Inert on the orchestrator (never called there).
+
+        websocket_event_loop is the loop that owns the Client/RequestClient (the daemon
+        thread's loop). All RequestClient primitives -- its asyncio.Lock, the pending-
+        request Future, and the _try_match filter that claims responses -- are bound to
+        that loop. Forwarding calls must be dispatched there via run_coroutine_threadsafe;
+        awaiting RequestClient methods directly from the main loop or a ThreadRunner loop
+        causes cross-loop contention that stalls for seconds per request.
+        """
+        self._worker_request_client = request_client
+        self._orchestrator_request_topic = orchestrator_request_topic
+        self._worker_response_topic = worker_response_topic
+        self._websocket_event_loop = websocket_event_loop
+        self._forward_timeout_ms = timeout_ms
+        self._worker_forwarding_enabled = True
+
+    def _should_forward(self, request: RequestPayload) -> bool:
+        """Return True when this request should be forwarded to the orchestrator.
+
+        Guarded by configure_worker_forwarding: forwarding is inert unless the worker
+        has been configured, so orchestrator processes are unaffected.
+        """
+        return self._worker_forwarding_enabled and isinstance(request, ForwardFromWorkerMixin)
+
+    async def _forward_to_orchestrator(
+        self,
+        request: RP,
+        result_context: ResultContext,
+    ) -> EventResultSuccess | EventResultFailure:
+        """Forward a worker-originated request to the orchestrator and structure its reply.
+
+        Wraps the request in an EventRequest, awaits the orchestrator's EventResult
+        payload, and reconstructs it as an EventResultSuccess/EventResultFailure whose
+        shape matches the locally-dispatched path.
+
+        The RequestClient send/track/await happens on the websocket event loop
+        (configured via configure_worker_forwarding) so that its asyncio.Lock and
+        the pending-request Future live on the same loop as the _try_match filter
+        that resolves them. Awaiting those primitives from any other loop causes
+        cross-loop contention that stalls for seconds.
+        """
+        if (
+            self._worker_request_client is None
+            or self._orchestrator_request_topic is None
+            or self._worker_response_topic is None
+            or self._websocket_event_loop is None
+        ):
+            msg = "Worker forwarding is enabled but not fully configured."
+            raise RuntimeError(msg)
+
+        event_request: EventRequest = EventRequest(request=request)
+
+        response_future = asyncio.run_coroutine_threadsafe(
+            self._worker_request_client.request_to_orchestrator(
+                event_request=event_request,
+                orchestrator_request_topic=self._orchestrator_request_topic,
+                worker_response_topic=self._worker_response_topic,
+                timeout_ms=self._forward_timeout_ms,
+            ),
+            self._websocket_event_loop,
+        )
+        response_payload = await asyncio.wrap_future(response_future)
+
+        event_type = response_payload.get("event_type", "")
+        result_type_name = response_payload.get("result_type")
+        result_data = response_payload.get("result", {})
+
+        if not result_type_name:
+            msg = f"Forwarded response for {type(request).__name__} missing 'result_type'."
+            raise RuntimeError(msg)
+
+        resolved_result_type = PayloadRegistry.get_type(result_type_name)
+        if resolved_result_type is None:
+            msg = f"Forwarded response 'result_type' is not registered: {result_type_name}"
+            raise RuntimeError(msg)
+
+        result_payload = cast("ResultPayload", converter.structure(result_data, resolved_result_type))
+
+        event_cls: type[EventResultSuccess | EventResultFailure]
+        event_cls = EventResultSuccess if event_type == "EventResultSuccess" else EventResultFailure
+
+        return event_cls(
+            request=request,
+            request_id=result_context.get("request_id"),
+            result=result_payload,
+            response_topic=result_context.get("response_topic"),
+        )
+
     def remove_manager_from_request_type(self, request_type: type[RP]) -> None:
         """Unsubscribe the manager from the request of a specific type.
 
@@ -292,6 +406,9 @@ class EventManager:
         if result_context is None:
             result_context = ResultContext()
 
+        if self._should_forward(request):
+            return await self._forward_to_orchestrator(request, result_context)
+
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -330,6 +447,14 @@ class EventManager:
         operation_depth_mgr = GriptapeNodes.OperationDepthManager()
         if result_context is None:
             result_context = ResultContext()
+
+        if self._should_forward(request):
+            try:
+                asyncio.get_running_loop()
+                with ThreadRunner() as runner:
+                    return runner.run(self._forward_to_orchestrator(request, result_context))
+            except RuntimeError:
+                return asyncio.run(self._forward_to_orchestrator(request, result_context))
 
         # Notify the manager of the event type
         request_type = type(request)

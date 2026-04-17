@@ -87,6 +87,11 @@ install_file_url_support()
 # Maximum length for log messages forwarded to the GUI.
 LOG_MESSAGE_MAX_LENGTH = 500
 
+# Timeout for worker-originated requests forwarded to the orchestrator.
+# Orchestrator handlers for graph-introspection requests complete in milliseconds;
+# a 30s ceiling bounds the wait if the orchestrator is overloaded or unreachable.
+ORCHESTRATOR_REQUEST_TIMEOUT_MS = 30_000
+
 
 class EventLogHandler(logging.Handler):
     """Custom logging handler that emits log messages as AppEvents.
@@ -324,6 +329,20 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
             )
             for topic in worker_manager.get_topics_to_subscribe(is_worker=True):
                 await client.subscribe(topic)
+
+            # Enable worker -> orchestrator forwarding for requests marked with
+            # ForwardFromWorkerMixin. Must be configured before the event queue
+            # processor can dispatch AppInitializationComplete handlers that might
+            # originate a forwardable request.
+            worker_response_topic = f"engines/{worker_engine_id}/response"
+            await client.subscribe(worker_response_topic)
+            griptape_nodes.EventManager().configure_worker_forwarding(
+                request_client=request_client,
+                orchestrator_request_topic=f"sessions/{worker_session_id}/request",
+                worker_response_topic=worker_response_topic,
+                websocket_event_loop=asyncio.get_running_loop(),
+                timeout_ms=ORCHESTRATOR_REQUEST_TIMEOUT_MS,
+            )
 
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_send_outgoing_messages(client))

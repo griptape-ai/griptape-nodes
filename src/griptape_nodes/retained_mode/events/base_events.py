@@ -182,6 +182,17 @@ class SkipTheLineMixin:
     """
 
 
+class ForwardFromWorkerMixin:
+    """Marker: when a worker originates this request, forward to the orchestrator.
+
+    Applied to request types whose handlers read state that only the
+    orchestrator owns (flow graph, connections, flow registry). Workers
+    never answer these locally -- their local managers lack the data and
+    would raise KeyError. The EventManager forwarding hook checks for this
+    marker before local dispatch when worker forwarding has been configured.
+    """
+
+
 # Success result payload abstract base class
 @dataclass(kw_only=True)
 class ResultPayloadSuccess(ResultPayload, ABC):
