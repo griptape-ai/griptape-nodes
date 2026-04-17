@@ -113,13 +113,7 @@ class TestArbitraryCodeExecManager:
     def test_outer_scope_isolated(self) -> None:
         manager = ArbitraryCodeExecManager(GriptapeNodes.EventManager())
         request = RunArbitraryPythonStringRequest(
-            python_string=(
-                "try:\n"
-                "    _ = manager\n"
-                "    result = False\n"
-                "except NameError:\n"
-                "    result = True"
-            ),
+            python_string=("try:\n    _ = manager\n    result = False\nexcept NameError:\n    result = True"),
             local_variable_to_capture="result",
         )
         result = manager.on_run_arbitrary_python_string_request(request)

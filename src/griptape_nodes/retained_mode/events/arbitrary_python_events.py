@@ -28,7 +28,7 @@ class RunArbitraryPythonStringRequest(RequestPayload):
     """
 
     python_string: str
-    local_variable_to_capture: str | None = (
+    variable_names_to_capture: str | list[str] | None = (
         None  # Optional: specify a local variable name to capture and return as output instead of stdout
     )
 
