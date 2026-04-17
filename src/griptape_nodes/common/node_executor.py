@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 import anyio
 
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
+from griptape_nodes.common.parameter_hydration import hydrate_parameter_values
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types import node_types
 from griptape_nodes.exe_types.base_iterative_nodes import (
@@ -235,6 +236,12 @@ async def _execute_node_on_worker(
     result_type_name = execute_raw.get("result_type", "")
     result_data = execute_raw.get("result", {})
     if result_type_name == ExecuteNodeResultSuccess.__name__:
+        # Rehydrate serialized artifacts returned from the worker. cattrs has no
+        # structure hook for SerializableMixin and parameter_output_values is
+        # typed dict[str, Any], so artifacts arrive as plain dicts without this.
+        result_data["parameter_output_values"] = hydrate_parameter_values(
+            result_data.get("parameter_output_values", {})
+        )
         return ExecuteNodeResultSuccess(**result_data)
     return ExecuteNodeResultFailure(**result_data)
 
