@@ -330,10 +330,13 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
             for topic in worker_manager.get_topics_to_subscribe(is_worker=True):
                 await client.subscribe(topic)
 
-            # Enable worker -> orchestrator forwarding for requests marked with
-            # ForwardFromWorkerMixin. Must be configured before the event queue
-            # processor can dispatch AppInitializationComplete handlers that might
-            # originate a forwardable request.
+            # Enable worker -> orchestrator forwarding for requests originated
+            # from node execution (gated by EventManager.worker_node_execution_scope,
+            # opened around ExecuteNodeRequest dispatch in _process_event_request).
+            # Must be configured before the event queue processor can dispatch any
+            # AppInitializationComplete handlers -- those run outside the scope and
+            # will stay local, but the forwarding plumbing needs to be live in case
+            # one ever opens a scope itself.
             worker_response_topic = f"engines/{worker_engine_id}/response"
             await client.subscribe(worker_response_topic)
             griptape_nodes.EventManager().configure_worker_forwarding(
@@ -542,11 +545,21 @@ async def _process_event_queue() -> None:
 
 
 async def _process_event_request(event: EventRequest) -> None:
-    """Handle request and emit success/failure events based on result."""
-    result_event = await griptape_nodes.EventManager().ahandle_request(
-        event.request,
-        result_context={"response_topic": event.response_topic, "request_id": event.request_id},
-    )
+    """Handle request and emit success/failure events based on result.
+
+    When the worker receives an ExecuteNodeRequest from the orchestrator, open
+    the worker_node_execution_scope around the dispatch. Nested handle_request
+    calls originated from node.aprocess() observe the ContextVar and forward
+    orchestrator-owned queries. Bootstrap and lifecycle requests land here
+    without the scope and dispatch locally.
+    """
+    event_mgr = griptape_nodes.EventManager()
+    result_context = {"response_topic": event.response_topic, "request_id": event.request_id}
+    if isinstance(event.request, execution_events.ExecuteNodeRequest):
+        with event_mgr.worker_node_execution_scope():
+            result_event = await event_mgr.ahandle_request(event.request, result_context=result_context)
+    else:
+        result_event = await event_mgr.ahandle_request(event.request, result_context=result_context)
     if event.request.broadcast_result:
         await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 

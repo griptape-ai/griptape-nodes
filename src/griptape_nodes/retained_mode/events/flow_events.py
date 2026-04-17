@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from griptape_nodes.exe_types.node_types import NodeDependencies
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
-    ForwardFromWorkerMixin,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -108,7 +107,7 @@ class DeleteFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowRequest(RequestPayload, ForwardFromWorkerMixin):
+class ListNodesInFlowRequest(RequestPayload):
     """List all nodes in a specific flow.
 
     Use when: Inspecting flow contents, building flow visualizations,
@@ -149,7 +148,7 @@ class ListNodesInFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 # It was implemented this way to maintain backwards compatibility with the editor.
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInCurrentContextRequest(RequestPayload, ForwardFromWorkerMixin):
+class ListFlowsInCurrentContextRequest(RequestPayload):
     pass
 
 
@@ -168,7 +167,7 @@ class ListFlowsInCurrentContextResultFailure(WorkflowNotAlteredMixin, ResultPayl
 # Gives a list of the flows directly parented by the node specified.
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowRequest(RequestPayload, ForwardFromWorkerMixin):
+class ListFlowsInFlowRequest(RequestPayload):
     # Pass in None to get the canvas.
     parent_flow_name: str | None = None
 
@@ -258,7 +257,7 @@ class SerializedFlowCommands:
 
 @dataclass
 @PayloadRegistry.register
-class SerializeFlowToCommandsRequest(RequestPayload, ForwardFromWorkerMixin):
+class SerializeFlowToCommandsRequest(RequestPayload):
     """Request payload to serialize a flow into a sequence of commands.
 
     Attributes:
@@ -363,7 +362,7 @@ class ExtractFlowCommandsFromImageMetadataResultFailure(WorkflowNotAlteredMixin,
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowDetailsRequest(RequestPayload, ForwardFromWorkerMixin):
+class GetFlowDetailsRequest(RequestPayload):
     """Request payload to get detailed information about a flow.
 
     This provides metadata about a flow including its reference status and parent hierarchy,
@@ -495,7 +494,7 @@ class ParameterNameMapping(NamedTuple):
 
 @dataclass
 @PayloadRegistry.register
-class PackageNodesAsSerializedFlowRequest(RequestPayload, ForwardFromWorkerMixin):
+class PackageNodesAsSerializedFlowRequest(RequestPayload):
     """Package multiple nodes as a complete flow with artificial start and end nodes.
 
     Creates a serialized flow where:

@@ -9,6 +9,7 @@ from griptape_nodes.node_library.library_registry import (
     NodeMetadata,
 )
 from griptape_nodes.retained_mode.events.base_events import (
+    HandleLocallyOnWorkerMixin,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -39,7 +40,7 @@ class DiscoveredLibrary(NamedTuple):
 
 @dataclass
 @PayloadRegistry.register
-class ListRegisteredLibrariesRequest(RequestPayload):
+class ListRegisteredLibrariesRequest(RequestPayload, HandleLocallyOnWorkerMixin):
     """List all currently registered libraries.
 
     Use when: Displaying available libraries, checking library availability,
@@ -69,7 +70,7 @@ class ListRegisteredLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 @dataclass
 @PayloadRegistry.register
-class ListCapableLibraryEventHandlersRequest(RequestPayload):
+class ListCapableLibraryEventHandlersRequest(RequestPayload, HandleLocallyOnWorkerMixin):
     """List libraries capable of handling a specific event type.
 
     Use when: Finding libraries that can process specific events, implementing event routing,
@@ -101,7 +102,7 @@ class ListCapableLibraryEventHandlersResultFailure(WorkflowNotAlteredMixin, Resu
 
 @dataclass
 @PayloadRegistry.register
-class ListNodeTypesInLibraryRequest(RequestPayload):
+class ListNodeTypesInLibraryRequest(RequestPayload, HandleLocallyOnWorkerMixin):
     """List all node types available in a specific library.
 
     Use when: Discovering available nodes, building node creation UIs,
@@ -136,7 +137,7 @@ class ListNodeTypesInLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayload
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataFromLibraryRequest(RequestPayload):
+class GetNodeMetadataFromLibraryRequest(RequestPayload, HandleLocallyOnWorkerMixin):
     """Get metadata for a specific node type from a library.
 
     Use when: Inspecting node capabilities, validating node types, building node creation UIs,
@@ -405,7 +406,7 @@ class RegisterLibraryFromRequirementSpecifierResultFailure(ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class ListCategoriesInLibraryRequest(RequestPayload):
+class ListCategoriesInLibraryRequest(RequestPayload, HandleLocallyOnWorkerMixin):
     """List all categories available in a library.
 
     Use when: Building category-based UIs, organizing node selection,
@@ -437,7 +438,7 @@ class ListCategoriesInLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 @dataclass
 @PayloadRegistry.register
-class GetLibraryMetadataRequest(RequestPayload):
+class GetLibraryMetadataRequest(RequestPayload, HandleLocallyOnWorkerMixin):
     """Get metadata for a specific library.
 
     Use when: Inspecting library properties, displaying library information,
@@ -489,7 +490,7 @@ class WidgetInfo:
 # "Jumbo" event for getting all things say, a GUI might want w/r/t a Library.
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForLibraryRequest(RequestPayload):
+class GetAllInfoForLibraryRequest(RequestPayload, HandleLocallyOnWorkerMixin):
     """Get comprehensive information for a library in a single call.
 
     Use when: Populating library UIs, implementing library inspection,
@@ -528,7 +529,7 @@ class GetAllInfoForLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 # The "Jumbo-est" of them all. Grabs all info for all libraries in one fell swoop.
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForAllLibrariesRequest(RequestPayload):
+class GetAllInfoForAllLibrariesRequest(RequestPayload, HandleLocallyOnWorkerMixin):
     """Get comprehensive information for all libraries in a single call.
 
     Use when: Populating complete library catalogs, implementing library browsers,

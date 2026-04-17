@@ -5,6 +5,8 @@ import inspect
 import logging
 import threading
 from collections import defaultdict
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
@@ -18,26 +20,32 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     EventResultFailure,
     EventResultSuccess,
-    ForwardFromWorkerMixin,
+    HandleLocallyOnWorkerMixin,
     ProgressEvent,
     RequestPayload,
     ResultDetails,
     ResultPayload,
-    WorkerStructuralMutationAntiPatternMixin,
 )
 from griptape_nodes.retained_mode.events.event_converter import converter
+from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.utils.async_utils import call_function
 
 if TYPE_CHECKING:
     import types
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Iterator
 
     from griptape_nodes.api_client.request_client import RequestClient
 
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
 AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
+
+# Origin-context flag: True for the duration of an ExecuteNodeRequest handler
+# on a worker. Nested handle_request calls originated from within that scope
+# are eligible for forwarding to the orchestrator. Bootstrap, lifecycle, and
+# AppInitializationComplete fan-out run outside the scope and dispatch locally.
+_WORKER_NODE_EXECUTION_CONTEXT: ContextVar[bool] = ContextVar("worker_node_execution_context", default=False)
 
 # Result types that should NOT trigger a flush request.
 #
@@ -212,7 +220,7 @@ class EventManager:
         websocket_event_loop: asyncio.AbstractEventLoop,
         timeout_ms: int | None = None,
     ) -> None:
-        """Enable worker -> orchestrator forwarding for requests marked with ForwardFromWorkerMixin.
+        """Enable worker -> orchestrator forwarding for requests originated from node execution.
 
         Called once at worker startup after the RequestClient is constructed and topics
         are subscribed. Inert on the orchestrator (never called there).
@@ -231,42 +239,46 @@ class EventManager:
         self._forward_timeout_ms = timeout_ms
         self._worker_forwarding_enabled = True
 
+    @contextmanager
+    def worker_node_execution_scope(self) -> Iterator[None]:
+        """Mark the current async context as running inside a worker's ExecuteNodeRequest handler.
+
+        Nested handle_request / ahandle_request calls originated from this
+        scope are eligible for forwarding to the orchestrator (provided the
+        request type is not marked HandleLocallyOnWorkerMixin). Outside this
+        scope, all requests dispatch locally.
+
+        Opened by app._process_event_request around the ExecuteNodeRequest
+        dispatch on workers. Bootstrap paths and AppInitializationComplete
+        fan-out are not wrapped and therefore never forward.
+        """
+        token = _WORKER_NODE_EXECUTION_CONTEXT.set(True)
+        try:
+            yield
+        finally:
+            _WORKER_NODE_EXECUTION_CONTEXT.reset(token)
+
     def _should_forward(self, request: RequestPayload) -> bool:
         """Return True when this request should be forwarded to the orchestrator.
 
-        Guarded by configure_worker_forwarding: forwarding is inert unless the worker
-        has been configured, so orchestrator processes are unaffected.
-        """
-        return self._worker_forwarding_enabled and isinstance(request, ForwardFromWorkerMixin)
-
-    def _reject_if_worker_structural_mutation(self, request: RequestPayload) -> None:
-        """Raise when worker-resident code dispatches a structural-mutation request.
-
-        Structural mutation from a worker is an anti-pattern: the worker's local
-        in-memory node would diverge from the orchestrator's authoritative graph,
-        and neither a forward-only nor local-only dispatch produces correct behavior.
-        The rejection is loud on purpose -- silently handling it locally produces
-        subtle, action-at-a-distance bugs that are far harder to diagnose than a
-        stack trace at the offending call site.
-
-        Library authors should move structural changes to node construction or
-        orchestrator-side lifecycle hooks.
+        Forwarding is active only when:
+          (1) configure_worker_forwarding has been called (we're on a worker),
+          (2) the current call is inside a worker_node_execution_scope (i.e.
+              originated from node execution, not from bootstrap or lifecycle),
+          (3) the request is not the ExecuteNodeRequest that opened the scope:
+              the orchestrator routed it to this worker precisely so the worker
+              would own the dispatch, and forwarding it back would infinite-loop
+              (orchestrator runs locally, returns success, node never executes
+              on the worker),
+          (4) the request is not opted out via HandleLocallyOnWorkerMixin.
         """
         if not self._worker_forwarding_enabled:
-            return
-        if not isinstance(request, WorkerStructuralMutationAntiPatternMixin):
-            return
-        node_name = getattr(request, "node_name", None)
-        msg = (
-            f"Worker-originated structural mutation rejected: {type(request).__name__}"
-            f"{f' on node {node_name!r}' if node_name else ''}. "
-            "Structural graph mutations (add/remove/rename/alter parameters, "
-            "connections, node identity) must not originate from worker-resident "
-            "node code: the worker's local view would diverge from the "
-            "orchestrator's authoritative graph. Move this change to node "
-            "construction or an orchestrator-side lifecycle hook."
-        )
-        raise RuntimeError(msg)
+            return False
+        if not _WORKER_NODE_EXECUTION_CONTEXT.get():
+            return False
+        if isinstance(request, ExecuteNodeRequest):
+            return False
+        return not isinstance(request, HandleLocallyOnWorkerMixin)
 
     async def _forward_to_orchestrator(
         self,
@@ -436,8 +448,6 @@ class EventManager:
         if result_context is None:
             result_context = ResultContext()
 
-        self._reject_if_worker_structural_mutation(request)
-
         if self._should_forward(request):
             return await self._forward_to_orchestrator(request, result_context)
 
@@ -479,8 +489,6 @@ class EventManager:
         operation_depth_mgr = GriptapeNodes.OperationDepthManager()
         if result_context is None:
             result_context = ResultContext()
-
-        self._reject_if_worker_structural_mutation(request)
 
         if self._should_forward(request):
             try:

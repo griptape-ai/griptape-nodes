@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
-    ForwardFromWorkerMixin,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -95,7 +94,7 @@ class DeleteConnectionResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ListConnectionsForNodeRequest(RequestPayload, ForwardFromWorkerMixin):
+class ListConnectionsForNodeRequest(RequestPayload):
     """List all connections for a specific node.
 
     Use when: Inspecting node connectivity, building connection visualizations,
