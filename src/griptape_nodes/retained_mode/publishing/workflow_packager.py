@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -276,10 +277,7 @@ class WorkflowPackager:
     def get_install_source(self) -> tuple[Literal["git", "file", "pypi"], str | None]:
         """Detect whether griptape-nodes was installed from git, file, or pypi."""
         dist = self.find_griptape_nodes_distribution()
-        if dist is None:
-            return "pypi", None
-
-        direct_url_text = dist.read_text("direct_url.json")
+        direct_url_text = dist.read_text("direct_url.json") if dist is not None else None
         if direct_url_text is None:
             return "pypi", None
 
@@ -287,12 +285,15 @@ class WorkflowPackager:
         url = direct_url_info.get("url", "")
 
         if url.startswith("file://"):
+            git_exe = shutil.which("git")
+            if git_exe is None:
+                return "file", None
             try:
                 pkg_dir = Path(str(dist.locate_file(""))).resolve()
                 git_root = next(p for p in (pkg_dir, *pkg_dir.parents) if (p / ".git").is_dir())
                 commit = (
-                    subprocess.check_output(
-                        ["git", "rev-parse", "--short", "HEAD"],
+                    subprocess.check_output(  # noqa: S603
+                        [git_exe, "rev-parse", "--short", "HEAD"],
                         cwd=git_root,
                         stderr=subprocess.DEVNULL,
                     )
@@ -424,7 +425,7 @@ dependencies = [
             if isinstance(resolve_result, GetPathForMacroResultSuccess):
                 return resolve_result.absolute_path, resolve_result.resolved_path
         except Exception:
-            pass
+            logger.debug("Macro resolution failed for %r; falling back to path resolution.", value_str, exc_info=True)
 
         candidate = Path(value_str)
         if candidate.is_absolute() and project_root and candidate.is_relative_to(project_root):

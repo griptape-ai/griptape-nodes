@@ -454,13 +454,21 @@ class GetWorkflowRunCommandResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
     """Workflow run command retrieval failed. Common causes: neither workflow_name nor file_path provided, workflow not found, file not found."""
 
 
+class PublishFieldType(StrEnum):
+    """The UI widget type for a publish dialog field."""
+
+    DROPDOWN = "dropdown"
+    TEXT = "text"
+    FILE_PICKER = "file_picker"
+
+
 @dataclass
 class PublishOptionField:
     """Describes a single field to render in the publish dialog."""
 
     name: str
     label: str
-    field_type: str  # "dropdown", "text", "file_picker"
+    field_type: PublishFieldType
     tooltip: str = ""
     choices: list[str] | None = None
     default_value: str | None = None
