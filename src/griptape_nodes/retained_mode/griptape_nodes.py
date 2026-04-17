@@ -100,9 +100,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _user_manager: UserManager
     _project_manager: ProjectManager
     _artifact_manager: ArtifactManager
-    _worker_manager: WorkerManager | None
+    _worker_manager: WorkerManager
 
     def __init__(self) -> None:  # noqa: PLR0915
+        from griptape_nodes.app.worker_manager import WorkerManager
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
             ArbitraryCodeExecManager,
@@ -152,7 +153,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
             self._context_manager = ContextManager(self._event_manager)
-            self._library_manager = LibraryManager(self._event_manager)
+            self._worker_manager = WorkerManager(griptape_nodes=self, event_manager=self._event_manager)
+            self._library_manager = LibraryManager(self._event_manager, worker_manager=self._worker_manager)
             self._model_manager = ModelManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._workflow_variables_manager = VariablesManager(self._event_manager)
@@ -170,7 +172,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._user_manager = UserManager(self._secrets_manager)
             self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
             self._artifact_manager = ArtifactManager(self._event_manager)
-            self._worker_manager = None
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -362,12 +363,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._artifact_manager
 
     @classmethod
-    def WorkerManager(cls) -> WorkerManager | None:
+    def WorkerManager(cls) -> WorkerManager:
         return GriptapeNodes.get_instance()._worker_manager
-
-    @classmethod
-    def set_worker_manager(cls, wm: WorkerManager) -> None:
-        GriptapeNodes.get_instance()._worker_manager = wm
 
     @classmethod
     def clear_data(cls) -> None:
