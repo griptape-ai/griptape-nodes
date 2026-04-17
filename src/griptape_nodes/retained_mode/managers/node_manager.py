@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any, NamedTuple, cast
 from uuid import uuid4
 
-from griptape_nodes.common.parameter_hydration import hydrate_parameter_values
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
     BaseIterativeStartNode,
@@ -2730,9 +2729,7 @@ class NodeManager:
     async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         """Hydrate a node's input parameters and execute it."""
         node_name = request.node_name
-        # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.
-        parameter_values = hydrate_parameter_values(request.parameter_values)
-        for param_name, value in parameter_values.items():
+        for param_name, value in request.parameter_values.items():
             try:
                 node.set_parameter_value(param_name, value)
             except Exception as e:
