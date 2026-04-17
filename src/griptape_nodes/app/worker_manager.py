@@ -6,17 +6,18 @@ import json
 import logging
 import os
 import re
-import shutil
+import sys
 import time
 import uuid
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import (
     WORKER_HEARTBEAT_INTERVAL_KEY,
+    WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
     WORKER_HEARTBEAT_TIMEOUT_KEY,
     WORKER_NODE_EXECUTION_TIMEOUT_KEY,
 )
@@ -25,9 +26,38 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.api_client.request_client import RequestClient
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes_app")
+
+
+@dataclass
+class WorkerRegistration:
+    """Tracks a registered worker's routing topic and optional library key.
+
+    worker_key is the library_name the worker was spawned for, or None for
+    general-purpose workers.
+    """
+
+    request_topic: str
+    worker_key: str | None
+
+
+@dataclass
+class _WorkerTransport:
+    """Transport-layer dependencies for WorkerManager.
+
+    Held separately from WorkerManager so the manager can be constructed up
+    front (e.g. by the GriptapeNodes singleton) and wired to a concrete
+    transport later, once the WebSocket client and request client exist.
+    """
+
+    ws_outgoing_queue: asyncio.Queue
+    send_message: Callable[[str, str, str | None], Awaitable[None]]
+    subscribe_to_topic: Callable[[str], Awaitable[None]]
+    unsubscribe_from_topic: Callable[[str], Awaitable[None]]
+    request_client: RequestClient
 
 
 class WorkerManager:
@@ -43,7 +73,7 @@ class WorkerManager:
 
     DEFAULT_HEARTBEAT_INTERVAL_S: float = 5.0
     DEFAULT_HEARTBEAT_TIMEOUT_S: float = 15.0
-    DEFAULT_NODE_EXECUTION_TIMEOUT_S: float = 300.0
+    DEFAULT_NODE_EXECUTION_TIMEOUT_S: float = 1800.0
     # How long after spawn to wait before enforcing heartbeat timeout.
     # Workers install venv deps and import modules before receiving heartbeats;
     # this matches the _await_pending_workers() ceiling so a worker never kills
@@ -52,33 +82,18 @@ class WorkerManager:
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         *,
         griptape_nodes: GriptapeNodes,
         event_manager: EventManager,
-        ws_outgoing_queue: asyncio.Queue,
-        send_message: Callable[[str, str, str | None], Awaitable[None]],
-        subscribe_to_topic: Callable[[str], Awaitable[None]],
-        unsubscribe_from_topic: Callable[[str], Awaitable[None]],
-        request_client: RequestClient,
     ) -> None:
         self._griptape_nodes = griptape_nodes
-        self._ws_outgoing_queue = ws_outgoing_queue
-        self._send_message = send_message
-        self._subscribe_to_topic = subscribe_to_topic
-        self._unsubscribe_from_topic = unsubscribe_from_topic
-        self._request_client = request_client
+        self._event_manager = event_manager
+        self._transport: _WorkerTransport | None = None
 
-        # Orchestrator-side registry: worker_engine_id → worker request topic
-        self._registered_workers: dict[str, str] = {}
-
-        # Orchestrator-side: worker_key → list of (engine_id, request_topic) tuples.
-        # Today: at most one entry per key. Future: N workers per key.
-        self._keyed_workers: dict[str, list[tuple[str, str]]] = {}
-
-        # Orchestrator-side reverse lookup: worker_engine_id → worker_key (or None for general workers)
-        self._worker_key: dict[str, str | None] = {}
+        # Orchestrator-side registry: worker_engine_id → WorkerRegistration
+        self._workers: dict[str, WorkerRegistration] = {}
 
         # Subprocesses spawned by this orchestrator (library_name → process)
         self._managed_worker_processes: dict[str, asyncio.subprocess.Process] = {}
@@ -95,17 +110,21 @@ class WorkerManager:
         # Set when an active session becomes available; gates worker spawning.
         self._session_ready_event: asyncio.Event = asyncio.Event()
 
-        config = GriptapeNodes.ConfigManager()
-        self.HEARTBEAT_INTERVAL_S: float = config.get_config_value(
+        config = griptape_nodes._config_manager
+        self.heartbeat_interval_s: float = config.get_config_value(
             WORKER_HEARTBEAT_INTERVAL_KEY, default=WorkerManager.DEFAULT_HEARTBEAT_INTERVAL_S, cast_type=float
         )
-        self.HEARTBEAT_TIMEOUT_S: float = config.get_config_value(
+        self.heartbeat_timeout_s: float = config.get_config_value(
             WORKER_HEARTBEAT_TIMEOUT_KEY, default=WorkerManager.DEFAULT_HEARTBEAT_TIMEOUT_S, cast_type=float
         )
-        self.NODE_EXECUTION_TIMEOUT_S: float = config.get_config_value(
+        self.node_execution_timeout_s: float = config.get_config_value(
             WORKER_NODE_EXECUTION_TIMEOUT_KEY, default=WorkerManager.DEFAULT_NODE_EXECUTION_TIMEOUT_S, cast_type=float
         )
-        self.HEARTBEAT_STARTUP_GRACE_S: float = WorkerManager.DEFAULT_HEARTBEAT_STARTUP_GRACE_S
+        self.heartbeat_startup_grace_s: float = config.get_config_value(
+            WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
+            default=WorkerManager.DEFAULT_HEARTBEAT_STARTUP_GRACE_S,
+            cast_type=float,
+        )
 
         event_manager.assign_manager_to_request_type(
             worker_events.RegisterWorkerRequest, self.handle_register_worker_request
@@ -118,6 +137,35 @@ class WorkerManager:
         )
         event_manager.assign_manager_to_request_type(worker_events.StartWorkerRequest, self.handle_start_worker_request)
 
+    @property
+    def _tx(self) -> _WorkerTransport:
+        if self._transport is None:
+            msg = "WorkerManager transport has not been attached; call attach_transport() before use."
+            raise RuntimeError(msg)
+        return self._transport
+
+    def attach_transport(
+        self,
+        *,
+        ws_outgoing_queue: asyncio.Queue,
+        send_message: Callable[[str, str, str | None], Awaitable[None]],
+        subscribe_to_topic: Callable[[str], Awaitable[None]],
+        unsubscribe_from_topic: Callable[[str], Awaitable[None]],
+        request_client: RequestClient,
+    ) -> None:
+        """Bind the transport-layer callables used for WebSocket I/O.
+
+        Called once the WebSocket client and RequestClient exist. Until this is
+        called, methods that depend on the transport will raise RuntimeError.
+        """
+        self._transport = _WorkerTransport(
+            ws_outgoing_queue=ws_outgoing_queue,
+            send_message=send_message,
+            subscribe_to_topic=subscribe_to_topic,
+            unsubscribe_from_topic=unsubscribe_from_topic,
+            request_client=request_client,
+        )
+
     async def handle_register_worker_request(
         self,
         request: worker_events.RegisterWorkerRequest,
@@ -126,19 +174,16 @@ class WorkerManager:
         wid = request.worker_engine_id
         session_id = self._griptape_nodes.get_session_id()
         request_topic = f"sessions/{session_id}/workers/{wid}/request"
-        self._registered_workers[wid] = request_topic
+        self._workers[wid] = WorkerRegistration(request_topic=request_topic, worker_key=request.library_name)
         self._worker_last_seen[wid] = time.monotonic()
 
-        # Track worker key association for routing.
-        self._worker_key[wid] = request.library_name
         if request.library_name:
-            self._keyed_workers.setdefault(request.library_name, []).append((wid, request_topic))
             logger.info("Worker registered: %s → library '%s'", wid, request.library_name)
         else:
             logger.info("Worker registered: %s (general-purpose)", wid)
 
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
-        await self._subscribe_to_topic(response_topic)
+        await self._tx.subscribe_to_topic(response_topic)
         return worker_events.RegisterWorkerResultSuccess(
             worker_engine_id=wid, result_details="Worker registered successfully."
         )
@@ -161,12 +206,11 @@ class WorkerManager:
         """Handle a worker unregister request from a worker engine."""
         wid = request.worker_engine_id
         session_id = self._griptape_nodes.get_session_id()
-        self._registered_workers.pop(wid, None)
+        registration = self._workers.pop(wid, None)
         self._worker_last_seen.pop(wid, None)
-        worker_key = self._worker_key.get(wid)
-        self._deregister_worker_key(wid)
+        worker_key = registration.worker_key if registration else None
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
-        await self._unsubscribe_from_topic(response_topic)
+        await self._tx.unsubscribe_from_topic(response_topic)
         # Remove the managed process entry so a new worker can be spawned for this key.
         if worker_key:
             removed = self._managed_worker_processes.pop(worker_key, None)
@@ -180,26 +224,28 @@ class WorkerManager:
     async def orchestrator_heartbeat_loop(self) -> None:
         """Challenge each registered worker on an interval; evict those that go silent."""
         while True:
-            await asyncio.sleep(self.HEARTBEAT_INTERVAL_S)
-            if not self._registered_workers:
+            await asyncio.sleep(self.heartbeat_interval_s)
+            if not self._workers:
                 continue
 
             now = time.monotonic()
             stale = [
                 wid
-                for wid in list(self._registered_workers)
-                if now - self._worker_last_seen.get(wid, 0) > self.HEARTBEAT_TIMEOUT_S
+                for wid in list(self._workers)
+                if now - self._worker_last_seen.get(wid, 0) > self.heartbeat_timeout_s
             ]
             for wid in stale:
                 await self.evict_worker(wid)
 
             session_id = self._griptape_nodes.get_session_id()
-            for wid, request_topic in list(self._registered_workers.items()):
+            for wid, registration in list(self._workers.items()):
                 hb = EventRequest(
                     request=worker_events.WorkerHeartbeatRequest(heartbeat_id=str(uuid.uuid4())),
                     response_topic=f"sessions/{session_id}/workers/{wid}/response",
                 )
-                await self._ws_outgoing_queue.put(WebSocketMessage("EventRequest", hb.json(), request_topic))
+                await self._tx.ws_outgoing_queue.put(
+                    WebSocketMessage("EventRequest", hb.json(), registration.request_topic)
+                )
 
     async def worker_heartbeat_monitor(self) -> None:
         """Shut down the worker if orchestrator heartbeats stop arriving.
@@ -212,18 +258,14 @@ class WorkerManager:
         # startup grace period.  Library loading can take tens of seconds; we do
         # not want the worker to kill itself before the orchestrator even has a
         # chance to start sending challenges.
-        self._worker_heartbeat_last_received_at = time.monotonic() + self.HEARTBEAT_STARTUP_GRACE_S
+        self._worker_heartbeat_last_received_at = time.monotonic() + self.heartbeat_startup_grace_s
         while True:
-            await asyncio.sleep(self.HEARTBEAT_INTERVAL_S)
+            await asyncio.sleep(self.heartbeat_interval_s)
             elapsed = time.monotonic() - self._worker_heartbeat_last_received_at
-            if elapsed > self.HEARTBEAT_TIMEOUT_S:
+            if elapsed > self.heartbeat_timeout_s:
                 msg = f"Orchestrator heartbeat lost ({elapsed:.1f}s since last heartbeat); worker is shutting down."
                 logger.warning(msg)
                 raise RuntimeError(msg)
-
-    def get_active_worker(self) -> tuple[str, str] | None:
-        """Return (worker_engine_id, worker_request_topic) for the registered worker, or None."""
-        return next(iter(self._registered_workers.items()), None)
 
     def get_worker_for_key(self, key: str) -> tuple[str, str] | None:
         """Return (worker_engine_id, worker_request_topic) for a worker registered under key, or None.
@@ -231,18 +273,10 @@ class WorkerManager:
         Today returns the first registered worker for the key. Future versions can
         load-balance across multiple workers for the same key.
         """
-        workers = self._keyed_workers.get(key, [])
-        return workers[0] if workers else None
-
-    def _deregister_worker_key(self, worker_engine_id: str) -> None:
-        """Remove a worker from the routing tables."""
-        key = self._worker_key.pop(worker_engine_id, None)
-        if key and key in self._keyed_workers:
-            self._keyed_workers[key] = [
-                (eid, topic) for eid, topic in self._keyed_workers[key] if eid != worker_engine_id
-            ]
-            if not self._keyed_workers[key]:
-                del self._keyed_workers[key]
+        for wid, registration in self._workers.items():
+            if registration.worker_key == key:
+                return wid, registration.request_topic
+        return None
 
     async def spawn_worker(self, args: list[str], worker_key: str) -> None:
         """Spawn a worker subprocess using the given command args.
@@ -257,26 +291,13 @@ class WorkerManager:
         self._managed_worker_processes[worker_key] = proc
         logger.info("Spawned worker for key '%s' (pid %s)", worker_key, proc.pid)
 
-    def terminate_managed_workers(self) -> None:
-        """Terminate all worker subprocesses spawned by this orchestrator.
+    async def reset_workers(self) -> None:
+        """Terminate all managed worker processes, unsubscribe response topics, clear state.
 
-        Called on orchestrator shutdown to prevent orphan processes.
-        Best-effort: each process is signalled with SIGTERM; already-exited
-        processes are silently ignored.
-        """
-        for library_name, proc in list(self._managed_worker_processes.items()):
-            try:
-                proc.terminate()
-                logger.debug("Terminated worker process for library '%s' (pid %s)", library_name, proc.pid)
-            except ProcessLookupError:
-                logger.debug("Worker process for library '%s' already exited", library_name)
-        self._managed_worker_processes.clear()
-
-    def reset_workers(self) -> None:
-        """Terminate all managed worker processes and clear all registration state.
-
-        Used before a library reload so that freshly spawned workers start with a
-        clean slate and there are no stale entries in the routing tables.
+        Used both on orchestrator shutdown and before a library reload: freshly
+        spawned workers must start with a clean slate and no stale entries in the
+        routing tables or lingering subscriptions on the broker. Best-effort:
+        already-exited processes and unsubscribe failures are logged and skipped.
         """
         logger.debug(
             "reset_workers called: %d managed process(es) tracked (%s)",
@@ -289,10 +310,16 @@ class WorkerManager:
                 logger.info("Terminated worker for key '%s' (pid %s)", library_name, proc.pid)
             except ProcessLookupError:
                 logger.debug("Worker for key '%s' already exited before termination", library_name)
+        session_id = self._griptape_nodes.get_session_id()
+        if session_id and self._transport is not None:
+            for wid in list(self._workers):
+                response_topic = f"sessions/{session_id}/workers/{wid}/response"
+                try:
+                    await self._tx.unsubscribe_from_topic(response_topic)
+                except Exception as e:
+                    logger.debug("Failed to unsubscribe from '%s' during reset: %s", response_topic, e)
         self._managed_worker_processes.clear()
-        self._registered_workers.clear()
-        self._keyed_workers.clear()
-        self._worker_key.clear()
+        self._workers.clear()
         self._worker_last_seen.clear()
 
     async def route_to_worker(
@@ -308,7 +335,7 @@ class WorkerManager:
         returned dict into the appropriate result type.
         """
         request_id = event_request.request_id or str(uuid.uuid4())
-        future = await self._request_client.track_request(request_id, tag=worker_engine_id)
+        future = await self._tx.request_client.track_request(request_id, tag=worker_engine_id)
 
         await self.forward_event_to_worker(
             event_request.model_copy(update={"request_id": request_id}),
@@ -316,20 +343,19 @@ class WorkerManager:
             worker_request_topic=worker_request_topic,
         )
         try:
-            return await asyncio.wait_for(future, timeout=self.NODE_EXECUTION_TIMEOUT_S)
+            return await asyncio.wait_for(future, timeout=self.node_execution_timeout_s)
         except TimeoutError:
-            msg = f"Worker request timed out after {self.NODE_EXECUTION_TIMEOUT_S:.0f}s."
+            msg = f"Worker request timed out after {self.node_execution_timeout_s:.0f}s."
             raise RuntimeError(msg) from None
 
     async def evict_worker(self, worker_engine_id: str) -> None:
         """Remove a worker from the registry and unsubscribe from its response topic."""
         session_id = self._griptape_nodes.get_session_id()
-        self._registered_workers.pop(worker_engine_id, None)
+        registration = self._workers.pop(worker_engine_id, None)
         self._worker_last_seen.pop(worker_engine_id, None)
-        lib_name = self._worker_key.get(worker_engine_id)
-        self._deregister_worker_key(worker_engine_id)
+        lib_name = registration.worker_key if registration else None
         topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
-        await self._unsubscribe_from_topic(topic)
+        await self._tx.unsubscribe_from_topic(topic)
         logger.warning("Worker evicted: %s", worker_engine_id)
         # Terminate the managed subprocess for this worker, if any.
         if lib_name:
@@ -338,7 +364,7 @@ class WorkerManager:
                 proc.terminate()
                 logger.info("Eviction: terminated managed process for key '%s' (pid %s)", lib_name, proc.pid)
         # Cancel any requests that were awaiting a result from this worker.
-        await self._request_client.cancel_requests_by_tag(worker_engine_id)
+        await self._tx.request_client.cancel_requests_by_tag(worker_engine_id)
 
         # Notify registered callbacks that this worker has been evicted.
         for cb in self._worker_evicted_callbacks:
@@ -385,11 +411,16 @@ class WorkerManager:
         if not session_id:
             logger.error("Session event set but no session ID available for library '%s'.", library_name)
             return
-        gtn = shutil.which("gtn")
-        if gtn is None:
-            logger.error("Cannot spawn worker for library '%s': 'gtn' not found on PATH.", library_name)
-            return
-        args = [gtn, "engine", "--session-id", session_id, "--library-name", library_name]
+        args = [
+            sys.executable,
+            "-m",
+            "griptape_nodes",
+            "engine",
+            "--session-id",
+            session_id,
+            "--library-name",
+            library_name,
+        ]
         await self.spawn_worker(args, library_name)
 
     @staticmethod
@@ -446,7 +477,7 @@ class WorkerManager:
         worker_response_topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
         forwarded = event.model_copy(update={"response_topic": worker_response_topic})
         logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
-        await self._send_message("EventRequest", forwarded.json(), worker_request_topic)
+        await self._tx.send_message("EventRequest", forwarded.json(), worker_request_topic)
 
     async def relay_worker_result(self, payload: dict) -> None:
         """Relay an unmatched worker result to the GUI session response topic.
@@ -471,7 +502,7 @@ class WorkerManager:
         dest_socket = "success_result" if payload.get("event_type") == "EventResultSuccess" else "failure_result"
         payload["response_topic"] = session_response_topic
         logger.debug("Relaying %s to %s", payload.get("event_type"), session_response_topic)
-        await self._send_message(dest_socket, json.dumps(payload), session_response_topic)
+        await self._tx.send_message(dest_socket, json.dumps(payload), session_response_topic)
 
     def _determine_response_topic(self) -> str:
         """Determine the response topic based on current session and engine IDs."""

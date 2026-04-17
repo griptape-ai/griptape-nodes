@@ -210,9 +210,10 @@ from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
     from types import ModuleType
 
+    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.events.base_events import Payload, RequestPayload, ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -356,9 +357,9 @@ class LibraryManager:
     _stable_to_dynamic_module_mapping: dict[str, str]  # stable_namespace -> dynamic_module_name
     _library_to_stable_modules: dict[str, set[str]]  # library_name -> set of stable_namespaces
     # Callbacks invoked immediately before all libraries are reloaded.
-    _pre_reload_callbacks: list[Callable[[], None]]
+    _pre_reload_callbacks: list[Callable[[], Awaitable[None]]]
 
-    def __init__(self, event_manager: EventManager) -> None:
+    def __init__(self, event_manager: EventManager, *, worker_manager: WorkerManager) -> None:
         self._library_file_path_to_info = {}
         self._dynamic_to_stable_module_mapping = {}
         self._stable_to_dynamic_module_mapping = {}
@@ -368,7 +369,7 @@ class LibraryManager:
         ] = {}
         self._libraries_loading_complete = asyncio.Event()
         self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
-        self._pre_reload_callbacks: list[Callable[[], None]] = []
+        self._pre_reload_callbacks: list[Callable[[], Awaitable[None]]] = []
         # True when this process is a dedicated worker
         self._is_worker: bool = False
         # The libraries this process is restricted to loading (set on workers).
@@ -446,7 +447,10 @@ class LibraryManager:
             self._on_session_started,
         )
 
-    def register_pre_reload_callback(self, callback: Callable[[], None]) -> None:
+        worker_manager.register_worker_evicted_callback(self.on_worker_evicted)
+        self._pre_reload_callbacks.append(worker_manager.reset_workers)
+
+    def register_pre_reload_callback(self, callback: Callable[[], Awaitable[None]]) -> None:
         """Register a callback invoked immediately before all libraries are reloaded.
 
         Callbacks fire after all libraries have been unloaded, before
@@ -3604,7 +3608,7 @@ class LibraryManager:
         # load_all_libraries_from_config runs so that workers can be cleanly restarted.
         for callback in self._pre_reload_callbacks:
             try:
-                callback()
+                await callback()
             except Exception as e:
                 logger.warning("Pre-reload callback raised an exception: %s", e)
 

@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from griptape_nodes.app.worker_manager import WorkerManager
+
 import truststore
 from cattrs import BaseValidationError, transform_error
 from rich.align import Align
@@ -21,7 +23,6 @@ from rich.panel import Panel
 
 from griptape_nodes.api_client import Client, RequestClient
 from griptape_nodes.app.engine_log import _engine_role_filter, _rich_handler
-from griptape_nodes.app.worker_manager import WorkerManager
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
 from griptape_nodes.retained_mode.events import app_events, execution_events, worker_events
@@ -313,9 +314,8 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
 
     try:
         async with RequestClient(client) as request_client:
-            worker_manager = WorkerManager(
-                griptape_nodes=griptape_nodes,
-                event_manager=griptape_nodes.EventManager(),
+            worker_manager = griptape_nodes.WorkerManager()
+            worker_manager.attach_transport(
                 ws_outgoing_queue=ws_outgoing_queue,
                 send_message=_send_message,
                 subscribe_to_topic=_subscribe_to_topic,
@@ -374,18 +374,14 @@ async def _run_orchestrator(client: Client) -> None:
     _engine_role_filter.prefix = "Orchestrator"
 
     async with RequestClient(client) as request_client:
-        worker_manager = WorkerManager(
-            griptape_nodes=griptape_nodes,
-            event_manager=griptape_nodes.EventManager(),
+        worker_manager = griptape_nodes.WorkerManager()
+        worker_manager.attach_transport(
             ws_outgoing_queue=ws_outgoing_queue,
             send_message=_send_message,
             subscribe_to_topic=_subscribe_to_topic,
             unsubscribe_from_topic=_unsubscribe_from_topic,
             request_client=request_client,
         )
-        GriptapeNodes.set_worker_manager(worker_manager)
-        worker_manager.register_worker_evicted_callback(griptape_nodes.LibraryManager().on_worker_evicted)
-        griptape_nodes.LibraryManager().register_pre_reload_callback(worker_manager.reset_workers)
         for topic in worker_manager.get_topics_to_subscribe(is_worker=False):
             await client.subscribe(topic)
 
@@ -402,7 +398,7 @@ async def _run_orchestrator(client: Client) -> None:
                 tg.create_task(worker_manager.orchestrator_heartbeat_loop())
                 tg.create_task(_consume_messages())
         finally:
-            worker_manager.terminate_managed_workers()
+            await worker_manager.reset_workers()
 
 
 def _deserialize_event[T](from_dict: Callable[[dict], T], payload: dict, label: str) -> T:
@@ -579,7 +575,7 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
             # Terminate workers so they are recreated when the next session starts.
             worker_manager = GriptapeNodes.WorkerManager()
             if worker_manager is not None:
-                worker_manager.reset_workers()
+                await worker_manager.reset_workers()
                 worker_manager.clear_session_ready()
     elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"

@@ -24,7 +24,7 @@ def _make_metadata(**kwargs: Any) -> LibraryMetadata:
 
 
 def _make_library_manager() -> LibraryManager:
-    return LibraryManager(event_manager=MagicMock())
+    return LibraryManager(event_manager=MagicMock(), worker_manager=MagicMock())
 
 
 class TestWorkerConfig:
@@ -247,10 +247,10 @@ class TestRegisterPreReloadCallback:
 
     def test_multiple_callbacks_registered_in_order(self) -> None:
         mgr = _make_library_manager()
+        baseline = list(mgr._pre_reload_callbacks)
         first, second = MagicMock(), MagicMock()
 
         mgr.register_pre_reload_callback(first)
         mgr.register_pre_reload_callback(second)
 
-        assert mgr._pre_reload_callbacks[0] is first
-        assert mgr._pre_reload_callbacks[1] is second
+        assert mgr._pre_reload_callbacks == [*baseline, first, second]

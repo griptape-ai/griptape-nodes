@@ -17,6 +17,7 @@ EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
 WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
 WORKER_HEARTBEAT_TIMEOUT_KEY = "worker.heartbeat_timeout_s"
 WORKER_NODE_EXECUTION_TIMEOUT_KEY = "worker.node_execution_timeout_s"
+WORKER_HEARTBEAT_STARTUP_GRACE_KEY = "worker.heartbeat_startup_grace_s"
 
 
 class Category(BaseModel):
@@ -172,6 +173,13 @@ class WorkerSettings(BaseModel):
     node_execution_timeout_s: float = Field(
         default=300.0,
         description="Maximum seconds to wait for a node execution response from a worker before timing out.",
+    )
+    heartbeat_startup_grace_s: float = Field(
+        default=120.0,
+        description=(
+            "Grace period in seconds after worker spawn before heartbeat timeouts are enforced. "
+            "Workers need time to install venv deps and import modules before they can respond."
+        ),
     )
 
 
