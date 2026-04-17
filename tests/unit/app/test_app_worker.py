@@ -448,9 +448,7 @@ class TestResetWorkers:
         assert worker_manager._managed_worker_processes == {}
 
     @pytest.mark.asyncio
-    async def test_unsubscribes_response_topic_for_each_registered_worker(
-        self, worker_manager: WorkerManager
-    ) -> None:
+    async def test_unsubscribes_response_topic_for_each_registered_worker(self, worker_manager: WorkerManager) -> None:
         worker_manager._workers["eng-1"] = WorkerRegistration(
             request_topic=f"sessions/{_SESSION}/workers/eng-1/request", worker_key=None
         )
