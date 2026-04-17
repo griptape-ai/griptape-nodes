@@ -23,6 +23,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultDetails,
     ResultPayload,
+    WorkerStructuralMutationAntiPatternMixin,
 )
 from griptape_nodes.retained_mode.events.event_converter import converter
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -238,6 +239,35 @@ class EventManager:
         """
         return self._worker_forwarding_enabled and isinstance(request, ForwardFromWorkerMixin)
 
+    def _reject_if_worker_structural_mutation(self, request: RequestPayload) -> None:
+        """Raise when worker-resident code dispatches a structural-mutation request.
+
+        Structural mutation from a worker is an anti-pattern: the worker's local
+        in-memory node would diverge from the orchestrator's authoritative graph,
+        and neither a forward-only nor local-only dispatch produces correct behavior.
+        The rejection is loud on purpose -- silently handling it locally produces
+        subtle, action-at-a-distance bugs that are far harder to diagnose than a
+        stack trace at the offending call site.
+
+        Library authors should move structural changes to node construction or
+        orchestrator-side lifecycle hooks.
+        """
+        if not self._worker_forwarding_enabled:
+            return
+        if not isinstance(request, WorkerStructuralMutationAntiPatternMixin):
+            return
+        node_name = getattr(request, "node_name", None)
+        msg = (
+            f"Worker-originated structural mutation rejected: {type(request).__name__}"
+            f"{f' on node {node_name!r}' if node_name else ''}. "
+            "Structural graph mutations (add/remove/rename/alter parameters, "
+            "connections, node identity) must not originate from worker-resident "
+            "node code: the worker's local view would diverge from the "
+            "orchestrator's authoritative graph. Move this change to node "
+            "construction or an orchestrator-side lifecycle hook."
+        )
+        raise RuntimeError(msg)
+
     async def _forward_to_orchestrator(
         self,
         request: RP,
@@ -406,6 +436,8 @@ class EventManager:
         if result_context is None:
             result_context = ResultContext()
 
+        self._reject_if_worker_structural_mutation(request)
+
         if self._should_forward(request):
             return await self._forward_to_orchestrator(request, result_context)
 
@@ -447,6 +479,8 @@ class EventManager:
         operation_depth_mgr = GriptapeNodes.OperationDepthManager()
         if result_context is None:
             result_context = ResultContext()
+
+        self._reject_if_worker_structural_mutation(request)
 
         if self._should_forward(request):
             try:

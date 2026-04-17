@@ -193,6 +193,22 @@ class ForwardFromWorkerMixin:
     """
 
 
+class WorkerStructuralMutationAntiPatternMixin:
+    """Marker: request mutates orchestrator-owned structural graph state.
+
+    Applied to request types that add, remove, rename, or alter parameters,
+    connections, or node identity. These mutations are safe from the
+    orchestrator but an anti-pattern from worker-resident node code: the
+    worker's local in-memory node would diverge from the orchestrator's
+    authoritative graph, and neither a forward-only nor local-only
+    dispatch produces correct behavior.
+
+    The EventManager refuses to dispatch these from a worker (raises).
+    Library authors should move structural changes to node construction
+    or orchestrator-side lifecycle hooks.
+    """
+
+
 # Success result payload abstract base class
 @dataclass(kw_only=True)
 class ResultPayloadSuccess(ResultPayload, ABC):
