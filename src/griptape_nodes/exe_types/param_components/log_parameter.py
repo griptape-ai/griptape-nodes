@@ -50,10 +50,10 @@ class LogParameter:
         self.append_to_logs(f"{label} took {human_readable_duration}\n")
 
     def append_to_logs(self, text: str) -> None:
-        self._node.append_value_to_parameter("logs", text)
+        self._node.append_output_value("logs", text)
 
     def clear_logs(self) -> None:
-        self._node.publish_update_to_parameter("logs", "")
+        self._node.set_output_value("logs", "")
 
 
 class StdoutCapture:

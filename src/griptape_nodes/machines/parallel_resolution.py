@@ -536,7 +536,7 @@ class ExecuteDagState(State):
 
             # Clear all of the current output values but don't broadcast the clearing.
             # to avoid any flickering in subscribers (UI).
-            node_reference.node_reference.parameter_output_values.silent_clear()
+            node_reference.node_reference.parameter_output_values.clear()
             exceptions = node_reference.node_reference.validate_before_node_run()
             if exceptions:
                 context.running_tasks_count -= 1  # Decrement on error

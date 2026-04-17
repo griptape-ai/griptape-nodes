@@ -484,8 +484,7 @@ class BaseIterativeStartNode(BaseNode):
 
         # Always set the index output in base class
         current_index = self.get_current_index()
-        self.parameter_output_values[IterativeNodeParam.INDEX.value] = current_index
-        self.publish_update_to_parameter(IterativeNodeParam.INDEX.value, current_index)
+        self.set_output_value(IterativeNodeParam.INDEX.value, current_index)
 
         # Get current item value from subclass (subclasses handle their own logic)
         current_item_value = self._get_current_item_value()
@@ -721,7 +720,7 @@ class BaseIterativeEndNode(BaseNode):
         Uses deep copy to ensure nested objects (like dictionaries) are properly copied
         and won't have unintended side effects if modified later.
         """
-        self.parameter_output_values[IterativeNodeParam.RESULTS.value] = copy.deepcopy(self._results_list)
+        self.set_output_value(IterativeNodeParam.RESULTS.value, copy.deepcopy(self._results_list))
 
     def _validate_end_node(self) -> list[Exception] | None:
         """Common validation logic for both workflow and node run validation."""

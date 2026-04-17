@@ -54,4 +54,4 @@ class ProgressBarComponent:
         else:
             progress_value = min(1.0, self._current_step / self._total_steps)
 
-        self._node.publish_update_to_parameter("progress", progress_value)
+        self._node.set_output_value("progress", progress_value)

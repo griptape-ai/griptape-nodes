@@ -901,7 +901,7 @@ class BaseNode(ABC):
             # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
             self.after_value_set(parameter=parameter, value=final_value)
             if emit_change:
-                self._emit_parameter_lifecycle_event(parameter)
+                self._emit_parameter_value_update_event(parameter, final_value)
         else:
             self.parameter_values[param_name] = candidate_value
         # handle with container parameters
@@ -920,6 +920,46 @@ class BaseNode(ABC):
                         initial_setup=initial_setup,
                         emit_change=False,
                     )
+
+    def set_output_value(self, param_name: str, value: Any) -> None:
+        """Set a Parameter's output value and broadcast the change to the UI.
+
+        Symmetric counterpart to `set_parameter_value`, but for outputs. Unlike
+        `set_parameter_value`, this does not run converters, validators, or
+        before/after hooks — outputs are already produced by the node.
+        """
+        self.parameter_output_values[param_name] = value
+
+    def append_output_value(self, param_name: str, value: Any) -> None:
+        """Append/concat to a Parameter's output value.
+
+        Writes to `parameter_output_values`, emits a `ParameterValueUpdateEvent`
+        for the accumulated value, and additionally emits a `ProgressEvent`
+        carrying just the delta. Used for streaming outputs like LLM tokens or
+        log lines.
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        if param_name in self.parameter_output_values:
+            try:
+                self.parameter_output_values[param_name] = self.parameter_output_values[param_name] + value
+            except TypeError:
+                # In-place .append mutates the existing list object, so dict
+                # __setitem__ isn't triggered. Emit the value-update ourselves.
+                try:
+                    self.parameter_output_values[param_name].append(value)
+                except Exception as e:
+                    msg = f"Value is not appendable to parameter '{param_name}' on {self.name}"
+                    raise RuntimeError(msg) from e
+                parameter = self.get_parameter_by_name(param_name)
+                if parameter is not None:
+                    self._emit_parameter_value_update_event(parameter, self.parameter_output_values[param_name])
+        else:
+            self.parameter_output_values[param_name] = value
+
+        GriptapeNodes.EventManager().put_event(
+            ProgressEvent(value=value, node_name=self.name, parameter_name=param_name)
+        )
 
     def set_initial_node_size(
         self, width: int = NODE_DEFAULT_SIZE["width"], height: int = NODE_DEFAULT_SIZE["height"]
@@ -1112,8 +1152,15 @@ class BaseNode(ABC):
     def clear_node(self) -> None:
         # set state to unresolved
         self.state = NodeResolutionState.UNRESOLVED
-        # delete all output values potentially generated
+        # Delete all output values potentially generated. Emit a value-update for each
+        # cleared key using the input-side value so subscribers (UI) reflect the
+        # displayed input value rather than leaving a stale output value on screen.
+        cleared_keys = list(self.parameter_output_values.keys())
         self.parameter_output_values.clear()
+        for param_name in cleared_keys:
+            parameter = self.get_parameter_by_name(param_name)
+            if parameter is not None:
+                self._emit_parameter_value_update_event(parameter, self.get_parameter_value(param_name))
         # Clear cancellation flag
         self.clear_cancellation()
         # Clear the spotlight linked list
@@ -1196,47 +1243,23 @@ class BaseNode(ABC):
         return None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        # Add the value to the node
-        if parameter_name in self.parameter_output_values:
-            try:
-                self.parameter_output_values[parameter_name] = self.parameter_output_values[parameter_name] + value
-            except TypeError:
-                try:
-                    self.parameter_output_values[parameter_name].append(value)
-                except Exception as e:
-                    msg = f"Value is not appendable to parameter '{parameter_name}' on {self.name}"
-                    raise RuntimeError(msg) from e
-        else:
-            self.parameter_output_values[parameter_name] = value
-        # Publish the event up!
-
-        GriptapeNodes.EventManager().put_event(
-            ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name)
+        warnings.warn(
+            "append_value_to_parameter is deprecated; use append_output_value instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        self.append_output_value(parameter_name, value)
 
     def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
-        from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        parameter = self.get_parameter_by_name(parameter_name)
-        if parameter:
-            data_type = parameter.type
-            self.parameter_output_values[parameter_name] = value
-            payload = ParameterValueUpdateEvent(
-                node_name=self.name,
-                parameter_name=parameter_name,
-                data_type=data_type,
-                value=safe_unstructure(value),
-            )
-
-            GriptapeNodes.EventManager().put_event(
-                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
-            )
-        else:
+        warnings.warn(
+            "publish_update_to_parameter is deprecated; use set_output_value instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if self.get_parameter_by_name(parameter_name) is None:
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
+        self.set_output_value(parameter_name, value)
 
     def reorder_elements(self, element_order: list[str] | list[int] | list[str | int]) -> None:
         """Reorder the elements of this node.
@@ -1364,6 +1387,21 @@ class BaseNode(ABC):
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
             )
 
+        GriptapeNodes.EventManager().put_event(event)
+
+    def _emit_parameter_value_update_event(self, parameter: Parameter, value: Any) -> None:
+        """Emit a ParameterValueUpdateEvent for parameter value changes."""
+        from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        payload = ParameterValueUpdateEvent(
+            node_name=self.name,
+            parameter_name=parameter.name,
+            data_type=parameter.type,
+            value=safe_unstructure(value),
+        )
+
+        event = ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
         GriptapeNodes.EventManager().put_event(event)
 
     def _get_element_name(self, element: str | int, element_names: list[str]) -> str:
@@ -1500,7 +1538,13 @@ class BaseNode(ABC):
 
 
 class TrackedParameterOutputValues(dict[str, Any]):
-    """A dictionary that tracks modifications and emits AlterElementEvent when parameter output values change."""
+    """Output-value dict that broadcasts `ParameterValueUpdateEvent` on assignment.
+
+    Only `__setitem__` is overridden. Every other dict operation (`clear`, `update`,
+    `pop`, `del`, iteration) behaves exactly like a plain dict with no side
+    effects. Callers that want the broadcast should assign with `dict[key] = v`
+    or use `BaseNode.set_output_value`/`append_output_value`.
+    """
 
     def __init__(self, node: BaseNode) -> None:
         super().__init__()
@@ -1509,65 +1553,10 @@ class TrackedParameterOutputValues(dict[str, Any]):
     def __setitem__(self, key: str, value: Any) -> None:
         old_value = self.get(key)
         super().__setitem__(key, value)
-
-        # Only emit event if value actually changed
         if old_value != value:
-            self._emit_parameter_change_event(key, value)
-
-    def __delitem__(self, key: str) -> None:
-        if key in self:
-            super().__delitem__(key)
-            self._emit_parameter_change_event(key, None, deleted=True)
-
-    def clear(self) -> None:
-        if self:  # Only emit events if there were values to clear
-            keys_to_clear = list(self.keys())
-            super().clear()
-            for key in keys_to_clear:
-                # Some nodes still have values set, even if their output values are cleared
-                # Here, we are emitting an event with those set values, to not misrepresent the values of the parameters in the UI.
-                value = self._node.get_parameter_value(key)
-                self._emit_parameter_change_event(key, value, deleted=True)
-
-    def silent_clear(self) -> None:
-        """Clear all values without emitting parameter change events."""
-        super().clear()
-
-    def update(self, *args, **kwargs) -> None:
-        # Handle both dict.update(other) and dict.update(**kwargs) patterns
-        if args:
-            other = args[0]
-            if hasattr(other, "items"):
-                for key, value in other.items():
-                    self[key] = value  # Use __setitem__ to trigger events
-            else:
-                for key, value in other:
-                    self[key] = value
-
-        for key, value in kwargs.items():
-            self[key] = value
-
-    def _emit_parameter_change_event(self, parameter_name: str, value: Any, *, deleted: bool = False) -> None:
-        """Emit an AlterElementEvent for parameter output value changes."""
-        parameter = self._node.get_parameter_by_name(parameter_name)
-        if parameter is not None:
-            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            # Create event data using the parameter's to_event method
-            event_data = parameter.to_event(self._node)
-            event_data["value"] = value
-
-            # Add modification metadata
-            event_data["modification_type"] = "deleted" if deleted else "set"
-
-            # Publish the event
-            event = ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
-            )
-
-            GriptapeNodes.EventManager().put_event(event)
+            parameter = self._node.get_parameter_by_name(key)
+            if parameter is not None:
+                self._node._emit_parameter_value_update_event(parameter, value)
 
 
 class ControlNode(BaseNode):
@@ -1818,11 +1807,11 @@ class EndNode(BaseNode):
         for param in self.parameters:
             if param.type != ParameterTypeBuiltin.CONTROL_TYPE:
                 value = self.get_parameter_value(param.name)
-                self.parameter_output_values[param.name] = value
+                self.set_output_value(param.name, value)
         entry_parameter = self._entry_control_parameter
         # Update which control parameter to flag as the output value.
         if entry_parameter is not None:
-            self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
+            self.set_output_value(entry_parameter.name, CONTROL_INPUT_PARAMETER)
 
 
 # StartLoopNode and EndLoopNode have been moved to base_iterative_nodes.py

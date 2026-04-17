@@ -160,7 +160,7 @@ class ProjectFileParameter:
 
     def _reset_to_default(self, parameter: Parameter, source_node_name: str, source_parameter_name: str) -> None:  # noqa: ARG002
         self._node.set_parameter_value(self._name, self._default_filename)
-        self._node.publish_update_to_parameter(self._name, self._default_filename)
+        self._node.set_output_value(self._name, self._default_filename)
 
     def _on_configure_button_clicked(
         self,
@@ -207,12 +207,12 @@ class ProjectFileParameter:
         configure_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(configure_node_name)
         if configure_node is not None:
             configure_node.set_parameter_value("situation", self._situation_name)
-            configure_node.publish_update_to_parameter("situation", self._situation_name)
+            configure_node.set_output_value("situation", self._situation_name)
 
             current_filename = self._node.get_parameter_value(self._name)
             if isinstance(current_filename, str) and current_filename:
                 configure_node.set_parameter_value("filename", current_filename)
-                configure_node.publish_update_to_parameter("filename", current_filename)
+                configure_node.set_output_value("filename", current_filename)
 
         connection_result = RetainedMode.connect(
             source=f"{configure_node_name}.file_destination",

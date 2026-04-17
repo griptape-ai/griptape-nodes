@@ -94,9 +94,9 @@ class UppercaseText(DataNode):
 
     def process(self) -> None:
         # process() is called when the node executes in a flow.
-        # Read inputs via get_parameter_value(...) and write outputs via parameter_output_values.
+        # Read inputs via get_parameter_value(...) and write outputs via set_output_value(...).
         text = self.get_parameter_value("text") or ""
-        self.parameter_output_values["uppercased"] = text.upper()
+        self.set_output_value("uppercased", text.upper())
 ```
 
 ### Test as you go

@@ -1755,9 +1755,6 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         # Update for our name with the right values
         name = event_dict.pop("name")
         event_dict["parameter_name"] = name
-        # Update with value
-        if node is not None:
-            event_dict["value"] = node.get_parameter_value(self.name)
         return event_dict
 
     @property

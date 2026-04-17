@@ -149,7 +149,7 @@ class BaseWhileNodeGroup(SubflowNodeGroup):
             condition_met: Whether the loop's 'done' condition was triggered
             iterations: Total number of iterations that were executed
         """
-        self.parameter_output_values["total_iterations"] = iterations
+        self.set_output_value("total_iterations", iterations)
 
     def _initialize_loop_data(self) -> None:
         """Initialize loop-specific data and state."""

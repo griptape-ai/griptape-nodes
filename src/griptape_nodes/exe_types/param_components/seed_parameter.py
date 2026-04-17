@@ -52,7 +52,7 @@ class SeedParameter:
             # Not using for cryptographic purposes
             seed = random.randint(0, self._max_seed)  # noqa: S311
             self._node.set_parameter_value("seed", seed)
-            self._node.publish_update_to_parameter("seed", seed)
+            self._node.set_output_value("seed", seed)
 
     def get_seed(self) -> int:
         return int(self._node.get_parameter_value("seed"))

@@ -2388,7 +2388,7 @@ class NodeManager:
                 and node.parameter_output_values[request.parameter_name] != object_created
             ):
                 modified = True
-            node.parameter_output_values[request.parameter_name] = object_created
+            node.set_output_value(request.parameter_name, object_created)
             return NodeManager.ModifiedReturnValue(object_created, modified)
         # Otherwise use set_parameter_value. This calls our converters and validators.
         # Skip before_value_set since we already called it earlier in the flow
@@ -4048,7 +4048,7 @@ class NodeManager:
         if old_name in node.parameter_values:
             node.parameter_values[request.new_parameter_name] = node.parameter_values.pop(old_name)
         if old_name in node.parameter_output_values:
-            node.parameter_output_values[request.new_parameter_name] = node.parameter_output_values.pop(old_name)
+            node.set_output_value(request.new_parameter_name, node.parameter_output_values.pop(old_name))
 
         return RenameParameterResultSuccess(
             old_parameter_name=old_name,

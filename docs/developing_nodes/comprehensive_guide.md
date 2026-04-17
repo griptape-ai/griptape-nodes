@@ -121,7 +121,7 @@ class MyNode(DataNode):
 
     def process(self) -> None:
         val = self.get_parameter_value("input").upper()
-        self.parameter_output_values["output"] = val
+        self.set_output_value("output", val)
 ```
 
 ## Parameters
@@ -860,7 +860,7 @@ class TwoImageProcessor(SuccessFailureNode):
         # Save result
         filename = generate_filename(self.name, suffix="processed")
         output_artifact = save_pil_image_with_named_filename(result_pil, filename)
-        self.parameter_output_values["output_image"] = output_artifact
+        self.set_output_value("output_image", output_artifact)
 
     def _do_processing(self, image_a: Image.Image, image_b: Image.Image) -> Image.Image:
         """Override this method with actual processing logic."""
@@ -905,9 +905,12 @@ All callbacks are overridable:
 ### Helper Methods
 
 - `hide_parameter_by_name()`, `show_parameter_by_name()`
-- `append_value_to_parameter()`
-- `publish_update_to_parameter()`
+- `set_parameter_value()` — set an **input** value (runs converters, validators, and `before_value_set`/`after_value_set` hooks)
+- `set_output_value()` — set an **output** value; broadcasts a `ParameterValueUpdateEvent` so the UI refreshes
+- `append_output_value()` — append/concat to an **output** value; broadcasts plus emits a `ProgressEvent` delta (use for streaming/logs)
 - `show_message_by_name()`, `hide_message_by_name()`, `get_message_by_name_or_element_id()`
+
+> **Deprecated:** `publish_update_to_parameter()` and `append_value_to_parameter()` are retained as `DeprecationWarning` shims and will be removed in a future release. Use `set_output_value()` and `append_output_value()` respectively.
 
 ## Best Practices
 
@@ -986,7 +989,7 @@ def process(self) -> None:
         from huggingface_hub import HfApi
     except ImportError:
         error_msg = "huggingface_hub library not installed"
-        self.parameter_output_values["output"] = None
+        self.set_output_value("output", None)
         raise ImportError(error_msg)
 ```
 
@@ -1228,7 +1231,7 @@ class MyVideoNode(ControlNode):
         saved = dest.write_bytes(video_bytes)
 
         # Set the output parameter with the saved location
-        self.parameter_output_values["output_video"] = VideoUrlArtifact(saved.location)
+        self.set_output_value("output_video", VideoUrlArtifact(saved.location))
 ```
 
 **Key Points:**
@@ -1428,7 +1431,7 @@ class ProcessVideo(ControlNode):
             saved = dest.write_bytes(output_bytes)
 
             # Set output
-            self.parameter_output_values["output_video"] = VideoUrlArtifact(saved.location)
+            self.set_output_value("output_video", VideoUrlArtifact(saved.location))
 
         finally:
             # Clean up temporary file
@@ -1599,7 +1602,7 @@ class MyAgentNode(ControlNode):
         agent_state = self.get_parameter_value("agent_in")
         agent = Agent.from_dict(agent_state) if agent_state else Agent()
         # Process with agent
-        self.parameter_output_values["agent_out"] = agent.to_dict()
+        self.set_output_value("agent_out", agent.to_dict())
 ```
 
 ### Abstract Base Classes for Node Families
@@ -1667,7 +1670,7 @@ model_dict['gated'] = is_gated
 
 # Status updates for gated models
 if getattr(model_info, 'gated', False):
-    self.publish_update_to_parameter(
+    self.set_output_value(
         "status",
         "🔒 GATED MODEL - May require approval"
     )
@@ -1794,12 +1797,12 @@ class LoadImage(SuccessFailureNode):
         self._clear_execution_status()
 
         # Clear output values to prevent stale data on errors
-        self.parameter_output_values["image"] = None
+        self.set_output_value("image", None)
 
         try:
             # Processing logic here
             result = load_image()
-            self.parameter_output_values["image"] = result
+            self.set_output_value("image", result)
 
             # Success case
             success_details = f"Image loaded successfully from {source}"
@@ -1946,15 +1949,15 @@ Always set safe defaults before raising exceptions:
 ```python
 def _set_safe_defaults(self) -> None:
     """Set safe default values for all outputs."""
-    self.parameter_output_values["result"] = None
-    self.parameter_output_values["status"] = "error"
-    self.parameter_output_values["count"] = 0
+    self.set_output_value("result", None)
+    self.set_output_value("status", "error")
+    self.set_output_value("count", 0)
 
 def process(self) -> None:
     try:
         # Processing logic
         result = process_data()
-        self.parameter_output_values["result"] = result
+        self.set_output_value("result", result)
     except Exception as e:
         self._set_safe_defaults()
         raise RuntimeError(f"Processing failed: {str(e)}") from e
@@ -2846,7 +2849,7 @@ processed = pil_image.filter(...)
 
 # Save and get output artifact
 output_artifact = save_pil_image_with_named_filename(processed, "result.png")
-self.parameter_output_values["output"] = output_artifact
+self.set_output_value("output", output_artifact)
 ```
 
 #### File Utilities (`griptape_nodes_library.utils.file_utils`)
@@ -3307,7 +3310,7 @@ class MyAsyncNode(DataNode):
             result = self._poll_for_completion(task_id, api_key)
 
             # Process result
-            self.parameter_output_values["output"] = result
+            self.set_output_value("output", result)
 
         except Exception as e:
             self._set_safe_defaults()
@@ -4245,7 +4248,7 @@ self.add_parameter(music_urls_param)
 def process(self) -> None:
     # ... generation logic ...
     urls = self._extract_music_urls(response_data)
-    self.parameter_output_values["music_urls"] = urls
+    self.set_output_value("music_urls", urls)
 
     # Build detailed result
     result_lines = [
@@ -4256,7 +4259,7 @@ def process(self) -> None:
     for i, url in enumerate(urls, 1):
         result_lines.append(f"{i}. {url}")
 
-    self.parameter_output_values["result_details"] = "\n".join(result_lines)
+    self.set_output_value("result_details", "\n".join(result_lines))
 ```
 
 #### Status Updates During Long Operations

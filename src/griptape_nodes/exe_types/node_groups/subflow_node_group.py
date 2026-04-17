@@ -1006,7 +1006,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                     value = internal_node.get_parameter_value(internal_param.name)
 
                 if value is not None:
-                    self.parameter_output_values[proxy_param_name] = value
+                    self.set_output_value(proxy_param_name, value)
                 break
 
     @abstractmethod

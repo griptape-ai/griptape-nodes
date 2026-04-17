@@ -181,8 +181,8 @@ class ExampleNode(DataNode):
         """Run the node.
 
         The engine calls `process()` when the node executes in a flow.
-        Read parameters with `get_parameter_value(...)` and write outputs to
-        `self.parameter_output_values`.
+        Read parameters with `get_parameter_value(...)` and write outputs with
+        `self.set_output_value(name, value)`.
         """
         # Read the current parameter values (from UI or from upstream connections).
         free_text = self.get_parameter_value("free_text") or ""
@@ -191,16 +191,16 @@ class ExampleNode(DataNode):
 
         # Reverse the words in free_text
         reversed_words = " ".join(reversed(str(free_text).split()))
-        self.parameter_output_values["reversed_text"] = reversed_words
+        self.set_output_value("reversed_text", reversed_words)
 
         # Pass through the dropdown selection so it can be consumed downstream.
-        self.parameter_output_values["dropdown"] = dropdown
+        self.set_output_value("dropdown", dropdown)
 
         # Calculate random float
         # NOTE: `random.uniform(a, b)` requires numeric inputs. This is a toy example;
         # real nodes should validate and handle None/missing values robustly.
         random_float = round(random.uniform(0, float(integer_slider)), 3)  # noqa: S311
-        self.parameter_output_values["random_float"] = random_float
+        self.set_output_value("random_float", random_float)
 
         # For demonstration, just print the values
         # (Avoid print() in production nodes; use structured logging or a "logs" output parameter.)

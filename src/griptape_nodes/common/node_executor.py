@@ -3710,7 +3710,7 @@ class NodeExecutor:
                         incoming_connection_source_parameter_name=target_param_name,
                     )
                 )
-            target_node.parameter_output_values[target_param_name] = param_value
+            target_node.set_output_value(target_param_name, param_value)
 
             logger.debug(
                 "Set parameter '%s' on node '%s' to value: %s",
@@ -3778,7 +3778,7 @@ class NodeExecutor:
 
             # Set the value on the target node
             target_node.set_parameter_value(target_param_name, param_value)
-            target_node.parameter_output_values[target_param_name] = param_value
+            target_node.set_output_value(target_param_name, param_value)
 
             logger.debug(
                 "Applied last iteration value to packaged node '%s' parameter '%s'",

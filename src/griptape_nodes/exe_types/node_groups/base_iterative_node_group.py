@@ -231,7 +231,7 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         """Output the current results list to the results parameter."""
         import copy
 
-        self.parameter_output_values["results"] = copy.deepcopy(self._results_list)
+        self.set_output_value("results", copy.deepcopy(self._results_list))
 
     def reset_for_workflow_run(self) -> None:
         """Reset state for a fresh workflow run."""

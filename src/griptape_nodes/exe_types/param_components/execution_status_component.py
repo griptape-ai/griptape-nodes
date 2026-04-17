@@ -152,10 +152,9 @@ class ExecutionStatusComponent:
             parameter: The parameter to update
             value: The new value to set
         """
-        # ALWAYS set parameter value and publish update
+        # ALWAYS set parameter value (emits ParameterValueUpdateEvent for the UI)
         self._node.set_parameter_value(parameter.name, value)
-        self._node.publish_update_to_parameter(parameter.name, value)
 
         # ONLY set output values if the parameter mode is OUTPUT
         if ParameterMode.OUTPUT in parameter.get_mode():
-            self._node.parameter_output_values[parameter.name] = value
+            self._node.set_output_value(parameter.name, value)

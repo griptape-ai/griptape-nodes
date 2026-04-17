@@ -117,7 +117,7 @@ class SubflowExecutionComponent:
 
     def clear_events(self) -> None:
         """Clear events at start of execution."""
-        self._node.publish_update_to_parameter("execution_events", "")
+        self._node.set_output_value("execution_events", "")
 
     def clear_publishing_target_link(self) -> None:
         """Clear the publishing target link parameter."""
@@ -129,7 +129,7 @@ class SubflowExecutionComponent:
         Args:
             event_str: The event string to append
         """
-        self._node.append_value_to_parameter("execution_events", event_str + "\n")
+        self._node.append_output_value("execution_events", event_str + "\n")
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle actions after a parameter value is set.
@@ -156,7 +156,7 @@ class SubflowExecutionComponent:
 
     def reset_publishing_progress(self) -> None:
         """Reset the publishing progress bar to 0."""
-        self._node.publish_update_to_parameter("publishing_progress", 0.0)
+        self._node.set_output_value("publishing_progress", 0.0)
 
     def _parse_execution_event(self, event: dict) -> ExecutionEvent | None:
         """Parse an execution event dictionary into an ExecutionEvent object.
@@ -201,7 +201,7 @@ class SubflowExecutionComponent:
         if isinstance(ex_event.payload, PublishWorkflowProgressEvent):
             # Update progress bar (convert from 0-100 to 0.0-1.0)
             progress_value = min(1.0, max(0.0, ex_event.payload.progress / 100.0))
-            self._node.publish_update_to_parameter("publishing_progress", progress_value)
+            self._node.set_output_value("publishing_progress", progress_value)
 
             # Also append a user-friendly message if provided
             if ex_event.payload.message:
