@@ -1682,7 +1682,7 @@ class WorkflowManager:
         file_path: Path
         relative_file_path: str
 
-    def _build_workflow_save_path(self, relative_file_path: str) -> WorkflowSavePath:
+    def _build_workflow_save_path(self, file_name: str, sub_dirs: str | None = None) -> WorkflowSavePath:
         """Resolve a workflow save path via the ``save_workflow`` situation.
 
         Returns the absolute save path plus a registry-relative form. When the
@@ -1692,13 +1692,12 @@ class WorkflowManager:
         resolve (e.g., no project loaded), we fall through to the plain
         workspace path.
         """
-        relative_path = Path(relative_file_path)
-        parent_str = str(relative_path.parent)
         extra_vars: dict[str, str | int] = {}
-        if parent_str not in (".", ""):
-            extra_vars["sub_dirs"] = parent_str
+        if sub_dirs:
+            extra_vars["sub_dirs"] = sub_dirs
 
-        destination = ProjectFileDestination.from_situation(relative_path.name, "save_workflow", **extra_vars)
+        destination = ProjectFileDestination.from_situation(file_name, "save_workflow", **extra_vars)
+        relative_file_path = str(Path(sub_dirs) / file_name) if sub_dirs else file_name
         try:
             resolved = Path(destination.resolve())
         except FileLoadError:
@@ -1998,11 +1997,11 @@ class WorkflowManager:
             current_dir = Path(current_workflow.file_path).parent
             # If current_dir is absolute, the workflow lives outside the workspace;
             # save the copy to the workspace root so the registry key stays relative.
-            if current_dir.is_absolute():
-                requested_relative = f"{file_name}.py"
+            if current_dir.is_absolute() or str(current_dir) == ".":
+                sub_dirs = None
             else:
-                requested_relative = str(current_dir / f"{file_name}.py")
-            file_path, relative_file_path = self._build_workflow_save_path(requested_relative)
+                sub_dirs = str(current_dir)
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py", sub_dirs=sub_dirs)
 
         else:
             # No requested name or no current workflow → first save
