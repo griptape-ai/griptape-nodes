@@ -59,6 +59,26 @@ class UnsubscribeCommand:
     topic: str
 
 
+@dataclass(frozen=True)
+class Orchestrator:
+    """Engine role: owns the session, routes requests to workers."""
+
+
+@dataclass(frozen=True)
+class Worker:
+    """Engine role: attached to an existing orchestrator session.
+
+    library_name is None for general-purpose workers and set for
+    library-dedicated workers that serve exactly one library.
+    """
+
+    session_id: str
+    library_name: str | None = None
+
+
+EngineRole = Orchestrator | Worker
+
+
 # Important to bootstrap singleton here so that we don't
 # get any weird circular import issues from the EventLogHandler
 # initializing it from a log during it's own initialization.
@@ -165,21 +185,21 @@ def _ensure_api_key() -> str:
     return api_key
 
 
-def start_app(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
+def start_app(role: EngineRole) -> None:
     """Legacy sync entry point - runs async app."""
     # Use the system certificate store for SSL verification.
     # Called here (not at module level) so it only applies in server mode,
     # not when app.py is imported by headless/subprocess contexts.
     truststore.inject_into_ssl()
     try:
-        asyncio.run(astart_app(worker_session_id=worker_session_id, worker_library_name=worker_library_name))
+        asyncio.run(astart_app(role))
     except KeyboardInterrupt:
         logger.info("Application stopped by user")
     except Exception as e:
         logger.error("Application error: %s", e)
 
 
-async def astart_app(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
+async def astart_app(role: EngineRole) -> None:
     """New async app entry point."""
     # Verify API key is set before starting
     _ensure_api_key()
@@ -191,7 +211,7 @@ async def astart_app(worker_session_id: str | None = None, worker_library_name: 
         # Start WebSocket tasks in daemon thread
         threading.Thread(
             target=_start_websocket_connection,
-            kwargs={"worker_session_id": worker_session_id, "worker_library_name": worker_library_name},
+            kwargs={"role": role},
             daemon=True,
             name="websocket-tasks",
         ).start()
@@ -204,7 +224,7 @@ async def astart_app(worker_session_id: str | None = None, worker_library_name: 
         raise
 
 
-def _start_websocket_connection(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
+def _start_websocket_connection(role: EngineRole) -> None:
     """Run WebSocket tasks in a separate thread with its own async loop."""
     global websocket_event_loop  # noqa: PLW0603
     try:
@@ -217,9 +237,7 @@ def _start_websocket_connection(worker_session_id: str | None = None, worker_lib
         websocket_event_loop_ready.set()
 
         # Run the async WebSocket tasks
-        loop.run_until_complete(
-            _run_websocket_tasks(worker_session_id=worker_session_id, worker_library_name=worker_library_name)
-        )
+        loop.run_until_complete(_run_websocket_tasks(role))
     except ConnectionError:
         # Connection failed - likely due to invalid/missing API key
         message = Panel(
@@ -244,27 +262,29 @@ def _start_websocket_connection(worker_session_id: str | None = None, worker_lib
         websocket_event_loop_ready.clear()
 
 
-async def _run_websocket_tasks(worker_session_id: str | None = None, worker_library_name: str | None = None) -> None:
+async def _run_websocket_tasks(role: EngineRole) -> None:
     """Run WebSocket tasks - async version."""
     async with Client() as client:
         logger.debug("WebSocket connection established")
+        is_worker = isinstance(role, Worker)
+        libraries_to_register = [role.library_name] if isinstance(role, Worker) and role.library_name else []
         griptape_nodes.EventManager().put_event(
             AppEvent(
                 payload=app_events.AppInitializationComplete(
-                    is_worker=bool(worker_library_name),
-                    libraries_to_register=[worker_library_name] if worker_library_name else [],
+                    is_worker=is_worker,
+                    libraries_to_register=libraries_to_register,
                 )
             )
         )
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppConnectionEstablished()))
 
-        if worker_session_id:
-            await _run_worker(client, worker_session_id, worker_library_name)
+        if isinstance(role, Worker):
+            await _run_worker(client, role)
         else:
             await _run_orchestrator(client)
 
 
-async def _run_worker(client: Client, worker_session_id: str, worker_library_name: str | None = None) -> None:
+async def _run_worker(client: Client, role: Worker) -> None:
     """Run the WebSocket task group for a worker engine."""
     # Announce this worker to the orchestrator's session request topic.
     # The orchestrator will store our engine_id and subscribe to our response topic.
@@ -276,20 +296,20 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     reg_event = EventRequest(
         request=worker_events.RegisterWorkerRequest(
             worker_engine_id=worker_engine_id,
-            library_name=worker_library_name,
+            library_name=role.library_name,
         ),
         response_topic=None,
     )
     await client.publish(
         "EventRequest",
         json.loads(reg_event.json()),
-        f"sessions/{worker_session_id}/request",
+        f"sessions/{role.session_id}/request",
     )
     logger.info("Worker %s registered with orchestrator", worker_engine_id)
 
     # Set session_id so _determine_response_topic() returns the session topic,
     # routing intermediate events (AppEvents, ProgressEvents) directly to the GUI.
-    griptape_nodes.SessionManager().active_session_id = worker_session_id
+    griptape_nodes.SessionManager().active_session_id = role.session_id
 
     # Relay LibraryLoadedNotification events to the orchestrator over MQTT.
     # LibraryManager broadcasts these when a library finishes loading on this worker;
@@ -301,7 +321,7 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
     # instead -- it enqueues via run_coroutine_threadsafe and is safe to call from loop A.
     async def _relay_library_loaded(notification: app_events.LibraryLoadedNotification) -> None:
         relay = AppEvent(payload=notification)
-        await _send_message("AppEvent", relay.json(), f"sessions/{worker_session_id}/request")
+        await _send_message("AppEvent", relay.json(), f"sessions/{role.session_id}/request")
 
     griptape_nodes.EventManager().add_listener_to_app_event(app_events.LibraryLoadedNotification, _relay_library_loaded)
 
@@ -339,9 +359,9 @@ async def _run_worker(client: Client, worker_session_id: str, worker_library_nam
             await client.publish(
                 "EventRequest",
                 json.loads(unregister_event.json()),
-                f"sessions/{worker_session_id}/request",
+                f"sessions/{role.session_id}/request",
             )
-            logger.info("Worker %s sent unregister to session %s", worker_engine_id, worker_session_id)
+            logger.info("Worker %s sent unregister to session %s", worker_engine_id, role.session_id)
         except Exception as e:
             logger.debug("Could not send unregister on shutdown: %s", e)
         os.kill(os.getpid(), signal.SIGINT)
