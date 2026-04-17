@@ -545,21 +545,11 @@ async def _process_event_queue() -> None:
 
 
 async def _process_event_request(event: EventRequest) -> None:
-    """Handle request and emit success/failure events based on result.
-
-    When the worker receives an ExecuteNodeRequest from the orchestrator, open
-    the worker_node_execution_scope around the dispatch. Nested handle_request
-    calls originated from node.aprocess() observe the ContextVar and forward
-    orchestrator-owned queries. Bootstrap and lifecycle requests land here
-    without the scope and dispatch locally.
-    """
-    event_mgr = griptape_nodes.EventManager()
-    result_context = {"response_topic": event.response_topic, "request_id": event.request_id}
-    if isinstance(event.request, execution_events.ExecuteNodeRequest):
-        with event_mgr.worker_node_execution_scope():
-            result_event = await event_mgr.ahandle_request(event.request, result_context=result_context)
-    else:
-        result_event = await event_mgr.ahandle_request(event.request, result_context=result_context)
+    """Handle request and emit success/failure events based on result."""
+    result_event = await griptape_nodes.EventManager().ahandle_request(
+        event.request,
+        result_context={"response_topic": event.response_topic, "request_id": event.request_id},
+    )
     if event.request.broadcast_result:
         await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 

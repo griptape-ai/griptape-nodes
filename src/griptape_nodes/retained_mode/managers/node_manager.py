@@ -2728,7 +2728,13 @@ class NodeManager:
         return await self._hydrate_and_run_node(node, request)
 
     async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
-        """Hydrate a node's input parameters and execute it."""
+        """Hydrate a node's input parameters and execute it.
+
+        node.aprocess() runs inside worker_node_execution_scope so that any
+        nested handle_request calls originated from node code (on a worker)
+        forward to the orchestrator. On the orchestrator the scope is a no-op
+        because forwarding is not configured there.
+        """
         node_name = request.node_name
         # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.
         parameter_values = hydrate_parameter_values(request.parameter_values)
@@ -2740,7 +2746,8 @@ class NodeManager:
                     result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
                 )
         try:
-            await node.aprocess()
+            with GriptapeNodes.EventManager().worker_node_execution_scope():
+                await node.aprocess()
         except Exception as e:
             return ExecuteNodeResultFailure(
                 result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",

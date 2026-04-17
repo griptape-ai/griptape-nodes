@@ -27,7 +27,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
 )
 from griptape_nodes.retained_mode.events.event_converter import converter
-from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.utils.async_utils import call_function
 
@@ -248,9 +247,10 @@ class EventManager:
         request type is not marked HandleLocallyOnWorkerMixin). Outside this
         scope, all requests dispatch locally.
 
-        Opened by app._process_event_request around the ExecuteNodeRequest
-        dispatch on workers. Bootstrap paths and AppInitializationComplete
-        fan-out are not wrapped and therefore never forward.
+        Opened by NodeManager._hydrate_and_run_node around node.aprocess()
+        inside the ExecuteNodeRequest handler. Bootstrap paths and
+        AppInitializationComplete fan-out are not wrapped and therefore
+        never forward.
         """
         token = _WORKER_NODE_EXECUTION_CONTEXT.set(True)
         try:
@@ -265,18 +265,16 @@ class EventManager:
           (1) configure_worker_forwarding has been called (we're on a worker),
           (2) the current call is inside a worker_node_execution_scope (i.e.
               originated from node execution, not from bootstrap or lifecycle),
-          (3) the request is not the ExecuteNodeRequest that opened the scope:
-              the orchestrator routed it to this worker precisely so the worker
-              would own the dispatch, and forwarding it back would infinite-loop
-              (orchestrator runs locally, returns success, node never executes
-              on the worker),
-          (4) the request is not opted out via HandleLocallyOnWorkerMixin.
+          (3) the request is not opted out via HandleLocallyOnWorkerMixin.
+
+        ExecuteNodeRequest is excluded structurally: the scope is opened by
+        NodeManager._hydrate_and_run_node around node.aprocess(), *inside* the
+        ExecuteNodeRequest handler. The request that enters the handler runs
+        outside the scope, so forwarding naturally skips it.
         """
         if not self._worker_forwarding_enabled:
             return False
         if not _WORKER_NODE_EXECUTION_CONTEXT.get():
-            return False
-        if isinstance(request, ExecuteNodeRequest):
             return False
         return not isinstance(request, HandleLocallyOnWorkerMixin)
 
