@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from griptape_nodes.exe_types.node_types import NodeDependencies
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
+    ForwardFromWorkerMixin,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -35,7 +36,7 @@ class FlowMetadataExtractionFailureReason(StrEnum):
 
 @dataclass(kw_only=True)
 @PayloadRegistry.register
-class CreateFlowRequest(RequestPayload):
+class CreateFlowRequest(RequestPayload, ForwardFromWorkerMixin):
     """Create a new flow (sub-workflow) within a parent flow.
 
     Use when: Creating sub-workflows, organizing complex workflows into components,
@@ -77,7 +78,7 @@ class CreateFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteFlowRequest(RequestPayload):
+class DeleteFlowRequest(RequestPayload, ForwardFromWorkerMixin):
     """Delete a flow and all its contents.
 
     Use when: Removing unused sub-workflows, cleaning up complex workflows,
@@ -107,7 +108,7 @@ class DeleteFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowRequest(RequestPayload):
+class ListNodesInFlowRequest(RequestPayload, ForwardFromWorkerMixin):
     """List all nodes in a specific flow.
 
     Use when: Inspecting flow contents, building flow visualizations,
@@ -148,7 +149,7 @@ class ListNodesInFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 # It was implemented this way to maintain backwards compatibility with the editor.
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInCurrentContextRequest(RequestPayload):
+class ListFlowsInCurrentContextRequest(RequestPayload, ForwardFromWorkerMixin):
     pass
 
 
@@ -167,7 +168,7 @@ class ListFlowsInCurrentContextResultFailure(WorkflowNotAlteredMixin, ResultPayl
 # Gives a list of the flows directly parented by the node specified.
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowRequest(RequestPayload):
+class ListFlowsInFlowRequest(RequestPayload, ForwardFromWorkerMixin):
     # Pass in None to get the canvas.
     parent_flow_name: str | None = None
 

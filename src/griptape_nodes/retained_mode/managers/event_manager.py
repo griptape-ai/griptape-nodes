@@ -6,7 +6,6 @@ import logging
 import threading
 from collections import defaultdict
 from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
@@ -20,7 +19,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     EventResultFailure,
     EventResultSuccess,
-    HandleLocallyOnWorkerMixin,
+    ForwardFromWorkerMixin,
     ProgressEvent,
     RequestPayload,
     ResultDetails,
@@ -39,12 +38,6 @@ if TYPE_CHECKING:
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
 AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
-
-# Origin-context flag: True for the duration of an ExecuteNodeRequest handler
-# on a worker. Nested handle_request calls originated from within that scope
-# are eligible for forwarding to the orchestrator. Bootstrap, lifecycle, and
-# AppInitializationComplete fan-out run outside the scope and dispatch locally.
-_WORKER_NODE_EXECUTION_CONTEXT: ContextVar[bool] = ContextVar("worker_node_execution_context", default=False)
 
 # Result types that should NOT trigger a flush request.
 #
@@ -80,6 +73,14 @@ class EventManager:
         self._worker_response_topic: str | None = None
         self._websocket_event_loop: asyncio.AbstractEventLoop | None = None
         self._forward_timeout_ms: int | None = None
+        # Node-execution refcount. Incremented on worker_node_execution_scope entry,
+        # decremented on exit. Plain instance state guarded by a lock so any thread
+        # -- including threads spawned inside third-party libraries (diffusers,
+        # transformers, etc.) during node execution -- can observe it via
+        # _should_forward. ContextVar was tried first and lost the flag when
+        # library-internal ThreadPoolExecutors ran node-emitted requests.
+        self._node_execution_depth: int = 0
+        self._node_execution_lock = threading.Lock()
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -240,32 +241,45 @@ class EventManager:
 
     @contextmanager
     def worker_node_execution_scope(self) -> Iterator[None]:
-        """Mark the current async context as running inside a worker's ExecuteNodeRequest handler.
+        """Mark this worker as actively executing a node.
 
-        Nested handle_request / ahandle_request calls originated from this
-        scope are eligible for forwarding to the orchestrator (provided the
-        request type is not marked HandleLocallyOnWorkerMixin). Outside this
-        scope, all requests dispatch locally.
+        Increments a thread-safe refcount on entry and decrements on exit.
+        While the refcount is > 0, requests marked ForwardFromWorkerMixin
+        dispatched on this worker are forwarded to the orchestrator.
+
+        The refcount is plain instance state guarded by a lock, so any
+        thread -- including threads spawned internally by third-party
+        libraries (diffusers, transformers) during node execution --
+        observes the same value. A ContextVar was tried first and lost
+        the flag when library-internal ThreadPoolExecutors emitted
+        requests.
 
         Opened by NodeManager._hydrate_and_run_node around node.aprocess()
         inside the ExecuteNodeRequest handler. Bootstrap paths and
         AppInitializationComplete fan-out are not wrapped and therefore
         never forward.
         """
-        token = _WORKER_NODE_EXECUTION_CONTEXT.set(True)
+        with self._node_execution_lock:
+            self._node_execution_depth += 1
         try:
             yield
         finally:
-            _WORKER_NODE_EXECUTION_CONTEXT.reset(token)
+            with self._node_execution_lock:
+                self._node_execution_depth -= 1
+
+    def _in_node_execution(self) -> bool:
+        """Return True when this worker is currently inside a node-execution scope."""
+        with self._node_execution_lock:
+            return self._node_execution_depth > 0
 
     def _should_forward(self, request: RequestPayload) -> bool:
         """Return True when this request should be forwarded to the orchestrator.
 
         Forwarding is active only when:
           (1) configure_worker_forwarding has been called (we're on a worker),
-          (2) the current call is inside a worker_node_execution_scope (i.e.
-              originated from node execution, not from bootstrap or lifecycle),
-          (3) the request is not opted out via HandleLocallyOnWorkerMixin.
+          (2) the request type is marked ForwardFromWorkerMixin (opt-in),
+          (3) the worker is currently inside a worker_node_execution_scope
+              (i.e. the request originated from node execution, not bootstrap).
 
         ExecuteNodeRequest is excluded structurally: the scope is opened by
         NodeManager._hydrate_and_run_node around node.aprocess(), *inside* the
@@ -274,9 +288,9 @@ class EventManager:
         """
         if not self._worker_forwarding_enabled:
             return False
-        if not _WORKER_NODE_EXECUTION_CONTEXT.get():
+        if not isinstance(request, ForwardFromWorkerMixin):
             return False
-        return not isinstance(request, HandleLocallyOnWorkerMixin)
+        return self._in_node_execution()
 
     async def _forward_to_orchestrator(
         self,

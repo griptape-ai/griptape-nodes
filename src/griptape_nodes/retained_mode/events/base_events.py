@@ -183,30 +183,18 @@ class SkipTheLineMixin:
 
 
 class ForwardFromWorkerMixin:
-    """Deprecated: retained as a no-op for one release for external-plugin compatibility.
+    """Opt-in marker: on a worker, forward this request to the orchestrator.
 
-    Previous behavior: opt-in marker for worker -> orchestrator forwarding.
-    Current behavior: forwarding is gated by EventManager.worker_node_execution_scope
-    (origin context), not by type. Requests that must stay local even during
-    node execution should use HandleLocallyOnWorkerMixin instead. This class
-    will be removed in a future release.
-    """
+    Applied to request types whose handler needs orchestrator-owned state
+    (cross-node graph topology, structural mutations against the flow
+    registry, cross-flow parameter reads). Forwarding only activates when
+    the worker is inside EventManager.worker_node_execution_scope -- i.e.
+    the request originated from node execution rather than worker
+    bootstrap. See EventManager._should_forward for the predicate.
 
-
-class HandleLocallyOnWorkerMixin:
-    """Marker: dispatch locally on the worker even inside node execution.
-
-    Applied to request types that must not forward to the orchestrator even when
-    originated from inside an ExecuteNodeRequest handler.
-
-    Applied to request types whose handler reads worker-owned state that
-    the orchestrator does not have (e.g. the worker's own library registry
-    entries, engine-version / identity queries local to this process).
-
-    Under the origin-context gated forwarding model, requests originated
-    from inside a worker's ExecuteNodeRequest handler default to forward.
-    This mixin is the explicit opt-out for requests that must stay local
-    even in that context.
+    Requests without this mixin dispatch locally on the worker even during
+    node execution. This is the right default for file I/O, config,
+    secrets, library queries, and other worker-owned state.
     """
 
 
