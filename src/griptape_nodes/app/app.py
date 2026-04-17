@@ -545,12 +545,22 @@ async def _process_event_queue() -> None:
 
 
 async def _process_event_request(event: EventRequest) -> None:
-    """Handle request and emit success/failure events based on result."""
+    """Handle request and emit success/failure events based on result.
+
+    Two independent reasons to emit the result:
+    - broadcast_result=True: the request wants its result fanned out (typically
+      to the GUI or default session topic).
+    - response_topic is set: the caller is waiting for a reply on that topic
+      (e.g. a worker that forwarded this request to us). The reply is required
+      regardless of broadcast_result, otherwise the caller's future hangs until
+      timeout. This covers request types like WriteFileRequest that default to
+      broadcast_result=False but must still reply when they arrive over the wire.
+    """
     result_event = await griptape_nodes.EventManager().ahandle_request(
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},
     )
-    if event.request.broadcast_result:
+    if event.request.broadcast_result or event.response_topic is not None:
         await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 
 
