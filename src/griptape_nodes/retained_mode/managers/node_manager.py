@@ -2730,28 +2730,32 @@ class NodeManager:
     async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         """Hydrate a node's input parameters and execute it.
 
-        node.aprocess() runs inside worker_node_execution_scope so that any
-        nested handle_request calls originated from node code (on a worker)
-        forward to the orchestrator. On the orchestrator the scope is a no-op
-        because forwarding is not configured there.
+        Hydration and node.aprocess() both run inside worker_node_execution_scope
+        so that any nested handle_request calls originated from node code (on a
+        worker) forward to the orchestrator. Hydration calls set_parameter_value,
+        which cascades into ListConnectionsForNodeRequest and similar cross-node
+        lookups; those must forward because the worker only owns its single node
+        copy and cannot resolve parent-flow or peer-node state locally. On the
+        orchestrator the scope is a no-op because forwarding is not configured
+        there.
         """
         node_name = request.node_name
-        # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.
-        parameter_values = hydrate_parameter_values(request.parameter_values)
-        for param_name, value in parameter_values.items():
+        with GriptapeNodes.EventManager().worker_node_execution_scope():
+            # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.
+            parameter_values = hydrate_parameter_values(request.parameter_values)
+            for param_name, value in parameter_values.items():
+                try:
+                    node.set_parameter_value(param_name, value)
+                except Exception as e:
+                    return ExecuteNodeResultFailure(
+                        result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
+                    )
             try:
-                node.set_parameter_value(param_name, value)
+                await node.aprocess()
             except Exception as e:
                 return ExecuteNodeResultFailure(
-                    result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
+                    result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
                 )
-        try:
-            with GriptapeNodes.EventManager().worker_node_execution_scope():
-                await node.aprocess()
-        except Exception as e:
-            return ExecuteNodeResultFailure(
-                result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
-            )
         return ExecuteNodeResultSuccess(
             parameter_output_values=dict(node.parameter_output_values),
             result_details=f"Node '{node_name}' executed successfully.",
