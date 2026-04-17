@@ -69,13 +69,31 @@ class ProjectTemplate(BaseModel):
         }
         output.update(diff)
 
+        return self._dump_yaml(output)
+
+    def to_yaml(self) -> str:
+        """Export the complete, fully-resolved project template as YAML.
+
+        Unlike to_overlay_yaml(), this emits every field without requiring a
+        base template to merge against. Intended for standalone consumers
+        (e.g., Griptape Cloud bundles) that receive the project on its own
+        and have no DEFAULT_PROJECT_TEMPLATE to layer an overlay on top of.
+        """
+        return self._dump_yaml(self.model_dump(mode="json", exclude_none=True))
+
+    @staticmethod
+    def _dump_yaml(data: dict) -> str:
+        """Serialize project-template data to YAML using shared conventions.
+
+        Loader injects `name` into nested objects from their dict keys, so
+        nested `name` keys are filtered out to avoid duplication on round-trip.
+        """
         yaml = YAML()
         yaml.default_flow_style = False
         yaml.width = 4096
         # Double-quote all strings; bools and ints are left untagged: https://yaml.org/spec/1.2.2/
         yaml.representer.add_representer(str, lambda r, d: r.represent_scalar("tag:yaml.org,2002:str", d, style='"'))
 
-        # loader injects name from the YAML dict key — exclude it from all nested objects
         nested_skip = frozenset({"name"})
 
         def filter_keys(d: dict, skip_keys: frozenset) -> dict:
@@ -83,7 +101,7 @@ class ProjectTemplate(BaseModel):
                 k: (filter_keys(v, skip_keys) if isinstance(v, dict) else v) for k, v in d.items() if k not in skip_keys
             }
 
-        filtered = {k: (filter_keys(v, nested_skip) if isinstance(v, dict) else v) for k, v in output.items()}
+        filtered = {k: (filter_keys(v, nested_skip) if isinstance(v, dict) else v) for k, v in data.items()}
 
         stream = io.StringIO()
         yaml.dump(filtered, stream)
