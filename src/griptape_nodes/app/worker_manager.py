@@ -43,7 +43,7 @@ class WorkerManager:
 
     DEFAULT_HEARTBEAT_INTERVAL_S: float = 5.0
     DEFAULT_HEARTBEAT_TIMEOUT_S: float = 15.0
-    DEFAULT_NODE_EXECUTION_TIMEOUT_S: float = 300.0
+    DEFAULT_NODE_EXECUTION_TIMEOUT_S: float = 1800.0
     # How long after spawn to wait before enforcing heartbeat timeout.
     # Workers install venv deps and import modules before receiving heartbeats;
     # this matches the _await_pending_workers() ceiling so a worker never kills
