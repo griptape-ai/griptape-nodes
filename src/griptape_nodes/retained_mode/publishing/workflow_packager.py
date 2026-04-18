@@ -338,6 +338,39 @@ class WorkflowPackager:
 
         return dependencies
 
+    def collect_pip_install_flags(self, workflow: Workflow) -> list[str]:
+        """Collect all unique pip install flags from the workflow's referenced libraries."""
+        flags: list[str] = []
+        for library_ref in workflow.metadata.node_libraries_referenced:
+            library_data = LibraryRegistry.get_library(library_ref.library_name).get_library_data()
+            if library_data.metadata and library_data.metadata.dependencies:
+                install_flags = library_data.metadata.dependencies.pip_install_flags
+                if install_flags:
+                    for flag in install_flags:
+                        if flag not in flags:
+                            flags.append(flag)
+        return flags
+
+    @staticmethod
+    def _uv_flags_to_toml_settings(flags: list[str]) -> dict[str, str | bool]:
+        """Convert uv CLI flags to [tool.uv] pyproject.toml key/value pairs.
+
+        Handles:
+          --preview             -> preview = true
+          --torch-backend=auto  -> torch-backend = "auto"
+        """
+        settings: dict[str, str | bool] = {}
+        for flag in flags:
+            if not flag.startswith("--"):
+                continue
+            flag_body = flag[2:]
+            if "=" in flag_body:
+                key, value = flag_body.split("=", 1)
+                settings[key] = value
+            else:
+                settings[flag_body] = True
+        return settings
+
     @staticmethod
     def _slugify(name: str) -> str:
         slug = name.lower()
@@ -345,7 +378,7 @@ class WorkflowPackager:
         return slug.strip("-")
 
     def write_pyproject_toml(self, destination: Path, workflow: Workflow) -> None:
-        """Generate a pyproject.toml with pinned dependencies."""
+        """Generate a pyproject.toml with pinned dependencies and uv settings."""
         project_name = self._slugify(self._workflow_name)
         dependencies = self.collect_dependencies(workflow)
         deps_toml = ",\n".join(f'    "{dep}"' for dep in dependencies)
@@ -361,6 +394,17 @@ dependencies = [
 {deps_toml},
 ]
 """
+
+        uv_flags = self.collect_pip_install_flags(workflow)
+        uv_settings = self._uv_flags_to_toml_settings(uv_flags)
+        if uv_settings:
+            content += "\n[tool.uv]\n"
+            for key, value in uv_settings.items():
+                if isinstance(value, bool):
+                    content += f"{key} = {'true' if value else 'false'}\n"
+                else:
+                    content += f'{key} = "{value}"\n'
+
         (destination / "pyproject.toml").write_text(content, encoding="utf-8")
 
     # -- Static file / asset gathering --
