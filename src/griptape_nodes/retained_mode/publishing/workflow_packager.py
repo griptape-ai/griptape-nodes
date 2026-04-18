@@ -64,6 +64,8 @@ SELECT_FROM_PROJECT_LIBRARY_NAME = "Griptape Nodes Library"
 SELECT_FROM_PROJECT_NODE_TYPE = "SelectFromProject"
 SELECT_FROM_PROJECT_PARAM_NAME = "selected_path"
 
+# TODO: Read and write operations should all be using ReadtoFile and WriteToFile.  https://github.com/griptape-ai/griptape-nodes/issues/4397
+
 
 class WorkflowPackager:
     """Shared packaging utilities for workflow publishers.
@@ -166,6 +168,8 @@ class WorkflowPackager:
                 relative_path = (Path("libraries") / common_root.name / library_path_relative_to_common_root).as_posix()
                 library_paths.append(relative_path)
             else:
+                msg = f"Cannot find griptape-nodes-library.json for {library.library_name}. Appending path {library.library_path}."
+                logger.warning(msg)
                 library_paths.append(library.library_path)
 
         return library_paths
@@ -274,16 +278,17 @@ class WorkflowPackager:
         except importlib.metadata.PackageNotFoundError:
             return None
 
-    def get_install_source(self) -> tuple[Literal["git", "file", "pypi"], str | None]:
+    def get_install_source(self) -> tuple[Literal["git", "file", "pypi"], str | None]:  # noqa: PLR0911
         """Detect whether griptape-nodes was installed from git, file, or pypi."""
         dist = self.find_griptape_nodes_distribution()
-        direct_url_text = dist.read_text("direct_url.json") if dist is not None else None
+        if dist is None:
+            return "pypi", None
+        direct_url_text = dist.read_text("direct_url.json")
         if direct_url_text is None:
             return "pypi", None
-
         direct_url_info = json.loads(direct_url_text)
         url = direct_url_info.get("url", "")
-
+        commit = None
         if url.startswith("file://"):
             git_exe = shutil.which("git")
             if git_exe is None:
@@ -445,11 +450,15 @@ dependencies = [
         for node_name, value_str in file_param_values:
             resolved = self._resolve_file_reference(value_str, project_root)
             if resolved is None:
+                msg = f"Couldn't resolve file reference for {node_name}. It will not be bundled."
+                logger.warning(msg)
                 continue
 
             absolute_path, resolved_relative = resolved
 
             if not absolute_path.exists() or absolute_path in copied:
+                msg = f"Couldn't resolve file reference for {node_name}. The absolute path does not exist. It will not be bundled."
+                logger.warning(msg)
                 continue
 
             dest = destination / resolved_relative
@@ -501,7 +510,12 @@ dependencies = [
             '["REPLACE_DOWNLOAD_COMMANDS"]',
             f"[{commands_repr}]",
         )
-        (destination / "download_models.py").write_text(script_content, encoding="utf-8")
+        try:
+            (destination / "download_models.py").write_text(script_content, encoding="utf-8")
+        except TypeError as err:
+            msg = f"Failed to write text for download models script. Failed to package folder to {destination}. {err}"
+            logger.error(msg)
+            raise TypeError(msg) from err
         return True
 
     # -- Convenience: full standard bundle --
@@ -515,7 +529,12 @@ dependencies = [
         Returns:
             List of relative library paths (for config or further use).
         """
-        destination.mkdir(parents=True, exist_ok=True)
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+        except (FileNotFoundError, OSError) as err:
+            msg = f"Failed to package to folder. Failed to create destination directory: {err}"
+            logger.error(msg)
+            raise TypeError(msg) from err
 
         # Copy workflow file
         self.emit_progress(10.0, "Copying workflow file...")

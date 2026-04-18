@@ -4300,7 +4300,7 @@ class WorkflowManager:
         """
         return WorkflowShape(inputs=input_node_params, outputs=output_node_params)
 
-    async def on_get_publish_options_request(self, request: GetPublishOptionsRequest) -> ResultPayload:
+    def on_get_publish_options_request(self, request: GetPublishOptionsRequest) -> ResultPayload:
         event_handler_mappings = GriptapeNodes.LibraryManager().get_registered_event_handlers(
             request_type=PublishWorkflowRequest
         )

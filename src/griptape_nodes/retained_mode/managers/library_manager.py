@@ -3445,6 +3445,7 @@ class LibraryManager:
         for library_path_str in config_libraries:
             # Filter out falsy values that will resolve to current directory
             if library_path_str:
+                # TODO: Update to check on project manager for workspace path. https://github.com/griptape-ai/griptape-nodes/issues/4396
                 library_path = resolve_workspace_path(Path(library_path_str), Path(config_mgr.workspace_path))
                 if library_path.exists():
                     process_path(library_path)
