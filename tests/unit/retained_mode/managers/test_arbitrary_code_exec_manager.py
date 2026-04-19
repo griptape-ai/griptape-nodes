@@ -110,7 +110,7 @@ class TestArbitraryCodeExecManager:
     def test_outer_scope_isolated(self) -> None:
         """Exec'd code must not be able to access variables from the calling scope."""
         request = RunArbitraryPythonStringRequest(
-            python_string=("try:\n    _ = manager\n    result = False\nexcept NameError:\n    result = True"),
+            python_string=("try:\n    _ = string_buffer\n    result = False\nexcept NameError:\n    result = True"),
             variable_names_to_capture="result",
         )
         result = GriptapeNodes.handle_request(request)
