@@ -33,17 +33,6 @@ class TestArbitraryCodeExecManager:
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
         assert result.python_output == "red\n"
 
-    def test_local_variable_captured(self) -> None:
-        """A single variable name string must be accepted and the variable returned as its native type."""
-        request = RunArbitraryPythonStringRequest(
-            python_string="result = 42",
-            variable_names_to_capture="result",
-        )
-        result = GriptapeNodes.handle_request(request)
-
-        assert isinstance(result, RunArbitraryPythonStringResultSuccess)
-        assert result.python_output == 42  # noqa: PLR2004
-
     def test_local_variable_capture_ignores_stdout(self) -> None:
         """When capturing a variable, stdout must be ignored in favour of the captured value."""
         request = RunArbitraryPythonStringRequest(
@@ -53,7 +42,7 @@ class TestArbitraryCodeExecManager:
         result = GriptapeNodes.handle_request(request)
 
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
-        assert result.python_output == "captured"
+        assert result.python_output == {"result": "captured"}
 
     def test_missing_local_variable_returns_failure(self) -> None:
         """Requesting a variable that was never set must return a failure naming the variable."""
@@ -105,7 +94,7 @@ class TestArbitraryCodeExecManager:
         result = GriptapeNodes.handle_request(request)
 
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
-        assert result.python_output == 120  # 5!  # noqa: PLR2004
+        assert result.python_output == {"result": 120}  # 5!
 
     def test_outer_scope_isolated(self) -> None:
         """Exec'd code must not be able to access variables from the calling scope."""
@@ -116,7 +105,7 @@ class TestArbitraryCodeExecManager:
         result = GriptapeNodes.handle_request(request)
 
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
-        assert result.python_output is True
+        assert result.python_output == {"result": True}
 
     def test_multiple_variables_captured_as_dict(self) -> None:
         """Multiple variable names must return a dict mapping each name to its native value."""
@@ -128,14 +117,3 @@ class TestArbitraryCodeExecManager:
 
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
         assert result.python_output == {"a": 1, "b": "hello", "c": [1, 2, 3]}
-
-    def test_single_element_list_returns_value_not_dict(self) -> None:
-        """A one-element list must return the bare value, not a single-key dict."""
-        request = RunArbitraryPythonStringRequest(
-            python_string="result = 1",
-            variable_names_to_capture=["result"],
-        )
-        result = GriptapeNodes.handle_request(request)
-
-        assert isinstance(result, RunArbitraryPythonStringResultSuccess)
-        assert result.python_output == 1
