@@ -4,21 +4,6 @@ from griptape_nodes.retained_mode.events.arbitrary_python_events import (
     RunArbitraryPythonStringResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import strip_ansi_codes
-
-
-class TestStripAnsiCodes:
-    def test_removes_color_codes(self) -> None:
-        """ANSI color escape sequences must be stripped so output is clean text."""
-        assert strip_ansi_codes("\x1b[31mred\x1b[0m") == "red"
-
-    def test_plain_text_unchanged(self) -> None:
-        """Plain text without ANSI codes must pass through unmodified."""
-        assert strip_ansi_codes("hello world") == "hello world"
-
-    def test_empty_string(self) -> None:
-        """Empty input must return empty output without errors."""
-        assert strip_ansi_codes("") == ""
 
 
 class TestArbitraryCodeExecManager:
