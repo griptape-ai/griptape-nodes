@@ -61,12 +61,16 @@ class ArbitraryCodeExecManager:
                     request.python_string, namespace, namespace
                 )
 
-            if request.local_variable_to_capture is not None:
-                var_name = request.local_variable_to_capture
-                if var_name not in namespace:
-                    msg = f"Local variable '{var_name}' was not found after execution."
-                    raise NameError(msg)
-                captured_output = str(namespace[var_name])
+            if request.variable_names_to_capture is not None:
+                names = request.variable_names_to_capture
+                missing = [name for name in names if name not in namespace]
+                if missing:
+                    msg = f"Local variables not found after execution: {missing}"
+                    raise NameError(msg)  # noqa: TRY301
+                if len(names) == 1:
+                    captured_output = namespace[names[0]]
+                else:
+                    captured_output = {name: namespace[name] for name in names}
             else:
                 captured_output = strip_ansi_codes(string_buffer.getvalue())
             result = RunArbitraryPythonStringResultSuccess(
