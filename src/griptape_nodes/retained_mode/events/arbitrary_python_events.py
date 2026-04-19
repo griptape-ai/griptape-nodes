@@ -31,7 +31,7 @@ class RunArbitraryPythonStringRequest(RequestPayload):
     """
 
     python_string: str
-    variable_names_to_capture: str | list[str] | None = field(default=None)
+    variable_names_to_capture: str | list[str] | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.variable_names_to_capture, str):

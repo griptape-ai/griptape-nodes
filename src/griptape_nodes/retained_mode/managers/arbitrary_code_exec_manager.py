@@ -67,10 +67,7 @@ class ArbitraryCodeExecManager:
                 if missing:
                     msg = f"Local variables not found after execution: {missing}"
                     raise NameError(msg)  # noqa: TRY301
-                if len(names) == 1:
-                    captured_output = namespace[names[0]]
-                else:
-                    captured_output = {name: namespace[name] for name in names}
+                captured_output = {name: namespace[name] for name in names}
             else:
                 captured_output = strip_ansi_codes(string_buffer.getvalue())
             result = RunArbitraryPythonStringResultSuccess(
