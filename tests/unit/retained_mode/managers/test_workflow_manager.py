@@ -789,3 +789,82 @@ class TestWorkflowManager:
 
         assert isinstance(result, ListAllWorkflowInfoResultSuccess)
         assert result.workflow_infos == {}
+
+    # --- _build_workflow_save_path ---
+
+    def test_build_workflow_save_path_resolves_via_situation(self, griptape_nodes: GriptapeNodes) -> None:
+        """Resolved paths inside the workspace yield a workspace-relative registry key."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workspace = griptape_nodes.ConfigManager().workspace_path
+        resolved_path = workspace / "my_workflow.py"
+
+        fake_destination = MagicMock()
+        fake_destination.resolve.return_value = str(resolved_path)
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
+            return_value=fake_destination,
+        ) as mock_from_situation:
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py")
+
+        mock_from_situation.assert_called_once_with("my_workflow.py", "save_workflow")
+        assert save_path.file_path == resolved_path
+        assert save_path.relative_file_path == "my_workflow.py"
+
+    def test_build_workflow_save_path_preserves_sub_dirs(self, griptape_nodes: GriptapeNodes) -> None:
+        """sub_dirs are passed to the situation and reflected in the resolved workspace-relative key."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workspace = griptape_nodes.ConfigManager().workspace_path
+        resolved_path = workspace / "team" / "my_workflow.py"
+
+        fake_destination = MagicMock()
+        fake_destination.resolve.return_value = str(resolved_path)
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
+            return_value=fake_destination,
+        ) as mock_from_situation:
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py", sub_dirs="team")
+
+        mock_from_situation.assert_called_once_with("my_workflow.py", "save_workflow", sub_dirs="team")
+        assert save_path.file_path == resolved_path
+        assert save_path.relative_file_path == str(Path("team") / "my_workflow.py")
+
+    def test_build_workflow_save_path_uses_absolute_when_outside_workspace(
+        self, griptape_nodes: GriptapeNodes, tmp_path: Path
+    ) -> None:
+        """Paths outside the workspace fall back to the absolute path as the registry key."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        outside_path = tmp_path / "elsewhere" / "my_workflow.py"
+
+        fake_destination = MagicMock()
+        fake_destination.resolve.return_value = str(outside_path)
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
+            return_value=fake_destination,
+        ):
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py")
+
+        assert save_path.file_path == outside_path
+        assert save_path.relative_file_path == str(outside_path)
+
+    def test_build_workflow_save_path_falls_back_on_file_load_error(self, griptape_nodes: GriptapeNodes) -> None:
+        """If the situation cannot resolve, we fall back to joining against the workspace path."""
+        from griptape_nodes.files.file import FileLoadError
+        from griptape_nodes.retained_mode.events.os_events import FileIOFailureReason
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workspace = griptape_nodes.ConfigManager().workspace_path
+
+        fake_destination = MagicMock()
+        fake_destination.resolve.side_effect = FileLoadError(FileIOFailureReason.UNKNOWN, "no project loaded")
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
+            return_value=fake_destination,
+        ):
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py", sub_dirs="team")
+
+        assert save_path.file_path == workspace / "team" / "my_workflow.py"
+        assert save_path.relative_file_path == str(Path("team") / "my_workflow.py")

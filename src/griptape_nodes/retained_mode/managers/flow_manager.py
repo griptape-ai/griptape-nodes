@@ -3792,21 +3792,22 @@ class FlowManager:
                     file_path=file_url_or_path,
                 )
 
-        # Validation: Check if image has metadata
-        if not hasattr(pil_image, "info") or not pil_image.info:
-            return ExtractFlowCommandsFromImageMetadataResultFailure(
+        # An image without embedded flow commands is a valid state, not an error.
+        metadata = pil_image.info if hasattr(pil_image, "info") else {}
+        if not metadata:
+            return ExtractFlowCommandsFromImageMetadataResultSuccess(
                 result_details=f"Image has no metadata: {file_url_or_path}",
-                file_path=file_url_or_path,
+                serialized_flow_commands=None,
+                altered_workflow_state=False,
             )
 
-        metadata = pil_image.info
         metadata_keys = [str(key) for key in metadata]
 
-        # Validation: Check if flow commands metadata exists
         if FLOW_COMMANDS_KEY not in metadata:
-            return ExtractFlowCommandsFromImageMetadataResultFailure(
+            return ExtractFlowCommandsFromImageMetadataResultSuccess(
                 result_details=f"No flow commands metadata found in image. Available keys: {metadata_keys}",
-                file_path=file_url_or_path,
+                serialized_flow_commands=None,
+                altered_workflow_state=False,
             )
 
         encoded_flow_commands = metadata[FLOW_COMMANDS_KEY]

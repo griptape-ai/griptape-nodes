@@ -2198,7 +2198,7 @@ class LibraryManager:
         widgets_info: list[WidgetInfo] | None = None
         library_data = library.get_library_data()
         if library_data.widgets:
-            logger.info(
+            logger.debug(
                 "Library '%s' has %d widget(s), building widget info",
                 request.library,
                 len(library_data.widgets),

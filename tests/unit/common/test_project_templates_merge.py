@@ -8,6 +8,7 @@ from griptape_nodes.common.project_templates import (
     ProjectValidationInfo,
     ProjectValidationStatus,
     load_partial_project_template,
+    load_project_template_from_yaml,
 )
 
 # Use system defaults directly (no longer loading from YAML)
@@ -721,3 +722,59 @@ situations:
         # Check validation error for incomplete policy
         assert validation.status == ProjectValidationStatus.UNUSABLE
         assert any("policy" in p.field_path and "both" in p.message.lower() for p in validation.problems)
+
+
+class TestProjectTemplateToYaml:
+    """Tests for ProjectTemplate.to_yaml()."""
+
+    def test_to_yaml_contains_required_top_level_fields(self) -> None:
+        yaml_str = DEFAULT_PROJECT_TEMPLATE.to_yaml()
+
+        # The dumper quotes all string scalars, including keys.
+        assert '"project_template_schema_version":' in yaml_str
+        assert '"name":' in yaml_str
+        assert '"situations":' in yaml_str
+        assert '"directories":' in yaml_str
+
+    def test_to_yaml_excludes_none_description(self) -> None:
+        template = ProjectTemplate(
+            project_template_schema_version=ProjectTemplate.LATEST_SCHEMA_VERSION,
+            name="x",
+            situations={},
+            directories={},
+            description=None,
+        )
+
+        assert "description" not in template.to_yaml()
+
+    def test_to_yaml_strips_nested_name_keys(self) -> None:
+        # Loader injects `name` into nested situations/directories from their dict keys,
+        # so emitting `name:` inside those nested objects would duplicate on round-trip.
+        yaml_str = DEFAULT_PROJECT_TEMPLATE.to_yaml()
+
+        # Only the top-level `name:` (with no indentation) should appear.
+        indented_name_lines = [
+            line for line in yaml_str.splitlines() if line.lstrip().startswith("name:") and line != line.lstrip()
+        ]
+        assert indented_name_lines == []
+
+    def test_to_yaml_round_trip(self) -> None:
+        yaml_str = DEFAULT_PROJECT_TEMPLATE.to_yaml()
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        loaded = load_project_template_from_yaml(yaml_str, validation)
+
+        assert loaded is not None
+        assert validation.status == ProjectValidationStatus.GOOD
+        assert loaded.name == DEFAULT_PROJECT_TEMPLATE.name
+        assert loaded.project_template_schema_version == DEFAULT_PROJECT_TEMPLATE.project_template_schema_version
+        assert set(loaded.situations.keys()) == set(DEFAULT_PROJECT_TEMPLATE.situations.keys())
+        assert set(loaded.directories.keys()) == set(DEFAULT_PROJECT_TEMPLATE.directories.keys())
+
+    def test_to_yaml_larger_than_overlay_against_self(self) -> None:
+        # Overlay against self contains only the two required fields; the full
+        # dump always contains every section, so must be strictly longer.
+        overlay = DEFAULT_PROJECT_TEMPLATE.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+        full = DEFAULT_PROJECT_TEMPLATE.to_yaml()
+
+        assert len(full) > len(overlay)

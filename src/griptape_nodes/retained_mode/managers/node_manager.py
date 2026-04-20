@@ -533,8 +533,7 @@ class NodeManager:
 
         log_level = logging.DEBUG
         if remapped_requested_node_name:
-            log_level = logging.WARNING
-            details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
+            details = f"{details}. Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         # Special handling for paired classes (e.g., create a Start node and it automatically creates a corresponding End node already connected).
         if isinstance(node, BaseIterativeStartNode) and not request.initial_setup:
