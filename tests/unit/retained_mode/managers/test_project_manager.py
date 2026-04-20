@@ -2304,6 +2304,42 @@ situations:
         assert absolute_path in pm._registered_template_status
         assert Path("missing.yml") not in pm._registered_template_status
 
+    def test_tilde_and_absolute_spellings_share_project_id(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Loading the same file via `~/...` and its absolute path produces one entry."""
+        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        # Point HOME/USERPROFILE at tmp_path so "~/project.yml" expands to tmp_path / project.yml
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        absolute_path = (tmp_path / "project.yml").resolve()
+        tilde_path = Path("~/project.yml")
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.handle_request.return_value = ReadFileResultSuccess(
+                content=self.VALID_PROJECT_YAML,
+                file_size=len(self.VALID_PROJECT_YAML),
+                mime_type="text/plain",
+                encoding="utf-8",
+                result_details="ok",
+            )
+
+            absolute_result = pm.on_load_project_template_request(
+                LoadProjectTemplateRequest(project_path=absolute_path)
+            )
+            tilde_result = pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=tilde_path))
+
+        assert isinstance(absolute_result, LoadProjectTemplateResultSuccess)
+        assert isinstance(tilde_result, LoadProjectTemplateResultSuccess)
+        assert absolute_result.project_id == tilde_result.project_id
+        assert absolute_result.project_id == str(absolute_path)
+        assert list(pm._successfully_loaded_project_templates.keys()).count(str(absolute_path)) == 1
+
 
 class TestRegisterProjectPathCanonicalization:
     """Test that _register_project_path dedupes across path spellings."""
