@@ -778,3 +778,120 @@ class TestProjectTemplateToYaml:
         full = DEFAULT_PROJECT_TEMPLATE.to_yaml()
 
         assert len(full) > len(overlay)
+
+    def test_overlay_emits_full_policy_when_only_one_field_differs(self) -> None:
+        # The loader treats `policy` as atomic: SituationTemplate.merge rejects any overlay policy
+        # that does not contain both on_collision and create_dirs. If the overlay writer emitted
+        # only the field that differs from base, the round-tripped file would be UNUSABLE.
+        # Flip create_dirs on save_file only; on_collision matches base.
+        base_sit = DEFAULT_PROJECT_TEMPLATE.situations["save_file"]
+        modified = DEFAULT_PROJECT_TEMPLATE.model_copy(
+            update={
+                "situations": {
+                    **DEFAULT_PROJECT_TEMPLATE.situations,
+                    "save_file": base_sit.model_copy(
+                        update={
+                            "policy": base_sit.policy.model_copy(
+                                update={"create_dirs": not base_sit.policy.create_dirs}
+                            )
+                        }
+                    ),
+                }
+            }
+        )
+
+        overlay_yaml = modified.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+
+        # Round-trip through the loader: the overlay alone must validate (it gets merged on load),
+        # and the merged template must match our in-memory modification.
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay_data = load_partial_project_template(overlay_yaml, validation)
+        assert overlay_data is not None
+        assert validation.status == ProjectValidationStatus.GOOD
+
+        merged = ProjectTemplate.merge(base=DEFAULT_PROJECT_TEMPLATE, overlay=overlay_data, validation_info=validation)
+        assert validation.status == ProjectValidationStatus.GOOD
+        assert merged.situations["save_file"].policy.create_dirs == (not base_sit.policy.create_dirs)
+        assert merged.situations["save_file"].policy.on_collision == base_sit.policy.on_collision
+
+
+class TestOverlayDeletions:
+    """Overlay/merge symmetry for deletions: removed base items must stay removed on reload."""
+
+    def _roundtrip(self, modified: ProjectTemplate) -> ProjectTemplate:
+        overlay_yaml = modified.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay_data = load_partial_project_template(overlay_yaml, validation)
+        assert overlay_data is not None
+        assert validation.status == ProjectValidationStatus.GOOD
+        merged = ProjectTemplate.merge(base=DEFAULT_PROJECT_TEMPLATE, overlay=overlay_data, validation_info=validation)
+        assert validation.status == ProjectValidationStatus.GOOD
+        return merged
+
+    def test_removed_base_situation_stays_removed(self) -> None:
+        removed_name = next(iter(DEFAULT_PROJECT_TEMPLATE.situations))
+        remaining = {k: v for k, v in DEFAULT_PROJECT_TEMPLATE.situations.items() if k != removed_name}
+        modified = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"situations": remaining})
+
+        merged = self._roundtrip(modified)
+
+        assert removed_name not in merged.situations
+
+    def test_removed_base_directory_stays_removed(self) -> None:
+        removed_name = next(iter(DEFAULT_PROJECT_TEMPLATE.directories))
+        remaining = {k: v for k, v in DEFAULT_PROJECT_TEMPLATE.directories.items() if k != removed_name}
+        modified = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"directories": remaining})
+
+        merged = self._roundtrip(modified)
+
+        assert removed_name not in merged.directories
+
+    def test_removed_environment_var_stays_removed(self) -> None:
+        seeded = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"environment": {"FOO": "bar", "BAZ": "qux"}})
+        overlay_yaml = seeded.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay_data = load_partial_project_template(overlay_yaml, validation)
+        assert overlay_data is not None
+        round_tripped = ProjectTemplate.merge(
+            base=DEFAULT_PROJECT_TEMPLATE, overlay=overlay_data, validation_info=validation
+        )
+        assert round_tripped.environment == {"FOO": "bar", "BAZ": "qux"}
+
+        # Now remove FOO and ensure the overlay tombstones it so merge drops it.
+        trimmed = round_tripped.model_copy(update={"environment": {"BAZ": "qux"}})
+        merged = self._roundtrip(trimmed)
+
+        assert "FOO" not in merged.environment
+        assert merged.environment.get("BAZ") == "qux"
+
+    def test_cleared_description_stays_cleared(self) -> None:
+        seeded = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"description": "previous description"})
+        cleared = seeded.model_copy(update={"description": None})
+
+        overlay_yaml = cleared.to_overlay_yaml(seeded)
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay_data = load_partial_project_template(overlay_yaml, validation)
+        assert overlay_data is not None
+        merged = ProjectTemplate.merge(base=seeded, overlay=overlay_data, validation_info=validation)
+
+        assert merged.description is None
+
+    def test_removed_situation_records_removed_override(self) -> None:
+        removed_name = next(iter(DEFAULT_PROJECT_TEMPLATE.situations))
+        remaining = {k: v for k, v in DEFAULT_PROJECT_TEMPLATE.situations.items() if k != removed_name}
+        modified = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"situations": remaining})
+
+        overlay_yaml = modified.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay_data = load_partial_project_template(overlay_yaml, validation)
+        assert overlay_data is not None
+        ProjectTemplate.merge(base=DEFAULT_PROJECT_TEMPLATE, overlay=overlay_data, validation_info=validation)
+
+        removed = [
+            o
+            for o in validation.overrides
+            if o.category == ProjectOverrideCategory.SITUATION
+            and o.name == removed_name
+            and o.action == ProjectOverrideAction.REMOVED
+        ]
+        assert len(removed) == 1
