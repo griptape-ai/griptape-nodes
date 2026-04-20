@@ -2495,6 +2495,19 @@ class TestRegisterProjectPathCanonicalization:
 
         cast("Mock", pm._config_manager).set_config_value.assert_not_called()
 
+    def test_tilde_spelling_dedupes_against_absolute_entry(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A ~-spelled persisted path is matched against an absolute incoming one."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        absolute_path = (tmp_path / "project.yml").resolve()
+        cast("Mock", pm._config_manager).get_config_value.return_value = ["~/project.yml"]
+
+        pm._register_project_path(str(absolute_path))
+
+        cast("Mock", pm._config_manager).set_config_value.assert_not_called()
+
 
 class TestLoadRegisteredProjectsCanonicalization:
     """Test that _load_registered_projects treats differently-spelled persisted paths as duplicates."""

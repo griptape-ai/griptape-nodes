@@ -31,7 +31,7 @@ from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
 from griptape_nodes.files.drivers.static_server_file_driver import StaticServerFileDriver
 from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriverRegistry
-from griptape_nodes.files.path_utils import path_needs_expansion
+from griptape_nodes.files.path_utils import canonicalize_for_identity, path_needs_expansion
 from griptape_nodes.files.path_utils import resolve_path_safely as pr_resolve
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
@@ -607,12 +607,11 @@ class OSManager:
         """
         workspace = GriptapeNodes.ConfigManager().workspace_path
 
-        # Ensure both paths are resolved for comparison
-        # Both path and workspace should use .resolve() to follow symlinks consistently
-        # (e.g., /var -> /private/var on macOS). Even if path doesn't exist yet,
-        # .resolve() will resolve parent directories and symlinks in the path.
-        path = path.resolve()
-        workspace = workspace.resolve()  # Workspace should always exist
+        # Canonicalize both sides so ~ / env vars / symlinks / relative spellings
+        # all compare equal. Non-existent paths don't raise; the resolvable
+        # prefix is resolved and the remainder is appended verbatim.
+        path = canonicalize_for_identity(path)
+        workspace = canonicalize_for_identity(workspace)
 
         msg = f"Validating path: {path} against workspace: {workspace}"
         logger.debug(msg)
@@ -1293,7 +1292,7 @@ class OSManager:
             need_relative_paths = request.workspace_only is True
             workspace_path = GriptapeNodes.ConfigManager().workspace_path
             if need_relative_paths or request.include_absolute_path:
-                resolved_workspace = workspace_path.resolve()
+                resolved_workspace = canonicalize_for_identity(workspace_path)
             else:
                 resolved_workspace = None
 
@@ -2815,7 +2814,7 @@ class OSManager:
             _, file_path = self._validate_workspace_path(resolved_path)
 
             # Also get absolute resolved path
-            absolute_resolved_path = str(resolved_path.resolve())
+            absolute_resolved_path = str(canonicalize_for_identity(resolved_path))
 
             file_entry = FileSystemEntry(
                 name=resolved_path.name,

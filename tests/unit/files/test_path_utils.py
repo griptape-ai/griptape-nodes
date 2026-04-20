@@ -9,6 +9,8 @@ import pytest
 
 from griptape_nodes.files.path_utils import (
     FilenameParts,
+    canonicalize_for_identity,
+    canonicalize_for_io,
     decompose_source_path,
     expand_path,
     normalize_path_for_platform,
@@ -663,3 +665,125 @@ class TestDecomposeSourcePath:
         assert result.drive_volume_mount == "C"
         assert result.source_relative_path == "Users/james/Documents"
         assert result.source_file_name == "file.txt"
+
+
+class TestCanonicalizeForIdentity:
+    """Tests for canonicalize_for_identity."""
+
+    def test_expands_tilde(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """~ is expanded to the user's home directory."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
+        result = canonicalize_for_identity("~/project.yml")
+        assert result == (tmp_path / "project.yml").resolve()
+
+    def test_expands_env_vars(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Environment variables in the path are expanded."""
+        monkeypatch.setenv("MYDIR", str(tmp_path))
+        result = (
+            canonicalize_for_identity("$MYDIR/file.txt")
+            if sys.platform != "win32"
+            else canonicalize_for_identity("%MYDIR%/file.txt")
+        )
+        assert result == (tmp_path / "file.txt").resolve()
+
+    def test_strips_surrounding_quotes(self, tmp_path: Path) -> None:
+        """Quoted paths are unquoted before canonicalization."""
+        quoted = f'"{tmp_path}/file.txt"'
+        result = canonicalize_for_identity(quoted)
+        assert result == (tmp_path / "file.txt").resolve()
+
+    def test_anchors_relative_to_base(self, tmp_path: Path) -> None:
+        """Relative paths are anchored to the provided base directory."""
+        result = canonicalize_for_identity("sub/file.txt", base=tmp_path)
+        assert result == (tmp_path / "sub" / "file.txt").resolve()
+
+    def test_relative_path_defaults_to_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Relative paths default to CWD when no base is provided."""
+        monkeypatch.chdir(tmp_path)
+        result = canonicalize_for_identity("file.txt")
+        assert result == (tmp_path / "file.txt").resolve()
+
+    def test_nonexistent_path_does_not_raise(self, tmp_path: Path) -> None:
+        """Non-existent paths canonicalize without error."""
+        result = canonicalize_for_identity(tmp_path / "does" / "not" / "exist.txt")
+        assert result.is_absolute()
+        # The resolvable prefix is resolved; remainder appended verbatim.
+        assert result.name == "exist.txt"
+
+    def test_normalizes_dot_and_dotdot(self, tmp_path: Path) -> None:
+        """. and .. components are collapsed."""
+        result = canonicalize_for_identity(f"{tmp_path}/a/../b/./c.txt")
+        assert result == (tmp_path / "b" / "c.txt").resolve()
+
+    def test_equivalent_spellings_collide(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Two spellings of the same file produce identical canonical paths."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        target = tmp_path / "project.yml"
+        target.touch()
+
+        via_tilde = canonicalize_for_identity("~/project.yml")
+        via_abs = canonicalize_for_identity(str(target))
+        via_dotdot = canonicalize_for_identity(str(tmp_path / "sub" / ".." / "project.yml"))
+
+        assert via_tilde == via_abs == via_dotdot
+
+    @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX symlinks")
+    def test_follows_symlinks_when_target_exists(self, tmp_path: Path) -> None:
+        """Existing symlinks are resolved to their target."""
+        target = tmp_path / "real.txt"
+        target.touch()
+        link = tmp_path / "link.txt"
+        link.symlink_to(target)
+
+        result = canonicalize_for_identity(link)
+        assert result == target.resolve()
+
+
+class TestCanonicalizeForIo:
+    """Tests for canonicalize_for_io."""
+
+    def test_expands_tilde(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """~ is expanded."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        result = canonicalize_for_io("~/file.txt")
+        assert str(result).endswith("file.txt")
+        assert result.is_absolute()
+
+    def test_anchors_relative_to_base(self, tmp_path: Path) -> None:
+        """Relative paths are anchored to the provided base."""
+        result = canonicalize_for_io("sub/file.txt", base=tmp_path)
+        assert Path(os.path.normpath(tmp_path / "sub" / "file.txt")) == result
+
+    def test_nonexistent_path_does_not_raise(self, tmp_path: Path) -> None:
+        """Non-existent paths canonicalize without error."""
+        result = canonicalize_for_io(tmp_path / "new_file.txt")
+        assert result == tmp_path / "new_file.txt"
+
+    @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX symlinks")
+    def test_does_not_follow_symlinks(self, tmp_path: Path) -> None:
+        """Symlinks are preserved (not followed) so newly-created parents work."""
+        target = tmp_path / "real.txt"
+        target.touch()
+        link = tmp_path / "link.txt"
+        link.symlink_to(target)
+
+        result = canonicalize_for_io(link)
+        # The io helper should NOT resolve the symlink.
+        assert result == link
+
+    @pytest.mark.skipif(not sys.platform.startswith("win"), reason="Windows long-path prefix")
+    def test_adds_long_path_prefix_on_windows(self, tmp_path: Path) -> None:
+        r"""Paths exceeding MAX_PATH get the \\?\ prefix on Windows."""
+        long_name = "a" * 300
+        result = canonicalize_for_io(tmp_path / long_name)
+        assert str(result).startswith("\\\\?\\")
+
+    @pytest.mark.skipif(sys.platform.startswith("win"), reason="non-Windows has no long-path prefix")
+    def test_no_long_path_prefix_off_windows(self, tmp_path: Path) -> None:
+        r"""Long paths on non-Windows platforms don't get \\?\ prefix."""
+        long_name = "a" * 300
+        result = canonicalize_for_io(tmp_path / long_name)
+        assert not str(result).startswith("\\\\?\\")

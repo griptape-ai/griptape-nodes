@@ -28,7 +28,7 @@ from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
 from griptape_nodes.files.file import FileLoadError
-from griptape_nodes.files.path_utils import derive_registry_key, resolve_workspace_path
+from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key, resolve_workspace_path
 from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
@@ -844,7 +844,7 @@ class WorkflowManager:
         full_path = WorkflowRegistry.get_complete_file_path(request.file_path)
         config_manager = GriptapeNodes.ConfigManager()
         try:
-            Path(full_path).resolve().relative_to(Path(config_manager.workspace_path).resolve())
+            canonicalize_for_identity(full_path).relative_to(canonicalize_for_identity(config_manager.workspace_path))
         except ValueError:
             existing_workflows = config_manager.get_config_value(WORKFLOWS_TO_REGISTER_KEY)
             if not existing_workflows:
@@ -1707,7 +1707,7 @@ class WorkflowManager:
         destination = ProjectFileDestination.from_situation(file_name, "save_workflow", **extra_vars)
         relative_file_path = str(Path(sub_dirs) / file_name) if sub_dirs else file_name
         try:
-            resolved = Path(destination.resolve())
+            resolved = canonicalize_for_identity(destination.resolve())
         except FileLoadError as err:
             workspace_path = GriptapeNodes.ConfigManager().workspace_path
             fallback_path = workspace_path.joinpath(relative_file_path)

@@ -364,6 +364,72 @@ def resolve_path_safely(path: Path) -> Path:
     return Path(os.path.normpath(path))
 
 
+def canonicalize_for_identity(path: str | Path, *, base: Path | None = None) -> Path:
+    """Produce a stable path identity for use as a dict key, cache key, or ID.
+
+    Sanitizes shell escapes/quotes, expands ~ and environment variables, anchors
+    relative paths to ``base`` (defaults to CWD), normalizes ``.`` and ``..``,
+    and follows symlinks via ``Path.resolve(strict=False)`` so two spellings of
+    the same file collide on equality. Non-existent paths do not raise; the
+    resolvable prefix is resolved and the remainder is appended verbatim.
+
+    Use this whenever a path is about to become a key: project IDs, cache
+    lookups, dedupe sets, workspace-containment checks.
+
+    Args:
+        path: Raw path string or Path object (may contain ~, env vars, quotes,
+            shell escapes, or relative segments).
+        base: Base directory for relative paths. Defaults to ``Path.cwd()``.
+
+    Returns:
+        Canonical absolute Path.
+    """
+    sanitized = sanitize_path_string(path)
+    expanded = expand_path(sanitized)
+    if not expanded.is_absolute():
+        expanded = (base if base is not None else Path.cwd()) / expanded
+    return resolve_path_safely(expanded).resolve(strict=False)
+
+
+def canonicalize_for_io(path: str | Path, *, base: Path | None = None) -> Path:
+    r"""Produce a path suitable for handing to the filesystem.
+
+    Same sanitization, expansion, absolutization, and normalization as
+    ``canonicalize_for_identity``, but does NOT follow symlinks (safe for
+    paths that do not yet exist) and applies the Windows long-path
+    (``\\?\``) prefix when the result exceeds MAX_PATH.
+
+    Use this when constructing a ``ReadFileRequest`` / ``WriteFileRequest`` or
+    otherwise handing a path to an OS-level I/O call.
+
+    Args:
+        path: Raw path string or Path object.
+        base: Base directory for relative paths. Defaults to ``Path.cwd()``.
+
+    Returns:
+        Canonical Path ready for filesystem operations.
+    """
+    # Windows MAX_PATH limit - paths longer than this need \\?\ prefix
+    windows_max_path = 260
+
+    sanitized = sanitize_path_string(path)
+    expanded = expand_path(sanitized)
+    if not expanded.is_absolute():
+        expanded = (base if base is not None else Path.cwd()) / expanded
+    normalized = resolve_path_safely(expanded)
+
+    if not sys.platform.startswith("win"):
+        return normalized
+
+    path_str = str(normalized)
+    if len(path_str) < windows_max_path or path_str.startswith("\\\\?\\"):
+        return normalized
+    # UNC paths (\\server\share) need \\?\UNC\ prefix
+    if path_str.startswith("\\\\"):
+        return Path(f"\\\\?\\UNC\\{path_str[2:]}")
+    return Path(f"\\\\?\\{path_str}")
+
+
 def resolve_file_path(path_str: str, base_dir: Path) -> Path:
     """Resolve a file path, handling absolute, relative, and tilde paths.
 

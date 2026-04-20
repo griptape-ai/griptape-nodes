@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.files.path_utils import derive_registry_key
+from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
 from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
@@ -490,8 +489,8 @@ class ContextManager:
             # Lazy import required: context_manager is imported by griptape_nodes, creating a circular dependency.
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            resolved = Path(file_path).resolve()
-            workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            resolved = canonicalize_for_identity(file_path)
+            workspace_path = canonicalize_for_identity(GriptapeNodes.ConfigManager().workspace_path)
             if resolved.is_relative_to(workspace_path):
                 path_for_key = str(resolved.relative_to(workspace_path))
             else:

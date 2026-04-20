@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import NamedTuple, Protocol, cast, runtime_checkable
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
+from griptape_nodes.files.path_utils import canonicalize_for_io
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     FileIOFailureReason,
@@ -502,9 +503,10 @@ class File:
             FileLoadError: If the file cannot be read.
         """
         resolved_path = _resolve_file_path(self._file_path)
+        canonical_path = str(canonicalize_for_io(resolved_path)) if resolved_path is not None else None
 
         request = ReadFileRequest(
-            file_path=resolved_path,
+            file_path=canonical_path,
             encoding=encoding,
             should_transform_image_content_to_thumbnail=False,
         )
@@ -534,9 +536,10 @@ class File:
             FileLoadError: If the file cannot be read.
         """
         resolved_path = await _aresolve_file_path(self._file_path)
+        canonical_path = str(canonicalize_for_io(resolved_path)) if resolved_path is not None else None
 
         request = ReadFileRequest(
-            file_path=resolved_path,
+            file_path=canonical_path,
             encoding=encoding,
             should_transform_image_content_to_thumbnail=False,
         )
@@ -589,8 +592,10 @@ class File:
                 result_details="Cannot write: file_path is None",
             )
 
+        canonical_path = str(canonicalize_for_io(resolved_path))
+
         request = WriteFileRequest(
-            file_path=resolved_path,
+            file_path=canonical_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,
@@ -642,8 +647,10 @@ class File:
                 result_details="Cannot write: file_path is None",
             )
 
+        canonical_path = str(canonicalize_for_io(resolved_path))
+
         request = WriteFileRequest(
-            file_path=resolved_path,
+            file_path=canonical_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,
