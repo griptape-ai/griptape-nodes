@@ -1700,10 +1700,17 @@ class WorkflowManager:
         relative_file_path = str(Path(sub_dirs) / file_name) if sub_dirs else file_name
         try:
             resolved = Path(destination.resolve())
-        except FileLoadError:
+        except FileLoadError as err:
             workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            fallback_path = workspace_path.joinpath(relative_file_path)
+            logger.debug(
+                "save_workflow situation unavailable for '%s' (%s); falling back to workspace path %s",
+                file_name,
+                err,
+                fallback_path,
+            )
             return WorkflowManager.WorkflowSavePath(
-                file_path=workspace_path.joinpath(relative_file_path),
+                file_path=fallback_path,
                 relative_file_path=relative_file_path,
             )
 
@@ -1711,6 +1718,10 @@ class WorkflowManager:
         try:
             workspace_relative = resolved.relative_to(workspace_path)
         except ValueError:
+            # TODO: store the macro form (e.g. "{workflows}/foo.py") in the
+            # registry so out-of-workspace save locations stay portable across
+            # machines. Tracked in
+            # https://github.com/griptape-ai/griptape-nodes/issues/2047.
             return WorkflowManager.WorkflowSavePath(file_path=resolved, relative_file_path=str(resolved))
 
         return WorkflowManager.WorkflowSavePath(file_path=resolved, relative_file_path=str(workspace_relative))
@@ -1997,6 +2008,10 @@ class WorkflowManager:
             current_dir = Path(current_workflow.file_path).parent
             # If current_dir is absolute, the workflow lives outside the workspace;
             # save the copy to the workspace root so the registry key stays relative.
+            # Path(".").parent evaluates to Path(".") (a bare filename with no
+            # parent), which would pass "." through as a sub_dirs value and
+            # produce a spurious "./" prefix in the save path. Treat it as
+            # "no sub-directory" to keep the resolved path flat.
             if current_dir.is_absolute() or str(current_dir) == ".":
                 sub_dirs = None
             else:
