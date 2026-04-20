@@ -78,7 +78,7 @@ class WorkerManager:
     # Workers install venv deps and import modules before receiving heartbeats;
     # this matches the _await_pending_workers() ceiling so a worker never kills
     # itself before the orchestrator gives up waiting for it.
-    DEFAULT_HEARTBEAT_STARTUP_GRACE_S: float = 120.0
+    DEFAULT_HEARTBEAT_STARTUP_GRACE_S: float = 600.0
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
 

@@ -178,7 +178,11 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     UpdateConfigCategoryProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
+from griptape_nodes.retained_mode.managers.settings import (
+    LIBRARIES_TO_DOWNLOAD_KEY,
+    LIBRARIES_TO_REGISTER_KEY,
+    WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
+)
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts, normalize_secrets_to_register
 from griptape_nodes.utils.file_utils import find_file_in_directory, find_files_recursive
@@ -2791,8 +2795,8 @@ class LibraryManager:
         # Wait for workers only when restarting into an existing session (workers were just
         # spawned above). On a fresh boot there is no session yet -- workers start later
         # when AppStartSessionRequest arrives and will finish before the user can open a
-        # workflow. Awaiting here on fresh boot would wait 120s for workers that haven't
-        # started yet.
+        # workflow. Awaiting here on fresh boot would wait the full worker-startup grace
+        # period for workers that haven't started yet.
         if GriptapeNodes.get_session_id():
             await self._await_pending_workers()
 
@@ -2875,12 +2879,16 @@ class LibraryManager:
             worker_manager.set_session_ready()
             await self._start_workers()
 
-    async def _await_pending_workers(self, wait_seconds: float = 120) -> None:
+    async def _await_pending_workers(self, wait_seconds: float | None = None) -> None:
         """Wait for all WORKER_PENDING libraries to report back via LibraryLoadedNotification.
 
         On timeout, marks remaining pending libraries as FAILURE/UNUSABLE so the rest of
         initialization can continue. Per-library worker_ready events are set by
         _on_library_loaded_notification when the worker sends its LibraryLoadedNotification.
+
+        When wait_seconds is None, reads the worker heartbeat startup grace from config so
+        the orchestrator ceiling stays aligned with the worker self-timeout; first-time
+        installs of large libraries can easily exceed the default heartbeat timeout.
         """
         pending_events = [
             info.worker_ready
@@ -2889,6 +2897,12 @@ class LibraryManager:
         ]
         if not pending_events:
             return
+
+        if wait_seconds is None:
+            config_mgr = GriptapeNodes.ConfigManager()
+            wait_seconds = config_mgr.get_config_value(
+                WORKER_HEARTBEAT_STARTUP_GRACE_KEY, default=600.0, cast_type=float
+            )
 
         timed_out = False
         try:
@@ -3056,7 +3070,8 @@ class LibraryManager:
             # Awaiting inline runs via broadcast_app_event's ThreadRunner, which blocks loop A's
             # thread entirely. While blocked, loop A cannot process worker notifications
             # (_on_library_loaded_notification), so _await_pending_workers inside
-            # reload_libraries_request never unblocks and times out after 120 seconds.
+            # reload_libraries_request never unblocks and times out after the worker-startup
+            # grace period.
             # Enqueueing here returns immediately; loop A processes the reload normally and
             # remains free to handle worker notifications concurrently.
             reload_request = ReloadAllLibrariesRequest(broadcast_result=False)
