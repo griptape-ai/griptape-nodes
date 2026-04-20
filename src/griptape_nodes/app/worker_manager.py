@@ -406,7 +406,13 @@ class WorkerManager:
         """Wait for an active session then spawn a worker subprocess for the given library."""
         # If a session is already active, skip the wait entirely.
         if not self._griptape_nodes.get_session_id():
+            logger.info(
+                "Worker for library '%s' is waiting for a session to start before spawning. "
+                "Start a session (via the Griptape Nodes GUI or AppStartSessionRequest) to proceed.",
+                library_name,
+            )
             await self._session_ready_event.wait()
+            logger.info("Session started; spawning worker for library '%s'.", library_name)
         session_id = self._griptape_nodes.get_session_id()
         if not session_id:
             logger.error("Session event set but no session ID available for library '%s'.", library_name)
