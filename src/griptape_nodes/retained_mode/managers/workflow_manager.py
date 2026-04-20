@@ -88,6 +88,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
     DeleteWorkflowResultSuccess,
+    GetPublishOptionsRequest,
+    GetPublishOptionsResultFailure,
+    GetPublishOptionsResultSuccess,
     GetWorkflowInfoRequest,
     GetWorkflowInfoResultFailure,
     GetWorkflowInfoResultSuccess,
@@ -121,6 +124,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     MoveWorkflowRequest,
     MoveWorkflowResultFailure,
     MoveWorkflowResultSuccess,
+    PublishWorkflowRegisteredEventData,
     PublishWorkflowRequest,
     PublishWorkflowResultFailure,
     PublishWorkflowResultSuccess,
@@ -361,6 +365,10 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             PublishWorkflowRequest,
             self.on_publish_workflow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            GetPublishOptionsRequest,
+            self.on_get_publish_options_request,
         )
         event_manager.assign_manager_to_request_type(
             SetWorkflowMetadataRequest,
@@ -4340,6 +4348,24 @@ class WorkflowManager:
             WorkflowShape object with inputs and outputs
         """
         return WorkflowShape(inputs=input_node_params, outputs=output_node_params)
+
+    def on_get_publish_options_request(self, request: GetPublishOptionsRequest) -> ResultPayload:
+        event_handler_mappings = GriptapeNodes.LibraryManager().get_registered_event_handlers(
+            request_type=PublishWorkflowRequest
+        )
+        publishing_handler = event_handler_mappings.get(request.publisher_name)
+        if publishing_handler is None:
+            details = f"No publishing handler found for '{request.publisher_name}'."
+            return GetPublishOptionsResultFailure(exception=ValueError(details), result_details=details)
+
+        event_data = publishing_handler.event_data
+        if isinstance(event_data, PublishWorkflowRegisteredEventData) and event_data.get_publish_options is not None:
+            return event_data.get_publish_options(request)
+
+        return GetPublishOptionsResultSuccess(
+            fields=[],
+            result_details="No custom publish options for this publisher.",
+        )
 
     async def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:

@@ -1,7 +1,10 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Literal
+
+from pydantic import BaseModel
 
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
@@ -453,6 +456,65 @@ class GetWorkflowRunCommandResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
     """Workflow run command retrieval failed. Common causes: neither workflow_name nor file_path provided, workflow not found, file not found."""
 
 
+class PublishFieldType(StrEnum):
+    """The UI widget type for a publish dialog field."""
+
+    DROPDOWN = "dropdown"
+    TEXT = "text"
+    FILE_PICKER = "file_picker"
+
+
+class PublishOptionField(BaseModel):
+    """Describes a single field to render in the publish dialog."""
+
+    name: str
+    label: str
+    field_type: PublishFieldType
+    tooltip: str = ""
+    choices: list[str] | None = None
+    default_value: str | None = None
+    depends_on: str | None = None  # name of another field whose change triggers a re-fetch
+    hidden: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class GetPublishOptionsRequest(RequestPayload):
+    """Get publisher-specific options to display in the publish dialog before publishing.
+
+    Use when: Opening the publish dialog for a specific publisher, refreshing dependent
+    options after a selection change.
+
+    Results: GetPublishOptionsResultSuccess (with fields) | GetPublishOptionsResultFailure
+    """
+
+    workflow_name: str
+    publisher_name: str
+    current_selections: dict | None = None  # current user selections; used for dependent field resolution
+
+
+@dataclass
+@PayloadRegistry.register
+class GetPublishOptionsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Publish options retrieved successfully.
+
+    Args:
+        fields: Ordered list of fields to render in the publish dialog
+        title: Optional dialog title (e.g. "Update Published Gizmo"). None uses the frontend default.
+        button_label: Optional publish button label (e.g. "Update"). None uses the frontend default.
+    """
+
+    fields: list[PublishOptionField]
+    title: str | None = None
+    button_label: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetPublishOptionsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Publish options retrieval failed."""
+
+
 @dataclass
 class PublishWorkflowRegisteredEventData:
     """Data specific to registering a PublishWorkflowRequest event handler."""
@@ -461,6 +523,7 @@ class PublishWorkflowRegisteredEventData:
     start_flow_node_library_name: str
     end_flow_node_type: str
     end_flow_node_library_name: str
+    get_publish_options: Callable[["GetPublishOptionsRequest"], GetPublishOptionsResultSuccess] | None = None
 
 
 @dataclass

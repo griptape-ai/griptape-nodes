@@ -2572,11 +2572,11 @@ class NodeManager:
                         # Compare types for compatibility
                         types_compatible = False
                         if request_mode == ParameterMode.INPUT:
-                            # See if THEIR inputs would accept MY output
-                            types_compatible = test_param.is_incoming_type_allowed(request_param.output_type)
-                        else:
                             # See if MY inputs would accept THEIR output
                             types_compatible = request_param.is_incoming_type_allowed(test_param.output_type)
+                        else:
+                            # See if THEIR inputs would accept MY output
+                            types_compatible = test_param.is_incoming_type_allowed(request_param.output_type)
 
                         if types_compatible:
                             param_and_mode = ParameterAndMode(
