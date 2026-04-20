@@ -2206,3 +2206,127 @@ situations:
             await pm.on_app_initialization_complete(AppInitializationComplete())
 
         assert str(registered_path) in pm._successfully_loaded_project_templates
+
+
+class TestValidateProjectTemplate:
+    """Test ProjectManager.on_validate_project_template_request."""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    @staticmethod
+    def _minimal_valid_template() -> dict:
+        return {
+            "project_template_schema_version": "0.1.0",
+            "name": "Test Project",
+            "situations": {
+                "save_file": {
+                    "name": "save_file",
+                    "macro": "{file_name_base}.{file_extension}",
+                    "policy": {"on_collision": "create_new", "create_dirs": True},
+                }
+            },
+            "directories": {
+                "inputs": {"name": "inputs", "path_macro": "inputs"},
+            },
+        }
+
+    def test_valid_template_returns_good_status(self, pm: ProjectManager) -> None:
+        """A fully valid template validates with GOOD status and no problems."""
+        from griptape_nodes.common.project_templates import ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        request = ValidateProjectTemplateRequest(template_data=self._minimal_valid_template())
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert result.validation.status == ProjectValidationStatus.GOOD
+        assert result.validation.problems == []
+
+    def test_partial_policy_marks_template_unusable(self, pm: ProjectManager) -> None:
+        """A situation policy missing on_collision should produce an UNUSABLE result."""
+        from griptape_nodes.common.project_templates import ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template = self._minimal_valid_template()
+        template["situations"]["save_file"]["policy"] = {"create_dirs": False}
+
+        request = ValidateProjectTemplateRequest(template_data=template)
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert result.validation.status == ProjectValidationStatus.UNUSABLE
+        assert any("situations.save_file.policy" in p.field_path for p in result.validation.problems)
+
+    def test_invalid_directory_macro_marks_template_unusable(self, pm: ProjectManager) -> None:
+        """A directory with an unparsable path_macro should produce a problem."""
+        from griptape_nodes.common.project_templates import ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template = self._minimal_valid_template()
+        # Unmatched brace is rejected by the macro parser
+        template["directories"]["inputs"]["path_macro"] = "inputs/{unclosed"
+
+        request = ValidateProjectTemplateRequest(template_data=template)
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert result.validation.status == ProjectValidationStatus.UNUSABLE
+        assert any(p.field_path == "directories.inputs.path_macro" for p in result.validation.problems)
+
+    def test_missing_name_marks_template_unusable(self, pm: ProjectManager) -> None:
+        """Missing required `name` field returns UNUSABLE with a structured problem."""
+        from griptape_nodes.common.project_templates import ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template = self._minimal_valid_template()
+        del template["name"]
+
+        request = ValidateProjectTemplateRequest(template_data=template)
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert result.validation.status == ProjectValidationStatus.UNUSABLE
+        assert any(p.field_path == "name" for p in result.validation.problems)
+
+    def test_pydantic_errors_surface_as_structured_problems(self, pm: ProjectManager) -> None:
+        """Pydantic validation errors produce per-field problems, not a stringified exception."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template = self._minimal_valid_template()
+        # Provide a bogus policy value to trigger a pydantic validator for the enum
+        template["situations"]["save_file"]["policy"] = {
+            "on_collision": "not_a_real_value",
+            "create_dirs": True,
+        }
+
+        request = ValidateProjectTemplateRequest(template_data=template)
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert len(result.validation.problems) >= 1
+        problem = result.validation.problems[0]
+        assert problem.field_path.startswith("situations.save_file.policy")
+        assert problem.message  # non-empty message
