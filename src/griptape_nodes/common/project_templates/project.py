@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class ProjectTemplate(BaseModel):
     """Complete project template loaded from project.yml."""
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.2.0"
 
     project_template_schema_version: str = Field(description="Schema version for the project template")
     name: str = Field(description="Name of the project")

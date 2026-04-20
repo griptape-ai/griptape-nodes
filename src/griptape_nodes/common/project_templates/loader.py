@@ -29,7 +29,7 @@ FIELD_DESCRIPTION = "description"
 
 # Special constants
 ROOT_FIELD_PATH = "<root>"
-DEFAULT_SCHEMA_VERSION = "0.1.0"
+DEFAULT_SCHEMA_VERSION = "0.2.0"
 DEFAULT_PROJECT_NAME = "Invalid Project"
 
 
