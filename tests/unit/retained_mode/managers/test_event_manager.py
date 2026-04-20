@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from griptape_nodes.retained_mode.events.app_events import AppConnectionEstablished
+from griptape_nodes.retained_mode.events.app_events import ConfigChanged
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
@@ -20,12 +20,12 @@ class TestEventManagerBroadcasting:
         listener1 = AsyncMock()
         listener2 = AsyncMock()
 
-        # Register listeners for AppConnectionEstablished event
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, listener1)
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, listener2)
+        # Register listeners for ConfigChanged event
+        event_manager.add_listener_to_app_event(ConfigChanged, listener1)
+        event_manager.add_listener_to_app_event(ConfigChanged, listener2)
 
         # Create and broadcast event
-        event = AppConnectionEstablished()
+        event = ConfigChanged(key="test_key", old_value="old", new_value="new")
         await event_manager.abroadcast_app_event(event)
 
         # Verify both listeners were called
@@ -38,7 +38,7 @@ class TestEventManagerBroadcasting:
         event_manager = EventManager()
 
         # Create event with no registered listeners
-        event = AppConnectionEstablished()
+        event = ConfigChanged(key="test_key", old_value="old", new_value="new")
 
         # Should not raise any exceptions
         await event_manager.abroadcast_app_event(event)
@@ -52,11 +52,11 @@ class TestEventManagerBroadcasting:
         listener2 = AsyncMock()
 
         # Register listeners
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, listener1)
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, listener2)
+        event_manager.add_listener_to_app_event(ConfigChanged, listener1)
+        event_manager.add_listener_to_app_event(ConfigChanged, listener2)
 
         # Create and broadcast event (sync)
-        event = AppConnectionEstablished()
+        event = ConfigChanged(key="test_key", old_value="old", new_value="new")
         event_manager.broadcast_app_event(event)
 
         # Verify both listeners were called
@@ -68,7 +68,7 @@ class TestEventManagerBroadcasting:
         event_manager = EventManager()
 
         # Create event with no registered listeners
-        event = AppConnectionEstablished()
+        event = ConfigChanged(key="test_key", old_value="old", new_value="new")
 
         # Should not raise any exceptions
         event_manager.broadcast_app_event(event)
@@ -82,10 +82,10 @@ class TestEventManagerBroadcasting:
         listener1 = AsyncMock(side_effect=ValueError("Test error"))
         listener2 = AsyncMock()
 
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, listener1)
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, listener2)
+        event_manager.add_listener_to_app_event(ConfigChanged, listener1)
+        event_manager.add_listener_to_app_event(ConfigChanged, listener2)
 
-        event = AppConnectionEstablished()
+        event = ConfigChanged(key="test_key", old_value="old", new_value="new")
 
         # TaskGroup raises ExceptionGroup when a task fails
         with pytest.raises(ExceptionGroup):
@@ -100,61 +100,70 @@ class TestEventManagerBroadcasting:
         calls = []
 
         # Create async listener
-        async def async_listener(event: AppConnectionEstablished) -> None:  # noqa: ARG001
-            calls.append("async")
+        async def async_listener(event: ConfigChanged) -> None:
+            calls.append(("async", event.key))
 
         # Create sync listener
-        def sync_listener(event: AppConnectionEstablished) -> None:  # noqa: ARG001
-            calls.append("sync")
+        def sync_listener(event: ConfigChanged) -> None:
+            calls.append(("sync", event.key))
 
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, async_listener)
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, sync_listener)
+        event_manager.add_listener_to_app_event(ConfigChanged, async_listener)
+        event_manager.add_listener_to_app_event(ConfigChanged, sync_listener)
 
-        event = AppConnectionEstablished()
+        event = ConfigChanged(key="test_key", old_value="old", new_value="new")
         await event_manager.abroadcast_app_event(event)
 
         # Verify both listeners were called
         assert len(calls) == 2  # noqa: PLR2004
-        assert "async" in calls
-        assert "sync" in calls
+        assert ("async", "test_key") in calls
+        assert ("sync", "test_key") in calls
 
     def test_remove_listener_from_app_event(self) -> None:
         """Test that listeners can be removed and won't be called after removal."""
         event_manager = EventManager()
 
         listener = AsyncMock()
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, listener)
+        event_manager.add_listener_to_app_event(ConfigChanged, listener)
 
         # Broadcast event - listener should be called
-        event = AppConnectionEstablished()
+        event = ConfigChanged(key="test_key", old_value="old", new_value="new")
         event_manager.broadcast_app_event(event)
         listener.assert_called_once()
 
         # Remove listener and broadcast again
-        event_manager.remove_listener_for_app_event(AppConnectionEstablished, listener)
+        event_manager.remove_listener_for_app_event(ConfigChanged, listener)
         listener.reset_mock()
 
-        event2 = AppConnectionEstablished()
+        event2 = ConfigChanged(key="test_key2", old_value="old2", new_value="new2")
         event_manager.broadcast_app_event(event2)
 
         # Listener should not be called after removal
         listener.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_abroadcast_app_event_preserves_event_identity(self) -> None:
-        """Test that the exact event object is passed to listeners."""
+    async def test_abroadcast_app_event_preserves_event_data(self) -> None:
+        """Test that event data is correctly passed to listeners."""
         event_manager = EventManager()
 
         received_events = []
 
-        async def listener(event: AppConnectionEstablished) -> None:
+        async def listener(event: ConfigChanged) -> None:
             received_events.append(event)
 
-        event_manager.add_listener_to_app_event(AppConnectionEstablished, listener)
+        event_manager.add_listener_to_app_event(ConfigChanged, listener)
 
-        original_event = AppConnectionEstablished()
+        # Create event with specific data
+        original_event = ConfigChanged(
+            key="workspace_directory",
+            old_value="/old/path",
+            new_value="/new/path",
+        )
+
         await event_manager.abroadcast_app_event(original_event)
 
-        # Verify listener received the exact event object
+        # Verify listener received the correct event data
         assert len(received_events) == 1
-        assert received_events[0] is original_event
+        received = received_events[0]
+        assert received.key == "workspace_directory"
+        assert received.old_value == "/old/path"
+        assert received.new_value == "/new/path"
