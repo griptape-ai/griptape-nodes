@@ -1718,7 +1718,7 @@ class WorkflowManager:
         try:
             workspace_relative = resolved.relative_to(workspace_path)
         except ValueError:
-            # TODO: store the macro form (e.g. "{workflows}/foo.py") in the
+            # TODO: store the macro form (e.g. "{workspace_dir}/foo.py") in the
             # registry so out-of-workspace save locations stay portable across
             # machines. Tracked in
             # https://github.com/griptape-ai/griptape-nodes/issues/2047.

@@ -38,13 +38,6 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="griptape-nodes-thumbnails",
             path_macro=".griptape-nodes-thumbnails",
         ),
-        # Points at the workspace root today for backward compatibility.
-        # Migrating to a dedicated subdirectory is tracked in
-        # https://github.com/griptape-ai/griptape-nodes/issues/2047.
-        "workflows": DirectoryDefinition(
-            name="workflows",
-            path_macro="{workspace_dir}",
-        ),
     },
     environment={},
     situations={
@@ -118,10 +111,13 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             ),
             fallback="save_file",
         ),
+        # Workflows save into the workspace root today for backward compatibility.
+        # Migrating to a dedicated subdirectory is tracked in
+        # https://github.com/griptape-ai/griptape-nodes/issues/2047.
         "save_workflow": SituationTemplate(
             name="save_workflow",
             description="Save a workflow Python file, preserving any sub-directory hierarchy",
-            macro="{workflows}/{sub_dirs?:/}{file_name_base}.{file_extension}",
+            macro="{workspace_dir}/{sub_dirs?:/}{file_name_base}.{file_extension}",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.OVERWRITE,
                 create_dirs=True,
