@@ -31,8 +31,13 @@ from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
 from griptape_nodes.files.drivers.static_server_file_driver import StaticServerFileDriver
 from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriverRegistry
-from griptape_nodes.files.path_utils import canonicalize_for_identity, path_needs_expansion
-from griptape_nodes.files.path_utils import resolve_path_safely as pr_resolve
+from griptape_nodes.files.path_utils import (
+    canonicalize_for_identity,
+    normalize_path_for_platform,
+    path_needs_expansion,
+    resolve_path_safely,
+    sanitize_path_string,
+)
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
@@ -427,43 +432,7 @@ class OSManager:
             expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
             final_path = Path(expanded_user)
 
-        return self.resolve_path_safely(final_path)
-
-    def resolve_path_safely(self, path: Path) -> Path:
-        """Resolve a path consistently across platforms.
-
-        Unlike Path.resolve() which behaves differently on Windows vs Unix
-        for non-existent paths, this method provides consistent behavior:
-        - Converts relative paths to absolute (using CWD as base)
-        - Normalizes path separators and removes . and ..
-        - Does NOT resolve symlinks if path doesn't exist
-        - Does NOT change path based on CWD for absolute paths
-
-        Use this instead of .resolve() when:
-        - Path might not exist (file creation, validation, user input)
-        - You need consistent cross-platform comparison
-        - You're about to create the file/directory
-
-        Use .resolve() when:
-        - Path definitely exists and you need symlink resolution
-        - You're checking actual file locations
-
-        Args:
-            path: Path to resolve (relative or absolute, existing or not)
-
-        Returns:
-            Absolute, normalized Path object
-
-        Examples:
-            # Relative path
-            resolve_path_safely(Path("relative/file.txt"))
-            → Path("/current/dir/relative/file.txt")
-
-            # Absolute non-existent path (Windows safe)
-            resolve_path_safely(Path("/abs/nonexistent/path"))
-            → Path("/abs/nonexistent/path")  # NOT resolved relative to CWD
-        """
-        return pr_resolve(path)
+        return resolve_path_safely(final_path)
 
     def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path:
         """Resolve a file path, handling absolute, relative, and tilde paths.
@@ -478,7 +447,7 @@ class OSManager:
         try:
             if path_needs_expansion(path_str):
                 return self._expand_path(path_str)
-            return self.resolve_path_safely(self._get_workspace_path() / path_str)
+            return resolve_path_safely(self._get_workspace_path() / path_str)
         except (ValueError, RuntimeError):
             if workspace_only:
                 msg = f"Path '{path_str}' not found, using workspace directory: {self._get_workspace_path()}"
@@ -553,7 +522,7 @@ class OSManager:
             # OVERWRITE policy: existence OK
             self._validate_file_path_for_write(path, check_not_exists=False, create_parents=False)
         """
-        normalized_path = self.normalize_path_for_platform(file_path)
+        normalized_path = normalize_path_for_platform(file_path)
 
         # Check if path is a directory
         try:
@@ -583,7 +552,7 @@ class OSManager:
                 ) from e
 
         # Check parent directory exists or can be created
-        parent_normalized = self.normalize_path_for_platform(file_path.parent)
+        parent_normalized = normalize_path_for_platform(file_path.parent)
         try:
             if not Path(parent_normalized).exists() and not create_parents:
                 raise FilePathValidationError(
@@ -626,91 +595,6 @@ class OSManager:
         msg = f"Path is within workspace, relative path: {relative}"
         logger.debug(msg)
         return True, relative
-
-    @staticmethod
-    def strip_surrounding_quotes(path_str: str) -> str:
-        """Strip surrounding quotes only if they match (from 'Copy as Pathname').
-
-        Args:
-            path_str: The path string to process
-
-        Returns:
-            Path string with surrounding quotes removed if present
-        """
-        from griptape_nodes.files.path_utils import strip_surrounding_quotes as pr_strip
-
-        return pr_strip(path_str)
-
-    def sanitize_path_string(self, path: str | Path | Any) -> str | Any:
-        r"""Clean path strings by removing newlines, carriage returns, shell escapes, and quotes.
-
-        This method handles multiple path cleaning concerns:
-        1. Removes newlines/carriage returns that cause WinError 123 on Windows
-           (from merge_texts nodes accidentally adding newlines between path components)
-        2. Removes shell escape characters and quotes (from macOS Finder 'Copy as Pathname')
-        3. Strips leading/trailing whitespace
-
-        Handles macOS Finder's 'Copy as Pathname' format which escapes
-        spaces, apostrophes, and other special characters with backslashes.
-        Only removes backslashes before shell-special characters to avoid
-        breaking Windows paths like C:\Users\file.txt.
-
-        Examples:
-            macOS Finder paths:
-                "/Downloads/Dragon\'s\ Curse/screenshot.jpg"
-                -> "/Downloads/Dragon's Curse/screenshot.jpg"
-
-                "/Test\ Images/Level\ 1\ -\ Knight\'s\ Quest/file.png"
-                -> "/Test Images/Level 1 - Knight's Quest/file.png"
-
-            Quoted paths:
-                '"/path/with spaces/file.txt"'
-                -> "/path/with spaces/file.txt"
-
-            Windows paths with newlines:
-                "C:\\Users\\file\\n\\n.txt"
-                -> "C:\\Users\\file.txt"
-
-            Windows extended-length paths:
-                r"\\?\C:\Very\ Long\ Path\file.txt"
-                -> r"\\?\C:\Very Long Path\file.txt"
-
-            Path objects:
-                Path("/path/to/file")
-                -> "/path/to/file"
-
-        Args:
-            path: Path string, Path object, or any other type to sanitize
-
-        Returns:
-            Sanitized path string, or original value if not a string/Path
-        """
-        from griptape_nodes.files.path_utils import sanitize_path_string as pr_sanitize
-
-        return pr_sanitize(path)
-
-    def normalize_path_for_platform(self, path: Path) -> str:
-        r"""Convert Path to string with Windows long path support if needed.
-
-        Windows has a 260 character path limit (MAX_PATH). Paths longer than this
-        need the \\?\ prefix to work correctly. This method transparently adds
-        the prefix when needed on Windows.
-
-        Also cleans paths to remove newlines/carriage returns that cause Windows errors.
-
-        Note: This method assumes the path exists or will exist. For non-existent
-        paths that need cross-platform normalization, use resolve_path_safely() first.
-
-        Args:
-            path: Path object to convert to string
-
-        Returns:
-            String representation of path, cleaned of newlines/carriage returns,
-            with Windows long path prefix if needed
-        """
-        from griptape_nodes.files.path_utils import normalize_path_for_platform as pr_normalize
-
-        return pr_normalize(path)
 
     @staticmethod
     def format_command_line(args: list[str]) -> str:
@@ -1147,12 +1031,12 @@ class OSManager:
             if self.is_windows():
                 # Linter complains but this is the recommended way on Windows
                 # We can ignore this warning as we've validated the path
-                os.startfile(self.normalize_path_for_platform(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
+                os.startfile(normalize_path_for_platform(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
                 logger.info("Opened path on Windows: %s", path)
             elif self.is_mac():
                 # On macOS, open should be in a standard location
                 subprocess.run(  # noqa: S603
-                    ["/usr/bin/open", self.normalize_path_for_platform(path)],
+                    ["/usr/bin/open", normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -1172,7 +1056,7 @@ class OSManager:
                     )
 
                 subprocess.run(  # noqa: S603
-                    [xdg_path, self.normalize_path_for_platform(path)],
+                    [xdg_path, normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -1268,7 +1152,7 @@ class OSManager:
             elif path_needs_expansion(directory_path_str):
                 directory = self._expand_path(directory_path_str)
             else:
-                directory = self.resolve_path_safely(self._get_workspace_path() / directory_path_str)
+                directory = resolve_path_safely(self._get_workspace_path() / directory_path_str)
 
             # Check if directory exists
             if not directory.exists():
@@ -1568,7 +1452,7 @@ class OSManager:
             return ReadFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
         # Sanitize path string (basic cleanup)
-        location = self.sanitize_path_string(location)
+        location = sanitize_path_string(location)
 
         # Read via driver system (driver handles all validation and I/O)
         return await self._read_via_driver(location, request)
@@ -1735,7 +1619,7 @@ class OSManager:
             path_display = f"{request.file_path.parsed_macro}"
         else:
             # Sanitize string path (removes shell escapes, quotes, etc.)
-            resolved_path_str = self.sanitize_path_string(request.file_path)
+            resolved_path_str = sanitize_path_string(request.file_path)
             path_display = resolved_path_str
 
         # Convert str → Path
@@ -1773,7 +1657,7 @@ class OSManager:
             )
 
         # Normalize path
-        normalized_path = self.normalize_path_for_platform(file_path)
+        normalized_path = normalize_path_for_platform(file_path)
 
         # Inject workflow metadata into file content if applicable
         content = request.content
@@ -1933,7 +1817,7 @@ class OSManager:
                         if parent_failure_reason is not None:
                             return self._handle_parent_directory_failure(parent_failure_reason, candidate_path)
 
-                        normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
+                        normalized_candidate_path = normalize_path_for_platform(candidate_path)
 
                         # Try to write this indexed candidate using helper
                         result = self._attempt_file_write(
@@ -2004,7 +1888,7 @@ class OSManager:
             None on success, FileIOFailureReason if validation/creation fails
         """
         if create_parents:
-            parent_normalized = self.normalize_path_for_platform(file_path.parent)
+            parent_normalized = normalize_path_for_platform(file_path.parent)
             try:
                 if not Path(parent_normalized).exists():
                     Path(parent_normalized).mkdir(parents=True, exist_ok=True)
@@ -2192,8 +2076,8 @@ class OSManager:
             PermissionError: If permission denied
         """
         # Normalize both paths for platform (handles Windows long paths)
-        src_normalized = self.normalize_path_for_platform(src_path)
-        dest_normalized = self.normalize_path_for_platform(dest_path)
+        src_normalized = normalize_path_for_platform(src_path)
+        dest_normalized = normalize_path_for_platform(dest_path)
 
         # Copy file preserving metadata
         shutil.copy2(src_normalized, dest_normalized)
@@ -2417,9 +2301,9 @@ class OSManager:
 
         # Resolve path - if absolute, use as-is; if relative, align to workspace
         if is_absolute:
-            file_path = self.resolve_path_safely(Path(full_path_str))
+            file_path = resolve_path_safely(Path(full_path_str))
         else:
-            file_path = self.resolve_path_safely(self._get_workspace_path() / full_path_str)
+            file_path = resolve_path_safely(self._get_workspace_path() / full_path_str)
 
         # Check if it already exists - warn but treat as success
         if file_path.exists():
@@ -2557,7 +2441,7 @@ class OSManager:
         # Resolve source path
         try:
             source_path = self._resolve_file_path(request.source_path, workspace_only=False)
-            source_normalized = self.normalize_path_for_platform(source_path)
+            source_normalized = normalize_path_for_platform(source_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid source path: {e}"
             logger.error(msg)
@@ -2578,7 +2462,7 @@ class OSManager:
         # Resolve destination path
         try:
             destination_path = self._resolve_file_path(request.destination_path, workspace_only=False)
-            dest_normalized = self.normalize_path_for_platform(destination_path)
+            dest_normalized = normalize_path_for_platform(destination_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid destination path: {e}"
             logger.error(msg)
@@ -2642,7 +2526,7 @@ class OSManager:
         if not GriptapeNodes.OSManager().is_windows():
             return
 
-        long_path = Path(GriptapeNodes.OSManager().normalize_path_for_platform(Path(path)))
+        long_path = Path(normalize_path_for_platform(Path(path)))
 
         try:
             Path.chmod(long_path, stat.S_IWRITE)
@@ -2876,7 +2760,7 @@ class OSManager:
         # Resolve and normalize source path
         try:
             source_path = self._resolve_file_path(source_str, workspace_only=False)
-            source_normalized = self.normalize_path_for_platform(source_path)
+            source_normalized = normalize_path_for_platform(source_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid source path: {e}"
             logger.error(msg)
@@ -2897,7 +2781,7 @@ class OSManager:
         # Resolve and normalize destination path
         try:
             destination_path = self._resolve_file_path(dest_str, workspace_only=False)
-            dest_normalized = self.normalize_path_for_platform(destination_path)
+            dest_normalized = normalize_path_for_platform(destination_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid destination path: {e}"
             logger.error(msg)

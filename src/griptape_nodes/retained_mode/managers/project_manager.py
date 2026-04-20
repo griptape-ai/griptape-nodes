@@ -27,7 +27,7 @@ from griptape_nodes.common.project_templates import (
     load_partial_project_template,
 )
 from griptape_nodes.files.file import File, FileLoadError, FileWriteError
-from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_file_path
+from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_file_path, resolve_path_safely
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.library_events import (
@@ -512,9 +512,8 @@ class ProjectManager:
                     # For directory builtin variables, compare as resolved paths
                     builtin_info = _BUILTIN_VARIABLE_INFO.get(var_name)
                     if builtin_info and builtin_info.is_directory:
-                        os_manager = GriptapeNodes.OSManager()
-                        resolved_existing = os_manager.resolve_path_safely(Path(str(existing)))
-                        resolved_builtin = os_manager.resolve_path_safely(Path(builtin_value))
+                        resolved_existing = resolve_path_safely(Path(str(existing)))
+                        resolved_builtin = resolve_path_safely(Path(builtin_value))
                         if resolved_existing != resolved_builtin:
                             disallowed_overrides.add(var_name)
                     elif str(existing) != builtin_value:
@@ -1155,12 +1154,11 @@ class ProjectManager:
             /Users/james/Downloads/file.png → None
         """
         # Normalize paths for consistent cross-platform comparison
-        os_manager = GriptapeNodes.OSManager()
-        absolute_path = os_manager.resolve_path_safely(absolute_path)
+        absolute_path = resolve_path_safely(absolute_path)
 
         template = project_info.template
-        workspace_dir = os_manager.resolve_path_safely(self._config_manager.workspace_path)
-        project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
+        workspace_dir = resolve_path_safely(self._config_manager.workspace_path)
+        project_base_dir = resolve_path_safely(project_info.project_base_dir)
 
         # Collect all variables used across ALL directory macros
         variables_needed: set[str] = set()
@@ -1200,7 +1198,7 @@ class ProjectManager:
             # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
             resolved_dir_path = resolve_file_path(resolved_path_str, workspace_dir)
             # Normalize for consistent cross-platform comparison
-            resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
+            resolved_dir_path = resolve_path_safely(resolved_dir_path)
 
             # Check if absolute_path is inside this directory
             try:

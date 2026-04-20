@@ -967,20 +967,11 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
         cast("Mock", project_manager._config_manager).workspace_path = project_base
 
-        # Mock GriptapeNodes.ConfigManager(), ContextManager(), and OSManager()
+        # Mock GriptapeNodes.ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
-
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path inside outputs directory
             absolute_path = project_base / "outputs" / "renders" / "file.png"
@@ -1033,15 +1024,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
-
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path outside project
             absolute_path = Path("/Users/test/Downloads/file.png")
@@ -1110,15 +1092,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
 
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
-
             # Test path inside outputs/inputs subdirectory (should match outputs, not inputs)
             absolute_path = project_base / "outputs" / "inputs" / "file.png"
 
@@ -1171,15 +1144,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
 
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
-
             # Test path exactly at outputs directory
             absolute_path = project_base / "outputs"
 
@@ -1229,15 +1193,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False
             mock_gn.ContextManager.return_value = mock_context
-
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path inside project_base_dir but not in any defined directory
             absolute_path = project_base / "random_folder" / "file.txt"
@@ -1291,6 +1246,8 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._current_project_id = SYSTEM_DEFAULTS_KEY
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        cast("Mock", project_manager._config_manager).workspace_path = project_base
 
         # Mock GriptapeNodes - workflow_name will fail because no workflow
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
