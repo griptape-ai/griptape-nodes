@@ -526,7 +526,11 @@ class TestSidecarMetadata:
     def temp_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
+            # Resolve so the path matches what ConfigManager.workspace_path and
+            # the canonicalized project_base_dir store. On Windows, tempfile
+            # returns the 8.3 short form (C:\Users\RUNNER~1\...); both sides
+            # must agree for decompose_source_path's relative_to() check to hold.
+            yield Path(tmpdir).resolve()
 
     @pytest.fixture(autouse=True)
     def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
