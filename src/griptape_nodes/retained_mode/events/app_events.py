@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
@@ -143,26 +142,6 @@ class EngineInitializationProgress(AppPayload):
     current: int
     total: int
     error: str | None = None
-
-
-@dataclass
-@PayloadRegistry.register
-class ConfigChanged(AppPayload):
-    """Configuration value changed notification.
-
-    Emitted whenever a config value is modified via set_config_value() or
-    set_config_category(). Allows managers to respond to specific config changes.
-
-    Args:
-        key: The config key that changed (e.g., "workspace_directory").
-             Empty string ("") indicates the entire config was replaced.
-        old_value: Previous value before the change
-        new_value: New value after the change
-    """
-
-    key: str
-    old_value: Any
-    new_value: Any
 
 
 @dataclass
