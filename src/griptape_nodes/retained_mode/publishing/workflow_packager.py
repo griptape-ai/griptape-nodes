@@ -39,6 +39,10 @@ from griptape_nodes.retained_mode.events.os_events import (
     CopyFileResultSuccess,
     CopyTreeRequest,
     CopyTreeResultSuccess,
+    ReadFileRequest,
+    ReadFileResultSuccess,
+    WriteFileRequest,
+    WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.events.project_events import (
     GetCurrentProjectRequest,
@@ -190,8 +194,13 @@ class WorkflowPackager:
             },
         }
         config_path = destination / "griptape_nodes_config.json"
-        with config_path.open("w", encoding="utf-8") as f:
-            json.dump(config, f, indent=4)
+        result = GriptapeNodes.handle_request(
+            WriteFileRequest(file_path=str(config_path), content=json.dumps(config, indent=4), encoding="utf-8")
+        )
+        if not isinstance(result, WriteFileResultSuccess):
+            msg = f"Failed to write config to '{config_path}'."
+            logger.error(msg)
+            raise TypeError(msg)
 
     # -- Environment file --
 
@@ -240,7 +249,11 @@ class WorkflowPackager:
             logger.warning("Could not retrieve current project template. No project.yml will be written.")
             return
         project_yaml = result.project_info.template.to_yaml()
-        (destination / "project.yml").write_text(project_yaml, encoding="utf-8")
+        write_result = GriptapeNodes.handle_request(
+            WriteFileRequest(file_path=str(destination / "project.yml"), content=project_yaml, encoding="utf-8")
+        )
+        if not isinstance(write_result, WriteFileResultSuccess):
+            logger.warning("Could not write project.yml to '%s'.", destination)
 
     # -- Dependencies --
 
@@ -405,7 +418,13 @@ dependencies = [
                 else:
                     content += f'{key} = "{value}"\n'
 
-        (destination / "pyproject.toml").write_text(content, encoding="utf-8")
+        result = GriptapeNodes.handle_request(
+            WriteFileRequest(file_path=str(destination / "pyproject.toml"), content=content, encoding="utf-8")
+        )
+        if not isinstance(result, WriteFileResultSuccess):
+            msg = f"Failed to write pyproject.toml to '{destination}'."
+            logger.error(msg)
+            raise TypeError(msg)
 
     # -- Static file / asset gathering --
 
@@ -548,18 +567,32 @@ dependencies = [
             return False
 
         template_path = Path(__file__).parent / "download_models_script.py"
-        template = template_path.read_text(encoding="utf-8")
+        read_result = GriptapeNodes.handle_request(
+            ReadFileRequest(file_path=str(template_path), workspace_only=False, encoding="utf-8")
+        )
+        if not isinstance(read_result, ReadFileResultSuccess):
+            msg = f"Failed to read download models script template from '{template_path}'."
+            logger.error(msg)
+            raise TypeError(msg)
+        template = read_result.content
+        if not isinstance(template, str):
+            msg = f"Expected text content for download models script template at '{template_path}'."
+            logger.error(msg)
+            raise TypeError(msg)
         commands_repr = ", ".join(repr(cmd) for cmd in commands)
         script_content = template.replace(
             '["REPLACE_DOWNLOAD_COMMANDS"]',
             f"[{commands_repr}]",
         )
-        try:
-            (destination / "download_models.py").write_text(script_content, encoding="utf-8")
-        except TypeError as err:
-            msg = f"Failed to write text for download models script. Failed to package folder to {destination}. {err}"
+        write_result = GriptapeNodes.handle_request(
+            WriteFileRequest(
+                file_path=str(destination / "download_models.py"), content=script_content, encoding="utf-8"
+            )
+        )
+        if not isinstance(write_result, WriteFileResultSuccess):
+            msg = f"Failed to write download models script to '{destination}'."
             logger.error(msg)
-            raise TypeError(msg) from err
+            raise TypeError(msg)
         return True
 
     # -- Convenience: full standard bundle --
