@@ -366,7 +366,7 @@ wheels = [
 
 [[package]]
 name = "griptape"
-version = "1.9.4"
+version = "1.10.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -388,9 +388,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/81/c8/27f836438e94529a02db82cc8a4b40692b827c1b59b46c1426cbc0ceae38/griptape-1.9.4.tar.gz", hash = "sha256:3065b888291026af1be81f7d98d2803abd7c02a47665eef05ba9ea2bc22d3399", size = 192411, upload-time = "2026-03-13T15:40:03.101Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9b/ba/987550a6746c3678c0b9e194e8795ed504d9d157d9848e788f60f5120192/griptape-1.10.0.tar.gz", hash = "sha256:86ede22e958ba7bc3896114ba6eb58b91e2cd28cda605d916d47570384604bdc", size = 192727, upload-time = "2026-04-20T20:01:32.04Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/da/11197c9d4dfccc10fa8592dd612f5f2ed3ba158ddc54b6fdf6ebd4d3ebea/griptape-1.9.4-py3-none-any.whl", hash = "sha256:304a478979c9d00b0480256a28cd8fc8b55f561e5fa39a5d600cb64a8cc37643", size = 427959, upload-time = "2026-03-13T15:40:04.845Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/26/ff303840c19d0f0c50313ee74a79a6e2736e7a919703cf440b2394930e41/griptape-1.10.0-py3-none-any.whl", hash = "sha256:3c4d40f80205497700311e38cdcf57cb81d4b8acf80971d4095eedd0a9df9f7d", size = 428096, upload-time = "2026-04-20T20:01:33.631Z" },
 ]
 
 [[package]]
@@ -483,7 +483,7 @@ requires-dist = [
     { name = "binaryornot", specifier = ">=0.4.4" },
     { name = "cattrs", specifier = ">=26.1.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", specifier = ">=1.9.4" },
+    { name = "griptape", specifier = ">=1.10.0" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "huggingface-hub", specifier = ">=1.9.0" },
     { name = "json-repair", specifier = ">=0.46.1" },
