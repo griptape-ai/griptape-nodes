@@ -9,7 +9,6 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageOps
 from pydantic import PositiveInt  # noqa: TC002 - Runtime validation, not type-only
 
-from griptape_nodes.files.path_utils import canonicalize_for_io
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     ReadFileRequest,
@@ -139,7 +138,7 @@ class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
         """
         # Step 1: Read source file
         read_request = ReadFileRequest(
-            file_path=str(canonicalize_for_io(self.source_file_location)),
+            file_path=self.source_file_location,
             workspace_only=False,
             should_transform_image_content_to_thumbnail=False,
         )
@@ -190,9 +189,7 @@ class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
             output_bytes = output_buffer.getvalue()
 
         # Step 4: Write output file
-        destination_path = str(
-            canonicalize_for_io(Path(self.destination_preview_directory) / self.destination_preview_file_name)
-        )
+        destination_path = str(Path(self.destination_preview_directory) / self.destination_preview_file_name)
 
         write_request = WriteFileRequest(
             file_path=destination_path,

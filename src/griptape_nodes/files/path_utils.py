@@ -399,8 +399,10 @@ def canonicalize_for_io(path: str | Path, *, base: Path | None = None) -> Path:
     paths that do not yet exist) and applies the Windows long-path
     (``\\?\``) prefix when the result exceeds MAX_PATH.
 
-    Use this when constructing a ``ReadFileRequest`` / ``WriteFileRequest`` or
-    otherwise handing a path to an OS-level I/O call.
+    Use this at the boundary that actually hands the path to the OS (driver
+    or request handler). Do NOT call it before constructing a
+    ``ReadFileRequest`` / ``WriteFileRequest`` — those handlers already
+    canonicalize on the way in, so a caller-side call is redundant.
 
     Args:
         path: Raw path string or Path object.

@@ -9,7 +9,6 @@ from typing import Any
 from PIL import Image, ImageOps
 from pydantic import PositiveInt  # noqa: TC002 - Runtime validation, not type-only
 
-from griptape_nodes.files.path_utils import canonicalize_for_io
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     ReadFileRequest,
@@ -109,7 +108,7 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
         """
         # Read the source image file
         read_request = ReadFileRequest(
-            file_path=str(canonicalize_for_io(self.source_file_location)),
+            file_path=self.source_file_location,
             workspace_only=False,
             should_transform_image_content_to_thumbnail=False,
         )
@@ -138,9 +137,7 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
             output_bytes = output_buffer.getvalue()
 
         # Construct full path for writing
-        destination_path = str(
-            canonicalize_for_io(Path(self.destination_preview_directory) / self.destination_preview_file_name)
-        )
+        destination_path = str(Path(self.destination_preview_directory) / self.destination_preview_file_name)
 
         # Write the preview file
         write_request = WriteFileRequest(
