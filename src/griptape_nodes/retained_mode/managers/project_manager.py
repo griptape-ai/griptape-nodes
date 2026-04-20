@@ -244,8 +244,15 @@ class ProjectManager:
         5. If usable, cache template in successful_templates
         6. Return LoadProjectTemplateResultSuccess or LoadProjectTemplateResultFailure
         """
+        # Resolve to absolute so the same file always produces the same project_id
+        # regardless of how the caller spelled the path (relative vs absolute,
+        # symlinks, etc.). Both _registered_template_status (keyed by Path) and
+        # _successfully_loaded_project_templates (keyed by str project_id) must
+        # use the resolved form so dedupe checks line up.
+        project_file_path = Path(request.project_path).resolve()
+
         read_request = ReadFileRequest(
-            file_path=str(request.project_path),
+            file_path=str(project_file_path),
             encoding="utf-8",
             workspace_only=False,
         )
@@ -253,46 +260,44 @@ class ProjectManager:
 
         if read_result.failed():
             validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
-            self._registered_template_status[request.project_path] = validation
+            self._registered_template_status[project_file_path] = validation
 
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because file not found",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because file not found",
             )
 
         if not isinstance(read_result, ReadFileResultSuccess):
             validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
-            self._registered_template_status[request.project_path] = validation
+            self._registered_template_status[project_file_path] = validation
 
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because file read returned unexpected result type",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because file read returned unexpected result type",
             )
 
         yaml_text = read_result.content
         if not isinstance(yaml_text, str):
             validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
-            self._registered_template_status[request.project_path] = validation
+            self._registered_template_status[project_file_path] = validation
 
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because template must be text, got binary content",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because template must be text, got binary content",
             )
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, validation)
 
         if overlay is None:
-            self._registered_template_status[request.project_path] = validation
+            self._registered_template_status[project_file_path] = validation
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because YAML could not be parsed",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because YAML could not be parsed",
             )
 
         template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
 
-        # Generate project_id from file path
-        project_file_path = Path(request.project_path)
         project_id = str(project_file_path)
         project_base_dir = project_file_path.parent
 
@@ -302,10 +307,10 @@ class ProjectManager:
 
         # Now check if validation is usable after collecting all errors
         if not validation.is_usable():
-            self._registered_template_status[request.project_path] = validation
+            self._registered_template_status[project_file_path] = validation
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because template is not usable (status: {validation.status})",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because template is not usable (status: {validation.status})",
             )
 
         # Create consolidated ProjectInfo with fully populated macro caches
@@ -323,7 +328,7 @@ class ProjectManager:
         self._successfully_loaded_project_templates[project_id] = project_info
 
         # Track validation status for all load attempts (for UI display)
-        self._registered_template_status[request.project_path] = validation
+        self._registered_template_status[project_file_path] = validation
 
         # Persist path so the project survives engine restarts
         self._register_project_path(project_id)
@@ -1263,12 +1268,11 @@ class ProjectManager:
                 project_path,
             )
 
-        workspace_dir_value = self._config_manager.get_config_value("workspace_directory")
-        if workspace_dir_value is None:
-            logger.debug("Skipping workspace project load: 'workspace_directory' config value is None")
-            return None
-
-        workspace_project_path = Path(workspace_dir_value) / WORKSPACE_PROJECT_FILE
+        # Use ConfigManager.workspace_path rather than the raw config string so
+        # that ~/ and relative paths are expanded/resolved consistently with the
+        # rest of the app (otherwise a "~/..." config value silently misses here).
+        workspace_dir = self._config_manager.workspace_path
+        workspace_project_path = workspace_dir / WORKSPACE_PROJECT_FILE
         if not workspace_project_path.exists():
             logger.debug("No workspace project file found at '%s'", workspace_project_path)
             return None
@@ -1286,6 +1290,7 @@ class ProjectManager:
         if workspace_project_path is None:
             return
 
+        workspace_project_path = workspace_project_path.resolve()
         logger.info("Found workspace project file at '%s', loading", workspace_project_path)
 
         try:
@@ -1364,7 +1369,11 @@ class ProjectManager:
         """
         registered_paths: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
         for path_str in registered_paths:
-            if path_str in self._successfully_loaded_project_templates:
+            # Project IDs are absolute paths, so resolve the persisted string
+            # before checking for an existing load (prevents duplicate entries
+            # when the same file was persisted under different spellings).
+            resolved_id = str(Path(path_str).resolve())
+            if resolved_id in self._successfully_loaded_project_templates:
                 continue
             load_request = LoadProjectTemplateRequest(project_path=Path(path_str))
             result = self.on_load_project_template_request(load_request)
@@ -1385,7 +1394,10 @@ class ProjectManager:
         """
         try:
             registered: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
-            if project_id not in registered:
+            # Compare by resolved path so a previously persisted relative spelling
+            # of the same file isn't re-persisted as a duplicate.
+            resolved_existing = {str(Path(p).resolve()) for p in registered}
+            if project_id not in resolved_existing:
                 self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
         except Exception:
             logger.warning("Failed to persist project path '%s' to config", project_id)
