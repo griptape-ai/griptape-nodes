@@ -2219,3 +2219,164 @@ situations:
             await pm.on_app_initialization_complete(AppInitializationComplete())
 
         assert str(registered_path) in pm._successfully_loaded_project_templates
+
+
+class TestLoadProjectTemplatePathCanonicalization:
+    """Test that on_load_project_template_request canonicalizes project paths.
+
+    Project IDs and validation-map keys must be keyed off the resolved absolute
+    path so the same file loaded via different spellings (relative vs absolute,
+    with or without trailing components, etc.) collapses to a single entry.
+    """
+
+    VALID_PROJECT_YAML = """\
+project_template_schema_version: "0.1.0"
+name: Canonicalization Test
+situations:
+  save_node_output:
+    macro: "{outputs}/{file_name_base}.{file_extension}"
+    policy:
+      on_collision: create_new
+      create_dirs: true
+"""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def test_relative_and_absolute_spellings_share_project_id(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Loading the same file via a relative and an absolute path produces one entry."""
+        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        absolute_path = (tmp_path / "project.yml").resolve()
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.handle_request.return_value = ReadFileResultSuccess(
+                content=self.VALID_PROJECT_YAML,
+                file_size=len(self.VALID_PROJECT_YAML),
+                mime_type="text/plain",
+                encoding="utf-8",
+                result_details="ok",
+            )
+
+            cwd = Path.cwd()
+            try:
+                os.chdir(tmp_path)
+                relative_path = Path("project.yml")
+                absolute_result = pm.on_load_project_template_request(
+                    LoadProjectTemplateRequest(project_path=absolute_path)
+                )
+                relative_result = pm.on_load_project_template_request(
+                    LoadProjectTemplateRequest(project_path=relative_path)
+                )
+            finally:
+                os.chdir(cwd)
+
+        assert isinstance(absolute_result, LoadProjectTemplateResultSuccess)
+        assert isinstance(relative_result, LoadProjectTemplateResultSuccess)
+        assert absolute_result.project_id == relative_result.project_id
+        assert absolute_result.project_id == str(absolute_path)
+        assert list(pm._successfully_loaded_project_templates.keys()).count(str(absolute_path)) == 1
+
+    def test_registered_template_status_keyed_by_resolved_path(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Validation status is stored under the resolved path, not the raw input."""
+        from griptape_nodes.retained_mode.events.project_events import LoadProjectTemplateRequest
+
+        absolute_path = (tmp_path / "missing.yml").resolve()
+
+        cwd = Path.cwd()
+        try:
+            os.chdir(tmp_path)
+            pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=Path("missing.yml")))
+        finally:
+            os.chdir(cwd)
+
+        assert absolute_path in pm._registered_template_status
+        assert Path("missing.yml") not in pm._registered_template_status
+
+
+class TestRegisterProjectPathCanonicalization:
+    """Test that _register_project_path dedupes across path spellings."""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def test_already_registered_under_different_spelling_is_not_reappended(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """If the same file is already persisted under a different spelling, skip it."""
+        absolute_path = (tmp_path / "project.yml").resolve()
+
+        cwd = Path.cwd()
+        try:
+            os.chdir(tmp_path)
+            relative_spelling = str(Path("project.yml").resolve())
+            cast("Mock", pm._config_manager).get_config_value.return_value = [relative_spelling]
+            pm._register_project_path(str(absolute_path))
+        finally:
+            os.chdir(cwd)
+
+        cast("Mock", pm._config_manager).set_config_value.assert_not_called()
+
+
+class TestLoadRegisteredProjectsCanonicalization:
+    """Test that _load_registered_projects treats differently-spelled persisted paths as duplicates."""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def test_persisted_unresolved_path_matches_loaded_resolved_entry(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A persisted path is matched against _successfully_loaded_project_templates after resolution."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        resolved_path = (tmp_path / "existing.yml").resolve()
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+        project_info = ProjectInfo(
+            project_id=str(resolved_path),
+            project_file_path=resolved_path,
+            project_base_dir=tmp_path,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[str(resolved_path)] = project_info
+
+        cwd = Path.cwd()
+        try:
+            os.chdir(tmp_path)
+            cast("Mock", pm._config_manager).get_config_value.return_value = ["existing.yml"]
+            with patch.object(pm, "on_load_project_template_request") as mock_load:
+                pm._load_registered_projects()
+        finally:
+            os.chdir(cwd)
+
+        mock_load.assert_not_called()

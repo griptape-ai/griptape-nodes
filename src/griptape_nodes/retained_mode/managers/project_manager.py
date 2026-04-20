@@ -1268,9 +1268,6 @@ class ProjectManager:
                 project_path,
             )
 
-        # Use ConfigManager.workspace_path rather than the raw config string so
-        # that ~/ and relative paths are expanded/resolved consistently with the
-        # rest of the app (otherwise a "~/..." config value silently misses here).
         workspace_dir = self._config_manager.workspace_path
         workspace_project_path = workspace_dir / WORKSPACE_PROJECT_FILE
         if not workspace_project_path.exists():
