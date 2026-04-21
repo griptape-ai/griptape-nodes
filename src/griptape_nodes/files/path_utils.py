@@ -33,6 +33,25 @@ _WINDOWS_UNC_PATTERN = re.compile(_WINDOWS_UNC_MATCH_PATTERN)
 _MACOS_VOLUME_PATTERN = re.compile(_MACOS_VOLUME_MATCH_PATTERN)
 _LINUX_MOUNT_PATTERN = re.compile(_LINUX_MOUNT_MATCH_PATTERN)
 
+# Windows MAX_PATH limit - paths at or above this length need the \\?\ prefix.
+WINDOWS_MAX_PATH = 260
+
+
+def _apply_windows_long_path_prefix(path_str: str) -> str:
+    r"""Prepend the Windows long-path prefix (``\\?\``) when required.
+
+    No-op on non-Windows platforms, on paths shorter than ``WINDOWS_MAX_PATH``,
+    or on paths that already carry the prefix. UNC paths (``\\server\share``)
+    get the ``\\?\UNC\`` variant.
+    """
+    if not sys.platform.startswith("win"):
+        return path_str
+    if len(path_str) < WINDOWS_MAX_PATH or path_str.startswith("\\\\?\\"):
+        return path_str
+    if path_str.startswith("\\\\"):
+        return f"\\\\?\\UNC\\{path_str[2:]}"
+    return f"\\\\?\\{path_str}"
+
 
 def derive_registry_key(file_path: str) -> str:
     """Derive a workflow registry key from a file path.
@@ -258,24 +277,13 @@ def normalize_path_for_platform(path: Path) -> str:
         String representation of path, cleaned of newlines/carriage returns,
         with Windows long path prefix if needed
     """
-    # Windows MAX_PATH limit - paths longer than this need \\?\ prefix
-    windows_max_path = 260
-
     path_str = str(path.resolve())
 
     # Clean path to remove newlines/carriage returns, shell escapes, and quotes
     # This handles cases where merge_texts nodes accidentally add newlines between path components
     path_str = sanitize_path_string(path_str)
 
-    # Windows long path handling (paths > windows_max_path chars need \\?\ prefix)
-    if sys.platform.startswith("win") and len(path_str) >= windows_max_path and not path_str.startswith("\\\\?\\"):
-        # UNC paths (\\server\share) need \\?\UNC\ prefix
-        if path_str.startswith("\\\\"):
-            return f"\\\\?\\UNC\\{path_str[2:]}"
-        # Regular paths need \\?\ prefix
-        return f"\\\\?\\{path_str}"
-
-    return path_str
+    return _apply_windows_long_path_prefix(path_str)
 
 
 def expand_path(path_str: str) -> Path:
@@ -411,25 +419,17 @@ def canonicalize_for_io(path: str | Path, *, base: Path | None = None) -> Path:
     Returns:
         Canonical Path ready for filesystem operations.
     """
-    # Windows MAX_PATH limit - paths longer than this need \\?\ prefix
-    windows_max_path = 260
-
     sanitized = sanitize_path_string(path)
     expanded = expand_path(sanitized)
     if not expanded.is_absolute():
         expanded = (base if base is not None else Path.cwd()) / expanded
     normalized = resolve_path_safely(expanded)
 
-    if not sys.platform.startswith("win"):
+    normalized_str = str(normalized)
+    prefixed = _apply_windows_long_path_prefix(normalized_str)
+    if prefixed == normalized_str:
         return normalized
-
-    path_str = str(normalized)
-    if len(path_str) < windows_max_path or path_str.startswith("\\\\?\\"):
-        return normalized
-    # UNC paths (\\server\share) need \\?\UNC\ prefix
-    if path_str.startswith("\\\\"):
-        return Path(f"\\\\?\\UNC\\{path_str[2:]}")
-    return Path(f"\\\\?\\{path_str}")
+    return Path(prefixed)
 
 
 def resolve_file_path(path_str: str, base_dir: Path) -> Path:

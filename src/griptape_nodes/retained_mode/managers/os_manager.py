@@ -101,9 +101,6 @@ from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
 
 console = Console()
 
-# Windows MAX_PATH limit - paths longer than this need \\?\ prefix
-WINDOWS_MAX_PATH = 260
-
 # Maximum number of indexed candidates to try when CREATE_NEW policy is used
 MAX_INDEXED_CANDIDATES = 1000
 
