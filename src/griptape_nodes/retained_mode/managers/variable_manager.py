@@ -172,6 +172,12 @@ class VariablesManager:
         if request.is_global:
             # Check for name collision in global variables
             if request.name in self._global_variables:
+                # During workflow load, adopt an existing global variable rather than failing.
+                # Globals may be shared across workflows; the first-loaded wins.
+                if request.initial_setup:
+                    return CreateVariableResultSuccess(
+                        result_details=f"Adopted existing global variable '{request.name}' during workflow load."
+                    )
                 return CreateVariableResultFailure(
                     result_details=f"Attempted to create a global variable named '{request.name}'. Failed because a variable with that name already exists."
                 )

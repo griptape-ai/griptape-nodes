@@ -2311,6 +2311,30 @@ class WorkflowManager:
                 # No initialization command, deserialize into current context
                 pass
 
+        # Split variable commands into globals (emitted at top level, before any flow context)
+        # and flow-scoped (emitted inside the owning flow's "with" block, before its nodes).
+        global_variable_commands = [
+            cmd
+            for cmd in serialized_flow_commands.serialized_variable_commands
+            if cmd.create_variable_command.is_global
+        ]
+        flow_scoped_variable_commands = [
+            cmd
+            for cmd in serialized_flow_commands.serialized_variable_commands
+            if not cmd.create_variable_command.is_global
+        ]
+
+        # Emit top-level global variable creation BEFORE the flow "with" block. Globals are
+        # scope-independent, so they do not need a flow context.
+        if not isinstance(flow_initialization_command, ImportWorkflowAsReferencedSubFlowRequest):
+            global_variable_asts = self._generate_create_variable_code(
+                serialized_variable_commands=global_variable_commands,
+                unique_values_dict_name="top_level_unique_values_dict",
+                import_recorder=import_recorder,
+            )
+            for node in global_variable_asts:
+                ast_container.add_node(node)
+
         # Generate assign flow context AST node, if we have any children commands
         # Skip content generation for referenced workflows - they should only have the import command
         is_referenced_workflow = isinstance(flow_initialization_command, ImportWorkflowAsReferencedSubFlowRequest)
@@ -2320,6 +2344,7 @@ class WorkflowManager:
             or len(serialized_flow_commands.set_parameter_value_commands) > 0
             or len(serialized_flow_commands.sub_flows_commands) > 0
             or len(serialized_flow_commands.set_lock_commands_per_node) > 0
+            or len(flow_scoped_variable_commands) > 0
         )
 
         if not is_referenced_workflow and has_content_to_serialize:
@@ -2333,6 +2358,17 @@ class WorkflowManager:
             assign_flow_context_node = self._generate_assign_flow_context(
                 flow_initialization_command=flow_initialization_command, flow_creation_index=flow_creation_index
             )
+
+            # Emit flow-scoped variable creation INSIDE the flow "with" block, BEFORE any
+            # node creation. Ordering matters: SetVariable nodes' before_value_set hook fires
+            # during initial_setup and calls has_variable(); having the variable already
+            # present ensures that hook is a no-op adopt rather than a duplicate create.
+            flow_scoped_variable_asts = self._generate_create_variable_code(
+                serialized_variable_commands=flow_scoped_variable_commands,
+                unique_values_dict_name="top_level_unique_values_dict",
+                import_recorder=import_recorder,
+            )
+            assign_flow_context_node.body.extend(flow_scoped_variable_asts)
 
             # Separate regular nodes from NodeGroup nodes in main flow
 
@@ -2389,13 +2425,30 @@ class WorkflowManager:
                             )
                             assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_import_node))
 
+                # Sub-flow serialization passes include_global_variables=False, so every entry
+                # here is a flow-scoped variable belonging to this sub-flow. (Globals emit once
+                # at the top level of the root flow.)
+                sub_flow_scoped_variable_commands = [
+                    cmd
+                    for cmd in sub_flow_commands.serialized_variable_commands
+                    if not cmd.create_variable_command.is_global
+                ]
+
                 # Generate the nodes in this subflow (just like we do for main flow)
-                if sub_flow_commands.serialized_node_commands:
+                if sub_flow_commands.serialized_node_commands or sub_flow_scoped_variable_commands:
                     # Create "with" statement for subflow
                     subflow_context_node = self._generate_assign_flow_context(
                         flow_initialization_command=sub_flow_initialization_command,
                         flow_creation_index=sub_flow_creation_index,
                     )
+                    # Emit flow-scoped variable creation BEFORE any node creation in this subflow,
+                    # for the same reason as the top-level flow.
+                    subflow_variable_asts = self._generate_create_variable_code(
+                        serialized_variable_commands=sub_flow_scoped_variable_commands,
+                        unique_values_dict_name="top_level_unique_values_dict",
+                        import_recorder=import_recorder,
+                    )
+                    subflow_context_node.body.extend(subflow_variable_asts)
                     # Generate nodes in subflow, passing current index and getting next available
                     subflow_nodes, current_node_index = self._generate_nodes_in_flow(
                         sub_flow_commands,
@@ -4042,6 +4095,85 @@ class WorkflowManager:
             connection_asts.append(create_connection_call)
 
         return connection_asts
+
+    def _generate_create_variable_code(
+        self,
+        serialized_variable_commands: list[SerializedFlowCommands.SerializedVariableCommand],
+        unique_values_dict_name: str,
+        import_recorder: ImportRecorder,
+    ) -> list[ast.stmt]:
+        """Generate AST for CreateVariableRequest calls, one per serialized variable command.
+
+        Each variable's value is looked up in the shared unique-values dict by UUID, mirroring
+        the pattern used for parameter values.
+        """
+        if not serialized_variable_commands:
+            return []
+
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.variable_events", "CreateVariableRequest")
+
+        create_variable_asts: list[ast.stmt] = []
+        for serialized_command in serialized_variable_commands:
+            create_variable_request = serialized_command.create_variable_command
+            value_lookup = ast.Subscript(
+                value=ast.Name(id=unique_values_dict_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                slice=ast.Constant(value=str(serialized_command.unique_value_uuid), lineno=1, col_offset=0),
+                ctx=ast.Load(),
+                lineno=1,
+                col_offset=0,
+            )
+
+            create_variable_call = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="CreateVariableRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=[
+                                ast.keyword(
+                                    arg="name",
+                                    value=ast.Constant(value=create_variable_request.name, lineno=1, col_offset=0),
+                                ),
+                                ast.keyword(
+                                    arg="type",
+                                    value=ast.Constant(value=create_variable_request.type, lineno=1, col_offset=0),
+                                ),
+                                ast.keyword(
+                                    arg="is_global",
+                                    value=ast.Constant(value=create_variable_request.is_global, lineno=1, col_offset=0),
+                                ),
+                                ast.keyword(arg="value", value=value_lookup, lineno=1, col_offset=0),
+                                ast.keyword(
+                                    arg="owning_flow",
+                                    value=ast.Constant(
+                                        value=create_variable_request.owning_flow, lineno=1, col_offset=0
+                                    ),
+                                ),
+                                ast.keyword(
+                                    arg="initial_setup", value=ast.Constant(value=True, lineno=1, col_offset=0)
+                                ),
+                            ],
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
+                    lineno=1,
+                    col_offset=0,
+                ),
+                lineno=1,
+                col_offset=0,
+            )
+            create_variable_asts.append(create_variable_call)
+
+        return create_variable_asts
 
     def _generate_set_parameter_value_code(
         self,

@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from griptape_nodes.retained_mode.events.variable_events import CreateVariableRequest
 
 if TYPE_CHECKING:
     # Circular import: flow_events <-> workflow_events
@@ -241,6 +242,21 @@ class SerializedFlowCommands:
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
 
+    @dataclass
+    class SerializedVariableCommand:
+        """Companion class to recreate a Variable during deserialization, pulling its value from the unique-values pool.
+
+        Attributes:
+            create_variable_command (CreateVariableRequest): The base create-variable command.
+                The ``value`` field on this command is ignored during AST generation — the generated script
+                substitutes the value from ``top_level_unique_values_dict[<unique_value_uuid>]`` instead.
+            unique_value_uuid (SerializedNodeCommands.UniqueParameterValueUUID): The UUID into the
+                unique values dictionary for this variable's value. Shares the pool with parameter values.
+        """
+
+        create_variable_command: CreateVariableRequest
+        unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
+
     flow_initialization_command: CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None
     serialized_node_commands: list[SerializedNodeCommands]
     serialized_connections: list[IndirectConnectionSerialization]
@@ -253,6 +269,7 @@ class SerializedFlowCommands:
     node_dependencies: NodeDependencies
     node_types_used: set[LibraryNameAndNodeType]
     flow_name: str | None = None
+    serialized_variable_commands: list[SerializedVariableCommand] = field(default_factory=list)
 
 
 @dataclass
@@ -265,11 +282,15 @@ class SerializeFlowToCommandsRequest(RequestPayload):
         include_create_flow_command (bool): If set to False, this will omit the CreateFlow call from the serialized flow object.
             This can be useful so that the contents of a flow can be deserialized into an existing flow instead of creating a new one and deserializing the nodes into that.
             Copy/paste can make use of this.
+        include_global_variables (bool): If True, serialize global variables alongside this flow's flow-scoped variables.
+            Set to False on recursive sub-flow serialization so globals appear exactly once (at the top-level flow's
+            serialization).
     """
 
     broadcast_result: bool = False
     flow_name: str | None = None
     include_create_flow_command: bool = True
+    include_global_variables: bool = True
 
 
 @dataclass
