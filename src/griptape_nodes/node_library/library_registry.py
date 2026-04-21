@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_validator
@@ -74,6 +75,24 @@ class ResourceRequirements(BaseModel):
         return converted
 
 
+class PreproductionStatus(StrEnum):
+    """Pre-production maturity. Absence from properties means production."""
+
+    ALPHA = "alpha"
+    BETA = "beta"
+
+
+class LibraryCanonicalKey(StrEnum):
+    """Canonical keys recognized in LibraryMetadata.properties.
+
+    Values are the literal strings used in library JSON. Any key not listed here
+    is permitted in the dict but carries no validation.
+    """
+
+    PREPRODUCTION_STATUS = "preproduction_status"
+    REQUIRES_ENTITLEMENTS = "requires_entitlements"
+
+
 class LibraryMetadata(BaseModel):
     """Metadata that explains details about the library, including versioning and search details."""
 
@@ -87,6 +106,8 @@ class LibraryMetadata(BaseModel):
     is_griptape_nodes_searchable: bool = True
     # Resource requirements for this library. If None, library is assumed to work on any platform.
     resources: ResourceRequirements | None = None
+    # Extensible bag of canonical + ad-hoc metadata. Canonical keys are defined in LibraryCanonicalKey.
+    properties: dict[str, Any] | None = None
 
 
 class IconVariant(BaseModel):
@@ -103,6 +124,17 @@ class NodeDeprecationMetadata(BaseModel):
     removal_version: str | None = None
 
 
+class NodeCanonicalKey(StrEnum):
+    """Canonical keys recognized in NodeMetadata.properties.
+
+    Values are the literal strings used in library JSON. Any key not listed here
+    is permitted in the dict but carries no validation.
+    """
+
+    PREPRODUCTION_STATUS = "preproduction_status"
+    RUNS_ARBITRARY_CODE = "runs_arbitrary_code"
+
+
 class NodeMetadata(BaseModel):
     """Metadata about each node within the library, which informs where in the hierarchy it sits, details on usage, and tags to assist search."""
 
@@ -115,6 +147,8 @@ class NodeMetadata(BaseModel):
     group: str | None = None
     deprecation: NodeDeprecationMetadata | None = None
     is_node_group: bool | None = None
+    # Extensible bag of canonical + ad-hoc metadata. Canonical keys are defined in NodeCanonicalKey.
+    properties: dict[str, Any] | None = None
 
 
 class CategoryDefinition(BaseModel):
@@ -166,7 +200,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.6.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.7.0"
 
     name: str
     library_schema_version: str
