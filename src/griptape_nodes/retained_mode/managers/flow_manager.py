@@ -152,7 +152,11 @@ from griptape_nodes.retained_mode.events.validation_events import (
     ValidateFlowDependenciesResultFailure,
     ValidateFlowDependenciesResultSuccess,
 )
-from griptape_nodes.retained_mode.events.variable_events import CreateVariableRequest
+from griptape_nodes.retained_mode.events.variable_events import (
+    CreateVariableRequest,
+    ListVariablesRequest,
+    ListVariablesResultSuccess,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowRequest,
     ImportWorkflowAsReferencedSubFlowResultSuccess,
@@ -160,6 +164,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import FLOW_COMMANDS_KEY
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
+from griptape_nodes.retained_mode.variable_types import VariableScope
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -3217,10 +3222,8 @@ class FlowManager:
         self,
         flow_name: str,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
-        *,
-        include_globals: bool,
     ) -> list[SerializedFlowCommands.SerializedVariableCommand]:
-        """Build SerializedVariableCommands for the flow's variables (and optionally globals).
+        """Build SerializedVariableCommands for the flow's flow-scoped variables.
 
         Variable values share the parameter value pool in ``unique_parameter_uuid_to_values`` — the
         generated workflow script references both kinds through the same ``top_level_unique_values_dict``.
@@ -3228,31 +3231,27 @@ class FlowManager:
         Args:
             flow_name: The flow whose flow-scoped variables are being serialized.
             unique_parameter_uuid_to_values: Shared unique-value pool; variable values are added in place.
-            include_globals: If True, also emit commands for every global variable (for the top-level flow only).
 
         Returns:
-            A list of ``SerializedVariableCommand``s, flow-scoped first, globals last.
+            A list of ``SerializedVariableCommand``s for this flow's flow-scoped variables.
         """
-        variables_manager = GriptapeNodes.VariablesManager()
         serialized_commands: list[SerializedFlowCommands.SerializedVariableCommand] = []
 
-        flow_variables = variables_manager._flow_variables.get(flow_name, {})
-        for variable in flow_variables.values():
-            command = self._build_serialized_variable_command(
-                variable=variable,
-                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-                is_global=False,
+        flow_list_result = GriptapeNodes.handle_request(
+            ListVariablesRequest(starting_flow=flow_name, lookup_scope=VariableScope.CURRENT_FLOW_ONLY)
+        )
+        if not isinstance(flow_list_result, ListVariablesResultSuccess):
+            logger.warning(
+                "Attempted to list flow-scoped variables for flow '%s' during serialization. Skipping.", flow_name
             )
-            serialized_commands.append(command)
-
-        if include_globals:
-            for variable in variables_manager._global_variables.values():
-                command = self._build_serialized_variable_command(
+        else:
+            serialized_commands.extend(
+                self._build_serialized_variable_command(
                     variable=variable,
                     unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-                    is_global=True,
                 )
-                serialized_commands.append(command)
+                for variable in flow_list_result.variables
+            )
 
         return serialized_commands
 
@@ -3260,8 +3259,6 @@ class FlowManager:
         self,
         variable: FlowVariable,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
-        *,
-        is_global: bool,
     ) -> SerializedFlowCommands.SerializedVariableCommand:
         """Register the variable's value in the unique-values pool and build the indirect command.
 
@@ -3283,9 +3280,9 @@ class FlowManager:
         create_variable_command = CreateVariableRequest(
             name=variable.name,
             type=variable.type,
-            is_global=is_global,
+            is_global=False,
             value=None,  # Overridden at deserialization via top_level_unique_values_dict lookup.
-            owning_flow=None if is_global else variable.owning_flow_name,
+            owning_flow=variable.owning_flow_name,
             initial_setup=True,
         )
         return SerializedFlowCommands.SerializedVariableCommand(
@@ -3475,10 +3472,8 @@ class FlowManager:
                     sub_flow_commands.append(serialized_flow)
                 else:
                     # For standalone sub-flows, use the existing recursive serialization.
-                    # include_global_variables=False: globals are emitted once on the top-level flow
-                    # to avoid duplicate CreateVariableRequest emissions.
                     with GriptapeNodes.ContextManager().flow(flow=child_flow_obj):
-                        child_flow_request = SerializeFlowToCommandsRequest(include_global_variables=False)
+                        child_flow_request = SerializeFlowToCommandsRequest()
                         child_flow_result = GriptapeNodes().handle_request(child_flow_request)
                         if not isinstance(child_flow_result, SerializeFlowToCommandsResultSuccess):
                             details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
@@ -3565,13 +3560,10 @@ class FlowManager:
         # Aggregate all connections from this flow and all sub-flows
         aggregated_connections = self._aggregate_connections(create_connection_commands, sub_flow_commands)
 
-        # Serialize variables owned by this flow. Globals are only emitted on the top-level call so
-        # they appear exactly once in the saved workflow — recursive sub-flow serialization passes
-        # include_global_variables=False.
+        # Serialize flow-scoped variables owned by this flow.
         serialized_variable_commands = self._serialize_variables_for_flow(
             flow_name=flow_name,
             unique_parameter_uuid_to_values=aggregated_unique_values,
-            include_globals=request.include_global_variables,
         )
 
         # Extract flow name from initialization command if available

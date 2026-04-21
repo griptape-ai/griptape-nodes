@@ -2311,30 +2311,6 @@ class WorkflowManager:
                 # No initialization command, deserialize into current context
                 pass
 
-        # Split variable commands into globals (emitted at top level, before any flow context)
-        # and flow-scoped (emitted inside the owning flow's "with" block, before its nodes).
-        global_variable_commands = [
-            cmd
-            for cmd in serialized_flow_commands.serialized_variable_commands
-            if cmd.create_variable_command.is_global
-        ]
-        flow_scoped_variable_commands = [
-            cmd
-            for cmd in serialized_flow_commands.serialized_variable_commands
-            if not cmd.create_variable_command.is_global
-        ]
-
-        # Emit top-level global variable creation BEFORE the flow "with" block. Globals are
-        # scope-independent, so they do not need a flow context.
-        if not isinstance(flow_initialization_command, ImportWorkflowAsReferencedSubFlowRequest):
-            global_variable_asts = self._generate_create_variable_code(
-                serialized_variable_commands=global_variable_commands,
-                unique_values_dict_name="top_level_unique_values_dict",
-                import_recorder=import_recorder,
-            )
-            for node in global_variable_asts:
-                ast_container.add_node(node)
-
         # Generate assign flow context AST node, if we have any children commands
         # Skip content generation for referenced workflows - they should only have the import command
         is_referenced_workflow = isinstance(flow_initialization_command, ImportWorkflowAsReferencedSubFlowRequest)
@@ -2344,7 +2320,7 @@ class WorkflowManager:
             or len(serialized_flow_commands.set_parameter_value_commands) > 0
             or len(serialized_flow_commands.sub_flows_commands) > 0
             or len(serialized_flow_commands.set_lock_commands_per_node) > 0
-            or len(flow_scoped_variable_commands) > 0
+            or len(serialized_flow_commands.serialized_variable_commands) > 0
         )
 
         if not is_referenced_workflow and has_content_to_serialize:
@@ -2364,7 +2340,7 @@ class WorkflowManager:
             # during initial_setup and calls has_variable(); having the variable already
             # present ensures that hook is a no-op adopt rather than a duplicate create.
             flow_scoped_variable_asts = self._generate_create_variable_code(
-                serialized_variable_commands=flow_scoped_variable_commands,
+                serialized_variable_commands=serialized_flow_commands.serialized_variable_commands,
                 unique_values_dict_name="top_level_unique_values_dict",
                 import_recorder=import_recorder,
             )
@@ -2425,17 +2401,8 @@ class WorkflowManager:
                             )
                             assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_import_node))
 
-                # Sub-flow serialization passes include_global_variables=False, so every entry
-                # here is a flow-scoped variable belonging to this sub-flow. (Globals emit once
-                # at the top level of the root flow.)
-                sub_flow_scoped_variable_commands = [
-                    cmd
-                    for cmd in sub_flow_commands.serialized_variable_commands
-                    if not cmd.create_variable_command.is_global
-                ]
-
                 # Generate the nodes in this subflow (just like we do for main flow)
-                if sub_flow_commands.serialized_node_commands or sub_flow_scoped_variable_commands:
+                if sub_flow_commands.serialized_node_commands or sub_flow_commands.serialized_variable_commands:
                     # Create "with" statement for subflow
                     subflow_context_node = self._generate_assign_flow_context(
                         flow_initialization_command=sub_flow_initialization_command,
@@ -2444,7 +2411,7 @@ class WorkflowManager:
                     # Emit flow-scoped variable creation BEFORE any node creation in this subflow,
                     # for the same reason as the top-level flow.
                     subflow_variable_asts = self._generate_create_variable_code(
-                        serialized_variable_commands=sub_flow_scoped_variable_commands,
+                        serialized_variable_commands=sub_flow_commands.serialized_variable_commands,
                         unique_values_dict_name="top_level_unique_values_dict",
                         import_recorder=import_recorder,
                     )

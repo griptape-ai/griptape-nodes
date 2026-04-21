@@ -25,8 +25,7 @@ class CreateVariableRequest(RequestPayload):
         value: The initial value of the variable
         owning_flow: Flow that should own this variable (None for current flow in the Context Manager)
         initial_setup: If True, this request is part of workflow load/deserialization. Suppresses
-            workflow-altered signalling and, for globals, adopts an existing variable of the same
-            name rather than failing on collision.
+            workflow-altered signalling.
     """
 
     name: str

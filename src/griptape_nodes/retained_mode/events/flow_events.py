@@ -282,15 +282,11 @@ class SerializeFlowToCommandsRequest(RequestPayload):
         include_create_flow_command (bool): If set to False, this will omit the CreateFlow call from the serialized flow object.
             This can be useful so that the contents of a flow can be deserialized into an existing flow instead of creating a new one and deserializing the nodes into that.
             Copy/paste can make use of this.
-        include_global_variables (bool): If True, serialize global variables alongside this flow's flow-scoped variables.
-            Set to False on recursive sub-flow serialization so globals appear exactly once (at the top-level flow's
-            serialization).
     """
 
     broadcast_result: bool = False
     flow_name: str | None = None
     include_create_flow_command: bool = True
-    include_global_variables: bool = True
 
 
 @dataclass

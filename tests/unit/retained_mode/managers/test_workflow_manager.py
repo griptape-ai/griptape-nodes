@@ -931,8 +931,8 @@ class TestWorkflowVariablePersistence:
         imports_text = import_recorder.generate_imports()
         assert "CreateVariableRequest" in imports_text
 
-    def test_save_load_preserves_flow_and_global_variables(self, griptape_nodes: GriptapeNodes) -> None:
-        """Round-trip: create variables, serialize, clear, exec, confirm both are restored."""
+    def test_save_load_preserves_flow_scoped_variables(self, griptape_nodes: GriptapeNodes) -> None:
+        """Round-trip: create a flow-scoped variable, serialize, clear, exec, confirm it is restored."""
         from griptape_nodes.retained_mode.events.flow_events import (
             CreateFlowRequest,
             CreateFlowResultSuccess,
@@ -959,7 +959,7 @@ class TestWorkflowVariablePersistence:
         if not context_manager.has_current_workflow():
             context_manager.push_workflow(workflow_name="round_trip_workflow")
 
-        # Create a flow with one flow-scoped variable + one global.
+        # Create a flow with one flow-scoped variable.
         flow_result = GriptapeNodes.handle_request(
             CreateFlowRequest(parent_flow_name=None, flow_name="ControlFlow_1", set_as_new_context=False)
         )
@@ -974,23 +974,17 @@ class TestWorkflowVariablePersistence:
             ),
             CreateVariableResultSuccess,
         )
-        assert isinstance(
-            GriptapeNodes.handle_request(
-                CreateVariableRequest(name="global_var", type="str", is_global=True, value="world")
-            ),
-            CreateVariableResultSuccess,
-        )
 
         # Serialize.
         serialize_result = GriptapeNodes.handle_request(SerializeFlowToCommandsRequest(flow_name=flow_name))
         assert isinstance(serialize_result, SerializeFlowToCommandsResultSuccess)
         serialized_commands = serialize_result.serialized_flow_commands
 
-        # Both variables should be serialized (flow-scoped + global).
+        # The flow-scoped variable should be serialized.
         names_serialized = {
             cmd.create_variable_command.name for cmd in serialized_commands.serialized_variable_commands
         }
-        assert names_serialized == {"flow_scoped_var", "global_var"}
+        assert names_serialized == {"flow_scoped_var"}
 
         # Generate the workflow script.
         metadata = self._fresh_metadata(name="test_round_trip")
@@ -999,14 +993,11 @@ class TestWorkflowVariablePersistence:
             workflow_metadata=metadata,
         )
 
-        # Script must reference CreateVariableRequest for both variables.
-        expected_create_variable_calls = 2  # one flow-scoped, one global
-        assert script_source.count("CreateVariableRequest(") >= expected_create_variable_calls
+        # Script must reference CreateVariableRequest for the flow-scoped variable.
+        assert "CreateVariableRequest(" in script_source
         assert "name='flow_scoped_var'" in script_source
-        assert "name='global_var'" in script_source
-        assert "is_global=True" in script_source
 
-        # Clear everything, then exec the script and confirm variables are rebuilt.
+        # Clear everything, then exec the script and confirm the variable is rebuilt.
         GriptapeNodes.clear_data()
         variables_manager.on_clear_object_state()
 
@@ -1020,38 +1011,3 @@ class TestWorkflowVariablePersistence:
         )
         assert isinstance(flow_value, GetVariableValueResultSuccess)
         assert flow_value.value == "dog"
-
-        # Globals are stored directly on the manager; no flow context needed for this assertion.
-        assert "global_var" in variables_manager._global_variables
-        assert variables_manager._global_variables["global_var"].value == "world"
-
-    def test_global_adopt_on_second_load(self, griptape_nodes: GriptapeNodes) -> None:
-        """Loading twice without clearing should adopt the existing global rather than failing."""
-        from griptape_nodes.retained_mode.events.variable_events import (
-            CreateVariableRequest,
-            CreateVariableResultFailure,
-            CreateVariableResultSuccess,
-        )
-
-        variables_manager = griptape_nodes.VariablesManager()
-        GriptapeNodes.clear_data()
-        variables_manager.on_clear_object_state()
-
-        # First creation succeeds.
-        first = GriptapeNodes.handle_request(
-            CreateVariableRequest(name="shared", type="str", is_global=True, value="first", initial_setup=True)
-        )
-        assert isinstance(first, CreateVariableResultSuccess)
-
-        # Second with initial_setup=True adopts, returning success without overwriting.
-        second = GriptapeNodes.handle_request(
-            CreateVariableRequest(name="shared", type="str", is_global=True, value="second", initial_setup=True)
-        )
-        assert isinstance(second, CreateVariableResultSuccess)
-        assert variables_manager._global_variables["shared"].value == "first"
-
-        # Without initial_setup, a collision still fails.
-        third = GriptapeNodes.handle_request(
-            CreateVariableRequest(name="shared", type="str", is_global=True, value="third", initial_setup=False)
-        )
-        assert isinstance(third, CreateVariableResultFailure)
