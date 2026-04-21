@@ -63,11 +63,16 @@ class CreateStaticFileUploadUrlRequest(RequestPayload):
 
     Args:
         file_name: Name of the file to be uploaded
+        situation_name: Project template situation to use for resolving the upload
+            path. Defaults to ``copy_external_file``. Callers that write to a
+            workspace-internal location (e.g. workflow thumbnails) should pass the
+            matching situation name.
 
     Results: CreateStaticFileUploadUrlResultSuccess (with URL and headers) | CreateStaticFileUploadUrlResultFailure (URL creation error)
     """
 
     file_name: str
+    situation_name: str = "copy_external_file"
 
 
 @dataclass
@@ -110,11 +115,15 @@ class CreateStaticFileDownloadUrlRequest(RequestPayload):
 
     Args:
         file_name: Name of the file to be downloaded from the staticfiles directory
+        situation_name: Project template situation to use for resolving the download
+            path. Defaults to ``copy_external_file`` to match the symmetric upload
+            request.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """
 
     file_name: str
+    situation_name: str = "copy_external_file"
 
 
 @dataclass

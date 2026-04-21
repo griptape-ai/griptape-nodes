@@ -375,7 +375,13 @@ def resolve_file_path(path_str: str, base_dir: Path) -> Path:
         Resolved Path object
     """
     if path_needs_expansion(path_str):
-        return expand_path(path_str)
+        expanded = expand_path(path_str)
+        # Expansion can leave a path still relative when it doesn't match an env var
+        # (e.g. URL-encoded filenames like "foo%20bar.png" which contain '%' but are not
+        # Windows env var references). In that case we still need to anchor to base_dir.
+        if expanded.is_absolute():
+            return expanded
+        return resolve_path_safely(base_dir / expanded)
     return resolve_path_safely(base_dir / path_str)
 
 

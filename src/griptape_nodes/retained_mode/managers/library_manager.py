@@ -44,7 +44,6 @@ from griptape_nodes.node_library.library_registry import (
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
     AppSessionStartedEvent,
-    ConfigChanged,
     EngineInitializationProgress,
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -56,7 +55,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import AppEvent, EventRequest, ResultDetails, ResultPayloadFailure
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails, ResultPayloadFailure
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -443,13 +442,116 @@ class LibraryManager:
             self.on_app_initialization_complete,
         )
         event_manager.add_listener_to_app_event(
-            ConfigChanged,
-            self.on_config_changed,
+            AppSessionStartedEvent,
+            self._on_session_started,
         )
         event_manager.add_listener_to_app_event(
             AppSessionStartedEvent,
             self._on_session_started,
         )
+
+        worker_manager.register_worker_evicted_callback(self.on_worker_evicted)
+        self._pre_reload_callbacks.append(worker_manager.reset_workers)
+
+    def register_pre_reload_callback(self, callback: Callable[[], Awaitable[None]]) -> None:
+        """Register a callback invoked immediately before all libraries are reloaded.
+
+        Callbacks fire after all libraries have been unloaded, before
+        load_all_libraries_from_config runs. Use this to clean up state
+        (e.g. terminate worker processes) that must be reset for the reload to
+        succeed.
+        """
+        self._pre_reload_callbacks.append(callback)
+
+    async def _on_library_loaded_notification(self, notification: LibraryLoadedNotification) -> None:
+        """Update LibraryInfo fitness and state when a library load outcome is reported."""
+        library_info = self.get_library_info_by_library_name(notification.library_name)
+        if library_info is None:
+            logger.warning(
+                "Received LibraryLoadedNotification for unknown library '%s'.",
+                notification.library_name,
+            )
+            return
+        library_info.fitness = LibraryManager.LibraryFitness(notification.fitness)
+        library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
+        if notification.problem_details:
+            logger.warning(
+                "Worker reported problems loading library '%s': %s",
+                notification.library_name,
+                notification.problem_details,
+            )
+        # Register stub node classes from the worker-reported schemas so the orchestrator
+        # can display nodes in the sidebar and recreate them during workflow loading.
+        # Skip on the worker itself -- it already has the real node classes registered.
+        if notification.node_schemas and not self._is_worker:
+            self._register_nodes_from_worker_schemas(notification.library_name, notification.node_schemas)
+        # Unblock any code awaiting this library's worker_ready event.
+        if library_info.worker_ready is not None:
+            library_info.worker_ready.set()
+
+    def get_worker_for_library(self, library_name: str | None) -> tuple[str, str] | None:
+        """Return (worker_engine_id, worker_request_topic) for the worker serving library_name, or None.
+
+        Raises RuntimeError if the library requires a dedicated worker but none is registered yet.
+        Returns None if no worker is registered and none is required.
+        """
+        if library_name:
+            library_info = self.get_library_info_by_library_name(library_name)
+            if library_info and library_info.requires_worker:
+                wm = GriptapeNodes.WorkerManager()
+                if wm:
+                    worker = wm.get_worker_for_key(library_name)
+                    if worker:
+                        return worker
+                    msg = (
+                        f"Library '{library_name}' requires a dedicated worker process "
+                        "that is not yet registered. The worker may still be starting up."
+                    )
+                    raise RuntimeError(msg)
+                msg = (
+                    f"Library '{library_name}' requires a dedicated worker process. "
+                    "The Worker Manager is not available."
+                )
+                raise RuntimeError(msg)
+        return None
+
+    async def _start_workers(self) -> None:
+        """Issue StartWorkerRequest for every library that requires a dedicated worker.
+
+        Sets each matching library back to WORKER_PENDING and asks WorkerManager to
+        spawn a subprocess.  Used on session start (both initial and subsequent) so
+        that worker creation is always tied to an active session.
+        """
+        for library_info in self._library_file_path_to_info.values():
+            if library_info.requires_worker and library_info.library_name and not self._is_worker:
+                library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.WORKER_PENDING
+                # Create (or reset) the worker_ready event for this spawn.
+                library_info.worker_ready = asyncio.Event()
+                await GriptapeNodes.ahandle_request(StartWorkerRequest(library_name=library_info.library_name))
+
+    def on_worker_evicted(self, worker_engine_id: str, library_name: str | None) -> None:
+        """Called when a worker is evicted by the orchestrator heartbeat monitor.
+
+        Transitions WORKER_PENDING libraries to FAILURE so downstream code and the UI
+        can reflect that the worker did not successfully confirm its library load.
+        The library remains registered in LibraryRegistry so node stubs stay visible.
+        """
+        if not library_name:
+            return
+        library_info = self.get_library_info_by_library_name(library_name)
+        if library_info is None:
+            return
+        if library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.WORKER_PENDING:
+            library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
+            library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+            # Unblock any code awaiting this library's worker_ready event.
+            if library_info.worker_ready is not None:
+                library_info.worker_ready.set()
+            logger.warning(
+                "Worker '%s' evicted before confirming load of library '%s'; library marked as FAILURE.",
+                worker_engine_id,
+                library_name,
+            )
 
         worker_manager.register_worker_evicted_callback(self.on_worker_evicted)
         self._pre_reload_callbacks.append(worker_manager.reset_workers)
@@ -1725,8 +1827,9 @@ class LibraryManager:
                             self._library_file_path_to_info[file_path] = library_info
 
                         # On a worker process, broadcast the notification so app.py can relay it
-                        # to the orchestrator over MQTT. Include serialized node schemas so the
-                        # orchestrator can register stub classes without importing the library.
+                        # to the orchestrator over the transport layer. Include serialized node
+                        # schemas so the orchestrator can register stub classes without importing
+                        # the library.
                         if (
                             self._is_worker
                             and library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.LOADED
@@ -2202,7 +2305,7 @@ class LibraryManager:
         widgets_info: list[WidgetInfo] | None = None
         library_data = library.get_library_data()
         if library_data.widgets:
-            logger.info(
+            logger.debug(
                 "Library '%s' has %d widget(s), building widget info",
                 request.library,
                 len(library_data.widgets),
@@ -3051,31 +3154,6 @@ class LibraryManager:
             padding=(1, 4),
         )
         console.print(message)
-
-    async def on_config_changed(self, event: ConfigChanged) -> None:
-        """Handle config changes to reload libraries when needed.
-
-        Responds to:
-        - libraries_to_register changes: Full library reload
-        """
-        if event.key == LIBRARIES_TO_REGISTER_KEY and event.old_value != event.new_value:
-            if self._is_worker:
-                # Workers only load their designated library once; they should not reload
-                # themselves in response to config changes.
-                return
-
-            logger.info("Config change detected for %s, triggering library reload", event.key)
-
-            # Enqueue the reload as a new EventRequest on loop A rather than awaiting it inline.
-            # Awaiting inline runs via broadcast_app_event's ThreadRunner, which blocks loop A's
-            # thread entirely. While blocked, loop A cannot process worker notifications
-            # (_on_library_loaded_notification), so _await_pending_workers inside
-            # reload_libraries_request never unblocks and times out after the worker-startup
-            # grace period.
-            # Enqueueing here returns immediately; loop A processes the reload normally and
-            # remains free to handle worker notifications concurrently.
-            reload_request = ReloadAllLibrariesRequest(broadcast_result=False)
-            GriptapeNodes.EventManager().put_event(EventRequest(request=reload_request))
 
     def _load_advanced_library_module(
         self,
@@ -3939,7 +4017,8 @@ class LibraryManager:
         for library_path_str in config_libraries:
             # Filter out falsy values that will resolve to current directory
             if library_path_str:
-                library_path = Path(library_path_str)
+                # TODO: Update to check on project manager for workspace path. https://github.com/griptape-ai/griptape-nodes/issues/4396
+                library_path = resolve_workspace_path(Path(library_path_str), Path(config_mgr.workspace_path))
                 if library_path.exists():
                     process_path(library_path)
 

@@ -534,8 +534,7 @@ class NodeManager:
 
         log_level = logging.DEBUG
         if remapped_requested_node_name:
-            log_level = logging.WARNING
-            details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
+            details = f"{details}. Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         # Special handling for paired classes (e.g., create a Start node and it automatically creates a corresponding End node already connected).
         if isinstance(node, BaseIterativeStartNode) and not request.initial_setup:
@@ -2574,11 +2573,11 @@ class NodeManager:
                         # Compare types for compatibility
                         types_compatible = False
                         if request_mode == ParameterMode.INPUT:
-                            # See if THEIR inputs would accept MY output
-                            types_compatible = test_param.is_incoming_type_allowed(request_param.output_type)
-                        else:
                             # See if MY inputs would accept THEIR output
                             types_compatible = request_param.is_incoming_type_allowed(test_param.output_type)
+                        else:
+                            # See if THEIR inputs would accept MY output
+                            types_compatible = test_param.is_incoming_type_allowed(request_param.output_type)
 
                         if types_compatible:
                             param_and_mode = ParameterAndMode(

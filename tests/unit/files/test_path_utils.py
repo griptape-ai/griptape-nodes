@@ -280,6 +280,41 @@ class TestResolveFilePath:
         assert result.is_absolute()
         assert str(result).startswith(str(tmp_path))
 
+    def test_anchors_url_encoded_filename_to_base_dir(self, tmp_path: Path) -> None:
+        """URL-encoded filenames trip path_needs_expansion via '%' but contain no env var.
+
+        So expand_path returns the original relative string. The result must still be
+        anchored to base_dir instead of being returned as a relative path.
+        """
+        filename = "As%20Fast%20As%20Can%20Be-thumbnail-2026-01-14.png"
+
+        result = resolve_file_path(filename, tmp_path)
+
+        assert result.is_absolute()
+        assert result == tmp_path / filename
+
+    def test_anchors_dollar_sign_filename_to_base_dir(self, tmp_path: Path) -> None:
+        """Filenames containing '$' with no matching env var must still be joined to base_dir."""
+        filename = "price$5.png"
+
+        result = resolve_file_path(filename, tmp_path)
+
+        assert result.is_absolute()
+        assert result == tmp_path / filename
+
+    def test_expands_env_var_path_outside_base_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A path whose env var expands to an absolute location must keep that absolute location.
+
+        It must NOT be re-anchored to base_dir.
+        """
+        target = tmp_path / "external"
+        target.mkdir()
+        monkeypatch.setenv("RESOLVE_FILE_PATH_TEST_DIR", str(target))
+
+        result = resolve_file_path("$RESOLVE_FILE_PATH_TEST_DIR/file.txt", Path("/unused/base"))
+
+        assert result == target / "file.txt"
+
 
 class TestParseFileUri:
     """Tests for parse_file_uri function."""

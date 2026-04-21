@@ -27,7 +27,9 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
+from griptape_nodes.files.file import FileLoadError
 from griptape_nodes.files.path_utils import derive_registry_key, resolve_workspace_path
+from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
     WorkflowMetadata,
@@ -86,6 +88,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
     DeleteWorkflowResultSuccess,
+    GetPublishOptionsRequest,
+    GetPublishOptionsResultFailure,
+    GetPublishOptionsResultSuccess,
     GetWorkflowInfoRequest,
     GetWorkflowInfoResultFailure,
     GetWorkflowInfoResultSuccess,
@@ -119,6 +124,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     MoveWorkflowRequest,
     MoveWorkflowResultFailure,
     MoveWorkflowResultSuccess,
+    PublishWorkflowRegisteredEventData,
     PublishWorkflowRequest,
     PublishWorkflowResultFailure,
     PublishWorkflowResultSuccess,
@@ -359,6 +365,10 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             PublishWorkflowRequest,
             self.on_publish_workflow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            GetPublishOptionsRequest,
+            self.on_get_publish_options_request,
         )
         event_manager.assign_manager_to_request_type(
             SetWorkflowMetadataRequest,
@@ -1674,6 +1684,56 @@ class WorkflowManager:
         success: bool
         error_details: str
 
+    class WorkflowSavePath(NamedTuple):
+        """Absolute save path and its registry-relative form."""
+
+        file_path: Path
+        relative_file_path: str
+
+    def _build_workflow_save_path(self, file_name: str, sub_dirs: str | None = None) -> WorkflowSavePath:
+        """Resolve a workflow save path via the ``save_workflow`` situation.
+
+        Returns the absolute save path plus a registry-relative form. When the
+        resolved path lives inside the workspace the relative form stays
+        workspace-relative; otherwise it falls back to the absolute path string
+        so registry lookups land at the same location. If the situation cannot
+        resolve (e.g., no project loaded), we fall through to the plain
+        workspace path.
+        """
+        extra_vars: dict[str, str | int] = {}
+        if sub_dirs:
+            extra_vars["sub_dirs"] = sub_dirs
+
+        destination = ProjectFileDestination.from_situation(file_name, "save_workflow", **extra_vars)
+        relative_file_path = str(Path(sub_dirs) / file_name) if sub_dirs else file_name
+        try:
+            resolved = Path(destination.resolve())
+        except FileLoadError as err:
+            workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            fallback_path = workspace_path.joinpath(relative_file_path)
+            logger.debug(
+                "save_workflow situation unavailable for '%s' (%s); falling back to workspace path %s",
+                file_name,
+                err,
+                fallback_path,
+            )
+            return WorkflowManager.WorkflowSavePath(
+                file_path=fallback_path,
+                relative_file_path=relative_file_path,
+            )
+
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        try:
+            workspace_relative = resolved.relative_to(workspace_path)
+        except ValueError:
+            # TODO: store the macro form (e.g. "{workspace_dir}/foo.py") in the
+            # registry so out-of-workspace save locations stay portable across
+            # machines. Tracked in
+            # https://github.com/griptape-ai/griptape-nodes/issues/2047.
+            return WorkflowManager.WorkflowSavePath(file_path=resolved, relative_file_path=str(resolved))
+
+        return WorkflowManager.WorkflowSavePath(file_path=resolved, relative_file_path=str(workspace_relative))
+
     def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
         """Write workflow content to file with proper validation and error handling.
 
@@ -1751,7 +1811,7 @@ class WorkflowManager:
         branched_from = save_target.branched_from
         registry_key = derive_registry_key(relative_file_path)
 
-        logger.info(
+        logger.debug(
             "Save workflow: scenario=%s, file_name=%s, file_path=%s, branched_from=%s",
             save_target.scenario.value,
             file_name,
@@ -1935,8 +1995,7 @@ class WorkflowManager:
             file_name = self._generate_unique_filename(base_name)
             creation_date = datetime.now(tz=UTC)
             branched_from = None
-            relative_file_path = f"{file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py")
 
         elif target_workflow:
             # Requested name exists in registry → overwrite it
@@ -1957,11 +2016,15 @@ class WorkflowManager:
             current_dir = Path(current_workflow.file_path).parent
             # If current_dir is absolute, the workflow lives outside the workspace;
             # save the copy to the workspace root so the registry key stays relative.
-            if current_dir.is_absolute():
-                relative_file_path = f"{file_name}.py"
+            # Path(".").parent evaluates to Path(".") (a bare filename with no
+            # parent), which would pass "." through as a sub_dirs value and
+            # produce a spurious "./" prefix in the save path. Treat it as
+            # "no sub-directory" to keep the resolved path flat.
+            if current_dir.is_absolute() or str(current_dir) == ".":
+                sub_dirs = None
             else:
-                relative_file_path = str(current_dir / f"{file_name}.py")
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+                sub_dirs = str(current_dir)
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py", sub_dirs=sub_dirs)
 
         else:
             # No requested name or no current workflow → first save
@@ -1969,8 +2032,7 @@ class WorkflowManager:
             file_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
             creation_date = datetime.now(tz=UTC)
             branched_from = None
-            relative_file_path = f"{file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py")
 
         # Ensure creation date is valid (backcompat)
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
@@ -1994,9 +2056,8 @@ class WorkflowManager:
             # Use provided file path
             file_path = Path(request.file_path)
         else:
-            # Default to workspace path
-            relative_file_path = f"{request.file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            # Resolve via the save_workflow situation (workspace-relative by default).
+            file_path = self._build_workflow_save_path(f"{request.file_name}.py").file_path
 
         # Use provided creation date or default to current time
         creation_date = request.creation_date
@@ -4287,6 +4348,24 @@ class WorkflowManager:
             WorkflowShape object with inputs and outputs
         """
         return WorkflowShape(inputs=input_node_params, outputs=output_node_params)
+
+    def on_get_publish_options_request(self, request: GetPublishOptionsRequest) -> ResultPayload:
+        event_handler_mappings = GriptapeNodes.LibraryManager().get_registered_event_handlers(
+            request_type=PublishWorkflowRequest
+        )
+        publishing_handler = event_handler_mappings.get(request.publisher_name)
+        if publishing_handler is None:
+            details = f"No publishing handler found for '{request.publisher_name}'."
+            return GetPublishOptionsResultFailure(exception=ValueError(details), result_details=details)
+
+        event_data = publishing_handler.event_data
+        if isinstance(event_data, PublishWorkflowRegisteredEventData) and event_data.get_publish_options is not None:
+            return event_data.get_publish_options(request)
+
+        return GetPublishOptionsResultSuccess(
+            fields=[],
+            result_details="No custom publish options for this publisher.",
+        )
 
     async def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:

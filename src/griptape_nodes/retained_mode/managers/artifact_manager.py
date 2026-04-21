@@ -100,6 +100,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
     normalize_friendly_name_to_key,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.utils.async_utils import to_thread
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -396,7 +397,9 @@ class ArtifactManager:
                 return GeneratePreviewResultFailure(result_details=error_details)
 
             # Step 1: Create metadata object
-            _artifact_metadata = provider_class.get_artifact_metadata(source_path)
+            # Run in a thread because video providers shell out to ffprobe synchronously,
+            # which would otherwise block the event loop.
+            _artifact_metadata = await to_thread(provider_class.get_artifact_metadata, source_path)
             metadata = PreviewMetadata(
                 version=PreviewMetadata.LATEST_SCHEMA_VERSION,
                 source_macro_path=request.macro_path.parsed_macro.template,
@@ -580,7 +583,7 @@ class ArtifactManager:
                     generate_result = await self.on_handle_generate_preview_from_defaults_request(generate_request)
 
                     if isinstance(generate_result, GeneratePreviewFromDefaultsResultSuccess):
-                        _artifact_metadata = provider_class.get_artifact_metadata(str(source_path))
+                        _artifact_metadata = await to_thread(provider_class.get_artifact_metadata, str(source_path))
                         return GetPreviewForArtifactResultSuccess(
                             result_details=f"Preview generated for '{source_path}'",
                             paths_to_preview=generate_result.paths_to_preview,
@@ -734,7 +737,7 @@ class ArtifactManager:
             generate_result = await self.on_handle_generate_preview_from_defaults_request(generate_request)
 
             if isinstance(generate_result, GeneratePreviewFromDefaultsResultSuccess):
-                _artifact_metadata = provider_class.get_artifact_metadata(str(source_path))
+                _artifact_metadata = await to_thread(provider_class.get_artifact_metadata, str(source_path))
                 return GetPreviewForArtifactResultSuccess(
                     result_details=f"Preview regenerated for '{source_path}'",
                     paths_to_preview=generate_result.paths_to_preview,
