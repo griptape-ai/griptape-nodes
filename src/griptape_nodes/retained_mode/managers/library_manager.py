@@ -1721,8 +1721,9 @@ class LibraryManager:
                             self._library_file_path_to_info[file_path] = library_info
 
                         # On a worker process, broadcast the notification so app.py can relay it
-                        # to the orchestrator over MQTT. Include serialized node schemas so the
-                        # orchestrator can register stub classes without importing the library.
+                        # to the orchestrator over the transport layer. Include serialized node
+                        # schemas so the orchestrator can register stub classes without importing
+                        # the library.
                         if (
                             self._is_worker
                             and library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.LOADED

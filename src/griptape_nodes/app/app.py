@@ -311,7 +311,7 @@ async def _run_worker(client: Client, role: Worker) -> None:
     # routing intermediate events (AppEvents, ProgressEvents) directly to the GUI.
     griptape_nodes.SessionManager().active_session_id = role.session_id
 
-    # Relay LibraryLoadedNotification events to the orchestrator over MQTT.
+    # Relay LibraryLoadedNotification events to the orchestrator over the transport layer.
     # LibraryManager broadcasts these when a library finishes loading on this worker;
     # publishing them to the session request topic lets the orchestrator update its state.
     #
