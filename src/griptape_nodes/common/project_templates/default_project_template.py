@@ -10,7 +10,7 @@ from griptape_nodes.common.project_templates.situation import (
 
 # Default project template matching the values from project_template.yml
 DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
-    project_template_schema_version="0.1.0",
+    project_template_schema_version="0.2.0",
     name="Default Project",
     description="System default configuration",
     directories={

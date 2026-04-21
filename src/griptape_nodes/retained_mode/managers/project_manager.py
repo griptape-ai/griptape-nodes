@@ -76,6 +76,8 @@ from griptape_nodes.retained_mode.events.project_events import (
     UnregisterProjectTemplateRequest,
     UnregisterProjectTemplateResultFailure,
     UnregisterProjectTemplateResultSuccess,
+    ValidateProjectTemplateRequest,
+    ValidateProjectTemplateResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
@@ -223,6 +225,9 @@ class ProjectManager:
         )
         event_manager.assign_manager_to_request_type(
             UnregisterProjectTemplateRequest, self.on_unregister_project_template_request
+        )
+        event_manager.assign_manager_to_request_type(
+            ValidateProjectTemplateRequest, self.on_validate_project_template_request
         )
 
         # Register app initialization listener
@@ -727,6 +732,38 @@ class ProjectManager:
         return SaveProjectTemplateResultSuccess(
             result_details=f"Successfully saved project template to '{request.project_path}'",
         )
+
+    def on_validate_project_template_request(
+        self, request: ValidateProjectTemplateRequest
+    ) -> ValidateProjectTemplateResultSuccess:
+        """Dry-run validate a template dict.
+
+        Runs the same validation the load path runs (pydantic model validation
+        plus macro parsing for situations and directories), but does not touch
+        disk or the template registry. Always returns Success; callers inspect
+        `validation.status` to decide whether the template is usable.
+        """
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+
+        try:
+            template = ProjectTemplate.model_validate(request.template_data)
+        except ValidationError as e:
+            for error in e.errors():
+                field_path = ".".join(str(loc) for loc in error["loc"])
+                validation.add_error(field_path=field_path, message=error["msg"])
+            return ValidateProjectTemplateResultSuccess(
+                validation=validation,
+                result_details=f"Template validation failed with {len(validation.problems)} problem(s)",
+            )
+
+        self._parse_situation_macros(template.situations, validation)
+        self._parse_directory_macros(template.directories, validation)
+
+        if validation.status == ProjectValidationStatus.GOOD:
+            details = "Template is valid"
+        else:
+            details = f"Template validation found {len(validation.problems)} problem(s) (status: {validation.status})"
+        return ValidateProjectTemplateResultSuccess(validation=validation, result_details=details)
 
     def on_unregister_project_template_request(
         self, request: UnregisterProjectTemplateRequest

@@ -27,7 +27,7 @@ class TestLibraryManagerDeterministicOrdering:
     def temp_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
+            yield Path(tmpdir).resolve()
 
     def test_discover_library_files_preserves_config_order(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test that _discover_library_files preserves the order from libraries_to_register."""
