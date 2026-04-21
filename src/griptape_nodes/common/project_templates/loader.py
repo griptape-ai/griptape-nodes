@@ -373,10 +373,8 @@ def _split_tombstones(raw: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], s
     for key, value in raw.items():
         if value is None:
             removed.add(key)
-        elif isinstance(value, dict):
-            active[key] = value
         else:
-            active[key] = value  # let merge surface a type error with context
+            active[key] = value
     return active, removed
 
 
