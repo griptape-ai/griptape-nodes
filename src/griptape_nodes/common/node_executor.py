@@ -8,7 +8,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import anyio
 
@@ -41,7 +41,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
-from griptape_nodes.retained_mode.events.base_events import ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import EventRequest, ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -53,9 +53,13 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
+    ExecuteNodeRequest,
+    ExecuteNodeResultFailure,
+    ExecuteNodeResultSuccess,
     GriptapeEvent,
     InvolvedNodesEvent,
     NodeFinishProcessEvent,
+    NodeMetadata,
     NodeResolvedEvent,
     NodeStartProcessEvent,
     NodeUnresolvedEvent,
@@ -114,6 +118,7 @@ from griptape_nodes.retained_mode.managers.event_manager import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -205,6 +210,35 @@ class LoopBodyNodes(NamedTuple):
     node_group_name: str | None
 
 
+async def _execute_node_on_worker(
+    wm: WorkerManager,
+    node: BaseNode,
+    worker: tuple[str, str],
+) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
+    """Execute a node on a worker.
+
+    Sends a single ExecuteNodeRequest carrying node_metadata. The worker creates
+    the node on first call (idempotent — no-op if already present) then executes it.
+    """
+    worker_engine_id, worker_request_topic = worker
+    execute_raw = await wm.route_to_worker(
+        EventRequest(
+            request=ExecuteNodeRequest(
+                node_name=node.name,
+                parameter_values=dict(node.parameter_values),
+                node_metadata=cast("NodeMetadata", dict(node.metadata)),
+            )
+        ),
+        worker_engine_id,
+        worker_request_topic,
+    )
+    result_type_name = execute_raw.get("result_type", "")
+    result_data = execute_raw.get("result", {})
+    if result_type_name == ExecuteNodeResultSuccess.__name__:
+        return ExecuteNodeResultSuccess(**result_data)
+    return ExecuteNodeResultFailure(**result_data)
+
+
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
@@ -259,8 +293,25 @@ class NodeExecutor:
                 await self.handle_loop_execution(node)
                 return
 
-            # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-            await node.aprocess()
+            wm = GriptapeNodes.WorkerManager()
+            library_name = node.metadata.get("library")
+            worker = GriptapeNodes.LibraryManager().get_worker_for_library(library_name) if library_name else None
+            if wm and worker:
+                result = await _execute_node_on_worker(wm, node, worker)
+            else:
+                result = await GriptapeNodes.ahandle_request(
+                    ExecuteNodeRequest(
+                        node_name=node.name,
+                        parameter_values=dict(node.parameter_values),
+                        node_metadata=cast("NodeMetadata", dict(node.metadata)),
+                    )
+                )
+            if isinstance(result, ExecuteNodeResultSuccess):
+                for name, value in result.parameter_output_values.items():
+                    node.set_parameter_value(name, value)
+            else:
+                msg = f"Node '{node.name}' execution failed: {result.result_details}"
+                raise RuntimeError(msg)  # noqa: TRY004
         finally:
             current_executing_node_name.reset(token)
 

@@ -1,23 +1,55 @@
 """Tests for WorkerManager.
 
-Covers registration, heartbeat, eviction, unregistration, and the relay
-filter that keeps internal health-check results off the GUI topic.
+Covers registration, heartbeat, eviction, unregistration, the relay
+filter that keeps internal health-check results off the GUI topic, and
+the route_to_worker / pending-future mechanism.
 """
 
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+import json
+import time
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
-from griptape_nodes.app.worker_manager import WorkerManager
+from griptape_nodes.api_client.request_client import _PendingRequest
+from griptape_nodes.app.worker_manager import WorkerManager, WorkerRegistration
 from griptape_nodes.retained_mode.events import worker_events
+from griptape_nodes.retained_mode.events.base_events import EventRequest
+from griptape_nodes.retained_mode.events.execution_events import (
+    ExecuteNodeRequest,
+    ExecuteNodeResultSuccess,
+)
 
 _SESSION = "sess-abc"
 _ENGINE = "eng-xyz"
 _WORKER_REQUEST_TOPIC = f"sessions/{_SESSION}/workers/{_ENGINE}/request"
 _WORKER_RESPONSE_TOPIC = f"sessions/{_SESSION}/workers/{_ENGINE}/response"
+
+
+class _FakeRequestClient:
+    """Minimal RequestClient stand-in for unit tests.
+
+    Implements only the methods WorkerManager calls so tests remain isolated
+    from the real Client/WebSocket machinery.
+    """
+
+    def __init__(self) -> None:
+        self._pending_requests: dict[str, _PendingRequest] = {}
+
+    async def track_request(self, request_id: str, tag: str = "") -> asyncio.Future:
+        future: asyncio.Future = asyncio.Future()
+        self._pending_requests[request_id] = _PendingRequest(future, tag)
+        return future
+
+    async def cancel_requests_by_tag(self, tag: str) -> None:
+        to_cancel = [rid for rid, entry in self._pending_requests.items() if entry.tag == tag]
+        for rid in to_cancel:
+            entry = self._pending_requests.pop(rid)
+            if not entry.future.done():
+                entry.future.cancel()
 
 
 @pytest.fixture
@@ -26,14 +58,18 @@ def worker_manager() -> WorkerManager:
     gtn = MagicMock()
     gtn.get_session_id.return_value = _SESSION
     gtn.get_engine_id.return_value = _ENGINE
-    return WorkerManager(
-        griptape_nodes=gtn,
-        event_manager=MagicMock(),
+    # WorkerManager reads several float config values at construction; hand back
+    # the declared default so asyncio.wait_for / time arithmetic gets a real number.
+    gtn._config_manager.get_config_value.side_effect = lambda _key, default, cast_type=float: cast_type(default)
+    wm = WorkerManager(griptape_nodes=gtn, event_manager=MagicMock())
+    wm.attach_transport(
         ws_outgoing_queue=asyncio.Queue(),
         send_message=AsyncMock(),
         subscribe_to_topic=AsyncMock(),
         unsubscribe_from_topic=AsyncMock(),
+        request_client=_FakeRequestClient(),  # type: ignore[arg-type]
     )
+    return wm
 
 
 class TestHandleRegisterWorkerRequest:
@@ -43,8 +79,8 @@ class TestHandleRegisterWorkerRequest:
 
         await worker_manager.handle_register_worker_request(request)
 
-        assert _ENGINE in worker_manager._registered_workers
-        assert worker_manager._registered_workers[_ENGINE] == _WORKER_REQUEST_TOPIC
+        assert _ENGINE in worker_manager._workers
+        assert worker_manager._workers[_ENGINE].request_topic == _WORKER_REQUEST_TOPIC
 
     @pytest.mark.asyncio
     async def test_seeds_last_seen_timestamp(self, worker_manager: WorkerManager) -> None:
@@ -61,7 +97,7 @@ class TestHandleRegisterWorkerRequest:
 
         await worker_manager.handle_register_worker_request(request)
 
-        worker_manager._subscribe_to_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
+        worker_manager._tx.subscribe_to_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_returns_success_with_engine_id(self, worker_manager: WorkerManager) -> None:
@@ -95,8 +131,8 @@ class TestWorkerHeartbeatMonitor:
     @pytest.mark.asyncio
     async def test_raises_after_timeout(self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch) -> None:
         """Monitor raises RuntimeError when no heartbeat arrives within the timeout."""
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 0.0)
+        monkeypatch.setattr(worker_manager, "heartbeat_interval_s", 0.01)
+        monkeypatch.setattr(worker_manager, "heartbeat_timeout_s", 0.0)
         worker_manager._worker_heartbeat_last_received_at = 0.0
 
         with pytest.raises(RuntimeError, match="Orchestrator heartbeat lost"):
@@ -107,8 +143,8 @@ class TestWorkerHeartbeatMonitor:
         self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Monitor does not raise when the timestamp is kept current."""
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_INTERVAL_S", 0.01)
-        monkeypatch.setattr(WorkerManager, "HEARTBEAT_TIMEOUT_S", 60.0)
+        monkeypatch.setattr(worker_manager, "heartbeat_interval_s", 0.01)
+        monkeypatch.setattr(worker_manager, "heartbeat_timeout_s", 60.0)
 
         task = asyncio.create_task(worker_manager.worker_heartbeat_monitor())
         await asyncio.sleep(0.05)
@@ -120,17 +156,17 @@ class TestWorkerHeartbeatMonitor:
 class TestHandleUnregisterWorkerRequest:
     @pytest.mark.asyncio
     async def test_removes_worker_from_registered_workers(self, worker_manager: WorkerManager) -> None:
-        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
         worker_manager._worker_last_seen[_ENGINE] = 999.0
 
         request = worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
         await worker_manager.handle_unregister_worker_request(request)
 
-        assert _ENGINE not in worker_manager._registered_workers
+        assert _ENGINE not in worker_manager._workers
 
     @pytest.mark.asyncio
     async def test_removes_worker_from_last_seen(self, worker_manager: WorkerManager) -> None:
-        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
         worker_manager._worker_last_seen[_ENGINE] = 999.0
 
         request = worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
@@ -140,17 +176,17 @@ class TestHandleUnregisterWorkerRequest:
 
     @pytest.mark.asyncio
     async def test_unsubscribes_from_worker_response_topic(self, worker_manager: WorkerManager) -> None:
-        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
         worker_manager._worker_last_seen[_ENGINE] = 999.0
 
         request = worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
         await worker_manager.handle_unregister_worker_request(request)
 
-        worker_manager._unsubscribe_from_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
+        worker_manager._tx.unsubscribe_from_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_returns_success_with_engine_id(self, worker_manager: WorkerManager) -> None:
-        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
         worker_manager._worker_last_seen[_ENGINE] = 999.0
 
         request = worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
@@ -168,6 +204,21 @@ class TestHandleUnregisterWorkerRequest:
 
         assert isinstance(result, worker_events.UnregisterWorkerResultSuccess)
 
+    @pytest.mark.asyncio
+    async def test_removes_managed_process_for_library(self, worker_manager: WorkerManager) -> None:
+        proc = MagicMock()
+        worker_manager._workers[_ENGINE] = WorkerRegistration(
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key="My Library"
+        )
+        worker_manager._worker_last_seen[_ENGINE] = 999.0
+        worker_manager._managed_worker_processes["My Library"] = proc
+
+        await worker_manager.handle_unregister_worker_request(
+            worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
+        )
+
+        assert "My Library" not in worker_manager._managed_worker_processes
+
 
 class TestRelayWorkerResult:
     @pytest.mark.asyncio
@@ -182,7 +233,7 @@ class TestRelayWorkerResult:
 
         await worker_manager.relay_worker_result(payload)
 
-        worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
+        worker_manager._tx.send_message.assert_not_called()  # type: ignore[union-attr]
         assert _ENGINE in worker_manager._worker_last_seen
 
     @pytest.mark.asyncio
@@ -196,7 +247,7 @@ class TestRelayWorkerResult:
 
         await worker_manager.relay_worker_result(payload)
 
-        worker_manager._send_message.assert_not_called()  # type: ignore[union-attr]
+        worker_manager._tx.send_message.assert_not_called()  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_non_heartbeat_result_is_forwarded_to_gui(self, worker_manager: WorkerManager) -> None:
@@ -209,30 +260,467 @@ class TestRelayWorkerResult:
 
         await worker_manager.relay_worker_result(payload)
 
-        worker_manager._send_message.assert_called_once()  # type: ignore[union-attr]
+        worker_manager._tx.send_message.assert_called_once()  # type: ignore[union-attr]
 
 
 class TestEvictWorker:
     @pytest.mark.asyncio
     async def test_removes_worker_from_state(self, worker_manager: WorkerManager) -> None:
-        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
         worker_manager._worker_last_seen[_ENGINE] = 100.0
 
         await worker_manager.evict_worker(_ENGINE)
 
-        assert _ENGINE not in worker_manager._registered_workers
+        assert _ENGINE not in worker_manager._workers
         assert _ENGINE not in worker_manager._worker_last_seen
 
     @pytest.mark.asyncio
     async def test_calls_unsubscribe_for_response_topic(self, worker_manager: WorkerManager) -> None:
-        worker_manager._registered_workers[_ENGINE] = _WORKER_REQUEST_TOPIC
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
         worker_manager._worker_last_seen[_ENGINE] = 100.0
 
         await worker_manager.evict_worker(_ENGINE)
 
-        worker_manager._unsubscribe_from_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
+        worker_manager._tx.unsubscribe_from_topic.assert_called_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_tolerates_unknown_worker(self, worker_manager: WorkerManager) -> None:
         """Evicting a worker not in the registry must not raise."""
         await worker_manager.evict_worker("ghost-engine")
+
+    @pytest.mark.asyncio
+    async def test_terminates_managed_subprocess_for_library(self, worker_manager: WorkerManager) -> None:
+        proc = MagicMock()
+        worker_manager._workers[_ENGINE] = WorkerRegistration(
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key="My Library"
+        )
+        worker_manager._worker_last_seen[_ENGINE] = 100.0
+        worker_manager._managed_worker_processes["My Library"] = proc
+
+        await worker_manager.evict_worker(_ENGINE)
+
+        proc.terminate.assert_called_once()
+        assert "My Library" not in worker_manager._managed_worker_processes
+
+
+class TestRelayWorkerResultPendingFuture:
+    # Note: future resolution for tracked requests is now handled by
+    # RequestClient._handle_response, not relay_worker_result. The tests
+    # below cover relay_worker_result's remaining responsibilities.
+
+    @pytest.mark.asyncio
+    async def test_non_pending_result_still_relays_to_gui(self, worker_manager: WorkerManager) -> None:
+        payload = {
+            "event_type": "EventResultSuccess",
+            "result_type": ExecuteNodeResultSuccess.__name__,
+            "result": {"parameter_output_values": {}, "result_details": "ok"},
+            "request_id": "unknown-id",
+        }
+
+        await worker_manager.relay_worker_result(payload)
+
+        worker_manager._tx.send_message.assert_called_once()  # type: ignore[union-attr]
+
+
+class TestLibraryWorkerRegistration:
+    @pytest.mark.asyncio
+    async def test_library_name_stored_on_registration(self, worker_manager: WorkerManager) -> None:
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, library_name="My Library")
+
+        await worker_manager.handle_register_worker_request(request)
+
+        assert worker_manager._workers[_ENGINE].worker_key == "My Library"
+
+    @pytest.mark.asyncio
+    async def test_general_worker_has_none_library(self, worker_manager: WorkerManager) -> None:
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
+
+        await worker_manager.handle_register_worker_request(request)
+
+        assert worker_manager._workers[_ENGINE].worker_key is None
+
+
+class TestGetWorkerForKey:
+    def test_returns_worker_for_registered_library(self, worker_manager: WorkerManager) -> None:
+        worker_manager._workers[_ENGINE] = WorkerRegistration(
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key="My Library"
+        )
+
+        result = worker_manager.get_worker_for_key("My Library")
+
+        assert result == (_ENGINE, _WORKER_REQUEST_TOPIC)
+
+    def test_returns_none_for_unknown_library(self, worker_manager: WorkerManager) -> None:
+        result = worker_manager.get_worker_for_key("Unknown Library")
+
+        assert result is None
+
+
+class TestLibraryWorkerCleanup:
+    def _seed(self, worker_manager: WorkerManager) -> None:
+        worker_manager._workers[_ENGINE] = WorkerRegistration(
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key="My Library"
+        )
+        worker_manager._worker_last_seen[_ENGINE] = 999.0
+
+    @pytest.mark.asyncio
+    async def test_unregister_removes_worker(self, worker_manager: WorkerManager) -> None:
+        self._seed(worker_manager)
+
+        await worker_manager.handle_unregister_worker_request(
+            worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
+        )
+
+        assert _ENGINE not in worker_manager._workers
+
+    @pytest.mark.asyncio
+    async def test_evict_removes_worker(self, worker_manager: WorkerManager) -> None:
+        self._seed(worker_manager)
+
+        await worker_manager.evict_worker(_ENGINE)
+
+        assert _ENGINE not in worker_manager._workers
+
+
+class TestSpawnWorker:
+    @pytest.mark.asyncio
+    async def test_duplicate_spawn_is_noop(self, worker_manager: WorkerManager) -> None:
+        worker_manager._managed_worker_processes["my-key"] = MagicMock()
+
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            await worker_manager.spawn_worker(["/usr/bin/gtn", "engine"], "my-key")
+
+        mock_exec.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_spawns_subprocess_with_provided_args(self, worker_manager: WorkerManager) -> None:
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        args = ["/usr/local/bin/gtn", "engine", "--session-id", "sess-abc", "--library-name", "My Library"]
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+            await worker_manager.spawn_worker(args, "My Library")
+
+        mock_exec.assert_called_once_with(*args, env=ANY)
+        assert worker_manager._managed_worker_processes["My Library"] is mock_proc
+
+
+class TestResetWorkers:
+    @pytest.mark.asyncio
+    async def test_terminates_all_processes(self, worker_manager: WorkerManager) -> None:
+        proc_a, proc_b = MagicMock(), MagicMock()
+        worker_manager._managed_worker_processes["Lib A"] = proc_a
+        worker_manager._managed_worker_processes["Lib B"] = proc_b
+
+        await worker_manager.reset_workers()
+
+        proc_a.terminate.assert_called_once()
+        proc_b.terminate.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_clears_all_tracking_state(self, worker_manager: WorkerManager) -> None:
+        worker_manager._managed_worker_processes["Lib A"] = MagicMock()
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key="Lib A")
+        worker_manager._worker_last_seen[_ENGINE] = 999.0
+
+        await worker_manager.reset_workers()
+
+        assert worker_manager._managed_worker_processes == {}
+        assert worker_manager._workers == {}
+        assert worker_manager._worker_last_seen == {}
+
+    @pytest.mark.asyncio
+    async def test_does_not_clear_session_ready_event(self, worker_manager: WorkerManager) -> None:
+        worker_manager._session_ready_event.set()
+
+        await worker_manager.reset_workers()
+
+        assert worker_manager._session_ready_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_tolerates_already_exited_process(self, worker_manager: WorkerManager) -> None:
+        proc = MagicMock()
+        proc.terminate.side_effect = ProcessLookupError
+        worker_manager._managed_worker_processes["Lib A"] = proc
+
+        await worker_manager.reset_workers()
+
+        assert worker_manager._managed_worker_processes == {}
+
+    @pytest.mark.asyncio
+    async def test_unsubscribes_response_topic_for_each_registered_worker(self, worker_manager: WorkerManager) -> None:
+        worker_manager._workers["eng-1"] = WorkerRegistration(
+            request_topic=f"sessions/{_SESSION}/workers/eng-1/request", worker_key=None
+        )
+        worker_manager._workers["eng-2"] = WorkerRegistration(
+            request_topic=f"sessions/{_SESSION}/workers/eng-2/request", worker_key=None
+        )
+
+        await worker_manager.reset_workers()
+
+        unsubscribed = {call.args[0] for call in worker_manager._tx.unsubscribe_from_topic.call_args_list}  # type: ignore[union-attr]
+        assert f"sessions/{_SESSION}/workers/eng-1/response" in unsubscribed
+        assert f"sessions/{_SESSION}/workers/eng-2/response" in unsubscribed
+
+
+class TestSetSessionReady:
+    def test_sets_session_ready_event(self, worker_manager: WorkerManager) -> None:
+        assert not worker_manager._session_ready_event.is_set()
+
+        worker_manager.set_session_ready()
+
+        assert worker_manager._session_ready_event.is_set()
+
+    def test_calling_twice_does_not_raise(self, worker_manager: WorkerManager) -> None:
+        worker_manager.set_session_ready()
+        worker_manager.set_session_ready()
+
+
+class TestHandleStartWorkerRequest:
+    @pytest.mark.asyncio
+    async def test_returns_success_immediately(self, worker_manager: WorkerManager) -> None:
+        request = worker_events.StartWorkerRequest(library_name="My Library")
+
+        with patch.object(worker_manager, "_spawn_when_session_ready", new=AsyncMock()):
+            result = await worker_manager.handle_start_worker_request(request)
+
+        assert isinstance(result, worker_events.StartWorkerResultSuccess)
+
+
+class TestSpawnWhenSessionReady:
+    @pytest.mark.asyncio
+    async def test_skips_wait_when_session_already_active(self, worker_manager: WorkerManager) -> None:
+        """If a session is already active, spawn proceeds without waiting for the event."""
+        worker_manager._griptape_nodes.get_session_id.return_value = _SESSION  # type: ignore[union-attr]
+
+        with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as mock_spawn:
+            await worker_manager._spawn_when_session_ready("My Library")
+
+        mock_spawn.assert_called_once()
+        assert not worker_manager._session_ready_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_waits_then_spawns_after_session_ready(self, worker_manager: WorkerManager) -> None:
+        """If no session yet, waits for the event and spawns once the session is available."""
+        # First call (pre-check) returns None; second call (post-wait) returns session ID.
+        worker_manager._griptape_nodes.get_session_id.side_effect = [None, _SESSION]  # type: ignore[union-attr]
+
+        with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as mock_spawn:
+            task = asyncio.create_task(worker_manager._spawn_when_session_ready("My Library"))
+            await asyncio.sleep(0)  # let the task start and reach the event wait
+            worker_manager._session_ready_event.set()
+            await task
+
+        mock_spawn.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_logs_error_when_no_session_after_event(self, worker_manager: WorkerManager) -> None:
+        """If the session event fires but get_session_id still returns None, spawn is not attempted."""
+        worker_manager._griptape_nodes.get_session_id.side_effect = [None, None]  # type: ignore[union-attr]
+        worker_manager._session_ready_event.set()
+
+        with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as mock_spawn:
+            await worker_manager._spawn_when_session_ready("My Library")
+
+        mock_spawn.assert_not_called()
+
+
+class TestWorkerEvictedCallbacks:
+    @pytest.mark.asyncio
+    async def test_callback_called_with_worker_id_and_library_name(self, worker_manager: WorkerManager) -> None:
+        callback = MagicMock()
+        worker_manager.register_worker_evicted_callback(callback)
+        worker_manager._workers[_ENGINE] = WorkerRegistration(
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key="My Library"
+        )
+
+        await worker_manager.evict_worker(_ENGINE)
+
+        callback.assert_called_once_with(_ENGINE, "My Library")
+
+    @pytest.mark.asyncio
+    async def test_exception_in_callback_does_not_prevent_others(self, worker_manager: WorkerManager) -> None:
+        first = MagicMock(side_effect=RuntimeError("boom"))
+        second = MagicMock()
+        worker_manager.register_worker_evicted_callback(first)
+        worker_manager.register_worker_evicted_callback(second)
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
+
+        await worker_manager.evict_worker(_ENGINE)
+
+        second.assert_called_once()
+
+
+class TestRouteToWorker:
+    @pytest.mark.asyncio
+    async def test_sends_request_to_worker_and_returns_raw_payload(self, worker_manager: WorkerManager) -> None:
+        """route_to_worker dispatches to the worker and resolves when RequestClient resolves the future."""
+        assert isinstance(worker_manager._tx.request_client, _FakeRequestClient)
+        fake_rc = worker_manager._tx.request_client
+        event_request = EventRequest(request=ExecuteNodeRequest(node_name="MyNode", parameter_values={"x": 1}))
+        expected_payload = {
+            "event_type": "EventResultSuccess",
+            "result_type": ExecuteNodeResultSuccess.__name__,
+            "result": {"parameter_output_values": {"out": 99}, "result_details": "ok"},
+            "request_id": "",  # overwritten below
+        }
+
+        async def resolve_via_future() -> None:
+            # Yield once so route_to_worker can register the future before we resolve it.
+            await asyncio.sleep(0)
+            request_id = next(iter(fake_rc._pending_requests))
+            entry = fake_rc._pending_requests[request_id]
+            payload = {**expected_payload, "request_id": request_id}
+            entry.future.set_result(payload)
+
+        asyncio.create_task(resolve_via_future())  # noqa: RUF006
+        result = await worker_manager.route_to_worker(event_request, _ENGINE, _WORKER_REQUEST_TOPIC)
+
+        assert result["result_type"] == ExecuteNodeResultSuccess.__name__
+        assert result["result"]["parameter_output_values"] == {"out": 99}
+        worker_manager._tx.send_message.assert_called_once()  # type: ignore[union-attr]
+
+
+class TestGetTopicsToSubscribe:
+    def test_orchestrator_includes_base_request_topic(self, worker_manager: WorkerManager) -> None:
+        assert "request" in worker_manager.get_topics_to_subscribe(is_worker=False)
+
+    def test_worker_excludes_base_request_topic(self, worker_manager: WorkerManager) -> None:
+        # Workers must NOT subscribe to the broadcast "request" topic — doing so causes
+        # them to receive and attempt to handle every MCP/GUI request, racing the orchestrator.
+        assert "request" not in worker_manager.get_topics_to_subscribe(is_worker=True)
+
+    def test_always_includes_engine_specific_topic(self, worker_manager: WorkerManager) -> None:
+        topics_worker = worker_manager.get_topics_to_subscribe(is_worker=True)
+        topics_orch = worker_manager.get_topics_to_subscribe(is_worker=False)
+
+        assert f"engines/{_ENGINE}/request" in topics_worker
+        assert f"engines/{_ENGINE}/request" in topics_orch
+
+    def test_worker_mode_includes_per_worker_topic(self, worker_manager: WorkerManager) -> None:
+        topics = worker_manager.get_topics_to_subscribe(is_worker=True)
+
+        assert f"sessions/{_SESSION}/workers/{_ENGINE}/request" in topics
+
+    def test_worker_mode_excludes_session_request_topic(self, worker_manager: WorkerManager) -> None:
+        topics = worker_manager.get_topics_to_subscribe(is_worker=True)
+
+        assert f"sessions/{_SESSION}/request" not in topics
+
+    def test_orchestrator_mode_includes_session_request_topic(self, worker_manager: WorkerManager) -> None:
+        topics = worker_manager.get_topics_to_subscribe(is_worker=False)
+
+        assert f"sessions/{_SESSION}/request" in topics
+
+    def test_orchestrator_mode_excludes_per_worker_topic(self, worker_manager: WorkerManager) -> None:
+        topics = worker_manager.get_topics_to_subscribe(is_worker=False)
+
+        assert f"sessions/{_SESSION}/workers/{_ENGINE}/request" not in topics
+
+    def test_orchestrator_mode_no_session_excludes_session_topic(self, worker_manager: WorkerManager) -> None:
+        worker_manager._griptape_nodes.get_session_id.return_value = None  # type: ignore[union-attr]
+
+        topics = worker_manager.get_topics_to_subscribe(is_worker=False)
+
+        assert not any("sessions/" in t for t in topics)
+
+
+class TestForwardEventToWorker:
+    @pytest.mark.asyncio
+    async def test_sends_message_to_worker_request_topic(self, worker_manager: WorkerManager) -> None:
+        from griptape_nodes.retained_mode.events.base_events import EventRequest
+        from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest
+
+        event = EventRequest(request=ExecuteNodeRequest(node_name="TestNode", parameter_values={}))
+
+        await worker_manager.forward_event_to_worker(
+            event, worker_engine_id=_ENGINE, worker_request_topic=_WORKER_REQUEST_TOPIC
+        )
+
+        worker_manager._tx.send_message.assert_called_once()  # type: ignore[union-attr]
+        assert worker_manager._tx.send_message.call_args[0][2] == _WORKER_REQUEST_TOPIC  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_sets_response_topic_to_worker_response_topic(self, worker_manager: WorkerManager) -> None:
+        from griptape_nodes.retained_mode.events.base_events import EventRequest
+        from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest
+
+        event = EventRequest(request=ExecuteNodeRequest(node_name="TestNode", parameter_values={}))
+
+        await worker_manager.forward_event_to_worker(
+            event, worker_engine_id=_ENGINE, worker_request_topic=_WORKER_REQUEST_TOPIC
+        )
+
+        sent_body = worker_manager._tx.send_message.call_args[0][1]  # type: ignore[union-attr]
+        sent_payload = json.loads(sent_body)
+        assert sent_payload.get("response_topic") == _WORKER_RESPONSE_TOPIC
+
+
+class TestDetermineResponseTopic:
+    def test_returns_session_response_topic_when_session_active(self, worker_manager: WorkerManager) -> None:
+        topic = worker_manager._determine_response_topic()
+
+        assert topic == f"sessions/{_SESSION}/response"
+
+    def test_returns_engine_response_topic_when_no_session(self, worker_manager: WorkerManager) -> None:
+        worker_manager._griptape_nodes.get_session_id.return_value = None  # type: ignore[union-attr]
+
+        topic = worker_manager._determine_response_topic()
+
+        assert topic == f"engines/{_ENGINE}/response"
+
+    def test_returns_default_when_no_session_or_engine(self, worker_manager: WorkerManager) -> None:
+        worker_manager._griptape_nodes.get_session_id.return_value = None  # type: ignore[union-attr]
+        worker_manager._griptape_nodes.get_engine_id.return_value = None  # type: ignore[union-attr]
+
+        topic = worker_manager._determine_response_topic()
+
+        assert topic == "response"
+
+
+class TestOrchestratorHeartbeatLoop:
+    @pytest.mark.asyncio
+    async def test_evicts_stale_worker(self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(worker_manager, "heartbeat_interval_s", 0.01)
+        monkeypatch.setattr(worker_manager, "heartbeat_timeout_s", 0.0)
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
+        worker_manager._worker_last_seen[_ENGINE] = 0.0
+
+        task = asyncio.create_task(worker_manager.orchestrator_heartbeat_loop())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert _ENGINE not in worker_manager._workers
+
+    @pytest.mark.asyncio
+    async def test_sends_heartbeat_challenge_to_live_worker(
+        self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(worker_manager, "heartbeat_interval_s", 0.01)
+        monkeypatch.setattr(worker_manager, "heartbeat_timeout_s", 60.0)
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
+        worker_manager._worker_last_seen[_ENGINE] = time.monotonic()
+
+        task = asyncio.create_task(worker_manager.orchestrator_heartbeat_loop())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert not worker_manager._tx.ws_outgoing_queue.empty()
+
+    @pytest.mark.asyncio
+    async def test_does_not_evict_fresh_worker(
+        self, worker_manager: WorkerManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(worker_manager, "heartbeat_interval_s", 0.01)
+        monkeypatch.setattr(worker_manager, "heartbeat_timeout_s", 60.0)
+        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
+        worker_manager._worker_last_seen[_ENGINE] = time.monotonic()
+
+        task = asyncio.create_task(worker_manager.orchestrator_heartbeat_loop())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert _ENGINE in worker_manager._workers

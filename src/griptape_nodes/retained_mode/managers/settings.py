@@ -14,6 +14,10 @@ MODELS_TO_DOWNLOAD_KEY = "app_events.on_app_initialization_complete.models_to_do
 PROJECTS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.projects_to_register"
 PROJECT_WORKSPACES_KEY = "project_workspaces"
 EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
+WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
+WORKER_HEARTBEAT_TIMEOUT_KEY = "worker.heartbeat_timeout_s"
+WORKER_NODE_EXECUTION_TIMEOUT_KEY = "worker.node_execution_timeout_s"
+WORKER_HEARTBEAT_STARTUP_GRACE_KEY = "worker.heartbeat_startup_grace_s"
 
 
 class Category(BaseModel):
@@ -157,6 +161,28 @@ class AppEvents(BaseModel):
     )
 
 
+class WorkerSettings(BaseModel):
+    heartbeat_interval_s: float = Field(
+        default=5.0,
+        description="Interval in seconds between worker heartbeat challenges sent by the orchestrator.",
+    )
+    heartbeat_timeout_s: float = Field(
+        default=15.0,
+        description="Seconds without a heartbeat response before a worker is evicted.",
+    )
+    node_execution_timeout_s: float = Field(
+        default=300.0,
+        description="Maximum seconds to wait for a node execution response from a worker before timing out.",
+    )
+    heartbeat_startup_grace_s: float = Field(
+        default=120.0,
+        description=(
+            "Grace period in seconds after worker spawn before heartbeat timeouts are enforced. "
+            "Workers need time to install venv deps and import modules before they can respond."
+        ),
+    )
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -226,6 +252,10 @@ class Settings(BaseModel):
         category=EXECUTION,
         default=5,
         description="Maximum number of nodes executing at a time for parallel execution.",
+    )
+    worker: WorkerSettings = Field(
+        category=EXECUTION,
+        default_factory=WorkerSettings,
     )
     storage_backend: Literal["local", "gtc"] = Field(category=STORAGE, default="local")
     auto_inject_workflow_metadata: bool = Field(

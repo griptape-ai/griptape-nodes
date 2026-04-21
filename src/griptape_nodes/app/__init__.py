@@ -1,5 +1,5 @@
 """App package."""
 
-from griptape_nodes.app.app import start_app
+from griptape_nodes.app.app import EngineRole, Orchestrator, Worker, start_app
 
-__all__ = ["start_app"]
+__all__ = ["EngineRole", "Orchestrator", "Worker", "start_app"]

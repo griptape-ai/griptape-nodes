@@ -20,9 +20,12 @@ class RegisterWorkerRequest(RequestPayload):
 
     Args:
         worker_engine_id: The engine_id of the registering worker.
+        library_name: The library this worker exclusively serves, or None for a
+            general-purpose worker that can handle any request.
     """
 
     worker_engine_id: str
+    library_name: str | None = None
     broadcast_result: bool = field(default=False, kw_only=True)
 
 
@@ -100,3 +103,32 @@ class UnregisterWorkerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class UnregisterWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Worker unregistration failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StartWorkerRequest(RequestPayload):
+    """Internal request to spawn a worker subprocess for a library that requires one.
+
+    Sent by LibraryManager when a worker-delegated library finishes loading on the
+    orchestrator. WorkerManager handles this by waiting for an active session then
+    spawning the worker subprocess.
+
+    Args:
+        library_name: The library the worker will serve.
+    """
+
+    library_name: str
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class StartWorkerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Worker spawn was successfully scheduled."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StartWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Worker spawn could not be scheduled."""

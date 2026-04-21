@@ -1392,7 +1392,7 @@ class ProjectManager:
             )
             return
 
-        logger.info("Successfully loaded workspace project from '%s'", workspace_project_path)
+        logger.debug("Successfully loaded workspace project from '%s'", workspace_project_path)
 
     def _load_registered_projects(self) -> None:
         """Load project templates from paths persisted in user config.

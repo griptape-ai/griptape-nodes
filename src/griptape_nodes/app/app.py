@@ -7,17 +7,22 @@ import os
 import signal
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from griptape_nodes.app.worker_manager import WorkerManager
 
 import truststore
 from cattrs import BaseValidationError, transform_error
 from rich.align import Align
 from rich.console import Console
-from rich.logging import RichHandler
 from rich.panel import Panel
 
-from griptape_nodes.api_client import Client
-from griptape_nodes.app.worker_manager import WorkerManager
+from griptape_nodes.api_client import Client, RequestClient
+from griptape_nodes.app.engine_log import _engine_role_filter, _rich_handler
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
 from griptape_nodes.retained_mode.events import app_events, execution_events, worker_events
@@ -52,6 +57,26 @@ class UnsubscribeCommand:
     """Command to unsubscribe from a topic."""
 
     topic: str
+
+
+@dataclass(frozen=True)
+class Orchestrator:
+    """Engine role: owns the session, routes requests to workers."""
+
+
+@dataclass(frozen=True)
+class Worker:
+    """Engine role: attached to an existing orchestrator session.
+
+    library_name is None for general-purpose workers and set for
+    library-dedicated workers that serve exactly one library.
+    """
+
+    session_id: str
+    library_name: str | None = None
+
+
+EngineRole = Orchestrator | Worker
 
 
 # Important to bootstrap singleton here so that we don't
@@ -121,7 +146,7 @@ logging.basicConfig(
     level=log_level,
     format="%(message)s",
     datefmt="[%X]",
-    handlers=[RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)],
+    handlers=[_rich_handler],
 )
 
 # Suppress noisy third-party library logging
@@ -160,21 +185,21 @@ def _ensure_api_key() -> str:
     return api_key
 
 
-def start_app(worker_session_id: str | None = None) -> None:
+def start_app(role: EngineRole) -> None:
     """Legacy sync entry point - runs async app."""
     # Use the system certificate store for SSL verification.
     # Called here (not at module level) so it only applies in server mode,
     # not when app.py is imported by headless/subprocess contexts.
     truststore.inject_into_ssl()
     try:
-        asyncio.run(astart_app(worker_session_id=worker_session_id))
+        asyncio.run(astart_app(role))
     except KeyboardInterrupt:
         logger.info("Application stopped by user")
     except Exception as e:
         logger.error("Application error: %s", e)
 
 
-async def astart_app(worker_session_id: str | None = None) -> None:
+async def astart_app(role: EngineRole) -> None:
     """New async app entry point."""
     # Verify API key is set before starting
     _ensure_api_key()
@@ -186,7 +211,7 @@ async def astart_app(worker_session_id: str | None = None) -> None:
         # Start WebSocket tasks in daemon thread
         threading.Thread(
             target=_start_websocket_connection,
-            kwargs={"worker_session_id": worker_session_id},
+            kwargs={"role": role},
             daemon=True,
             name="websocket-tasks",
         ).start()
@@ -199,7 +224,7 @@ async def astart_app(worker_session_id: str | None = None) -> None:
         raise
 
 
-def _start_websocket_connection(worker_session_id: str | None = None) -> None:
+def _start_websocket_connection(role: EngineRole) -> None:
     """Run WebSocket tasks in a separate thread with its own async loop."""
     global websocket_event_loop  # noqa: PLW0603
     try:
@@ -212,7 +237,7 @@ def _start_websocket_connection(worker_session_id: str | None = None) -> None:
         websocket_event_loop_ready.set()
 
         # Run the async WebSocket tasks
-        loop.run_until_complete(_run_websocket_tasks(worker_session_id=worker_session_id))
+        loop.run_until_complete(_run_websocket_tasks(role))
     except ConnectionError:
         # Connection failed - likely due to invalid/missing API key
         message = Panel(
@@ -237,20 +262,29 @@ def _start_websocket_connection(worker_session_id: str | None = None) -> None:
         websocket_event_loop_ready.clear()
 
 
-async def _run_websocket_tasks(worker_session_id: str | None = None) -> None:
+async def _run_websocket_tasks(role: EngineRole) -> None:
     """Run WebSocket tasks - async version."""
     async with Client() as client:
         logger.debug("WebSocket connection established")
-        griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppInitializationComplete()))
+        is_worker = isinstance(role, Worker)
+        libraries_to_register = [role.library_name] if isinstance(role, Worker) and role.library_name else []
+        griptape_nodes.EventManager().put_event(
+            AppEvent(
+                payload=app_events.AppInitializationComplete(
+                    is_worker=is_worker,
+                    libraries_to_register=libraries_to_register,
+                )
+            )
+        )
         griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppConnectionEstablished()))
 
-        if worker_session_id:
-            await _run_worker(client, worker_session_id)
+        if isinstance(role, Worker):
+            await _run_worker(client, role)
         else:
             await _run_orchestrator(client)
 
 
-async def _run_worker(client: Client, worker_session_id: str) -> None:
+async def _run_worker(client: Client, role: Worker) -> None:
     """Run the WebSocket task group for a worker engine."""
     # Announce this worker to the orchestrator's session request topic.
     # The orchestrator will store our engine_id and subscribe to our response topic.
@@ -258,22 +292,63 @@ async def _run_worker(client: Client, worker_session_id: str) -> None:
     if not worker_engine_id:
         msg = "Engine ID is not set; cannot register as a worker."
         raise RuntimeError(msg)
+    _engine_role_filter.prefix = f"Worker-{worker_engine_id[:8]}"
     reg_event = EventRequest(
-        request=worker_events.RegisterWorkerRequest(worker_engine_id=worker_engine_id),
+        request=worker_events.RegisterWorkerRequest(
+            worker_engine_id=worker_engine_id,
+            library_name=role.library_name,
+        ),
         response_topic=None,
     )
     await client.publish(
         "EventRequest",
         json.loads(reg_event.json()),
-        f"sessions/{worker_session_id}/request",
+        f"sessions/{role.session_id}/request",
     )
-    logger.info("Worker %s sent registration to session %s", worker_engine_id, worker_session_id)
+    logger.info("Worker %s registered with orchestrator", worker_engine_id)
+
+    # Set session_id so _determine_response_topic() returns the session topic,
+    # routing intermediate events (AppEvents, ProgressEvents) directly to the GUI.
+    griptape_nodes.SessionManager().active_session_id = role.session_id
+
+    # Relay LibraryLoadedNotification events to the orchestrator over the transport layer.
+    # LibraryManager broadcasts these when a library finishes loading on this worker;
+    # publishing them to the session request topic lets the orchestrator update its state.
+    #
+    # IMPORTANT: abroadcast_app_event is called from the main event loop (loop A), but
+    # client and its WebSocket are bound to the WebSocket event loop (loop B). Calling
+    # client.publish() directly from loop A would silently fail or hang. Use _send_message()
+    # instead -- it enqueues via run_coroutine_threadsafe and is safe to call from loop A.
+    async def _relay_library_loaded(notification: app_events.LibraryLoadedNotification) -> None:
+        relay = AppEvent(payload=notification)
+        await _send_message("AppEvent", relay.json(), f"sessions/{role.session_id}/request")
+
+    griptape_nodes.EventManager().add_listener_to_app_event(app_events.LibraryLoadedNotification, _relay_library_loaded)
+
+    async def _consume_messages() -> None:
+        async for message in client.messages:
+            try:
+                await _process_api_event(message)
+            except Exception as e:
+                logger.error("Error handling message: %s", e)
 
     try:
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=True)))
-            tg.create_task(_send_outgoing_messages(client))
-            tg.create_task(worker_manager.worker_heartbeat_monitor())
+        async with RequestClient(client) as request_client:
+            worker_manager = griptape_nodes.WorkerManager()
+            worker_manager.attach_transport(
+                ws_outgoing_queue=ws_outgoing_queue,
+                send_message=_send_message,
+                subscribe_to_topic=_subscribe_to_topic,
+                unsubscribe_from_topic=_unsubscribe_from_topic,
+                request_client=request_client,
+            )
+            for topic in worker_manager.get_topics_to_subscribe(is_worker=True):
+                await client.subscribe(topic)
+
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(_send_outgoing_messages(client))
+                tg.create_task(worker_manager.worker_heartbeat_monitor())
+                tg.create_task(_consume_messages())
     except BaseException:
         # Best-effort unregister so the orchestrator can clean up immediately.
         unregister_event = EventRequest(
@@ -284,43 +359,78 @@ async def _run_worker(client: Client, worker_session_id: str) -> None:
             await client.publish(
                 "EventRequest",
                 json.loads(unregister_event.json()),
-                f"sessions/{worker_session_id}/request",
+                f"sessions/{role.session_id}/request",
             )
-            logger.info("Worker %s sent unregister to session %s", worker_engine_id, worker_session_id)
+            logger.info("Worker %s sent unregister to session %s", worker_engine_id, role.session_id)
         except Exception as e:
             logger.debug("Could not send unregister on shutdown: %s", e)
         os.kill(os.getpid(), signal.SIGINT)
 
 
+async def _handle_orchestrator_unmatched(message: dict, worker_manager: WorkerManager) -> None:
+    """Handle messages not resolved by RequestClient as pending requests.
+
+    Called for every message not claimed by RequestClient's response filter.
+    Routes worker result messages (heartbeats and any unmatched results) to
+    WorkerManager, and all other messages to _process_api_event.
+    """
+    try:
+        payload = message.get("payload", {})
+        event_type = payload.get("event_type", "")
+        if event_type in ("EventResultSuccess", "EventResultFailure"):
+            # Heartbeat or unmatched result from a worker — relay via the orchestrator.
+            await worker_manager.relay_worker_result(payload)
+        else:
+            await _process_api_event(message)
+    except Exception as e:
+        logger.warning(
+            "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
+            e,
+        )
+
+
 async def _run_orchestrator(client: Client) -> None:
     """Run the WebSocket task group for an orchestrator engine."""
-    async with asyncio.TaskGroup() as tg:
-        tg.create_task(_process_incoming_messages(client, worker_manager.get_topics_to_subscribe(is_worker=False)))
-        tg.create_task(_send_outgoing_messages(client))
-        tg.create_task(worker_manager.orchestrator_heartbeat_loop())
+    _engine_role_filter.prefix = "Orchestrator"
 
+    async with RequestClient(client) as request_client:
+        worker_manager = griptape_nodes.WorkerManager()
+        worker_manager.attach_transport(
+            ws_outgoing_queue=ws_outgoing_queue,
+            send_message=_send_message,
+            subscribe_to_topic=_subscribe_to_topic,
+            unsubscribe_from_topic=_unsubscribe_from_topic,
+            request_client=request_client,
+        )
+        for topic in worker_manager.get_topics_to_subscribe(is_worker=False):
+            await client.subscribe(topic)
 
-async def _process_incoming_messages(client: Client, topics: list[str]) -> None:
-    """Process incoming WebSocket requests from Nodes API."""
-    logger.debug("Processing incoming WebSocket requests from WebSocket connection")
+        async def _handle_unmatched(message: dict) -> None:
+            await _handle_orchestrator_unmatched(message, worker_manager)
 
-    for topic in topics:
-        await client.subscribe(topic)
+        async def _consume_messages() -> None:
+            async for message in client.messages:
+                await _handle_unmatched(message)
 
-    async for message in client.messages:
         try:
-            payload = message.get("payload", {})
-            event_type = payload.get("event_type", "")
-            if event_type in ("EventResultSuccess", "EventResultFailure"):
-                # Result from a worker — relay it through the orchestrator.
-                await worker_manager.relay_worker_result(payload)
-            else:
-                await _process_api_event(message)
-        except Exception as e:
-            logger.warning(
-                "Skipping unrecognized event. Your editor may be newer than this engine version. (%s)",
-                e,
-            )
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(_send_outgoing_messages(client))
+                tg.create_task(worker_manager.orchestrator_heartbeat_loop())
+                tg.create_task(_consume_messages())
+        finally:
+            await worker_manager.reset_workers()
+
+
+def _deserialize_event[T](from_dict: Callable[[dict], T], payload: dict, label: str) -> T:
+    """Deserialize an event from a raw payload dict, wrapping errors with context."""
+    try:
+        return from_dict(payload)
+    except Exception as e:
+        details = str(e)
+        if isinstance(e, BaseValidationError):
+            details = "; ".join(transform_error(e))
+        msg = f"Unable to convert request JSON into a valid {label} object. Error Message: '{details}'"
+        raise RuntimeError(msg) from None
 
 
 async def _process_api_event(event: dict) -> None:
@@ -328,29 +438,27 @@ async def _process_api_event(event: dict) -> None:
     payload = event.get("payload", {})
 
     try:
+        event_type = payload["event_type"]
+    except KeyError:
+        msg = "Error: 'event_type' not found in request."
+        raise RuntimeError(msg) from None
+
+    if event_type == "AppEvent":
+        griptape_nodes.EventManager().put_event(_deserialize_event(AppEvent.from_dict, payload, "AppEvent"))
+        return
+
+    try:
         payload["request"]
     except KeyError:
         msg = "Error: 'request' was expected but not found."
         raise RuntimeError(msg) from None
 
-    try:
-        event_type = payload["event_type"]
-        if event_type != "EventRequest":
-            msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
-            raise RuntimeError(msg) from None
-    except KeyError:
-        msg = "Error: 'event_type' not found in request."
+    if event_type != "EventRequest":
+        msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
         raise RuntimeError(msg) from None
 
     # Now attempt to convert it into an EventRequest.
-    try:
-        request_event = EventRequest.from_dict(payload)
-    except Exception as e:
-        details = str(e)
-        if isinstance(e, BaseValidationError):
-            details = "; ".join(transform_error(e))
-        msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{details}'"
-        raise RuntimeError(msg) from None
+    request_event = _deserialize_event(EventRequest.from_dict, payload, "EventRequest")
 
     if not isinstance(request_event, EventRequest):
         msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
@@ -432,11 +540,6 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
-    worker = worker_manager.get_active_worker()
-    if worker and not isinstance(event.request, WorkerManager.LOCAL_REQUEST_TYPES):
-        await worker_manager.forward_event_to_worker(event, worker_engine_id=worker[0], worker_request_topic=worker[1])
-        return
-
     result_event = await griptape_nodes.EventManager().ahandle_request(
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},
@@ -449,6 +552,13 @@ async def _process_app_event(event: AppEvent) -> None:
     """Process AppEvents and send them to the API (async version)."""
     # Let Griptape Nodes broadcast it.
     await griptape_nodes.abroadcast_app_event(event.payload)
+
+    # Strip node_schemas before forwarding LibraryLoadedNotification to the GUI.
+    # The orchestrator has already consumed the schemas to register stub classes;
+    # the GUI has no use for them and the payload can exceed 100 KB for large libraries.
+    payload = event.payload
+    if isinstance(payload, app_events.LibraryLoadedNotification) and payload.node_schemas:
+        event = AppEvent(payload=replace(payload, node_schemas=None))
 
     await _send_message("app_event", event.json())
 
@@ -470,12 +580,23 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
             topic = f"sessions/{session_id}/request"
             await _subscribe_to_topic(topic)
             logger.info("Subscribed to session topic: %s", topic)
+            # Unblock any worker spawns that were waiting for a session to become available,
+            # then broadcast so interested managers (e.g. LibraryManager) can react.
+            worker_manager = GriptapeNodes.WorkerManager()
+            if worker_manager is not None:
+                worker_manager.set_session_ready()
+            await GriptapeNodes.abroadcast_app_event(app_events.AppSessionStartedEvent(session_id=session_id))
         elif isinstance(result_event.result, app_events.AppEndSessionResultSuccess):
             session_id = result_event.result.session_id
             if session_id is not None:
                 topic = f"sessions/{session_id}/request"
                 await _unsubscribe_from_topic(topic)
                 logger.info("Unsubscribed from session topic: %s", topic)
+            # Terminate workers so they are recreated when the next session starts.
+            worker_manager = GriptapeNodes.WorkerManager()
+            if worker_manager is not None:
+                await worker_manager.reset_workers()
+                worker_manager.clear_session_ready()
     elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"
     else:
@@ -566,13 +687,3 @@ def _determine_response_topic() -> str:
 
     # Default to generic response topic
     return "response"
-
-
-worker_manager = WorkerManager(
-    griptape_nodes=griptape_nodes,
-    event_manager=griptape_nodes.EventManager(),
-    ws_outgoing_queue=ws_outgoing_queue,
-    send_message=_send_message,
-    subscribe_to_topic=_subscribe_to_topic,
-    unsubscribe_from_topic=_unsubscribe_from_topic,
-)
