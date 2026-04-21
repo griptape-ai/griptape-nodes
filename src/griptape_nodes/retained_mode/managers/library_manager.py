@@ -44,7 +44,6 @@ from griptape_nodes.node_library.library_registry import (
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
     AppSessionStartedEvent,
-    ConfigChanged,
     EngineInitializationProgress,
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -56,7 +55,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import AppEvent, EventRequest, ResultDetails, ResultPayloadFailure
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails, ResultPayloadFailure
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -437,10 +436,6 @@ class LibraryManager:
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
             self.on_app_initialization_complete,
-        )
-        event_manager.add_listener_to_app_event(
-            ConfigChanged,
-            self.on_config_changed,
         )
         event_manager.add_listener_to_app_event(
             AppSessionStartedEvent,
@@ -3038,30 +3033,6 @@ class LibraryManager:
             padding=(1, 4),
         )
         console.print(message)
-
-    async def on_config_changed(self, event: ConfigChanged) -> None:
-        """Handle config changes to reload libraries when needed.
-
-        Responds to:
-        - libraries_to_register changes: Full library reload
-        """
-        if event.key == LIBRARIES_TO_REGISTER_KEY and event.old_value != event.new_value:
-            if self._is_worker:
-                # Workers only load their designated library once; they should not reload
-                # themselves in response to config changes.
-                return
-
-            logger.info("Config change detected for %s, triggering library reload", event.key)
-
-            # Enqueue the reload as a new EventRequest on loop A rather than awaiting it inline.
-            # Awaiting inline runs via broadcast_app_event's ThreadRunner, which blocks loop A's
-            # thread entirely. While blocked, loop A cannot process worker notifications
-            # (_on_library_loaded_notification), so _await_pending_workers inside
-            # reload_libraries_request never unblocks and times out after 120 seconds.
-            # Enqueueing here returns immediately; loop A processes the reload normally and
-            # remains free to handle worker notifications concurrently.
-            reload_request = ReloadAllLibrariesRequest(broadcast_result=False)
-            GriptapeNodes.EventManager().put_event(EventRequest(request=reload_request))
 
     def _load_advanced_library_module(
         self,
