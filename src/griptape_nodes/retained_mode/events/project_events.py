@@ -352,6 +352,45 @@ class SaveProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
+class ValidateProjectTemplateRequest(RequestPayload):
+    """Validate a project template dict without saving or loading it.
+
+    Use when: UI needs to check whether a template would be accepted by the
+    engine before committing changes to disk. Runs the same validation pipeline
+    that LoadProjectTemplateRequest uses, without any side effects.
+
+    Args:
+        template_data: Dict representation of the template to validate
+
+    Results: ValidateProjectTemplateResultSuccess | ValidateProjectTemplateResultFailure
+    """
+
+    template_data: dict[str, Any]
+
+
+@dataclass
+@PayloadRegistry.register
+class ValidateProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Validation completed.
+
+    The validation itself always produces a structured result; check
+    `validation.status` to determine if the template is usable.
+
+    Args:
+        validation: Validation info with status and any problems encountered
+    """
+
+    validation: ProjectValidationInfo
+
+
+@dataclass
+@PayloadRegistry.register
+class ValidateProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Validation could not be performed (e.g. malformed request)."""
+
+
+@dataclass
+@PayloadRegistry.register
 class AttemptMatchPathAgainstMacroRequest(RequestPayload):
     """Attempt to match a path against a macro schema and extract variables.
 

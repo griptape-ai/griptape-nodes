@@ -39,6 +39,7 @@ class ProjectOverrideAction(StrEnum):
 
     MODIFIED = "modified"  # Existed in base, changed in overlay
     ADDED = "added"  # New in overlay, not in base
+    REMOVED = "removed"  # Existed in base, tombstoned in overlay
 
 
 @dataclass
