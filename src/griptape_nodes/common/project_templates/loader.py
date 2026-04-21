@@ -334,7 +334,7 @@ def load_partial_project_template(
         )
         environment_raw = {}
 
-    environment, removed_environment = _split_env_tombstones(environment_raw)
+    environment, removed_environment = _split_tombstones(environment_raw)
 
     # Optional field: description. Distinguish absent (inherit base) from
     # explicit null (clear base value).
@@ -363,24 +363,13 @@ def load_partial_project_template(
     )
 
 
-def _split_tombstones(raw: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], set[str]]:
+def _split_tombstones(raw: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
     """Partition an overlay dict into active items and deletion tombstones.
 
-    Keys with null values are treated as "delete the inherited item."
+    Keys with null values are treated as "delete the inherited item." Callers
+    should narrow the active-dict value type at their call site.
     """
-    active: dict[str, dict[str, Any]] = {}
-    removed: set[str] = set()
-    for key, value in raw.items():
-        if value is None:
-            removed.add(key)
-        else:
-            active[key] = value
-    return active, removed
-
-
-def _split_env_tombstones(raw: dict[str, Any]) -> tuple[dict[str, str], set[str]]:
-    """Partition an environment overlay into active vars and deletion tombstones."""
-    active: dict[str, str] = {}
+    active: dict[str, Any] = {}
     removed: set[str] = set()
     for key, value in raw.items():
         if value is None:
