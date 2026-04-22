@@ -37,6 +37,7 @@ from griptape_nodes.files.path_utils import (
     path_needs_expansion,
     resolve_path_safely,
     sanitize_path_string,
+    strip_surrounding_quotes,
 )
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
@@ -592,6 +593,121 @@ class OSManager:
         msg = f"Path is within workspace, relative path: {relative}"
         logger.debug(msg)
         return True, relative
+
+    def resolve_path_safely(self, path: Path) -> Path:
+        """Resolve a path consistently across platforms.
+
+        Unlike Path.resolve() which behaves differently on Windows vs Unix
+        for non-existent paths, this method provides consistent behavior:
+        - Converts relative paths to absolute (using CWD as base)
+        - Normalizes path separators and removes . and ..
+        - Does NOT resolve symlinks if path doesn't exist
+        - Does NOT change path based on CWD for absolute paths
+
+        Use this instead of .resolve() when:
+        - Path might not exist (file creation, validation, user input)
+        - You need consistent cross-platform comparison
+        - You're about to create the file/directory
+
+        Use .resolve() when:
+        - Path definitely exists and you need symlink resolution
+        - You're checking actual file locations
+
+        Args:
+            path: Path to resolve (relative or absolute, existing or not)
+
+        Returns:
+            Absolute, normalized Path object
+
+        Examples:
+            # Relative path
+            resolve_path_safely(Path("relative/file.txt"))
+            → Path("/current/dir/relative/file.txt")
+
+            # Absolute non-existent path (Windows safe)
+            resolve_path_safely(Path("/abs/nonexistent/path"))
+            → Path("/abs/nonexistent/path")  # NOT resolved relative to CWD
+        """
+        return resolve_path_safely(path)
+
+    def sanitize_path_string(self, path: str | Path | Any) -> str | Any:
+        r"""Clean path strings by removing newlines, carriage returns, shell escapes, and quotes.
+
+        This method handles multiple path cleaning concerns:
+        1. Removes newlines/carriage returns that cause WinError 123 on Windows
+           (from merge_texts nodes accidentally adding newlines between path components)
+        2. Removes shell escape characters and quotes (from macOS Finder 'Copy as Pathname')
+        3. Strips leading/trailing whitespace
+
+        Handles macOS Finder's 'Copy as Pathname' format which escapes
+        spaces, apostrophes, and other special characters with backslashes.
+        Only removes backslashes before shell-special characters to avoid
+        breaking Windows paths like C:\Users\file.txt.
+
+        Examples:
+            macOS Finder paths:
+                "/Downloads/Dragon\'s\ Curse/screenshot.jpg"
+                -> "/Downloads/Dragon's Curse/screenshot.jpg"
+
+                "/Test\ Images/Level\ 1\ -\ Knight\'s\ Quest/file.png"
+                -> "/Test Images/Level 1 - Knight's Quest/file.png"
+
+            Quoted paths:
+                '"/path/with spaces/file.txt"'
+                -> "/path/with spaces/file.txt"
+
+            Windows paths with newlines:
+                "C:\\Users\\file\\n\\n.txt"
+                -> "C:\\Users\\file.txt"
+
+            Windows extended-length paths:
+                r"\\?\C:\Very\ Long\ Path\file.txt"
+                -> r"\\?\C:\Very Long Path\file.txt"
+
+            Path objects:
+                Path("/path/to/file")
+                -> "/path/to/file"
+
+        Args:
+            path: Path string, Path object, or any other type to sanitize
+
+        Returns:
+            Sanitized path string, or original value if not a string/Path
+        """
+        return sanitize_path_string(path)
+
+    def normalize_path_for_platform(self, path: Path) -> str:
+        r"""Convert Path to string with Windows long path support if needed.
+
+        Windows has a 260 character path limit (MAX_PATH). Paths longer than this
+        need the \\?\ prefix to work correctly. This method transparently adds
+        the prefix when needed on Windows.
+
+        Also cleans paths to remove newlines/carriage returns that cause Windows errors.
+
+        Note: This method assumes the path exists or will exist. For non-existent
+        paths that need cross-platform normalization, use resolve_path_safely() first.
+
+        Args:
+            path: Path object to convert to string
+
+        Returns:
+            String representation of path, cleaned of newlines/carriage returns,
+            with Windows long path prefix if needed
+        """
+        return normalize_path_for_platform(path)
+
+    @staticmethod
+    def strip_surrounding_quotes(path_str: str) -> str:
+        """Strip surrounding quotes only if they match (from 'Copy as Pathname').
+
+        Args:
+            path_str: The path string to process
+
+        Returns:
+            Path string with surrounding quotes removed if present
+        """
+        return strip_surrounding_quotes(path_str)
 
     @staticmethod
     def format_command_line(args: list[str]) -> str:
