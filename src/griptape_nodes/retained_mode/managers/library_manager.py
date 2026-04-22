@@ -31,7 +31,7 @@ from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.files.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -1120,7 +1120,7 @@ class LibraryManager:
             Merged list of NodeDefinitions
         """
         # Create mapping of discovered files for quick lookup (use absolute resolved paths)
-        discovered_file_paths = {str(f.resolve()): f for f in discovered_files}
+        discovered_file_paths = {str(canonicalize_for_identity(f)): f for f in discovered_files}
 
         # Keep existing nodes that still have corresponding files
         merged_nodes = []
@@ -1129,7 +1129,7 @@ class LibraryManager:
         for existing_node in existing_schema.nodes:
             # Resolve the file path to absolute for comparison
             try:
-                existing_file_path = str(Path(existing_node.file_path).resolve())
+                existing_file_path = str(canonicalize_for_identity(existing_node.file_path))
             except Exception as e:
                 logger.warning(
                     "Could not resolve path for existing node '%s' at '%s': %s. Skipping.",
@@ -1157,7 +1157,7 @@ class LibraryManager:
 
         # Add new files as placeholder nodes
         for discovered_file in discovered_files:
-            discovered_file_path = str(discovered_file.resolve())
+            discovered_file_path = str(canonicalize_for_identity(discovered_file))
 
             if discovered_file_path not in existing_file_paths:
                 # Create placeholder node definition for new file

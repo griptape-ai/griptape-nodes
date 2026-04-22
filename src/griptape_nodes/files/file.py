@@ -88,21 +88,18 @@ _PATH_FAILURE_TO_FILE_IO: dict[PathResolutionFailureReason, FileIOFailureReason]
 }
 
 
-def _resolve_file_path(file_path: str | MacroPath | None) -> str | None:
+def _resolve_file_path(file_path: str | MacroPath) -> str:
     """Resolve a file path, handling MacroPath resolution if needed.
 
     Args:
-        file_path: A plain path string, a MacroPath, or None.
+        file_path: A plain path string or a MacroPath.
 
     Returns:
-        A resolved path string, or None if file_path is None.
+        A resolved path string.
 
     Raises:
         FileLoadError: If macro resolution fails.
     """
-    if file_path is None:
-        return None
-
     if isinstance(file_path, str):
         return file_path
 
@@ -122,23 +119,20 @@ def _resolve_file_path(file_path: str | MacroPath | None) -> str | None:
     return str(resolve_result.absolute_path)  # type: ignore[union-attr]
 
 
-async def _aresolve_file_path(file_path: str | MacroPath | None) -> str | None:
+async def _aresolve_file_path(file_path: str | MacroPath) -> str:
     """Async version of _resolve_file_path.
 
     Resolve a file path, handling MacroPath resolution if needed.
 
     Args:
-        file_path: A plain path string, a MacroPath, or None.
+        file_path: A plain path string or a MacroPath.
 
     Returns:
-        A resolved path string, or None if file_path is None.
+        A resolved path string.
 
     Raises:
         FileLoadError: If macro resolution fails.
     """
-    if file_path is None:
-        return None
-
     if isinstance(file_path, str):
         return file_path
 
@@ -218,13 +212,7 @@ class File:
         Raises:
             FileLoadError: If macro resolution fails (e.g. no project loaded).
         """
-        resolved = _resolve_file_path(self._file_path)
-        if resolved is None:
-            raise FileLoadError(
-                failure_reason=FileIOFailureReason.INVALID_PATH,
-                result_details="Cannot resolve path: file_path is None",
-            )
-        return resolved
+        return _resolve_file_path(self._file_path)
 
     @property
     def location(self) -> str:
@@ -501,10 +489,8 @@ class File:
         Raises:
             FileLoadError: If the file cannot be read.
         """
-        resolved_path = _resolve_file_path(self._file_path)
-
         request = ReadFileRequest(
-            file_path=resolved_path,
+            file_path=_resolve_file_path(self._file_path),
             encoding=encoding,
             should_transform_image_content_to_thumbnail=False,
         )
@@ -533,10 +519,8 @@ class File:
         Raises:
             FileLoadError: If the file cannot be read.
         """
-        resolved_path = await _aresolve_file_path(self._file_path)
-
         request = ReadFileRequest(
-            file_path=resolved_path,
+            file_path=await _aresolve_file_path(self._file_path),
             encoding=encoding,
             should_transform_image_content_to_thumbnail=False,
         )
@@ -581,16 +565,8 @@ class File:
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        resolved_path = _resolve_file_path(self._file_path)
-
-        if resolved_path is None:
-            raise FileWriteError(
-                failure_reason=FileIOFailureReason.INVALID_PATH,
-                result_details="Cannot write: file_path is None",
-            )
-
         request = WriteFileRequest(
-            file_path=resolved_path,
+            file_path=_resolve_file_path(self._file_path),
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,
@@ -634,16 +610,8 @@ class File:
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        resolved_path = await _aresolve_file_path(self._file_path)
-
-        if resolved_path is None:
-            raise FileWriteError(
-                failure_reason=FileIOFailureReason.INVALID_PATH,
-                result_details="Cannot write: file_path is None",
-            )
-
         request = WriteFileRequest(
-            file_path=resolved_path,
+            file_path=await _aresolve_file_path(self._file_path),
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,

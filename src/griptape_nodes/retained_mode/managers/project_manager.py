@@ -27,7 +27,7 @@ from griptape_nodes.common.project_templates import (
     load_partial_project_template,
 )
 from griptape_nodes.files.file import File, FileLoadError, FileWriteError
-from griptape_nodes.files.path_utils import expand_path, resolve_file_path
+from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_file_path, resolve_path_safely
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.library_events import (
@@ -255,7 +255,7 @@ class ProjectManager:
         # _registered_template_status (keyed by Path) and
         # _successfully_loaded_project_templates (keyed by str project_id) must
         # use the canonical form so dedupe checks line up.
-        project_file_path = expand_path(str(request.project_path)).resolve()
+        project_file_path = canonicalize_for_identity(request.project_path)
 
         read_request = ReadFileRequest(
             file_path=str(project_file_path),
@@ -512,9 +512,8 @@ class ProjectManager:
                     # For directory builtin variables, compare as resolved paths
                     builtin_info = _BUILTIN_VARIABLE_INFO.get(var_name)
                     if builtin_info and builtin_info.is_directory:
-                        os_manager = GriptapeNodes.OSManager()
-                        resolved_existing = os_manager.resolve_path_safely(Path(str(existing)))
-                        resolved_builtin = os_manager.resolve_path_safely(Path(builtin_value))
+                        resolved_existing = resolve_path_safely(Path(str(existing)))
+                        resolved_builtin = resolve_path_safely(Path(builtin_value))
                         if resolved_existing != resolved_builtin:
                             disallowed_overrides.add(var_name)
                     elif str(existing) != builtin_value:
@@ -570,9 +569,9 @@ class ProjectManager:
 
     def _find_workspace_override(self, project_file_path: Path, project_workspaces: dict[str, str]) -> str | None:
         """Return the user-configured workspace override for a project file, or None if not mapped."""
-        resolved_project_path = str(project_file_path.resolve())
+        resolved_project_path = str(canonicalize_for_identity(project_file_path))
         return next(
-            (v for k, v in project_workspaces.items() if str(Path(k).resolve()) == resolved_project_path),
+            (v for k, v in project_workspaces.items() if str(canonicalize_for_identity(k)) == resolved_project_path),
             None,
         )
 
@@ -1155,12 +1154,11 @@ class ProjectManager:
             /Users/james/Downloads/file.png → None
         """
         # Normalize paths for consistent cross-platform comparison
-        os_manager = GriptapeNodes.OSManager()
-        absolute_path = os_manager.resolve_path_safely(absolute_path)
+        absolute_path = resolve_path_safely(absolute_path)
 
         template = project_info.template
-        workspace_dir = os_manager.resolve_path_safely(self._config_manager.workspace_path)
-        project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
+        workspace_dir = resolve_path_safely(self._config_manager.workspace_path)
+        project_base_dir = resolve_path_safely(project_info.project_base_dir)
 
         # Collect all variables used across ALL directory macros
         variables_needed: set[str] = set()
@@ -1200,7 +1198,7 @@ class ProjectManager:
             # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
             resolved_dir_path = resolve_file_path(resolved_path_str, workspace_dir)
             # Normalize for consistent cross-platform comparison
-            resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
+            resolved_dir_path = resolve_path_safely(resolved_dir_path)
 
             # Check if absolute_path is inside this directory
             try:
@@ -1408,7 +1406,7 @@ class ProjectManager:
             # vars and resolve the persisted string before checking for an
             # existing load (prevents duplicate entries when the same file
             # was persisted under different spellings).
-            resolved_id = str(expand_path(path_str).resolve())
+            resolved_id = str(canonicalize_for_identity(path_str))
             if resolved_id in self._successfully_loaded_project_templates:
                 continue
             load_request = LoadProjectTemplateRequest(project_path=Path(path_str))
@@ -1433,7 +1431,7 @@ class ProjectManager:
             # Compare by canonicalized path (~/env expansion + resolution) so a
             # previously persisted relative or ~/ spelling of the same file
             # isn't re-persisted as a duplicate.
-            resolved_existing = {str(expand_path(p).resolve()) for p in registered}
+            resolved_existing = {str(canonicalize_for_identity(p)) for p in registered}
             if project_id not in resolved_existing:
                 self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
         except Exception:
