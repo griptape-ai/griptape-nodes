@@ -1003,3 +1003,10 @@ class TestStaticFilesManagerOnAppInitializationComplete:
 
         assert manager.static_server_base_url == "http://localhost:8124"
         assert manager.storage_driver.base_url == "http://localhost:8124/workspace"
+
+    def test_access_before_initialization_complete_raises(self, mock_secrets_manager: Mock) -> None:
+        """Reading the property before on_app_initialization_complete resolves it is a startup bug."""
+        manager = self._build_manager(mock_secrets_manager, None)
+
+        with pytest.raises(RuntimeError, match="static_server_base_url accessed before"):
+            _ = manager.static_server_base_url
