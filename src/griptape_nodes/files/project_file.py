@@ -110,6 +110,13 @@ class ProjectFileDestination(FileDestination):
             "file_extension": parts.extension,
             **extra_vars,
         }
+        # When the filename carries its own directory component (e.g. "renders/foo.png"),
+        # treat it as an authoritative sub_dirs. This lets callers pass a path-prefixed
+        # filename and have it honored even if sub_dirs would otherwise resolve from a
+        # builtin (e.g. the current workflow's directory).
+        directory_str = str(parts.directory)
+        if directory_str and directory_str != "." and "sub_dirs" not in variables:
+            variables["sub_dirs"] = directory_str
 
         file_metadata = (
             SidecarContent(

@@ -1695,8 +1695,12 @@ class WorkflowManager:
         file_path: Path
         relative_file_path: str
 
-    def _build_workflow_save_path(self, file_name: str, sub_dirs: str | None = None) -> WorkflowSavePath:
+    def _build_workflow_save_path(self, file_name: str) -> WorkflowSavePath:
         """Resolve a workflow save path via the ``save_workflow`` situation.
+
+        ``file_name`` may include directory components (e.g. ``"test/foo.py"``);
+        ``ProjectFileDestination.from_situation`` splits them and populates
+        ``sub_dirs`` for the macro.
 
         Returns the absolute save path plus a registry-relative form. When the
         resolved path lives inside the workspace the relative form stays
@@ -1705,12 +1709,8 @@ class WorkflowManager:
         resolve (e.g., no project loaded), we fall through to the plain
         workspace path.
         """
-        extra_vars: dict[str, str | int] = {}
-        if sub_dirs:
-            extra_vars["sub_dirs"] = sub_dirs
-
-        destination = ProjectFileDestination.from_situation(file_name, "save_workflow", **extra_vars)
-        relative_file_path = str(Path(sub_dirs) / file_name) if sub_dirs else file_name
+        destination = ProjectFileDestination.from_situation(file_name, "save_workflow")
+        relative_file_path = file_name
         try:
             resolved = canonicalize_for_identity(destination.resolve())
         except FileLoadError as err:
@@ -2014,28 +2014,24 @@ class WorkflowManager:
 
         elif requested_file_name and current_workflow:
             # Requested name doesn't exist but we have a current workflow → Save As.
-            # A user-typed name like "episode/my_wf" splits into sub-directory + stem
-            # and is authoritative: the requested name fully determines the save path.
+            # A user-typed name like "episode/my_wf" carries its sub-directory in the
+            # filename and is authoritative: save_workflow's macro will parse it.
             scenario = WorkflowManager.SaveWorkflowScenario.SAVE_AS
             creation_date = current_workflow.metadata.creation_date
             branched_from = current_workflow.metadata.branched_from
-            parts = FilenameParts.from_filename(f"{requested_file_name}.py")
-            sub_dirs = str(parts.directory) if str(parts.directory) != "." else None
-            file_name = parts.stem
-            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py", sub_dirs=sub_dirs)
+            file_name = FilenameParts.from_filename(f"{requested_file_name}.py").stem
+            file_path, relative_file_path = self._build_workflow_save_path(f"{requested_file_name}.py")
 
         else:
             # No requested name or no current workflow → first save.
-            # A user-typed name like "episode/my_wf" splits into sub-directory + stem;
-            # auto-generated timestamp names have no directory component.
+            # A user-typed name like "episode/my_wf" carries its sub-directory in the
+            # filename; auto-generated timestamp names have no directory component.
             scenario = WorkflowManager.SaveWorkflowScenario.FIRST_SAVE
             raw_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
-            parts = FilenameParts.from_filename(f"{raw_name}.py")
-            sub_dirs = str(parts.directory) if str(parts.directory) != "." else None
-            file_name = parts.stem
+            file_name = FilenameParts.from_filename(f"{raw_name}.py").stem
             creation_date = datetime.now(tz=UTC)
             branched_from = None
-            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py", sub_dirs=sub_dirs)
+            file_path, relative_file_path = self._build_workflow_save_path(f"{raw_name}.py")
 
         # Ensure creation date is valid (backcompat)
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
