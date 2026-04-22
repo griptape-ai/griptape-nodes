@@ -106,7 +106,6 @@ BUILTIN_WORKSPACE_DIR = "workspace_dir"
 BUILTIN_WORKFLOW_NAME = "workflow_name"
 BUILTIN_WORKFLOW_DIR = "workflow_dir"
 BUILTIN_STATIC_FILES_DIR = "static_files_dir"
-BUILTIN_SUB_DIRS = "sub_dirs"
 
 
 @dataclass(frozen=True)
@@ -130,7 +129,6 @@ _BUILTIN_VARIABLE_DEFINITIONS = [
     BuiltinVariableInfo(name=BUILTIN_WORKFLOW_NAME, is_directory=False),
     BuiltinVariableInfo(name=BUILTIN_WORKFLOW_DIR, is_directory=True),
     BuiltinVariableInfo(name=BUILTIN_STATIC_FILES_DIR, is_directory=False),
-    BuiltinVariableInfo(name=BUILTIN_SUB_DIRS, is_directory=False),
 ]
 
 # Map of variable name to metadata
@@ -497,13 +495,6 @@ class ProjectManager:
                 resolution_bag[var_name] = directory_def.path_macro
             elif var_name in user_provided_names:
                 resolution_bag[var_name] = request.variables[var_name]
-
-            # sub_dirs is a special builtin that defaults to the current workflow's
-            # parent directory but is always superseded by a caller-supplied value
-            # (e.g. save_as to a different sub-directory). When the caller already
-            # provided it, skip the builtin lookup entirely so no conflict is raised.
-            if var_name == BUILTIN_SUB_DIRS and var_name in resolution_bag:
-                continue
 
             if var_name in BUILTIN_VARIABLES:
                 try:
@@ -913,10 +904,7 @@ class ProjectManager:
             if var_name in user_provided_names:
                 satisfied_variables.add(var_name)
 
-            # sub_dirs: caller-provided always wins, so it never conflicts with the builtin.
-            if var_name == BUILTIN_SUB_DIRS and var_name in user_provided_names:
-                pass
-            elif var_name in BUILTIN_VARIABLES:
+            if var_name in BUILTIN_VARIABLES:
                 try:
                     builtin_value = self._get_builtin_variable_value(var_name, project_info)
                 except (RuntimeError, NotImplementedError) as e:
@@ -1106,7 +1094,7 @@ class ProjectManager:
 
         return directory_schemas
 
-    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:  # noqa: C901
+    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:
         """Get the value of a single builtin variable.
 
         Args:
@@ -1155,38 +1143,9 @@ class ProjectManager:
             case "static_files_dir":
                 return self._config_manager.get_config_value("static_files_directory", default="staticfiles")
 
-            case "sub_dirs":
-                return self._resolve_current_workflow_sub_dirs()
-
             case _:
                 msg = f"Unknown builtin variable: {var_name}"
                 raise ValueError(msg)
-
-    def _resolve_current_workflow_sub_dirs(self) -> str:
-        """Resolve the ``sub_dirs`` builtin from the current workflow's file_path parent.
-
-        Raises ``RuntimeError`` when there is no current workflow, the workflow is
-        unsaved, or the workflow lives at the workspace root (no sub-directory to
-        contribute). The optional-variable fallback in the macro resolver skips
-        the ``{sub_dirs?:/}`` segment in those cases.
-        """
-        context_manager = GriptapeNodes.ContextManager()
-        if not context_manager.has_current_workflow():
-            msg = "No current workflow"
-            raise RuntimeError(msg)
-        workflow_name = context_manager.get_current_workflow_name()
-        try:
-            workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
-        except KeyError as e:
-            msg = f"Workflow '{workflow_name}' has not been saved yet"
-            raise RuntimeError(msg) from e
-        # workflow.file_path is workspace-relative (e.g. "test/cj_workflow.py"),
-        # so its parent is the sub-directory under the workspace.
-        parent_str = str(Path(workflow.file_path).parent)
-        if parent_str == ".":
-            msg = "Current workflow has no sub-directory"
-            raise RuntimeError(msg)
-        return parent_str
 
     def _absolute_path_to_macro_path(  # noqa: C901, PLR0912
         self, absolute_path: Path, project_info: ProjectInfo

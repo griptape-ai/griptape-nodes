@@ -812,7 +812,7 @@ class TestWorkflowManager:
         assert save_path.relative_file_path == "my_workflow.py"
 
     def test_build_workflow_save_path_preserves_sub_dirs(self, griptape_nodes: GriptapeNodes) -> None:
-        """A path-prefixed filename passes through to the situation and is reflected in the registry key."""
+        """sub_dirs are passed to the situation and reflected in the resolved workspace-relative key."""
         workflow_manager = griptape_nodes.WorkflowManager()
         workspace = griptape_nodes.ConfigManager().workspace_path
         resolved_path = workspace / "team" / "my_workflow.py"
@@ -824,11 +824,11 @@ class TestWorkflowManager:
             "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
             return_value=fake_destination,
         ) as mock_from_situation:
-            save_path = workflow_manager._build_workflow_save_path("team/my_workflow.py")
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py", sub_dirs="team")
 
-        mock_from_situation.assert_called_once_with("team/my_workflow.py", "save_workflow")
+        mock_from_situation.assert_called_once_with("my_workflow.py", "save_workflow", sub_dirs="team")
         assert save_path.file_path == resolved_path
-        assert save_path.relative_file_path == "team/my_workflow.py"
+        assert save_path.relative_file_path == str(Path("team") / "my_workflow.py")
 
     def test_build_workflow_save_path_uses_absolute_when_outside_workspace(
         self, griptape_nodes: GriptapeNodes, tmp_path: Path
@@ -864,7 +864,7 @@ class TestWorkflowManager:
             "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
             return_value=fake_destination,
         ):
-            save_path = workflow_manager._build_workflow_save_path("team/my_workflow.py")
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py", sub_dirs="team")
 
         assert save_path.file_path == workspace / "team" / "my_workflow.py"
-        assert save_path.relative_file_path == "team/my_workflow.py"
+        assert save_path.relative_file_path == str(Path("team") / "my_workflow.py")
