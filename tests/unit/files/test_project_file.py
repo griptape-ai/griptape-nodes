@@ -157,7 +157,7 @@ class TestProjectFileDestinationInit:
         assert variables is not None
         assert "sub_dirs" not in variables
 
-    def test_from_situation_absolute_filename_bypasses_macro(self) -> None:
+    def test_from_situation_absolute_filename_bypasses_macro(self, tmp_path: Path) -> None:
         """An absolute filename is honored verbatim rather than routed through the situation macro."""
         from griptape_nodes.common.project_templates.situation import (
             SituationFilePolicy,
@@ -172,13 +172,15 @@ class TestProjectFileDestinationInit:
             policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
         )
 
+        absolute_filename = str(tmp_path / "foo" / "bar" / "output.png")
+
         with patch(
             HANDLE_REQUEST_PATH, return_value=GetSituationResultSuccess(situation=situation, result_details="ok")
         ):
-            dest = ProjectFileDestination.from_situation("/foo/bar/output.png", "save_node_output")
+            dest = ProjectFileDestination.from_situation(absolute_filename, "save_node_output")
 
         # The resolved path should be the absolute path as-is, not routed under {outputs}.
-        assert dest._file.location == "/foo/bar/output.png"
+        assert dest._file.location == absolute_filename
 
     def test_from_situation_explicit_sub_dirs_wins_over_filename_directory(self) -> None:
         """An explicit sub_dirs kwarg is not clobbered by a filename-derived value."""
