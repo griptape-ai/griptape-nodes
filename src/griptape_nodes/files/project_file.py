@@ -110,11 +110,13 @@ class ProjectFileDestination(FileDestination):
             "file_extension": parts.extension,
             **extra_vars,
         }
-        # When the filename carries its own directory component (e.g. "foo/bar/output.png"),
-        # populate sub_dirs so situations with {sub_dirs?:/} route the file into that
-        # sub-directory. An explicit sub_dirs kwarg in extra_vars takes precedence.
+        # When the filename carries its own relative directory component (e.g.
+        # "foo/bar/output.png"), populate sub_dirs so situations with {sub_dirs?:/}
+        # route the file into that sub-directory. An explicit sub_dirs kwarg in
+        # extra_vars takes precedence. Absolute filenames are handled below --
+        # they bypass the situation macro entirely.
         directory_str = str(parts.directory)
-        if directory_str and directory_str != "." and "sub_dirs" not in variables:
+        if directory_str and directory_str != "." and not parts.directory.is_absolute() and "sub_dirs" not in variables:
             variables["sub_dirs"] = directory_str
 
         file_metadata = (
@@ -132,6 +134,17 @@ class ProjectFileDestination(FileDestination):
             if situation_obj is not None
             else None
         )
+
+        # Absolute filenames bypass the situation macro: the caller is declaring
+        # an explicit on-disk location, so honor it verbatim rather than treating
+        # the leading-slash directory as sub_dirs within {outputs}/etc.
+        if parts.directory.is_absolute():
+            return cls(
+                filename,
+                existing_file_policy=existing_file_policy,
+                create_parents=create_dirs,
+                file_metadata=file_metadata,
+            )
 
         macro_path = MacroPath(ParsedMacro(macro_template), variables)
         return cls(
