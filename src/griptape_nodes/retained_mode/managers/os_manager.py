@@ -945,6 +945,7 @@ class OSManager:
     def platform() -> str:
         return sys.platform
 
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4418
     @staticmethod
     def is_windows() -> bool:
         return sys.platform.startswith("win")

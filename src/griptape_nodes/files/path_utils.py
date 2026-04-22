@@ -44,6 +44,7 @@ def _apply_windows_long_path_prefix(path_str: str) -> str:
     or on paths that already carry the prefix. UNC paths (``\\server\share``)
     get the ``\\?\UNC\`` variant.
     """
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4418
     if not sys.platform.startswith("win"):
         return path_str
     if len(path_str) < WINDOWS_MAX_PATH or path_str.startswith("\\\\?\\"):
