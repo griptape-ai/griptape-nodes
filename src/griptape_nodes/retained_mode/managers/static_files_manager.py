@@ -4,7 +4,6 @@ import logging
 import threading
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import urlparse
 
 from xdg_base_dirs import xdg_config_home
 
@@ -97,8 +96,15 @@ class StaticFilesManager:
         self.storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
         workspace_directory = config_manager.workspace_path
 
-        # Build base URL for LocalStorageDriver from configured base URL
-        self.static_server_base_url = config_manager.get_config_value("static_server_base_url").rstrip("/")
+        # Build base URL for LocalStorageDriver. When the user has not configured an explicit
+        # base URL, derive it from the server's host/port so on_app_initialization_complete can
+        # later swap in the OS-assigned port. An explicit override is taken verbatim.
+        configured_base_url = config_manager.get_config_value("static_server_base_url")
+        self._static_server_base_url_overridden = configured_base_url is not None
+        if configured_base_url is None:
+            self.static_server_base_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}"
+        else:
+            self.static_server_base_url = configured_base_url.rstrip("/")
         base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
 
         match self.storage_backend:
@@ -389,13 +395,12 @@ class StaticFilesManager:
             sock = bind_free_socket(STATIC_SERVER_HOST, STATIC_SERVER_PORT)
             actual_port = sock.getsockname()[1]
 
-            # Only update the base URL when the user hasn't customized the host or port
+            # Only update the base URL when the user hasn't provided an explicit override
             # (e.g. an ngrok tunnel, reverse proxy, or `ssh -L` tunnel on a different port).
-            # If both host and port match the server defaults, it's a direct connection and
-            # we update the port to reflect the OS-assigned value.
-            parsed = urlparse(self.static_server_base_url)
-            if parsed.hostname == STATIC_SERVER_HOST and parsed.port == STATIC_SERVER_PORT:
-                self.static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}".rstrip("/")
+            # Without an override the URL is server-derived, so we refresh the port to reflect
+            # the OS-assigned value.
+            if not self._static_server_base_url_overridden:
+                self.static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}"
             self.storage_driver.base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
 
             threading.Thread(target=start_static_server, args=(sock,), daemon=True, name="static-server").start()

@@ -928,15 +928,15 @@ class TestStaticFilesManagerOnAppInitializationComplete:
 
     The engine binds a free port at startup and may rewrite `static_server_base_url`
     to reflect the OS-assigned port. That rewrite must only happen when the user has
-    not customized host or port away from the defaults, otherwise it clobbers tunnel
-    configurations (e.g. `ssh -L 8888:localhost:8124`, ngrok, reverse proxies).
+    not provided an explicit override, otherwise it clobbers tunnel configurations
+    (e.g. `ssh -L 8888:localhost:8124`, ngrok, reverse proxies).
     """
 
     @pytest.fixture
     def mock_secrets_manager(self) -> Mock:
         return Mock()
 
-    def _build_manager(self, mock_secrets_manager: Mock, configured_url: str) -> StaticFilesManager:
+    def _build_manager(self, mock_secrets_manager: Mock, configured_url: str | None) -> StaticFilesManager:
         from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 
         mock_config = Mock()
@@ -968,9 +968,9 @@ class TestStaticFilesManagerOnAppInitializationComplete:
         ):
             manager.on_app_initialization_complete(AppInitializationComplete())
 
-    def test_default_host_and_port_rewritten_to_actual_port(self, mock_secrets_manager: Mock) -> None:
-        """When config matches the defaults, the OS-assigned port replaces the default port."""
-        manager = self._build_manager(mock_secrets_manager, "http://localhost:8124")
+    def test_unset_base_url_rewritten_to_actual_port(self, mock_secrets_manager: Mock) -> None:
+        """When no override is configured, the OS-assigned port replaces the server's default port."""
+        manager = self._build_manager(mock_secrets_manager, None)
 
         self._invoke_initialization(manager, actual_port=54321)
 
@@ -994,3 +994,12 @@ class TestStaticFilesManagerOnAppInitializationComplete:
 
         assert manager.static_server_base_url == "https://my-tunnel.ngrok.io"
         assert manager.storage_driver.base_url == "https://my-tunnel.ngrok.io/workspace"
+
+    def test_override_matching_defaults_is_still_preserved(self, mock_secrets_manager: Mock) -> None:
+        """An explicit override is respected even when it happens to equal the server defaults."""
+        manager = self._build_manager(mock_secrets_manager, "http://localhost:8124")
+
+        self._invoke_initialization(manager, actual_port=54321)
+
+        assert manager.static_server_base_url == "http://localhost:8124"
+        assert manager.storage_driver.base_url == "http://localhost:8124/workspace"

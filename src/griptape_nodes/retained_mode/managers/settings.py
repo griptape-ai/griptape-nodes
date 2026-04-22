@@ -1,4 +1,3 @@
-import os
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
@@ -293,12 +292,10 @@ class Settings(BaseModel):
         default_factory=list,
         description="List of Model Context Protocol server configurations",
     )
-    static_server_base_url: str = Field(
+    static_server_base_url: str | None = Field(
         category=STATIC_SERVER,
-        default_factory=lambda: (
-            f"http://{os.getenv('STATIC_SERVER_HOST', 'localhost')}:{os.getenv('STATIC_SERVER_PORT', '8124')}"
-        ),
-        description="Base URL for the static server. Defaults to http://localhost:8124 (or values from STATIC_SERVER_HOST/PORT env vars). Override this when using tunnels (ngrok, cloudflare) or reverse proxies.",
+        default=None,
+        description="Base URL for the static server. Leave unset to derive it from the server's host/port (including the OS-assigned port when the configured port is unavailable). Set this only to override the derived URL, e.g. when fronting the server with a tunnel (ngrok, cloudflare) or reverse proxy.",
     )
     artifacts: dict[str, Any] = Field(
         category=ARTIFACTS,
