@@ -11,6 +11,7 @@ WORKFLOWS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.workflows
 SECRETS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.secrets_to_register"
 MODELS_TO_DOWNLOAD_KEY = "app_events.on_app_initialization_complete.models_to_download"
 PROJECTS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.projects_to_register"
+CURRENT_PROJECT_ID_KEY = "app_events.on_app_initialization_complete.current_project_id"
 PROJECT_WORKSPACES_KEY = "project_workspaces"
 EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
 WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
@@ -127,6 +128,11 @@ class AppInitializationComplete(BaseModel):
         category=PROJECTS,
         default_factory=list,
         description="List of griptape-nodes-project.yml file paths to load at startup",
+    )
+    current_project_id: str | None = Field(
+        category=PROJECTS,
+        default=None,
+        description="Project ID of the most recently active project. Restored on engine restart if still available.",
     )
 
 
