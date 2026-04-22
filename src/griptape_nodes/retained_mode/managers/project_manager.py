@@ -1435,7 +1435,7 @@ class ProjectManager:
                     result.result_details,
                 )
             else:
-                logger.info("Reloaded registered project from '%s'", path_str)
+                logger.debug("Reloaded registered project from '%s'", path_str)
 
     def _register_project_path(self, project_id: str) -> None:
         """Persist a project file path so it is loaded on the next engine restart.
