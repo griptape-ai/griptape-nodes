@@ -387,6 +387,191 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("staticfiles/output.txt")
 
+    @patch("griptape_nodes.retained_mode.managers.project_manager.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_sub_dirs_resolves_from_current_workflow(
+        self,
+        mock_griptape_nodes: Mock,
+        mock_workflow_registry: Mock,
+        project_manager_with_template: ProjectManager,
+    ) -> None:
+        """{sub_dirs} resolves to the current workflow's file_path parent (workspace-relative)."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "cj_workflow"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        mock_workflow = Mock()
+        mock_workflow.file_path = "test/cj_workflow.py"
+        mock_workflow_registry.get_workflow_by_name.return_value = mock_workflow
+
+        parsed_macro = ParsedMacro("outputs/{sub_dirs?:/}render.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/test/render.png")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_sub_dirs_nested_sub_directory(
+        self,
+        mock_griptape_nodes: Mock,
+        mock_workflow_registry: Mock,
+        project_manager_with_template: ProjectManager,
+    ) -> None:
+        """{sub_dirs} preserves nested directory components from the workflow's file_path."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "intro"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        mock_workflow = Mock()
+        mock_workflow.file_path = "act_1/scene_3/intro.py"
+        mock_workflow_registry.get_workflow_by_name.return_value = mock_workflow
+
+        parsed_macro = ParsedMacro("outputs/{sub_dirs?:/}frame.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/act_1/scene_3/frame.png")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_sub_dirs_workflow_at_workspace_root_skipped(
+        self,
+        mock_griptape_nodes: Mock,
+        mock_workflow_registry: Mock,
+        project_manager_with_template: ProjectManager,
+    ) -> None:
+        """{sub_dirs?:/} is skipped (optional fallback) when the workflow lives at the workspace root."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "root_workflow"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        mock_workflow = Mock()
+        mock_workflow.file_path = "root_workflow.py"
+        mock_workflow_registry.get_workflow_by_name.return_value = mock_workflow
+
+        parsed_macro = ParsedMacro("outputs/{sub_dirs?:/}render.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/render.png")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_sub_dirs_optional_skipped_when_no_workflow(
+        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+    ) -> None:
+        """{sub_dirs?:/} is skipped (not an error) when there is no current workflow."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = False
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        parsed_macro = ParsedMacro("outputs/{sub_dirs?:/}render.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/render.png")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_sub_dirs_optional_skipped_when_workflow_unregistered(
+        self,
+        mock_griptape_nodes: Mock,
+        mock_workflow_registry: Mock,
+        project_manager_with_template: ProjectManager,
+    ) -> None:
+        """{sub_dirs?:/} is skipped when the workflow is not yet in the registry (unsaved)."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "unsaved_workflow"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        mock_workflow_registry.get_workflow_by_name.side_effect = KeyError("unsaved_workflow")
+
+        parsed_macro = ParsedMacro("outputs/{sub_dirs?:/}render.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/render.png")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_caller_provided_sub_dirs_wins_over_builtin(
+        self,
+        mock_griptape_nodes: Mock,
+        mock_workflow_registry: Mock,
+        project_manager_with_template: ProjectManager,
+    ) -> None:
+        """Caller-provided sub_dirs supersedes the builtin without raising a conflict.
+
+        Covers the save_as scenario where the user saves a workflow at test/foo.py
+        into renders/new.py: the filename-derived sub_dirs should win.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        # Builtin would resolve to "test", but caller passes "renders".
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "foo"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        mock_workflow = Mock()
+        mock_workflow.file_path = "test/foo.py"
+        mock_workflow_registry.get_workflow_by_name.return_value = mock_workflow
+
+        parsed_macro = ParsedMacro("outputs/{sub_dirs?:/}render.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={"sub_dirs": "renders"})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/renders/render.png")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_caller_provided_sub_dirs_used_when_no_current_workflow(
+        self,
+        mock_griptape_nodes: Mock,
+        mock_workflow_registry: Mock,  # noqa: ARG002
+        project_manager_with_template: ProjectManager,
+    ) -> None:
+        """Caller-provided sub_dirs works even when builtin cannot resolve (no current workflow)."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = False
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        parsed_macro = ParsedMacro("outputs/{sub_dirs?:/}render.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={"sub_dirs": "renders"})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/renders/render.png")
+
     def test_builtin_static_files_dir_resolves_from_config(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {static_files_dir} resolves to the configured static_files_directory setting."""
         from griptape_nodes.common.macro_parser import ParsedMacro
