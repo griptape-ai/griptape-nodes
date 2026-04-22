@@ -389,11 +389,12 @@ class StaticFilesManager:
             sock = bind_free_socket(STATIC_SERVER_HOST, STATIC_SERVER_PORT)
             actual_port = sock.getsockname()[1]
 
-            # Only update the base URL when the user hasn't configured a custom host
-            # (e.g. an ngrok tunnel or reverse proxy). If the configured host matches the
-            # server's bind host, it's a direct connection and we update the port.
+            # Only update the base URL when the user hasn't customized the host or port
+            # (e.g. an ngrok tunnel, reverse proxy, or `ssh -L` tunnel on a different port).
+            # If both host and port match the server defaults, it's a direct connection and
+            # we update the port to reflect the OS-assigned value.
             parsed = urlparse(self.static_server_base_url)
-            if parsed.hostname == STATIC_SERVER_HOST:
+            if parsed.hostname == STATIC_SERVER_HOST and parsed.port == STATIC_SERVER_PORT:
                 self.static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}".rstrip("/")
             self.storage_driver.base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
 
