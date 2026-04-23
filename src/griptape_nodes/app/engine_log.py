@@ -44,7 +44,7 @@ class _EngineRoleFilter(logging.Filter):
 class _EngineRoleHandler(RichHandler):
     """RichHandler that inserts a worker engine designator as its own column between log level and message."""
 
-    _COLUMN_WIDTH = 15  # display width for "Orchestrator" (12) or "Worker-XXXXXXXX" (15)
+    _COLUMN_WIDTH = 15  # display width for "Worker-XXXXXXXX"
 
     def render(  # type: ignore[override]
         self,

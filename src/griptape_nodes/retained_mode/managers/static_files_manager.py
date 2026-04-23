@@ -4,7 +4,6 @@ import logging
 import threading
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import urlparse
 
 from xdg_base_dirs import xdg_config_home
 
@@ -97,9 +96,17 @@ class StaticFilesManager:
         self.storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
         workspace_directory = config_manager.workspace_path
 
-        # Build base URL for LocalStorageDriver from configured base URL
-        self.static_server_base_url = config_manager.get_config_value("static_server_base_url").rstrip("/")
-        base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
+        # Capture any explicit base URL override now; leave the underlying field None otherwise
+        # so on_app_initialization_complete can derive the URL from the OS-assigned port. A set
+        # value here (including one that equals the server defaults) is the signal for "user
+        # override" and short-circuits the port refresh.
+        configured_base_url = config_manager.get_config_value("static_server_base_url")
+        self._static_server_base_url: str | None = (
+            configured_base_url.rstrip("/") if configured_base_url is not None else None
+        )
+        base_url = (
+            f"{self._static_server_base_url}{STATIC_SERVER_URL}" if self._static_server_base_url is not None else None
+        )
 
         match self.storage_backend:
             case StorageBackend.GTC:
@@ -146,6 +153,18 @@ class StaticFilesManager:
             )
             # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop static server
 
+    @property
+    def static_server_base_url(self) -> str:
+        """Base URL for the static server.
+
+        Resolved during ``on_app_initialization_complete`` once the server has bound to a
+        port. Reading this before that event fires indicates a startup-ordering bug.
+        """
+        if self._static_server_base_url is None:
+            msg = "static_server_base_url accessed before on_app_initialization_complete resolved it."
+            raise RuntimeError(msg)
+        return self._static_server_base_url
+
     def _generate_preview_if_needed(self, file_path: Path) -> tuple[Path, dict | None]:
         """Generate preview for a file if needed.
 
@@ -175,11 +194,12 @@ class StaticFilesManager:
                 macro_path=MacroPath(ParsedMacro(str(file_path)), {}),
                 artifact_provider_name=provider_name,
                 preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
+                failure_log_level=logging.DEBUG,
             )
         )
 
         if not isinstance(result, GetPreviewForArtifactResultSuccess) or not isinstance(result.paths_to_preview, str):
-            logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
+            logger.debug("Preview generation failed for %s: %s", file_path, result.result_details)
             return file_path, None
 
         preview_path = Path(result.paths_to_preview)
@@ -389,13 +409,12 @@ class StaticFilesManager:
             sock = bind_free_socket(STATIC_SERVER_HOST, STATIC_SERVER_PORT)
             actual_port = sock.getsockname()[1]
 
-            # Only update the base URL when the user hasn't configured a custom host
-            # (e.g. an ngrok tunnel or reverse proxy). If the configured host matches the
-            # server's bind host, it's a direct connection and we update the port.
-            parsed = urlparse(self.static_server_base_url)
-            if parsed.hostname == STATIC_SERVER_HOST:
-                self.static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}".rstrip("/")
-            self.storage_driver.base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
+            # When there's no explicit override, derive the base URL from the bind host and
+            # the OS-assigned port. An override set in __init__ (e.g. an ngrok tunnel, reverse
+            # proxy, or `ssh -L` tunnel on a different port) is taken verbatim.
+            if self._static_server_base_url is None:
+                self._static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}"
+            self.storage_driver.base_url = f"{self._static_server_base_url}{STATIC_SERVER_URL}"
 
             threading.Thread(target=start_static_server, args=(sock,), daemon=True, name="static-server").start()
 

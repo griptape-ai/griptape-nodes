@@ -9,6 +9,7 @@ import anyio
 import pytest
 import send2trash
 
+from griptape_nodes.files.path_utils import normalize_path_for_platform, resolve_path_safely
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
     CreateFileRequest,
@@ -734,7 +735,7 @@ class TestExpandPath:
         with patch.object(os_manager, "_get_windows_special_folder_path", return_value=mock_downloads) as mock_get:
             result = os_manager._expand_path("~/Downloads")
             mock_get.assert_called_once()
-            assert result == os_manager.resolve_path_safely(mock_downloads)
+            assert result == resolve_path_safely(mock_downloads)
 
     def test_expand_path_non_windows_uses_expanduser(
         self,
@@ -746,7 +747,7 @@ class TestExpandPath:
             pytest.skip("Non-Windows test")
         os_manager = griptape_nodes.OSManager()
         result = os_manager._expand_path("~/Downloads")
-        expected = os_manager.resolve_path_safely(Path.home() / "Downloads")
+        expected = resolve_path_safely(Path.home() / "Downloads")
         assert result == expected
 
 
@@ -775,30 +776,27 @@ class TestWindowsLongPathHandling:
         path_parts = [temp_dir] + [long_component] * 6  # Will exceed 260 chars
         return Path(*path_parts)
 
-    def test_normalize_path_short_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    def test_normalize_path_short_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:  # noqa: ARG002
         """Test that short paths are not modified."""
-        os_manager = griptape_nodes.OSManager()
         short_path = temp_dir / "short.txt"
-        result = os_manager.normalize_path_for_platform(short_path)
+        result = normalize_path_for_platform(short_path)
 
         # Should return string without \\?\ prefix
         assert not result.startswith("\\\\?\\")
 
     @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
-    def test_normalize_path_long_path_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:
+    def test_normalize_path_long_path_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:  # noqa: ARG002
         r"""Test that long paths on Windows get \\?\ prefix."""
-        os_manager = griptape_nodes.OSManager()
-        result = os_manager.normalize_path_for_platform(long_path)
+        result = normalize_path_for_platform(long_path)
 
         # On Windows, long paths should get the prefix
         if len(str(long_path.resolve())) >= WINDOWS_MAX_PATH:
             assert result.startswith("\\\\?\\")
 
     @pytest.mark.skipif(platform.system() == "Windows", reason="Non-Windows test")
-    def test_normalize_path_long_path_non_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:
+    def test_normalize_path_long_path_non_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:  # noqa: ARG002
         """Test that long paths on non-Windows don't get prefix."""
-        os_manager = griptape_nodes.OSManager()
-        result = os_manager.normalize_path_for_platform(long_path)
+        result = normalize_path_for_platform(long_path)
 
         # On non-Windows, no prefix should be added
         assert not result.startswith("\\\\?\\")

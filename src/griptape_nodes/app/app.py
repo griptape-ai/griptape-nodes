@@ -413,8 +413,6 @@ async def _handle_orchestrator_unmatched(message: dict, worker_manager: WorkerMa
 
 async def _run_orchestrator(client: Client) -> None:
     """Run the WebSocket task group for an orchestrator engine."""
-    _engine_role_filter.prefix = "Orchestrator"
-
     async with RequestClient(client) as request_client:
         worker_manager = griptape_nodes.WorkerManager()
         worker_manager.attach_transport(

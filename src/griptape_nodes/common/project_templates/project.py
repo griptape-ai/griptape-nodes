@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class ProjectTemplate(BaseModel):
     """Complete project template loaded from project.yml."""
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.2.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
 
     project_template_schema_version: str = Field(description="Schema version for the project template")
     name: str = Field(description="Name of the project")
@@ -33,6 +33,10 @@ class ProjectTemplate(BaseModel):
         description="Directory definitions (logical_name -> definition)",
     )
     environment: dict[str, str] = Field(default_factory=dict, description="Custom environment variables")
+    file_extension_directories: dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping of file extension (without leading dot) to a macro (plain name or `{...}` template) used to populate the {file_extension_directory} macro variable",
+    )
 
     def get_situation(self, situation_name: str) -> SituationTemplate | None:
         """Get a situation by name, returns None if not found."""
@@ -81,6 +85,13 @@ class ProjectTemplate(BaseModel):
         environment_overlay = self._diff_environment(self_dump["environment"], base_dump["environment"])
         if environment_overlay:
             output["environment"] = environment_overlay
+
+        file_extension_directories_overlay = self._diff_environment(
+            self_dump.get("file_extension_directories", {}),
+            base_dump.get("file_extension_directories", {}),
+        )
+        if file_extension_directories_overlay:
+            output["file_extension_directories"] = file_extension_directories_overlay
 
         return self._dump_yaml(output)
 
@@ -329,6 +340,31 @@ class ProjectTemplate(BaseModel):
                 action=action,
             )
 
+        # Merge file_extension_directories (same semantics as environment: per-key
+        # overwrite, null tombstones drop inherited entries).
+        merged_file_extension_directories = {**base.file_extension_directories}
+        for key in overlay.removed_file_extension_directories:
+            if key in merged_file_extension_directories:
+                del merged_file_extension_directories[key]
+                validation_info.add_override(
+                    category=ProjectOverrideCategory.FILE_EXTENSION_DIRECTORY,
+                    name=key,
+                    action=ProjectOverrideAction.REMOVED,
+                )
+        for key, value in overlay.file_extension_directories.items():
+            action = (
+                ProjectOverrideAction.MODIFIED
+                if key in base.file_extension_directories
+                else ProjectOverrideAction.ADDED
+            )
+            merged_file_extension_directories[key] = value
+
+            validation_info.add_override(
+                category=ProjectOverrideCategory.FILE_EXTENSION_DIRECTORY,
+                name=key,
+                action=action,
+            )
+
         # Description: overlay value wins; explicit null clears; absent inherits base.
         if overlay.clears_description:
             merged_description = None
@@ -343,5 +379,6 @@ class ProjectTemplate(BaseModel):
             situations=merged_situations,
             directories=merged_directories,
             environment=merged_environment,
+            file_extension_directories=merged_file_extension_directories,
             description=merged_description,
         )

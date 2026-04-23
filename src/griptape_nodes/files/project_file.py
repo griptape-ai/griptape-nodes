@@ -5,6 +5,7 @@ from pathlib import Path
 
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+from griptape_nodes.files.derivation import DERIVATION_RULES, apply_derivation_rules
 from griptape_nodes.files.file import File, FileDestination
 from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
@@ -26,6 +27,7 @@ logger = logging.getLogger("griptape_nodes")
 
 FALLBACK_MACRO_TEMPLATE = "{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}"
 
+
 SITUATION_TO_FILE_POLICY: dict[str, ExistingFilePolicy] = {
     SituationFilePolicy.CREATE_NEW: ExistingFilePolicy.CREATE_NEW,
     SituationFilePolicy.OVERWRITE: ExistingFilePolicy.OVERWRITE,
@@ -43,7 +45,34 @@ class ProjectFileDestination(FileDestination):
 
     Construct directly with a ``MacroPath`` and write policy, or use the
     ``from_situation`` classmethod to build from a situation name and filename.
+
+    Before storing the path, a pre-resolution pass runs the engine's
+    ``DERIVATION_RULES`` against any MacroPath input. Each rule produces a
+    derived variable (e.g. ``file_extension_directory`` from ``file_extension`` +
+    the project's ``file_extension_directories`` table) when its template slot is
+    referenced. This keeps derivation consistent across every caller
+    (``from_situation``, ``FileOutputSetting``, etc.) without each of them
+    duplicating the lookup.
     """
+
+    def __init__(
+        self,
+        file_path: str | MacroPath,
+        *,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
+        file_metadata: SidecarContent | None = None,
+    ) -> None:
+        if isinstance(file_path, MacroPath):
+            file_path = apply_derivation_rules(file_path, DERIVATION_RULES)
+        super().__init__(
+            file_path,
+            existing_file_policy=existing_file_policy,
+            append=append,
+            create_parents=create_parents,
+            file_metadata=file_metadata,
+        )
 
     def write_bytes(self, content: bytes) -> File:
         return self._map_to_macro_file(super().write_bytes(content))
@@ -110,6 +139,21 @@ class ProjectFileDestination(FileDestination):
             "file_extension": parts.extension,
             **extra_vars,
         }
+        # When the filename carries its own relative directory component (e.g.
+        # "foo/bar/output.png"), populate sub_dirs so situations with {sub_dirs?:/}
+        # route the file into that sub-directory. An explicit sub_dirs kwarg in
+        # extra_vars takes precedence. Absolute filenames still flow through the
+        # macro; we skip the sub_dirs override for them so we don't feed a
+        # leading-slash value into the macro substitution.
+        directory_str = str(parts.directory)
+        if directory_str and directory_str != "." and not parts.directory.is_absolute() and "sub_dirs" not in variables:
+            variables["sub_dirs"] = directory_str
+
+        # Derived variables (e.g. file_extension_directory) are populated by
+        # ProjectFileDestination's __init__ via apply_derivation_rules. We run
+        # the pass here too so the sidecar metadata captures the same variables
+        # the write actually uses.
+        macro_path = apply_derivation_rules(MacroPath(ParsedMacro(macro_template), variables), DERIVATION_RULES)
 
         file_metadata = (
             SidecarContent(
@@ -120,14 +164,27 @@ class ProjectFileDestination(FileDestination):
                         on_collision=situation_obj.policy.on_collision,
                         create_dirs=situation_obj.policy.create_dirs,
                     ),
-                    variables={k: str(v) for k, v in variables.items()},
+                    variables={k: str(v) for k, v in macro_path.variables.items()},
                 ),
             )
             if situation_obj is not None
             else None
         )
 
-        macro_path = MacroPath(ParsedMacro(macro_template), variables)
+        # Absolute filenames bypass the situation macro: the caller is declaring
+        # an explicit on-disk location, so honor it verbatim rather than treating
+        # the leading-slash directory as sub_dirs within {outputs}/etc. Drop the
+        # sidecar metadata too -- the situation macro + variables we computed
+        # above won't re-resolve to the actual on-disk location, so recording
+        # them would produce a dishonest provenance trail.
+        if parts.directory.is_absolute():
+            return cls(
+                filename,
+                existing_file_policy=existing_file_policy,
+                create_parents=create_dirs,
+                file_metadata=None,
+            )
+
         return cls(
             macro_path,
             existing_file_policy=existing_file_policy,

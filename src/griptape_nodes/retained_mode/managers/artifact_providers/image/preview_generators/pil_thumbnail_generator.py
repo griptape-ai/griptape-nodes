@@ -108,7 +108,9 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
         """
         # Read the source image file
         read_request = ReadFileRequest(
-            file_path=self.source_file_location, workspace_only=False, should_transform_image_content_to_thumbnail=False
+            file_path=self.source_file_location,
+            workspace_only=False,
+            should_transform_image_content_to_thumbnail=False,
         )
         read_result = GriptapeNodes.handle_request(read_request)
 
