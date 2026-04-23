@@ -52,14 +52,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
     async def __aenter__(self) -> Self:
         """Async context manager entry: initialize queue and broadcast app initialization."""
         GriptapeNodes.EventManager().initialize_queue()
-
-        # Activate the user-specified project BEFORE broadcasting AppInitializationComplete.
-        # At this point ProjectManager._initialization_complete is still False, so the
-        # project switch skips the heavy library reload that would otherwise clear the
-        # flow/nodes already created at module import time.
-        if self._project_file_path is not None:
-            await self._load_project(self._project_file_path)
-
         await GriptapeNodes.EventManager().abroadcast_app_event(
             AppInitializationComplete(
                 skip_library_loading=self._skip_library_loading, workflows_to_register=self._workflows_to_register
@@ -234,6 +226,9 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         flow_name = self._load_flow_for_workflow()
         # Now let's set the input to the flow
         await self._set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
+
+        if self._project_file_path is not None:
+            await self._load_project(self._project_file_path)
 
         return flow_name
 
