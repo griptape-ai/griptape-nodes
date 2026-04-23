@@ -194,11 +194,12 @@ class StaticFilesManager:
                 macro_path=MacroPath(ParsedMacro(str(file_path)), {}),
                 artifact_provider_name=provider_name,
                 preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
+                failure_log_level=logging.DEBUG,
             )
         )
 
         if not isinstance(result, GetPreviewForArtifactResultSuccess) or not isinstance(result.paths_to_preview, str):
-            logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
+            logger.debug("Preview generation failed for %s: %s", file_path, result.result_details)
             return file_path, None
 
         preview_path = Path(result.paths_to_preview)
