@@ -83,6 +83,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     CanResetNodeToDefaultsRequest,
     CanResetNodeToDefaultsResultFailure,
     CanResetNodeToDefaultsResultSuccess,
+    ClearNodeCacheRequest,
+    ClearNodeCacheResultFailure,
+    ClearNodeCacheResultSuccess,
     CreateNodeRequest,
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
@@ -330,6 +333,7 @@ class NodeManager:
             CanResetNodeToDefaultsRequest, self.on_can_reset_node_to_defaults_request
         )
         event_manager.assign_manager_to_request_type(ResetNodeToDefaultsRequest, self.on_reset_node_to_defaults_request)
+        event_manager.assign_manager_to_request_type(ClearNodeCacheRequest, self.on_clear_node_cache_request)
         event_manager.assign_manager_to_request_type(
             BatchSetNodeLockStateRequest, self.on_batch_set_lock_node_state_request
         )
@@ -4791,3 +4795,19 @@ class NodeManager:
         return ReorderParameterListItemResultSuccess(
             result_details=f"Successfully reordered item in ParameterList '{request.parameter_list_name}' on Node '{node_name}' from index {request.from_index} to {request.to_index}."
         )
+
+    def on_clear_node_cache_request(self, request: ClearNodeCacheRequest) -> ResultPayload:
+        """Clear a single node's cached outputs and mark it UNRESOLVED."""
+        node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        if node is None:
+            return ClearNodeCacheResultFailure(
+                result_details=f"Attempted to clear cache for Node '{request.node_name}'. Node not found."
+            )
+        if node.state == NodeResolutionState.RESOLVING:
+            return ClearNodeCacheResultFailure(
+                result_details=f"Attempted to clear cache for Node '{request.node_name}'. Node is currently RESOLVING."
+            )
+        node.make_node_unresolved(current_states_to_trigger_change_event={NodeResolutionState.RESOLVED})
+        node.parameter_output_values.silent_clear()
+        GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
+        return ClearNodeCacheResultSuccess(result_details=f"Cache cleared for node '{request.node_name}'.")

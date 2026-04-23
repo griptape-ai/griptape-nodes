@@ -1104,3 +1104,35 @@ class MoveNodeToNewFlowResultFailure(ResultPayloadFailure):
     Common causes: node not found, source flow not found, target flow not found,
     node not in source flow, node is a NodeGroup with subflow conflicts.
     """
+
+
+@dataclass
+@PayloadRegistry.register
+class ClearNodeCacheRequest(RequestPayload):
+    """Clear a node's cached outputs and mark it UNRESOLVED.
+
+    Use when: Forcing a node to re-execute without resetting its parameter values.
+    Downstream nodes are also marked UNRESOLVED. Useful for developer tooling.
+
+    If the node is currently RESOLVING the request fails immediately. Retry
+    after the node has finished resolving to clear its cache.
+
+    Args:
+        node_name: Name of the node whose cache should be cleared.
+
+    Results: ClearNodeCacheResultSuccess | ClearNodeCacheResultFailure
+    """
+
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ClearNodeCacheResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Cache cleared and node marked UNRESOLVED. Downstream nodes also invalidated."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ClearNodeCacheResultFailure(ResultPayloadFailure):
+    """Cache clear failed. Common causes: node not found, node is currently RESOLVING."""
