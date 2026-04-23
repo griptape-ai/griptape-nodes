@@ -16,7 +16,6 @@ from griptape_nodes.common.macro_parser import (
     MacroResolutionFailureReason,
     MacroVariables,
     ParsedMacro,
-    VariableInfo,
 )
 from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_TEMPLATE,
@@ -487,44 +486,26 @@ class ProjectManager:
 
         resolution_bag: MacroVariables = {}
         disallowed_overrides: set[str] = set()
-        # Per-request cache: dedupes work when the macro references the same
-        # directory multiple times (or via multiple paths through nested refs).
-        directory_resolution_cache: dict[str, str] = {}
 
         for var_info in variable_infos:
             var_name = var_info.name
 
             if var_name in directory_names:
-                # Recursively resolve so nested directory references (e.g.
-                # watch_outputs -> watch_folder) expand to a concrete path
-                # instead of leaking literal {...} tokens into the result.
-                # User vars flow through so directory macros can reference
-                # caller-supplied values just like situation macros do.
-                try:
-                    resolution_bag[var_name] = self._resolve_directory_path(
-                        var_name, project_info, directory_resolution_cache, set(), request.variables
-                    )
-                except (RuntimeError, NotImplementedError) as e:
-                    # NotImplementedError: directory references an unimplemented builtin (e.g. {project_name}).
-                    # RuntimeError: cycle, unknown reference, or inner MacroResolutionError.
-                    return GetPathForMacroResultFailure(
-                        failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                        result_details=f"Attempted to resolve macro path. Failed because directory '{var_name}' could not be resolved: {e}",
-                    )
+                directory_def = template.directories[var_name]
+                resolution_bag[var_name] = directory_def.path_macro
             elif var_name in user_provided_names:
                 resolution_bag[var_name] = request.variables[var_name]
 
             if var_name in BUILTIN_VARIABLES:
                 try:
-                    builtin_value = self._try_resolve_optional_builtin(var_info, project_info)
+                    builtin_value = self._get_builtin_variable_value(var_name, project_info)
                 except (RuntimeError, NotImplementedError) as e:
+                    if not var_info.is_required:
+                        continue
                     return GetPathForMacroResultFailure(
                         failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
                         result_details=f"Attempted to resolve macro path. Failed because builtin variable '{var_name}' cannot be resolved: {e}",
                     )
-                # Optional builtin that couldn't resolve — drop the segment.
-                if builtin_value is None:
-                    continue
                 # Confirm no monkey business with trying to override builtin values
                 existing = resolution_bag.get(var_name)
                 if existing is not None:
@@ -1093,26 +1074,6 @@ class ProjectManager:
 
         return directory_schemas
 
-    def _try_resolve_optional_builtin(self, var_info: VariableInfo, project_info: ProjectInfo) -> str | None:
-        """Resolve a builtin, deferring to optional/required semantics on failure.
-
-        Callers face the same rule — an optional builtin that can't be resolved
-        (no current workflow, unimplemented, etc.) should be omitted from the
-        macro so the optional segment drops; a required one should surface.
-        Returning ``None`` means "optional, drop it"; raising means "required,
-        let the caller decide the error shape."
-
-        Raises:
-            RuntimeError: Builtin resolution failed and ``var_info.is_required``.
-            NotImplementedError: Same, for unimplemented builtins.
-        """
-        try:
-            return self._get_builtin_variable_value(var_info.name, project_info)
-        except (RuntimeError, NotImplementedError):
-            if var_info.is_required:
-                raise
-            return None
-
     def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:
         """Get the value of a single builtin variable.
 
@@ -1166,104 +1127,9 @@ class ProjectManager:
                 msg = f"Unknown builtin variable: {var_name}"
                 raise ValueError(msg)
 
-    def _resolve_directory_path(
-        self,
-        directory_name: str,
-        project_info: ProjectInfo,
-        cache: dict[str, str],
-        visiting: set[str],
-        user_variables: MacroVariables,
-    ) -> str:
-        """Recursively resolve a directory macro into a fully substituted path string.
-
-        Directory ``path_macro`` values can reference other directories, builtin
-        variables (e.g. ``watch_outputs: "{watch_folder}/outputs"``), or
-        user-supplied variables from the outer request. This helper walks the
-        reference chain and substitutes each token with its resolved value so
-        the returned string contains no ``{...}`` tokens. Without this, a
-        situation that references a chained directory would emit the literal
-        inner token (e.g. ``{watch_folder}/outputs/...``) into the final path.
-
-        Mirrors the optional/required handling of the top-level macro handler:
-        an optional builtin that fails to resolve is dropped (segment omitted);
-        a required one propagates the error.
-
-        Args:
-            directory_name: Name of the directory to resolve.
-            project_info: Current project info (supplies parsed schemas and builtins).
-            cache: Memoization cache keyed by directory name; shared across a
-                single resolution pass so each directory is resolved at most once.
-            visiting: Names currently on the recursion stack; a re-entry signals
-                a cycle.
-            user_variables: Variables from the outer request, available for
-                substitution inside directory macros (empty dict when there
-                is no caller context, e.g. absolute-path mapping).
-
-        Returns:
-            Fully resolved path string with every ``{...}`` token substituted.
-
-        Raises:
-            RuntimeError: If a cycle is detected, a referenced directory is
-                unknown, a required builtin/nested macro fails to resolve, or
-                ``ParsedMacro.resolve`` raises (e.g. required token missing).
-            NotImplementedError: If a required builtin is not yet implemented
-                (e.g. ``{project_name}`` as of today).
-        """
-        # Memoized: a directory referenced multiple times in one request resolves once.
-        if directory_name in cache:
-            return cache[directory_name]
-
-        # Re-entry = cycle (a -> b -> a). Without this guard recursion would never terminate.
-        if directory_name in visiting:
-            chain = " -> ".join([*visiting, directory_name])
-            msg = f"Cycle detected while resolving directory '{directory_name}' (chain: {chain})"
-            raise RuntimeError(msg)
-
-        parsed_macro = project_info.parsed_directory_schemas.get(directory_name)
-        if parsed_macro is None:
-            msg = f"Directory '{directory_name}' not found in parsed schemas"
-            raise RuntimeError(msg)
-
-        visiting.add(directory_name)
-        try:
-            # Build a variables bag for this directory's macro by resolving each
-            # referenced token. Nested directories recurse; builtins are queried
-            # at call time so live context (workflow, workspace) is reflected;
-            # user-supplied variables flow through so directory macros can be as
-            # expressive as situation macros.
-            inner_bag: MacroVariables = {}
-            for var_info in parsed_macro.get_variables():
-                var_name = var_info.name
-                if var_name in project_info.parsed_directory_schemas:
-                    inner_bag[var_name] = self._resolve_directory_path(
-                        var_name, project_info, cache, visiting, user_variables
-                    )
-                elif var_name in BUILTIN_VARIABLES:
-                    # Optional builtins drop cleanly; required ones propagate
-                    # (caller wraps as MACRO_RESOLUTION_ERROR). Shared helper
-                    # keeps this semantics identical to the top-level handler.
-                    builtin_value = self._try_resolve_optional_builtin(var_info, project_info)
-                    if builtin_value is not None:
-                        inner_bag[var_name] = builtin_value
-                elif var_name in user_variables:
-                    inner_bag[var_name] = user_variables[var_name]
-                # Else: unknown name, left out of bag. ParsedMacro.resolve drops
-                # it if optional, raises MacroResolutionError if required (caught below).
-
-            try:
-                resolved = parsed_macro.resolve(inner_bag, self._secrets_manager)
-            except MacroResolutionError as e:
-                msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
-                raise RuntimeError(msg) from e
-        finally:
-            # Must discard even on raise so a failed sibling doesn't poison the
-            # visiting set for a later resolution pass that reuses it.
-            visiting.discard(directory_name)
-
-        cache[directory_name] = resolved
-        return resolved
-
-    def _absolute_path_to_macro_path(self, absolute_path: Path, project_info: ProjectInfo) -> str | None:
+    def _absolute_path_to_macro_path(  # noqa: C901, PLR0912
+        self, absolute_path: Path, project_info: ProjectInfo
+    ) -> str | None:
         """Convert an absolute path to macro form using longest prefix matching.
 
         Resolves all project directories at runtime (to support env vars and macros),
@@ -1294,6 +1160,19 @@ class ProjectManager:
         workspace_dir = resolve_path_safely(self._config_manager.workspace_path)
         project_base_dir = resolve_path_safely(project_info.project_base_dir)
 
+        # Collect all variables used across ALL directory macros
+        variables_needed: set[str] = set()
+        for parsed_macro in project_info.parsed_directory_schemas.values():
+            variable_infos = parsed_macro.get_variables()
+            variables_needed.update(var_info.name for var_info in variable_infos)
+
+        # Build builtin variables dict - only resolve variables actually needed by the macros
+        # If a required variable fails to resolve, let the error propagate (will be caught by handler)
+        builtin_vars: MacroVariables = {}
+        for var_name in variables_needed:
+            if var_name in BUILTIN_VARIABLES:
+                builtin_vars[var_name] = self._get_builtin_variable_value(var_name, project_info)
+
         # Find all matching directories (where absolute_path is inside the directory)
         class DirectoryMatch(NamedTuple):
             directory_name: str
@@ -1301,18 +1180,19 @@ class ProjectManager:
             prefix_length: int
 
         matches: list[DirectoryMatch] = []
-        # Shared across this sweep so directories referenced by other directories
-        # (watch_folder -> watch_outputs) don't get re-resolved per iteration.
-        directory_resolution_cache: dict[str, str] = {}
 
         for directory_name in template.directories:
-            # Fully expand nested directory and builtin references so prefix
-            # matching compares real paths, not unresolved {...} templates.
-            # No user-variable context here — this sweep operates purely on
-            # the current project state, independent of any request.
-            resolved_path_str = self._resolve_directory_path(
-                directory_name, project_info, directory_resolution_cache, set(), {}
-            )
+            # Get parsed macro from project info cache
+            parsed_macro = project_info.parsed_directory_schemas.get(directory_name)
+            if parsed_macro is None:
+                msg = f"Directory '{directory_name}' not found in parsed schemas"
+                raise RuntimeError(msg)
+
+            try:
+                resolved_path_str = parsed_macro.resolve(builtin_vars, self._secrets_manager)
+            except MacroResolutionError as e:
+                msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
+                raise RuntimeError(msg) from e
 
             # Make absolute (resolve relative paths against the workspace directory).
             # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
