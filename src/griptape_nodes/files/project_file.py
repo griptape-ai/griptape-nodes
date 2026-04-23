@@ -110,15 +110,6 @@ class ProjectFileDestination(FileDestination):
             "file_extension": parts.extension,
             **extra_vars,
         }
-        # When the filename carries its own relative directory component (e.g.
-        # "foo/bar/output.png"), populate sub_dirs so situations with {sub_dirs?:/}
-        # route the file into that sub-directory. An explicit sub_dirs kwarg in
-        # extra_vars takes precedence. Absolute filenames still flow through the
-        # macro; we skip the sub_dirs override for them so we don't feed a
-        # leading-slash value into the macro substitution.
-        directory_str = str(parts.directory)
-        if directory_str and directory_str != "." and not parts.directory.is_absolute() and "sub_dirs" not in variables:
-            variables["sub_dirs"] = directory_str
 
         file_metadata = (
             SidecarContent(
