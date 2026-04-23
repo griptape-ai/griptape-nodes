@@ -40,6 +40,39 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
     },
     environment={},
+    file_extension_groups={
+        # images
+        "png": "images",
+        "jpg": "images",
+        "jpeg": "images",
+        "webp": "images",
+        "gif": "images",
+        "bmp": "images",
+        "tiff": "images",
+        "tif": "images",
+        # videos
+        "mp4": "videos",
+        "mov": "videos",
+        "webm": "videos",
+        "mkv": "videos",
+        "avi": "videos",
+        # audio
+        "mp3": "audio",
+        "wav": "audio",
+        "flac": "audio",
+        "ogg": "audio",
+        "m4a": "audio",
+        "aac": "audio",
+        # documents / text
+        "txt": "text",
+        "md": "text",
+        "json": "text",
+        "yaml": "text",
+        "yml": "text",
+        "csv": "text",
+        # python
+        "py": "python",
+    },
     situations={
         "save_file": SituationTemplate(
             name="save_file",
