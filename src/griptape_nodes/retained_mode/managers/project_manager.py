@@ -80,7 +80,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     ValidateProjectTemplateResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.settings import CURRENT_PROJECT_ID_KEY, PROJECTS_TO_REGISTER_KEY
+from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -652,13 +652,19 @@ class ProjectManager:
         workspace_changed = old_workspace != new_workspace
 
         if self._initialization_complete:
-            # Persist only post-startup so the startup sequence (system defaults,
-            # workspace project, etc.) does not overwrite a user-selected id
-            # before the restore step runs.
+            # Persist the active project's file path so the next engine restart
+            # restores it via _resolve_project_file_path(). System defaults has
+            # no file path, so persist None for that case and let startup fall
+            # back to the workspace default.
+            persisted_project_file: str | None = None
+            if request.project_id is not None:
+                persisted_info = self._successfully_loaded_project_templates.get(request.project_id)
+                if persisted_info is not None and persisted_info.project_file_path is not None:
+                    persisted_project_file = str(persisted_info.project_file_path)
             try:
-                self._config_manager.set_config_value(CURRENT_PROJECT_ID_KEY, request.project_id)
+                self._config_manager.set_config_value("project_file", persisted_project_file)
             except Exception:
-                logger.warning("Failed to persist current project id '%s' to config", request.project_id)
+                logger.warning("Failed to persist project_file '%s' to config", persisted_project_file)
 
             failure = await self._reload_after_project_switch(request.project_id, workspace_changed=workspace_changed)
             if failure is not None:
@@ -811,9 +817,9 @@ class ProjectManager:
         if self._current_project_id == project_id:
             self._current_project_id = None
             try:
-                self._config_manager.set_config_value(CURRENT_PROJECT_ID_KEY, None)
+                self._config_manager.set_config_value("project_file", None)
             except Exception:
-                logger.warning("Failed to clear current project id from config after unregister")
+                logger.warning("Failed to clear project_file from config after unregister")
 
         return UnregisterProjectTemplateResultSuccess(
             result_details=f"Successfully unregistered project template '{project_id}'",
@@ -958,12 +964,6 @@ class ProjectManager:
 
         # Load any additional project templates previously registered by the user
         self._load_registered_projects()
-
-        # Restore the last-active project id if it was persisted and is still
-        # loadable. Runs AFTER registered projects are loaded so their ids are
-        # present in the registry, and BEFORE _initialization_complete so the
-        # restore doesn't re-persist itself through on_set_current_project_request.
-        await self._restore_last_current_project()
 
         # Mark initialization complete so subsequent project switches trigger
         # workspace detection and library reload when the workspace actually changes.
@@ -1439,38 +1439,6 @@ class ProjectManager:
                 )
             else:
                 logger.info("Reloaded registered project from '%s'", path_str)
-
-    async def _restore_last_current_project(self) -> None:
-        """Restore the most recently active project id from persisted config.
-
-        Runs during startup after all projects have been loaded. If the stored
-        id isn't in the registry (project file deleted, unregistered, etc.), we
-        leave the current project as whatever startup already set and clear the
-        stale config value so it doesn't keep missing on future restarts.
-        """
-        stored_id = self._config_manager.get_config_value(CURRENT_PROJECT_ID_KEY)
-        if not stored_id or stored_id == self._current_project_id:
-            return
-
-        if stored_id not in self._successfully_loaded_project_templates:
-            logger.info("Persisted current project id '%s' is not loaded; clearing stale config value", stored_id)
-            try:
-                self._config_manager.set_config_value(CURRENT_PROJECT_ID_KEY, None)
-            except Exception:
-                logger.warning("Failed to clear stale current project id from config")
-            return
-
-        set_request = SetCurrentProjectRequest(project_id=stored_id)
-        set_result = await self.on_set_current_project_request(set_request)
-        if set_result.failed():
-            logger.error(
-                "Attempted to restore current project '%s'. Failed with: %s",
-                stored_id,
-                set_result.result_details,
-            )
-            return
-
-        logger.info("Restored current project from persisted config: '%s'", stored_id)
 
     def _register_project_path(self, project_id: str) -> None:
         """Persist a project file path so it is loaded on the next engine restart.
