@@ -595,7 +595,7 @@ class ProjectManager:
             GriptapeNodes.WorkflowManager().refresh_workflow_registry()
         return None
 
-    async def on_set_current_project_request(
+    async def on_set_current_project_request(  # noqa: C901
         self, request: SetCurrentProjectRequest
     ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
         """Set which project user has selected.
@@ -652,6 +652,20 @@ class ProjectManager:
         workspace_changed = old_workspace != new_workspace
 
         if self._initialization_complete:
+            # Persist the active project's file path so the next engine restart
+            # restores it via _resolve_project_file_path(). System defaults has
+            # no file path, so persist None for that case and let startup fall
+            # back to the workspace default.
+            persisted_project_file: str | None = None
+            if request.project_id is not None:
+                persisted_info = self._successfully_loaded_project_templates.get(request.project_id)
+                if persisted_info is not None and persisted_info.project_file_path is not None:
+                    persisted_project_file = str(persisted_info.project_file_path)
+            try:
+                self._config_manager.set_config_value("project_file", persisted_project_file)
+            except Exception:
+                logger.warning("Failed to persist project_file '%s' to config", persisted_project_file)
+
             failure = await self._reload_after_project_switch(request.project_id, workspace_changed=workspace_changed)
             if failure is not None:
                 return failure
@@ -797,9 +811,15 @@ class ProjectManager:
         except Exception:
             logger.warning("Failed to remove project path '%s' from persisted config", project_id)
 
-        # If this was the active project, clear the current project
+        # If this was the active project, clear the current project (in-memory
+        # and persisted) so the next restart doesn't try to restore a project
+        # that is no longer registered.
         if self._current_project_id == project_id:
             self._current_project_id = None
+            try:
+                self._config_manager.set_config_value("project_file", None)
+            except Exception:
+                logger.warning("Failed to clear project_file from config after unregister")
 
         return UnregisterProjectTemplateResultSuccess(
             result_details=f"Successfully unregistered project template '{project_id}'",
