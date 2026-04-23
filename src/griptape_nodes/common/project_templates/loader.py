@@ -25,6 +25,7 @@ FIELD_SITUATIONS = "situations"
 FIELD_DIRECTORIES = "directories"
 FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION = "project_template_schema_version"
 FIELD_ENVIRONMENT = "environment"
+FIELD_FILE_EXTENSION_GROUPS = "file_extension_groups"
 FIELD_DESCRIPTION = "description"
 
 # Special constants
@@ -76,11 +77,13 @@ class ProjectOverlayData(NamedTuple):
     situations: dict[str, dict[str, Any]]  # situation_name -> raw dict
     directories: dict[str, dict[str, Any]]  # directory_name -> raw dict
     environment: dict[str, str]
+    file_extension_groups: dict[str, str]
     description: str | None
     line_info: YAMLLineInfo
     removed_situations: frozenset[str] = frozenset()
     removed_directories: frozenset[str] = frozenset()
     removed_environment: frozenset[str] = frozenset()
+    removed_file_extension_groups: frozenset[str] = frozenset()
     clears_description: bool = False
 
 
@@ -227,7 +230,7 @@ def load_project_template_from_yaml(  # noqa: C901
         return template
 
 
-def load_partial_project_template(
+def load_partial_project_template(  # noqa: C901
     yaml_text: str,
     validation_info: ProjectValidationInfo,
 ) -> ProjectOverlayData | None:
@@ -336,6 +339,18 @@ def load_partial_project_template(
 
     environment, removed_environment = _split_tombstones(environment_raw)
 
+    # Optional field: file_extension_groups (default to empty dict)
+    file_extension_groups_raw = data.get(FIELD_FILE_EXTENSION_GROUPS, {})
+    if not isinstance(file_extension_groups_raw, dict):
+        validation_info.add_error(
+            field_path=FIELD_FILE_EXTENSION_GROUPS,
+            message=f"Must be dict, got {type(file_extension_groups_raw).__name__}",
+            line_number=line_info.get_line(FIELD_FILE_EXTENSION_GROUPS),
+        )
+        file_extension_groups_raw = {}
+
+    file_extension_groups, removed_file_extension_groups = _split_tombstones(file_extension_groups_raw)
+
     # Optional field: description. Distinguish absent (inherit base) from
     # explicit null (clear base value).
     clears_description = FIELD_DESCRIPTION in data and data.get(FIELD_DESCRIPTION) is None
@@ -354,11 +369,13 @@ def load_partial_project_template(
         situations=situations,
         directories=directories,
         environment=environment,
+        file_extension_groups=file_extension_groups,
         description=description,
         line_info=line_info,
         removed_situations=frozenset(removed_situations),
         removed_directories=frozenset(removed_directories),
         removed_environment=frozenset(removed_environment),
+        removed_file_extension_groups=frozenset(removed_file_extension_groups),
         clears_description=clears_description,
     )
 
