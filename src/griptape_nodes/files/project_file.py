@@ -11,8 +11,6 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
-    GetCurrentProjectRequest,
-    GetCurrentProjectResultSuccess,
     GetSituationRequest,
     GetSituationResultSuccess,
     MacroPath,
@@ -27,24 +25,6 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 logger = logging.getLogger("griptape_nodes")
 
 FALLBACK_MACRO_TEMPLATE = "{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}"
-
-
-def _file_extension_group_for(extension: str) -> str | None:
-    """Map a filename extension to a group name via the current project's template.
-
-    Looks up the extension (case-insensitively) in the current project's
-    `file_extension_groups` mapping. Returns None when the extension is
-    empty, no project is loaded, or the extension is unmapped so callers
-    can leave an optional `{file_extension_group?:/}` macro slot unresolved
-    instead of routing unknown types into an arbitrary folder.
-    """
-    if not extension:
-        return None
-    project_result = GriptapeNodes.handle_request(GetCurrentProjectRequest())
-    if not isinstance(project_result, GetCurrentProjectResultSuccess):
-        return None
-    return project_result.project_info.template.file_extension_groups.get(extension.lower())
-
 
 SITUATION_TO_FILE_POLICY: dict[str, ExistingFilePolicy] = {
     SituationFilePolicy.CREATE_NEW: ExistingFilePolicy.CREATE_NEW,
@@ -130,17 +110,6 @@ class ProjectFileDestination(FileDestination):
             "file_extension": parts.extension,
             **extra_vars,
         }
-
-        # Route common file types into a coarse group (images, videos, audio,
-        # text, python, etc.) so overlays using {file_extension_group?:/} can
-        # co-locate related siblings (png + jpg -> images/). The mapping lives
-        # in the current project's template, so projects can customize the
-        # taxonomy without engine changes. Unmapped extensions leave the slot
-        # unset, letting the optional macro degrade to a flat layout.
-        if "file_extension_group" not in variables:
-            group = _file_extension_group_for(parts.extension)
-            if group is not None:
-                variables["file_extension_group"] = group
 
         file_metadata = (
             SidecarContent(
