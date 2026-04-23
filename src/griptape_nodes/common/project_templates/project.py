@@ -33,10 +33,6 @@ class ProjectTemplate(BaseModel):
         description="Directory definitions (logical_name -> definition)",
     )
     environment: dict[str, str] = Field(default_factory=dict, description="Custom environment variables")
-    file_extension_groups: dict[str, str] = Field(
-        default_factory=dict,
-        description="Mapping of file extension (without leading dot) to a group name used to populate the {file_extension_group} macro variable",
-    )
 
     def get_situation(self, situation_name: str) -> SituationTemplate | None:
         """Get a situation by name, returns None if not found."""
@@ -85,13 +81,6 @@ class ProjectTemplate(BaseModel):
         environment_overlay = self._diff_environment(self_dump["environment"], base_dump["environment"])
         if environment_overlay:
             output["environment"] = environment_overlay
-
-        file_extension_groups_overlay = self._diff_environment(
-            self_dump.get("file_extension_groups", {}),
-            base_dump.get("file_extension_groups", {}),
-        )
-        if file_extension_groups_overlay:
-            output["file_extension_groups"] = file_extension_groups_overlay
 
         return self._dump_yaml(output)
 
@@ -340,29 +329,6 @@ class ProjectTemplate(BaseModel):
                 action=action,
             )
 
-        # Merge file_extension_groups (same semantics as environment: per-key
-        # overwrite, null tombstones drop inherited entries).
-        merged_file_extension_groups = {**base.file_extension_groups}
-        for key in overlay.removed_file_extension_groups:
-            if key in merged_file_extension_groups:
-                del merged_file_extension_groups[key]
-                validation_info.add_override(
-                    category=ProjectOverrideCategory.FILE_EXTENSION_GROUP,
-                    name=key,
-                    action=ProjectOverrideAction.REMOVED,
-                )
-        for key, value in overlay.file_extension_groups.items():
-            action = (
-                ProjectOverrideAction.MODIFIED if key in base.file_extension_groups else ProjectOverrideAction.ADDED
-            )
-            merged_file_extension_groups[key] = value
-
-            validation_info.add_override(
-                category=ProjectOverrideCategory.FILE_EXTENSION_GROUP,
-                name=key,
-                action=action,
-            )
-
         # Description: overlay value wins; explicit null clears; absent inherits base.
         if overlay.clears_description:
             merged_description = None
@@ -377,6 +343,5 @@ class ProjectTemplate(BaseModel):
             situations=merged_situations,
             directories=merged_directories,
             environment=merged_environment,
-            file_extension_groups=merged_file_extension_groups,
             description=merged_description,
         )
