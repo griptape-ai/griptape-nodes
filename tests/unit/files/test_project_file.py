@@ -182,6 +182,9 @@ class TestProjectFileDestinationInit:
 
         # The resolved path should be the absolute path as-is, not routed under {outputs}.
         assert dest._file.location == absolute_filename
+        # No sidecar metadata: the situation macro+variables don't re-resolve to
+        # the absolute path we honored verbatim, so recording them would be a lie.
+        assert dest._file._file_metadata is None
 
     def test_from_situation_explicit_sub_dirs_wins_over_filename_directory(self) -> None:
         """An explicit sub_dirs kwarg is not clobbered by a filename-derived value."""
