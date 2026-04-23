@@ -97,8 +97,15 @@ class TestProjectManagerMacroHandlers:
 class TestProjectManagerInitialization:
     """Test ProjectManager initialization and state."""
 
-    def test_project_manager_initializes_empty(self) -> None:
-        """Test ProjectManager starts with empty state."""
+    def test_project_manager_initializes_with_system_defaults(self) -> None:
+        """System defaults loaded eagerly in __init__.
+
+        Project-aware requests must work before AppInitializationComplete fires
+        because CLI workflow scripts construct nodes at module import time,
+        before the event is broadcast.
+        """
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
+
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -106,8 +113,8 @@ class TestProjectManagerInitialization:
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
         assert pm._registered_template_status == {}
-        assert pm._successfully_loaded_project_templates == {}
-        assert pm._current_project_id is None
+        assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
+        assert SYSTEM_DEFAULTS_KEY in pm._successfully_loaded_project_templates
 
     def test_project_manager_stores_manager_references(self) -> None:
         """Test ProjectManager stores config and secrets manager references."""
@@ -488,6 +495,7 @@ class TestProjectManagerGetStateForMacro:
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+        pm._current_project_id = None
 
         parsed_macro = ParsedMacro("{file_name}.txt")
 
@@ -632,6 +640,7 @@ class TestProjectManagerGetCurrentProject:
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+        pm._current_project_id = None
 
         request = GetCurrentProjectRequest()
         result = pm.on_get_current_project_request(request)
@@ -1038,7 +1047,8 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test mapping when no current project is set (returns failure)."""
         from griptape_nodes.retained_mode.events.project_events import AttemptMapAbsolutePathToProjectResultFailure
 
-        # No project set up
+        # Clear the system defaults loaded in __init__ to simulate no current project
+        project_manager._current_project_id = None
 
         absolute_path = Path("/Users/test/project/outputs/file.png")
 
