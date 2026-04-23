@@ -68,24 +68,24 @@ class TestExecuteNodeOnWorker:
         assert request.request.parameter_values == {"x": 1}
 
     @pytest.mark.asyncio
-    async def test_returns_execute_result_on_success(self) -> None:
+    async def test_copies_outputs_back_onto_node_on_success(self) -> None:
         node = self._make_node()
         worker = (_ENGINE, _WORKER_REQUEST_TOPIC)
         wm = MagicMock()
         wm.route_to_worker = AsyncMock(return_value=self._EXECUTE_RAW_SUCCESS)
 
-        result = await _execute_node_on_worker(wm, node, worker)
+        await _execute_node_on_worker(wm, node, worker)
 
-        assert isinstance(result, ExecuteNodeResultSuccess)
-        assert result.parameter_output_values == {"out": 42}
+        node.set_parameter_value.assert_called_once_with("out", 42)
 
     @pytest.mark.asyncio
-    async def test_returns_failure_result_from_worker(self) -> None:
+    async def test_raises_runtime_error_on_worker_failure(self) -> None:
         node = self._make_node()
         worker = (_ENGINE, _WORKER_REQUEST_TOPIC)
         wm = MagicMock()
         wm.route_to_worker = AsyncMock(return_value=self._EXECUTE_RAW_FAILURE)
 
-        result = await _execute_node_on_worker(wm, node, worker)
+        with pytest.raises(RuntimeError, match="execution failed"):
+            await _execute_node_on_worker(wm, node, worker)
 
-        assert isinstance(result, ExecuteNodeResultFailure)
+        node.set_parameter_value.assert_not_called()
