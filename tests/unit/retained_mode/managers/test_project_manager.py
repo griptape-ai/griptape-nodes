@@ -732,6 +732,80 @@ class TestProjectManagerNestedDirectoryResolution:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/workspace/tenants/acme/outputs/report.pdf")
 
+    def test_directory_name_shadowing_builtin_with_mismatched_value_is_rejected(self) -> None:
+        """A directory named like a builtin with a mismatched value is rejected.
+
+        Today there's no template-load-time validation preventing a user from
+        naming a directory ``workspace_dir`` (or any other builtin). The
+        top-level handler catches the conflict at resolution time by comparing
+        the directory's resolved path against the builtin's value — if they
+        don't match, the request fails. This pins that runtime behavior so a
+        future refactor can't silently let a shadowing directory override a
+        builtin's value.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import DirectoryDefinition, ProjectTemplate
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="shadowing_project",
+            directories={
+                "workspace_dir": DirectoryDefinition(name="workspace_dir", path_macro="/overridden"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/not-this-workspace"))
+
+        parsed_macro = ParsedMacro("{workspace_dir}/file.txt")
+        result = pm.on_get_path_for_macro_request(GetPathForMacroRequest(parsed_macro=parsed_macro, variables={}))
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED
+        assert result.conflicting_variables == {"workspace_dir"}
+
+    def test_failed_directory_does_not_poison_subsequent_resolutions(self) -> None:
+        """A mid-recursion failure must not leave state in cache/visiting.
+
+        If directory A references unresolvable B and raises, a later successful
+        resolution in the SAME sweep (think: _absolute_path_to_macro_path
+        iterating all directories with a shared cache) must still work.
+        This pins the try/finally discard on visiting and the
+        "cache only on success" invariant.
+        """
+        from griptape_nodes.common.project_templates import DirectoryDefinition, ProjectTemplate
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="partial_failure_project",
+            directories={
+                # 'broken' references a required {missing_var} (not a directory, not
+                # a builtin, not user-supplied) — parsed_macro.resolve will raise.
+                "broken": DirectoryDefinition(name="broken", path_macro="{workspace_dir}/{missing_var}"),
+                "good": DirectoryDefinition(name="good", path_macro="{workspace_dir}/good"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/workspace"))
+        project_id = pm._current_project_id
+        assert project_id is not None
+        project_info = pm._successfully_loaded_project_templates[project_id]
+        assert isinstance(project_info, ProjectInfo)
+
+        # Share cache across both calls to mimic an _absolute_path_to_macro_path sweep.
+        cache: dict[str, str] = {}
+
+        with pytest.raises(RuntimeError):
+            pm._resolve_directory_path("broken", project_info, cache, set(), {})
+
+        # State must be clean: 'broken' never cached, 'good' still resolvable.
+        assert "broken" not in cache
+        resolved = pm._resolve_directory_path("good", project_info, cache, set(), {})
+        assert resolved == "/workspace/good"
+        assert cache["good"] == "/workspace/good"
+
 
 class TestProjectManagerGetStateForMacro:
     """Test ProjectManager GetStateForMacro request handler."""

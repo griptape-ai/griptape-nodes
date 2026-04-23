@@ -16,6 +16,7 @@ from griptape_nodes.common.macro_parser import (
     MacroResolutionFailureReason,
     MacroVariables,
     ParsedMacro,
+    VariableInfo,
 )
 from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_TEMPLATE,
@@ -515,14 +516,15 @@ class ProjectManager:
 
             if var_name in BUILTIN_VARIABLES:
                 try:
-                    builtin_value = self._get_builtin_variable_value(var_name, project_info)
+                    builtin_value = self._try_resolve_optional_builtin(var_info, project_info)
                 except (RuntimeError, NotImplementedError) as e:
-                    if not var_info.is_required:
-                        continue
                     return GetPathForMacroResultFailure(
                         failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
                         result_details=f"Attempted to resolve macro path. Failed because builtin variable '{var_name}' cannot be resolved: {e}",
                     )
+                # Optional builtin that couldn't resolve — drop the segment.
+                if builtin_value is None:
+                    continue
                 # Confirm no monkey business with trying to override builtin values
                 existing = resolution_bag.get(var_name)
                 if existing is not None:
@@ -1091,6 +1093,26 @@ class ProjectManager:
 
         return directory_schemas
 
+    def _try_resolve_optional_builtin(self, var_info: VariableInfo, project_info: ProjectInfo) -> str | None:
+        """Resolve a builtin, deferring to optional/required semantics on failure.
+
+        Callers face the same rule — an optional builtin that can't be resolved
+        (no current workflow, unimplemented, etc.) should be omitted from the
+        macro so the optional segment drops; a required one should surface.
+        Returning ``None`` means "optional, drop it"; raising means "required,
+        let the caller decide the error shape."
+
+        Raises:
+            RuntimeError: Builtin resolution failed and ``var_info.is_required``.
+            NotImplementedError: Same, for unimplemented builtins.
+        """
+        try:
+            return self._get_builtin_variable_value(var_info.name, project_info)
+        except (RuntimeError, NotImplementedError):
+            if var_info.is_required:
+                raise
+            return None
+
     def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:
         """Get the value of a single builtin variable.
 
@@ -1144,7 +1166,7 @@ class ProjectManager:
                 msg = f"Unknown builtin variable: {var_name}"
                 raise ValueError(msg)
 
-    def _resolve_directory_path(  # noqa: C901
+    def _resolve_directory_path(
         self,
         directory_name: str,
         project_info: ProjectInfo,
@@ -1217,16 +1239,12 @@ class ProjectManager:
                         var_name, project_info, cache, visiting, user_variables
                     )
                 elif var_name in BUILTIN_VARIABLES:
-                    # Mirror top-level behavior: an optional builtin that cannot
-                    # be resolved (no current workflow, unimplemented, etc.) is
-                    # dropped from the bag so ParsedMacro.resolve() omits the
-                    # whole optional segment. Required builtins still surface.
-                    try:
-                        inner_bag[var_name] = self._get_builtin_variable_value(var_name, project_info)
-                    except (RuntimeError, NotImplementedError):
-                        if var_info.is_required:
-                            raise
-                        continue
+                    # Optional builtins drop cleanly; required ones propagate
+                    # (caller wraps as MACRO_RESOLUTION_ERROR). Shared helper
+                    # keeps this semantics identical to the top-level handler.
+                    builtin_value = self._try_resolve_optional_builtin(var_info, project_info)
+                    if builtin_value is not None:
+                        inner_bag[var_name] = builtin_value
                 elif var_name in user_variables:
                     inner_bag[var_name] = user_variables[var_name]
                 # Else: unknown name, left out of bag. ParsedMacro.resolve drops
