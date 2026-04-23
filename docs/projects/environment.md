@@ -78,6 +78,6 @@ If a caller tries to supply a value for a builtin or directory name that differs
 
 ### Derived variables
 
-| Variable               | Derived from                                                        | Source of truth                                       |
-| ---------------------- | ------------------------------------------------------------------- | ----------------------------------------------------- |
-| `file_extension_macro` | `file_extension` plus the project's `file_extension_macros` mapping | See [File Extension Macros](file_extension_macros.md) |
+| Variable                   | Derived from                                                             | Source of truth                                                 |
+| -------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `file_extension_directory` | `file_extension` plus the project's `file_extension_directories` mapping | See [File Extension Directories](file_extension_directories.md) |

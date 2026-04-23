@@ -48,8 +48,8 @@ class ProjectFileDestination(FileDestination):
 
     Before storing the path, a pre-resolution pass runs the engine's
     ``DERIVATION_RULES`` against any MacroPath input. Each rule produces a
-    derived variable (e.g. ``file_extension_macro`` from ``file_extension`` +
-    the project's ``file_extension_macros`` table) when its template slot is
+    derived variable (e.g. ``file_extension_directory`` from ``file_extension`` +
+    the project's ``file_extension_directories`` table) when its template slot is
     referenced. This keeps derivation consistent across every caller
     (``from_situation``, ``FileOutputSetting``, etc.) without each of them
     duplicating the lookup.
@@ -149,7 +149,7 @@ class ProjectFileDestination(FileDestination):
         if directory_str and directory_str != "." and not parts.directory.is_absolute() and "sub_dirs" not in variables:
             variables["sub_dirs"] = directory_str
 
-        # Derived variables (e.g. file_extension_macro) are populated by
+        # Derived variables (e.g. file_extension_directory) are populated by
         # ProjectFileDestination's __init__ via apply_derivation_rules. We run
         # the pass here too so the sidecar metadata captures the same variables
         # the write actually uses.

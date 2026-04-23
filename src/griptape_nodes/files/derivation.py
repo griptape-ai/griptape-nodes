@@ -94,21 +94,21 @@ def _template_variable_names(parsed_macro: ParsedMacro) -> set[str]:
     return {segment.info.name for segment in parsed_macro.segments if isinstance(segment, ParsedVariable)}
 
 
-def resolve_file_extension_macro(extension: str, extra_vars: Mapping[str, str | int] | None = None) -> str | None:
+def resolve_file_extension_directory(extension: str, extra_vars: Mapping[str, str | int] | None = None) -> str | None:
     """Resolve an extension to a folder fragment via the current project's template.
 
     Looks up the extension (case-insensitively) in the current project's
-    `file_extension_macros` mapping. Plain names like `"images"` are returned
+    `file_extension_directories` mapping. Plain names like `"images"` are returned
     as-is; values containing macro syntax (e.g. `"{outputs}/videos"`) are
     resolved via `GetPathForMacroRequest` against the project's builtins and
     directory definitions, plus any caller-supplied `extra_vars` (e.g.
     `node_name`, `parameter_name`, `sub_dirs`, `_index`). Filename parts
     (`file_name_base`, `file_extension`) are intentionally excluded --
-    extension macros are a routing layer, not a filename layer.
+    extension directories are a routing layer, not a filename layer.
 
     Returns None when the extension is empty, no project is loaded, the
     extension is unmapped, or resolution fails -- so the optional
-    `{file_extension_macro?:/}` slot degrades cleanly instead of routing
+    `{file_extension_directory?:/}` slot degrades cleanly instead of routing
     unknown types into an arbitrary folder or surfacing as a crash.
     """
     if not extension:
@@ -116,14 +116,14 @@ def resolve_file_extension_macro(extension: str, extra_vars: Mapping[str, str | 
     project_result = GriptapeNodes.handle_request(GetCurrentProjectRequest())
     if not isinstance(project_result, GetCurrentProjectResultSuccess):
         return None
-    raw_macro = project_result.project_info.template.file_extension_macros.get(extension.lower())
+    raw_macro = project_result.project_info.template.file_extension_directories.get(extension.lower())
     if raw_macro is None:
         return None
     # Plain folder name -- skip the event round-trip.
     if "{" not in raw_macro:
         return raw_macro
     # Filename parts belong to the situation macro's filename section, not
-    # the routing layer. Smuggling them through extension macros would let
+    # the routing layer. Smuggling them through extension directories would let
     # routing encode filenames.
     resolution_vars: dict[str, str | int] = {
         k: v for k, v in (extra_vars or {}).items() if k not in ("file_name_base", "file_extension")
@@ -133,7 +133,7 @@ def resolve_file_extension_macro(extension: str, extra_vars: Mapping[str, str | 
     )
     if not isinstance(resolve_result, GetPathForMacroResultSuccess):
         logger.warning(
-            "Failed to resolve file_extension_macros value for '%s' (%r): %s. Falling back to no routing.",
+            "Failed to resolve file_extension_directories value for '%s' (%r): %s. Falling back to no routing.",
             extension,
             raw_macro,
             resolve_result.result_details,
@@ -144,20 +144,20 @@ def resolve_file_extension_macro(extension: str, extra_vars: Mapping[str, str | 
     return resolve_result.resolved_path.as_posix()
 
 
-def _derive_file_extension_macro(variables: Mapping[str, str | int]) -> str | None:
+def _derive_file_extension_directory(variables: Mapping[str, str | int]) -> str | None:
     extension = variables.get("file_extension")
     if not isinstance(extension, str):
         return None
-    return resolve_file_extension_macro(extension, variables)
+    return resolve_file_extension_directory(extension, variables)
 
 
-FILE_EXTENSION_MACRO_RULE = DerivationRule(
-    name="file_extension_macro",
+FILE_EXTENSION_DIRECTORY_RULE = DerivationRule(
+    name="file_extension_directory",
     requires=frozenset({"file_extension"}),
-    derive=_derive_file_extension_macro,
+    derive=_derive_file_extension_directory,
 )
 
 
 # Engine-hardcoded registry. Add new rules here; ordering matters when a rule's
 # output feeds another rule's `requires`.
-DERIVATION_RULES: tuple[DerivationRule, ...] = (FILE_EXTENSION_MACRO_RULE,)
+DERIVATION_RULES: tuple[DerivationRule, ...] = (FILE_EXTENSION_DIRECTORY_RULE,)

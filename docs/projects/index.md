@@ -48,5 +48,5 @@ workspace
 - [Directories](directories.md) — logical name-to-path mappings
 - [Situations](situations.md) — named file-saving scenarios with policies
 - [Environment & Builtin Variables](environment.md) — custom variables and system-provided values
-- [File Extension Macros](file_extension_macros.md) — route files to folders by extension
+- [File Extension Directories](file_extension_directories.md) — route files to folders by extension
 - [Customization Guide](customization.md) — practical examples for common customizations

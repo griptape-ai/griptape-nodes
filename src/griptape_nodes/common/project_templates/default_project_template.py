@@ -50,7 +50,7 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
     # taxonomy stays aligned with the formats those providers actually handle.
     # audio/text/python have no artifact providers today and are listed
     # explicitly.
-    file_extension_macros={
+    file_extension_directories={
         **dict.fromkeys(ImageArtifactProvider.get_supported_formats(), "images"),
         **dict.fromkeys(VideoArtifactProvider.get_supported_formats(), "videos"),
         # audio
