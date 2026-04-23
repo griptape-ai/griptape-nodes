@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
+from griptape_nodes.common.project_templates import ProjectTemplate
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -438,6 +439,376 @@ class TestProjectManagerBuiltinVariables:
 
         assert isinstance(result.result_details, ResultDetails)
         assert "cannot override builtin variables" in str(result.result_details)
+
+
+class TestProjectManagerNestedDirectoryResolution:
+    """Test that directory path_macros can reference other directories (nested resolution)."""
+
+    @staticmethod
+    def _build_project_manager_with_template(template: ProjectTemplate, project_base: Path) -> ProjectManager:
+        """Build a ProjectManager with the given template registered as the current project."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_config = Mock()
+        mock_config.workspace_path = project_base
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(template.situations, validation)
+        directory_schemas = pm._parse_directory_macros(template.directories, validation)
+
+        project_path = project_base / "project.yml"
+        project_id = str(project_path)
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_base,
+            template=template,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
+        return pm
+
+    def test_directory_path_macro_referencing_another_directory_is_fully_resolved(self) -> None:
+        """A directory whose path_macro references another directory must recurse.
+
+        Previously the resolver copied ``DirectoryDefinition.path_macro`` verbatim
+        into the resolution bag, so nested references (watch_outputs -> watch_folder)
+        leaked literal ``{watch_folder}`` tokens into the final path. This test
+        pins the fixed behavior.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+        )
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="nested_project",
+            directories={
+                "watch_folder": DirectoryDefinition(name="watch_folder", path_macro="/fake/WATCH"),
+                "watch_outputs": DirectoryDefinition(name="watch_outputs", path_macro="{watch_folder}/outputs"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/fake/WATCH"))
+
+        parsed_macro = ParsedMacro("{watch_outputs}/{node_name}.{file_extension}")
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={"node_name": "MyNode", "file_extension": "png"},
+            )
+        )
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/fake/WATCH/outputs/MyNode.png")
+
+    def test_optional_variable_omitted_with_nested_directory(self) -> None:
+        """Omitting an optional variable must still drop its separator cleanly.
+
+        Mirrors the real ``save_node_watch_output`` macro that originally
+        triggered the bug report.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+        )
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="nested_project",
+            directories={
+                "watch_folder": DirectoryDefinition(name="watch_folder", path_macro="/fake/WATCH"),
+                "watch_outputs": DirectoryDefinition(name="watch_outputs", path_macro="{watch_folder}/outputs"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/fake/WATCH"))
+
+        parsed_macro = ParsedMacro("{watch_outputs}/{sub_dirs?:/}{node_name}.{file_extension}")
+
+        with_subdirs = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={
+                    "node_name": "MyNode",
+                    "file_extension": "png",
+                    "sub_dirs": "renders",
+                },
+            )
+        )
+        assert isinstance(with_subdirs, GetPathForMacroResultSuccess)
+        assert with_subdirs.resolved_path == Path("/fake/WATCH/outputs/renders/MyNode.png")
+
+        without_subdirs = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={"node_name": "MyNode", "file_extension": "png"},
+            )
+        )
+        assert isinstance(without_subdirs, GetPathForMacroResultSuccess)
+        assert without_subdirs.resolved_path == Path("/fake/WATCH/outputs/MyNode.png")
+
+    def test_directory_cycle_returns_failure(self) -> None:
+        """A cycle in directory references must be detected and reported, not infinite-looped."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+        )
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="cyclic_project",
+            directories={
+                "a": DirectoryDefinition(name="a", path_macro="{b}/a"),
+                "b": DirectoryDefinition(name="b", path_macro="{a}/b"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/fake/cycle"))
+
+        parsed_macro = ParsedMacro("{a}/file.txt")
+        result = pm.on_get_path_for_macro_request(GetPathForMacroRequest(parsed_macro=parsed_macro, variables={}))
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+        assert "cycle" in str(result.result_details).lower()
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_directory_optional_builtin_drops_when_unresolvable(self, mock_griptape_nodes: Mock) -> None:
+        """An optional builtin inside a directory macro drops cleanly if unresolvable.
+
+        Directory macros should be as expressive as situation macros: when
+        {workflow_name?:/} appears inside a directory path_macro and there is no
+        current workflow, the entire optional segment (variable + separator)
+        must be omitted instead of failing the whole request.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import DirectoryDefinition, ProjectTemplate
+
+        # No current workflow → {workflow_name} raises RuntimeError inside the helper.
+        mock_context = Mock()
+        mock_context.has_current_workflow.return_value = False
+        mock_griptape_nodes.ContextManager.return_value = mock_context
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="scratch_project",
+            directories={
+                "scratch": DirectoryDefinition(name="scratch", path_macro="{workspace_dir}/scratch/{workflow_name?:/}"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/workspace"))
+
+        parsed_macro = ParsedMacro("{scratch}/{file_name_base}.{file_extension}")
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={"file_name_base": "notes", "file_extension": "txt"},
+            )
+        )
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/scratch/notes.txt")
+
+    def test_directory_optional_unimplemented_builtin_drops(self) -> None:
+        """An optional {project_name?:...} inside a directory macro drops silently.
+
+        ``project_name`` raises NotImplementedError today; like RuntimeError, an
+        optional reference must be dropped instead of aborting the request.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import DirectoryDefinition, ProjectTemplate
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="labeled_project",
+            directories={
+                "labeled": DirectoryDefinition(name="labeled", path_macro="{workspace_dir}/outputs/{project_name?:_}"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/workspace"))
+
+        parsed_macro = ParsedMacro("{labeled}/{file_name_base}.{file_extension}")
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={"file_name_base": "image", "file_extension": "png"},
+            )
+        )
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/outputs/image.png")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_directory_required_builtin_failure_propagates(self, mock_griptape_nodes: Mock) -> None:
+        """A *required* builtin failure inside a directory macro must fail loudly.
+
+        Symmetric to the optional-drop behavior: we suppress errors only for
+        optional references. A bare {workflow_name} with no current workflow
+        must surface as MACRO_RESOLUTION_ERROR, not silently produce garbage.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import DirectoryDefinition, ProjectTemplate
+
+        mock_context = Mock()
+        mock_context.has_current_workflow.return_value = False
+        mock_griptape_nodes.ContextManager.return_value = mock_context
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="strict_project",
+            directories={
+                # No '?' marker -> workflow_name is required inside this directory's macro.
+                "strict": DirectoryDefinition(name="strict", path_macro="{workspace_dir}/{workflow_name}/out"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/workspace"))
+
+        parsed_macro = ParsedMacro("{strict}/{file_name_base}.{file_extension}")
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={"file_name_base": "image", "file_extension": "png"},
+            )
+        )
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+        assert "no current workflow" in str(result.result_details).lower()
+
+    def test_user_variable_available_inside_directory_macro(self) -> None:
+        """A directory macro may reference a user-supplied variable from the outer request.
+
+        Pins the plumbing that passes `request.variables` down into
+        `_resolve_directory_path`, so directory macros are as expressive as
+        situation macros.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import DirectoryDefinition, ProjectTemplate
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="tenant_project",
+            directories={
+                # {tenant} is supplied by the caller, not by project config.
+                "tenant_outputs": DirectoryDefinition(
+                    name="tenant_outputs", path_macro="{workspace_dir}/tenants/{tenant}/outputs"
+                ),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/workspace"))
+
+        parsed_macro = ParsedMacro("{tenant_outputs}/{file_name_base}.{file_extension}")
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={"tenant": "acme", "file_name_base": "report", "file_extension": "pdf"},
+            )
+        )
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/tenants/acme/outputs/report.pdf")
+
+    def test_directory_name_shadowing_builtin_with_mismatched_value_is_rejected(self) -> None:
+        """A directory named like a builtin with a mismatched value is rejected.
+
+        Today there's no template-load-time validation preventing a user from
+        naming a directory ``workspace_dir`` (or any other builtin). The
+        top-level handler catches the conflict at resolution time by comparing
+        the directory's resolved path against the builtin's value — if they
+        don't match, the request fails. This pins that runtime behavior so a
+        future refactor can't silently let a shadowing directory override a
+        builtin's value.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import DirectoryDefinition, ProjectTemplate
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="shadowing_project",
+            directories={
+                "workspace_dir": DirectoryDefinition(name="workspace_dir", path_macro="/overridden"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/not-this-workspace"))
+
+        parsed_macro = ParsedMacro("{workspace_dir}/file.txt")
+        result = pm.on_get_path_for_macro_request(GetPathForMacroRequest(parsed_macro=parsed_macro, variables={}))
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED
+        assert result.conflicting_variables == {"workspace_dir"}
+
+    def test_failed_directory_does_not_poison_subsequent_resolutions(self) -> None:
+        """A mid-recursion failure must not leave state in cache/visiting.
+
+        If directory A references unresolvable B and raises, a later successful
+        resolution in the SAME sweep (think: _absolute_path_to_macro_path
+        iterating all directories with a shared cache) must still work.
+        This pins the try/finally discard on visiting and the
+        "cache only on success" invariant.
+        """
+        from griptape_nodes.common.project_templates import DirectoryDefinition, ProjectTemplate
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="partial_failure_project",
+            directories={
+                # 'broken' references a required {missing_var} (not a directory, not
+                # a builtin, not user-supplied) — parsed_macro.resolve will raise.
+                "broken": DirectoryDefinition(name="broken", path_macro="{workspace_dir}/{missing_var}"),
+                "good": DirectoryDefinition(name="good", path_macro="{workspace_dir}/good"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/workspace"))
+        project_id = pm._current_project_id
+        assert project_id is not None
+        project_info = pm._successfully_loaded_project_templates[project_id]
+        assert isinstance(project_info, ProjectInfo)
+
+        # Share cache across both calls to mimic an _absolute_path_to_macro_path sweep.
+        cache: dict[str, str] = {}
+
+        with pytest.raises(RuntimeError):
+            pm._resolve_directory_path("broken", project_info, cache, set(), {})
+
+        # State must be clean: 'broken' never cached, 'good' still resolvable.
+        assert "broken" not in cache
+        resolved = pm._resolve_directory_path("good", project_info, cache, set(), {})
+        # Derive the expected value the same way the helper does: the workspace
+        # builtin is stringified via str(Path), so on Windows the prefix uses
+        # backslashes. Pinning a POSIX literal here breaks the Windows lane.
+        expected = str(Path("/workspace")) + "/good"
+        assert resolved == expected
+        assert cache["good"] == expected
 
 
 class TestProjectManagerGetStateForMacro:
