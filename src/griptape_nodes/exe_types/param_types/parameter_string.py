@@ -129,6 +129,14 @@ class ParameterString(Parameter):
             final_input_types = ["str"]
             final_converters = existing_converters
 
+        # When allowed_modes is explicitly provided, it takes precedence over the
+        # allow_input/allow_property/allow_output convenience parameters. Forward defaults
+        # for the convenience parameters so Parameter does not emit a conflict warning.
+        if allowed_modes is not None:
+            allow_input = True
+            allow_property = True
+            allow_output = True
+
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(
             name=name,
