@@ -7,6 +7,12 @@ from griptape_nodes.common.project_templates.situation import (
     SituationPolicy,
     SituationTemplate,
 )
+from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
+    ImageArtifactProvider,
+)
+from griptape_nodes.retained_mode.managers.artifact_providers.video.video_artifact_provider import (
+    VideoArtifactProvider,
+)
 
 # Default project template matching the values from project_template.yml
 DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
@@ -40,22 +46,13 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
     },
     environment={},
+    # images/videos are derived from their ArtifactProviders so the layout
+    # taxonomy stays aligned with the formats those providers actually handle.
+    # audio/text/python have no artifact providers today and are listed
+    # explicitly.
     file_extension_groups={
-        # images
-        "png": "images",
-        "jpg": "images",
-        "jpeg": "images",
-        "webp": "images",
-        "gif": "images",
-        "bmp": "images",
-        "tiff": "images",
-        "tif": "images",
-        # videos
-        "mp4": "videos",
-        "mov": "videos",
-        "webm": "videos",
-        "mkv": "videos",
-        "avi": "videos",
+        **dict.fromkeys(ImageArtifactProvider.get_supported_formats(), "images"),
+        **dict.fromkeys(VideoArtifactProvider.get_supported_formats(), "videos"),
         # audio
         "mp3": "audio",
         "wav": "audio",
