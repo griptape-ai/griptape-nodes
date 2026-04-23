@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
+from griptape_nodes.common.project_templates import ProjectTemplate
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -438,6 +439,154 @@ class TestProjectManagerBuiltinVariables:
 
         assert isinstance(result.result_details, ResultDetails)
         assert "cannot override builtin variables" in str(result.result_details)
+
+
+class TestProjectManagerNestedDirectoryResolution:
+    """Test that directory path_macros can reference other directories (nested resolution)."""
+
+    @staticmethod
+    def _build_project_manager_with_template(template: ProjectTemplate, project_base: Path) -> ProjectManager:
+        """Build a ProjectManager with the given template registered as the current project."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_config = Mock()
+        mock_config.workspace_path = project_base
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(template.situations, validation)
+        directory_schemas = pm._parse_directory_macros(template.directories, validation)
+
+        project_path = project_base / "project.yml"
+        project_id = str(project_path)
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_base,
+            template=template,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
+        return pm
+
+    def test_directory_path_macro_referencing_another_directory_is_fully_resolved(self) -> None:
+        """A directory whose path_macro references another directory must recurse.
+
+        Previously the resolver copied ``DirectoryDefinition.path_macro`` verbatim
+        into the resolution bag, so nested references (watch_outputs -> watch_folder)
+        leaked literal ``{watch_folder}`` tokens into the final path. This test
+        pins the fixed behavior.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+        )
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="nested_project",
+            directories={
+                "watch_folder": DirectoryDefinition(name="watch_folder", path_macro="/fake/WATCH"),
+                "watch_outputs": DirectoryDefinition(name="watch_outputs", path_macro="{watch_folder}/outputs"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/fake/WATCH"))
+
+        parsed_macro = ParsedMacro("{watch_outputs}/{node_name}.{file_extension}")
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={"node_name": "MyNode", "file_extension": "png"},
+            )
+        )
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/fake/WATCH/outputs/MyNode.png")
+
+    def test_optional_variable_omitted_with_nested_directory(self) -> None:
+        """Omitting an optional variable must still drop its separator cleanly.
+
+        Mirrors the real ``save_node_watch_output`` macro that originally
+        triggered the bug report.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+        )
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="nested_project",
+            directories={
+                "watch_folder": DirectoryDefinition(name="watch_folder", path_macro="/fake/WATCH"),
+                "watch_outputs": DirectoryDefinition(name="watch_outputs", path_macro="{watch_folder}/outputs"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/fake/WATCH"))
+
+        parsed_macro = ParsedMacro("{watch_outputs}/{sub_dirs?:/}{node_name}.{file_extension}")
+
+        with_subdirs = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={
+                    "node_name": "MyNode",
+                    "file_extension": "png",
+                    "sub_dirs": "renders",
+                },
+            )
+        )
+        assert isinstance(with_subdirs, GetPathForMacroResultSuccess)
+        assert with_subdirs.resolved_path == Path("/fake/WATCH/outputs/renders/MyNode.png")
+
+        without_subdirs = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={"node_name": "MyNode", "file_extension": "png"},
+            )
+        )
+        assert isinstance(without_subdirs, GetPathForMacroResultSuccess)
+        assert without_subdirs.resolved_path == Path("/fake/WATCH/outputs/MyNode.png")
+
+    def test_directory_cycle_returns_failure(self) -> None:
+        """A cycle in directory references must be detected and reported, not infinite-looped."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+        )
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="cyclic_project",
+            directories={
+                "a": DirectoryDefinition(name="a", path_macro="{b}/a"),
+                "b": DirectoryDefinition(name="b", path_macro="{a}/b"),
+            },
+            situations={},
+        )
+
+        pm = self._build_project_manager_with_template(template, Path("/fake/cycle"))
+
+        parsed_macro = ParsedMacro("{a}/file.txt")
+        result = pm.on_get_path_for_macro_request(GetPathForMacroRequest(parsed_macro=parsed_macro, variables={}))
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+        assert "cycle" in str(result.result_details).lower()
 
 
 class TestProjectManagerGetStateForMacro:

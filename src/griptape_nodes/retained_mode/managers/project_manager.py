@@ -486,13 +486,28 @@ class ProjectManager:
 
         resolution_bag: MacroVariables = {}
         disallowed_overrides: set[str] = set()
+        # Per-request cache: dedupes work when the macro references the same
+        # directory multiple times (or via multiple paths through nested refs).
+        directory_resolution_cache: dict[str, str] = {}
 
         for var_info in variable_infos:
             var_name = var_info.name
 
             if var_name in directory_names:
-                directory_def = template.directories[var_name]
-                resolution_bag[var_name] = directory_def.path_macro
+                # Recursively resolve so nested directory references (e.g.
+                # watch_outputs -> watch_folder) expand to a concrete path
+                # instead of leaking literal {...} tokens into the result.
+                try:
+                    resolution_bag[var_name] = self._resolve_directory_path(
+                        var_name, project_info, directory_resolution_cache, set()
+                    )
+                except (RuntimeError, NotImplementedError) as e:
+                    # NotImplementedError: directory references an unimplemented builtin (e.g. {project_name}).
+                    # RuntimeError: cycle, unknown reference, or inner MacroResolutionError.
+                    return GetPathForMacroResultFailure(
+                        failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                        result_details=f"Attempted to resolve macro path. Failed because directory '{var_name}' could not be resolved: {e}",
+                    )
             elif var_name in user_provided_names:
                 resolution_bag[var_name] = request.variables[var_name]
 
@@ -1127,9 +1142,81 @@ class ProjectManager:
                 msg = f"Unknown builtin variable: {var_name}"
                 raise ValueError(msg)
 
-    def _absolute_path_to_macro_path(  # noqa: C901, PLR0912
-        self, absolute_path: Path, project_info: ProjectInfo
-    ) -> str | None:
+    def _resolve_directory_path(
+        self,
+        directory_name: str,
+        project_info: ProjectInfo,
+        cache: dict[str, str],
+        visiting: set[str],
+    ) -> str:
+        """Recursively resolve a directory macro into a fully substituted path string.
+
+        Directory ``path_macro`` values can reference other directories or builtin
+        variables (e.g. ``watch_outputs: "{watch_folder}/outputs"``). This helper
+        walks the reference chain and substitutes each token with its resolved
+        value so the returned string contains no ``{...}`` tokens. Without this,
+        a situation that references a chained directory would emit the literal
+        inner token (e.g. ``{watch_folder}/outputs/...``) into the final path.
+
+        Args:
+            directory_name: Name of the directory to resolve.
+            project_info: Current project info (supplies parsed schemas and builtins).
+            cache: Memoization cache keyed by directory name; shared across a
+                single resolution pass so each directory is resolved at most once.
+            visiting: Names currently on the recursion stack; a re-entry signals
+                a cycle.
+
+        Returns:
+            Fully resolved path string with every ``{...}`` token substituted.
+
+        Raises:
+            RuntimeError: If a cycle is detected, a referenced directory is
+                unknown, or a builtin/nested macro fails to resolve.
+        """
+        # Memoized: a directory referenced multiple times in one request resolves once.
+        if directory_name in cache:
+            return cache[directory_name]
+
+        # Re-entry = cycle (a -> b -> a). Without this guard recursion would never terminate.
+        if directory_name in visiting:
+            chain = " -> ".join([*visiting, directory_name])
+            msg = f"Cycle detected while resolving directory '{directory_name}' (chain: {chain})"
+            raise RuntimeError(msg)
+
+        parsed_macro = project_info.parsed_directory_schemas.get(directory_name)
+        if parsed_macro is None:
+            msg = f"Directory '{directory_name}' not found in parsed schemas"
+            raise RuntimeError(msg)
+
+        visiting.add(directory_name)
+        try:
+            # Build a variables bag for this directory's macro by resolving each
+            # referenced token. Nested directories recurse; builtins are queried
+            # at call time so live context (workflow, workspace) is reflected.
+            inner_bag: MacroVariables = {}
+            for var_info in parsed_macro.get_variables():
+                var_name = var_info.name
+                if var_name in project_info.parsed_directory_schemas:
+                    inner_bag[var_name] = self._resolve_directory_path(var_name, project_info, cache, visiting)
+                elif var_name in BUILTIN_VARIABLES:
+                    inner_bag[var_name] = self._get_builtin_variable_value(var_name, project_info)
+                # Anything else (not a directory, not a builtin) is left out of the
+                # bag: ParsedMacro.resolve() drops it if optional, raises if required.
+
+            try:
+                resolved = parsed_macro.resolve(inner_bag, self._secrets_manager)
+            except MacroResolutionError as e:
+                msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
+                raise RuntimeError(msg) from e
+        finally:
+            # Must discard even on raise so a failed sibling doesn't poison the
+            # visiting set for a later resolution pass that reuses it.
+            visiting.discard(directory_name)
+
+        cache[directory_name] = resolved
+        return resolved
+
+    def _absolute_path_to_macro_path(self, absolute_path: Path, project_info: ProjectInfo) -> str | None:
         """Convert an absolute path to macro form using longest prefix matching.
 
         Resolves all project directories at runtime (to support env vars and macros),
@@ -1160,19 +1247,6 @@ class ProjectManager:
         workspace_dir = resolve_path_safely(self._config_manager.workspace_path)
         project_base_dir = resolve_path_safely(project_info.project_base_dir)
 
-        # Collect all variables used across ALL directory macros
-        variables_needed: set[str] = set()
-        for parsed_macro in project_info.parsed_directory_schemas.values():
-            variable_infos = parsed_macro.get_variables()
-            variables_needed.update(var_info.name for var_info in variable_infos)
-
-        # Build builtin variables dict - only resolve variables actually needed by the macros
-        # If a required variable fails to resolve, let the error propagate (will be caught by handler)
-        builtin_vars: MacroVariables = {}
-        for var_name in variables_needed:
-            if var_name in BUILTIN_VARIABLES:
-                builtin_vars[var_name] = self._get_builtin_variable_value(var_name, project_info)
-
         # Find all matching directories (where absolute_path is inside the directory)
         class DirectoryMatch(NamedTuple):
             directory_name: str
@@ -1180,19 +1254,16 @@ class ProjectManager:
             prefix_length: int
 
         matches: list[DirectoryMatch] = []
+        # Shared across this sweep so directories referenced by other directories
+        # (watch_folder -> watch_outputs) don't get re-resolved per iteration.
+        directory_resolution_cache: dict[str, str] = {}
 
         for directory_name in template.directories:
-            # Get parsed macro from project info cache
-            parsed_macro = project_info.parsed_directory_schemas.get(directory_name)
-            if parsed_macro is None:
-                msg = f"Directory '{directory_name}' not found in parsed schemas"
-                raise RuntimeError(msg)
-
-            try:
-                resolved_path_str = parsed_macro.resolve(builtin_vars, self._secrets_manager)
-            except MacroResolutionError as e:
-                msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
-                raise RuntimeError(msg) from e
+            # Fully expand nested directory and builtin references so prefix
+            # matching compares real paths, not unresolved {...} templates.
+            resolved_path_str = self._resolve_directory_path(
+                directory_name, project_info, directory_resolution_cache, set()
+            )
 
             # Make absolute (resolve relative paths against the workspace directory).
             # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
