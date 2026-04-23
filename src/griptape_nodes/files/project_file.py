@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.macro_parser import ParsedMacro, ParsedVariable
 from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.files.file import File, FileDestination
 from griptape_nodes.files.path_utils import FilenameParts
@@ -31,7 +31,7 @@ logger = logging.getLogger("griptape_nodes")
 FALLBACK_MACRO_TEMPLATE = "{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}"
 
 
-def _file_extension_macro_for(extension: str, extra_vars: dict[str, str | int] | None = None) -> str | None:
+def resolve_file_extension_macro(extension: str, extra_vars: dict[str, str | int] | None = None) -> str | None:
     """Resolve an extension to a folder fragment via the current project's template.
 
     Looks up the extension (case-insensitively) in the current project's
@@ -79,6 +79,38 @@ def _file_extension_macro_for(extension: str, extra_vars: dict[str, str | int] |
     return str(resolve_result.resolved_path)
 
 
+def _template_references(parsed_macro: ParsedMacro, variable_name: str) -> bool:
+    """Return True if the parsed template has a variable segment with the given name."""
+    return any(
+        isinstance(segment, ParsedVariable) and segment.info.name == variable_name
+        for segment in parsed_macro.segments
+    )
+
+
+def _inject_file_extension_macro(macro_path: MacroPath) -> MacroPath:
+    """Populate `file_extension_macro` in a MacroPath's variables when the template needs it.
+
+    No-op when the template doesn't reference `{file_extension_macro...}`, when
+    the variable is already set by the caller, or when there's no
+    `file_extension` in the variables to look up a mapping for. Otherwise,
+    resolves the extension against the current project's
+    ``file_extension_macros`` mapping and returns a new MacroPath with the
+    value injected.
+    """
+    if not _template_references(macro_path.parsed_macro, "file_extension_macro"):
+        return macro_path
+    variables = macro_path.variables
+    if "file_extension_macro" in variables:
+        return macro_path
+    extension = variables.get("file_extension")
+    if not isinstance(extension, str) or not extension:
+        return macro_path
+    resolved = resolve_file_extension_macro(extension, dict(variables))
+    if resolved is None:
+        return macro_path
+    return MacroPath(macro_path.parsed_macro, {**variables, "file_extension_macro": resolved})
+
+
 SITUATION_TO_FILE_POLICY: dict[str, ExistingFilePolicy] = {
     SituationFilePolicy.CREATE_NEW: ExistingFilePolicy.CREATE_NEW,
     SituationFilePolicy.OVERWRITE: ExistingFilePolicy.OVERWRITE,
@@ -96,7 +128,33 @@ class ProjectFileDestination(FileDestination):
 
     Construct directly with a ``MacroPath`` and write policy, or use the
     ``from_situation`` classmethod to build from a situation name and filename.
+
+    When the path template references ``{file_extension_macro...}`` and the
+    variable isn't already provided, the extension is looked up in the
+    current project's ``file_extension_macros`` mapping and injected into the
+    variables. This keeps per-extension routing (images/, videos/, etc.)
+    consistent across every caller (``from_situation``, ``FileOutputSetting``,
+    etc.) without each of them duplicating the lookup.
     """
+
+    def __init__(
+        self,
+        file_path: str | MacroPath,
+        *,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
+        file_metadata: SidecarContent | None = None,
+    ) -> None:
+        if isinstance(file_path, MacroPath):
+            file_path = _inject_file_extension_macro(file_path)
+        super().__init__(
+            file_path,
+            existing_file_policy=existing_file_policy,
+            append=append,
+            create_parents=create_parents,
+            file_metadata=file_metadata,
+        )
 
     def write_bytes(self, content: bytes) -> File:
         return self._map_to_macro_file(super().write_bytes(content))
@@ -164,17 +222,10 @@ class ProjectFileDestination(FileDestination):
             **extra_vars,
         }
 
-        # Route common file types into a per-extension folder fragment
-        # (images, videos, audio, text, python, etc.) so overlays using
-        # {file_extension_macro?:/} can co-locate related siblings
-        # (png + jpg -> images/). The mapping lives in the current project's
-        # template, so projects can customize routing without engine changes.
-        # Unmapped extensions leave the slot unset, letting the optional macro
-        # degrade to a flat layout.
-        if "file_extension_macro" not in variables:
-            extension_macro = _file_extension_macro_for(parts.extension, extra_vars)
-            if extension_macro is not None:
-                variables["file_extension_macro"] = extension_macro
+        # The {file_extension_macro} slot is populated by ProjectFileDestination's
+        # __init__ via _inject_file_extension_macro, so every caller
+        # (from_situation, FileOutputSetting, etc.) routes consistently.
+        macro_path = _inject_file_extension_macro(MacroPath(ParsedMacro(macro_template), variables))
 
         file_metadata = (
             SidecarContent(
@@ -185,14 +236,13 @@ class ProjectFileDestination(FileDestination):
                         on_collision=situation_obj.policy.on_collision,
                         create_dirs=situation_obj.policy.create_dirs,
                     ),
-                    variables={k: str(v) for k, v in variables.items()},
+                    variables={k: str(v) for k, v in macro_path.variables.items()},
                 ),
             )
             if situation_obj is not None
             else None
         )
 
-        macro_path = MacroPath(ParsedMacro(macro_template), variables)
         return cls(
             macro_path,
             existing_file_policy=existing_file_policy,
