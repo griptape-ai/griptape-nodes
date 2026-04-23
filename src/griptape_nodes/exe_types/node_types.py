@@ -43,6 +43,7 @@ from griptape_nodes.utils import async_utils
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+    from griptape_nodes.retained_mode.variable_types import VariableScope
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -103,6 +104,24 @@ class ImportDependency(NamedTuple):
     class_name: str | None = None
 
 
+@dataclass(frozen=True)
+class VariableReference:
+    """A reference to a workflow variable by name and scope.
+
+    Nodes that read from or write to a named variable declare it via this dataclass
+    so that serialization can persist only the variables that are actually used by
+    the workflow graph (rather than every variable currently in engine state).
+
+    Attributes:
+        name: The variable's name as the node knows it
+        scope: The scope the node uses to resolve the variable (HIERARCHICAL is the
+            common case; the serializer will resolve the actual owning flow).
+    """
+
+    name: str
+    scope: VariableScope
+
+
 @dataclass
 class NodeDependencies:
     """Dependencies that a node has on external resources.
@@ -116,12 +135,14 @@ class NodeDependencies:
         static_files: Set of static file names that this node depends on
         imports: Set of Python imports that this node requires
         libraries: Set of library names and versions that this node uses
+        variable_references: Set of variable references (name + scope) this node reads or writes
     """
 
     referenced_workflows: set[str] = field(default_factory=set)
     static_files: set[str] = field(default_factory=set)
     imports: set[ImportDependency] = field(default_factory=set)
     libraries: set[LibraryNameAndVersion] = field(default_factory=set)
+    variable_references: set[VariableReference] = field(default_factory=set)
 
     def aggregate_from(self, other: NodeDependencies) -> None:
         """Aggregate dependencies from another NodeDependencies object into this one.
@@ -134,6 +155,7 @@ class NodeDependencies:
         self.static_files.update(other.static_files)
         self.imports.update(other.imports)
         self.libraries.update(other.libraries)
+        self.variable_references.update(other.variable_references)
 
 
 class NodeResolutionState(StrEnum):
