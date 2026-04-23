@@ -236,6 +236,12 @@ class ProjectManager:
             self.on_app_initialization_complete,
         )
 
+        # Load system defaults eagerly so project-aware requests work before
+        # AppInitializationComplete fires. Workflow scripts run in CLI mode
+        # construct nodes at module import time, before the event is broadcast.
+        self._load_system_defaults()
+        self._current_project_id = SYSTEM_DEFAULTS_KEY
+
     def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
     ) -> LoadProjectTemplateResultSuccess | LoadProjectTemplateResultFailure:
@@ -925,9 +931,20 @@ class ProjectManager:
 
         Called by EventManager after all libraries are loaded.
         Loads system defaults, then checks workspace for a griptape-nodes-project.yml
-        overlay file and sets it as the current project if found.
+        overlay file and sets it as the current project if found. If a project has
+        already been explicitly selected before this event (e.g., by a CLI executor
+        via --project-file-path), preserves that choice and skips workspace discovery.
         """
-        self._load_system_defaults()
+        # If an explicit project was selected before init completed (e.g., by
+        # LocalWorkflowExecutor loading --project-file-path), keep it. Still load
+        # registered projects for visibility and mark init complete.
+        explicit_project_selected = (
+            self._current_project_id is not None and self._current_project_id != SYSTEM_DEFAULTS_KEY
+        )
+        if explicit_project_selected:
+            self._load_registered_projects()
+            self._initialization_complete = True
+            return
 
         # Set system defaults as current project (using synthetic key for system defaults)
         set_request = SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY)
@@ -1418,7 +1435,7 @@ class ProjectManager:
                     result.result_details,
                 )
             else:
-                logger.info("Reloaded registered project from '%s'", path_str)
+                logger.debug("Reloaded registered project from '%s'", path_str)
 
     def _register_project_path(self, project_id: str) -> None:
         """Persist a project file path so it is loaded on the next engine restart.
