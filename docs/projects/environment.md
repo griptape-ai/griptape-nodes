@@ -72,5 +72,12 @@ When a macro is resolved, variables are supplied from these sources in priority 
 1. **Builtin variables** — always win; cannot be overridden by any other source
 1. **Directory names** — resolved from the project's directory definitions; cannot be overridden by caller-supplied variables
 1. **Caller-supplied variables** — values passed by the node or operation requesting path resolution
+1. **Derived variables** — computed from the variables above plus project state, and injected before the situation macro is resolved. A derived variable abstains when the caller has already supplied its value, so caller-supplied entries still win.
 
 If a caller tries to supply a value for a builtin or directory name that differs from the system value, the resolution fails with a `DIRECTORY_OVERRIDE_ATTEMPTED` error.
+
+### Derived variables
+
+| Variable                   | Derived from                                                             | Source of truth                                                 |
+| -------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `file_extension_directory` | `file_extension` plus the project's `file_extension_directories` mapping | See [File Extension Directories](file_extension_directories.md) |
