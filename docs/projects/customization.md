@@ -100,6 +100,40 @@ directories:
     path_macro: "{CLIENT_CODE}/{SEASON}/renders"
 ```
 
+## Routing files by extension
+
+Use `file_extension_macros` to land files of different types in different subfolders without writing a separate situation for each type. See [File Extension Macros](file_extension_macros.md) for the full reference.
+
+```yaml
+project_template_schema_version: "0.3.0"
+name: "My Project"
+
+file_extension_macros:
+  png: "images"
+  jpg: "images"
+  mp4: "videos"
+  wav: "audio"
+
+situations:
+  save_node_output:
+    macro: "{outputs}/{file_extension_macro?:/}{node_name?:_}{file_name_base}{_index?:03}.{file_extension}"
+```
+
+Extensions can also resolve to a macro. To route videos to a share drive while everything else stays under `outputs`, use the situation macro that lets the routing value dictate the root:
+
+```yaml
+project_template_schema_version: "0.3.0"
+name: "My Project"
+
+file_extension_macros:
+  png: "{outputs}/images"
+  mp4: "{workspace_dir}/shared/videos"
+
+situations:
+  save_node_output:
+    macro: "{file_extension_macro?:/}{node_name?:_}{file_name_base}{_index?:03}.{file_extension}"
+```
+
 ## Referencing OS environment variables
 
 Pull values from the operating system environment:

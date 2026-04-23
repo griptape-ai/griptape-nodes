@@ -90,6 +90,7 @@ nav:
           - Directories: projects/directories.md
           - Situations: projects/situations.md
           - Environment & Builtin Variables: projects/environment.md
+          - File Extension Macros: projects/file_extension_macros.md
           - Customization Guide: projects/customization.md
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
