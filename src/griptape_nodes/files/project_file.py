@@ -13,6 +13,8 @@ from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectResultSuccess,
     GetCurrentProjectRequest,
     GetCurrentProjectResultSuccess,
+    GetPathForMacroRequest,
+    GetPathForMacroResultSuccess,
     GetSituationRequest,
     GetSituationResultSuccess,
     MacroPath,
@@ -29,21 +31,52 @@ logger = logging.getLogger("griptape_nodes")
 FALLBACK_MACRO_TEMPLATE = "{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}"
 
 
-def _file_extension_group_for(extension: str) -> str | None:
+def _file_extension_group_for(extension: str, extra_vars: dict[str, str | int] | None = None) -> str | None:
     """Map a filename extension to a group name via the current project's template.
 
     Looks up the extension (case-insensitively) in the current project's
-    `file_extension_groups` mapping. Returns None when the extension is
-    empty, no project is loaded, or the extension is unmapped so callers
-    can leave an optional `{file_extension_group?:/}` macro slot unresolved
-    instead of routing unknown types into an arbitrary folder.
+    `file_extension_groups` mapping. Plain names like `"images"` are returned
+    as-is; values containing macro syntax (e.g. `"{outputs}/videos"`) are
+    resolved via `GetPathForMacroRequest` against the project's builtins and
+    directory definitions, plus any caller-supplied `extra_vars` (e.g.
+    `node_name`, `parameter_name`, `sub_dirs`, `_index`). Filename parts
+    (`file_name_base`, `file_extension`) are intentionally excluded --
+    groups are a taxonomy layer, not a filename layer.
+
+    Returns None when the extension is empty, no project is loaded, the
+    extension is unmapped, or resolution fails -- so the optional
+    `{file_extension_group?:/}` slot degrades cleanly instead of routing
+    unknown types into an arbitrary folder or surfacing as a crash.
     """
     if not extension:
         return None
     project_result = GriptapeNodes.handle_request(GetCurrentProjectRequest())
     if not isinstance(project_result, GetCurrentProjectResultSuccess):
         return None
-    return project_result.project_info.template.file_extension_groups.get(extension.lower())
+    raw_group = project_result.project_info.template.file_extension_groups.get(extension.lower())
+    if raw_group is None:
+        return None
+    # Plain folder name -- skip the event round-trip.
+    if "{" not in raw_group:
+        return raw_group
+    # Filename parts belong to the situation macro's filename section, not
+    # the taxonomy layer. Smuggling them through groups would let taxonomy
+    # encode filenames.
+    resolution_vars: dict[str, str | int] = {
+        k: v for k, v in (extra_vars or {}).items() if k not in ("file_name_base", "file_extension")
+    }
+    resolve_result = GriptapeNodes.handle_request(
+        GetPathForMacroRequest(parsed_macro=ParsedMacro(raw_group), variables=resolution_vars)
+    )
+    if not isinstance(resolve_result, GetPathForMacroResultSuccess):
+        logger.warning(
+            "Failed to resolve file_extension_groups value for '%s' (%r): %s. Falling back to no group.",
+            extension,
+            raw_group,
+            resolve_result.result_details,
+        )
+        return None
+    return str(resolve_result.resolved_path)
 
 
 SITUATION_TO_FILE_POLICY: dict[str, ExistingFilePolicy] = {
@@ -138,7 +171,7 @@ class ProjectFileDestination(FileDestination):
         # taxonomy without engine changes. Unmapped extensions leave the slot
         # unset, letting the optional macro degrade to a flat layout.
         if "file_extension_group" not in variables:
-            group = _file_extension_group_for(parts.extension)
+            group = _file_extension_group_for(parts.extension, extra_vars)
             if group is not None:
                 variables["file_extension_group"] = group
 
