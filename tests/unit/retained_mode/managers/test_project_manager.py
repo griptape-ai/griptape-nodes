@@ -803,8 +803,12 @@ class TestProjectManagerNestedDirectoryResolution:
         # State must be clean: 'broken' never cached, 'good' still resolvable.
         assert "broken" not in cache
         resolved = pm._resolve_directory_path("good", project_info, cache, set(), {})
-        assert resolved == "/workspace/good"
-        assert cache["good"] == "/workspace/good"
+        # Derive the expected value the same way the helper does: the workspace
+        # builtin is stringified via str(Path), so on Windows the prefix uses
+        # backslashes. Pinning a POSIX literal here breaks the Windows lane.
+        expected = str(Path("/workspace")) + "/good"
+        assert resolved == expected
+        assert cache["good"] == expected
 
 
 class TestProjectManagerGetStateForMacro:
