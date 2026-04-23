@@ -110,16 +110,21 @@ class ProjectFileParameter:
 
         If an upstream node implements FileDestinationProvider (e.g., FileOutputSettings),
         its FileDestination is retrieved directly without deserializing from the wire.
+        An upstream provider that returns None (misconfigured) raises instead of silently
+        falling back to the default situation, since that fallback hides user intent.
 
-        If the parameter holds a string filename, parses it into
-        file_name_base/file_extension, builds a MacroPath using the
-        situation's macro template, and wraps it in a FileDestination.
+        Otherwise the parameter's string value is parsed into
+        file_name_base/file_extension, combined with this component's default
+        situation, and wrapped in a FileDestination.
 
         Args:
             **extra_vars: Additional variables for the macro (e.g., sub_dirs="renders")
 
         Returns:
             FileDestination with a MacroPath and baked-in write policy for deferred path resolution
+
+        Raises:
+            ValueError: If an upstream FileDestinationProvider is connected but returns None.
         """
         result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self._node.name))
         if isinstance(result, ListConnectionsForNodeResultSuccess):
@@ -128,8 +133,14 @@ class ProjectFileParameter:
                     source_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(conn.source_node_name)
                     if isinstance(source_node, FileDestinationProvider):
                         file_dest = source_node.file_destination
-                        if file_dest is not None:
-                            return file_dest
+                        if file_dest is None:
+                            msg = (
+                                f"Attempted to build file destination for {self._node.name}.{self._name}. "
+                                f"Failed because upstream node '{conn.source_node_name}' provides a "
+                                f"FileDestination but returned None (likely missing a filename)."
+                            )
+                            raise ValueError(msg)
+                        return file_dest
 
         value = self._node.get_parameter_value(self._name)
 
