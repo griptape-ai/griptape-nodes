@@ -199,6 +199,10 @@ from griptape_nodes.retained_mode.retained_mode import RetainedMode
 
 logger = logging.getLogger("griptape_nodes")
 
+# Sentinel for "key not present in node.parameter_values". Distinct from None
+# so a legitimately-stored None does not collide with "missing".
+_PARAM_MISSING = object()
+
 
 class SerializedParameterValues(NamedTuple):
     """Result of serializing parameter output values.
@@ -2743,6 +2747,16 @@ class NodeManager:
             # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.
             parameter_values = hydrate_parameter_values(request.parameter_values)
             for param_name, value in parameter_values.items():
+                # Skip when the node already holds this value. The local path
+                # calls ExecuteNodeRequest with dict(node.parameter_values) on
+                # the same in-memory instance, so every iteration would be a
+                # no-op mutation that still ran before/after_value_set hooks
+                # and emitted a lifecycle event -- observably breaking nodes
+                # like LoadImage. On the worker the node is fresh, so current
+                # is _PARAM_MISSING and the normal set path runs.
+                current = node.parameter_values.get(param_name, _PARAM_MISSING)
+                if current is value or current == value:
+                    continue
                 try:
                     node.set_parameter_value(param_name, value)
                 except Exception as e:

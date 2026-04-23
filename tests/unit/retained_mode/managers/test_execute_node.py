@@ -23,6 +23,7 @@ class TestExecuteNode:
         node = MagicMock(spec=BaseNode)
         node.name = name
         node.aprocess = AsyncMock()
+        node.parameter_values = {}
         node.parameter_output_values = {"output_param": "output_value"}
         return node
 
@@ -231,3 +232,47 @@ class TestExecuteNode:
         assert isinstance(result, ExecuteNodeResultSuccess)
         expected_param_count = 3
         assert mock_node.set_parameter_value.call_count == expected_param_count
+
+    @pytest.mark.asyncio
+    async def test_hydrate_skips_identical_values(self) -> None:
+        """Identity-skip guard: hydrate does not re-call set_parameter_value for matching values."""
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+        # Pre-populate parameter_values so each hydrate lookup finds a match.
+        mock_node.parameter_values = {"param_a": 1, "param_b": "two", "param_c": [3]}
+        mock_obj_mgr = self._make_mock_obj_mgr(existing_node=mock_node)
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.node_manager.GriptapeNodes.ObjectManager",
+            return_value=mock_obj_mgr,
+        ):
+            request = ExecuteNodeRequest(
+                node_name="test_node",
+                parameter_values=dict(mock_node.parameter_values),
+            )
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        mock_node.set_parameter_value.assert_not_called()
+        mock_node.aprocess.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_hydrate_calls_set_for_differing_values(self) -> None:
+        """Identity-skip does not fire when the incoming value differs from current."""
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+        mock_node.parameter_values = {"param_a": 1}  # existing, but stale
+        mock_obj_mgr = self._make_mock_obj_mgr(existing_node=mock_node)
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.node_manager.GriptapeNodes.ObjectManager",
+            return_value=mock_obj_mgr,
+        ):
+            request = ExecuteNodeRequest(
+                node_name="test_node",
+                parameter_values={"param_a": 999},  # differs from current
+            )
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        mock_node.set_parameter_value.assert_called_once_with("param_a", 999)

@@ -306,12 +306,21 @@ class NodeExecutor:
                         node_metadata=cast("NodeMetadata", dict(node.metadata)),
                     )
                 )
-            if isinstance(result, ExecuteNodeResultSuccess):
-                for name, value in result.parameter_output_values.items():
-                    node.set_parameter_value(name, value)
-            else:
-                msg = f"Node '{node.name}' execution failed: {result.result_details}"
+            if not isinstance(result, ExecuteNodeResultSuccess):
+                msg = f"Node '{node.name}' execution failed: {getattr(result, 'result_details', result)}"
                 raise RuntimeError(msg)  # noqa: TRY004
+            # Copy outputs back onto the in-memory node. Write directly into
+            # parameter_output_values (not through set_parameter_value, which
+            # targets parameter_values and re-fires before/after_value_set and
+            # lifecycle events). TrackedParameterOutputValues.__setitem__
+            # guards with old_value != value, so on the local/in-process path
+            # -- where aprocess already wrote these entries in place -- the
+            # write is idempotent and emits no duplicate AlterElementEvent.
+            # Downstream delivery is handled later by
+            # parallel_resolution.collect_values_from_upstream_nodes, which
+            # reads from parameter_output_values.
+            for name, value in result.parameter_output_values.items():
+                node.parameter_output_values[name] = value
         finally:
             current_executing_node_name.reset(token)
 
