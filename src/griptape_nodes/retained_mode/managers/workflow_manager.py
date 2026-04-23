@@ -28,7 +28,12 @@ from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
 from griptape_nodes.files.file import FileLoadError
-from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key, resolve_workspace_path
+from griptape_nodes.files.path_utils import (
+    FilenameParts,
+    canonicalize_for_identity,
+    derive_registry_key,
+    resolve_workspace_path,
+)
 from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
@@ -2008,31 +2013,29 @@ class WorkflowManager:
             file_path = Path(WorkflowRegistry.get_complete_file_path(relative_file_path))
 
         elif requested_file_name and current_workflow:
-            # Requested name doesn't exist but we have a current workflow → Save As
+            # Requested name doesn't exist but we have a current workflow → Save As.
+            # A user-typed name like "episode/my_wf" splits into sub-directory + stem
+            # and is authoritative: the requested name fully determines the save path.
             scenario = WorkflowManager.SaveWorkflowScenario.SAVE_AS
-            file_name = requested_file_name
             creation_date = current_workflow.metadata.creation_date
             branched_from = current_workflow.metadata.branched_from
-            current_dir = Path(current_workflow.file_path).parent
-            # If current_dir is absolute, the workflow lives outside the workspace;
-            # save the copy to the workspace root so the registry key stays relative.
-            # Path(".").parent evaluates to Path(".") (a bare filename with no
-            # parent), which would pass "." through as a sub_dirs value and
-            # produce a spurious "./" prefix in the save path. Treat it as
-            # "no sub-directory" to keep the resolved path flat.
-            if current_dir.is_absolute() or str(current_dir) == ".":
-                sub_dirs = None
-            else:
-                sub_dirs = str(current_dir)
+            parts = FilenameParts.from_filename(f"{requested_file_name}.py")
+            sub_dirs = str(parts.directory) if str(parts.directory) != "." else None
+            file_name = parts.stem
             file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py", sub_dirs=sub_dirs)
 
         else:
-            # No requested name or no current workflow → first save
+            # No requested name or no current workflow → first save.
+            # A user-typed name like "episode/my_wf" splits into sub-directory + stem;
+            # auto-generated timestamp names have no directory component.
             scenario = WorkflowManager.SaveWorkflowScenario.FIRST_SAVE
-            file_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            raw_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            parts = FilenameParts.from_filename(f"{raw_name}.py")
+            sub_dirs = str(parts.directory) if str(parts.directory) != "." else None
+            file_name = parts.stem
             creation_date = datetime.now(tz=UTC)
             branched_from = None
-            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py")
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py", sub_dirs=sub_dirs)
 
         # Ensure creation date is valid (backcompat)
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
