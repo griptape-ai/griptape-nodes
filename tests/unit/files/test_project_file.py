@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
 
+from griptape_nodes.common.project_templates.situation import SituationTemplate
 from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
 
@@ -78,7 +79,7 @@ class TestProjectFileDestinationInit:
 
     def _make_extension_group_handle_request(
         self,
-        situation: "SituationTemplate",  # noqa: F821
+        situation: SituationTemplate,
         file_extension_groups: dict[str, str],
     ) -> Callable[[object], object]:
         """Build a handle_request side_effect that answers situation + current-project lookups.
