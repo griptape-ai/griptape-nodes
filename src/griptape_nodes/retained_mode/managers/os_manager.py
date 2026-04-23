@@ -2223,15 +2223,8 @@ class OSManager:
         Returns:
             True if sufficient space is available, False otherwise.
         """
-        # Callers routinely pass a target write path whose directory hasn't been
-        # created yet (save situations create parent dirs on write). Walk up to
-        # the nearest existing ancestor so disk_usage resolves to the same mount
-        # the write will land on rather than raising FileNotFoundError.
-        probe = path
-        while not probe.exists() and probe != probe.parent:
-            probe = probe.parent
         try:
-            disk_info = OSManager.get_disk_space_info(probe)
+            disk_info = OSManager.get_disk_space_info(path)
             required_bytes = int(required_gb * 1024 * 1024 * 1024)  # Convert GB to bytes
             return disk_info.free >= required_bytes  # noqa: TRY300
         except OSError:
@@ -2248,14 +2241,8 @@ class OSManager:
         Returns:
             A formatted error message with disk space information.
         """
-        # Mirror check_available_disk_space: if the path is a yet-to-be-created
-        # target, probe the nearest existing ancestor so the reported free/used
-        # numbers reflect the mount the write would land on.
-        probe = path
-        while not probe.exists() and probe != probe.parent:
-            probe = probe.parent
         try:
-            disk_info = OSManager.get_disk_space_info(probe)
+            disk_info = OSManager.get_disk_space_info(path)
             free_gb = disk_info.free / (1024**3)
             used_gb = disk_info.used / (1024**3)
             total_gb = disk_info.total / (1024**3)
