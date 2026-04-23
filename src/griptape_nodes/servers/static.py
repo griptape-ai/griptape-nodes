@@ -239,7 +239,7 @@ async def _serve_external_file(file_path: str) -> FileResponse:
 
     # Check if file exists
     if not await anyio_absolute_path.exists():
-        logger.warning("External file not found: %s", absolute_path)
+        logger.debug("External file not found: %s", absolute_path)
         raise HTTPException(status_code=404, detail=f"File {absolute_path} not found")
 
     # Check if it's actually a file (not a directory)
