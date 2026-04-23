@@ -31,21 +31,21 @@ logger = logging.getLogger("griptape_nodes")
 FALLBACK_MACRO_TEMPLATE = "{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}"
 
 
-def _file_extension_group_for(extension: str, extra_vars: dict[str, str | int] | None = None) -> str | None:
-    """Map a filename extension to a group name via the current project's template.
+def _file_extension_macro_for(extension: str, extra_vars: dict[str, str | int] | None = None) -> str | None:
+    """Resolve an extension to a folder fragment via the current project's template.
 
     Looks up the extension (case-insensitively) in the current project's
-    `file_extension_groups` mapping. Plain names like `"images"` are returned
+    `file_extension_macros` mapping. Plain names like `"images"` are returned
     as-is; values containing macro syntax (e.g. `"{outputs}/videos"`) are
     resolved via `GetPathForMacroRequest` against the project's builtins and
     directory definitions, plus any caller-supplied `extra_vars` (e.g.
     `node_name`, `parameter_name`, `sub_dirs`, `_index`). Filename parts
     (`file_name_base`, `file_extension`) are intentionally excluded --
-    groups are a taxonomy layer, not a filename layer.
+    extension macros are a routing layer, not a filename layer.
 
     Returns None when the extension is empty, no project is loaded, the
     extension is unmapped, or resolution fails -- so the optional
-    `{file_extension_group?:/}` slot degrades cleanly instead of routing
+    `{file_extension_macro?:/}` slot degrades cleanly instead of routing
     unknown types into an arbitrary folder or surfacing as a crash.
     """
     if not extension:
@@ -53,26 +53,26 @@ def _file_extension_group_for(extension: str, extra_vars: dict[str, str | int] |
     project_result = GriptapeNodes.handle_request(GetCurrentProjectRequest())
     if not isinstance(project_result, GetCurrentProjectResultSuccess):
         return None
-    raw_group = project_result.project_info.template.file_extension_groups.get(extension.lower())
-    if raw_group is None:
+    raw_macro = project_result.project_info.template.file_extension_macros.get(extension.lower())
+    if raw_macro is None:
         return None
     # Plain folder name -- skip the event round-trip.
-    if "{" not in raw_group:
-        return raw_group
+    if "{" not in raw_macro:
+        return raw_macro
     # Filename parts belong to the situation macro's filename section, not
-    # the taxonomy layer. Smuggling them through groups would let taxonomy
-    # encode filenames.
+    # the routing layer. Smuggling them through extension macros would let
+    # routing encode filenames.
     resolution_vars: dict[str, str | int] = {
         k: v for k, v in (extra_vars or {}).items() if k not in ("file_name_base", "file_extension")
     }
     resolve_result = GriptapeNodes.handle_request(
-        GetPathForMacroRequest(parsed_macro=ParsedMacro(raw_group), variables=resolution_vars)
+        GetPathForMacroRequest(parsed_macro=ParsedMacro(raw_macro), variables=resolution_vars)
     )
     if not isinstance(resolve_result, GetPathForMacroResultSuccess):
         logger.warning(
-            "Failed to resolve file_extension_groups value for '%s' (%r): %s. Falling back to no group.",
+            "Failed to resolve file_extension_macros value for '%s' (%r): %s. Falling back to no routing.",
             extension,
-            raw_group,
+            raw_macro,
             resolve_result.result_details,
         )
         return None
@@ -164,16 +164,17 @@ class ProjectFileDestination(FileDestination):
             **extra_vars,
         }
 
-        # Route common file types into a coarse group (images, videos, audio,
-        # text, python, etc.) so overlays using {file_extension_group?:/} can
-        # co-locate related siblings (png + jpg -> images/). The mapping lives
-        # in the current project's template, so projects can customize the
-        # taxonomy without engine changes. Unmapped extensions leave the slot
-        # unset, letting the optional macro degrade to a flat layout.
-        if "file_extension_group" not in variables:
-            group = _file_extension_group_for(parts.extension, extra_vars)
-            if group is not None:
-                variables["file_extension_group"] = group
+        # Route common file types into a per-extension folder fragment
+        # (images, videos, audio, text, python, etc.) so overlays using
+        # {file_extension_macro?:/} can co-locate related siblings
+        # (png + jpg -> images/). The mapping lives in the current project's
+        # template, so projects can customize routing without engine changes.
+        # Unmapped extensions leave the slot unset, letting the optional macro
+        # degrade to a flat layout.
+        if "file_extension_macro" not in variables:
+            extension_macro = _file_extension_macro_for(parts.extension, extra_vars)
+            if extension_macro is not None:
+                variables["file_extension_macro"] = extension_macro
 
         file_metadata = (
             SidecarContent(

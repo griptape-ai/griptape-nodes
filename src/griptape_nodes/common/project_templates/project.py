@@ -33,9 +33,9 @@ class ProjectTemplate(BaseModel):
         description="Directory definitions (logical_name -> definition)",
     )
     environment: dict[str, str] = Field(default_factory=dict, description="Custom environment variables")
-    file_extension_groups: dict[str, str] = Field(
+    file_extension_macros: dict[str, str] = Field(
         default_factory=dict,
-        description="Mapping of file extension (without leading dot) to a group name used to populate the {file_extension_group} macro variable",
+        description="Mapping of file extension (without leading dot) to a macro (plain name or `{...}` template) used to populate the {file_extension_macro} macro variable",
     )
 
     def get_situation(self, situation_name: str) -> SituationTemplate | None:
@@ -86,12 +86,12 @@ class ProjectTemplate(BaseModel):
         if environment_overlay:
             output["environment"] = environment_overlay
 
-        file_extension_groups_overlay = self._diff_environment(
-            self_dump.get("file_extension_groups", {}),
-            base_dump.get("file_extension_groups", {}),
+        file_extension_macros_overlay = self._diff_environment(
+            self_dump.get("file_extension_macros", {}),
+            base_dump.get("file_extension_macros", {}),
         )
-        if file_extension_groups_overlay:
-            output["file_extension_groups"] = file_extension_groups_overlay
+        if file_extension_macros_overlay:
+            output["file_extension_macros"] = file_extension_macros_overlay
 
         return self._dump_yaml(output)
 
@@ -340,25 +340,25 @@ class ProjectTemplate(BaseModel):
                 action=action,
             )
 
-        # Merge file_extension_groups (same semantics as environment: per-key
+        # Merge file_extension_macros (same semantics as environment: per-key
         # overwrite, null tombstones drop inherited entries).
-        merged_file_extension_groups = {**base.file_extension_groups}
-        for key in overlay.removed_file_extension_groups:
-            if key in merged_file_extension_groups:
-                del merged_file_extension_groups[key]
+        merged_file_extension_macros = {**base.file_extension_macros}
+        for key in overlay.removed_file_extension_macros:
+            if key in merged_file_extension_macros:
+                del merged_file_extension_macros[key]
                 validation_info.add_override(
-                    category=ProjectOverrideCategory.FILE_EXTENSION_GROUP,
+                    category=ProjectOverrideCategory.FILE_EXTENSION_MACRO,
                     name=key,
                     action=ProjectOverrideAction.REMOVED,
                 )
-        for key, value in overlay.file_extension_groups.items():
+        for key, value in overlay.file_extension_macros.items():
             action = (
-                ProjectOverrideAction.MODIFIED if key in base.file_extension_groups else ProjectOverrideAction.ADDED
+                ProjectOverrideAction.MODIFIED if key in base.file_extension_macros else ProjectOverrideAction.ADDED
             )
-            merged_file_extension_groups[key] = value
+            merged_file_extension_macros[key] = value
 
             validation_info.add_override(
-                category=ProjectOverrideCategory.FILE_EXTENSION_GROUP,
+                category=ProjectOverrideCategory.FILE_EXTENSION_MACRO,
                 name=key,
                 action=action,
             )
@@ -377,6 +377,6 @@ class ProjectTemplate(BaseModel):
             situations=merged_situations,
             directories=merged_directories,
             environment=merged_environment,
-            file_extension_groups=merged_file_extension_groups,
+            file_extension_macros=merged_file_extension_macros,
             description=merged_description,
         )

@@ -32,7 +32,7 @@ class ProjectOverrideCategory(StrEnum):
     DIRECTORY = "directory"
     ENVIRONMENT = "environment"
     METADATA = "metadata"
-    FILE_EXTENSION_GROUP = "file_extension_group"
+    FILE_EXTENSION_MACRO = "file_extension_macro"
 
 
 class ProjectOverrideAction(StrEnum):
