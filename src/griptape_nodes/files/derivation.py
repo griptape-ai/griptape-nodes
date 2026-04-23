@@ -139,7 +139,9 @@ def resolve_file_extension_macro(extension: str, extra_vars: Mapping[str, str | 
             resolve_result.result_details,
         )
         return None
-    return str(resolve_result.resolved_path)
+    # POSIX form so the value composes cleanly with other forward-slash macro
+    # segments on Windows (str(Path(...)) would emit backslashes).
+    return resolve_result.resolved_path.as_posix()
 
 
 def _derive_file_extension_macro(variables: Mapping[str, str | int]) -> str | None:
