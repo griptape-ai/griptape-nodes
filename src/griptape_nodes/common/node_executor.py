@@ -214,11 +214,19 @@ async def _execute_node_on_worker(
     wm: WorkerManager,
     node: BaseNode,
     worker: tuple[str, str],
-) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-    """Execute a node on a worker.
+) -> None:
+    """Execute a node on a worker and copy its outputs back onto the node.
 
     Sends a single ExecuteNodeRequest carrying node_metadata. The worker creates
     the node on first call (idempotent — no-op if already present) then executes it.
+
+    On success, copies parameter_output_values back onto the in-memory node so
+    that NodeManager's side-effect handling of set_parameter_value can propagate
+    the outputs to downstream connections. The local (in-process) branch must
+    not do this copy-back, because aprocess() already populated outputs in
+    place and propagation already fired during that write.
+
+    Raises RuntimeError if the worker reports failure.
     """
     worker_engine_id, worker_request_topic = worker
     execute_raw = await wm.route_to_worker(
@@ -234,9 +242,13 @@ async def _execute_node_on_worker(
     )
     result_type_name = execute_raw.get("result_type", "")
     result_data = execute_raw.get("result", {})
-    if result_type_name == ExecuteNodeResultSuccess.__name__:
-        return ExecuteNodeResultSuccess(**result_data)
-    return ExecuteNodeResultFailure(**result_data)
+    if result_type_name != ExecuteNodeResultSuccess.__name__:
+        failure = ExecuteNodeResultFailure(**result_data)
+        msg = f"Node '{node.name}' execution failed on worker: {failure.result_details}"
+        raise RuntimeError(msg)
+    result = ExecuteNodeResultSuccess(**result_data)
+    for name, value in result.parameter_output_values.items():
+        node.set_parameter_value(name, value)
 
 
 class NodeExecutor:
@@ -297,21 +309,19 @@ class NodeExecutor:
             library_name = node.metadata.get("library")
             worker = GriptapeNodes.LibraryManager().get_worker_for_library(library_name) if library_name else None
             if wm and worker:
-                result = await _execute_node_on_worker(wm, node, worker)
+                # Worker runs in a different process; _execute_node_on_worker
+                # copies outputs back onto the in-memory node so NodeManager's
+                # side-effect path can propagate them to downstream connections.
+                await _execute_node_on_worker(wm, node, worker)
             else:
-                result = await GriptapeNodes.ahandle_request(
-                    ExecuteNodeRequest(
-                        node_name=node.name,
-                        parameter_values=dict(node.parameter_values),
-                        node_metadata=cast("NodeMetadata", dict(node.metadata)),
-                    )
-                )
-            if isinstance(result, ExecuteNodeResultSuccess):
-                for name, value in result.parameter_output_values.items():
-                    node.set_parameter_value(name, value)
-            else:
-                msg = f"Node '{node.name}' execution failed: {result.result_details}"
-                raise RuntimeError(msg)  # noqa: TRY004
+                # Orchestrator-only path: behave identically to pre-workers.
+                # Run aprocess() directly on this node instance. NodeManager's
+                # on_set_parameter_value_request side-effect path propagates
+                # any new outputs to downstream connections in-process.
+                # Routing through ExecuteNodeRequest here would re-hydrate
+                # inputs via set_parameter_value and was observed to break
+                # single-node flows (e.g. LoadImage / drag-to-load-image).
+                await node.aprocess()
         finally:
             current_executing_node_name.reset(token)
 
