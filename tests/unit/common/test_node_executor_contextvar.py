@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from griptape_nodes.common.node_executor import NodeExecutor, current_executing_node_name
-from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeResultSuccess
 
 _GRIPTAPE_NODES_PATH = "griptape_nodes.common.node_executor.GriptapeNodes"
 _EXECUTE_ON_WORKER_PATH = "griptape_nodes.common.node_executor._execute_node_on_worker"
@@ -34,10 +33,6 @@ def _make_node_with_library(name: str, library: str = "my_lib") -> MagicMock:
     return node
 
 
-def _success_result() -> ExecuteNodeResultSuccess:
-    return ExecuteNodeResultSuccess(result_details="ok", parameter_output_values={})
-
-
 class TestCurrentExecutingNodeNameDefault:
     def test_default_is_none(self) -> None:
         assert current_executing_node_name.get() is None
@@ -50,13 +45,13 @@ class TestNodeExecutorContextVar:
         captured: list[str | None] = []
         node = _make_node("TestNode")
 
-        async def fake_handle(_req: Any) -> ExecuteNodeResultSuccess:
+        async def fake_aprocess() -> None:
             captured.append(current_executing_node_name.get())
-            return _success_result()
+
+        node.aprocess = AsyncMock(side_effect=fake_aprocess)
 
         with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
             mock_gn.WorkerManager.return_value = None
-            mock_gn.ahandle_request = AsyncMock(side_effect=fake_handle)
             await _make_executor().execute(node)
 
         assert captured == ["TestNode"]
@@ -68,7 +63,6 @@ class TestNodeExecutorContextVar:
 
         with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
             mock_gn.WorkerManager.return_value = None
-            mock_gn.ahandle_request = AsyncMock(return_value=_success_result())
             await _make_executor().execute(node)
 
         assert current_executing_node_name.get() is None
@@ -77,10 +71,10 @@ class TestNodeExecutorContextVar:
     async def test_contextvar_reset_to_none_when_aprocess_raises(self) -> None:
         """The ContextVar is reset to None even when execution raises an exception."""
         node = _make_node("TestNode")
+        node.aprocess = AsyncMock(side_effect=RuntimeError("node failed"))
 
         with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
             mock_gn.WorkerManager.return_value = None
-            mock_gn.ahandle_request = AsyncMock(side_effect=RuntimeError("node failed"))
 
             with pytest.raises(RuntimeError, match="node failed"):
                 await _make_executor().execute(node)
@@ -95,14 +89,18 @@ class TestNodeExecutorContextVar:
         node_a = _make_node("NodeA")
         node_b = _make_node("NodeB")
 
-        async def fake_handle(req: Any) -> ExecuteNodeResultSuccess:
-            await asyncio.sleep(0)  # yield to allow interleaving
-            results[req.node_name] = current_executing_node_name.get()
-            return _success_result()
+        def _fake_aprocess_for(node_name: str) -> Any:
+            async def _aprocess() -> None:
+                await asyncio.sleep(0)  # yield to allow interleaving
+                results[node_name] = current_executing_node_name.get()
+
+            return _aprocess
+
+        node_a.aprocess = AsyncMock(side_effect=_fake_aprocess_for("NodeA"))
+        node_b.aprocess = AsyncMock(side_effect=_fake_aprocess_for("NodeB"))
 
         with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
             mock_gn.WorkerManager.return_value = None
-            mock_gn.ahandle_request = AsyncMock(side_effect=fake_handle)
 
             executor = _make_executor()
             await asyncio.gather(
@@ -123,9 +121,8 @@ class TestNodeExecutorContextVarWorkerBranch:
         captured: list[str | None] = []
         node = _make_node_with_library("TestNode")
 
-        async def fake_execute(_wm: Any, _node: Any, _worker: Any) -> ExecuteNodeResultSuccess:
+        async def fake_execute(_wm: Any, _node: Any, _worker: Any) -> None:
             captured.append(current_executing_node_name.get())
-            return _success_result()
 
         with (
             patch(_GRIPTAPE_NODES_PATH) as mock_gn,
@@ -144,7 +141,7 @@ class TestNodeExecutorContextVarWorkerBranch:
 
         with (
             patch(_GRIPTAPE_NODES_PATH) as mock_gn,
-            patch(_EXECUTE_ON_WORKER_PATH, new=AsyncMock(return_value=_success_result())),
+            patch(_EXECUTE_ON_WORKER_PATH, new=AsyncMock(return_value=None)),
         ):
             mock_gn.WorkerManager.return_value = MagicMock()
             mock_gn.LibraryManager.return_value.get_worker_for_library.return_value = ("eng-id", "topic")
