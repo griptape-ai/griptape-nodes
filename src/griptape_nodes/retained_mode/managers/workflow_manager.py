@@ -192,6 +192,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY
+from griptape_nodes.utils.ast_utils import rewrite_string_comments
 from griptape_nodes.utils.string_utils import normalize_display_name
 
 if TYPE_CHECKING:
@@ -2539,35 +2540,9 @@ class WorkflowManager:
         # Rewrite string-literal lines of the form `'# foo'` or `"# foo"` into real `# foo`
         # comments. `ast.unparse` cannot emit comments directly, so the generators above
         # smuggle them in as bare-string statements and we unwrap them here.
-        ast_output = self._rewrite_string_comments(ast_output)
+        ast_output = rewrite_string_comments(ast_output)
         import_output = import_recorder.generate_imports()
         return f"{metadata_block}\n\n{import_output}\n\n{ast_output}\n"
-
-    @staticmethod
-    def _rewrite_string_comments(source: str) -> str:
-        """Turn bare-string statements that start with `#` into real Python comments.
-
-        Only whole-line matches are rewritten; indentation is preserved so comments inside
-        functions / `with` blocks stay indented correctly. The body may contain the
-        opposing quote character (ast.unparse flips quoting style when the body already
-        contains one) but must not contain the enclosing quote.
-        """
-        # Smallest valid bare-string comment is `"#"` or `'#'` — three characters.
-        min_quoted_len = 3
-        rewritten_lines = []
-        for line in source.splitlines():
-            stripped = line.lstrip()
-            indent = line[: len(line) - len(stripped)]
-            if len(stripped) >= min_quoted_len and stripped[0] in ('"', "'") and stripped[-1] == stripped[0]:
-                quote = stripped[0]
-                body = stripped[1:-1]
-                # Must be a single-line literal with no embedded matching quote,
-                # and must look like a comment ("#..." with no surprises).
-                if quote not in body and body.startswith("#"):
-                    rewritten_lines.append(f"{indent}{body}")
-                    continue
-            rewritten_lines.append(line)
-        return "\n".join(rewritten_lines)
 
     def _replace_workflow_metadata_header(self, workflow_content: str, new_metadata: WorkflowMetadata) -> str | None:
         """Replace the metadata header in a workflow file with new metadata.
@@ -3578,7 +3553,7 @@ class WorkflowManager:
 
         # Comment lines explaining what we're doing. Each line is emitted as its own bare-string
         # statement so that it unparses onto a single source line. A post-process pass in
-        # _generate_workflow_file_content (via _rewrite_string_comments) then strips the surrounding
+        # _generate_workflow_file_content (via rewrite_string_comments) then strips the surrounding
         # quotes to turn each line into a real Python `#` comment.
         comment_lines = [
             "# 1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.",
