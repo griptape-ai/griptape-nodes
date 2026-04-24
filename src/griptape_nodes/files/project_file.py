@@ -185,6 +185,20 @@ class ProjectFileDestination(FileDestination):
                 file_metadata=None,
             )
 
+        # Absolute filenames bypass the situation macro: the caller is declaring
+        # an explicit on-disk location, so honor it verbatim rather than treating
+        # the leading-slash directory as sub_dirs within {outputs}/etc. Drop the
+        # sidecar metadata too -- the situation macro + variables we computed
+        # above won't re-resolve to the actual on-disk location, so recording
+        # them would produce a dishonest provenance trail.
+        if parts.directory.is_absolute():
+            return cls(
+                filename,
+                existing_file_policy=existing_file_policy,
+                create_parents=create_dirs,
+                file_metadata=None,
+            )
+
         return cls(
             macro_path,
             existing_file_policy=existing_file_policy,
