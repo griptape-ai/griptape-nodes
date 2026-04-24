@@ -1235,3 +1235,83 @@ class TestWorkflowVariablePersistence:
         serialize_result = GriptapeNodes.handle_request(SerializeFlowToCommandsRequest(flow_name=flow_name))
         assert isinstance(serialize_result, SerializeFlowToCommandsResultSuccess)
         assert serialize_result.serialized_flow_commands.serialized_variable_commands == []
+
+
+class TestVariableReferenceAccess:
+    """Tests for the access field on VariableReference."""
+
+    def test_default_access_is_read_write(self) -> None:
+        """Omitting ``access`` yields READ_WRITE — the safe default when a node's pattern is mixed."""
+        from griptape_nodes.exe_types.node_types import VariableAccess, VariableReference
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        ref = VariableReference(name="foo", scope=VariableScope.HIERARCHICAL)
+
+        assert ref.access is VariableAccess.READ_WRITE
+
+    def test_access_participates_in_equality_and_hash(self) -> None:
+        """Different access values on the same (name, scope) produce distinct, coexisting set members."""
+        from griptape_nodes.exe_types.node_types import VariableAccess, VariableReference
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        read_ref = VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ)
+        write_ref = VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.WRITE)
+        read_ref_twin = VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ)
+
+        assert read_ref != write_ref
+        assert hash(read_ref) != hash(write_ref)
+        assert read_ref == read_ref_twin
+        assert {read_ref, write_ref, read_ref_twin} == {read_ref, write_ref}
+
+    def test_aggregate_from_preserves_distinct_access_entries(self) -> None:
+        """Aggregating two NodeDependencies that name the same variable with different access retains both."""
+        from griptape_nodes.exe_types.node_types import NodeDependencies, VariableAccess, VariableReference
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        reader = NodeDependencies()
+        reader.variable_references.add(
+            VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ)
+        )
+        writer = NodeDependencies()
+        writer.variable_references.add(
+            VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ_WRITE)
+        )
+
+        reader.aggregate_from(writer)
+
+        assert reader.variable_references == {
+            VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ),
+            VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ_WRITE),
+        }
+
+    def test_serializer_ignores_access(self, griptape_nodes: GriptapeNodes) -> None:
+        """Serialization filtering is access-agnostic: any declared reference keeps the variable."""
+        from griptape_nodes.exe_types.node_types import VariableAccess, VariableReference
+        from griptape_nodes.retained_mode.events.variable_events import (
+            CreateVariableRequest,
+            CreateVariableResultSuccess,
+        )
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        flow_manager = griptape_nodes.FlowManager()
+        persistence = TestWorkflowVariablePersistence()
+        flow_name = persistence._push_clean_flow_context(griptape_nodes)
+
+        assert isinstance(
+            GriptapeNodes.handle_request(
+                CreateVariableRequest(name="only_read", type="str", is_global=False, value="cat", owning_flow=flow_name)
+            ),
+            CreateVariableResultSuccess,
+        )
+
+        unique_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, object] = {}
+        commands = flow_manager._serialize_variables_for_flow(
+            flow_name=flow_name,
+            unique_parameter_uuid_to_values=unique_values,
+            variable_references={
+                VariableReference(name="only_read", scope=VariableScope.CURRENT_FLOW_ONLY, access=VariableAccess.READ)
+            },
+        )
+
+        # Access being READ does not exclude the variable from save-to-disk serialization.
+        assert {cmd.create_variable_command.name for cmd in commands} == {"only_read"}

@@ -104,22 +104,39 @@ class ImportDependency(NamedTuple):
     class_name: str | None = None
 
 
+class VariableAccess(StrEnum):
+    """How a node interacts with a referenced variable."""
+
+    READ = "read"
+    WRITE = "write"
+    READ_WRITE = "read_write"
+
+
 @dataclass(frozen=True)
 class VariableReference:
-    """A reference to a workflow variable by name and scope.
+    """A reference to a workflow variable by name, scope, and access pattern.
 
     Nodes that read from or write to a named variable declare it via this dataclass
     so that serialization can persist only the variables that are actually used by
     the workflow graph (rather than every variable currently in engine state).
 
+    Access is part of the hash/equality contract: the same variable may legitimately
+    appear under different access modes from different nodes in the same flow (e.g. a
+    GetVariable declares READ while a SetVariable declares READ_WRITE on the same name).
+    Both entries are retained in the aggregated set so downstream consumers can merge
+    them as needed.
+
     Attributes:
-        name: The variable's name as the node knows it
+        name: The variable's name as the node knows it.
         scope: The scope the node uses to resolve the variable (HIERARCHICAL is the
             common case; the serializer will resolve the actual owning flow).
+        access: Whether the node reads, writes, or both. Defaults to READ_WRITE as
+            the safe choice when a node's access pattern is unknown or mixed.
     """
 
     name: str
     scope: VariableScope
+    access: VariableAccess = VariableAccess.READ_WRITE
 
 
 @dataclass
@@ -135,7 +152,7 @@ class NodeDependencies:
         static_files: Set of static file names that this node depends on
         imports: Set of Python imports that this node requires
         libraries: Set of library names and versions that this node uses
-        variable_references: Set of variable references (name + scope) this node reads or writes
+        variable_references: Set of variable references this node reads or writes
     """
 
     referenced_workflows: set[str] = field(default_factory=set)
