@@ -5,7 +5,6 @@ from pathlib import Path
 
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.common.project_templates.situation import SituationFilePolicy
-from griptape_nodes.files.derivation import DERIVATION_RULES, apply_derivation_rules
 from griptape_nodes.files.file import File, FileDestination
 from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
@@ -46,33 +45,11 @@ class ProjectFileDestination(FileDestination):
     Construct directly with a ``MacroPath`` and write policy, or use the
     ``from_situation`` classmethod to build from a situation name and filename.
 
-    Before storing the path, a pre-resolution pass runs the engine's
-    ``DERIVATION_RULES`` against any MacroPath input. Each rule produces a
-    derived variable (e.g. ``file_extension_directory`` from ``file_extension`` +
-    the project's ``file_extension_directories`` table) when its template slot is
-    referenced. This keeps derivation consistent across every caller
-    (``from_situation``, ``FileOutputSetting``, etc.) without each of them
-    duplicating the lookup.
+    Derivation rules (e.g. ``file_extension_directory``) run centrally inside
+    the ``GetPathForMacroRequest`` handler, so any MacroPath stored here gets
+    its derived variables filled in at resolution time without callers having
+    to pre-apply them.
     """
-
-    def __init__(
-        self,
-        file_path: str | MacroPath,
-        *,
-        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
-        append: bool = False,
-        create_parents: bool = True,
-        file_metadata: SidecarContent | None = None,
-    ) -> None:
-        if isinstance(file_path, MacroPath):
-            file_path = apply_derivation_rules(file_path, DERIVATION_RULES)
-        super().__init__(
-            file_path,
-            existing_file_policy=existing_file_policy,
-            append=append,
-            create_parents=create_parents,
-            file_metadata=file_metadata,
-        )
 
     def write_bytes(self, content: bytes) -> File:
         return self._map_to_macro_file(super().write_bytes(content))
@@ -149,11 +126,12 @@ class ProjectFileDestination(FileDestination):
         if directory_str and directory_str != "." and not parts.directory.is_absolute() and "sub_dirs" not in variables:
             variables["sub_dirs"] = directory_str
 
-        # Derived variables (e.g. file_extension_directory) are populated by
-        # ProjectFileDestination's __init__ via apply_derivation_rules. We run
-        # the pass here too so the sidecar metadata captures the same variables
-        # the write actually uses.
-        macro_path = apply_derivation_rules(MacroPath(ParsedMacro(macro_template), variables), DERIVATION_RULES)
+        # Derived variables (e.g. file_extension_directory) are injected by the
+        # GetPathForMacroRequest handler at resolve time, so we store only the
+        # caller-supplied variables here. The sidecar records the raw inputs;
+        # anyone re-resolving the path against the current project gets the
+        # same derived values the write used.
+        macro_path = MacroPath(ParsedMacro(macro_template), variables)
 
         file_metadata = (
             SidecarContent(
