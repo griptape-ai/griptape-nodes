@@ -3257,7 +3257,9 @@ class FlowManager:
         )
         if not isinstance(flow_list_result, ListVariablesResultSuccess):
             logger.warning(
-                "Attempted to list flow-scoped variables for flow '%s' during serialization. Skipping.", flow_name
+                "Attempted to list flow-scoped variables for flow '%s' during serialization. Failed with: %s. Skipping.",
+                flow_name,
+                flow_list_result.result_details,
             )
             return []
 
@@ -3310,6 +3312,12 @@ class FlowManager:
             ListVariablesRequest(starting_flow=flow_name, lookup_scope=VariableScope.CURRENT_FLOW_ONLY)
         )
         if not isinstance(list_result, ListVariablesResultSuccess):
+            logger.debug(
+                "Attempted variable ownership check for '%s' in flow '%s'. Failed to list variables: %s",
+                name,
+                flow_name,
+                list_result.result_details,
+            )
             return False
         return any(variable.name == name for variable in list_result.variables)
 
@@ -3319,6 +3327,15 @@ class FlowManager:
             GetVariableRequest(name=name, lookup_scope=VariableScope.HIERARCHICAL, starting_flow=starting_flow)
         )
         if not isinstance(result, GetVariableResultSuccess):
+            # A failure here is the expected signal for "variable does not resolve hierarchically" —
+            # e.g. a declared reference whose target was deleted. Logged at debug so it is available
+            # for diagnosis without generating noise during normal saves.
+            logger.debug(
+                "Hierarchical lookup for variable '%s' starting at flow '%s' did not resolve: %s",
+                name,
+                starting_flow,
+                result.result_details,
+            )
             return None
         return result.variable.owning_flow_name
 
