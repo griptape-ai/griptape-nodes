@@ -253,6 +253,9 @@ nav:
           - Add Overlay: nodes/video/add_overlay.md
           - Add RGB Shift: nodes/video/add_rgb_shift.md
           - Add Vignette: nodes/video/add_vignette.md
+          - Adjust Mask Size: nodes/video/adjust_mask_size.md
+          - Combine Masks Video: nodes/video/combine_masks_video.md
+          - Video Color Match: nodes/video/video_color_match.md
       - Tools:
           - Calculator: nodes/tools/calculator_tool.md
           - Date Time: nodes/tools/date_time_tool.md
