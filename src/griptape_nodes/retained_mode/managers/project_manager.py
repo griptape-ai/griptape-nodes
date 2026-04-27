@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -199,6 +200,11 @@ class ProjectManager:
         # Set to True at end of on_app_initialization_complete. Guards workspace switch
         # logic so expensive reloads don't fire during startup.
         self._initialization_complete: bool = False
+
+        # Snapshot of os.environ entries mutated by the currently-active project.
+        # Maps env var name -> original value (or None if the var was not set before).
+        # Restored when switching projects, so each project's env is isolated.
+        self._applied_env_snapshot: dict[str, str | None] = {}
 
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
         # This allows UI to query why a project failed to load
@@ -547,6 +553,30 @@ class ProjectManager:
                 result_details=f"Attempted to resolve macro path. Failed because cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
             )
 
+        # Fill remaining referenced variables from the project's environment map.
+        # Env vars are the lowest-priority source: builtins, directories, and caller
+        # variables have already filled their slots above. Env keys that collide
+        # with a directory name or builtin are treated as an authoring bug and
+        # surface as DIRECTORY_OVERRIDE_ATTEMPTED so the user sees the conflict.
+        env_vars = template.environment
+        env_conflicts: set[str] = set()
+        for var_info in variable_infos:
+            var_name = var_info.name
+            if var_name not in env_vars:
+                continue
+            if var_name in directory_names or var_name in BUILTIN_VARIABLES:
+                env_conflicts.add(var_name)
+                continue
+            if var_name not in resolution_bag:
+                resolution_bag[var_name] = env_vars[var_name]
+
+        if env_conflicts:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                conflicting_variables=env_conflicts,
+                result_details=f"Attempted to resolve macro path. Failed because project environment keys conflict with reserved names: {', '.join(sorted(env_conflicts))}",
+            )
+
         required_vars = {v.name for v in variable_infos if v.is_required}
         provided_vars = set(resolution_bag.keys())
         missing = required_vars - provided_vars
@@ -593,6 +623,37 @@ class ProjectManager:
             None,
         )
 
+    # Env vars that cross engine/OS boundaries and are risky to override.
+    # We still apply user values but log a warning so pathological configs are visible.
+    _DANGEROUS_ENV_KEYS: frozenset[str] = frozenset({"PATH", "HOME", "PYTHONPATH", "LD_LIBRARY_PATH"})
+
+    def _restore_project_env(self) -> None:
+        """Undo any os.environ mutations from the previously-active project.
+
+        For every key we previously set, restore the original value (or unset it
+        if there was no original). Clears the snapshot so subsequent applies start
+        from a clean slate.
+        """
+        for key, original in self._applied_env_snapshot.items():
+            if original is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = original
+        self._applied_env_snapshot = {}
+
+    def _apply_project_env(self, template: ProjectTemplate) -> None:
+        """Apply template.environment to os.environ, snapshotting originals for later restore."""
+        for key, value in template.environment.items():
+            if key in self._DANGEROUS_ENV_KEYS:
+                logger.warning(
+                    "Project '%s' sets dangerous env var '%s'; applying anyway, but this "
+                    "may destabilize the engine process.",
+                    self._current_project_id,
+                    key,
+                )
+            self._applied_env_snapshot[key] = os.environ.get(key)
+            os.environ[key] = value
+
     async def _reload_after_project_switch(
         self, project_id: str | None, *, workspace_changed: bool
     ) -> SetCurrentProjectResultFailure | None:
@@ -613,7 +674,7 @@ class ProjectManager:
             GriptapeNodes.WorkflowManager().refresh_workflow_registry()
         return None
 
-    async def on_set_current_project_request(  # noqa: C901
+    async def on_set_current_project_request(  # noqa: C901, PLR0912
         self, request: SetCurrentProjectRequest
     ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
         """Set which project user has selected.
@@ -624,6 +685,12 @@ class ProjectManager:
         During startup, LibraryManager handles library loading concurrently, so
         the workspace switch is skipped.
         """
+        # Revert the outgoing project's os.environ mutations before any config
+        # layer changes. Config resolution consults env vars (e.g. workspace_directory
+        # at line ~694), and the new project's workspace selection must not be
+        # influenced by the old project's env.
+        self._restore_project_env()
+
         # Capture workspace BEFORE config changes for comparison after
         old_workspace = self._config_manager.workspace_path
 
@@ -684,6 +751,16 @@ class ProjectManager:
             except Exception:
                 logger.warning("Failed to persist project_file '%s' to config", persisted_project_file)
 
+        # Apply the new project's environment to os.environ. Runs even during startup
+        # so the initial project activation's env vars are live before any node code
+        # or subprocess observes os.environ. Restore at the top of this handler
+        # guarantees the previous project's mutations are undone first.
+        if request.project_id is not None:
+            active_project = self._successfully_loaded_project_templates.get(request.project_id)
+            if active_project is not None:
+                self._apply_project_env(active_project.template)
+
+        if self._initialization_complete:
             failure = await self._reload_after_project_switch(request.project_id, workspace_changed=workspace_changed)
             if failure is not None:
                 return failure

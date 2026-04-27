@@ -2520,3 +2520,260 @@ class TestLoadRegisteredProjectsCanonicalization:
             os.chdir(cwd)
 
         mock_load.assert_not_called()
+
+
+def _build_pm_with_template(template: object, *, project_path: Path, mock_config: Mock | None = None) -> ProjectManager:
+    """Build a ProjectManager whose current project uses the provided template."""
+    from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+    from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+    if mock_config is None:
+        mock_config = Mock()
+        mock_config.workspace_path = Path("/workspace")
+    mock_secrets = Mock()
+    mock_event_manager = Mock()
+    pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+    project_id = str(project_path)
+    validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+    situation_schemas = pm._parse_situation_macros(template.situations, validation)  # type: ignore[attr-defined]
+    directory_schemas = pm._parse_directory_macros(template.directories, validation)  # type: ignore[attr-defined]
+
+    project_info = ProjectInfo(
+        project_id=project_id,
+        project_file_path=project_path,
+        project_base_dir=project_path.parent,
+        template=template,  # type: ignore[arg-type]
+        validation=validation,
+        parsed_situation_schemas=situation_schemas,
+        parsed_directory_schemas=directory_schemas,
+    )
+    pm._successfully_loaded_project_templates[project_id] = project_info
+    pm._current_project_id = project_id
+    return pm
+
+
+class TestProjectManagerEnvVarMacroResolution:
+    """Project environment variables are injected into GetPathForMacro resolution."""
+
+    def _template_with_env(self, environment: dict[str, str]) -> object:
+        from griptape_nodes.common.project_templates import ProjectTemplate
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+
+        return ProjectTemplate(
+            project_template_schema_version=DEFAULT_PROJECT_TEMPLATE.project_template_schema_version,
+            name=DEFAULT_PROJECT_TEMPLATE.name,
+            description=DEFAULT_PROJECT_TEMPLATE.description,
+            directories=DEFAULT_PROJECT_TEMPLATE.directories,
+            environment=environment,
+            file_extension_directories=DEFAULT_PROJECT_TEMPLATE.file_extension_directories,
+            situations=DEFAULT_PROJECT_TEMPLATE.situations,
+        )
+
+    def test_env_var_resolves_in_macro(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        template = self._template_with_env({"FOO": "bar"})
+        pm = _build_pm_with_template(template, project_path=Path("/test/project.yml"))
+
+        request = GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{FOO}/x.png"), variables={})
+        result = pm.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/bar/x.png")
+
+    def test_caller_variable_overrides_env_var(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        template = self._template_with_env({"FOO": "env_loses"})
+        pm = _build_pm_with_template(template, project_path=Path("/test/project.yml"))
+
+        request = GetPathForMacroRequest(
+            parsed_macro=ParsedMacro("{outputs}/{FOO}/x.png"),
+            variables={"FOO": "caller_wins"},
+        )
+        result = pm.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/caller_wins/x.png")
+
+    def test_env_var_cannot_shadow_builtin(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        template = self._template_with_env({"workspace_dir": "/nope"})
+        pm = _build_pm_with_template(template, project_path=Path("/test/project.yml"))
+
+        request = GetPathForMacroRequest(parsed_macro=ParsedMacro("{workspace_dir}/x.png"), variables={})
+        result = pm.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED
+        assert result.conflicting_variables is not None
+        assert "workspace_dir" in result.conflicting_variables
+
+    def test_env_var_cannot_shadow_directory_name(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        template = self._template_with_env({"outputs": "/nope"})
+        pm = _build_pm_with_template(template, project_path=Path("/test/project.yml"))
+
+        request = GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/x.png"), variables={})
+        result = pm.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED
+        assert result.conflicting_variables is not None
+        assert "outputs" in result.conflicting_variables
+
+    def test_env_var_value_not_recursively_resolved(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        template = self._template_with_env({"FOO": "{workspace_dir}/sub"})
+        pm = _build_pm_with_template(template, project_path=Path("/test/project.yml"))
+
+        request = GetPathForMacroRequest(parsed_macro=ParsedMacro("{FOO}"), variables={})
+        result = pm.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert str(result.resolved_path) == "{workspace_dir}/sub"
+
+
+class TestProjectManagerEnvVarProcessApply:
+    """Project environment variables are applied to os.environ on project switch."""
+
+    def _env_template(self, environment: dict[str, str]) -> object:
+        from griptape_nodes.common.project_templates import ProjectTemplate
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+
+        return ProjectTemplate(
+            project_template_schema_version=DEFAULT_PROJECT_TEMPLATE.project_template_schema_version,
+            name="env-test",
+            description=None,
+            directories=DEFAULT_PROJECT_TEMPLATE.directories,
+            environment=environment,
+            file_extension_directories=DEFAULT_PROJECT_TEMPLATE.file_extension_directories,
+            situations=DEFAULT_PROJECT_TEMPLATE.situations,
+        )
+
+    def _build_pm(self, project_file: Path, template: object) -> ProjectManager:
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+        mock_config.workspace_path = project_file.parent
+        return _build_pm_with_template(template, project_path=project_file, mock_config=mock_config)
+
+    @pytest.mark.asyncio
+    async def test_applies_env_to_os_environ(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        monkeypatch.delenv("GT_TEST_APP_MODE", raising=False)
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+        pm = self._build_pm(project_file, self._env_template({"GT_TEST_APP_MODE": "dev"}))
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+
+        assert os.environ.get("GT_TEST_APP_MODE") == "dev"
+        pm._restore_project_env()
+
+    @pytest.mark.asyncio
+    async def test_restores_previous_value_on_switch_to_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        monkeypatch.setenv("GT_TEST_APP_MODE", "prod")
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+        pm = self._build_pm(project_file, self._env_template({"GT_TEST_APP_MODE": "dev"}))
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+        assert os.environ.get("GT_TEST_APP_MODE") == "dev"
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=None))
+        assert os.environ.get("GT_TEST_APP_MODE") == "prod"
+
+    @pytest.mark.asyncio
+    async def test_restores_unset_keys(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        monkeypatch.delenv("GT_TEST_APP_MODE", raising=False)
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+        pm = self._build_pm(project_file, self._env_template({"GT_TEST_APP_MODE": "dev"}))
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+        assert os.environ.get("GT_TEST_APP_MODE") == "dev"
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=None))
+        assert "GT_TEST_APP_MODE" not in os.environ
+
+    @pytest.mark.asyncio
+    async def test_switch_between_projects_restores_then_applies(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        monkeypatch.delenv("GT_TEST_FOO", raising=False)
+
+        project_a = tmp_path / "a.yml"
+        project_a.touch()
+        project_b = tmp_path / "b.yml"
+        project_b.touch()
+
+        template_a = self._env_template({"GT_TEST_FOO": "a"})
+        pm = self._build_pm(project_a, template_a)
+
+        template_b = self._env_template({"GT_TEST_FOO": "b"})
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas_b = pm._parse_situation_macros(template_b.situations, validation)  # type: ignore[attr-defined]
+        directory_schemas_b = pm._parse_directory_macros(template_b.directories, validation)  # type: ignore[attr-defined]
+        pm._successfully_loaded_project_templates[str(project_b)] = ProjectInfo(
+            project_id=str(project_b),
+            project_file_path=project_b,
+            project_base_dir=project_b.parent,
+            template=template_b,  # type: ignore[arg-type]
+            validation=validation,
+            parsed_situation_schemas=situation_schemas_b,
+            parsed_directory_schemas=directory_schemas_b,
+        )
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_a)))
+        assert os.environ.get("GT_TEST_FOO") == "a"
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_b)))
+        assert os.environ.get("GT_TEST_FOO") == "b"
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=None))
+        assert "GT_TEST_FOO" not in os.environ
+
+    @pytest.mark.asyncio
+    async def test_dangerous_env_var_warns_but_applies(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+
+        original_path = os.environ.get("PATH", "")
+        monkeypatch.setenv("PATH", original_path)
+
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+        pm = self._build_pm(project_file, self._env_template({"PATH": "/custom/path"}))
+
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
+
+        assert os.environ.get("PATH") == "/custom/path"
+        assert any("dangerous env var" in rec.message for rec in caplog.records)
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=None))
+        assert os.environ.get("PATH", "") == original_path

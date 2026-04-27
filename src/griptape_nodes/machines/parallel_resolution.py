@@ -339,6 +339,12 @@ class ExecuteDagState(State):
 
         dag_node = context.node_to_reference[node_name]
 
+        # Locked nodes are treated as pre-resolved: their outputs feed downstream nodes,
+        # but the scheduler must never execute them or re-populate their inputs.
+        if dag_node.node_reference.lock:
+            dag_node.node_state = NodeState.DONE
+            return
+
         # Only check nodes that are currently waiting
         if dag_node.node_state == NodeState.WAITING:
             can_queue = context.dag_builder.can_queue_control_node(dag_node)
@@ -358,6 +364,12 @@ class ExecuteDagState(State):
             node_reference (DagOrchestrator.DagNode): The node to collect values for.
         """
         current_node = node_reference.node_reference
+
+        # Locked nodes cannot accept parameter writes (node_manager rejects SetParameterValueRequest
+        # on locked nodes). Treat them as pre-resolved and skip input propagation.
+        if current_node.lock:
+            return
+
         connections = GriptapeNodes.FlowManager().get_connections()
 
         for parameter in current_node.parameters:
