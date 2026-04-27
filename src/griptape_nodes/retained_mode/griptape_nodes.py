@@ -28,7 +28,6 @@ from griptape_nodes.utils.metaclasses import SingletonMeta
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
-    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.events.base_events import (
         AppPayload,
         RequestPayload,
@@ -68,6 +67,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
         VersionCompatibilityManager,
     )
+    from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 
@@ -103,7 +103,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _worker_manager: WorkerManager
 
     def __init__(self) -> None:  # noqa: PLR0915
-        from griptape_nodes.app.worker_manager import WorkerManager
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
             ArbitraryCodeExecManager,
@@ -138,6 +137,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
             VersionCompatibilityManager,
         )
+        from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
         from griptape_nodes.retained_mode.managers.workflow_manager import (
             WorkflowManager,
         )
