@@ -15,7 +15,6 @@ from griptape_nodes.common.project_templates.validation import (
     ProjectOverrideCategory,
     ProjectValidationInfo,
 )
-from griptape_nodes.utils.dict_utils import dict_diff
 
 if TYPE_CHECKING:
     from griptape_nodes.common.project_templates.loader import ProjectOverlayData
@@ -24,7 +23,7 @@ if TYPE_CHECKING:
 class ProjectTemplate(BaseModel):
     """Complete project template loaded from project.yml."""
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
 
     project_template_schema_version: str = Field(description="Schema version for the project template")
     name: str = Field(description="Name of the project")
@@ -34,6 +33,10 @@ class ProjectTemplate(BaseModel):
         description="Directory definitions (logical_name -> definition)",
     )
     environment: dict[str, str] = Field(default_factory=dict, description="Custom environment variables")
+    file_extension_directories: dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping of file extension (without leading dot) to a macro (plain name or `{...}` template) used to populate the {file_extension_directory} macro variable",
+    )
 
     def get_situation(self, situation_name: str) -> SituationTemplate | None:
         """Get a situation by name, returns None if not found."""
@@ -46,36 +49,92 @@ class ProjectTemplate(BaseModel):
     def to_overlay_yaml(self, base: ProjectTemplate) -> str:
         """Export only user customizations relative to a base template as YAML.
 
-        Produces a minimal overlay containing only what differs from the base
-        (system defaults). Content identical to the base is omitted, keeping
-        the file focused on the user's actual changes.
+        Per-item atomicity: if a situation or directory differs from the base
+        at all, the full item is emitted (not a sub-field diff). This mirrors
+        the loader's atomic treatment of SituationPolicy and removes a class
+        of partial-overlay round-trip bugs.
+
+        Deletion semantics: items that exist in the base but are missing from
+        self are emitted as null tombstones so the loader's merge can drop
+        them. Same for environment variables. An explicit null `description`
+        signals "clear the inherited description."
 
         Sections with no user content are omitted entirely.
-        Field-level diffing for situations: only changed fields are written.
-
-        Note: deletions of optional fields (fallback, description) that exist
-        in the base are not preserved — they will reappear on next load.
         """
         self_dump = self.model_dump(mode="json")
         base_dump = base.model_dump(mode="json")
-        diff = dict_diff(self_dump, base_dump)
 
-        # Required fields must always be present even if unchanged from base.
-        # Seed output with them first so they appear at the top; dict.update then
-        # appends remaining diff entries in model declaration order after them.
         output: dict = {
             "project_template_schema_version": self_dump["project_template_schema_version"],
             "name": self_dump["name"],
         }
-        output.update(diff)
 
+        # description: emit only when it diverges from base. Explicit null
+        # tombstones a previously-set base description.
+        if self_dump.get("description") != base_dump.get("description"):
+            output["description"] = self_dump.get("description")
+
+        situations_overlay = self._diff_named_items(self_dump["situations"], base_dump["situations"])
+        if situations_overlay:
+            output["situations"] = situations_overlay
+
+        directories_overlay = self._diff_named_items(self_dump["directories"], base_dump["directories"])
+        if directories_overlay:
+            output["directories"] = directories_overlay
+
+        environment_overlay = self._diff_environment(self_dump["environment"], base_dump["environment"])
+        if environment_overlay:
+            output["environment"] = environment_overlay
+
+        file_extension_directories_overlay = self._diff_environment(
+            self_dump.get("file_extension_directories", {}),
+            base_dump.get("file_extension_directories", {}),
+        )
+        if file_extension_directories_overlay:
+            output["file_extension_directories"] = file_extension_directories_overlay
+
+        return self._dump_yaml(output)
+
+    @staticmethod
+    def _diff_named_items(self_items: dict, base_items: dict) -> dict:
+        """Build a per-item atomic overlay: full item on change, null on removal."""
+        changed = {name: value for name, value in self_items.items() if value != base_items.get(name)}
+        removed = {name: None for name in base_items if name not in self_items}
+        return {**changed, **removed}
+
+    @staticmethod
+    def _diff_environment(self_env: dict, base_env: dict) -> dict:
+        """Build an environment overlay: changed values, plus null for removals."""
+        changed = {key: value for key, value in self_env.items() if base_env.get(key) != value}
+        removed = {key: None for key in base_env if key not in self_env}
+        return {**changed, **removed}
+
+    def to_yaml(self) -> str:
+        """Export the complete, fully-resolved project template as YAML.
+
+        Unlike to_overlay_yaml(), this emits every field without requiring a
+        base template to merge against. Intended for standalone consumers
+        (e.g., Griptape Cloud bundles) that receive the project on its own
+        and have no DEFAULT_PROJECT_TEMPLATE to layer an overlay on top of.
+        """
+        return self._dump_yaml(self.model_dump(mode="json", exclude_none=True))
+
+    @staticmethod
+    def _dump_yaml(data: dict) -> str:
+        """Serialize project-template data to YAML using shared conventions.
+
+        Loader injects `name` into nested objects from their dict keys, so
+        nested `name` keys are filtered out to avoid duplication on round-trip.
+        """
         yaml = YAML()
         yaml.default_flow_style = False
         yaml.width = 4096
         # Double-quote all strings; bools and ints are left untagged: https://yaml.org/spec/1.2.2/
         yaml.representer.add_representer(str, lambda r, d: r.represent_scalar("tag:yaml.org,2002:str", d, style='"'))
+        # Emit explicit "null" for None (deletion tombstones) so bare keys like `save_file:`
+        # don't look truncated in a hand-read of the file.
+        yaml.representer.add_representer(type(None), lambda r, _d: r.represent_scalar("tag:yaml.org,2002:null", "null"))
 
-        # loader injects name from the YAML dict key — exclude it from all nested objects
         nested_skip = frozenset({"name"})
 
         def filter_keys(d: dict, skip_keys: frozenset) -> dict:
@@ -83,14 +142,14 @@ class ProjectTemplate(BaseModel):
                 k: (filter_keys(v, skip_keys) if isinstance(v, dict) else v) for k, v in d.items() if k not in skip_keys
             }
 
-        filtered = {k: (filter_keys(v, nested_skip) if isinstance(v, dict) else v) for k, v in output.items()}
+        filtered = {k: (filter_keys(v, nested_skip) if isinstance(v, dict) else v) for k, v in data.items()}
 
         stream = io.StringIO()
         yaml.dump(filtered, stream)
         return stream.getvalue()
 
     @staticmethod
-    def merge(  # noqa: C901, PLR0912
+    def merge(  # noqa: C901, PLR0912, PLR0915
         base: ProjectTemplate,
         overlay: ProjectOverlayData,
         validation_info: ProjectValidationInfo,
@@ -141,6 +200,14 @@ class ProjectTemplate(BaseModel):
 
         # Start with all base situations
         for sit_name, base_sit in base.situations.items():
+            if sit_name in overlay.removed_situations:
+                # Tombstone in overlay - drop from merged result
+                validation_info.add_override(
+                    category=ProjectOverrideCategory.SITUATION,
+                    name=sit_name,
+                    action=ProjectOverrideAction.REMOVED,
+                )
+                continue
             if sit_name in overlay.situations:
                 # Field-level merge
                 merged_sit = SituationTemplate.merge(
@@ -195,6 +262,14 @@ class ProjectTemplate(BaseModel):
         merged_directories: dict[str, DirectoryDefinition] = {}
 
         for dir_name, base_dir in base.directories.items():
+            if dir_name in overlay.removed_directories:
+                # Tombstone in overlay - drop from merged result
+                validation_info.add_override(
+                    category=ProjectOverrideCategory.DIRECTORY,
+                    name=dir_name,
+                    action=ProjectOverrideAction.REMOVED,
+                )
+                continue
             if dir_name in overlay.directories:
                 # Field-level merge
                 merged_dir = DirectoryDefinition.merge(
@@ -247,6 +322,14 @@ class ProjectTemplate(BaseModel):
 
         # Merge environment
         merged_environment = {**base.environment}
+        for key in overlay.removed_environment:
+            if key in merged_environment:
+                del merged_environment[key]
+                validation_info.add_override(
+                    category=ProjectOverrideCategory.ENVIRONMENT,
+                    name=key,
+                    action=ProjectOverrideAction.REMOVED,
+                )
         for key, value in overlay.environment.items():
             action = ProjectOverrideAction.MODIFIED if key in base.environment else ProjectOverrideAction.ADDED
             merged_environment[key] = value
@@ -257,8 +340,38 @@ class ProjectTemplate(BaseModel):
                 action=action,
             )
 
-        # Use overlay metadata, fall back to base for description
-        merged_description = overlay.description if overlay.description is not None else base.description
+        # Merge file_extension_directories (same semantics as environment: per-key
+        # overwrite, null tombstones drop inherited entries).
+        merged_file_extension_directories = {**base.file_extension_directories}
+        for key in overlay.removed_file_extension_directories:
+            if key in merged_file_extension_directories:
+                del merged_file_extension_directories[key]
+                validation_info.add_override(
+                    category=ProjectOverrideCategory.FILE_EXTENSION_DIRECTORY,
+                    name=key,
+                    action=ProjectOverrideAction.REMOVED,
+                )
+        for key, value in overlay.file_extension_directories.items():
+            action = (
+                ProjectOverrideAction.MODIFIED
+                if key in base.file_extension_directories
+                else ProjectOverrideAction.ADDED
+            )
+            merged_file_extension_directories[key] = value
+
+            validation_info.add_override(
+                category=ProjectOverrideCategory.FILE_EXTENSION_DIRECTORY,
+                name=key,
+                action=action,
+            )
+
+        # Description: overlay value wins; explicit null clears; absent inherits base.
+        if overlay.clears_description:
+            merged_description = None
+        elif overlay.description is not None:
+            merged_description = overlay.description
+        else:
+            merged_description = base.description
 
         return ProjectTemplate(
             project_template_schema_version=overlay.project_template_schema_version,
@@ -266,5 +379,6 @@ class ProjectTemplate(BaseModel):
             situations=merged_situations,
             directories=merged_directories,
             environment=merged_environment,
+            file_extension_directories=merged_file_extension_directories,
             description=merged_description,
         )

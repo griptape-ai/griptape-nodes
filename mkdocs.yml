@@ -90,6 +90,7 @@ nav:
           - Directories: projects/directories.md
           - Situations: projects/situations.md
           - Environment & Builtin Variables: projects/environment.md
+          - File Extension Directories: projects/file_extension_directories.md
           - Customization Guide: projects/customization.md
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
@@ -254,6 +255,7 @@ nav:
           - Add Vignette: nodes/video/add_vignette.md
           - Adjust Mask Size: nodes/video/adjust_mask_size.md
           - Combine Masks Video: nodes/video/combine_masks_video.md
+          - Video Color Match: nodes/video/video_color_match.md
       - Tools:
           - Calculator: nodes/tools/calculator_tool.md
           - Date Time: nodes/tools/date_time_tool.md

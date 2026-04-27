@@ -4,7 +4,7 @@ from typing import Annotated
 
 import typer
 
-from griptape_nodes.app import start_app
+from griptape_nodes.app import EngineRole, Orchestrator, Worker, start_app
 from griptape_nodes.cli.commands.init import _run_init
 from griptape_nodes.cli.shared import (
     CONFIG_DIR,
@@ -28,12 +28,21 @@ def engine_command(
             help="Session ID of an existing orchestrator session to join as a worker engine.",
         ),
     ] = None,
+    library_name: Annotated[
+        str | None,
+        typer.Option(
+            "--library-name",
+            envvar="GTN_LIBRARY_NAME",
+            help="If set, this engine serves only the named library and loads no other libraries.",
+        ),
+    ] = None,
 ) -> None:
     """Run the Griptape Nodes engine."""
-    _start_engine(worker_session_id=session_id)
+    role: EngineRole = Worker(session_id=session_id, library_name=library_name) if session_id else Orchestrator()
+    _start_engine(role)
 
 
-def _start_engine(worker_session_id: str | None = None) -> None:
+def _start_engine(role: EngineRole) -> None:
     """Starts the Griptape Nodes engine."""
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory
@@ -52,5 +61,6 @@ def _start_engine(worker_session_id: str | None = None) -> None:
             )
         )
 
-    console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
-    start_app(worker_session_id=worker_session_id)
+    if isinstance(role, Orchestrator):
+        console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
+    start_app(role)

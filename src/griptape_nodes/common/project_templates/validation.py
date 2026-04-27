@@ -32,6 +32,7 @@ class ProjectOverrideCategory(StrEnum):
     DIRECTORY = "directory"
     ENVIRONMENT = "environment"
     METADATA = "metadata"
+    FILE_EXTENSION_DIRECTORY = "file_extension_directory"
 
 
 class ProjectOverrideAction(StrEnum):
@@ -39,6 +40,7 @@ class ProjectOverrideAction(StrEnum):
 
     MODIFIED = "modified"  # Existed in base, changed in overlay
     ADDED = "added"  # New in overlay, not in base
+    REMOVED = "removed"  # Existed in base, tombstoned in overlay
 
 
 @dataclass

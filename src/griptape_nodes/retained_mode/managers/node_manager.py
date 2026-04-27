@@ -302,7 +302,6 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(MigrateParameterRequest, self.on_migrate_parameter_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
-        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
         event_manager.assign_manager_to_request_type(
             GetCompatibleParametersRequest, self.on_get_compatible_parameters_request
@@ -334,6 +333,7 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             BatchSetNodeLockStateRequest, self.on_batch_set_lock_node_state_request
         )
+        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -2572,11 +2572,11 @@ class NodeManager:
                         # Compare types for compatibility
                         types_compatible = False
                         if request_mode == ParameterMode.INPUT:
-                            # See if THEIR inputs would accept MY output
-                            types_compatible = test_param.is_incoming_type_allowed(request_param.output_type)
-                        else:
                             # See if MY inputs would accept THEIR output
                             types_compatible = request_param.is_incoming_type_allowed(test_param.output_type)
+                        else:
+                            # See if THEIR inputs would accept MY output
+                            types_compatible = test_param.is_incoming_type_allowed(request_param.output_type)
 
                         if types_compatible:
                             param_and_mode = ParameterAndMode(
@@ -2691,17 +2691,43 @@ class NodeManager:
         return ResolveNodeResultSuccess(result_details=details)
 
     async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
-        """Execute a node's aprocess() directly with provided parameter values."""
+        """Execute a node, creating it first if it does not yet exist.
+
+        Idempotent: if the node already exists in ObjectManager it is reused.
+        When the node is absent and node_metadata is provided, the node is created
+        from the metadata (which must contain "node_type" and "library" keys).
+        """
         node_name = request.node_name
+        obj_mgr = GriptapeNodes.ObjectManager()
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            if not request.node_metadata:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Node '{node_name}' not found and no node_metadata provided to create it.",
+                )
+            node_type = request.node_metadata.get("node_type")
+            library_name = request.node_metadata.get("library")
+            if not node_type:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Node '{node_name}' not found and node_metadata is missing 'node_type'.",
+                )
+            try:
+                node = LibraryRegistry.create_node(
+                    node_type=node_type,
+                    name=node_name,
+                    metadata=dict(request.node_metadata),
+                    specific_library_name=library_name,
+                )
+            except Exception as e:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Failed to create node '{node_name}' of type '{node_type}': {e}",
+                )
+            obj_mgr.add_object_by_name(node.name, node)
+        return await self._hydrate_and_run_node(node, request)
 
-        try:
-            node = self.get_node_by_name(node_name)
-        except ValueError as e:
-            return ExecuteNodeResultFailure(
-                result_details=f"Attempted to execute node '{node_name}'. Failed because node does not exist: {e}",
-            )
-
-        # Hydrate input parameters
+    async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
+        """Hydrate a node's input parameters and execute it."""
+        node_name = request.node_name
         for param_name, value in request.parameter_values.items():
             try:
                 node.set_parameter_value(param_name, value)
@@ -2709,15 +2735,12 @@ class NodeManager:
                 return ExecuteNodeResultFailure(
                     result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
                 )
-
-        # Execute the node
         try:
             await node.aprocess()
         except Exception as e:
             return ExecuteNodeResultFailure(
                 result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
             )
-
         return ExecuteNodeResultSuccess(
             parameter_output_values=dict(node.parameter_output_values),
             result_details=f"Node '{node_name}' executed successfully.",

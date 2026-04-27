@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from watchfiles import Change, PythonFilter, watch
 
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+from griptape_nodes.files.path_utils import canonicalize_for_identity
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails
 from griptape_nodes.retained_mode.events.sync_events import (
@@ -77,10 +78,7 @@ class SyncManager:
             path: Path to the file that will be written
             content: The exact bytes that will be written to the file
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        os_manager = GriptapeNodes.OSManager()
-        path_str = str(os_manager.resolve_path_safely(Path(path)))
+        path_str = str(canonicalize_for_identity(path))
         file_hash = hashlib.sha256(content).hexdigest()
         with self._hash_lock:
             self._file_hashes[path_str] = file_hash
@@ -99,7 +97,7 @@ class SyncManager:
             True if the file content matches our expected hash (self-triggered event),
             False if it doesn't match or no expected hash exists (external change)
         """
-        path_str = str(Path(path).resolve())
+        path_str = str(canonicalize_for_identity(path))
         with self._hash_lock:
             expected_hash = self._file_hashes.get(path_str)
 

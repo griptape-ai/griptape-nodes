@@ -7,10 +7,16 @@ from griptape_nodes.common.project_templates.situation import (
     SituationPolicy,
     SituationTemplate,
 )
+from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
+    ImageArtifactProvider,
+)
+from griptape_nodes.retained_mode.managers.artifact_providers.video.video_artifact_provider import (
+    VideoArtifactProvider,
+)
 
 # Default project template matching the values from project_template.yml
 DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
-    project_template_schema_version="0.1.0",
+    project_template_schema_version="0.3.0",
     name="Default Project",
     description="System default configuration",
     directories={
@@ -40,6 +46,30 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
     },
     environment={},
+    # images/videos are derived from their ArtifactProviders so the layout
+    # taxonomy stays aligned with the formats those providers actually handle.
+    # audio/text/python have no artifact providers today and are listed
+    # explicitly.
+    file_extension_directories={
+        **dict.fromkeys(ImageArtifactProvider.get_supported_formats(), "images"),
+        **dict.fromkeys(VideoArtifactProvider.get_supported_formats(), "videos"),
+        # audio
+        "mp3": "audio",
+        "wav": "audio",
+        "flac": "audio",
+        "ogg": "audio",
+        "m4a": "audio",
+        "aac": "audio",
+        # documents / text
+        "txt": "text",
+        "md": "text",
+        "json": "text",
+        "yaml": "text",
+        "yml": "text",
+        "csv": "text",
+        # python
+        "py": "python",
+    },
     situations={
         "save_file": SituationTemplate(
             name="save_file",
@@ -105,6 +135,19 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="save_griptape_nodes_metadata",
             description="Save sidecar metadata file with preserved directory hierarchy",
             macro="{griptape-nodes-metadata}/{source_relative_path?:/}{source_file_name}.json",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.OVERWRITE,
+                create_dirs=True,
+            ),
+            fallback="save_file",
+        ),
+        # Workflows save into the workspace root today for backward compatibility.
+        # Migrating to a dedicated subdirectory is tracked in
+        # https://github.com/griptape-ai/griptape-nodes/issues/2047.
+        "save_workflow": SituationTemplate(
+            name="save_workflow",
+            description="Save a workflow Python file, preserving any sub-directory hierarchy",
+            macro="{workspace_dir}/{sub_dirs?:/}{file_name_base}.{file_extension}",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.OVERWRITE,
                 create_dirs=True,

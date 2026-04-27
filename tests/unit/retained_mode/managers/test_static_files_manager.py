@@ -921,3 +921,92 @@ class TestStaticFilesManagerBaseUrlTrailingSlash:
             )
 
         assert manager.static_server_base_url == expected_url
+
+
+class TestStaticFilesManagerOnAppInitializationComplete:
+    """Test port handling in on_app_initialization_complete.
+
+    The engine binds a free port at startup and may rewrite `static_server_base_url`
+    to reflect the OS-assigned port. That rewrite must only happen when the user has
+    not provided an explicit override, otherwise it clobbers tunnel configurations
+    (e.g. `ssh -L 8888:localhost:8124`, ngrok, reverse proxies).
+    """
+
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Mock:
+        return Mock()
+
+    def _build_manager(self, mock_secrets_manager: Mock, configured_url: str | None) -> StaticFilesManager:
+        from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
+
+        mock_config = Mock()
+        mock_config.get_config_value.side_effect = lambda key, default=None: {
+            "storage_backend": "local",
+            "static_server_base_url": configured_url,
+        }.get(key, default)
+        mock_config.workspace_path = Path("/mock/workspace")
+
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver") as driver_cls:
+            driver_cls.return_value = Mock(spec=LocalStorageDriver)
+            manager = StaticFilesManager(
+                config_manager=mock_config, secrets_manager=mock_secrets_manager, event_manager=None
+            )
+        return manager
+
+    def _invoke_initialization(self, manager: StaticFilesManager, actual_port: int) -> None:
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+
+        mock_sock = Mock()
+        mock_sock.getsockname.return_value = ("127.0.0.1", actual_port)
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.static_files_manager.bind_free_socket",
+                return_value=mock_sock,
+            ),
+            patch("griptape_nodes.retained_mode.managers.static_files_manager.threading.Thread"),
+        ):
+            manager.on_app_initialization_complete(AppInitializationComplete())
+
+    def test_unset_base_url_rewritten_to_actual_port(self, mock_secrets_manager: Mock) -> None:
+        """When no override is configured, the OS-assigned port replaces the server's default port."""
+        manager = self._build_manager(mock_secrets_manager, None)
+
+        self._invoke_initialization(manager, actual_port=54321)
+
+        assert manager.static_server_base_url == "http://localhost:54321"
+        assert manager.storage_driver.base_url == "http://localhost:54321/workspace"
+
+    def test_custom_port_on_localhost_preserved(self, mock_secrets_manager: Mock) -> None:
+        """A custom port (e.g. from an `ssh -L 8888:localhost:8124` tunnel) must not be overwritten."""
+        manager = self._build_manager(mock_secrets_manager, "http://localhost:8888")
+
+        self._invoke_initialization(manager, actual_port=54321)
+
+        assert manager.static_server_base_url == "http://localhost:8888"
+        assert manager.storage_driver.base_url == "http://localhost:8888/workspace"
+
+    def test_custom_hostname_preserved(self, mock_secrets_manager: Mock) -> None:
+        """A custom host (e.g. an ngrok tunnel) must not be overwritten."""
+        manager = self._build_manager(mock_secrets_manager, "https://my-tunnel.ngrok.io")
+
+        self._invoke_initialization(manager, actual_port=54321)
+
+        assert manager.static_server_base_url == "https://my-tunnel.ngrok.io"
+        assert manager.storage_driver.base_url == "https://my-tunnel.ngrok.io/workspace"
+
+    def test_override_matching_defaults_is_still_preserved(self, mock_secrets_manager: Mock) -> None:
+        """An explicit override is respected even when it happens to equal the server defaults."""
+        manager = self._build_manager(mock_secrets_manager, "http://localhost:8124")
+
+        self._invoke_initialization(manager, actual_port=54321)
+
+        assert manager.static_server_base_url == "http://localhost:8124"
+        assert manager.storage_driver.base_url == "http://localhost:8124/workspace"
+
+    def test_access_before_initialization_complete_raises(self, mock_secrets_manager: Mock) -> None:
+        """Reading the property before on_app_initialization_complete resolves it is a startup bug."""
+        manager = self._build_manager(mock_secrets_manager, None)
+
+        with pytest.raises(RuntimeError, match="static_server_base_url accessed before"):
+            _ = manager.static_server_base_url

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import uuid
-from typing import TYPE_CHECKING, Any, Self, TypeVar
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -16,7 +16,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
+
+@dataclass
+class _PendingRequest:
+    future: asyncio.Future
+    tag: str
 
 
 class RequestClient:
@@ -26,6 +30,10 @@ class RequestClient:
     pub/sub messaging. Tracks pending requests by request_id and resolves/rejects
     futures when responses arrive. Supports timeouts for requests that don't
     receive responses.
+
+    Registers _try_match as a message filter on the Client so that response
+    messages are claimed before reaching the client's message queue. Messages
+    not matched to a pending request are left for the queue's normal consumers.
     """
 
     def __init__(
@@ -45,19 +53,16 @@ class RequestClient:
         self.request_topic_fn = request_topic_fn or (lambda: "request")
         self.response_topic_fn = response_topic_fn or (lambda: "response")
 
-        # Map of request_id -> Future that will be resolved when response arrives
-        self._pending_requests: dict[str, asyncio.Future] = {}
+        # Map of request_id -> pending request where tag identifies the originating worker/caller
+        self._pending_requests: dict[str, _PendingRequest] = {}
         self._lock = asyncio.Lock()
 
         # Track subscribed response topics
         self._subscribed_response_topics: set[str] = set()
 
-        # Background task for listening to responses
-        self._response_listener_task: asyncio.Task | None = None
-
     async def __aenter__(self) -> Self:
-        """Async context manager entry: start response listener."""
-        self._response_listener_task = asyncio.create_task(self._listen_for_responses())
+        """Async context manager entry: register response filter on Client."""
+        self.client.add_message_filter(self._try_match)
         logger.debug("RequestClient started")
         return self
 
@@ -67,15 +72,16 @@ class RequestClient:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Async context manager exit: stop response listener."""
-        if self._response_listener_task:
-            self._response_listener_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._response_listener_task
+        """Async context manager exit: deregister response filter from Client."""
+        self.client.remove_message_filter(self._try_match)
         logger.debug("RequestClient stopped")
 
     async def request(
-        self, request_type: str, payload: dict[str, Any], timeout_ms: int | None = None
+        self,
+        request_type: str,
+        payload: dict[str, Any],
+        topic: str | None = None,
+        timeout_ms: int | None = None,
     ) -> dict[str, Any]:
         """Send a request and wait for its response.
 
@@ -89,6 +95,7 @@ class RequestClient:
         Args:
             request_type: Type of request to send
             payload: Request payload data
+            topic: Optional per-call request topic override (defaults to request_topic_fn())
             timeout_ms: Optional timeout in milliseconds
 
         Returns:
@@ -105,7 +112,7 @@ class RequestClient:
         response_future = await self._track_request(request_id)
 
         # Determine topics
-        request_topic = self.request_topic_fn()
+        request_topic = topic or self.request_topic_fn()
         response_topic = self.response_topic_fn()
 
         # Subscribe to response topic if not already subscribed
@@ -117,6 +124,7 @@ class RequestClient:
         event_payload = {
             "event_type": "EventRequest",
             "request_type": request_type,
+            "request_id": request_id,
             "request": payload,
             "response_topic": response_topic,
         }
@@ -146,11 +154,42 @@ class RequestClient:
             logger.debug("Request %s completed successfully", request_id)
             return result
 
-    async def _track_request(self, request_id: str) -> asyncio.Future:
+    async def track_request(self, request_id: str, tag: str = "") -> asyncio.Future:
+        """Register a future for an outgoing request and return it.
+
+        Use this when the send path is handled externally (e.g. WorkerManager
+        sends via forward_event_to_worker) and only the future tracking is needed.
+        The future is resolved when _try_match claims the response message.
+
+        Args:
+            request_id: Unique identifier for this request
+            tag: Optional tag for grouping related requests (e.g. worker_engine_id)
+
+        Returns:
+            Future that will be resolved when the matching response arrives
+        """
+        return await self._track_request(request_id, tag=tag)
+
+    async def cancel_requests_by_tag(self, tag: str) -> None:
+        """Cancel all pending futures that were registered with the given tag.
+
+        Args:
+            tag: The tag value used when track_request was called (e.g. worker_engine_id)
+        """
+        async with self._lock:
+            to_cancel = [rid for rid, entry in self._pending_requests.items() if entry.tag == tag]
+            for rid in to_cancel:
+                entry = self._pending_requests.pop(rid)
+                if not entry.future.done():
+                    entry.future.cancel()
+                    logger.debug("Cancelled request %s (tag=%s)", rid, tag)
+
+    async def _track_request(self, request_id: str, tag: str = "") -> asyncio.Future:
         """Start tracking a request and return a future that will be resolved on response.
 
         Args:
             request_id: Unique identifier for this request
+            tag: Optional tag for grouping (e.g. worker_engine_id)
 
         Returns:
             Future that will be resolved when response arrives
@@ -164,9 +203,43 @@ class RequestClient:
                 raise ValueError(msg)
 
             future: asyncio.Future = asyncio.Future()
-            self._pending_requests[request_id] = future
-            logger.debug("Tracking request: %s", request_id)
+            self._pending_requests[request_id] = _PendingRequest(future, tag)
+            logger.debug("Tracking request: %s (tag=%s)", request_id, tag)
             return future
+
+    def _resolve_request_unlocked(self, request_id: str, result: Any) -> None:
+        """Resolve a request's future. Caller must hold self._lock.
+
+        Args:
+            request_id: Request identifier
+            result: Result data to return to the requester
+        """
+        entry = self._pending_requests.pop(request_id, None)
+
+        if entry is None:
+            logger.warning("Received response for unknown request: %s", request_id)
+            return
+
+        if not entry.future.done():
+            entry.future.set_result(result)
+            logger.debug("Resolved request: %s", request_id)
+
+    def _reject_request_unlocked(self, request_id: str, error: Exception) -> None:
+        """Reject a request's future. Caller must hold self._lock.
+
+        Args:
+            request_id: Request identifier
+            error: Exception to raise for the requester
+        """
+        entry = self._pending_requests.pop(request_id, None)
+
+        if entry is None:
+            logger.warning("Received error for unknown request: %s", request_id)
+            return
+
+        if not entry.future.done():
+            entry.future.set_exception(error)
+            logger.debug("Rejected request: %s with error: %s", request_id, error)
 
     async def _resolve_request(self, request_id: str, result: Any) -> None:
         """Mark a request as successful and resolve its future with a result.
@@ -176,15 +249,7 @@ class RequestClient:
             result: Result data to return to the requester
         """
         async with self._lock:
-            future = self._pending_requests.pop(request_id, None)
-
-            if future is None:
-                logger.warning("Received response for unknown request: %s", request_id)
-                return
-
-            if not future.done():
-                future.set_result(result)
-                logger.debug("Resolved request: %s", request_id)
+            self._resolve_request_unlocked(request_id, result)
 
     async def _reject_request(self, request_id: str, error: Exception) -> None:
         """Mark a request as failed and reject its future with an exception.
@@ -194,15 +259,7 @@ class RequestClient:
             error: Exception to raise for the requester
         """
         async with self._lock:
-            future = self._pending_requests.pop(request_id, None)
-
-            if future is None:
-                logger.warning("Received error for unknown request: %s", request_id)
-                return
-
-            if not future.done():
-                future.set_exception(error)
-                logger.debug("Rejected request: %s with error: %s", request_id, error)
+            self._reject_request_unlocked(request_id, error)
 
     async def _cancel_request(self, request_id: str) -> None:
         """Cancel a pending request and clean up its tracking.
@@ -211,14 +268,14 @@ class RequestClient:
             request_id: Request identifier
         """
         async with self._lock:
-            future = self._pending_requests.pop(request_id, None)
+            entry = self._pending_requests.pop(request_id, None)
 
-            if future is None:
+            if entry is None:
                 logger.debug("Request already completed or unknown: %s", request_id)
                 return
 
-            if not future.done():
-                future.cancel()
+            if not entry.future.done():
+                entry.future.cancel()
                 logger.debug("Cancelled request: %s", request_id)
 
     @property
@@ -239,40 +296,39 @@ class RequestClient:
         """
         return list(self._pending_requests.keys())
 
-    async def _listen_for_responses(self) -> None:
-        """Listen for response messages from subscribed topics."""
-        try:
-            async for message in self.client.messages:
-                try:
-                    await self._handle_response(message)
-                except Exception as e:
-                    logger.error("Error handling response message: %s", e)
-        except asyncio.CancelledError:
-            logger.debug("Response listener cancelled")
-            raise
+    async def _try_match(self, message: dict[str, Any]) -> bool:
+        """Attempt to match an incoming message to a pending request.
 
-    async def _handle_response(self, message: dict[str, Any]) -> None:
-        """Handle response messages by resolving tracked requests.
+        Registered as a Client message filter so response messages are claimed
+        before reaching the client's message queue. Messages not matched to a
+        pending request return False and are left for queue consumers.
+
+        Expects worker/event-bus response format:
+          payload["event_type"] in ("EventResultSuccess", "EventResultFailure")
+          payload["request_id"] = UUID (outer event request_id)
+          Resolves with the full payload dict.
 
         Args:
-            message: WebSocket message containing response
+            message: WebSocket message to inspect
+
+        Returns:
+            True if the message was matched and resolved/rejected, False otherwise.
         """
-        message_type = message.get("type")
-
-        # Only handle success/failure result messages
-        if message_type not in ("success_result", "failure_result"):
-            return
-
         payload = message.get("payload", {})
-        request_id = payload.get("request", {}).get("request_id")
 
-        if not request_id:
-            logger.debug("Response message has no request_id")
-            return
+        request_id = payload.get("request_id") or ""
+        async with self._lock:
+            if not request_id or request_id not in self._pending_requests:
+                return False
 
-        if message_type == "success_result":
-            result = payload.get("result", "Success")
-            await self._resolve_request(request_id, result)
-        else:
-            error_msg = payload.get("result", {}).get("exception", "Unknown error") or "Unknown error"
-            await self._reject_request(request_id, Exception(error_msg))
+            event_type = payload.get("event_type", "")
+            if event_type == "EventResultSuccess":
+                self._resolve_request_unlocked(request_id, payload)
+                return True
+            if event_type == "EventResultFailure":
+                result = payload.get("result", {})
+                error_msg = str(result.get("result_details") or result.get("exception") or "Unknown error")
+                self._reject_request_unlocked(request_id, Exception(error_msg))
+                return True
+
+        return False

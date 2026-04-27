@@ -9,6 +9,7 @@ import anyio
 import pytest
 import send2trash
 
+from griptape_nodes.files.path_utils import normalize_path_for_platform, resolve_path_safely
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
     CreateFileRequest,
@@ -734,7 +735,7 @@ class TestExpandPath:
         with patch.object(os_manager, "_get_windows_special_folder_path", return_value=mock_downloads) as mock_get:
             result = os_manager._expand_path("~/Downloads")
             mock_get.assert_called_once()
-            assert result == os_manager.resolve_path_safely(mock_downloads)
+            assert result == resolve_path_safely(mock_downloads)
 
     def test_expand_path_non_windows_uses_expanduser(
         self,
@@ -746,7 +747,7 @@ class TestExpandPath:
             pytest.skip("Non-Windows test")
         os_manager = griptape_nodes.OSManager()
         result = os_manager._expand_path("~/Downloads")
-        expected = os_manager.resolve_path_safely(Path.home() / "Downloads")
+        expected = resolve_path_safely(Path.home() / "Downloads")
         assert result == expected
 
 
@@ -775,30 +776,27 @@ class TestWindowsLongPathHandling:
         path_parts = [temp_dir] + [long_component] * 6  # Will exceed 260 chars
         return Path(*path_parts)
 
-    def test_normalize_path_short_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    def test_normalize_path_short_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:  # noqa: ARG002
         """Test that short paths are not modified."""
-        os_manager = griptape_nodes.OSManager()
         short_path = temp_dir / "short.txt"
-        result = os_manager.normalize_path_for_platform(short_path)
+        result = normalize_path_for_platform(short_path)
 
         # Should return string without \\?\ prefix
         assert not result.startswith("\\\\?\\")
 
     @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
-    def test_normalize_path_long_path_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:
+    def test_normalize_path_long_path_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:  # noqa: ARG002
         r"""Test that long paths on Windows get \\?\ prefix."""
-        os_manager = griptape_nodes.OSManager()
-        result = os_manager.normalize_path_for_platform(long_path)
+        result = normalize_path_for_platform(long_path)
 
         # On Windows, long paths should get the prefix
         if len(str(long_path.resolve())) >= WINDOWS_MAX_PATH:
             assert result.startswith("\\\\?\\")
 
     @pytest.mark.skipif(platform.system() == "Windows", reason="Non-Windows test")
-    def test_normalize_path_long_path_non_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:
+    def test_normalize_path_long_path_non_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:  # noqa: ARG002
         """Test that long paths on non-Windows don't get prefix."""
-        os_manager = griptape_nodes.OSManager()
-        result = os_manager.normalize_path_for_platform(long_path)
+        result = normalize_path_for_platform(long_path)
 
         # On non-Windows, no prefix should be added
         assert not result.startswith("\\\\?\\")
@@ -1410,3 +1408,45 @@ class TestCreateNewFilePolicy:
         expected_path = temp_dir / "render_1.png"
         assert Path(result.final_file_path).resolve() == expected_path.resolve()
         assert expected_path.read_text() == "Second file"
+
+
+class TestDiskSpaceProbe:
+    """Disk-space helpers must probe the nearest existing ancestor.
+
+    Save situations create parent dirs on write, so callers routinely hand in
+    a target path whose directory does not yet exist. get_disk_space_info would
+    raise FileNotFoundError; the helpers must walk up to an existing ancestor
+    so the reported numbers reflect the mount the write will land on.
+    """
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    def test_check_available_disk_space_nonexistent_target_probes_ancestor(self, temp_dir: Path) -> None:
+        """A yet-to-be-created target resolves to an existing ancestor rather than raising."""
+        nonexistent_target = temp_dir / "not_yet" / "deeper" / "file.bin"
+
+        # required_gb=0 means any amount of free space satisfies; the point of
+        # this test is that the call returns True rather than False-on-OSError.
+        assert OSManager.check_available_disk_space(nonexistent_target, required_gb=0) is True
+
+    def test_check_available_disk_space_returns_false_when_insufficient(self, temp_dir: Path) -> None:
+        """Probing succeeds; a wildly oversized requirement still returns False."""
+        nonexistent_target = temp_dir / "not_yet" / "file.bin"
+
+        # Require more space than any realistic filesystem has, so the probe
+        # succeeds but the free-space check fails.
+        assert OSManager.check_available_disk_space(nonexistent_target, required_gb=10**9) is False
+
+    def test_format_disk_space_error_nonexistent_target_probes_ancestor(self, temp_dir: Path) -> None:
+        """Error formatter must report numbers rather than the manual-check fallback."""
+        nonexistent_target = temp_dir / "not_yet" / "deeper" / "file.bin"
+
+        message = OSManager.format_disk_space_error(nonexistent_target)
+
+        # The fallback branch emits "Could not determine disk space"; the
+        # probe branch emits "Available:" numbers. We want the probe branch.
+        assert "Available:" in message
+        assert "Could not determine disk space" not in message

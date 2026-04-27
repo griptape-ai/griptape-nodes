@@ -25,11 +25,12 @@ FIELD_SITUATIONS = "situations"
 FIELD_DIRECTORIES = "directories"
 FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION = "project_template_schema_version"
 FIELD_ENVIRONMENT = "environment"
+FIELD_FILE_EXTENSION_DIRECTORIES = "file_extension_directories"
 FIELD_DESCRIPTION = "description"
 
 # Special constants
 ROOT_FIELD_PATH = "<root>"
-DEFAULT_SCHEMA_VERSION = "0.1.0"
+DEFAULT_SCHEMA_VERSION = "0.3.0"
 DEFAULT_PROJECT_NAME = "Invalid Project"
 
 
@@ -64,6 +65,11 @@ class ProjectOverlayData(NamedTuple):
     Contains raw dicts for situations/directories with basic structural validation.
     Line tracking preserved for error reporting during merge.
     Used as overlay input to ProjectTemplate.merge().
+
+    Deletion sentinels: a null value for a situation/directory/environment key
+    means "delete this inherited item from the base template." These are
+    collected into the removed_* sets rather than the value dicts so merge
+    code can process them explicitly.
     """
 
     name: str
@@ -71,8 +77,14 @@ class ProjectOverlayData(NamedTuple):
     situations: dict[str, dict[str, Any]]  # situation_name -> raw dict
     directories: dict[str, dict[str, Any]]  # directory_name -> raw dict
     environment: dict[str, str]
+    file_extension_directories: dict[str, str]
     description: str | None
     line_info: YAMLLineInfo
+    removed_situations: frozenset[str] = frozenset()
+    removed_directories: frozenset[str] = frozenset()
+    removed_environment: frozenset[str] = frozenset()
+    removed_file_extension_directories: frozenset[str] = frozenset()
+    clears_description: bool = False
 
 
 def load_yaml_with_line_tracking(yaml_text: str) -> YAMLParseResult:
@@ -218,7 +230,7 @@ def load_project_template_from_yaml(  # noqa: C901
         return template
 
 
-def load_partial_project_template(
+def load_partial_project_template(  # noqa: C901
     yaml_text: str,
     validation_info: ProjectValidationInfo,
 ) -> ProjectOverlayData | None:
@@ -292,36 +304,56 @@ def load_partial_project_template(
         schema_version = DEFAULT_SCHEMA_VERSION
 
     # Optional field: situations (default to empty dict)
-    situations = data.get(FIELD_SITUATIONS, {})
-    if not isinstance(situations, dict):
+    situations_raw = data.get(FIELD_SITUATIONS, {})
+    if not isinstance(situations_raw, dict):
         validation_info.add_error(
             field_path=FIELD_SITUATIONS,
-            message=f"Must be dict, got {type(situations).__name__}",
+            message=f"Must be dict, got {type(situations_raw).__name__}",
             line_number=line_info.get_line(FIELD_SITUATIONS),
         )
-        situations = {}
+        situations_raw = {}
+
+    situations, removed_situations = _split_tombstones(situations_raw)
 
     # Optional field: directories (default to empty dict)
-    directories = data.get(FIELD_DIRECTORIES, {})
-    if not isinstance(directories, dict):
+    directories_raw = data.get(FIELD_DIRECTORIES, {})
+    if not isinstance(directories_raw, dict):
         validation_info.add_error(
             field_path=FIELD_DIRECTORIES,
-            message=f"Must be dict, got {type(directories).__name__}",
+            message=f"Must be dict, got {type(directories_raw).__name__}",
             line_number=line_info.get_line(FIELD_DIRECTORIES),
         )
-        directories = {}
+        directories_raw = {}
+
+    directories, removed_directories = _split_tombstones(directories_raw)
 
     # Optional field: environment (default to empty dict)
-    environment = data.get(FIELD_ENVIRONMENT, {})
-    if not isinstance(environment, dict):
+    environment_raw = data.get(FIELD_ENVIRONMENT, {})
+    if not isinstance(environment_raw, dict):
         validation_info.add_error(
             field_path=FIELD_ENVIRONMENT,
-            message=f"Must be dict, got {type(environment).__name__}",
+            message=f"Must be dict, got {type(environment_raw).__name__}",
             line_number=line_info.get_line(FIELD_ENVIRONMENT),
         )
-        environment = {}
+        environment_raw = {}
 
-    # Optional field: description
+    environment, removed_environment = _split_tombstones(environment_raw)
+
+    # Optional field: file_extension_directories (default to empty dict)
+    file_extension_directories_raw = data.get(FIELD_FILE_EXTENSION_DIRECTORIES, {})
+    if not isinstance(file_extension_directories_raw, dict):
+        validation_info.add_error(
+            field_path=FIELD_FILE_EXTENSION_DIRECTORIES,
+            message=f"Must be dict, got {type(file_extension_directories_raw).__name__}",
+            line_number=line_info.get_line(FIELD_FILE_EXTENSION_DIRECTORIES),
+        )
+        file_extension_directories_raw = {}
+
+    file_extension_directories, removed_file_extension_directories = _split_tombstones(file_extension_directories_raw)
+
+    # Optional field: description. Distinguish absent (inherit base) from
+    # explicit null (clear base value).
+    clears_description = FIELD_DESCRIPTION in data and data.get(FIELD_DESCRIPTION) is None
     description = data.get(FIELD_DESCRIPTION)
     if description is not None and not isinstance(description, str):
         validation_info.add_error(
@@ -337,6 +369,28 @@ def load_partial_project_template(
         situations=situations,
         directories=directories,
         environment=environment,
+        file_extension_directories=file_extension_directories,
         description=description,
         line_info=line_info,
+        removed_situations=frozenset(removed_situations),
+        removed_directories=frozenset(removed_directories),
+        removed_environment=frozenset(removed_environment),
+        removed_file_extension_directories=frozenset(removed_file_extension_directories),
+        clears_description=clears_description,
     )
+
+
+def _split_tombstones(raw: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
+    """Partition an overlay dict into active items and deletion tombstones.
+
+    Keys with null values are treated as "delete the inherited item." Callers
+    should narrow the active-dict value type at their call site.
+    """
+    active: dict[str, Any] = {}
+    removed: set[str] = set()
+    for key, value in raw.items():
+        if value is None:
+            removed.add(key)
+        else:
+            active[key] = value
+    return active, removed

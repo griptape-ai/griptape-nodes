@@ -27,7 +27,14 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.files.path_utils import derive_registry_key, resolve_workspace_path
+from griptape_nodes.files.file import FileLoadError
+from griptape_nodes.files.path_utils import (
+    FilenameParts,
+    canonicalize_for_identity,
+    derive_registry_key,
+    resolve_workspace_path,
+)
+from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
     WorkflowMetadata,
@@ -86,6 +93,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
     DeleteWorkflowResultSuccess,
+    GetPublishOptionsRequest,
+    GetPublishOptionsResultFailure,
+    GetPublishOptionsResultSuccess,
     GetWorkflowInfoRequest,
     GetWorkflowInfoResultFailure,
     GetWorkflowInfoResultSuccess,
@@ -119,6 +129,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     MoveWorkflowRequest,
     MoveWorkflowResultFailure,
     MoveWorkflowResultSuccess,
+    PublishWorkflowRegisteredEventData,
     PublishWorkflowRequest,
     PublishWorkflowResultFailure,
     PublishWorkflowResultSuccess,
@@ -359,6 +370,10 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             PublishWorkflowRequest,
             self.on_publish_workflow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            GetPublishOptionsRequest,
+            self.on_get_publish_options_request,
         )
         event_manager.assign_manager_to_request_type(
             SetWorkflowMetadataRequest,
@@ -834,7 +849,7 @@ class WorkflowManager:
         full_path = WorkflowRegistry.get_complete_file_path(request.file_path)
         config_manager = GriptapeNodes.ConfigManager()
         try:
-            Path(full_path).resolve().relative_to(Path(config_manager.workspace_path).resolve())
+            canonicalize_for_identity(full_path).relative_to(canonicalize_for_identity(config_manager.workspace_path))
         except ValueError:
             existing_workflows = config_manager.get_config_value(WORKFLOWS_TO_REGISTER_KEY)
             if not existing_workflows:
@@ -1674,6 +1689,56 @@ class WorkflowManager:
         success: bool
         error_details: str
 
+    class WorkflowSavePath(NamedTuple):
+        """Absolute save path and its registry-relative form."""
+
+        file_path: Path
+        relative_file_path: str
+
+    def _build_workflow_save_path(self, file_name: str, sub_dirs: str | None = None) -> WorkflowSavePath:
+        """Resolve a workflow save path via the ``save_workflow`` situation.
+
+        Returns the absolute save path plus a registry-relative form. When the
+        resolved path lives inside the workspace the relative form stays
+        workspace-relative; otherwise it falls back to the absolute path string
+        so registry lookups land at the same location. If the situation cannot
+        resolve (e.g., no project loaded), we fall through to the plain
+        workspace path.
+        """
+        extra_vars: dict[str, str | int] = {}
+        if sub_dirs:
+            extra_vars["sub_dirs"] = sub_dirs
+
+        destination = ProjectFileDestination.from_situation(file_name, "save_workflow", **extra_vars)
+        relative_file_path = str(Path(sub_dirs) / file_name) if sub_dirs else file_name
+        try:
+            resolved = canonicalize_for_identity(destination.resolve())
+        except FileLoadError as err:
+            workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            fallback_path = workspace_path.joinpath(relative_file_path)
+            logger.debug(
+                "save_workflow situation unavailable for '%s' (%s); falling back to workspace path %s",
+                file_name,
+                err,
+                fallback_path,
+            )
+            return WorkflowManager.WorkflowSavePath(
+                file_path=fallback_path,
+                relative_file_path=relative_file_path,
+            )
+
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        try:
+            workspace_relative = resolved.relative_to(workspace_path)
+        except ValueError:
+            # TODO: store the macro form (e.g. "{workspace_dir}/foo.py") in the
+            # registry so out-of-workspace save locations stay portable across
+            # machines. Tracked in
+            # https://github.com/griptape-ai/griptape-nodes/issues/2047.
+            return WorkflowManager.WorkflowSavePath(file_path=resolved, relative_file_path=str(resolved))
+
+        return WorkflowManager.WorkflowSavePath(file_path=resolved, relative_file_path=str(workspace_relative))
+
     def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
         """Write workflow content to file with proper validation and error handling.
 
@@ -1751,7 +1816,7 @@ class WorkflowManager:
         branched_from = save_target.branched_from
         registry_key = derive_registry_key(relative_file_path)
 
-        logger.info(
+        logger.debug(
             "Save workflow: scenario=%s, file_name=%s, file_path=%s, branched_from=%s",
             save_target.scenario.value,
             file_name,
@@ -1935,8 +2000,7 @@ class WorkflowManager:
             file_name = self._generate_unique_filename(base_name)
             creation_date = datetime.now(tz=UTC)
             branched_from = None
-            relative_file_path = f"{file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py")
 
         elif target_workflow:
             # Requested name exists in registry → overwrite it
@@ -1949,28 +2013,29 @@ class WorkflowManager:
             file_path = Path(WorkflowRegistry.get_complete_file_path(relative_file_path))
 
         elif requested_file_name and current_workflow:
-            # Requested name doesn't exist but we have a current workflow → Save As
+            # Requested name doesn't exist but we have a current workflow → Save As.
+            # A user-typed name like "episode/my_wf" splits into sub-directory + stem
+            # and is authoritative: the requested name fully determines the save path.
             scenario = WorkflowManager.SaveWorkflowScenario.SAVE_AS
-            file_name = requested_file_name
             creation_date = current_workflow.metadata.creation_date
             branched_from = current_workflow.metadata.branched_from
-            current_dir = Path(current_workflow.file_path).parent
-            # If current_dir is absolute, the workflow lives outside the workspace;
-            # save the copy to the workspace root so the registry key stays relative.
-            if current_dir.is_absolute():
-                relative_file_path = f"{file_name}.py"
-            else:
-                relative_file_path = str(current_dir / f"{file_name}.py")
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            parts = FilenameParts.from_filename(f"{requested_file_name}.py")
+            sub_dirs = str(parts.directory) if str(parts.directory) != "." else None
+            file_name = parts.stem
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py", sub_dirs=sub_dirs)
 
         else:
-            # No requested name or no current workflow → first save
+            # No requested name or no current workflow → first save.
+            # A user-typed name like "episode/my_wf" splits into sub-directory + stem;
+            # auto-generated timestamp names have no directory component.
             scenario = WorkflowManager.SaveWorkflowScenario.FIRST_SAVE
-            file_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            raw_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            parts = FilenameParts.from_filename(f"{raw_name}.py")
+            sub_dirs = str(parts.directory) if str(parts.directory) != "." else None
+            file_name = parts.stem
             creation_date = datetime.now(tz=UTC)
             branched_from = None
-            relative_file_path = f"{file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py", sub_dirs=sub_dirs)
 
         # Ensure creation date is valid (backcompat)
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
@@ -1994,9 +2059,8 @@ class WorkflowManager:
             # Use provided file path
             file_path = Path(request.file_path)
         else:
-            # Default to workspace path
-            relative_file_path = f"{request.file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+            # Resolve via the save_workflow situation (workspace-relative by default).
+            file_path = self._build_workflow_save_path(f"{request.file_name}.py").file_path
 
         # Use provided creation date or default to current time
         creation_date = request.creation_date
@@ -2256,6 +2320,7 @@ class WorkflowManager:
             or len(serialized_flow_commands.set_parameter_value_commands) > 0
             or len(serialized_flow_commands.sub_flows_commands) > 0
             or len(serialized_flow_commands.set_lock_commands_per_node) > 0
+            or len(serialized_flow_commands.serialized_variable_commands) > 0
         )
 
         if not is_referenced_workflow and has_content_to_serialize:
@@ -2269,6 +2334,17 @@ class WorkflowManager:
             assign_flow_context_node = self._generate_assign_flow_context(
                 flow_initialization_command=flow_initialization_command, flow_creation_index=flow_creation_index
             )
+
+            # Emit flow-scoped variable creation INSIDE the flow "with" block, BEFORE any
+            # node creation. Ordering matters: SetVariable nodes' before_value_set hook fires
+            # during initial_setup and calls has_variable(); having the variable already
+            # present ensures that hook is a no-op adopt rather than a duplicate create.
+            flow_scoped_variable_asts = self._generate_create_variable_code(
+                serialized_variable_commands=serialized_flow_commands.serialized_variable_commands,
+                unique_values_dict_name="top_level_unique_values_dict",
+                import_recorder=import_recorder,
+            )
+            assign_flow_context_node.body.extend(flow_scoped_variable_asts)
 
             # Separate regular nodes from NodeGroup nodes in main flow
 
@@ -2326,12 +2402,20 @@ class WorkflowManager:
                             assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_import_node))
 
                 # Generate the nodes in this subflow (just like we do for main flow)
-                if sub_flow_commands.serialized_node_commands:
+                if sub_flow_commands.serialized_node_commands or sub_flow_commands.serialized_variable_commands:
                     # Create "with" statement for subflow
                     subflow_context_node = self._generate_assign_flow_context(
                         flow_initialization_command=sub_flow_initialization_command,
                         flow_creation_index=sub_flow_creation_index,
                     )
+                    # Emit flow-scoped variable creation BEFORE any node creation in this subflow,
+                    # for the same reason as the top-level flow.
+                    subflow_variable_asts = self._generate_create_variable_code(
+                        serialized_variable_commands=sub_flow_commands.serialized_variable_commands,
+                        unique_values_dict_name="top_level_unique_values_dict",
+                        import_recorder=import_recorder,
+                    )
+                    subflow_context_node.body.extend(subflow_variable_asts)
                     # Generate nodes in subflow, passing current index and getting next available
                     subflow_nodes, current_node_index = self._generate_nodes_in_flow(
                         sub_flow_commands,
@@ -3979,6 +4063,85 @@ class WorkflowManager:
 
         return connection_asts
 
+    def _generate_create_variable_code(
+        self,
+        serialized_variable_commands: list[SerializedFlowCommands.SerializedVariableCommand],
+        unique_values_dict_name: str,
+        import_recorder: ImportRecorder,
+    ) -> list[ast.stmt]:
+        """Generate AST for CreateVariableRequest calls, one per serialized variable command.
+
+        Each variable's value is looked up in the shared unique-values dict by UUID, mirroring
+        the pattern used for parameter values.
+        """
+        if not serialized_variable_commands:
+            return []
+
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.variable_events", "CreateVariableRequest")
+
+        create_variable_asts: list[ast.stmt] = []
+        for serialized_command in serialized_variable_commands:
+            create_variable_request = serialized_command.create_variable_command
+            value_lookup = ast.Subscript(
+                value=ast.Name(id=unique_values_dict_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                slice=ast.Constant(value=str(serialized_command.unique_value_uuid), lineno=1, col_offset=0),
+                ctx=ast.Load(),
+                lineno=1,
+                col_offset=0,
+            )
+
+            create_variable_call = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="CreateVariableRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=[
+                                ast.keyword(
+                                    arg="name",
+                                    value=ast.Constant(value=create_variable_request.name, lineno=1, col_offset=0),
+                                ),
+                                ast.keyword(
+                                    arg="type",
+                                    value=ast.Constant(value=create_variable_request.type, lineno=1, col_offset=0),
+                                ),
+                                ast.keyword(
+                                    arg="is_global",
+                                    value=ast.Constant(value=create_variable_request.is_global, lineno=1, col_offset=0),
+                                ),
+                                ast.keyword(arg="value", value=value_lookup, lineno=1, col_offset=0),
+                                ast.keyword(
+                                    arg="owning_flow",
+                                    value=ast.Constant(
+                                        value=create_variable_request.owning_flow, lineno=1, col_offset=0
+                                    ),
+                                ),
+                                ast.keyword(
+                                    arg="initial_setup", value=ast.Constant(value=True, lineno=1, col_offset=0)
+                                ),
+                            ],
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
+                    lineno=1,
+                    col_offset=0,
+                ),
+                lineno=1,
+                col_offset=0,
+            )
+            create_variable_asts.append(create_variable_call)
+
+        return create_variable_asts
+
     def _generate_set_parameter_value_code(
         self,
         set_parameter_value_commands: dict[
@@ -4287,6 +4450,24 @@ class WorkflowManager:
             WorkflowShape object with inputs and outputs
         """
         return WorkflowShape(inputs=input_node_params, outputs=output_node_params)
+
+    def on_get_publish_options_request(self, request: GetPublishOptionsRequest) -> ResultPayload:
+        event_handler_mappings = GriptapeNodes.LibraryManager().get_registered_event_handlers(
+            request_type=PublishWorkflowRequest
+        )
+        publishing_handler = event_handler_mappings.get(request.publisher_name)
+        if publishing_handler is None:
+            details = f"No publishing handler found for '{request.publisher_name}'."
+            return GetPublishOptionsResultFailure(exception=ValueError(details), result_details=details)
+
+        event_data = publishing_handler.event_data
+        if isinstance(event_data, PublishWorkflowRegisteredEventData) and event_data.get_publish_options is not None:
+            return event_data.get_publish_options(request)
+
+        return GetPublishOptionsResultSuccess(
+            fields=[],
+            result_details="No custom publish options for this publisher.",
+        )
 
     async def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:

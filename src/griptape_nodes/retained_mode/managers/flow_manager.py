@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import logging
 import pickle
 from enum import StrEnum
@@ -31,6 +32,7 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeResolutionState,
     StartNode,
+    VariableReference,
 )
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder
@@ -151,6 +153,13 @@ from griptape_nodes.retained_mode.events.validation_events import (
     ValidateFlowDependenciesResultFailure,
     ValidateFlowDependenciesResultSuccess,
 )
+from griptape_nodes.retained_mode.events.variable_events import (
+    CreateVariableRequest,
+    GetVariableRequest,
+    GetVariableResultSuccess,
+    ListVariablesRequest,
+    ListVariablesResultSuccess,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowRequest,
     ImportWorkflowAsReferencedSubFlowResultSuccess,
@@ -158,11 +167,13 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import FLOW_COMMANDS_KEY
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
+from griptape_nodes.retained_mode.variable_types import VariableScope
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowShapeNodes
+    from griptape_nodes.retained_mode.variable_types import FlowVariable
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -3210,6 +3221,159 @@ class FlowManager:
 
         return aggregated_values
 
+    def _serialize_variables_for_flow(
+        self,
+        flow_name: str,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        variable_references: set[VariableReference],
+    ) -> list[SerializedFlowCommands.SerializedVariableCommand]:
+        """Build SerializedVariableCommands for flow-scoped variables owned by this flow and declared by a node.
+
+        Only variables that are:
+          (a) owned by ``flow_name``, AND
+          (b) named by at least one declared ``VariableReference`` after scope resolution
+        get serialized. Variables present in engine state but not claimed by any node
+        (orphans from deleted nodes) are silently dropped.
+
+        Variable values share the parameter value pool in ``unique_parameter_uuid_to_values`` — the
+        generated workflow script references both kinds through the same ``top_level_unique_values_dict``.
+
+        Args:
+            flow_name: The flow whose flow-scoped variables are being serialized.
+            unique_parameter_uuid_to_values: Shared unique-value pool; variable values are added in place.
+            variable_references: Aggregated set of references declared by nodes in this flow and its subtree.
+
+        Returns:
+            A list of ``SerializedVariableCommand``s for this flow's declared flow-scoped variables.
+        """
+        declared_names_for_this_flow = self._resolve_declared_variable_names_for_flow(
+            flow_name=flow_name, variable_references=variable_references
+        )
+        if not declared_names_for_this_flow:
+            return []
+
+        flow_list_result = GriptapeNodes.handle_request(
+            ListVariablesRequest(starting_flow=flow_name, lookup_scope=VariableScope.CURRENT_FLOW_ONLY)
+        )
+        if not isinstance(flow_list_result, ListVariablesResultSuccess):
+            logger.warning(
+                "Attempted to list flow-scoped variables for flow '%s' during serialization. Failed with: %s. Skipping.",
+                flow_name,
+                flow_list_result.result_details,
+            )
+            return []
+
+        return [
+            self._build_serialized_variable_command(
+                variable=variable,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+            )
+            for variable in flow_list_result.variables
+            if variable.name in declared_names_for_this_flow
+        ]
+
+    def _resolve_declared_variable_names_for_flow(
+        self,
+        flow_name: str,
+        variable_references: set[VariableReference],
+    ) -> set[str]:
+        """Return the names of variables owned by ``flow_name`` that are claimed by a declared reference.
+
+        Resolution rules per reference scope:
+          - CURRENT_FLOW_ONLY: claims ``ref.name`` only if a variable with that name exists in ``flow_name``.
+          - HIERARCHICAL: uses ``GetVariableRequest`` to resolve; claims ``ref.name`` only if the resolved
+            variable is owned by ``flow_name`` (ancestor-owned variables get claimed by the ancestor's
+            own serialization pass).
+          - GLOBAL_ONLY / ALL: out of scope for this pass; skipped with a debug log. Globals are a
+            deferred follow-up.
+        """
+        claimed_names: set[str] = set()
+
+        for ref in variable_references:
+            if ref.scope is VariableScope.CURRENT_FLOW_ONLY:
+                if self._variable_is_owned_by(name=ref.name, flow_name=flow_name):
+                    claimed_names.add(ref.name)
+            elif ref.scope is VariableScope.HIERARCHICAL:
+                owning_flow = self._hierarchical_owning_flow_for(name=ref.name, starting_flow=flow_name)
+                if owning_flow == flow_name:
+                    claimed_names.add(ref.name)
+            else:
+                logger.debug(
+                    "Skipping variable reference '%s' with unsupported scope '%s' during serialization.",
+                    ref.name,
+                    ref.scope,
+                )
+
+        return claimed_names
+
+    def _variable_is_owned_by(self, name: str, flow_name: str) -> bool:
+        """Return True if a flow-scoped variable with ``name`` exists directly in ``flow_name``."""
+        list_result = GriptapeNodes.handle_request(
+            ListVariablesRequest(starting_flow=flow_name, lookup_scope=VariableScope.CURRENT_FLOW_ONLY)
+        )
+        if not isinstance(list_result, ListVariablesResultSuccess):
+            logger.debug(
+                "Attempted variable ownership check for '%s' in flow '%s'. Failed to list variables: %s",
+                name,
+                flow_name,
+                list_result.result_details,
+            )
+            return False
+        return any(variable.name == name for variable in list_result.variables)
+
+    def _hierarchical_owning_flow_for(self, name: str, starting_flow: str) -> str | None:
+        """Return the owning flow name of a variable found by hierarchical lookup, or None if not found."""
+        result = GriptapeNodes.handle_request(
+            GetVariableRequest(name=name, lookup_scope=VariableScope.HIERARCHICAL, starting_flow=starting_flow)
+        )
+        if not isinstance(result, GetVariableResultSuccess):
+            # A failure here is the expected signal for "variable does not resolve hierarchically" —
+            # e.g. a declared reference whose target was deleted. Logged at debug so it is available
+            # for diagnosis without generating noise during normal saves.
+            logger.debug(
+                "Hierarchical lookup for variable '%s' starting at flow '%s' did not resolve: %s",
+                name,
+                starting_flow,
+                result.result_details,
+            )
+            return None
+        return result.variable.owning_flow_name
+
+    def _build_serialized_variable_command(
+        self,
+        variable: FlowVariable,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+    ) -> SerializedFlowCommands.SerializedVariableCommand:
+        """Register the variable's value in the unique-values pool and build the indirect command.
+
+        Values are stored as raw Python objects — ``_generate_unique_values_code`` pickles them at
+        AST-generation time. Each variable gets its own UUID even if another entry holds an equal
+        value; matching the existing parameter-value pattern, dedup-by-equality is not attempted here.
+        """
+        unique_value_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+        try:
+            unique_parameter_uuid_to_values[unique_value_uuid] = copy.deepcopy(variable.value)
+        except Exception:
+            # Fall back to by-reference storage; matches the parameter-value code path's warning.
+            logger.warning(
+                "Attempted to serialize variable '%s'. Value could not be deep-copied; storing by reference.",
+                variable.name,
+            )
+            unique_parameter_uuid_to_values[unique_value_uuid] = variable.value
+
+        create_variable_command = CreateVariableRequest(
+            name=variable.name,
+            type=variable.type,
+            is_global=False,
+            value=None,  # Overridden at deserialization via top_level_unique_values_dict lookup.
+            owning_flow=variable.owning_flow_name,
+            initial_setup=True,
+        )
+        return SerializedFlowCommands.SerializedVariableCommand(
+            create_variable_command=create_variable_command,
+            unique_value_uuid=unique_value_uuid,
+        )
+
     def _aggregate_set_parameter_value_commands(
         self,
         set_parameter_value_commands: dict[
@@ -3391,7 +3555,7 @@ class FlowManager:
                     )
                     sub_flow_commands.append(serialized_flow)
                 else:
-                    # For standalone sub-flows, use the existing recursive serialization
+                    # For standalone sub-flows, use the existing recursive serialization.
                     with GriptapeNodes.ContextManager().flow(flow=child_flow_obj):
                         child_flow_request = SerializeFlowToCommandsRequest()
                         child_flow_result = GriptapeNodes().handle_request(child_flow_request)
@@ -3480,6 +3644,13 @@ class FlowManager:
         # Aggregate all connections from this flow and all sub-flows
         aggregated_connections = self._aggregate_connections(create_connection_commands, sub_flow_commands)
 
+        # Serialize flow-scoped variables owned by this flow that are declared by a node.
+        serialized_variable_commands = self._serialize_variables_for_flow(
+            flow_name=flow_name,
+            unique_parameter_uuid_to_values=aggregated_unique_values,
+            variable_references=aggregated_dependencies.variable_references,
+        )
+
         # Extract flow name from initialization command if available
         extracted_flow_name = None
         if create_flow_request is not None and hasattr(create_flow_request, "flow_name"):
@@ -3496,6 +3667,7 @@ class FlowManager:
             node_dependencies=aggregated_dependencies,
             node_types_used=aggregated_node_types_used,
             flow_name=extracted_flow_name,
+            serialized_variable_commands=serialized_variable_commands,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)

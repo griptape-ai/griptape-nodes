@@ -1,8 +1,13 @@
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
+
+if TYPE_CHECKING:
+    from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+    from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
@@ -789,3 +794,524 @@ class TestWorkflowManager:
 
         assert isinstance(result, ListAllWorkflowInfoResultSuccess)
         assert result.workflow_infos == {}
+
+    # --- _build_workflow_save_path ---
+
+    def test_build_workflow_save_path_resolves_via_situation(self, griptape_nodes: GriptapeNodes) -> None:
+        """Resolved paths inside the workspace yield a workspace-relative registry key."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workspace = griptape_nodes.ConfigManager().workspace_path
+        resolved_path = workspace / "my_workflow.py"
+
+        fake_destination = MagicMock()
+        fake_destination.resolve.return_value = str(resolved_path)
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
+            return_value=fake_destination,
+        ) as mock_from_situation:
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py")
+
+        mock_from_situation.assert_called_once_with("my_workflow.py", "save_workflow")
+        assert save_path.file_path == resolved_path
+        assert save_path.relative_file_path == "my_workflow.py"
+
+    def test_build_workflow_save_path_preserves_sub_dirs(self, griptape_nodes: GriptapeNodes) -> None:
+        """sub_dirs are passed to the situation and reflected in the resolved workspace-relative key."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workspace = griptape_nodes.ConfigManager().workspace_path
+        resolved_path = workspace / "team" / "my_workflow.py"
+
+        fake_destination = MagicMock()
+        fake_destination.resolve.return_value = str(resolved_path)
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
+            return_value=fake_destination,
+        ) as mock_from_situation:
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py", sub_dirs="team")
+
+        mock_from_situation.assert_called_once_with("my_workflow.py", "save_workflow", sub_dirs="team")
+        assert save_path.file_path == resolved_path
+        assert save_path.relative_file_path == str(Path("team") / "my_workflow.py")
+
+    def test_build_workflow_save_path_uses_absolute_when_outside_workspace(
+        self, griptape_nodes: GriptapeNodes, tmp_path: Path
+    ) -> None:
+        """Paths outside the workspace fall back to the absolute path as the registry key."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        outside_path = tmp_path / "elsewhere" / "my_workflow.py"
+
+        fake_destination = MagicMock()
+        fake_destination.resolve.return_value = str(outside_path)
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
+            return_value=fake_destination,
+        ):
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py")
+
+        assert save_path.file_path == outside_path
+        assert save_path.relative_file_path == str(outside_path)
+
+    def test_build_workflow_save_path_falls_back_on_file_load_error(self, griptape_nodes: GriptapeNodes) -> None:
+        """If the situation cannot resolve, we fall back to joining against the workspace path."""
+        from griptape_nodes.files.file import FileLoadError
+        from griptape_nodes.retained_mode.events.os_events import FileIOFailureReason
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workspace = griptape_nodes.ConfigManager().workspace_path
+
+        fake_destination = MagicMock()
+        fake_destination.resolve.side_effect = FileLoadError(FileIOFailureReason.UNKNOWN, "no project loaded")
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.workflow_manager.ProjectFileDestination.from_situation",
+            return_value=fake_destination,
+        ):
+            save_path = workflow_manager._build_workflow_save_path("my_workflow.py", sub_dirs="team")
+
+        assert save_path.file_path == workspace / "team" / "my_workflow.py"
+        assert save_path.relative_file_path == str(Path("team") / "my_workflow.py")
+
+
+class TestWorkflowVariablePersistence:
+    """Round-trip tests: variables created in a flow must survive save + load."""
+
+    def _fresh_metadata(self, name: str = "test_workflow") -> "WorkflowMetadata":
+        from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+
+        return WorkflowMetadata(
+            name=name,
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="0.0.0",
+            node_libraries_referenced=[],
+        )
+
+    def test_generate_create_variable_code_emits_expected_call(self, griptape_nodes: GriptapeNodes) -> None:
+        """The AST helper should produce a single CreateVariableRequest call per command."""
+        import ast
+
+        from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
+        from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
+        from griptape_nodes.retained_mode.events.variable_events import CreateVariableRequest
+        from griptape_nodes.retained_mode.managers.workflow_manager import ImportRecorder
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        import_recorder = ImportRecorder()
+
+        serialized_command = SerializedFlowCommands.SerializedVariableCommand(
+            create_variable_command=CreateVariableRequest(
+                name="my_var",
+                type="str",
+                is_global=False,
+                value=None,
+                owning_flow="ControlFlow_1",
+                initial_setup=True,
+            ),
+            unique_value_uuid=SerializedNodeCommands.UniqueParameterValueUUID("abc-uuid"),
+        )
+
+        stmts = workflow_manager._generate_create_variable_code(
+            serialized_variable_commands=[serialized_command],
+            unique_values_dict_name="top_level_unique_values_dict",
+            import_recorder=import_recorder,
+        )
+
+        assert len(stmts) == 1
+        rendered = ast.unparse(stmts[0])
+        assert "CreateVariableRequest(" in rendered
+        assert "name='my_var'" in rendered
+        assert "type='str'" in rendered
+        assert "is_global=False" in rendered
+        assert "owning_flow='ControlFlow_1'" in rendered
+        assert "initial_setup=True" in rendered
+        assert "top_level_unique_values_dict['abc-uuid']" in rendered
+
+        # Import recorder should have captured the CreateVariableRequest import.
+        imports_text = import_recorder.generate_imports()
+        assert "CreateVariableRequest" in imports_text
+
+    def _push_clean_flow_context(self, griptape_nodes: GriptapeNodes, flow_name: str = "ControlFlow_1") -> str:
+        """Clear state, push a workflow context, and create a single empty flow. Returns the flow name."""
+        from griptape_nodes.retained_mode.events.flow_events import (
+            CreateFlowRequest,
+            CreateFlowResultSuccess,
+        )
+
+        variables_manager = griptape_nodes.VariablesManager()
+        context_manager = griptape_nodes.ContextManager()
+
+        GriptapeNodes.clear_data()
+        variables_manager.on_clear_object_state()
+
+        if not context_manager.has_current_workflow():
+            context_manager.push_workflow(workflow_name="round_trip_workflow")
+
+        flow_result = GriptapeNodes.handle_request(
+            CreateFlowRequest(parent_flow_name=None, flow_name=flow_name, set_as_new_context=False)
+        )
+        assert isinstance(flow_result, CreateFlowResultSuccess)
+        return flow_result.flow_name
+
+    def test_declared_variable_gets_serialized(self, griptape_nodes: GriptapeNodes) -> None:
+        """A flow-scoped variable that is declared via a VariableReference should be serialized."""
+        from griptape_nodes.exe_types.node_types import VariableReference
+        from griptape_nodes.retained_mode.events.variable_events import (
+            CreateVariableRequest,
+            CreateVariableResultSuccess,
+        )
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        flow_manager = griptape_nodes.FlowManager()
+        flow_name = self._push_clean_flow_context(griptape_nodes)
+
+        assert isinstance(
+            GriptapeNodes.handle_request(
+                CreateVariableRequest(
+                    name="declared_var", type="str", is_global=False, value="dog", owning_flow=flow_name
+                )
+            ),
+            CreateVariableResultSuccess,
+        )
+
+        unique_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, object] = {}
+        commands = flow_manager._serialize_variables_for_flow(
+            flow_name=flow_name,
+            unique_parameter_uuid_to_values=unique_values,
+            variable_references={VariableReference(name="declared_var", scope=VariableScope.CURRENT_FLOW_ONLY)},
+        )
+
+        assert {cmd.create_variable_command.name for cmd in commands} == {"declared_var"}
+        assert len(unique_values) == 1
+
+    def test_orphan_variable_is_dropped(self, griptape_nodes: GriptapeNodes) -> None:
+        """A variable in engine state with no declared reference must not be serialized."""
+        from griptape_nodes.retained_mode.events.variable_events import (
+            CreateVariableRequest,
+            CreateVariableResultSuccess,
+        )
+
+        flow_manager = griptape_nodes.FlowManager()
+        flow_name = self._push_clean_flow_context(griptape_nodes)
+
+        assert isinstance(
+            GriptapeNodes.handle_request(
+                CreateVariableRequest(
+                    name="orphan_var", type="str", is_global=False, value="cat", owning_flow=flow_name
+                )
+            ),
+            CreateVariableResultSuccess,
+        )
+
+        unique_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, object] = {}
+        commands = flow_manager._serialize_variables_for_flow(
+            flow_name=flow_name,
+            unique_parameter_uuid_to_values=unique_values,
+            variable_references=set(),
+        )
+
+        assert commands == []
+        assert unique_values == {}
+
+    def test_declared_but_missing_variable_is_dropped(self, griptape_nodes: GriptapeNodes) -> None:
+        """A reference to a variable that does not exist in the flow should not produce a command."""
+        from griptape_nodes.exe_types.node_types import VariableReference
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        flow_manager = griptape_nodes.FlowManager()
+        flow_name = self._push_clean_flow_context(griptape_nodes)
+
+        unique_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, object] = {}
+        commands = flow_manager._serialize_variables_for_flow(
+            flow_name=flow_name,
+            unique_parameter_uuid_to_values=unique_values,
+            variable_references={VariableReference(name="ghost", scope=VariableScope.CURRENT_FLOW_ONLY)},
+        )
+
+        assert commands == []
+
+    def test_global_only_scope_is_skipped(self, griptape_nodes: GriptapeNodes) -> None:
+        """GLOBAL_ONLY references are deferred for now and must not produce a command."""
+        from griptape_nodes.exe_types.node_types import VariableReference
+        from griptape_nodes.retained_mode.events.variable_events import (
+            CreateVariableRequest,
+            CreateVariableResultSuccess,
+        )
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        flow_manager = griptape_nodes.FlowManager()
+        flow_name = self._push_clean_flow_context(griptape_nodes)
+
+        # Create a flow-scoped variable with the same name as a pretend-global. It should not match,
+        # because the GLOBAL_ONLY scope is unsupported for serialization and must be skipped.
+        assert isinstance(
+            GriptapeNodes.handle_request(
+                CreateVariableRequest(
+                    name="shared_name", type="str", is_global=False, value="local", owning_flow=flow_name
+                )
+            ),
+            CreateVariableResultSuccess,
+        )
+
+        unique_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, object] = {}
+        commands = flow_manager._serialize_variables_for_flow(
+            flow_name=flow_name,
+            unique_parameter_uuid_to_values=unique_values,
+            variable_references={VariableReference(name="shared_name", scope=VariableScope.GLOBAL_ONLY)},
+        )
+
+        assert commands == []
+
+    def test_hierarchical_reference_only_serializes_at_owning_flow(self, griptape_nodes: GriptapeNodes) -> None:
+        """A HIERARCHICAL reference resolved against a child flow must not serialize an ancestor-owned variable."""
+        from griptape_nodes.exe_types.node_types import VariableReference
+        from griptape_nodes.retained_mode.events.flow_events import (
+            CreateFlowRequest,
+            CreateFlowResultSuccess,
+        )
+        from griptape_nodes.retained_mode.events.variable_events import (
+            CreateVariableRequest,
+            CreateVariableResultSuccess,
+        )
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        flow_manager = griptape_nodes.FlowManager()
+        parent_flow_name = self._push_clean_flow_context(griptape_nodes, flow_name="ParentFlow")
+
+        child_flow_result = GriptapeNodes.handle_request(
+            CreateFlowRequest(parent_flow_name=parent_flow_name, flow_name="ChildFlow", set_as_new_context=False)
+        )
+        assert isinstance(child_flow_result, CreateFlowResultSuccess)
+        child_flow_name = child_flow_result.flow_name
+
+        # Variable lives on the parent.
+        assert isinstance(
+            GriptapeNodes.handle_request(
+                CreateVariableRequest(
+                    name="ancestor_var",
+                    type="str",
+                    is_global=False,
+                    value="from_parent",
+                    owning_flow=parent_flow_name,
+                )
+            ),
+            CreateVariableResultSuccess,
+        )
+
+        ref = VariableReference(name="ancestor_var", scope=VariableScope.HIERARCHICAL)
+
+        # Child flow should not claim the parent-owned variable.
+        child_unique_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, object] = {}
+        child_commands = flow_manager._serialize_variables_for_flow(
+            flow_name=child_flow_name,
+            unique_parameter_uuid_to_values=child_unique_values,
+            variable_references={ref},
+        )
+        assert child_commands == []
+
+        # Parent flow should claim it.
+        parent_unique_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, object] = {}
+        parent_commands = flow_manager._serialize_variables_for_flow(
+            flow_name=parent_flow_name,
+            unique_parameter_uuid_to_values=parent_unique_values,
+            variable_references={ref},
+        )
+        assert {cmd.create_variable_command.name for cmd in parent_commands} == {"ancestor_var"}
+
+    def test_save_load_preserves_flow_scoped_variables(self, griptape_nodes: GriptapeNodes) -> None:
+        """Round-trip: declare a flow-scoped variable, serialize, clear, exec, confirm it is restored."""
+        from griptape_nodes.exe_types.node_types import NodeDependencies, VariableReference
+        from griptape_nodes.retained_mode.events.flow_events import (
+            SerializeFlowToCommandsRequest,
+            SerializeFlowToCommandsResultSuccess,
+        )
+        from griptape_nodes.retained_mode.events.variable_events import (
+            CreateVariableRequest,
+            CreateVariableResultSuccess,
+            GetVariableValueRequest,
+            GetVariableValueResultSuccess,
+        )
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        variables_manager = griptape_nodes.VariablesManager()
+        flow_name = self._push_clean_flow_context(griptape_nodes)
+
+        assert isinstance(
+            GriptapeNodes.handle_request(
+                CreateVariableRequest(
+                    name="flow_scoped_var", type="str", is_global=False, value="dog", owning_flow=flow_name
+                )
+            ),
+            CreateVariableResultSuccess,
+        )
+
+        # Normally a node declares the reference via get_node_dependencies(); for this test we
+        # inject the declaration directly onto the flow's aggregated NodeDependencies after
+        # serialization gathers them. We do that by patching _aggregate_flow_dependencies to append
+        # a VariableReference for our variable.
+        from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
+        from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
+
+        flow_manager = griptape_nodes.FlowManager()
+        original_aggregate = flow_manager._aggregate_flow_dependencies
+
+        def aggregate_with_declared_ref(
+            serialized_node_commands: list[SerializedNodeCommands],
+            sub_flows_commands: list[SerializedFlowCommands],
+        ) -> NodeDependencies:
+            deps = original_aggregate(serialized_node_commands, sub_flows_commands)
+            deps.variable_references.add(
+                VariableReference(name="flow_scoped_var", scope=VariableScope.CURRENT_FLOW_ONLY)
+            )
+            return deps
+
+        with patch.object(
+            flow_manager,
+            "_aggregate_flow_dependencies",
+            side_effect=aggregate_with_declared_ref,
+        ):
+            serialize_result = GriptapeNodes.handle_request(SerializeFlowToCommandsRequest(flow_name=flow_name))
+
+        assert isinstance(serialize_result, SerializeFlowToCommandsResultSuccess)
+        serialized_commands = serialize_result.serialized_flow_commands
+
+        names_serialized = {
+            cmd.create_variable_command.name for cmd in serialized_commands.serialized_variable_commands
+        }
+        assert names_serialized == {"flow_scoped_var"}
+
+        # Generate the workflow script.
+        metadata = self._fresh_metadata(name="test_round_trip")
+        script_source = workflow_manager._generate_workflow_file_content(
+            serialized_flow_commands=serialized_commands,
+            workflow_metadata=metadata,
+        )
+
+        # Script must reference CreateVariableRequest for the flow-scoped variable.
+        assert "CreateVariableRequest(" in script_source
+        assert "name='flow_scoped_var'" in script_source
+
+        # Clear everything, then exec the script and confirm the variable is rebuilt.
+        GriptapeNodes.clear_data()
+        variables_manager.on_clear_object_state()
+
+        exec_globals: dict[str, object] = {"__file__": "test_workflow.py"}
+        exec(compile(script_source, "<round_trip_test>", "exec"), exec_globals)  # noqa: S102
+
+        flow_value = GriptapeNodes.handle_request(
+            GetVariableValueRequest(
+                name="flow_scoped_var", starting_flow=flow_name, lookup_scope=VariableScope.CURRENT_FLOW_ONLY
+            )
+        )
+        assert isinstance(flow_value, GetVariableValueResultSuccess)
+        assert flow_value.value == "dog"
+
+    def test_save_drops_orphan_variables_end_to_end(self, griptape_nodes: GriptapeNodes) -> None:
+        """The var.py scenario: a variable with no declaring node must not survive serialization."""
+        from griptape_nodes.retained_mode.events.flow_events import (
+            SerializeFlowToCommandsRequest,
+            SerializeFlowToCommandsResultSuccess,
+        )
+        from griptape_nodes.retained_mode.events.variable_events import (
+            CreateVariableRequest,
+            CreateVariableResultSuccess,
+        )
+
+        flow_name = self._push_clean_flow_context(griptape_nodes)
+
+        # Simulate the bug: a variable was created (via some now-deleted SetVariable node) but no
+        # node currently declares it.
+        assert isinstance(
+            GriptapeNodes.handle_request(
+                CreateVariableRequest(
+                    name="orphan_var", type="str", is_global=False, value="stale", owning_flow=flow_name
+                )
+            ),
+            CreateVariableResultSuccess,
+        )
+
+        serialize_result = GriptapeNodes.handle_request(SerializeFlowToCommandsRequest(flow_name=flow_name))
+        assert isinstance(serialize_result, SerializeFlowToCommandsResultSuccess)
+        assert serialize_result.serialized_flow_commands.serialized_variable_commands == []
+
+
+class TestVariableReferenceAccess:
+    """Tests for the access field on VariableReference."""
+
+    def test_default_access_is_read_write(self) -> None:
+        """Omitting ``access`` yields READ_WRITE — the safe default when a node's pattern is mixed."""
+        from griptape_nodes.exe_types.node_types import VariableAccess, VariableReference
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        ref = VariableReference(name="foo", scope=VariableScope.HIERARCHICAL)
+
+        assert ref.access is VariableAccess.READ_WRITE
+
+    def test_access_participates_in_equality_and_hash(self) -> None:
+        """Different access values on the same (name, scope) produce distinct, coexisting set members."""
+        from griptape_nodes.exe_types.node_types import VariableAccess, VariableReference
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        read_ref = VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ)
+        write_ref = VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.WRITE)
+        read_ref_twin = VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ)
+
+        assert read_ref != write_ref
+        assert hash(read_ref) != hash(write_ref)
+        assert read_ref == read_ref_twin
+        assert {read_ref, write_ref, read_ref_twin} == {read_ref, write_ref}
+
+    def test_aggregate_from_preserves_distinct_access_entries(self) -> None:
+        """Aggregating two NodeDependencies that name the same variable with different access retains both."""
+        from griptape_nodes.exe_types.node_types import NodeDependencies, VariableAccess, VariableReference
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        reader = NodeDependencies()
+        reader.variable_references.add(
+            VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ)
+        )
+        writer = NodeDependencies()
+        writer.variable_references.add(
+            VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ_WRITE)
+        )
+
+        reader.aggregate_from(writer)
+
+        assert reader.variable_references == {
+            VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ),
+            VariableReference(name="foo", scope=VariableScope.HIERARCHICAL, access=VariableAccess.READ_WRITE),
+        }
+
+    def test_serializer_ignores_access(self, griptape_nodes: GriptapeNodes) -> None:
+        """Serialization filtering is access-agnostic: any declared reference keeps the variable."""
+        from griptape_nodes.exe_types.node_types import VariableAccess, VariableReference
+        from griptape_nodes.retained_mode.events.variable_events import (
+            CreateVariableRequest,
+            CreateVariableResultSuccess,
+        )
+        from griptape_nodes.retained_mode.variable_types import VariableScope
+
+        flow_manager = griptape_nodes.FlowManager()
+        persistence = TestWorkflowVariablePersistence()
+        flow_name = persistence._push_clean_flow_context(griptape_nodes)
+
+        assert isinstance(
+            GriptapeNodes.handle_request(
+                CreateVariableRequest(name="only_read", type="str", is_global=False, value="cat", owning_flow=flow_name)
+            ),
+            CreateVariableResultSuccess,
+        )
+
+        unique_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, object] = {}
+        commands = flow_manager._serialize_variables_for_flow(
+            flow_name=flow_name,
+            unique_parameter_uuid_to_values=unique_values,
+            variable_references={
+                VariableReference(name="only_read", scope=VariableScope.CURRENT_FLOW_ONLY, access=VariableAccess.READ)
+            },
+        )
+
+        # Access being READ does not exclude the variable from save-to-disk serialization.
+        assert {cmd.create_variable_command.name for cmd in commands} == {"only_read"}

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Required, TypedDict
 
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
@@ -460,6 +460,13 @@ class GriptapeEvent(ExecutionPayload):
     value: Any
 
 
+class NodeMetadata(TypedDict, total=False):
+    """Metadata dict carried on nodes. node_type and library are required; all other keys are optional."""
+
+    node_type: Required[str]
+    library: Required[str]
+
+
 @dataclass
 @PayloadRegistry.register
 class ExecuteNodeRequest(RequestPayload):
@@ -469,15 +476,23 @@ class ExecuteNodeRequest(RequestPayload):
     Unlike ResolveNodeRequest, this bypasses flow/DAG machinery and executes
     the node's process method directly.
 
+    If the node does not already exist in ObjectManager and node_metadata is provided,
+    the node is created first (idempotent: no-op if already present). This covers both
+    orchestrator-local execution (node always exists) and worker execution (created on
+    first call, reused on subsequent calls).
+
     Args:
         node_name: Name of the node to execute.
         parameter_values: Input parameter values to set before execution.
+        node_metadata: Full node metadata from the orchestrator. When provided and the
+            node does not exist, it is created from this metadata.
 
     Results: ExecuteNodeResultSuccess | ExecuteNodeResultFailure
     """
 
     node_name: str
     parameter_values: dict[str, Any] = field(default_factory=dict)
+    node_metadata: NodeMetadata | None = None
 
 
 @dataclass

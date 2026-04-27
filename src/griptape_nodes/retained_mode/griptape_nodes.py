@@ -28,6 +28,7 @@ from griptape_nodes.utils.metaclasses import SingletonMeta
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
+    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.events.base_events import (
         AppPayload,
         RequestPayload,
@@ -99,8 +100,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _user_manager: UserManager
     _project_manager: ProjectManager
     _artifact_manager: ArtifactManager
+    _worker_manager: WorkerManager
 
     def __init__(self) -> None:  # noqa: PLR0915
+        from griptape_nodes.app.worker_manager import WorkerManager
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
             ArbitraryCodeExecManager,
@@ -150,7 +153,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
             self._context_manager = ContextManager(self._event_manager)
-            self._library_manager = LibraryManager(self._event_manager)
+            self._worker_manager = WorkerManager(griptape_nodes=self, event_manager=self._event_manager)
+            self._library_manager = LibraryManager(self._event_manager, worker_manager=self._worker_manager)
             self._model_manager = ModelManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._workflow_variables_manager = VariablesManager(self._event_manager)
@@ -357,6 +361,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def ArtifactManager(cls) -> ArtifactManager:
         return GriptapeNodes.get_instance()._artifact_manager
+
+    @classmethod
+    def WorkerManager(cls) -> WorkerManager:
+        return GriptapeNodes.get_instance()._worker_manager
 
     @classmethod
     def clear_data(cls) -> None:

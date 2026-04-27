@@ -97,8 +97,15 @@ class TestProjectManagerMacroHandlers:
 class TestProjectManagerInitialization:
     """Test ProjectManager initialization and state."""
 
-    def test_project_manager_initializes_empty(self) -> None:
-        """Test ProjectManager starts with empty state."""
+    def test_project_manager_initializes_with_system_defaults(self) -> None:
+        """System defaults loaded eagerly in __init__.
+
+        Project-aware requests must work before AppInitializationComplete fires
+        because CLI workflow scripts construct nodes at module import time,
+        before the event is broadcast.
+        """
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
+
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -106,8 +113,8 @@ class TestProjectManagerInitialization:
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
         assert pm._registered_template_status == {}
-        assert pm._successfully_loaded_project_templates == {}
-        assert pm._current_project_id is None
+        assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
+        assert SYSTEM_DEFAULTS_KEY in pm._successfully_loaded_project_templates
 
     def test_project_manager_stores_manager_references(self) -> None:
         """Test ProjectManager stores config and secrets manager references."""
@@ -488,6 +495,7 @@ class TestProjectManagerGetStateForMacro:
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+        pm._current_project_id = None
 
         parsed_macro = ParsedMacro("{file_name}.txt")
 
@@ -632,6 +640,7 @@ class TestProjectManagerGetCurrentProject:
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+        pm._current_project_id = None
 
         request = GetCurrentProjectRequest()
         result = pm.on_get_current_project_request(request)
@@ -967,20 +976,11 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
         cast("Mock", project_manager._config_manager).workspace_path = project_base
 
-        # Mock GriptapeNodes.ConfigManager(), ContextManager(), and OSManager()
+        # Mock GriptapeNodes.ContextManager()
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
-
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path inside outputs directory
             absolute_path = project_base / "outputs" / "renders" / "file.png"
@@ -1034,15 +1034,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
 
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
-
             # Test path outside project
             absolute_path = Path("/Users/test/Downloads/file.png")
 
@@ -1056,7 +1047,8 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test mapping when no current project is set (returns failure)."""
         from griptape_nodes.retained_mode.events.project_events import AttemptMapAbsolutePathToProjectResultFailure
 
-        # No project set up
+        # Clear the system defaults loaded in __init__ to simulate no current project
+        project_manager._current_project_id = None
 
         absolute_path = Path("/Users/test/project/outputs/file.png")
 
@@ -1110,15 +1102,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
 
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
-
             # Test path inside outputs/inputs subdirectory (should match outputs, not inputs)
             absolute_path = project_base / "outputs" / "inputs" / "file.png"
 
@@ -1171,15 +1154,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
             mock_gn.ContextManager.return_value = mock_context
 
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
-
             # Test path exactly at outputs directory
             absolute_path = project_base / "outputs"
 
@@ -1229,15 +1203,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_context = Mock()
             mock_context.has_current_workflow.return_value = False
             mock_gn.ContextManager.return_value = mock_context
-
-            # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
-
-            mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
-                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
-            )
-            mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path inside project_base_dir but not in any defined directory
             absolute_path = project_base / "random_folder" / "file.txt"
@@ -1291,6 +1256,8 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         project_manager._current_project_id = SYSTEM_DEFAULTS_KEY
         project_manager._secrets_manager = Mock()
         project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        cast("Mock", project_manager._config_manager).workspace_path = project_base
 
         # Mock GriptapeNodes - workflow_name will fail because no workflow
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -1376,6 +1343,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         await pm._load_workspace_project()
 
@@ -1399,6 +1367,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1428,6 +1397,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1468,6 +1438,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1499,6 +1470,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1510,13 +1482,15 @@ situations:
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
 
     @pytest.mark.asyncio
-    async def test_load_workspace_project_none_workspace_dir_skips(self, pm: ProjectManager) -> None:
-        """None workspace_directory config value skips loading without error."""
+    async def test_load_workspace_project_missing_workspace_dir_skips(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Workspace directory without a project file skips loading without error."""
         from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
         self._setup_system_defaults(pm)
 
         cast("Mock", pm._config_manager).get_config_value.return_value = None
+        # Point workspace_path at an empty directory so the existence check fails.
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             await pm._load_workspace_project()
@@ -1544,6 +1518,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1570,6 +1545,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         await pm.on_app_initialization_complete(AppInitializationComplete())
 
@@ -1593,6 +1569,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1624,6 +1601,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -1657,6 +1635,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
@@ -2193,6 +2172,7 @@ situations:
             return str(tmp_path)
 
         cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_gn.handle_request.return_value = ReadFileResultSuccess(
@@ -2206,3 +2186,337 @@ situations:
             await pm.on_app_initialization_complete(AppInitializationComplete())
 
         assert str(registered_path) in pm._successfully_loaded_project_templates
+
+
+class TestValidateProjectTemplate:
+    """Test ProjectManager.on_validate_project_template_request."""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    @staticmethod
+    def _minimal_valid_template() -> dict:
+        return {
+            "project_template_schema_version": "0.1.0",
+            "name": "Test Project",
+            "situations": {
+                "save_file": {
+                    "name": "save_file",
+                    "macro": "{file_name_base}.{file_extension}",
+                    "policy": {"on_collision": "create_new", "create_dirs": True},
+                }
+            },
+            "directories": {
+                "inputs": {"name": "inputs", "path_macro": "inputs"},
+            },
+        }
+
+    def test_valid_template_returns_good_status(self, pm: ProjectManager) -> None:
+        """A fully valid template validates with GOOD status and no problems."""
+        from griptape_nodes.common.project_templates import ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        request = ValidateProjectTemplateRequest(template_data=self._minimal_valid_template())
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert result.validation.status == ProjectValidationStatus.GOOD
+        assert result.validation.problems == []
+
+    def test_partial_policy_marks_template_unusable(self, pm: ProjectManager) -> None:
+        """A situation policy missing on_collision should produce an UNUSABLE result."""
+        from griptape_nodes.common.project_templates import ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template = self._minimal_valid_template()
+        template["situations"]["save_file"]["policy"] = {"create_dirs": False}
+
+        request = ValidateProjectTemplateRequest(template_data=template)
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert result.validation.status == ProjectValidationStatus.UNUSABLE
+        assert any("situations.save_file.policy" in p.field_path for p in result.validation.problems)
+
+    def test_invalid_directory_macro_marks_template_unusable(self, pm: ProjectManager) -> None:
+        """A directory with an unparsable path_macro should produce a problem."""
+        from griptape_nodes.common.project_templates import ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template = self._minimal_valid_template()
+        # Unmatched brace is rejected by the macro parser
+        template["directories"]["inputs"]["path_macro"] = "inputs/{unclosed"
+
+        request = ValidateProjectTemplateRequest(template_data=template)
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert result.validation.status == ProjectValidationStatus.UNUSABLE
+        assert any(p.field_path == "directories.inputs.path_macro" for p in result.validation.problems)
+
+    def test_missing_name_marks_template_unusable(self, pm: ProjectManager) -> None:
+        """Missing required `name` field returns UNUSABLE with a structured problem."""
+        from griptape_nodes.common.project_templates import ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template = self._minimal_valid_template()
+        del template["name"]
+
+        request = ValidateProjectTemplateRequest(template_data=template)
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert result.validation.status == ProjectValidationStatus.UNUSABLE
+        assert any(p.field_path == "name" for p in result.validation.problems)
+
+    def test_pydantic_errors_surface_as_structured_problems(self, pm: ProjectManager) -> None:
+        """Pydantic validation errors produce per-field problems, not a stringified exception."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template = self._minimal_valid_template()
+        # Provide a bogus policy value to trigger a pydantic validator for the enum
+        template["situations"]["save_file"]["policy"] = {
+            "on_collision": "not_a_real_value",
+            "create_dirs": True,
+        }
+
+        request = ValidateProjectTemplateRequest(template_data=template)
+        result = pm.on_validate_project_template_request(request)
+
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert len(result.validation.problems) >= 1
+        problem = result.validation.problems[0]
+        assert problem.field_path.startswith("situations.save_file.policy")
+        assert problem.message  # non-empty message
+
+
+class TestLoadProjectTemplatePathCanonicalization:
+    """Test that on_load_project_template_request canonicalizes project paths.
+
+    Project IDs and validation-map keys must be keyed off the resolved absolute
+    path so the same file loaded via different spellings (relative vs absolute,
+    with or without trailing components, etc.) collapses to a single entry.
+    """
+
+    VALID_PROJECT_YAML = """\
+project_template_schema_version: "0.1.0"
+name: Canonicalization Test
+situations:
+  save_node_output:
+    macro: "{outputs}/{file_name_base}.{file_extension}"
+    policy:
+      on_collision: create_new
+      create_dirs: true
+"""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def test_relative_and_absolute_spellings_share_project_id(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Loading the same file via a relative and an absolute path produces one entry."""
+        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        absolute_path = (tmp_path / "project.yml").resolve()
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.handle_request.return_value = ReadFileResultSuccess(
+                content=self.VALID_PROJECT_YAML,
+                file_size=len(self.VALID_PROJECT_YAML),
+                mime_type="text/plain",
+                encoding="utf-8",
+                result_details="ok",
+            )
+
+            cwd = Path.cwd()
+            try:
+                os.chdir(tmp_path)
+                relative_path = Path("project.yml")
+                absolute_result = pm.on_load_project_template_request(
+                    LoadProjectTemplateRequest(project_path=absolute_path)
+                )
+                relative_result = pm.on_load_project_template_request(
+                    LoadProjectTemplateRequest(project_path=relative_path)
+                )
+            finally:
+                os.chdir(cwd)
+
+        assert isinstance(absolute_result, LoadProjectTemplateResultSuccess)
+        assert isinstance(relative_result, LoadProjectTemplateResultSuccess)
+        assert absolute_result.project_id == relative_result.project_id
+        assert absolute_result.project_id == str(absolute_path)
+        assert list(pm._successfully_loaded_project_templates.keys()).count(str(absolute_path)) == 1
+
+    def test_registered_template_status_keyed_by_resolved_path(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Validation status is stored under the resolved path, not the raw input."""
+        from griptape_nodes.retained_mode.events.project_events import LoadProjectTemplateRequest
+
+        absolute_path = (tmp_path / "missing.yml").resolve()
+
+        cwd = Path.cwd()
+        try:
+            os.chdir(tmp_path)
+            pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=Path("missing.yml")))
+        finally:
+            os.chdir(cwd)
+
+        assert absolute_path in pm._registered_template_status
+        assert Path("missing.yml") not in pm._registered_template_status
+
+    def test_tilde_and_absolute_spellings_share_project_id(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Loading the same file via `~/...` and its absolute path produces one entry."""
+        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        # Point HOME/USERPROFILE at tmp_path so "~/project.yml" expands to tmp_path / project.yml
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        absolute_path = (tmp_path / "project.yml").resolve()
+        tilde_path = Path("~/project.yml")
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.handle_request.return_value = ReadFileResultSuccess(
+                content=self.VALID_PROJECT_YAML,
+                file_size=len(self.VALID_PROJECT_YAML),
+                mime_type="text/plain",
+                encoding="utf-8",
+                result_details="ok",
+            )
+
+            absolute_result = pm.on_load_project_template_request(
+                LoadProjectTemplateRequest(project_path=absolute_path)
+            )
+            tilde_result = pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=tilde_path))
+
+        assert isinstance(absolute_result, LoadProjectTemplateResultSuccess)
+        assert isinstance(tilde_result, LoadProjectTemplateResultSuccess)
+        assert absolute_result.project_id == tilde_result.project_id
+        assert absolute_result.project_id == str(absolute_path)
+        assert list(pm._successfully_loaded_project_templates.keys()).count(str(absolute_path)) == 1
+
+
+class TestRegisterProjectPathCanonicalization:
+    """Test that _register_project_path dedupes across path spellings."""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def test_already_registered_under_different_spelling_is_not_reappended(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """If the same file is already persisted under a different spelling, skip it."""
+        absolute_path = (tmp_path / "project.yml").resolve()
+
+        cwd = Path.cwd()
+        try:
+            os.chdir(tmp_path)
+            relative_spelling = str(Path("project.yml").resolve())
+            cast("Mock", pm._config_manager).get_config_value.return_value = [relative_spelling]
+            pm._register_project_path(str(absolute_path))
+        finally:
+            os.chdir(cwd)
+
+        cast("Mock", pm._config_manager).set_config_value.assert_not_called()
+
+    def test_tilde_spelling_dedupes_against_absolute_entry(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A ~-spelled persisted path is matched against an absolute incoming one."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        absolute_path = (tmp_path / "project.yml").resolve()
+        cast("Mock", pm._config_manager).get_config_value.return_value = ["~/project.yml"]
+
+        pm._register_project_path(str(absolute_path))
+
+        cast("Mock", pm._config_manager).set_config_value.assert_not_called()
+
+
+class TestLoadRegisteredProjectsCanonicalization:
+    """Test that _load_registered_projects treats differently-spelled persisted paths as duplicates."""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def test_persisted_unresolved_path_matches_loaded_resolved_entry(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A persisted path is matched against _successfully_loaded_project_templates after resolution."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        resolved_path = (tmp_path / "existing.yml").resolve()
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+        project_info = ProjectInfo(
+            project_id=str(resolved_path),
+            project_file_path=resolved_path,
+            project_base_dir=tmp_path,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[str(resolved_path)] = project_info
+
+        cwd = Path.cwd()
+        try:
+            os.chdir(tmp_path)
+            cast("Mock", pm._config_manager).get_config_value.return_value = ["existing.yml"]
+            with patch.object(pm, "on_load_project_template_request") as mock_load:
+                pm._load_registered_projects()
+        finally:
+            os.chdir(cwd)
+
+        mock_load.assert_not_called()
