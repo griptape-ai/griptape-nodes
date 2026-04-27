@@ -2430,9 +2430,7 @@ class NodeManager:
                 # about a node that has just been deleted (e.g. during batch deletes). The
                 # caller still receives a failure result and can react as needed.
                 details = f"Attempted to get all info for Node named '{node_name}', but no such Node was found."
-                return GetAllNodeInfoResultFailure(
-                    result_details=ResultDetails(message=details, level=logging.DEBUG)
-                )
+                return GetAllNodeInfoResultFailure(result_details=ResultDetails(message=details, level=logging.DEBUG))
 
         get_metadata_request = GetNodeMetadataRequest(node_name=node_name)
         get_metadata_result = self.on_get_node_metadata_request(get_metadata_request)
