@@ -145,6 +145,10 @@ default.extend-ignore-re = [
   "(?m)(#|//)\\s*spellchecker:ignore-next-line\\n.*",
 ]
 
+[tool.typos.default.extend-words]
+# HALD CLUT is a Color Lookup Table technique named after its inventor
+HALD = "HALD"
+
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
