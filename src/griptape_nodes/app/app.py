@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from griptape_nodes.app.worker_manager import WorkerManager
+    from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 
 import truststore
 from cattrs import BaseValidationError, transform_error

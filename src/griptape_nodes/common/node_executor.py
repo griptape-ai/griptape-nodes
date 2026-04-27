@@ -118,9 +118,9 @@ from griptape_nodes.retained_mode.managers.event_manager import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 
 logger = logging.getLogger("griptape_nodes")
 

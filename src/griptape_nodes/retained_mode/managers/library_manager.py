@@ -216,10 +216,10 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from types import ModuleType
 
-    from griptape_nodes.app.worker_manager import WorkerManager
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.events.base_events import Payload, RequestPayload, ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 
 logger = logging.getLogger("griptape_nodes")
 console = Console()

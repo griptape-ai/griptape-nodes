@@ -15,13 +15,13 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import pytest
 
 from griptape_nodes.api_client.request_client import _PendingRequest
-from griptape_nodes.app.worker_manager import WorkerManager, WorkerRegistration
 from griptape_nodes.retained_mode.events import worker_events
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeRequest,
     ExecuteNodeResultSuccess,
 )
+from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager, WorkerRegistration
 
 _SESSION = "sess-abc"
 _ENGINE = "eng-xyz"
