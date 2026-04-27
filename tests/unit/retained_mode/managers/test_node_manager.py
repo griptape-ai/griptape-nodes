@@ -2,7 +2,8 @@ import logging
 
 import pytest
 
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.node_events import (
     BatchSetNodeMetadataRequest,
     BatchSetNodeMetadataResultFailure,
@@ -10,6 +11,7 @@ from griptape_nodes.retained_mode.events.node_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
 
 class TestNodeManagerBatchSetNodeMetadata:
@@ -157,3 +159,72 @@ class TestNodeManagerAlterParameterDetailsClearDefaultValue:
         assert "clear_default_value takes precedence" in caplog.records[0].message
         assert "test_param" in caplog.records[0].message
         assert "test_node" in caplog.records[0].message
+
+
+class TestReconstituteParameterListChildren:
+    """Tests for NodeManager._reconstitute_parameter_list_children."""
+
+    @staticmethod
+    def _make_node_with_list(list_name: str = "input_images") -> BaseNode:
+        node = BaseNode(name="test_node")
+        node.add_parameter(ParameterList(name=list_name, tooltip="items", input_types=["str"]))
+        return node
+
+    def test_reconstitutes_parameter_list_children(self) -> None:
+        node = self._make_node_with_list()
+        key = "input_images_ParameterListUniqueParamID_5d7292fb02884241b27d7488c358"
+
+        NodeManager._reconstitute_parameter_list_children(node, {key: "image_url"})
+
+        assert node.get_parameter_by_name(key) is not None
+
+    def test_preserves_exact_uuid_name(self) -> None:
+        node = self._make_node_with_list()
+        key = "input_images_ParameterListUniqueParamID_deadbeefcafe"
+
+        NodeManager._reconstitute_parameter_list_children(node, {key: "value"})
+
+        child = node.get_parameter_by_name(key)
+        assert child is not None
+        assert child.name == key
+
+    def test_idempotent_on_repeat(self) -> None:
+        node = self._make_node_with_list()
+        key = "input_images_ParameterListUniqueParamID_abc123"
+        values = {key: "value"}
+
+        NodeManager._reconstitute_parameter_list_children(node, values)
+        NodeManager._reconstitute_parameter_list_children(node, values)
+
+        parent = node.get_parameter_by_name("input_images")
+        assert isinstance(parent, ParameterList)
+        children = parent.get_child_parameters()
+        assert len([c for c in children if c.name == key]) == 1
+
+    def test_unknown_prefix_does_not_create_child(self) -> None:
+        node = self._make_node_with_list()
+        node.add_parameter(Parameter(name="prompt", tooltip="prompt", type="str"))
+        key = "prompt_ParameterListUniqueParamID_abc123"
+
+        NodeManager._reconstitute_parameter_list_children(node, {key: "value"})
+
+        assert node.get_parameter_by_name(key) is None
+
+    def test_non_sentinel_key_is_skipped(self) -> None:
+        node = self._make_node_with_list()
+
+        NodeManager._reconstitute_parameter_list_children(node, {"random_param": "value"})
+
+        assert node.get_parameter_by_name("random_param") is None
+
+    def test_existing_child_is_left_untouched(self) -> None:
+        node = self._make_node_with_list()
+        parent = node.get_parameter_by_name("input_images")
+        assert isinstance(parent, ParameterList)
+        existing = parent.add_child_parameter_with_name("input_images_ParameterListUniqueParamID_preexisting")
+
+        NodeManager._reconstitute_parameter_list_children(node, {existing.name: "value"})
+
+        children = parent.get_child_parameters()
+        assert len(children) == 1
+        assert children[0] is existing

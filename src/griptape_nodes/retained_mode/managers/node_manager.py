@@ -2728,6 +2728,7 @@ class NodeManager:
     async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         """Hydrate a node's input parameters and execute it."""
         node_name = request.node_name
+        self._reconstitute_parameter_list_children(node, request.parameter_values)
         for param_name, value in request.parameter_values.items():
             try:
                 node.set_parameter_value(param_name, value)
@@ -2745,6 +2746,25 @@ class NodeManager:
             parameter_output_values=dict(node.parameter_output_values),
             result_details=f"Node '{node_name}' executed successfully.",
         )
+
+    @staticmethod
+    def _reconstitute_parameter_list_children(node: BaseNode, parameter_values: dict[str, Any]) -> None:
+        """Recreate ParameterList children whose UUID-tagged names appear in the request.
+
+        Node recreation paths that run a node's __init__ produce empty ParameterLists.
+        If the caller already has values keyed by the saved child names, the children
+        must exist before set_parameter_value is called or the lookup fails.
+        """
+        sentinel = "_ParameterListUniqueParamID_"
+        for key in parameter_values:
+            if node.get_parameter_by_name(key) is not None:
+                continue
+            if sentinel not in key:
+                continue
+            prefix = key.split(sentinel, 1)[0]
+            parent = node.get_parameter_by_name(prefix)
+            if isinstance(parent, ParameterList):
+                parent.add_child_parameter_with_name(key)
 
     def on_validate_node_dependencies_request(self, request: ValidateNodeDependenciesRequest) -> ResultPayload:
         node_name = request.node_name

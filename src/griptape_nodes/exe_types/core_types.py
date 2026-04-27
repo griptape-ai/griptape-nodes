@@ -2653,7 +2653,30 @@ class ParameterList(ParameterContainer):
         # (No, we're not renaming it List[0] everywhere for you)
         name = f"{self.name}_ParameterListUniqueParamID_{uuid.uuid4().hex!s}"
 
-        param = Parameter(
+        param = self._build_child_parameter(name)
+
+        # Add at the end.
+        self.add_child(param)
+
+        return param
+
+    def add_child_parameter_with_name(self, name: str) -> Parameter:
+        """Add (or reuse) a child parameter with an explicit name.
+
+        Used to reconstitute children on nodes that were recreated without
+        replaying AddParameterToNodeRequest commands (e.g. worker execution),
+        preserving the UUID-tagged name so connections remain stable.
+        """
+        for existing in self.get_child_parameters():
+            if existing.name == name:
+                return existing
+
+        param = self._build_child_parameter(name)
+        self.add_child(param)
+        return param
+
+    def _build_child_parameter(self, name: str) -> Parameter:
+        return Parameter(
             name=name,
             tooltip=self.tooltip,
             type=self._type,
@@ -2672,11 +2695,6 @@ class ParameterList(ParameterContainer):
             user_defined=True,
             parent_container_name=self.name,
         )
-
-        # Add at the end.
-        self.add_child(param)
-
-        return param
 
     def clear_list(self) -> None:
         """Remove all children that have been added to the list."""
