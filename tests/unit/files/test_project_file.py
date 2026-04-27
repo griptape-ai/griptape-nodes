@@ -147,8 +147,8 @@ class TestProjectFileDestinationInit:
 
         return dispatch
 
-    def test_from_situation_file_extension_directory_derived_from_extension(self) -> None:
-        """Known extensions populate file_extension_directory; siblings like png/jpg share a destination."""
+    def test_from_situation_sidecar_omits_derived_variables(self) -> None:
+        """Sidecar stores only caller-supplied inputs; derived values like file_extension_directory are not persisted."""
         from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
         from griptape_nodes.common.project_templates.situation import (
             SituationFilePolicy,
@@ -167,20 +167,15 @@ class TestProjectFileDestinationInit:
         )
 
         with patch(HANDLE_REQUEST_PATH, side_effect=dispatch):
-            png_dest = ProjectFileDestination.from_situation("foo.png", "save_node_output")
-            jpg_dest = ProjectFileDestination.from_situation("bar.jpg", "save_node_output")
+            dest = ProjectFileDestination.from_situation("foo.png", "save_node_output")
 
-        assert png_dest._file._file_metadata is not None
-        assert png_dest._file._file_metadata.situation is not None
-        png_vars = png_dest._file._file_metadata.situation.variables
-        assert png_vars is not None
-        assert png_vars["file_extension_directory"] == "images"
-
-        assert jpg_dest._file._file_metadata is not None
-        assert jpg_dest._file._file_metadata.situation is not None
-        jpg_vars = jpg_dest._file._file_metadata.situation.variables
-        assert jpg_vars is not None
-        assert jpg_vars["file_extension_directory"] == "images"
+        assert dest._file._file_metadata is not None
+        assert dest._file._file_metadata.situation is not None
+        variables = dest._file._file_metadata.situation.variables
+        assert variables is not None
+        assert variables["file_name_base"] == "foo"
+        assert variables["file_extension"] == "png"
+        assert "file_extension_directory" not in variables
 
     def test_from_situation_file_extension_directory_unmapped_extension(self) -> None:
         """An extension with no mapping leaves file_extension_directory unset so the optional slot degrades."""
@@ -266,7 +261,9 @@ class TestProjectFileDestinationInit:
         assert dest._file._file_metadata.situation is not None
         variables = dest._file._file_metadata.situation.variables
         assert variables is not None
-        assert variables["file_extension_directory"] == "images"
+        # Derived values (file_extension_directory) no longer stored in sidecar;
+        # the case-insensitive lookup is exercised at resolve time instead.
+        assert "file_extension_directory" not in variables
 
     def test_from_situation_file_extension_directory_uses_project_taxonomy(self) -> None:
         """The mapping comes from the current project's template, not an engine constant."""
@@ -289,125 +286,15 @@ class TestProjectFileDestinationInit:
             png_dest = ProjectFileDestination.from_situation("foo.png", "save_node_output")
             psd_dest = ProjectFileDestination.from_situation("bar.psd", "save_node_output")
 
+        # Derived values no longer persisted in sidecar -- re-computed at resolve time.
         assert png_dest._file._file_metadata is not None
         assert png_dest._file._file_metadata.situation is not None
         assert png_dest._file._file_metadata.situation.variables is not None
-        assert png_dest._file._file_metadata.situation.variables["file_extension_directory"] == "renders"
+        assert "file_extension_directory" not in png_dest._file._file_metadata.situation.variables
         assert psd_dest._file._file_metadata is not None
         assert psd_dest._file._file_metadata.situation is not None
         assert psd_dest._file._file_metadata.situation.variables is not None
-        assert psd_dest._file._file_metadata.situation.variables["file_extension_directory"] == "renders"
-
-    def test_from_situation_file_extension_directory_plain_name_skips_resolution(self) -> None:
-        """A plain-name extension macro value (no `{`) must not trigger a GetPathForMacroRequest."""
-        from griptape_nodes.common.project_templates.situation import (
-            SituationFilePolicy,
-            SituationPolicy,
-            SituationTemplate,
-        )
-        from griptape_nodes.retained_mode.events.project_events import GetPathForMacroRequest
-
-        situation = SituationTemplate(
-            name="save_node_output",
-            macro="{outputs}/{file_extension_directory?:/}{file_name_base}.{file_extension}",
-            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
-        )
-
-        call_log: list[object] = []
-        # No macro_resolver supplied -- if the code issues a GetPathForMacroRequest, the
-        # dispatcher raises AssertionError.
-        dispatch = self._make_extension_directory_handle_request(situation, {"png": "images"}, call_log=call_log)
-
-        with patch(HANDLE_REQUEST_PATH, side_effect=dispatch):
-            dest = ProjectFileDestination.from_situation("foo.png", "save_node_output")
-
-        assert dest._file._file_metadata is not None
-        assert dest._file._file_metadata.situation is not None
-        assert dest._file._file_metadata.situation.variables is not None
-        assert dest._file._file_metadata.situation.variables["file_extension_directory"] == "images"
-        assert not any(isinstance(req, GetPathForMacroRequest) for req in call_log)
-
-    def test_from_situation_file_extension_directory_macro_value_resolves(self) -> None:
-        """An extension macro value containing `{...}` is resolved via GetPathForMacroRequest."""
-        from griptape_nodes.common.project_templates.situation import (
-            SituationFilePolicy,
-            SituationPolicy,
-            SituationTemplate,
-        )
-        from griptape_nodes.retained_mode.events.project_events import (
-            GetPathForMacroRequest,
-            GetPathForMacroResultSuccess,
-        )
-
-        situation = SituationTemplate(
-            name="save_node_output",
-            macro="{file_extension_directory?:/}{file_name_base}.{file_extension}",
-            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
-        )
-
-        def macro_resolver(_req: object) -> object:
-            return GetPathForMacroResultSuccess(
-                resolved_path=Path("outputs/videos"),
-                absolute_path=Path("/tmp/test/outputs/videos"),  # noqa: S108
-                result_details="ok",
-            )
-
-        call_log: list[object] = []
-        dispatch = self._make_extension_directory_handle_request(
-            situation,
-            {"mp4": "{outputs}/videos"},
-            macro_resolver=macro_resolver,
-            call_log=call_log,
-        )
-
-        with patch(HANDLE_REQUEST_PATH, side_effect=dispatch):
-            dest = ProjectFileDestination.from_situation("clip.mp4", "save_node_output")
-
-        assert dest._file._file_metadata is not None
-        assert dest._file._file_metadata.situation is not None
-        assert dest._file._file_metadata.situation.variables is not None
-        assert dest._file._file_metadata.situation.variables["file_extension_directory"] == "outputs/videos"
-        assert any(isinstance(req, GetPathForMacroRequest) for req in call_log)
-
-    def test_from_situation_file_extension_directory_macro_value_absolute_still_a_string(self) -> None:
-        """Absolute resolved extension macro values land in variables verbatim; no bypass of the situation macro."""
-        from griptape_nodes.common.project_templates.situation import (
-            SituationFilePolicy,
-            SituationPolicy,
-            SituationTemplate,
-        )
-        from griptape_nodes.retained_mode.events.project_events import GetPathForMacroResultSuccess
-
-        situation = SituationTemplate(
-            name="save_node_output",
-            macro="{file_extension_directory?:/}{file_name_base}.{file_extension}",
-            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
-        )
-
-        absolute_dir = "/Volumes/share/videos"
-
-        def macro_resolver(_req: object) -> object:
-            return GetPathForMacroResultSuccess(
-                resolved_path=Path(absolute_dir),
-                absolute_path=Path(absolute_dir),
-                result_details="ok",
-            )
-
-        dispatch = self._make_extension_directory_handle_request(
-            situation,
-            {"mp4": "{workspace_dir}/share/videos"},
-            macro_resolver=macro_resolver,
-        )
-
-        with patch(HANDLE_REQUEST_PATH, side_effect=dispatch):
-            dest = ProjectFileDestination.from_situation("clip.mp4", "save_node_output")
-
-        assert dest._file._file_metadata is not None
-        assert dest._file._file_metadata.situation is not None
-        assert dest._file._file_metadata.situation.variables is not None
-        assert dest._file._file_metadata.situation.variables["file_extension_directory"] == absolute_dir
-        # Situation macro unchanged -- no engine-side bypass rewriting the template.
-        assert dest._file._file_metadata.situation.macro == situation.macro
+        assert "file_extension_directory" not in psd_dest._file._file_metadata.situation.variables
 
     def test_from_situation_file_extension_directory_resolution_failure_falls_through(self) -> None:
         """Resolution failures leave file_extension_directory unset so the optional slot degrades."""
@@ -487,55 +374,6 @@ class TestProjectFileDestinationInit:
         # Neither the project lookup nor the macro resolver should fire.
         assert not any(isinstance(req, GetCurrentProjectRequest) for req in call_log)
         assert not any(isinstance(req, GetPathForMacroRequest) for req in call_log)
-
-    def test_from_situation_file_extension_directory_macro_value_sees_caller_extras(self) -> None:
-        """Caller kwargs (node_name, etc.) are in scope for extension macro value resolution; filename parts are not."""
-        from griptape_nodes.common.project_templates.situation import (
-            SituationFilePolicy,
-            SituationPolicy,
-            SituationTemplate,
-        )
-        from griptape_nodes.retained_mode.events.project_events import (
-            GetPathForMacroRequest,
-            GetPathForMacroResultSuccess,
-        )
-
-        situation = SituationTemplate(
-            name="save_node_output",
-            macro="{outputs}/{file_extension_directory?:/}{file_name_base}.{file_extension}",
-            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
-        )
-
-        captured_requests: list[GetPathForMacroRequest] = []
-
-        def macro_resolver(req: object) -> object:
-            assert isinstance(req, GetPathForMacroRequest)
-            captured_requests.append(req)
-            return GetPathForMacroResultSuccess(
-                resolved_path=Path("Save Image/foo"),
-                absolute_path=Path("/tmp/test/Save Image/foo"),  # noqa: S108
-                result_details="ok",
-            )
-
-        dispatch = self._make_extension_directory_handle_request(
-            situation,
-            {"png": "{node_name?:/}foo"},
-            macro_resolver=macro_resolver,
-        )
-
-        with patch(HANDLE_REQUEST_PATH, side_effect=dispatch):
-            dest = ProjectFileDestination.from_situation("render.png", "save_node_output", node_name="Save Image")
-
-        assert dest._file._file_metadata is not None
-        assert dest._file._file_metadata.situation is not None
-        assert dest._file._file_metadata.situation.variables is not None
-        assert dest._file._file_metadata.situation.variables["file_extension_directory"] == "Save Image/foo"
-
-        assert len(captured_requests) == 1
-        request_vars = captured_requests[0].variables
-        assert request_vars["node_name"] == "Save Image"
-        assert "file_name_base" not in request_vars
-        assert "file_extension" not in request_vars
 
     def test_from_situation_derives_sub_dirs_from_filename_directory(self) -> None:
         """A path-prefixed filename populates sub_dirs in the resolution variables."""
@@ -646,6 +484,34 @@ class TestProjectFileDestinationInit:
         variables = dest._file._file_metadata.situation.variables
         assert variables is not None
         assert variables["sub_dirs"] == "explicit_override"
+
+    def test_from_situation_absolute_filename_bypasses_macro(self, tmp_path: Path) -> None:
+        """An absolute filename is honored verbatim rather than routed through the situation macro."""
+        from griptape_nodes.common.project_templates.situation import (
+            SituationFilePolicy,
+            SituationPolicy,
+            SituationTemplate,
+        )
+        from griptape_nodes.retained_mode.events.project_events import GetSituationResultSuccess
+
+        situation = SituationTemplate(
+            name="save_node_output",
+            macro="{outputs}/{sub_dirs?:/}{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
+        )
+
+        absolute_filename = str(tmp_path / "foo" / "bar" / "output.png")
+
+        with patch(
+            HANDLE_REQUEST_PATH, return_value=GetSituationResultSuccess(situation=situation, result_details="ok")
+        ):
+            dest = ProjectFileDestination.from_situation(absolute_filename, "save_node_output")
+
+        # The resolved path should be the absolute path as-is, not routed under {outputs}.
+        assert dest._file.location == absolute_filename
+        # No sidecar metadata: the situation macro+variables don't re-resolve to
+        # the absolute path we honored verbatim, so recording them would be a lie.
+        assert dest._file._file_metadata is None
 
     def test_file_metadata_policy_matches_situation(self) -> None:
         """SidecarContent.situation.policy mirrors the situation's policy."""

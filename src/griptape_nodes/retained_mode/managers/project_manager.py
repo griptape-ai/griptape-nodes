@@ -26,6 +26,7 @@ from griptape_nodes.common.project_templates import (
     SituationTemplate,
     load_partial_project_template,
 )
+from griptape_nodes.files.derivation import DERIVATION_RULES, apply_derivation_rules
 from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_file_path, resolve_path_safely
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
@@ -65,6 +66,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     LoadProjectTemplateRequest,
     LoadProjectTemplateResultFailure,
     LoadProjectTemplateResultSuccess,
+    MacroPath,
     PathResolutionFailureReason,
     ProjectTemplateInfo,
     SaveProjectTemplateRequest,
@@ -235,6 +237,12 @@ class ProjectManager:
             AppInitializationComplete,
             self.on_app_initialization_complete,
         )
+
+        # Load system defaults eagerly so project-aware requests work before
+        # AppInitializationComplete fires. Workflow scripts run in CLI mode
+        # construct nodes at module import time, before the event is broadcast.
+        self._load_system_defaults()
+        self._current_project_id = SYSTEM_DEFAULTS_KEY
 
     def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
@@ -449,15 +457,16 @@ class ProjectManager:
 
         Flow:
         1. Get current project
-        2. Get variables from ParsedMacro.get_variables()
-        3. For each variable:
+        2. Apply derivation rules to inject derived variables (e.g. file_extension_directory)
+        3. Get variables from ParsedMacro.get_variables()
+        4. For each variable:
            - If in directories dict → resolve directory, add to resolution bag
            - Else if in user_supplied_vars → use user value
            - If in BOTH → ERROR: DIRECTORY_OVERRIDE_ATTEMPTED
            - Else → collect as missing
-        4. If any missing → ERROR: MISSING_REQUIRED_VARIABLES
-        5. Resolve macro with complete variable bag
-        6. Return resolved Path
+        5. If any missing → ERROR: MISSING_REQUIRED_VARIABLES
+        6. Resolve macro with complete variable bag
+        7. Return resolved Path
         """
         current_project_request = GetCurrentProjectRequest()
         current_project_result = self.on_get_current_project_request(current_project_request)
@@ -471,9 +480,18 @@ class ProjectManager:
         project_info = current_project_result.project_info
         template = project_info.template
 
+        # Apply derivation rules centrally so every caller of GetPathForMacroRequest
+        # gets derived variables (e.g. file_extension_directory) without duplicating
+        # the pre-pass at each call site. Rules that can't fire (missing inputs,
+        # unreferenced output) abstain silently, so plain macros pass through unchanged.
+        resolved_macro_path = apply_derivation_rules(
+            MacroPath(request.parsed_macro, request.variables), DERIVATION_RULES
+        )
+        effective_variables: MacroVariables = resolved_macro_path.variables
+
         variable_infos = request.parsed_macro.get_variables()
         directory_names = set(template.directories.keys())
-        user_provided_names = set(request.variables.keys())
+        user_provided_names = set(effective_variables.keys())
 
         # Check for directory/user variable name conflicts
         conflicting = directory_names & user_provided_names
@@ -494,7 +512,7 @@ class ProjectManager:
                 directory_def = template.directories[var_name]
                 resolution_bag[var_name] = directory_def.path_macro
             elif var_name in user_provided_names:
-                resolution_bag[var_name] = request.variables[var_name]
+                resolution_bag[var_name] = effective_variables[var_name]
 
             if var_name in BUILTIN_VARIABLES:
                 try:
@@ -945,9 +963,20 @@ class ProjectManager:
 
         Called by EventManager after all libraries are loaded.
         Loads system defaults, then checks workspace for a griptape-nodes-project.yml
-        overlay file and sets it as the current project if found.
+        overlay file and sets it as the current project if found. If a project has
+        already been explicitly selected before this event (e.g., by a CLI executor
+        via --project-file-path), preserves that choice and skips workspace discovery.
         """
-        self._load_system_defaults()
+        # If an explicit project was selected before init completed (e.g., by
+        # LocalWorkflowExecutor loading --project-file-path), keep it. Still load
+        # registered projects for visibility and mark init complete.
+        explicit_project_selected = (
+            self._current_project_id is not None and self._current_project_id != SYSTEM_DEFAULTS_KEY
+        )
+        if explicit_project_selected:
+            self._load_registered_projects()
+            self._initialization_complete = True
+            return
 
         # Set system defaults as current project (using synthetic key for system defaults)
         set_request = SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY)
@@ -1438,7 +1467,7 @@ class ProjectManager:
                     result.result_details,
                 )
             else:
-                logger.info("Reloaded registered project from '%s'", path_str)
+                logger.debug("Reloaded registered project from '%s'", path_str)
 
     def _register_project_path(self, project_id: str) -> None:
         """Persist a project file path so it is loaded on the next engine restart.
