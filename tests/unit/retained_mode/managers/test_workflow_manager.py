@@ -1382,6 +1382,11 @@ class TestWorkflowVariablePersistence:
         exec_globals: dict[str, object] = {"__file__": "test_workflow.py"}
         exec(compile(script_source, "<round_trip_test>", "exec"), exec_globals)  # noqa: S102
 
+        # Graph-building requests now live inside `async def build_workflow()`; await it so the
+        # flow/variable are actually materialized before we query them.
+        build_workflow = exec_globals["build_workflow"]
+        asyncio.run(build_workflow())  # type: ignore[operator]
+
         flow_value = GriptapeNodes.handle_request(
             GetVariableValueRequest(
                 name="flow_scoped_var", starting_flow=flow_name, lookup_scope=VariableScope.CURRENT_FLOW_ONLY
