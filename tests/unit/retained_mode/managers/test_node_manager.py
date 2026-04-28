@@ -9,9 +9,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     BatchSetNodeMetadataRequest,
     BatchSetNodeMetadataResultFailure,
     BatchSetNodeMetadataResultSuccess,
-    ClearNodeCacheRequest,
-    ClearNodeCacheResultFailure,
-    ClearNodeCacheResultSuccess,
+    UnresolveNodeRequest,
+    UnresolveNodeResultFailure,
+    UnresolveNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -135,12 +135,12 @@ class TestNodeManagerResolutionStateSerialization:
         assert create_node_request.resolution == NodeResolutionState.UNRESOLVED.value
 
 
-class TestClearNodeCacheRequest:
-    """Tests for the on_clear_node_cache_request handler."""
+class TestUnresolveNodeRequest:
+    """Tests for the on_unresolve_node_request handler."""
 
     def test_node_not_found_returns_failure(self) -> None:
-        result = GriptapeNodes.handle_request(ClearNodeCacheRequest(node_name="nonexistent_node"))
-        assert isinstance(result, ClearNodeCacheResultFailure)
+        result = GriptapeNodes.handle_request(UnresolveNodeRequest(node_name="nonexistent_node"))
+        assert isinstance(result, UnresolveNodeResultFailure)
         assert "nonexistent_node" in str(result.result_details)
 
     def test_resolving_node_returns_failure_without_side_effects(self) -> None:
@@ -153,14 +153,14 @@ class TestClearNodeCacheRequest:
             "attempt_get_object_by_name_as_type",
             return_value=mock_node,
         ):
-            result = GriptapeNodes.handle_request(ClearNodeCacheRequest(node_name="test_node"))
+            result = GriptapeNodes.handle_request(UnresolveNodeRequest(node_name="test_node"))
 
-        assert isinstance(result, ClearNodeCacheResultFailure)
+        assert isinstance(result, UnresolveNodeResultFailure)
         assert "test_node" in str(result.result_details)
         mock_node.make_node_unresolved.assert_not_called()
         mock_node.parameter_output_values.clear.assert_not_called()
 
-    def test_resolved_node_clears_cache_and_cascades_downstream(self) -> None:
+    def test_resolved_node_unresolves_and_cascades_downstream(self) -> None:
         mock_node = MagicMock(spec=BaseNode)
         mock_node.name = "test_node"
         mock_node.state = NodeResolutionState.RESOLVED
@@ -178,16 +178,16 @@ class TestClearNodeCacheRequest:
                 return_value=mock_connections,
             ),
         ):
-            result = GriptapeNodes.handle_request(ClearNodeCacheRequest(node_name="test_node"))
+            result = GriptapeNodes.handle_request(UnresolveNodeRequest(node_name="test_node"))
 
-        assert isinstance(result, ClearNodeCacheResultSuccess)
+        assert isinstance(result, UnresolveNodeResultSuccess)
         mock_node.make_node_unresolved.assert_called_once_with(
             current_states_to_trigger_change_event={NodeResolutionState.RESOLVED}
         )
-        mock_node.parameter_output_values.silent_clear.assert_called_once()
+        mock_node.parameter_output_values.silent_clear.assert_not_called()
         mock_connections.unresolve_future_nodes.assert_called_once_with(mock_node)
 
-    def test_unresolved_node_still_clears_outputs_and_cascades(self) -> None:
+    def test_unresolved_node_still_cascades_downstream(self) -> None:
         mock_node = MagicMock(spec=BaseNode)
         mock_node.name = "test_node"
         mock_node.state = NodeResolutionState.UNRESOLVED
@@ -205,10 +205,10 @@ class TestClearNodeCacheRequest:
                 return_value=mock_connections,
             ),
         ):
-            result = GriptapeNodes.handle_request(ClearNodeCacheRequest(node_name="test_node"))
+            result = GriptapeNodes.handle_request(UnresolveNodeRequest(node_name="test_node"))
 
-        assert isinstance(result, ClearNodeCacheResultSuccess)
-        mock_node.parameter_output_values.silent_clear.assert_called_once()
+        assert isinstance(result, UnresolveNodeResultSuccess)
+        mock_node.parameter_output_values.silent_clear.assert_not_called()
         mock_connections.unresolve_future_nodes.assert_called_once_with(mock_node)
 
 
