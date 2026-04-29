@@ -2426,8 +2426,11 @@ class NodeManager:
             obj_mgr = GriptapeNodes.ObjectManager()
             node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
             if node is None:
+                # Logged at DEBUG: this is usually a benign race where the GUI requests info
+                # about a node that has just been deleted (e.g. during batch deletes). The
+                # caller still receives a failure result and can react as needed.
                 details = f"Attempted to get all info for Node named '{node_name}', but no such Node was found."
-                return GetAllNodeInfoResultFailure(result_details=details)
+                return GetAllNodeInfoResultFailure(result_details=ResultDetails(message=details, level=logging.DEBUG))
 
         get_metadata_request = GetNodeMetadataRequest(node_name=node_name)
         get_metadata_result = self.on_get_node_metadata_request(get_metadata_request)
