@@ -1728,7 +1728,7 @@ class LibraryManager:
                             and library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.LOADED
                             and library_info.library_name
                         ):
-                            node_schemas = self._serialize_library_node_schemas(library_info.library_name)
+                            node_schemas = await self._serialize_library_node_schemas(library_info.library_name)
                             await GriptapeNodes.abroadcast_app_event(
                                 LibraryLoadedNotification(
                                     library_name=library_info.library_name,
@@ -3239,7 +3239,13 @@ class LibraryManager:
         # Update lifecycle state to LOADED
         library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
 
-    def _serialize_library_node_schemas(self, library_name: str) -> list[WorkerNodeSchema]:
+    # Per-node timeout for the schema probe. Node __init__ methods that make
+    # synchronous handle_request calls can deadlock against async handlers that
+    # await init-time events (e.g. WorkflowManager._workflows_loading_complete),
+    # so each probe runs in a worker thread with this ceiling.
+    _SCHEMA_PROBE_TIMEOUT_S: float = 10.0
+
+    async def _serialize_library_node_schemas(self, library_name: str) -> list[WorkerNodeSchema]:
         """Serialize node parameter schemas for a loaded library.
 
         Called on the worker process after library nodes are loaded. Probes each
@@ -3258,7 +3264,20 @@ class LibraryManager:
             if node_class is None:
                 continue
             try:
-                probe = node_class(name="__schema_probe__")
+                probe = await asyncio.wait_for(
+                    asyncio.to_thread(node_class, name="__schema_probe__"),
+                    timeout=self._SCHEMA_PROBE_TIMEOUT_S,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Schema probe for node class '%s' in library '%s' timed out after %.1fs; "
+                    "skipping. The node's __init__ likely makes a blocking call that cannot "
+                    "complete during library load.",
+                    class_name,
+                    library_name,
+                    self._SCHEMA_PROBE_TIMEOUT_S,
+                )
+                continue
             except Exception:
                 logger.debug("Could not probe node class '%s' for schema serialization.", class_name, exc_info=True)
                 continue
