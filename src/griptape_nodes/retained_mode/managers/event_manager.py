@@ -47,6 +47,11 @@ class EventManager:
     def __init__(self) -> None:
         # Dictionary to store the SPECIFIC manager for each request type
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
+        # Cached async flag per request type — populated once at registration, checked on every dispatch.
+        self._request_type_is_async: dict[type[RequestPayload], bool] = {}
+        # Cached list of field names with omit_from_result=True per request type.
+        # Only populated for the small number of types that actually use this metadata.
+        self._request_type_to_omit_fields: dict[type[RequestPayload], list[str]] = {}
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
         # Event queue for publishing events
@@ -186,6 +191,10 @@ class EventManager:
             msg = f"Attempted to assign an event of type {request_type} to manager {callback.__name__}, but that request is already assigned to manager {existing_manager.__name__}."
             raise ValueError(msg)
         self._request_type_to_manager[request_type] = callback
+        self._request_type_is_async[request_type] = inspect.iscoroutinefunction(callback)
+        omit_fields = [f.name for f in fields(request_type) if f.metadata.get("omit_from_result", False)]
+        if omit_fields:
+            self._request_type_to_omit_fields[request_type] = omit_fields
 
     def remove_manager_from_request_type(self, request_type: type[RP]) -> None:
         """Unsubscribe the manager from the request of a specific type.
@@ -250,10 +259,13 @@ class EventManager:
             if depth_manager.is_top_level() and context.get("request_id") is not None:
                 retained_mode_str = depth_manager.request_retained_mode_translation(request)
 
-            # Some requests have fields marked as "omit_from_result" which should be removed from the request
-            for field in fields(request):
-                if field.metadata.get("omit_from_result", False):
-                    setattr(request, field.name, None)
+            # Some requests have fields marked as "omit_from_result" — clear them before broadcasting.
+            # The field list is pre-computed at registration time; only the rare types that use this
+            # metadata appear in the dict, so the common case is a single O(1) miss.
+            omit_fields = self._request_type_to_omit_fields.get(type(request))
+            if omit_fields:
+                for field_name in omit_fields:
+                    setattr(request, field_name, None)
             if callback_result.succeeded():
                 result_event = EventResultSuccess(
                     request=request,
@@ -338,7 +350,7 @@ class EventManager:
             raise TypeError(msg)
 
         # Support async callbacks for sync method ONLY if there is no running event loop
-        if inspect.iscoroutinefunction(callback):
+        if self._request_type_is_async[request_type]:
             try:
                 asyncio.get_running_loop()
                 with ThreadRunner() as runner:
