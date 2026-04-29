@@ -37,6 +37,7 @@ class ArbitraryCodeExecManager:
         )
 
     def on_run_arbitrary_python_string_request(self, request: RunArbitraryPythonStringRequest) -> ResultPayload:
+
         try:
             string_buffer = io.StringIO()
             with redirect_stdout(string_buffer):
@@ -60,7 +61,15 @@ class ArbitraryCodeExecManager:
                     request.python_string, namespace, namespace
                 )
 
-            captured_output = strip_ansi_codes(string_buffer.getvalue())
+            if request.variable_names_to_capture is not None:
+                names = request.variable_names_to_capture
+                missing = [name for name in names if name not in namespace]
+                if missing:
+                    msg = f"Local variables not found after execution: {missing}"
+                    raise NameError(msg)  # noqa: TRY301
+                captured_output = {name: namespace[name] for name in names}
+            else:
+                captured_output = strip_ansi_codes(string_buffer.getvalue())
             result = RunArbitraryPythonStringResultSuccess(
                 python_output=captured_output, result_details="Successfully executed Python string"
             )
