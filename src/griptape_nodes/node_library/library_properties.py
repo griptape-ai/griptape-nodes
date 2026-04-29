@@ -105,28 +105,33 @@ class RequiredPermissionsNodeProperty(BaseModel):
     permissions: dict[str, str]
 
 
-class ModelFamilyNodeProperty(BaseModel):
-    """Node uses a family of third-party models (e.g. 'OpenAI GPT').
+class ModelUsageNodeProperty(BaseModel):
+    """Node uses a third-party model, declared at the most specific level the author knows.
 
-    terms_url is required: if a node calls out to a third-party model family,
-    authors must link to the applicable terms of service. This closes one of the
-    compliance gaps in the original proposal -- customers shouldn't have to guess
-    where to find T&C.
+    Authors declare the provider (always), and optionally the family and specific model.
+    If a node calls out to multiple providers (e.g. an Agent that can use either
+    Anthropic or OpenAI), add one `model_usage` property per provider.
+
+    Fields:
+      - provider: required. The upstream vendor or service (e.g. "Anthropic", "Kling",
+        "OpenAI"). Answers "no Kling"-style admin policies directly.
+      - family: optional. A grouping within the provider (e.g. "Claude 4", "Kling v2",
+        "GPT-4"). Null when the node routes dynamically within a provider.
+      - model: optional. The exact model identifier (e.g. "claude-opus-4-7", "gpt-4o-mini").
+        Null when the specific model is selected at runtime.
+      - terms_url: required. Canonical T&C URL for this provider's usage of this node.
+
+    All three granularity fields live in one object so provider/family/model can't drift
+    apart across edits. Admin filters query any level uniformly:
+        property.provider == "Kling"           # blanket: no Kling at all
+        property.family   == "Kling v2"        # "no Kling v2 specifically"
+        property.model    == "gpt-4o-mini"     # "only allow gpt-4o-mini"
     """
 
-    type: Literal["model_family"] = "model_family"
-    family: str
-    terms_url: str
-
-
-class SpecificModelNodeProperty(BaseModel):
-    """Node uses a specific third-party model (e.g. 'gpt-4o-mini').
-
-    terms_url is required for the same reason as ModelFamilyNodeProperty.
-    """
-
-    type: Literal["specific_model"] = "specific_model"
-    model: str
+    type: Literal["model_usage"] = "model_usage"
+    provider: str
+    family: str | None = None
+    model: str | None = None
     terms_url: str
 
 
@@ -159,8 +164,7 @@ class KeySupportNodeProperty(BaseModel):
 NodeProperty = Annotated[
     ProductionStatusNodeProperty
     | RequiredPermissionsNodeProperty
-    | ModelFamilyNodeProperty
-    | SpecificModelNodeProperty
+    | ModelUsageNodeProperty
     | ProxyModelNodeProperty
     | ExecuteArbitraryCodeNodeProperty
     | EngineControlNodeProperty

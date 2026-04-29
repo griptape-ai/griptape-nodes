@@ -13,14 +13,13 @@ from griptape_nodes.node_library.library_properties import (
     ExecuteArbitraryCodeNodeProperty,
     KeySupport,
     KeySupportNodeProperty,
-    ModelFamilyNodeProperty,
+    ModelUsageNodeProperty,
     ProductionStatus,
     ProductionStatusLibraryProperty,
     ProductionStatusNodeProperty,
     ProxyModelNodeProperty,
     RequiredPermissionsLibraryProperty,
     RequiredPermissionsNodeProperty,
-    SpecificModelNodeProperty,
 )
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
@@ -170,30 +169,37 @@ class TestProductionStatusSemantics:
             ProductionStatusNodeProperty()  # type: ignore[call-arg]
 
 
-class TestModelPropertiesRequireTermsUrl:
-    def test_model_family_requires_terms_url(self) -> None:
+class TestModelUsageProperty:
+    def test_model_usage_requires_provider(self) -> None:
         with pytest.raises(ValidationError):
             NodeMetadata.model_validate(
                 {
                     "category": "Test",
                     "description": "test",
                     "display_name": "TestNode",
-                    "properties": [{"type": "model_family", "family": "OpenAI"}],
+                    "properties": [
+                        {
+                            "type": "model_usage",
+                            "family": "Claude 4",
+                            "terms_url": "https://example.com/terms",
+                        }
+                    ],
                 }
             )
 
-    def test_specific_model_requires_terms_url(self) -> None:
+    def test_model_usage_requires_terms_url(self) -> None:
         with pytest.raises(ValidationError):
             NodeMetadata.model_validate(
                 {
                     "category": "Test",
                     "description": "test",
                     "display_name": "TestNode",
-                    "properties": [{"type": "specific_model", "model": "gpt-4o"}],
+                    "properties": [{"type": "model_usage", "provider": "Anthropic"}],
                 }
             )
 
-    def test_model_family_with_terms_url_is_valid(self) -> None:
+    def test_model_usage_family_and_model_optional(self) -> None:
+        """Dynamic-routing case: node knows the provider but not the family or specific model."""
         metadata = NodeMetadata.model_validate(
             {
                 "category": "Test",
@@ -201,17 +207,34 @@ class TestModelPropertiesRequireTermsUrl:
                 "display_name": "TestNode",
                 "properties": [
                     {
-                        "type": "model_family",
-                        "family": "OpenAI GPT",
+                        "type": "model_usage",
+                        "provider": "Anthropic",
                         "terms_url": "https://example.com/terms",
                     }
                 ],
             }
         )
 
-        assert isinstance(metadata.properties[0], ModelFamilyNodeProperty)
-        assert metadata.properties[0].family == "OpenAI GPT"
+        assert isinstance(metadata.properties[0], ModelUsageNodeProperty)
+        assert metadata.properties[0].provider == "Anthropic"
+        assert metadata.properties[0].family is None
+        assert metadata.properties[0].model is None
         assert metadata.properties[0].terms_url == "https://example.com/terms"
+
+    def test_model_usage_full_granularity_round_trip(self) -> None:
+        original = ModelUsageNodeProperty(
+            provider="Kling",
+            family="Kling v2",
+            model="kling-v2-master",
+            terms_url="https://example.com/kling",
+        )
+
+        reloaded = ModelUsageNodeProperty.model_validate(original.model_dump())
+
+        assert reloaded.provider == "Kling"
+        assert reloaded.family == "Kling v2"
+        assert reloaded.model == "kling-v2-master"
+        assert reloaded.terms_url == "https://example.com/kling"
 
 
 class TestRoundTripSerialization:
@@ -229,8 +252,12 @@ class TestRoundTripSerialization:
             node_properties=[
                 ProductionStatusNodeProperty(status=ProductionStatus.BETA),
                 RequiredPermissionsNodeProperty(permissions={"action": "node::use"}),
-                ModelFamilyNodeProperty(family="Anthropic Claude", terms_url="https://example.com/a"),
-                SpecificModelNodeProperty(model="claude-opus-4-7", terms_url="https://example.com/b"),
+                ModelUsageNodeProperty(
+                    provider="Anthropic",
+                    family="Claude 4",
+                    model="claude-opus-4-7",
+                    terms_url="https://example.com/a",
+                ),
                 ProxyModelNodeProperty(),
                 ExecuteArbitraryCodeNodeProperty(),
                 EngineControlNodeProperty(),
