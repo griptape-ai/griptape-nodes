@@ -1123,7 +1123,7 @@ class ProjectManager:
 
         return directory_schemas
 
-    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:
+    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:  # noqa: C901
         """Get the value of a single builtin variable.
 
         Args:
@@ -1166,6 +1166,9 @@ class ProjectManager:
                 except KeyError as e:
                     msg = f"Workflow '{workflow_name}' has not been saved yet"
                     raise RuntimeError(msg) from e
+                if workflow.file_path is None:
+                    msg = f"Workflow '{workflow_name}' has not been saved yet"
+                    raise RuntimeError(msg)
                 workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
                 return str(workflow_file_path.parent)
 

@@ -12,6 +12,7 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
 )
+from griptape_nodes.retained_mode.events.workflow_events import WorkflowKeyChangedAppEvent
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -249,6 +250,21 @@ class ContextManager:
         event_manager.assign_manager_to_request_type(
             request_type=GetWorkflowContextRequest, callback=self.on_get_workflow_context_request
         )
+        event_manager.add_listener_to_app_event(
+            WorkflowKeyChangedAppEvent,
+            self.on_workflow_key_changed,
+        )
+
+    def on_workflow_key_changed(self, event: WorkflowKeyChangedAppEvent) -> None:
+        """Update any workflow-stack entries whose name matches the old key.
+
+        Fired when a workflow's registry key changes (e.g., after first save swaps the
+        synthetic "unsaved:<uuid>" key for a path-derived key). Walks the stack rather
+        than just the top because pushed-but-not-yet-popped entries may also match.
+        """
+        for workflow_context in self._workflow_stack:
+            if workflow_context._name == event.old_key:
+                workflow_context._name = event.new_key
 
     def on_set_workflow_context_request(self, request: SetWorkflowContextRequest) -> ResultPayload:
         # As of today, we only allow a single Workflow context at a time. This may change in the future.

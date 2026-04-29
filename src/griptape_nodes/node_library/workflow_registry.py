@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
@@ -140,6 +141,11 @@ class WorkflowRegistry(metaclass=SingletonMeta):
     class _RegistryKey:
         """Private class for workflow construction."""
 
+    # Prefix used for synthetic registry keys for unsaved (in-memory) workflows.
+    # These keys collide with no possible file-path-derived key because derive_registry_key
+    # strips the extension and normalizes separators, but never emits a "unsaved:" literal.
+    UNSAVED_KEY_PREFIX: ClassVar[str] = "unsaved:"
+
     _workflows: ClassVar[dict[str, Workflow]] = {}
     _registry_key: _RegistryKey = _RegistryKey()
 
@@ -156,7 +162,35 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         if registry_key in instance._workflows:
             msg = f"Workflow with file name '{registry_key}' already registered."
             raise KeyError(msg)
-        workflow = Workflow(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
+        workflow = Workflow.from_disk(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
+        instance._workflows[registry_key] = workflow
+        return workflow
+
+    @classmethod
+    def find_key_by_workflow(cls, workflow: Workflow) -> str | None:
+        """Return the registry key for a given Workflow instance, or None if not registered."""
+        instance = cls()
+        for key, wf in instance._workflows.items():
+            if wf is workflow:
+                return key
+        return None
+
+    @classmethod
+    def create_unsaved(cls, name: str) -> Workflow:
+        """Create an in-memory ("unsaved") workflow entry.
+
+        Produces a synthetic registry key of the form "unsaved:<uuid4>" so the entry
+        is distinguishable from disk-derived keys. The entry has `file_path is None`
+        and minimal metadata (the caller is responsible for updating metadata as the
+        user edits the workflow). On save, the registry key is swapped to the
+        path-derived key via `rekey_workflow`.
+        """
+        instance = cls()
+        registry_key = f"{cls.UNSAVED_KEY_PREFIX}{uuid.uuid4()}"
+        if registry_key in instance._workflows:
+            msg = f"Generated unsaved registry key '{registry_key}' unexpectedly collided with existing entry."
+            raise KeyError(msg)
+        workflow = Workflow.new_unsaved(registry_key=instance._registry_key, name=name)
         instance._workflows[registry_key] = workflow
         return workflow
 
@@ -232,12 +266,24 @@ class WorkflowRegistry(metaclass=SingletonMeta):
 
 
 class Workflow:
-    """A workflow card to be ran."""
+    """A workflow card to be ran.
+
+    A workflow has two possible states:
+    - **Saved**: backed by a file on disk. `file_path` is a string (relative or absolute).
+    - **Unsaved**: in-memory only. `file_path is None`. Created via `Workflow.new_unsaved`
+      (typically through `WorkflowRegistry.create_unsaved`). Transitions to saved when
+      `SaveWorkflowRequest` is handled for this workflow's registry key.
+    """
 
     metadata: WorkflowMetadata
-    file_path: str
+    file_path: str | None
 
-    def __init__(self, registry_key: WorkflowRegistry._RegistryKey, metadata: WorkflowMetadata, file_path: str) -> None:
+    def __init__(
+        self,
+        registry_key: WorkflowRegistry._RegistryKey,
+        metadata: WorkflowMetadata,
+        file_path: str | None,
+    ) -> None:
         if not isinstance(registry_key, WorkflowRegistry._RegistryKey):
             msg = "Workflows can only be created through WorkflowRegistry"
             raise TypeError(msg)
@@ -245,15 +291,56 @@ class Workflow:
         self.metadata = metadata
         self.file_path = file_path
 
-        # Get the absolute file path.
+    @classmethod
+    def from_disk(
+        cls,
+        registry_key: WorkflowRegistry._RegistryKey,
+        metadata: WorkflowMetadata,
+        file_path: str,
+    ) -> Workflow:
+        """Construct a Workflow backed by an existing file on disk.
+
+        Verifies the file exists at construction time (preserving the pre-existing invariant
+        that saved Workflow entries always point at a real file). Unsaved entries bypass this
+        check by going through `Workflow.new_unsaved`.
+        """
         complete_path = WorkflowRegistry.get_complete_file_path(relative_file_path=file_path)
         if not Path(complete_path).is_file():
             msg = f"File path '{complete_path}' does not exist."
             raise ValueError(msg)
+        return cls(registry_key=registry_key, metadata=metadata, file_path=file_path)
+
+    @classmethod
+    def new_unsaved(cls, registry_key: WorkflowRegistry._RegistryKey, name: str) -> Workflow:
+        """Construct an unsaved (in-memory-only) Workflow with minimal metadata.
+
+        Callers should update `metadata` as the user edits the workflow. The workflow
+        transitions to "saved" when the save handler swaps its registry key to a
+        path-derived key and sets `file_path`.
+        """
+        metadata = WorkflowMetadata(
+            name=name,
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="",
+            node_libraries_referenced=[],
+            creation_date=datetime.now(UTC),
+        )
+        return cls(registry_key=registry_key, metadata=metadata, file_path=None)
+
+    @property
+    def is_saved(self) -> bool:
+        """True if this workflow is backed by a file on disk."""
+        return self.file_path is not None
 
     @property
     def is_synced(self) -> bool:
-        """Check if this workflow is in the synced workflows directory."""
+        """Check if this workflow is in the synced workflows directory.
+
+        Unsaved workflows are never synced (there is no file to place anywhere).
+        """
+        if self.file_path is None:
+            return False
+
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         config_mgr = GriptapeNodes.ConfigManager()
@@ -276,4 +363,5 @@ class Workflow:
         # Customers of this function need that, so let's stuff it in.
         ret_val["file_path"] = self.file_path
         ret_val["is_synced"] = self.is_synced
+        ret_val["is_saved"] = self.is_saved
         return ret_val
