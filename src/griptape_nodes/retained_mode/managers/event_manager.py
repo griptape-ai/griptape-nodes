@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any, cast
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
-from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
@@ -419,10 +418,7 @@ class EventManager:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         obj_manager = GriptapeNodes.ObjectManager()
-        # Get all flows and their nodes
-        nodes = obj_manager.get_filtered_subset(type=BaseNode)
-        for node in nodes.values():
-            # Only flush if there are actually tracked parameters
+        for node in obj_manager._nodes.values():
             if node._tracked_parameters:
                 node.emit_parameter_changes()
 

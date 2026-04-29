@@ -117,6 +117,14 @@ test/coverage: ## Run all tests with coverage.
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration
 
+.PHONY: test/bench
+test/bench: ## Run performance benchmarks.
+	@uv run pytest tests/benchmarks/ -v --benchmark-sort=mean
+
+.PHONY: test/bench/compare
+test/bench/compare: ## Compare benchmarks against saved baseline.
+	@uv run pytest tests/benchmarks/ -v --benchmark-compare --benchmark-compare-fail=mean:10%
+
 .PHONY: docs
 docs: ## Build documentation.
 	@uv run python -m mkdocs build --clean --strict 

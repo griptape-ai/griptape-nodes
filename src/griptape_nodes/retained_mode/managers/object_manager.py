@@ -38,9 +38,13 @@ logger = logging.getLogger("griptape_nodes")
 
 class ObjectManager:
     _name_to_objects: dict[str, object]
+    _nodes: dict[str, BaseNode]
+    _flows: dict[str, ControlFlow]
 
     def __init__(self, _event_manager: EventManager) -> None:
         self._name_to_objects = {}
+        self._nodes = {}
+        self._flows = {}
         _event_manager.assign_manager_to_request_type(
             request_type=RenameObjectRequest, callback=self.on_rename_object_request
         )
@@ -92,9 +96,8 @@ class ObjectManager:
                 logger.error(details)
                 return RenameObjectResultFailure(next_available_name=None, result_details=details)
 
-        # Update the object table.
-        self._name_to_objects[final_name] = source_obj
-        del self._name_to_objects[request.object_name]
+        # Update the object table and typed indices.
+        self._rename_in_indices(request.object_name, final_name, source_obj)
 
         details = f"Successfully renamed object '{request.object_name}' to '{final_name}`."
         log_level = logging.DEBUG
@@ -158,6 +161,17 @@ class ObjectManager:
         details = "Successfully cleared all object state (deleted everything)."
         return ClearAllObjectStateResultSuccess(result_details=details)
 
+    def _rename_in_indices(self, old_name: str, new_name: str, obj: object) -> None:
+        """Update _name_to_objects and the typed indices atomically for a rename."""
+        self._name_to_objects[new_name] = obj
+        del self._name_to_objects[old_name]
+        if isinstance(obj, BaseNode):
+            self._nodes[new_name] = obj
+            del self._nodes[old_name]
+        elif isinstance(obj, ControlFlow):
+            self._flows[new_name] = obj
+            del self._flows[old_name]
+
     def get_filtered_subset[T](
         self,
         name: str | Pattern | None = None,
@@ -172,27 +186,42 @@ class ObjectManager:
         Returns:
             A new filtered dictionary containing only matching key-value pairs
         """
-        result = {}
+        # Fast path: type-only filters on indexed types skip the full scan entirely.
+        if name is None:
+            if type is BaseNode:
+                return dict(self._nodes)  # type: ignore[return-value]
+            if type is ControlFlow:
+                return dict(self._flows)  # type: ignore[return-value]
 
-        # Compile pattern if it's a string
+        return self._filter_with_pattern(name, type)
+
+    def _filter_with_pattern[T](
+        self,
+        name: str | Pattern | None,
+        type: type[T] | None,  # noqa: A002
+    ) -> dict[str, T]:
+        """Filter objects by name pattern and optional type, using typed indices where possible."""
         if name and isinstance(name, str):
             name = re.compile(name)
 
-        for key, value in self._name_to_objects.items():
-            # Check key pattern if provided
-            key_match = True
-            if name:
-                key_match = bool(name.search(key))
+        # Use the typed index as source when possible to avoid isinstance checks.
+        source: dict[str, object]
+        if type is BaseNode:
+            source = self._nodes  # type: ignore[assignment]
+            type = None  # noqa: A001
+        elif type is ControlFlow:
+            source = self._flows  # type: ignore[assignment]
+            type = None  # noqa: A001
+        else:
+            source = self._name_to_objects
 
-            # Check value type if provided
-            value_match = True
-            if type:
-                value_match = isinstance(value, type)
-
-            # Add to result if both conditions match
-            if key_match and value_match:
-                result[key] = value
-
+        result: dict[str, T] = {}
+        for key, value in source.items():
+            if name and not name.search(key):
+                continue
+            if type and not isinstance(value, type):
+                continue
+            result[key] = value  # type: ignore[assignment]
         return result
 
     def generate_name_for_object(self, type_name: str, requested_name: str | None = None) -> str:
@@ -250,6 +279,10 @@ class ObjectManager:
             msg = f"Attempted to add an object with name '{name}' but an object with that name already exists. The Object Manager is sacrosanct in this regard."
             raise ValueError(msg)
         self._name_to_objects[name] = obj
+        if isinstance(obj, BaseNode):
+            self._nodes[name] = obj
+        elif isinstance(obj, ControlFlow):
+            self._flows[name] = obj
 
     def get_object_by_name(self, name: str) -> object:
         return self._name_to_objects[name]
@@ -281,3 +314,5 @@ class ObjectManager:
                     GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
                     return
         del self._name_to_objects[name]
+        self._nodes.pop(name, None)
+        self._flows.pop(name, None)
