@@ -34,7 +34,7 @@ version/publish: ## Create and push git tags.
 	@git tag v$$(make version/get)
 	@git tag stable -f
 	@git push -f --tags
-	@git push -u origin release/v$$(make version/get | awk -F. '{print $$1 "." $$2}')
+	@git push -u origin HEAD:refs/heads/release/v$$(make version/get | awk -F. '{print $$1 "." $$2}')
 	
 .PHONY: run
 run: ## Run the project.
