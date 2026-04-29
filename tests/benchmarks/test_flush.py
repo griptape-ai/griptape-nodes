@@ -26,7 +26,7 @@ def test_flush_no_dirty_nodes(benchmark, populated_object_manager_for_flush, gri
     for node in nodes:
         assert not node._tracked_parameters
 
-    benchmark(event_mgr._flush_tracked_parameter_changes)
+    benchmark(event_mgr._flush_tracked_parameter_changes, _obj_mgr)
 
 
 def test_flush_some_dirty_nodes(benchmark, populated_object_manager_for_flush, griptape_nodes):
@@ -48,6 +48,6 @@ def test_flush_some_dirty_nodes(benchmark, populated_object_manager_for_flush, g
         # Re-mark nodes dirty before each iteration (flush clears them)
         for node in nodes[:dirty_count]:
             node._tracked_parameters.append(mock_param)
-        event_mgr._flush_tracked_parameter_changes()
+        event_mgr._flush_tracked_parameter_changes(_obj_mgr)
 
     benchmark(run_flush)

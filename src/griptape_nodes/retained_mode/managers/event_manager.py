@@ -233,13 +233,10 @@ class EventManager:
         callback_result: ResultPayload,
         *,
         context: ResultContext,
+        operation_depth_mgr: Any,
+        workflow_mgr: Any,
     ) -> EventResultSuccess | EventResultFailure:
         """Core logic for handling requests, shared between sync and async methods."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        operation_depth_mgr = GriptapeNodes.OperationDepthManager()
-        workflow_mgr = GriptapeNodes.WorkflowManager()
-
         with operation_depth_mgr as depth_manager:
             # Now see if the WorkflowManager was asking us to squelch altered_workflow_state commands
             # This prevents situations like loading a workflow (which naturally alters the workflow state)
@@ -300,6 +297,8 @@ class EventManager:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         operation_depth_mgr = GriptapeNodes.OperationDepthManager()
+        workflow_mgr = GriptapeNodes.WorkflowManager()
+        obj_manager = GriptapeNodes.ObjectManager()
         if result_context is None:
             result_context = ResultContext()
 
@@ -316,12 +315,14 @@ class EventManager:
         # Queue flush request for async context (unless result type should skip flush)
         with operation_depth_mgr:
             if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                self._flush_tracked_parameter_changes()
+                self._flush_tracked_parameter_changes(obj_manager)
 
         return self._handle_request_core(
             request,
             cast("ResultPayload", result_payload),
             context=result_context,
+            operation_depth_mgr=operation_depth_mgr,
+            workflow_mgr=workflow_mgr,
         )
 
     def handle_request(
@@ -339,6 +340,8 @@ class EventManager:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         operation_depth_mgr = GriptapeNodes.OperationDepthManager()
+        workflow_mgr = GriptapeNodes.WorkflowManager()
+        obj_manager = GriptapeNodes.ObjectManager()
         if result_context is None:
             result_context = ResultContext()
 
@@ -364,12 +367,14 @@ class EventManager:
         # Queue flush request for sync context (unless result type should skip flush)
         with operation_depth_mgr:
             if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                self._flush_tracked_parameter_changes()
+                self._flush_tracked_parameter_changes(obj_manager)
 
         return self._handle_request_core(
             request,
             cast("ResultPayload", result_payload),
             context=result_context,
+            operation_depth_mgr=operation_depth_mgr,
+            workflow_mgr=workflow_mgr,
         )
 
     def add_listener_to_app_event(
@@ -426,10 +431,7 @@ class EventManager:
                 for listener_callback in listener_set:
                     tg.create_task(call_function(listener_callback, app_event))
 
-    def _flush_tracked_parameter_changes(self) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        obj_manager = GriptapeNodes.ObjectManager()
+    def _flush_tracked_parameter_changes(self, obj_manager: Any) -> None:
         for node in obj_manager._nodes.values():
             if node._tracked_parameters:
                 node.emit_parameter_changes()
