@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
@@ -12,7 +13,6 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
 )
-from griptape_nodes.retained_mode.events.workflow_events import WorkflowKeyChangedAppEvent
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -250,27 +250,29 @@ class ContextManager:
         event_manager.assign_manager_to_request_type(
             request_type=GetWorkflowContextRequest, callback=self.on_get_workflow_context_request
         )
-        event_manager.add_listener_to_app_event(
-            WorkflowKeyChangedAppEvent,
-            self.on_workflow_key_changed,
-        )
-
-    def on_workflow_key_changed(self, event: WorkflowKeyChangedAppEvent) -> None:
-        """Update any workflow-stack entries whose name matches the old key.
-
-        Fired when a workflow's registry key changes (e.g., after first save swaps the
-        synthetic "unsaved:<uuid>" key for a path-derived key). Walks the stack rather
-        than just the top because pushed-but-not-yet-popped entries may also match.
-        """
-        for workflow_context in self._workflow_stack:
-            if workflow_context._name == event.old_key:
-                workflow_context._name = event.new_key
 
     def on_set_workflow_context_request(self, request: SetWorkflowContextRequest) -> ResultPayload:
         # As of today, we only allow a single Workflow context at a time. This may change in the future.
         if self.has_current_workflow():
             msg = f"Attempted to set the Workflow '{request.workflow_name}' as the Current Context. Failed because an existing workflow, '{self.get_current_workflow_name()}', is already in the Current Context. In order to clear the existing workflow and remove all objects and references to it, issue a ClearAllObjectState request."
             return SetWorkflowContextFailure(result_details=msg)
+
+        # Auto-register an unsaved registry entry when the caller is activating an
+        # "unsaved:<uuid>" key that hasn't been materialized yet. This makes every
+        # workflow (saved or not) a first-class registry entry, so list/metadata/etc.
+        # calls don't need special-casing for pre-save state.
+        if request.workflow_name.startswith(
+            WorkflowRegistry.UNSAVED_KEY_PREFIX
+        ) and not WorkflowRegistry.has_workflow_with_name(request.workflow_name):
+            display_name = request.display_name or "Untitled"
+            try:
+                WorkflowRegistry.create_unsaved_with_key(key=request.workflow_name, name=display_name)
+            except (ValueError, KeyError) as err:
+                msg = (
+                    f"Attempted to auto-register unsaved workflow '{request.workflow_name}' "
+                    f"before setting it as the Current Context. Failed because of '{err}'."
+                )
+                return SetWorkflowContextFailure(result_details=msg)
 
         self.push_workflow(request.workflow_name)
         msg = f"Successfully set the Workflow '{request.workflow_name}' as the Current Context."

@@ -8,7 +8,6 @@ from pydantic import BaseModel
 
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
-    AppPayload,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -147,66 +146,6 @@ class RegisterWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class RegisterWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Workflow registration failed. Common causes: invalid metadata, file not found, name conflict."""
-
-
-@dataclass
-@PayloadRegistry.register
-class WorkflowKeyChangedAppEvent(AppPayload):
-    """Broadcast that a workflow's registry key changed (e.g. after first save).
-
-    Subscribers that key state by workflow registry key (context manager, dirty store,
-    subscription topics, frontend store) must migrate their state from old_key to new_key.
-
-    Args:
-        old_key: Previous registry key (e.g. "unsaved:<uuid>").
-        new_key: New registry key (path-derived for saved workflows).
-    """
-
-    old_key: str
-    new_key: str
-
-
-@dataclass
-@PayloadRegistry.register
-class CreateUnsavedWorkflowRequest(RequestPayload):
-    """Create an in-memory ("unsaved") workflow registry entry.
-
-    The resulting workflow has no file on disk. It gets a synthetic registry key
-    ("unsaved:<uuid4>") that the caller uses for context/flow/node operations, and
-    transitions to a file-backed entry when `SaveWorkflowRequest` is issued for it.
-
-    Use when: creating a new workflow via the UI "New Workflow" button, before the
-    user has chosen a save location.
-
-    Args:
-        name: Display name for the workflow (stored in metadata.name).
-
-    Results: CreateUnsavedWorkflowResultSuccess (with workflow_name) | CreateUnsavedWorkflowResultFailure
-    """
-
-    name: str
-
-
-@dataclass
-@PayloadRegistry.register
-class CreateUnsavedWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Unsaved workflow entry created successfully.
-
-    Args:
-        workflow_name: Synthetic registry key ("unsaved:<uuid4>") for the new entry.
-                       Callers pass this to SetWorkflowContextRequest and other per-workflow requests.
-        metadata: Initial metadata dict (matches the shape returned by GetWorkflowMetadataRequest),
-                  including is_saved=False.
-    """
-
-    workflow_name: str
-    metadata: dict
-
-
-@dataclass
-@PayloadRegistry.register
-class CreateUnsavedWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Unsaved workflow creation failed. Common causes: registry error, key collision."""
 
 
 @dataclass

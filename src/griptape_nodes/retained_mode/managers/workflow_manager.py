@@ -87,9 +87,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     CompareWorkflowsRequest,
     CompareWorkflowsResultFailure,
     CompareWorkflowsResultSuccess,
-    CreateUnsavedWorkflowRequest,
-    CreateUnsavedWorkflowResultFailure,
-    CreateUnsavedWorkflowResultSuccess,
     CreateWorkflowFromTemplateRequest,
     CreateWorkflowFromTemplateResultFailure,
     CreateWorkflowFromTemplateResultSuccess,
@@ -172,7 +169,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     WorkflowDependencyInfo,
     WorkflowDependencyStatus,
     WorkflowInfoSummary,
-    WorkflowKeyChangedAppEvent,
     WorkflowStatus,
 )
 from griptape_nodes.retained_mode.griptape_nodes import (
@@ -430,10 +426,6 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             RegisterWorkflowsFromConfigRequest,
             self.on_register_workflows_from_config_request,
-        )
-        event_manager.assign_manager_to_request_type(
-            CreateUnsavedWorkflowRequest,
-            self.on_create_unsaved_workflow_request,
         )
 
     def has_current_referenced_workflow(self) -> bool:
@@ -832,40 +824,6 @@ class WorkflowManager:
             workflow_name=registry_key,
             result_details=ResultDetails(
                 message=f"Successfully registered workflow: {registry_key}",
-                level=logging.DEBUG,
-            ),
-        )
-
-    def on_create_unsaved_workflow_request(self, request: CreateUnsavedWorkflowRequest) -> ResultPayload:
-        """Create an in-memory workflow registry entry with no backing file.
-
-        The returned `workflow_name` is a synthetic key ("unsaved:<uuid>") that the caller
-        uses for subsequent operations (SetWorkflowContextRequest, flow/node ops, etc.).
-        On first save, the save handler swaps the key to a path-derived key and fires a
-        WorkflowKeyChangedAppEvent so other subscribers can migrate.
-        """
-        display_name = request.name.strip() if isinstance(request.name, str) else ""
-        if not display_name:
-            return CreateUnsavedWorkflowResultFailure(
-                result_details="Attempted to create unsaved workflow. Failed because the provided name was empty."
-            )
-        try:
-            workflow = WorkflowRegistry.create_unsaved(name=display_name)
-        except Exception as e:
-            details = f"Attempted to create unsaved workflow with name '{display_name}'. Failed because of error: {e}"
-            return CreateUnsavedWorkflowResultFailure(result_details=details)
-        registry_key = WorkflowRegistry.find_key_by_workflow(workflow)
-        if registry_key is None:
-            details = (
-                f"Attempted to create unsaved workflow with name '{display_name}'. "
-                "Failed because the new entry could not be located in the registry after creation."
-            )
-            return CreateUnsavedWorkflowResultFailure(result_details=details)
-        return CreateUnsavedWorkflowResultSuccess(
-            workflow_name=registry_key,
-            metadata=workflow.get_workflow_metadata(),
-            result_details=ResultDetails(
-                message=f"Created unsaved workflow '{display_name}' with registry key '{registry_key}'.",
                 level=logging.DEBUG,
             ),
         )
@@ -1888,7 +1846,7 @@ class WorkflowManager:
 
         return self.WriteWorkflowFileResult(success=True, error_details="")
 
-    async def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0915
+    async def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Determine save target (file path, name, metadata)
         context_manager = GriptapeNodes.ContextManager()
         current_workflow_name = (
@@ -1979,9 +1937,9 @@ class WorkflowManager:
         # Handle the unsaved -> saved transition: if the current-context workflow is an
         # unsaved entry, swap its registry key to the path-derived key and update its
         # file_path. This preserves the workflow instance (so any external references
-        # remain valid) while transitioning it to the "saved" state. Fires
-        # WorkflowKeyChangedAppEvent so context manager, dirty store, frontend, etc.
-        # can migrate any state keyed on the old unsaved key.
+        # remain valid) while transitioning it to the "saved" state. Also walks the
+        # ContextManager's workflow stack in-place so any active context referencing
+        # the old unsaved key is updated to the new registry key.
         unsaved_source_key: str | None = None
         if (
             current_workflow_name is not None
@@ -2002,9 +1960,9 @@ class WorkflowManager:
                 WorkflowRegistry.rekey_workflow(old_key=unsaved_source_key, new_key=registry_key)
                 rekeyed_workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
                 rekeyed_workflow.file_path = relative_file_path
-            GriptapeNodes.EventManager().put_event(
-                AppEvent(payload=WorkflowKeyChangedAppEvent(old_key=unsaved_source_key, new_key=registry_key))
-            )
+            for workflow_context_state in GriptapeNodes.ContextManager()._workflow_stack:
+                if workflow_context_state._name == unsaved_source_key:
+                    workflow_context_state._name = registry_key
             registered_workflows = WorkflowRegistry.list_workflows()
 
         if registry_key not in registered_workflows:

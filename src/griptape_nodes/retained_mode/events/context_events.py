@@ -19,12 +19,20 @@ class SetWorkflowContextRequest(RequestPayload):
     setting the active workflow for subsequent operations, workflow navigation.
 
     Args:
-        workflow_name: Name of the workflow to set as current context
+        workflow_name: Name of the workflow to set as current context. If this starts
+                       with the unsaved-registry-key prefix ("unsaved:") and no matching
+                       entry exists yet, the handler auto-registers a fresh unsaved
+                       entry keyed by this exact value.
+        display_name: Human-readable name used when auto-registering an unsaved entry.
+                      Ignored when the workflow is already in the registry. Defaults to
+                      None; in that case the auto-registered entry gets a placeholder
+                      name.
 
     Results: SetWorkflowContextSuccess | SetWorkflowContextFailure (workflow not found)
     """
 
     workflow_name: str
+    display_name: str | None = None
 
 
 @dataclass

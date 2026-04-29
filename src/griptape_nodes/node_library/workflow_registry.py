@@ -177,7 +177,7 @@ class WorkflowRegistry(metaclass=SingletonMeta):
 
     @classmethod
     def create_unsaved(cls, name: str) -> Workflow:
-        """Create an in-memory ("unsaved") workflow entry.
+        """Create an in-memory ("unsaved") workflow entry with a generated key.
 
         Produces a synthetic registry key of the form "unsaved:<uuid4>" so the entry
         is distinguishable from disk-derived keys. The entry has `file_path is None`
@@ -185,13 +185,26 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         user edits the workflow). On save, the registry key is swapped to the
         path-derived key via `rekey_workflow`.
         """
-        instance = cls()
         registry_key = f"{cls.UNSAVED_KEY_PREFIX}{uuid.uuid4()}"
-        if registry_key in instance._workflows:
-            msg = f"Generated unsaved registry key '{registry_key}' unexpectedly collided with existing entry."
+        return cls.create_unsaved_with_key(key=registry_key, name=name)
+
+    @classmethod
+    def create_unsaved_with_key(cls, key: str, name: str) -> Workflow:
+        """Create an in-memory ("unsaved") workflow entry with a caller-supplied key.
+
+        Used when the caller (typically the frontend) has already minted the key and
+        needs the registry entry to use that exact value. The key must start with the
+        UNSAVED_KEY_PREFIX so it can never collide with a path-derived key.
+        """
+        if not key.startswith(cls.UNSAVED_KEY_PREFIX):
+            msg = f"Unsaved registry key '{key}' must start with '{cls.UNSAVED_KEY_PREFIX}'."
+            raise ValueError(msg)
+        instance = cls()
+        if key in instance._workflows:
+            msg = f"Unsaved registry key '{key}' already registered."
             raise KeyError(msg)
         workflow = Workflow.new_unsaved(registry_key=instance._registry_key, name=name)
-        instance._workflows[registry_key] = workflow
+        instance._workflows[key] = workflow
         return workflow
 
     @classmethod
