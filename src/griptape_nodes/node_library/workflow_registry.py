@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
@@ -187,28 +186,6 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         return workflow
 
     @classmethod
-    def find_key_by_workflow(cls, workflow: Workflow) -> str | None:
-        """Return the registry key for a given Workflow instance, or None if not registered."""
-        instance = cls()
-        for key, wf in instance._workflows.items():
-            if wf is workflow:
-                return key
-        return None
-
-    @classmethod
-    def create_unsaved(cls, name: str) -> Workflow:
-        """Create an in-memory ("unsaved") workflow entry with a generated key.
-
-        Produces a synthetic registry key of the form "unsaved:<uuid4>" so the entry
-        is distinguishable from disk-derived keys. The entry has `file_path is None`
-        and minimal metadata (the caller is responsible for updating metadata as the
-        user edits the workflow). On save, the registry key is swapped to the
-        path-derived key via `rekey_workflow`.
-        """
-        registry_key = f"{cls.UNSAVED_KEY_PREFIX}{uuid.uuid4()}"
-        return cls.create_unsaved_with_key(key=registry_key, name=name)
-
-    @classmethod
     def create_unsaved_with_key(cls, key: str, name: str) -> Workflow:
         """Create an in-memory ("unsaved") workflow entry with a caller-supplied key.
 
@@ -216,6 +193,9 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         needs the registry entry to use that exact value. The key must start with the
         UNSAVED_KEY_PREFIX so it can never collide with a path-derived key.
         """
+        if not key.startswith(cls.UNSAVED_KEY_PREFIX):
+            msg = f"Unsaved registry key '{key}' must start with '{cls.UNSAVED_KEY_PREFIX}'."
+            raise ValueError(msg)
         metadata = WorkflowMetadata(
             name=name,
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
@@ -303,7 +283,7 @@ class Workflow:
     - **Saved**: backed by a file on disk. `file_path` is a string (relative or absolute).
       Created via `Workflow.from_disk`.
     - **Unsaved**: in-memory only. `file_path is None`. Created by constructing directly
-      (typically through `WorkflowRegistry.create_unsaved` or `generate_new_workflow`
+      (typically through `WorkflowRegistry.create_unsaved_with_key` or `generate_new_workflow`
       with `file_path=None`). Transitions to saved when `SaveWorkflowRequest` is handled
       for this workflow's registry key.
     """

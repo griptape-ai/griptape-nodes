@@ -229,3 +229,19 @@ class TestWorkflowRegistryOperations:
             pytest.raises(ValueError, match="requires a file_path"),
         ):
             WorkflowRegistry.generate_new_workflow(registry_key="my_workflow", metadata=mock_metadata)
+
+    def test_create_unsaved_with_key_rejects_non_prefixed_key(self) -> None:
+        with (
+            patch.dict(WorkflowRegistry._workflows, {}, clear=True),
+            pytest.raises(ValueError, match="must start with"),
+        ):
+            WorkflowRegistry.create_unsaved_with_key(key="no_prefix", name="Untitled")
+
+    def test_create_unsaved_with_key_registers_under_supplied_key(self) -> None:
+        with patch.dict(WorkflowRegistry._workflows, {}, clear=True):
+            workflow = WorkflowRegistry.create_unsaved_with_key(key="unsaved:abc", name="Untitled")
+
+            assert "unsaved:abc" in WorkflowRegistry._workflows
+            assert WorkflowRegistry._workflows["unsaved:abc"] is workflow
+            assert workflow.file_path is None
+            assert workflow.metadata.name == "Untitled"

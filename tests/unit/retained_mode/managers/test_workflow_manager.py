@@ -580,6 +580,109 @@ class TestWorkflowManager:
         assert isinstance(result, MoveWorkflowResultSuccess)
         mock_set_name.assert_not_called()
 
+    # --- Save workflow: unsaved -> saved transition ---
+
+    def test_on_save_workflow_rekeys_context_stack_on_first_save(self, griptape_nodes: GriptapeNodes) -> None:
+        """First save of an unsaved workflow rekeys the registry entry and updates the context stack in-place."""
+        from datetime import UTC, datetime
+
+        from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+        from griptape_nodes.retained_mode.events.flow_events import (
+            GetTopLevelFlowResultSuccess,
+            SerializedFlowCommands,
+            SerializeFlowToCommandsResultSuccess,
+        )
+        from griptape_nodes.retained_mode.events.workflow_events import (
+            SaveWorkflowFileFromSerializedFlowResultSuccess,
+            SaveWorkflowRequest,
+            SaveWorkflowResultSuccess,
+        )
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        context_manager = griptape_nodes.ContextManager()
+
+        unsaved_key = "unsaved:abc-123"
+        saved_key = "my_flow"
+
+        with patch.dict(WorkflowRegistry._workflows, {}, clear=True):
+            WorkflowRegistry.create_unsaved_with_key(key=unsaved_key, name="Untitled")
+            unsaved_workflow = WorkflowRegistry.get_workflow_by_name(unsaved_key)
+            context_manager.push_workflow(workflow_name=unsaved_key)
+
+            empty_commands = SerializedFlowCommands(
+                flow_initialization_command=None,
+                serialized_node_commands=[],
+                serialized_connections=[],
+                unique_parameter_uuid_to_values={},
+                set_parameter_value_commands={},
+                set_lock_commands_per_node={},
+                sub_flows_commands=[],
+                node_dependencies=MagicMock(),
+                node_types_used=set(),
+            )
+
+            saved_metadata = WorkflowMetadata(
+                name="My Flow",
+                schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+                engine_version_created_with="test",
+                node_libraries_referenced=[],
+                creation_date=datetime.now(UTC),
+            )
+
+            async def fake_ahandle_request(req: object) -> object:
+                from griptape_nodes.retained_mode.events.flow_events import (
+                    GetTopLevelFlowRequest,
+                    SerializeFlowToCommandsRequest,
+                )
+
+                if isinstance(req, GetTopLevelFlowRequest):
+                    return GetTopLevelFlowResultSuccess(flow_name="ControlFlow_1", result_details="ok")
+                if isinstance(req, SerializeFlowToCommandsRequest):
+                    return SerializeFlowToCommandsResultSuccess(
+                        serialized_flow_commands=empty_commands, result_details="ok"
+                    )
+                msg = f"Unexpected request type in test: {type(req).__name__}"
+                raise AssertionError(msg)
+
+            save_file_success = SaveWorkflowFileFromSerializedFlowResultSuccess(
+                file_path=f"/workspace/{saved_key}.py",
+                workflow_metadata=saved_metadata,
+                result_details="ok",
+            )
+
+            try:
+                with (
+                    patch.object(GriptapeNodes, "ahandle_request", side_effect=fake_ahandle_request),
+                    patch.object(
+                        workflow_manager,
+                        "on_save_workflow_file_from_serialized_flow_request",
+                        new=AsyncMock(return_value=save_file_success),
+                    ),
+                    patch.object(
+                        workflow_manager,
+                        "extract_workflow_shape",
+                        side_effect=ValueError("no shape"),
+                    ),
+                ):
+                    result = asyncio.run(
+                        workflow_manager.on_save_workflow_request(SaveWorkflowRequest(file_name=saved_key))
+                    )
+
+                assert isinstance(result, SaveWorkflowResultSuccess)
+                assert result.workflow_name == saved_key
+
+                # Registry: unsaved entry rekeyed, saved entry points at the same Workflow instance
+                assert unsaved_key not in WorkflowRegistry._workflows
+                assert saved_key in WorkflowRegistry._workflows
+                assert WorkflowRegistry._workflows[saved_key] is unsaved_workflow
+                assert unsaved_workflow.file_path == f"{saved_key}.py"
+
+                # Context stack: the active workflow name is the new key
+                assert context_manager.get_current_workflow_name() == saved_key
+            finally:
+                if context_manager.has_current_workflow():
+                    context_manager.pop_workflow()
+
     # --- WorkflowInfo payload helpers ---
 
     def test_build_workflow_info_key_uses_workspace_join(self, griptape_nodes: GriptapeNodes) -> None:
