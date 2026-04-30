@@ -41,7 +41,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
-from griptape_nodes.retained_mode.events.base_events import EventRequest, ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -54,7 +54,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
     ExecuteNodeRequest,
-    ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
     GriptapeEvent,
     InvolvedNodesEvent,
@@ -120,7 +119,6 @@ if TYPE_CHECKING:
 
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-    from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -210,35 +208,6 @@ class LoopBodyNodes(NamedTuple):
     node_group_name: str | None
 
 
-async def _execute_node_on_worker(
-    wm: WorkerManager,
-    node: BaseNode,
-    worker: tuple[str, str],
-) -> ExecuteNodeResultSuccess | ExecuteNodeResultFailure:
-    """Execute a node on a worker.
-
-    Sends a single ExecuteNodeRequest carrying node_metadata. The worker creates
-    the node on first call (idempotent — no-op if already present) then executes it.
-    """
-    worker_engine_id, worker_request_topic = worker
-    execute_raw = await wm.route_to_worker(
-        EventRequest(
-            request=ExecuteNodeRequest(
-                node_name=node.name,
-                parameter_values=dict(node.parameter_values),
-                node_metadata=cast("NodeMetadata", dict(node.metadata)),
-            )
-        ),
-        worker_engine_id,
-        worker_request_topic,
-    )
-    result_type_name = execute_raw.get("result_type", "")
-    result_data = execute_raw.get("result", {})
-    if result_type_name == ExecuteNodeResultSuccess.__name__:
-        return ExecuteNodeResultSuccess(**result_data)
-    return ExecuteNodeResultFailure(**result_data)
-
-
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
@@ -293,19 +262,16 @@ class NodeExecutor:
                 await self.handle_loop_execution(node)
                 return
 
-            wm = GriptapeNodes.WorkerManager()
-            library_name = node.metadata.get("library")
-            worker = GriptapeNodes.LibraryManager().get_worker_for_library(library_name) if library_name else None
-            if wm and worker:
-                result = await _execute_node_on_worker(wm, node, worker)
-            else:
-                result = await GriptapeNodes.ahandle_request(
-                    ExecuteNodeRequest(
-                        node_name=node.name,
-                        parameter_values=dict(node.parameter_values),
-                        node_metadata=cast("NodeMetadata", dict(node.metadata)),
-                    )
+            # Single entry point for both local and worker execution. The
+            # ExecuteNodeRequest handler routes to a worker subprocess when the
+            # node's library requires it, otherwise runs aprocess in-process.
+            result = await GriptapeNodes.ahandle_request(
+                ExecuteNodeRequest(
+                    node_name=node.name,
+                    parameter_values=dict(node.parameter_values),
+                    node_metadata=cast("NodeMetadata", dict(node.metadata)),
                 )
+            )
             if not isinstance(result, ExecuteNodeResultSuccess):
                 msg = f"Node '{node.name}' execution failed: {getattr(result, 'result_details', result)}"
                 raise RuntimeError(msg)  # noqa: TRY004

@@ -25,6 +25,7 @@ class TestExecuteNode:
         node.aprocess = AsyncMock()
         node.parameter_values = {}
         node.parameter_output_values = {"output_param": "output_value"}
+        node.metadata = {}
         return node
 
     def _make_mock_obj_mgr(self, existing_node: MagicMock | None = None) -> MagicMock:
@@ -276,3 +277,135 @@ class TestExecuteNode:
 
         assert isinstance(result, ExecuteNodeResultSuccess)
         mock_node.set_parameter_value.assert_called_once_with("param_a", 999)
+
+
+_LIBRARY_MANAGER_PATH = "griptape_nodes.retained_mode.managers.node_manager.GriptapeNodes.LibraryManager"
+_WORKER_MANAGER_PATH = "griptape_nodes.retained_mode.managers.node_manager.GriptapeNodes.WorkerManager"
+_OBJECT_MANAGER_PATH = "griptape_nodes.retained_mode.managers.node_manager.GriptapeNodes.ObjectManager"
+
+
+class TestExecuteNodeWorkerRoute:
+    """Orchestrator-side worker routing for ExecuteNodeRequest.
+
+    When the library is owned by a worker and we're on the orchestrator, the
+    handler routes the ExecuteNodeRequest to the worker and returns the result
+    without calling aprocess locally. Inside a worker subprocess (_is_worker=True)
+    the handler always runs locally even if a WorkerManager is present.
+    """
+
+    def _get_node_manager(self) -> NodeManager:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        return GriptapeNodes.NodeManager()
+
+    def _make_mock_node(self, name: str = "worker_node") -> MagicMock:
+        node = MagicMock(spec=BaseNode)
+        node.name = name
+        node.aprocess = AsyncMock()
+        node.metadata = {"library": "worker_library"}
+        node.parameter_values = {}
+        node.parameter_output_values = {}
+        return node
+
+    def _make_mock_obj_mgr(self, existing_node: MagicMock | None = None) -> MagicMock:
+        mock_obj_mgr = MagicMock()
+        mock_obj_mgr.attempt_get_object_by_name_as_type.return_value = existing_node
+        return mock_obj_mgr
+
+    @pytest.mark.asyncio
+    async def test_routes_to_worker_and_returns_worker_result(self) -> None:
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+        mock_obj_mgr = self._make_mock_obj_mgr(existing_node=mock_node)
+
+        wm = MagicMock()
+        wm.route_to_worker = AsyncMock(
+            return_value={
+                "result_type": ExecuteNodeResultSuccess.__name__,
+                "result": {"parameter_output_values": {"out": 42}, "result_details": "ok"},
+            }
+        )
+        lib_mgr = MagicMock()
+        lib_mgr._is_worker = False
+        lib_mgr.get_worker_for_library.return_value = ("eng-id", "topic")
+
+        with (
+            patch(_OBJECT_MANAGER_PATH, return_value=mock_obj_mgr),
+            patch(_LIBRARY_MANAGER_PATH, return_value=lib_mgr),
+            patch(_WORKER_MANAGER_PATH, return_value=wm),
+        ):
+            request = ExecuteNodeRequest(
+                node_name="worker_node",
+                node_metadata=cast("NodeMetadata", {"node_type": "WorkerNode", "library": "worker_library"}),
+            )
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        assert result.parameter_output_values == {"out": 42}
+        wm.route_to_worker.assert_awaited_once()
+        # The orchestrator stub must not have run aprocess; the worker did.
+        mock_node.aprocess.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_worker_failure_returns_failure(self) -> None:
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+        mock_obj_mgr = self._make_mock_obj_mgr(existing_node=mock_node)
+
+        wm = MagicMock()
+        wm.route_to_worker = AsyncMock(
+            return_value={
+                "result_type": ExecuteNodeResultFailure.__name__,
+                "result": {"result_details": "worker exploded"},
+            }
+        )
+        lib_mgr = MagicMock()
+        lib_mgr._is_worker = False
+        lib_mgr.get_worker_for_library.return_value = ("eng-id", "topic")
+
+        with (
+            patch(_OBJECT_MANAGER_PATH, return_value=mock_obj_mgr),
+            patch(_LIBRARY_MANAGER_PATH, return_value=lib_mgr),
+            patch(_WORKER_MANAGER_PATH, return_value=wm),
+        ):
+            request = ExecuteNodeRequest(
+                node_name="worker_node",
+                node_metadata=cast("NodeMetadata", {"node_type": "WorkerNode", "library": "worker_library"}),
+            )
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultFailure)
+        assert "worker exploded" in str(result.result_details)
+        mock_node.aprocess.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_worker_subprocess_runs_locally_without_re_routing(self) -> None:
+        """Worker subprocess runs the node locally without re-routing.
+
+        Inside the worker subprocess itself (_is_worker=True), the handler must
+        run the node locally even if WorkerManager happens to be available.
+        """
+        node_manager = self._get_node_manager()
+        mock_node = self._make_mock_node()
+        mock_obj_mgr = self._make_mock_obj_mgr(existing_node=mock_node)
+
+        wm = MagicMock()
+        wm.route_to_worker = AsyncMock()
+        lib_mgr = MagicMock()
+        lib_mgr._is_worker = True
+        lib_mgr.get_worker_for_library.return_value = ("eng-id", "topic")
+
+        with (
+            patch(_OBJECT_MANAGER_PATH, return_value=mock_obj_mgr),
+            patch(_LIBRARY_MANAGER_PATH, return_value=lib_mgr),
+            patch(_WORKER_MANAGER_PATH, return_value=wm),
+        ):
+            request = ExecuteNodeRequest(
+                node_name="worker_node",
+                node_metadata=cast("NodeMetadata", {"node_type": "WorkerNode", "library": "worker_library"}),
+            )
+            result = await node_manager.on_execute_node_request(request)
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        mock_node.aprocess.assert_awaited_once()
+        wm.route_to_worker.assert_not_awaited()

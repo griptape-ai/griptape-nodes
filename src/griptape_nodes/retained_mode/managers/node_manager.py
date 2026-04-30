@@ -1,11 +1,17 @@
+from __future__ import annotations
+
 import copy
 import logging
 import pickle
 from dataclasses import dataclass
-from typing import Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
 
 from griptape_nodes.common.parameter_hydration import hydrate_parameter_values
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
     BaseIterativeStartNode,
@@ -35,6 +41,7 @@ from griptape_nodes.exe_types.node_types import (
 )
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
+    EventRequest,
     ResultDetails,
     ResultPayload,
     ResultPayloadFailure,
@@ -194,7 +201,6 @@ from griptape_nodes.retained_mode.events.validation_events import (
     ValidateNodeDependenciesResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 
 logger = logging.getLogger("griptape_nodes")
@@ -2696,39 +2702,95 @@ class NodeManager:
         return ResolveNodeResultSuccess(result_details=details)
 
     async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
-        """Execute a node, creating it first if it does not yet exist.
+        """Execute a node, routing to a worker subprocess when the library requires it.
+
+        Single entry point for both local and worker execution. On the orchestrator,
+        if the node's library is owned by a worker, the request is forwarded over
+        the wire. Otherwise aprocess runs in-process. Inside a worker subprocess
+        (_is_worker=True) this always runs locally even if a WorkerManager is wired
+        up, so we don't loop requests back out.
 
         Idempotent: if the node already exists in ObjectManager it is reused.
         When the node is absent and node_metadata is provided, the node is created
         from the metadata (which must contain "node_type" and "library" keys).
         """
+        lookup = self._get_or_create_node_for_execute(request)
+        if isinstance(lookup, ExecuteNodeResultFailure):
+            return lookup
+        node, _was_created = lookup
+
+        library_manager = GriptapeNodes.LibraryManager()
+        if not library_manager._is_worker:
+            library_name = node.metadata.get("library")
+            worker = library_manager.get_worker_for_library(library_name) if library_name else None
+            wm = GriptapeNodes.WorkerManager()
+            if wm is not None and worker is not None:
+                return await self._execute_node_via_worker(request, wm, worker)
+
+        return await self._hydrate_and_run_node(node, request)
+
+    def _get_or_create_node_for_execute(
+        self, request: ExecuteNodeRequest
+    ) -> tuple[BaseNode, bool] | ExecuteNodeResultFailure:
+        """Look up an existing node or create one from request.node_metadata.
+
+        Returns (node, was_created). was_created is True only when the node was
+        newly instantiated here (used by the worker subprocess to distinguish
+        first-touch hydration from a live-node execution).
+        """
         node_name = request.node_name
         obj_mgr = GriptapeNodes.ObjectManager()
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
-        if node is None:
-            if not request.node_metadata:
-                return ExecuteNodeResultFailure(
-                    result_details=f"Node '{node_name}' not found and no node_metadata provided to create it.",
-                )
-            node_type = request.node_metadata.get("node_type")
-            library_name = request.node_metadata.get("library")
-            if not node_type:
-                return ExecuteNodeResultFailure(
-                    result_details=f"Node '{node_name}' not found and node_metadata is missing 'node_type'.",
-                )
-            try:
-                node = LibraryRegistry.create_node(
-                    node_type=node_type,
-                    name=node_name,
-                    metadata=dict(request.node_metadata),
-                    specific_library_name=library_name,
-                )
-            except Exception as e:
-                return ExecuteNodeResultFailure(
-                    result_details=f"Failed to create node '{node_name}' of type '{node_type}': {e}",
-                )
-            obj_mgr.add_object_by_name(node.name, node)
-        return await self._hydrate_and_run_node(node, request)
+        if node is not None:
+            return node, False
+        if not request.node_metadata:
+            return ExecuteNodeResultFailure(
+                result_details=f"Node '{node_name}' not found and no node_metadata provided to create it.",
+            )
+        node_type = request.node_metadata.get("node_type")
+        library_name = request.node_metadata.get("library")
+        if not node_type:
+            return ExecuteNodeResultFailure(
+                result_details=f"Node '{node_name}' not found and node_metadata is missing 'node_type'.",
+            )
+        try:
+            node = LibraryRegistry.create_node(
+                node_type=node_type,
+                name=node_name,
+                metadata=dict(request.node_metadata),
+                specific_library_name=library_name,
+            )
+        except Exception as e:
+            return ExecuteNodeResultFailure(
+                result_details=f"Failed to create node '{node_name}' of type '{node_type}': {e}",
+            )
+        obj_mgr.add_object_by_name(node.name, node)
+        return node, True
+
+    async def _execute_node_via_worker(
+        self,
+        request: ExecuteNodeRequest,
+        wm: WorkerManager,
+        worker: tuple[str, str],
+    ) -> ResultPayload:
+        """Dispatch ExecuteNodeRequest to a worker and return its result.
+
+        The worker creates the node on first call (idempotent) and runs aprocess
+        remotely. Output copy-back onto the orchestrator's live node happens in
+        the caller (NodeExecutor.execute) so the write path is identical for
+        local and worker routes.
+        """
+        worker_engine_id, worker_request_topic = worker
+        execute_raw = await wm.route_to_worker(
+            EventRequest(request=request),
+            worker_engine_id,
+            worker_request_topic,
+        )
+        result_type_name = execute_raw.get("result_type", "")
+        result_data = execute_raw.get("result", {})
+        if result_type_name == ExecuteNodeResultSuccess.__name__:
+            return ExecuteNodeResultSuccess(**result_data)
+        return ExecuteNodeResultFailure(**result_data)
 
     async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         """Hydrate a node's input parameters and execute it.
@@ -2807,7 +2869,7 @@ class NodeManager:
         self,
         group_node: BaseNodeGroup,
         unique_uuid_to_values: dict,
-        serialized_parameter_value_tracker: "SerializedParameterValueTracker",
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
     ) -> SerializedGroupResult:
         """Serialize a group node and its children for copy/paste operations.
 

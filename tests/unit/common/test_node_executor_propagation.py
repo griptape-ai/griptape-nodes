@@ -1,4 +1,14 @@
-"""Tests for output copy-back behavior in NodeExecutor.execute()."""
+"""Tests for output copy-back behavior in NodeExecutor.execute().
+
+NodeExecutor.execute dispatches a single ExecuteNodeRequest for both local and
+worker execution. After the handler returns, outputs are copied back onto the
+in-memory node via parameter_output_values (not set_parameter_value). The
+copy-back is idempotent: TrackedParameterOutputValues.__setitem__ guards on
+old_value != new_value, so on the local path -- where aprocess already wrote
+these entries in place -- no duplicate AlterElementEvent is emitted. On the
+worker path the orchestrator stub has not seen the writes, so the copy-back
+is the first (and only) emit per key.
+"""
 
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,7 +20,6 @@ from griptape_nodes.exe_types.node_types import TrackedParameterOutputValues
 from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeResultSuccess
 
 _GRIPTAPE_NODES_PATH = "griptape_nodes.common.node_executor.GriptapeNodes"
-_EXECUTE_ON_WORKER_PATH = "griptape_nodes.common.node_executor._execute_node_on_worker"
 
 _EXPECTED_FRESH_OUTPUT_EMITS = 2
 
@@ -25,12 +34,12 @@ def _make_node_with_tracked_outputs(name: str = "TestNode") -> MagicMock:
     node.name = name
     node.parameter_values = {}
     node.parameter_output_values = TrackedParameterOutputValues(node)
-    node.metadata = {}  # no library -> local path (no worker)
+    node.metadata = {}
     return node
 
 
 class TestLocalExecuteCopyBack:
-    """Fix 1: copy-back writes into parameter_output_values, not via set_parameter_value."""
+    """Copy-back writes into parameter_output_values, not via set_parameter_value."""
 
     @pytest.mark.asyncio
     async def test_copy_back_does_not_call_set_parameter_value(self) -> None:
@@ -39,7 +48,6 @@ class TestLocalExecuteCopyBack:
         result = ExecuteNodeResultSuccess(result_details="ok", parameter_output_values={"out": 42})
 
         with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
-            mock_gn.WorkerManager.return_value = None
             mock_gn.ahandle_request = AsyncMock(return_value=result)
             await _make_executor().execute(node)
 
@@ -65,7 +73,6 @@ class TestLocalExecuteCopyBack:
             patch(_GRIPTAPE_NODES_PATH) as mock_gn,
             patch.object(TrackedParameterOutputValues, "_emit_parameter_change_event") as mock_emit,
         ):
-            mock_gn.WorkerManager.return_value = None
             mock_gn.ahandle_request = AsyncMock(side_effect=fake_handle)
             await _make_executor().execute(node)
 
@@ -74,12 +81,14 @@ class TestLocalExecuteCopyBack:
 
     @pytest.mark.asyncio
     async def test_copy_back_emits_for_fresh_outputs_on_worker_path(self) -> None:
-        """Worker path: copy-back is a first-time assignment per key, one emit per key."""
-        node = _make_node_with_tracked_outputs()
-        # Route through the worker branch.
-        node.metadata = {"library": "my_lib"}
+        """Worker path: copy-back is a first-time assignment per key, one emit per key.
 
-        async def fake_worker(_wm: Any, _node: Any, _worker: Any) -> ExecuteNodeResultSuccess:
+        Simulated by returning a result whose outputs are not yet on the node --
+        matches the orchestrator's view of a node whose aprocess ran remotely.
+        """
+        node = _make_node_with_tracked_outputs()
+
+        async def fake_handle(_req: Any) -> ExecuteNodeResultSuccess:
             return ExecuteNodeResultSuccess(
                 result_details="ok",
                 parameter_output_values={"a": 1, "b": 2},
@@ -87,14 +96,9 @@ class TestLocalExecuteCopyBack:
 
         with (
             patch(_GRIPTAPE_NODES_PATH) as mock_gn,
-            patch(_EXECUTE_ON_WORKER_PATH, new=AsyncMock(side_effect=fake_worker)),
             patch.object(TrackedParameterOutputValues, "_emit_parameter_change_event") as mock_emit,
         ):
-            mock_gn.WorkerManager.return_value = MagicMock()
-            mock_gn.LibraryManager.return_value.get_worker_for_library.return_value = (
-                "eng-id",
-                "topic",
-            )
+            mock_gn.ahandle_request = AsyncMock(side_effect=fake_handle)
             await _make_executor().execute(node)
 
         # Two fresh keys; each __setitem__ sees old_value None != new_value.

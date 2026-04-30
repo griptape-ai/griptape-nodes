@@ -1,4 +1,9 @@
-"""Tests for current_executing_node_name ContextVar in NodeExecutor.execute()."""
+"""Tests for current_executing_node_name ContextVar in NodeExecutor.execute().
+
+NodeExecutor.execute now dispatches ExecuteNodeRequest through
+GriptapeNodes.ahandle_request for both local and worker execution. The
+ContextVar is set before dispatch and reset on return (or exception).
+"""
 
 import asyncio
 from typing import Any
@@ -10,7 +15,6 @@ from griptape_nodes.common.node_executor import NodeExecutor, current_executing_
 from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeResultSuccess
 
 _GRIPTAPE_NODES_PATH = "griptape_nodes.common.node_executor.GriptapeNodes"
-_EXECUTE_ON_WORKER_PATH = "griptape_nodes.common.node_executor._execute_node_on_worker"
 
 
 def _make_executor() -> NodeExecutor:
@@ -20,17 +24,9 @@ def _make_executor() -> NodeExecutor:
 def _make_node(name: str) -> MagicMock:
     node = MagicMock()
     node.name = name
-    # Use a real dict so metadata.get("library") returns None, skipping the worker branch.
     node.metadata = {}
-    node.aprocess = AsyncMock()
-    return node
-
-
-def _make_node_with_library(name: str, library: str = "my_lib") -> MagicMock:
-    node = MagicMock()
-    node.name = name
-    node.metadata = {"library": library}
-    node.aprocess = AsyncMock()
+    node.parameter_values = {}
+    node.parameter_output_values = {}
     return node
 
 
@@ -45,17 +41,16 @@ class TestCurrentExecutingNodeNameDefault:
 
 class TestNodeExecutorContextVar:
     @pytest.mark.asyncio
-    async def test_contextvar_holds_node_name_during_aprocess(self) -> None:
+    async def test_contextvar_holds_node_name_during_dispatch(self) -> None:
         """The ContextVar holds the node name while execute() is running."""
         captured: list[str | None] = []
         node = _make_node("TestNode")
 
-        async def fake_handle(_req: Any) -> ExecuteNodeResultSuccess:
+        async def fake_handle(_request: Any) -> ExecuteNodeResultSuccess:
             captured.append(current_executing_node_name.get())
             return _success_result()
 
         with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
-            mock_gn.WorkerManager.return_value = None
             mock_gn.ahandle_request = AsyncMock(side_effect=fake_handle)
             await _make_executor().execute(node)
 
@@ -67,19 +62,17 @@ class TestNodeExecutorContextVar:
         node = _make_node("TestNode")
 
         with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
-            mock_gn.WorkerManager.return_value = None
             mock_gn.ahandle_request = AsyncMock(return_value=_success_result())
             await _make_executor().execute(node)
 
         assert current_executing_node_name.get() is None
 
     @pytest.mark.asyncio
-    async def test_contextvar_reset_to_none_when_aprocess_raises(self) -> None:
-        """The ContextVar is reset to None even when execution raises an exception."""
+    async def test_contextvar_reset_to_none_when_dispatch_raises(self) -> None:
+        """The ContextVar is reset to None even when dispatch raises an exception."""
         node = _make_node("TestNode")
 
         with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
-            mock_gn.WorkerManager.return_value = None
             mock_gn.ahandle_request = AsyncMock(side_effect=RuntimeError("node failed"))
 
             with pytest.raises(RuntimeError, match="node failed"):
@@ -95,13 +88,12 @@ class TestNodeExecutorContextVar:
         node_a = _make_node("NodeA")
         node_b = _make_node("NodeB")
 
-        async def fake_handle(req: Any) -> ExecuteNodeResultSuccess:
+        async def fake_handle(request: Any) -> ExecuteNodeResultSuccess:
             await asyncio.sleep(0)  # yield to allow interleaving
-            results[req.node_name] = current_executing_node_name.get()
+            results[request.node_name] = current_executing_node_name.get()
             return _success_result()
 
         with patch(_GRIPTAPE_NODES_PATH) as mock_gn:
-            mock_gn.WorkerManager.return_value = None
             mock_gn.ahandle_request = AsyncMock(side_effect=fake_handle)
 
             executor = _make_executor()
@@ -112,59 +104,3 @@ class TestNodeExecutorContextVar:
 
         assert results["NodeA"] == "NodeA"
         assert results["NodeB"] == "NodeB"
-
-
-class TestNodeExecutorContextVarWorkerBranch:
-    """ContextVar behavior when execution routes through the worker branch."""
-
-    @pytest.mark.asyncio
-    async def test_contextvar_holds_node_name_during_worker_execution(self) -> None:
-        """The ContextVar holds the node name while executing on a worker."""
-        captured: list[str | None] = []
-        node = _make_node_with_library("TestNode")
-
-        async def fake_execute(_wm: Any, _node: Any, _worker: Any) -> ExecuteNodeResultSuccess:
-            captured.append(current_executing_node_name.get())
-            return _success_result()
-
-        with (
-            patch(_GRIPTAPE_NODES_PATH) as mock_gn,
-            patch(_EXECUTE_ON_WORKER_PATH, new=AsyncMock(side_effect=fake_execute)),
-        ):
-            mock_gn.WorkerManager.return_value = MagicMock()
-            mock_gn.LibraryManager.return_value.get_worker_for_library.return_value = ("eng-id", "topic")
-            await _make_executor().execute(node)
-
-        assert captured == ["TestNode"]
-
-    @pytest.mark.asyncio
-    async def test_contextvar_reset_after_successful_worker_execution(self) -> None:
-        """The ContextVar is reset to None after worker execution completes successfully."""
-        node = _make_node_with_library("TestNode")
-
-        with (
-            patch(_GRIPTAPE_NODES_PATH) as mock_gn,
-            patch(_EXECUTE_ON_WORKER_PATH, new=AsyncMock(return_value=_success_result())),
-        ):
-            mock_gn.WorkerManager.return_value = MagicMock()
-            mock_gn.LibraryManager.return_value.get_worker_for_library.return_value = ("eng-id", "topic")
-            await _make_executor().execute(node)
-
-        assert current_executing_node_name.get() is None
-
-    @pytest.mark.asyncio
-    async def test_contextvar_reset_when_worker_execution_raises(self) -> None:
-        """The ContextVar is reset to None even when worker execution raises an exception."""
-        node = _make_node_with_library("TestNode")
-
-        with (
-            patch(_GRIPTAPE_NODES_PATH) as mock_gn,
-            patch(_EXECUTE_ON_WORKER_PATH, new=AsyncMock(side_effect=RuntimeError("worker failed"))),
-        ):
-            mock_gn.WorkerManager.return_value = MagicMock()
-            mock_gn.LibraryManager.return_value.get_worker_for_library.return_value = ("eng-id", "topic")
-
-            with pytest.raises(RuntimeError, match="worker failed"):
-                await _make_executor().execute(node)
-
-        assert current_executing_node_name.get() is None
