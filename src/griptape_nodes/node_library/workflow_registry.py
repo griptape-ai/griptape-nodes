@@ -9,7 +9,7 @@ from typing import Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
-from griptape_nodes.files.path_utils import derive_registry_key, resolve_workspace_path
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     LibraryNameAndVersion,
 )
@@ -149,20 +149,40 @@ class WorkflowRegistry(metaclass=SingletonMeta):
     _workflows: ClassVar[dict[str, Workflow]] = {}
     _registry_key: _RegistryKey = _RegistryKey()
 
-    # Create a new workflow with everything we'd need
+    # Create a new workflow with everything we'd need.
     @classmethod
-    def generate_new_workflow(cls, file_path: str, metadata: WorkflowMetadata) -> Workflow:
+    def generate_new_workflow(
+        cls,
+        registry_key: str,
+        metadata: WorkflowMetadata,
+        file_path: str | None = None,
+    ) -> Workflow:
+        """Register a workflow under `registry_key` with the given metadata.
+
+        The registry stores the workflow by the caller-supplied `registry_key`; the key
+        just happens to be file-path-derived for saved workflows, but the registry does
+        not require that. Callers deriving a key from a file path should pass it through
+        `derive_registry_key` first.
+
+        `file_path` is optional: provide it for saved workflows (backed by a file on
+        disk; existence is verified at construction time); omit it for unsaved in-memory
+        entries. Unsaved keys must start with `UNSAVED_KEY_PREFIX`.
+        """
         instance = cls()
-        # Use the file path (minus extension) as the registry key, preserving directory components
-        # so workflows with the same filename in different directories get distinct keys.
-        # TODO(https://github.com/griptape-ai/griptape-nodes/issues/4057): file_path should be
-        # resolved from a "save_workflow" situation macro (like ArtifactManager._resolve_preview_path)
-        # so the save location is user-configurable per project rather than hard-coded.
-        registry_key = derive_registry_key(file_path)
         if registry_key in instance._workflows:
-            msg = f"Workflow with file name '{registry_key}' already registered."
+            msg = f"Workflow with registry key '{registry_key}' already registered."
             raise KeyError(msg)
-        workflow = Workflow.from_disk(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
+        is_unsaved_key = registry_key.startswith(cls.UNSAVED_KEY_PREFIX)
+        if is_unsaved_key and file_path is not None:
+            msg = f"Unsaved registry key '{registry_key}' cannot be paired with a file_path."
+            raise ValueError(msg)
+        if not is_unsaved_key and file_path is None:
+            msg = f"Saved registry key '{registry_key}' requires a file_path."
+            raise ValueError(msg)
+        if file_path is None:
+            workflow = Workflow(registry_key=instance._registry_key, metadata=metadata, file_path=None)
+        else:
+            workflow = Workflow.from_disk(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
         instance._workflows[registry_key] = workflow
         return workflow
 
@@ -196,16 +216,14 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         needs the registry entry to use that exact value. The key must start with the
         UNSAVED_KEY_PREFIX so it can never collide with a path-derived key.
         """
-        if not key.startswith(cls.UNSAVED_KEY_PREFIX):
-            msg = f"Unsaved registry key '{key}' must start with '{cls.UNSAVED_KEY_PREFIX}'."
-            raise ValueError(msg)
-        instance = cls()
-        if key in instance._workflows:
-            msg = f"Unsaved registry key '{key}' already registered."
-            raise KeyError(msg)
-        workflow = Workflow.new_unsaved(registry_key=instance._registry_key, name=name)
-        instance._workflows[key] = workflow
-        return workflow
+        metadata = WorkflowMetadata(
+            name=name,
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="",
+            node_libraries_referenced=[],
+            creation_date=datetime.now(UTC),
+        )
+        return cls.generate_new_workflow(registry_key=key, metadata=metadata, file_path=None)
 
     @classmethod
     def get_workflow_by_name(cls, name: str) -> Workflow:
@@ -283,9 +301,11 @@ class Workflow:
 
     A workflow has two possible states:
     - **Saved**: backed by a file on disk. `file_path` is a string (relative or absolute).
-    - **Unsaved**: in-memory only. `file_path is None`. Created via `Workflow.new_unsaved`
-      (typically through `WorkflowRegistry.create_unsaved`). Transitions to saved when
-      `SaveWorkflowRequest` is handled for this workflow's registry key.
+      Created via `Workflow.from_disk`.
+    - **Unsaved**: in-memory only. `file_path is None`. Created by constructing directly
+      (typically through `WorkflowRegistry.create_unsaved` or `generate_new_workflow`
+      with `file_path=None`). Transitions to saved when `SaveWorkflowRequest` is handled
+      for this workflow's registry key.
     """
 
     metadata: WorkflowMetadata
@@ -314,31 +334,14 @@ class Workflow:
         """Construct a Workflow backed by an existing file on disk.
 
         Verifies the file exists at construction time (preserving the pre-existing invariant
-        that saved Workflow entries always point at a real file). Unsaved entries bypass this
-        check by going through `Workflow.new_unsaved`.
+        that saved Workflow entries always point at a real file). Unsaved entries bypass
+        this check by constructing the Workflow directly with `file_path=None`.
         """
         complete_path = WorkflowRegistry.get_complete_file_path(relative_file_path=file_path)
         if not Path(complete_path).is_file():
             msg = f"File path '{complete_path}' does not exist."
             raise ValueError(msg)
         return cls(registry_key=registry_key, metadata=metadata, file_path=file_path)
-
-    @classmethod
-    def new_unsaved(cls, registry_key: WorkflowRegistry._RegistryKey, name: str) -> Workflow:
-        """Construct an unsaved (in-memory-only) Workflow with minimal metadata.
-
-        Callers should update `metadata` as the user edits the workflow. The workflow
-        transitions to "saved" when the save handler swaps its registry key to a
-        path-derived key and sets `file_path`.
-        """
-        metadata = WorkflowMetadata(
-            name=name,
-            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
-            engine_version_created_with="",
-            node_libraries_referenced=[],
-            creation_date=datetime.now(UTC),
-        )
-        return cls(registry_key=registry_key, metadata=metadata, file_path=None)
 
     @property
     def is_saved(self) -> bool:

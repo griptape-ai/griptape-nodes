@@ -810,16 +810,18 @@ class WorkflowManager:
         return RunWorkflowFromRegistryResultSuccess(result_details=ResultDetails(*result_messages))
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
+        # The registry key is derived from the file path (minus extension), independent of the display name.
+        registry_key = derive_registry_key(request.file_name)
         try:
             if isinstance(request.metadata, dict):
                 request.metadata = WorkflowMetadata(**request.metadata)
 
-            WorkflowRegistry.generate_new_workflow(metadata=request.metadata, file_path=request.file_name)
+            WorkflowRegistry.generate_new_workflow(
+                registry_key=registry_key, metadata=request.metadata, file_path=request.file_name
+            )
         except Exception as e:
             details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
             return RegisterWorkflowResultFailure(result_details=details)
-        # The registry key is derived from the file path (minus extension), independent of the display name.
-        registry_key = derive_registry_key(request.file_name)
         return RegisterWorkflowResultSuccess(
             workflow_name=registry_key,
             result_details=ResultDetails(
@@ -1966,7 +1968,9 @@ class WorkflowManager:
             registered_workflows = WorkflowRegistry.list_workflows()
 
         if registry_key not in registered_workflows:
-            WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
+            WorkflowRegistry.generate_new_workflow(
+                registry_key=registry_key, metadata=workflow_metadata, file_path=relative_file_path
+            )
 
         existing_workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
         existing_workflow.metadata = workflow_metadata
@@ -4889,7 +4893,11 @@ class WorkflowManager:
             Path(branch_full_path).write_text(branch_content, encoding="utf-8")
 
             # Now create the branch workflow in registry (file must exist on disk first)
-            WorkflowRegistry.generate_new_workflow(metadata=branch_metadata, file_path=branch_file_path)
+            WorkflowRegistry.generate_new_workflow(
+                registry_key=derive_registry_key(branch_file_path),
+                metadata=branch_metadata,
+                file_path=branch_file_path,
+            )
 
             details = f"Successfully branched workflow '{request.workflow_name}' as '{branch_name}'"
             return BranchWorkflowResultSuccess(
@@ -4972,7 +4980,11 @@ class WorkflowManager:
 
         new_full_path = WorkflowRegistry.get_complete_file_path(relative_file_path)
         Path(new_full_path).write_text(new_content, encoding="utf-8")
-        WorkflowRegistry.generate_new_workflow(metadata=new_metadata, file_path=relative_file_path)
+        WorkflowRegistry.generate_new_workflow(
+            registry_key=derive_registry_key(relative_file_path),
+            metadata=new_metadata,
+            file_path=relative_file_path,
+        )
 
         details = f"Successfully created workflow '{new_file_name}' from template '{request.template_name}'"
         return CreateWorkflowFromTemplateResultSuccess(
