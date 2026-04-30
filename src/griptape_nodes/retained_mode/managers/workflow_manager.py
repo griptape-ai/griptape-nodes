@@ -1259,27 +1259,36 @@ class WorkflowManager:
     async def on_set_workflow_metadata_request(self, request: SetWorkflowMetadataRequest) -> ResultPayload:
         await self._workflows_loading_complete.wait()
 
-        # Resolve workflow and file path
+        # Unsaved workflows have no file on disk; update the in-memory registry entry only.
+        # This keeps display-name / description edits in sync with the registry so a refresh
+        # re-hydrates the latest state without needing a save.
+        if WorkflowRegistry.has_workflow_with_name(request.workflow_name):
+            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+            if workflow.file_path is None:
+                try:
+                    merged = self._merge_metadata(workflow.metadata, request.workflow_metadata)
+                except ValueError as e:
+                    return SetWorkflowMetadataResultFailure(result_details=str(e))
+                merged.last_modified_date = datetime.now(tz=UTC)
+                workflow.metadata = merged
+                return SetWorkflowMetadataResultSuccess(
+                    result_details=ResultDetails(
+                        message=(
+                            f"Successfully updated in-memory metadata for unsaved workflow '{request.workflow_name}'."
+                        ),
+                        level=logging.INFO,
+                    )
+                )
+
+        # Resolve workflow and file path for saved workflows
         resolution = self._get_workflow_and_path(request.workflow_name)
         if resolution.error is not None or resolution.workflow is None or resolution.file_path is None:
             return SetWorkflowMetadataResultFailure(result_details=resolution.error or "Failed to resolve workflow.")
 
-        # Use provided metadata object as the new metadata
-        new_metadata = request.workflow_metadata
-        # Allow JSON dicts from frontend by coercing to WorkflowMetadata
-        # Merge with existing metadata to ensure required fields are present
-        if isinstance(new_metadata, dict):
-            # Start with existing metadata as base, then overlay provided fields
-            existing_metadata_dict = resolution.workflow.metadata.model_dump()
-            # Only overlay non-None values from the incoming dict to preserve required fields
-            for key, value in new_metadata.items():
-                if value is not None or key in ("description", "image", "branched_from", "workflow_shape"):
-                    # Allow explicit None for optional fields, but preserve required fields if incoming is None
-                    existing_metadata_dict[key] = value
-            try:
-                new_metadata = WorkflowMetadata.model_validate(existing_metadata_dict)
-            except Exception as e:
-                return SetWorkflowMetadataResultFailure(result_details=f"Invalid workflow_metadata: {e!s}")
+        try:
+            new_metadata = self._merge_metadata(resolution.workflow.metadata, request.workflow_metadata)
+        except ValueError as e:
+            return SetWorkflowMetadataResultFailure(result_details=str(e))
         # Refresh last_modified_date to reflect this change
         new_metadata.last_modified_date = datetime.now(tz=UTC)
 
@@ -1296,6 +1305,29 @@ class WorkflowManager:
                 message=f"Successfully updated metadata for workflow '{request.workflow_name}'.", level=logging.INFO
             )
         )
+
+    def _merge_metadata(
+        self, existing: WorkflowMetadata, incoming: WorkflowMetadata | dict[str, Any]
+    ) -> WorkflowMetadata:
+        """Coerce incoming metadata (dict or WorkflowMetadata) into a merged WorkflowMetadata.
+
+        Dicts from the frontend may omit required fields; merge on top of existing
+        metadata so required fields are preserved. Raises ValueError on invalid input.
+        """
+        if not isinstance(incoming, dict):
+            return incoming
+        existing_metadata_dict = existing.model_dump()
+        # Only overlay non-None values from the incoming dict to preserve required fields.
+        # Allow explicit None for these optional fields.
+        optional_none_allowed = ("description", "image", "branched_from", "workflow_shape")
+        for key, value in incoming.items():
+            if value is not None or key in optional_none_allowed:
+                existing_metadata_dict[key] = value
+        try:
+            return WorkflowMetadata.model_validate(existing_metadata_dict)
+        except Exception as e:
+            msg = f"Invalid workflow_metadata: {e!s}"
+            raise ValueError(msg) from e
 
     def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         try:
@@ -2042,7 +2074,7 @@ class WorkflowManager:
                 return candidate_name
             curr_idx += 1
 
-    def _determine_save_target(
+    def _determine_save_target(  # noqa: PLR0915
         self, requested_file_name: str | None, current_workflow_name: str | None
     ) -> SaveWorkflowTargetInfo:
         """Determine the target file path, name, and metadata for saving a workflow.
@@ -2057,6 +2089,12 @@ class WorkflowManager:
         Raises:
             ValueError: If workflow registry lookups fail or produce inconsistent state
         """
+        # An unsaved synthetic key ("unsaved:<uuid>") is a registry lookup key, not a
+        # usable filename stem. Treat it as "no requested name" so the FIRST_SAVE path
+        # derives the filename from the workflow's display-name metadata below.
+        if requested_file_name and requested_file_name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX):
+            requested_file_name = None
+
         # Look up workflows in registry
         target_workflow = None
         if requested_file_name and WorkflowRegistry.has_workflow_with_name(requested_file_name):
@@ -2119,9 +2157,17 @@ class WorkflowManager:
         else:
             # No requested name or no current workflow → first save.
             # A user-typed name like "episode/my_wf" splits into sub-directory + stem;
-            # auto-generated timestamp names have no directory component.
+            # auto-generated timestamp names have no directory component. When the caller
+            # has no name in mind, prefer the current workflow's display-name metadata
+            # (e.g. the auto-generated "workflow_25" for a freshly-created unsaved flow)
+            # over a timestamp so the on-disk filename matches what the user sees.
             scenario = WorkflowManager.SaveWorkflowScenario.FIRST_SAVE
-            raw_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            if not requested_file_name and current_workflow is not None:
+                candidate_name = (current_workflow.metadata.name or "").strip()
+                sanitized = re.sub(r"[^A-Za-z0-9._/-]+", "_", candidate_name).strip("_/")
+                raw_name = sanitized or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            else:
+                raw_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
             parts = FilenameParts.from_filename(f"{raw_name}.py")
             sub_dirs = str(parts.directory) if str(parts.directory) != "." else None
             file_name = parts.stem

@@ -683,6 +683,137 @@ class TestWorkflowManager:
                 if context_manager.has_current_workflow():
                     context_manager.pop_workflow()
 
+    def test_on_set_workflow_metadata_updates_unsaved_workflow_in_memory(self, griptape_nodes: GriptapeNodes) -> None:
+        """SetWorkflowMetadataRequest on an unsaved workflow updates registry metadata without touching disk."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workflow_manager._workflows_loading_complete.set()
+
+        unsaved_key = "unsaved:meta-test"
+
+        with patch.dict(WorkflowRegistry._workflows, {}, clear=True):
+            WorkflowRegistry.create_unsaved_with_key(key=unsaved_key, name="Untitled")
+            workflow = WorkflowRegistry.get_workflow_by_name(unsaved_key)
+            assert workflow.file_path is None
+
+            result = asyncio.run(
+                workflow_manager.on_set_workflow_metadata_request(
+                    SetWorkflowMetadataRequest(
+                        workflow_name=unsaved_key,
+                        workflow_metadata={"name": "my_flow", "description": "hello"},  # type: ignore[arg-type]
+                    )
+                )
+            )
+
+            assert isinstance(result, SetWorkflowMetadataResultSuccess)
+            assert workflow.metadata.name == "my_flow"
+            assert workflow.metadata.description == "hello"
+            # Still unsaved — no disk file materialized.
+            assert workflow.file_path is None
+
+    def test_first_save_uses_display_name_when_requested_name_is_unsaved_key(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """First save of an unsaved workflow derives the filename from metadata.name, not the synthetic key."""
+        from datetime import UTC, datetime
+
+        from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+        from griptape_nodes.retained_mode.events.flow_events import (
+            GetTopLevelFlowResultSuccess,
+            SerializedFlowCommands,
+            SerializeFlowToCommandsResultSuccess,
+        )
+        from griptape_nodes.retained_mode.events.workflow_events import (
+            SaveWorkflowFileFromSerializedFlowResultSuccess,
+            SaveWorkflowRequest,
+            SaveWorkflowResultSuccess,
+        )
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workflow_manager._workflows_loading_complete.set()
+        context_manager = griptape_nodes.ContextManager()
+
+        unsaved_key = "unsaved:filename-test"
+        display_name = "workflow_25"
+
+        with patch.dict(WorkflowRegistry._workflows, {}, clear=True):
+            WorkflowRegistry.create_unsaved_with_key(key=unsaved_key, name=display_name)
+            context_manager.push_workflow(workflow_name=unsaved_key)
+
+            empty_commands = SerializedFlowCommands(
+                flow_initialization_command=None,
+                serialized_node_commands=[],
+                serialized_connections=[],
+                unique_parameter_uuid_to_values={},
+                set_parameter_value_commands={},
+                set_lock_commands_per_node={},
+                sub_flows_commands=[],
+                node_dependencies=MagicMock(),
+                node_types_used=set(),
+            )
+
+            saved_metadata = WorkflowMetadata(
+                name=display_name,
+                schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+                engine_version_created_with="test",
+                node_libraries_referenced=[],
+                creation_date=datetime.now(UTC),
+            )
+
+            async def fake_ahandle_request(req: object) -> object:
+                from griptape_nodes.retained_mode.events.flow_events import (
+                    GetTopLevelFlowRequest,
+                    SerializeFlowToCommandsRequest,
+                )
+
+                if isinstance(req, GetTopLevelFlowRequest):
+                    return GetTopLevelFlowResultSuccess(flow_name="ControlFlow_1", result_details="ok")
+                if isinstance(req, SerializeFlowToCommandsRequest):
+                    return SerializeFlowToCommandsResultSuccess(
+                        serialized_flow_commands=empty_commands, result_details="ok"
+                    )
+                msg = f"Unexpected request type in test: {type(req).__name__}"
+                raise AssertionError(msg)
+
+            captured: dict[str, object] = {}
+
+            async def fake_save_file(request: object) -> object:
+                captured["file_name"] = getattr(request, "file_name", None)
+                captured["file_path"] = getattr(request, "file_path", None)
+                return SaveWorkflowFileFromSerializedFlowResultSuccess(
+                    file_path=str(getattr(request, "file_path", "")),
+                    workflow_metadata=saved_metadata,
+                    result_details="ok",
+                )
+
+            try:
+                with (
+                    patch.object(GriptapeNodes, "ahandle_request", side_effect=fake_ahandle_request),
+                    patch.object(
+                        workflow_manager,
+                        "on_save_workflow_file_from_serialized_flow_request",
+                        new=AsyncMock(side_effect=fake_save_file),
+                    ),
+                    patch.object(
+                        workflow_manager,
+                        "extract_workflow_shape",
+                        side_effect=ValueError("no shape"),
+                    ),
+                ):
+                    # Caller passes the synthetic unsaved key as file_name (matches the
+                    # frontend saveWorkflowWithoutModal behavior). Backend should strip it
+                    # and use metadata.name as the filename stem.
+                    result = asyncio.run(
+                        workflow_manager.on_save_workflow_request(SaveWorkflowRequest(file_name=unsaved_key))
+                    )
+
+                assert isinstance(result, SaveWorkflowResultSuccess)
+                assert captured["file_name"] == display_name
+                assert str(captured["file_path"]).endswith(f"{display_name}.py")
+                assert unsaved_key not in str(captured["file_path"])
+            finally:
+                if context_manager.has_current_workflow():
+                    context_manager.pop_workflow()
+
     # --- WorkflowInfo payload helpers ---
 
     def test_build_workflow_info_key_uses_workspace_join(self, griptape_nodes: GriptapeNodes) -> None:
