@@ -1,3 +1,4 @@
+import ast
 import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -10,8 +11,10 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+from griptape_nodes.exe_types.node_types import NodeDependencies
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
+from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
 from griptape_nodes.retained_mode.events.workflow_events import (
     CreateWorkflowFromTemplateRequest,
     CreateWorkflowFromTemplateResultFailure,
@@ -874,6 +877,185 @@ class TestWorkflowManager:
         assert save_path.file_path == workspace / "team" / "my_workflow.py"
         assert save_path.relative_file_path == str(Path("team") / "my_workflow.py")
 
+    # --- _generate_workflow_file_content (save output) ---
+
+    @staticmethod
+    def _empty_serialized_flow_commands() -> SerializedFlowCommands:
+        """Build a shape-free SerializedFlowCommands with no nodes/connections/values."""
+        return SerializedFlowCommands(
+            flow_initialization_command=None,
+            serialized_node_commands=[],
+            serialized_connections=[],
+            unique_parameter_uuid_to_values={},
+            set_parameter_value_commands={},
+            set_lock_commands_per_node={},
+            sub_flows_commands=[],
+            node_dependencies=NodeDependencies(),
+            node_types_used=set(),
+        )
+
+    @staticmethod
+    def _minimal_workflow_metadata(*, with_shape: bool = False) -> WorkflowMetadata:
+        return WorkflowMetadata(
+            name="test_workflow",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="1.0.0",
+            node_libraries_referenced=[],
+            workflow_shape=WorkflowShape(inputs={}, outputs={}) if with_shape else None,
+        )
+
+    def _generate(self, griptape_nodes: GriptapeNodes, *, with_shape: bool = False) -> str:
+        workflow_manager = griptape_nodes.WorkflowManager()
+        return workflow_manager._generate_workflow_file_content(
+            serialized_flow_commands=self._empty_serialized_flow_commands(),
+            workflow_metadata=self._minimal_workflow_metadata(with_shape=with_shape),
+        )
+
+    def test_generate_workflow_file_content_wraps_graph_building_in_async_build_workflow(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """Saved workflows must wrap graph-building statements in `async def build_workflow()`."""
+        content = self._generate(griptape_nodes)
+
+        # The file must declare build_workflow as an async function.
+        module = ast.parse(content)
+        build_workflow_defs = [
+            node for node in module.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "build_workflow"
+        ]
+        assert len(build_workflow_defs) == 1, "build_workflow must be defined exactly once as async"
+
+    def test_generate_workflow_file_content_is_inert_at_import(self, griptape_nodes: GriptapeNodes) -> None:
+        """A shape-free saved workflow must contain no module-level side effects.
+
+        Only function/class definitions and imports should appear at the top level so that
+        `exec()`-ing the module does not mutate engine state until build_workflow() is awaited.
+        """
+        content = self._generate(griptape_nodes)
+        module = ast.parse(content)
+
+        allowed_top_level = (
+            ast.Import,
+            ast.ImportFrom,
+            ast.FunctionDef,
+            ast.AsyncFunctionDef,
+            ast.ClassDef,
+            ast.Expr,  # docstring-style literal; still inert
+        )
+        for node in module.body:
+            assert isinstance(node, allowed_top_level), (
+                f"Unexpected top-level statement of type {type(node).__name__} in shape-free workflow"
+            )
+
+    def test_generate_workflow_file_content_prereq_lives_inside_build_workflow(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """Prerequisite code (context_manager setup) must live inside build_workflow, not at module scope."""
+        content = self._generate(griptape_nodes)
+        module = ast.parse(content)
+
+        build_workflow = next(
+            node for node in module.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "build_workflow"
+        )
+        body_src = "\n".join(ast.unparse(stmt) for stmt in build_workflow.body)
+        assert "context_manager = GriptapeNodes.ContextManager()" in body_src
+        assert "context_manager.push_workflow(file_path=__file__)" in body_src
+
+    def test_generate_workflow_file_content_empty_build_workflow_has_pass_body(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """If we somehow produce no graph-building statements, build_workflow should still be valid Python."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        # Stub out the two generators so main_body ends up empty and the `or [ast.Pass()]` branch runs.
+        with (
+            patch.object(workflow_manager, "_generate_workflow_run_prerequisite_code", return_value=[]),
+            patch.object(
+                workflow_manager,
+                "_generate_unique_values_code",
+                return_value=ast.Module(body=[], type_ignores=[]),
+            ),
+        ):
+            content = workflow_manager._generate_workflow_file_content(
+                serialized_flow_commands=self._empty_serialized_flow_commands(),
+                workflow_metadata=self._minimal_workflow_metadata(),
+            )
+
+        module = ast.parse(content)
+        build_workflow = next(
+            node for node in module.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "build_workflow"
+        )
+        assert len(build_workflow.body) == 1
+        assert isinstance(build_workflow.body[0], ast.Pass)
+
+    def test_generate_workflow_file_content_aexecute_awaits_build_workflow_first(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """aexecute_workflow must `await build_workflow()` before running the executor.
+
+        Shape-bearing workflows emit execute_workflow + aexecute_workflow, and the async
+        version is expected to construct the graph before invoking the executor.
+        """
+        content = self._generate(griptape_nodes, with_shape=True)
+        module = ast.parse(content)
+
+        aexecute = next(
+            node for node in module.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "aexecute_workflow"
+        )
+        first_stmt = aexecute.body[0]
+        # Expected shape: `await build_workflow()`
+        assert isinstance(first_stmt, ast.Expr)
+        assert isinstance(first_stmt.value, ast.Await)
+        call = first_stmt.value.value
+        assert isinstance(call, ast.Call)
+        assert isinstance(call.func, ast.Name)
+        assert call.func.id == "build_workflow"
+
+    def test_generate_workflow_file_content_ensure_context_is_async(self, griptape_nodes: GriptapeNodes) -> None:
+        """_ensure_workflow_context is now async and must await ahandle_request."""
+        content = self._generate(griptape_nodes, with_shape=True)
+        module = ast.parse(content)
+
+        ensure = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "_ensure_workflow_context"
+        )
+        body_src = "\n".join(ast.unparse(stmt) for stmt in ensure.body)
+        assert "await GriptapeNodes.ahandle_request" in body_src
+        # Sanity check: the old sync variant is gone.
+        assert "GriptapeNodes.handle_request(" not in body_src
+
+    def test_generate_workflow_file_content_register_library_uses_await_ahandle_request(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """Each referenced library emits `await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(...))`."""
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        metadata = WorkflowMetadata(
+            name="test_workflow",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="1.0.0",
+            node_libraries_referenced=[LibraryNameAndVersion(library_name="my_lib", library_version="1.2.3")],
+        )
+        content = workflow_manager._generate_workflow_file_content(
+            serialized_flow_commands=self._empty_serialized_flow_commands(),
+            workflow_metadata=metadata,
+        )
+
+        module = ast.parse(content)
+        build_workflow = next(
+            node for node in module.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "build_workflow"
+        )
+        body_src = "\n".join(ast.unparse(stmt) for stmt in build_workflow.body)
+        assert "await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(" in body_src
+        assert "library_name='my_lib'" in body_src
+
+    def test_generate_workflow_file_content_is_valid_python(self, griptape_nodes: GriptapeNodes) -> None:
+        """Generated content must parse cleanly (no smuggled-string comments left behind)."""
+        content = self._generate(griptape_nodes, with_shape=True)
+        # ast.parse raises SyntaxError if rewrite_string_comments left bad output behind.
+        ast.parse(content)
+
 
 class TestWorkflowVariablePersistence:
     """Round-trip tests: variables created in a flow must survive save + load."""
@@ -1199,6 +1381,11 @@ class TestWorkflowVariablePersistence:
 
         exec_globals: dict[str, object] = {"__file__": "test_workflow.py"}
         exec(compile(script_source, "<round_trip_test>", "exec"), exec_globals)  # noqa: S102
+
+        # Graph-building requests now live inside `async def build_workflow()`; await it so the
+        # flow/variable are actually materialized before we query them.
+        build_workflow = exec_globals["build_workflow"]
+        asyncio.run(build_workflow())  # type: ignore[operator]
 
         flow_value = GriptapeNodes.handle_request(
             GetVariableValueRequest(
