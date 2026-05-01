@@ -2520,3 +2520,191 @@ class TestLoadRegisteredProjectsCanonicalization:
             os.chdir(cwd)
 
         mock_load.assert_not_called()
+
+
+class TestProjectEnvironmentVariableRecursion:
+    """Tests for recursive resolution of project template.environment values.
+
+    Env values are parsed as macros and may reference builtins, directory names,
+    or other env vars. Values must survive as fully-expanded strings once written
+    into os.environ or into the macro resolution bag.
+    """
+
+    def _make_pm_with_template(
+        self,
+        environment: dict[str, str],
+        directories: dict[str, str] | None = None,
+        *,
+        workspace_path: Path = Path("/workspace"),
+        project_file_path: Path = Path("/proj/project.yml"),
+    ) -> ProjectManager:
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_config = Mock()
+        mock_config.workspace_path = workspace_path
+        mock_config.get_config_value.return_value = "staticfiles"
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="test_project",
+            directories={
+                name: DirectoryDefinition(name=name, path_macro=path_macro)
+                for name, path_macro in (directories or {"outputs": "outputs"}).items()
+            },
+            situations={},
+            environment=environment,
+        )
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(template.situations, validation)
+        directory_schemas = pm._parse_directory_macros(template.directories, validation)
+
+        project_id = str(project_file_path)
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_file_path,
+            project_base_dir=project_file_path.parent,
+            template=template,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
+        return pm
+
+    def test_env_value_resolves_literal_string(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_template(environment={"FOO": "hello"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{FOO}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/hello/x.png")
+
+    def test_env_value_references_builtin(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_template(environment={"WORK": "{workspace_dir}/sub"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{WORK}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/sub/x.png")
+
+    def test_env_value_references_directory(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_template(
+            environment={"OUT": "{outputs}/nested"},
+            directories={"outputs": "my_outputs"},
+        )
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{OUT}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("my_outputs/nested/x.png")
+
+    def test_env_value_references_another_env_var(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_template(environment={"BASE": "root", "FULL": "{BASE}/leaf"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{FULL}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/root/leaf/x.png")
+
+    def test_env_value_chain_multiple_hops(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_template(
+            environment={"A": "{workspace_dir}", "B": "{A}/b", "C": "{B}/c"},
+        )
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{C}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/b/c/x.png")
+
+    def test_env_value_cycle_detected(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_template(environment={"A": "{B}", "B": "{A}"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{A}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails
+
+        assert isinstance(result.result_details, ResultDetails)
+        assert "cycle" in str(result.result_details).lower()
+
+    def test_env_value_references_unknown_name(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_template(environment={"FOO": "{NOT_DEFINED}"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{FOO}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+
+    def test_env_value_references_workflow_builtin_without_workflow_fails(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_template(environment={"WF": "{workflow_name}_suffix"})
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False
+            mock_gn.ContextManager.return_value = mock_context
+
+            result = pm.on_get_path_for_macro_request(
+                GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{WF}/x.png"), variables={})
+            )
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+
+    def test_apply_project_env_writes_resolved_values_to_os_environ(self) -> None:
+        pm = self._make_pm_with_template(environment={"FOO": "{workspace_dir}/sub"})
+        assert pm._current_project_id is not None
+        project_info = pm._successfully_loaded_project_templates[pm._current_project_id]
+        try:
+            original = os.environ.get("FOO")
+            pm._apply_project_env(project_info)
+            assert os.environ["FOO"] == "/workspace/sub"
+            pm._restore_project_env()
+            if original is None:
+                assert "FOO" not in os.environ
+            else:
+                assert os.environ["FOO"] == original
+        finally:
+            os.environ.pop("FOO", None)
+
+    def test_apply_project_env_skips_on_resolution_failure(self, caplog: pytest.LogCaptureFixture) -> None:
+        """If an env value can't be resolved (e.g. cycle), apply is skipped and nothing is written."""
+        pm = self._make_pm_with_template(environment={"A": "{B}", "B": "{A}"})
+        assert pm._current_project_id is not None
+        project_info = pm._successfully_loaded_project_templates[pm._current_project_id]
+        os.environ.pop("A", None)
+        os.environ.pop("B", None)
+        try:
+            with caplog.at_level(logging.WARNING):
+                pm._apply_project_env(project_info)
+            assert "A" not in os.environ
+            assert "B" not in os.environ
+            assert pm._applied_env_snapshot == {}
+        finally:
+            os.environ.pop("A", None)
+            os.environ.pop("B", None)
