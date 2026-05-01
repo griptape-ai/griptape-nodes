@@ -439,7 +439,7 @@ class TestProjectManagerBuiltinVariables:
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultFailure)
-        assert result.failure_reason == PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED
+        assert result.failure_reason == PathResolutionFailureReason.RESERVED_NAME_COLLISION
         assert result.conflicting_variables == {"project_dir"}
         from griptape_nodes.retained_mode.events.base_events import ResultDetails
 

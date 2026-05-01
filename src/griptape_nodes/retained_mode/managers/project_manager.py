@@ -468,7 +468,7 @@ class ProjectManager:
         4. For each variable:
            - If in directories dict → resolve directory, add to resolution bag
            - Else if in user_supplied_vars → use user value
-           - If in BOTH → ERROR: DIRECTORY_OVERRIDE_ATTEMPTED
+           - If in BOTH → ERROR: RESERVED_NAME_COLLISION
            - Else → collect as missing
         5. If any missing → ERROR: MISSING_REQUIRED_VARIABLES
         6. Resolve macro with complete variable bag
@@ -503,7 +503,7 @@ class ProjectManager:
         conflicting = directory_names & user_provided_names
         if conflicting:
             return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
                 conflicting_variables=conflicting,
                 result_details=f"Attempted to resolve macro path. Failed because variables conflict with directory names: {', '.join(sorted(conflicting))}",
             )
@@ -548,7 +548,7 @@ class ProjectManager:
         # Check if user tried to override builtins with different values
         if disallowed_overrides:
             return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
                 conflicting_variables=disallowed_overrides,
                 result_details=f"Attempted to resolve macro path. Failed because cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
             )
@@ -557,13 +557,13 @@ class ProjectManager:
         # builtins > directories > caller-supplied > project env). Values are treated as
         # literal strings, not re-parsed as macros. Env keys that collide with a directory
         # name or builtin AND are referenced by this macro are rejected as
-        # DIRECTORY_OVERRIDE_ATTEMPTED so users don't silently shadow core resolution state.
+        # RESERVED_NAME_COLLISION so users don't silently shadow core resolution state.
         referenced_var_names = {v.name for v in variable_infos}
         project_env = template.environment
         env_collisions = set(project_env) & (directory_names | BUILTIN_VARIABLES) & referenced_var_names
         if env_collisions:
             return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
                 conflicting_variables=env_collisions,
                 result_details=f"Attempted to resolve macro path. Failed because project environment variables collide with directory or builtin names: {', '.join(sorted(env_collisions))}",
             )
