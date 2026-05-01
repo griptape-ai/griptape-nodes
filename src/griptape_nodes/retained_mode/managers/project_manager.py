@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -203,6 +204,11 @@ class ProjectManager:
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
         # This allows UI to query why a project failed to load
         self._registered_template_status: dict[Path, ProjectValidationInfo] = {}
+
+        # Snapshot of os.environ entries mutated by the currently-active project.
+        # Maps env var name -> original value (or None if the var was not set before).
+        # Restored on project switch so each project's env is isolated.
+        self._applied_env_snapshot: dict[str, str | None] = {}
 
         # Register event handlers
         event_manager.assign_manager_to_request_type(LoadProjectTemplateRequest, self.on_load_project_template_request)
@@ -547,6 +553,25 @@ class ProjectManager:
                 result_details=f"Attempted to resolve macro path. Failed because cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
             )
 
+        # Project env vars fill any remaining referenced variable names (lowest precedence:
+        # builtins > directories > caller-supplied > project env). Values are treated as
+        # literal strings, not re-parsed as macros. Env keys that collide with a directory
+        # name or builtin AND are referenced by this macro are rejected as
+        # DIRECTORY_OVERRIDE_ATTEMPTED so users don't silently shadow core resolution state.
+        referenced_var_names = {v.name for v in variable_infos}
+        project_env = template.environment
+        env_collisions = set(project_env) & (directory_names | BUILTIN_VARIABLES) & referenced_var_names
+        if env_collisions:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                conflicting_variables=env_collisions,
+                result_details=f"Attempted to resolve macro path. Failed because project environment variables collide with directory or builtin names: {', '.join(sorted(env_collisions))}",
+            )
+        for var_info in variable_infos:
+            var_name = var_info.name
+            if var_name not in resolution_bag and var_name in project_env:
+                resolution_bag[var_name] = project_env[var_name]
+
         required_vars = {v.name for v in variable_infos if v.is_required}
         provided_vars = set(resolution_bag.keys())
         missing = required_vars - provided_vars
@@ -585,6 +610,27 @@ class ProjectManager:
             result_details=f"Successfully resolved macro path. Result: {resolved_path}",
         )
 
+    # Keys we refuse to silently clobber. Users can still set them from their
+    # project.yml, but we emit a warning so overrides are visible in logs.
+    _DANGEROUS_ENV_KEYS: frozenset[str] = frozenset({"PATH", "HOME", "PYTHONPATH", "LD_LIBRARY_PATH"})
+
+    def _restore_project_env(self) -> None:
+        """Revert any os.environ entries mutated by the currently-active project."""
+        for key, original in self._applied_env_snapshot.items():
+            if original is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = original
+        self._applied_env_snapshot = {}
+
+    def _apply_project_env(self, template: ProjectTemplate) -> None:
+        """Apply template.environment to os.environ, snapshotting originals for later restore."""
+        for key, value in template.environment.items():
+            if key in self._DANGEROUS_ENV_KEYS:
+                logger.warning("Project template is overriding sensitive environment variable '%s'", key)
+            self._applied_env_snapshot[key] = os.environ.get(key)
+            os.environ[key] = value
+
     def _find_workspace_override(self, project_file_path: Path, project_workspaces: dict[str, str]) -> str | None:
         """Return the user-configured workspace override for a project file, or None if not mapped."""
         resolved_project_path = str(canonicalize_for_identity(project_file_path))
@@ -613,7 +659,7 @@ class ProjectManager:
             GriptapeNodes.WorkflowManager().refresh_workflow_registry()
         return None
 
-    async def on_set_current_project_request(  # noqa: C901
+    async def on_set_current_project_request(  # noqa: C901, PLR0912
         self, request: SetCurrentProjectRequest
     ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
         """Set which project user has selected.
@@ -624,6 +670,11 @@ class ProjectManager:
         During startup, LibraryManager handles library loading concurrently, so
         the workspace switch is skipped.
         """
+        # Restore os.environ entries mutated by the outgoing project before any config
+        # layer changes. Workspace resolution below may consult env vars, so the old
+        # project's values must not leak into the new project's workspace decision.
+        self._restore_project_env()
+
         # Capture workspace BEFORE config changes for comparison after
         old_workspace = self._config_manager.workspace_path
 
@@ -665,6 +716,15 @@ class ProjectManager:
                 # and reload configs so workspace_path resolves from default config layers.
                 self._config_manager.set_workspace_override(None)
                 self._config_manager.load_configs()
+
+        # Apply the new project's environment variables to os.environ. Happens after
+        # workspace resolution (so it doesn't affect workspace lookup -- the outgoing
+        # project's entries were already restored above) and before library reload
+        # (so nodes imported during reload observe the new values).
+        if request.project_id is not None:
+            new_project_info = self._successfully_loaded_project_templates.get(request.project_id)
+            if new_project_info is not None:
+                self._apply_project_env(new_project_info.template)
 
         new_workspace = self._config_manager.workspace_path
         workspace_changed = old_workspace != new_workspace
