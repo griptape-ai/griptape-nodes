@@ -287,12 +287,13 @@ class TestModelCatalogRoundTrip:
 
 class TestPermissionCatalogRoundTrip:
     def test_catalog_with_entries_and_marker_mapping_round_trips(self) -> None:
+        policy_src = 'permit(principal, action == Action::"use_model", resource == Entitlement::"use_openai");'
         original = PermissionCatalogLibraryProperty(
             permissions={
                 "use_kling": PermissionDeclaration(description="Access Kling models."),
                 "use_openai": PermissionDeclaration(
                     description="Access OpenAI models.",
-                    policy={"note": "future cedar payload"},
+                    policies=[policy_src],
                 ),
             },
             marker_mapping={"execute_arbitrary_code": "use_kling"},
@@ -301,7 +302,8 @@ class TestPermissionCatalogRoundTrip:
         reloaded = PermissionCatalogLibraryProperty.model_validate(original.model_dump())
 
         assert reloaded.permissions["use_kling"].description == "Access Kling models."
-        assert reloaded.permissions["use_openai"].policy == {"note": "future cedar payload"}
+        assert reloaded.permissions["use_kling"].policies == []
+        assert reloaded.permissions["use_openai"].policies == [policy_src]
         assert reloaded.marker_mapping == {"execute_arbitrary_code": "use_kling"}
 
     def test_permissions_defaults_to_empty(self) -> None:
@@ -309,6 +311,11 @@ class TestPermissionCatalogRoundTrip:
         catalog = PermissionCatalogLibraryProperty()
         assert catalog.permissions == {}
         assert catalog.marker_mapping == {}
+
+    def test_permission_declaration_policies_defaults_to_empty_list(self) -> None:
+        """A permission declared without policies yields an empty list (engine grants when evaluator is stub)."""
+        declaration = PermissionDeclaration(description="x")
+        assert declaration.policies == []
 
 
 class TestRoundTripSerialization:

@@ -35,6 +35,11 @@ MARKER_ENGINE_CONTROL = "engine_control"
 MARKER_PROXY_MODEL = "proxy_model"
 
 
+# Cedar policies for built-in permissions are intentionally empty for now. They
+# will be specified alongside the real Cedar evaluator; the engine currently
+# grants every permission regardless of policy content. Authors who want
+# library-specific restrictions on these built-ins should declare a separate
+# permission in their own catalog rather than shadowing a built-in name.
 BUILTIN_PERMISSIONS: dict[str, PermissionDeclaration] = {
     RUN_ARBITRARY_PYTHON: PermissionDeclaration(
         description="Execute arbitrary Python code inside a node.",

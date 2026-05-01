@@ -70,13 +70,16 @@ class PermissionDeclaration(BaseModel):
     Fields:
       - description: required. Human-readable explanation surfaced in admin UIs and error
         messages ("Access Kling video generation models").
-      - policy: free-form dict[str, str] reserved for policy payloads that the
-        permission evaluator may consume. The default (empty dict) means the
-        declaration carries no additional policy hint.
+      - policies: a list of Cedar policy statements (source text) that govern when
+        this permission is granted. Each entry is a single Cedar `permit` or
+        `forbid` statement as authors would write it in a .cedar file. The engine
+        stores and round-trips these strings; the Cedar evaluator will parse and
+        apply them when it ships. Cedar syntax validation at library-load time is
+        planned (see `library_validation.py` for the current validation surface).
     """
 
     description: str
-    policy: dict[str, str] = Field(default_factory=dict)
+    policies: list[str] = Field(default_factory=list)
 
 
 class ModelEntitlement(BaseModel):
