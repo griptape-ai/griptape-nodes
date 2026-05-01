@@ -2720,59 +2720,72 @@ class NodeManager:
         return ResolveNodeResultSuccess(result_details=details)
 
     async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
-        """Execute a node, routing to a worker subprocess when the library requires it.
+        """Execute a node. Orchestrator path is lookup-only; worker path is a pure RPC.
 
-        Single entry point for both local and worker execution. On the orchestrator,
-        if the node's library is owned by a worker, the request is forwarded over
-        the wire. Otherwise aprocess runs in-process. Inside a worker subprocess
-        (_is_worker=True) this always runs locally even if a WorkerManager is wired
-        up, so we don't loop requests back out.
+        On the orchestrator the node must already live in ObjectManager (created by
+        prior CreateNodeRequest). A miss is a hard failure -- we never fabricate
+        a fresh node from metadata on the orchestrator, because that would mask a
+        real "node dropped from the live map" bug with a stub that has no
+        connections and no flow parentage.
 
-        Idempotent: if the node already exists in ObjectManager it is reused.
-        When the node is absent and node_metadata is provided, the node is created
-        from the metadata (which must contain "node_type" and "library" keys).
+        On the worker (_is_worker=True) the node is constructed from
+        request.node_metadata on every call, hydrated, executed, and discarded.
+        Nothing persists between ExecuteNodeRequests on the worker side -- the
+        orchestrator is the single source of truth for node identity and
+        parameter values.
+
+        If the orchestrator's lookup succeeds and the node's library is owned by
+        a worker, the request is forwarded over the wire to that worker.
         """
-        lookup = self._get_or_create_node_for_execute(request)
-        if isinstance(lookup, ExecuteNodeResultFailure):
-            return lookup
-        node, _was_created = lookup
-
         library_manager = GriptapeNodes.LibraryManager()
-        if not library_manager._is_worker:
-            library_name = node.metadata.get("library")
-            worker = library_manager.get_worker_for_library(library_name) if library_name else None
-            wm = GriptapeNodes.WorkerManager()
-            if wm is not None and worker is not None:
-                return await self._execute_node_via_worker(request, wm, worker)
+
+        if library_manager._is_worker:
+            worker_node = self._materialize_transient_node_from_metadata(request)
+            if isinstance(worker_node, ExecuteNodeResultFailure):
+                return worker_node
+            return await self._hydrate_and_run_node(worker_node, request)
+
+        obj_mgr = GriptapeNodes.ObjectManager()
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        if node is None:
+            return ExecuteNodeResultFailure(
+                result_details=(
+                    f"Node '{request.node_name}' not found in ObjectManager on orchestrator. "
+                    "Refusing to fabricate a fresh node from metadata; the node was dropped "
+                    "from the live map and must be re-created via CreateNodeRequest."
+                ),
+            )
+
+        library_name = node.metadata.get("library")
+        worker = library_manager.get_worker_for_library(library_name) if library_name else None
+        wm = GriptapeNodes.WorkerManager()
+        if wm is not None and worker is not None:
+            return await self._execute_node_via_worker(request, wm, worker)
 
         return await self._hydrate_and_run_node(node, request)
 
-    def _get_or_create_node_for_execute(
+    def _materialize_transient_node_from_metadata(
         self, request: ExecuteNodeRequest
-    ) -> tuple[BaseNode, bool] | ExecuteNodeResultFailure:
-        """Look up an existing node or create one from request.node_metadata.
+    ) -> BaseNode | ExecuteNodeResultFailure:
+        """Construct a fresh node from request.node_metadata for worker-side execution.
 
-        Returns (node, was_created). was_created is True only when the node was
-        newly instantiated here (used by the worker subprocess to distinguish
-        first-touch hydration from a live-node execution).
+        The returned node is transient: it is NOT added to ObjectManager. It
+        exists only for the duration of _hydrate_and_run_node and is released to
+        GC when that call returns. Called only on the worker path.
         """
         node_name = request.node_name
-        obj_mgr = GriptapeNodes.ObjectManager()
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
-        if node is not None:
-            return node, False
         if not request.node_metadata:
             return ExecuteNodeResultFailure(
-                result_details=f"Node '{node_name}' not found and no node_metadata provided to create it.",
+                result_details=f"Node '{node_name}' requires node_metadata on worker path.",
             )
         node_type = request.node_metadata.get("node_type")
         library_name = request.node_metadata.get("library")
         if not node_type:
             return ExecuteNodeResultFailure(
-                result_details=f"Node '{node_name}' not found and node_metadata is missing 'node_type'.",
+                result_details=f"Node '{node_name}' node_metadata is missing 'node_type'.",
             )
         try:
-            node = LibraryRegistry.create_node(
+            return LibraryRegistry.create_node(
                 node_type=node_type,
                 name=node_name,
                 metadata=dict(request.node_metadata),
@@ -2782,8 +2795,6 @@ class NodeManager:
             return ExecuteNodeResultFailure(
                 result_details=f"Failed to create node '{node_name}' of type '{node_type}': {e}",
             )
-        obj_mgr.add_object_by_name(node.name, node)
-        return node, True
 
     async def _execute_node_via_worker(
         self,
