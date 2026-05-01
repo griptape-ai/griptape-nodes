@@ -66,6 +66,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+    RegisterLibraryFromFileRequest,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.os_events import (
@@ -686,10 +687,23 @@ class WorkflowManager:
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
         complete_file_path = resolve_workspace_path(Path(relative_file_path), workspace_path)
         try:
-            # Libraries are now loaded only on app initialization and explicit reload requests
-            # Now execute the workflow.
             async with await anyio.open_file(Path(complete_file_path), encoding="utf-8") as file:
                 workflow_content = await file.read()
+
+            # Resolve the workflow's declared library dependencies before exec.
+            # The metadata header lists every library the workflow uses; each must
+            # be registered (discovery is triggered if needed) so node construction
+            # inside the script can succeed. Older saved files also embed imperative
+            # RegisterLibraryFromFileRequest calls in their body; strip those here
+            # so they don't trip the sync-in-async guard when the script is exec'd.
+            library_resolution_error = await self._ensure_libraries_for_workflow(
+                relative_file_path=relative_file_path,
+                complete_file_path=complete_file_path,
+            )
+            if library_resolution_error is not None:
+                return library_resolution_error
+            workflow_content = self._strip_legacy_prereq_calls(workflow_content)
+
             exec(workflow_content)  # noqa: S102
 
             # After workflow execution, ensure there's always a current context by pushing
@@ -706,6 +720,63 @@ class WorkflowManager:
             execution_successful=True,
             execution_details=f"Succeeded in running workflow on path '{complete_file_path}'.",
         )
+
+    # Shape of the imperative library-registration block that older generated
+    # workflows embed at the top of the file. Kept tight because the emitter
+    # (before this change) always produced exactly this call shape.
+    _LEGACY_PREREQ_CALL_REGEX: ClassVar[re.Pattern[str]] = re.compile(
+        r"^GriptapeNodes\.handle_request\(\s*RegisterLibraryFromFileRequest\([^)]*\)\s*\)\s*\n",
+        re.MULTILINE,
+    )
+
+    async def _ensure_libraries_for_workflow(
+        self, *, relative_file_path: str, complete_file_path: Path
+    ) -> WorkflowExecutionResult | None:
+        """Ensure every library the workflow declares is registered before exec.
+
+        Reads node_libraries_referenced from the workflow's TOML metadata header
+        and dispatches a RegisterLibraryFromFileRequest for each entry via
+        ahandle_request. Returns a failure WorkflowExecutionResult if a library
+        cannot be resolved; None on success.
+        """
+        load_metadata_result = await self.on_load_workflow_metadata_request(
+            LoadWorkflowMetadata(file_name=relative_file_path)
+        )
+        if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+            # No usable metadata block (missing, malformed, or schema-invalid).
+            # Fall through to exec without pre-registering libraries; the engine
+            # startup path may have already loaded them. This mirrors prior
+            # behavior where a missing prereq block was survivable.
+            return None
+        for lib_ref in load_metadata_result.metadata.node_libraries_referenced:
+            register_result = await GriptapeNodes.ahandle_request(
+                RegisterLibraryFromFileRequest(
+                    library_name=lib_ref.library_name,
+                    perform_discovery_if_not_found=True,
+                )
+            )
+            if not register_result.succeeded():
+                details = (
+                    f"Failed to ensure library '{lib_ref.library_name}' for workflow "
+                    f"'{complete_file_path}': {getattr(register_result, 'result_details', '')}"
+                )
+                return WorkflowManager.WorkflowExecutionResult(
+                    execution_successful=False,
+                    execution_details=details,
+                )
+        return None
+
+    def _strip_legacy_prereq_calls(self, workflow_content: str) -> str:
+        """Remove imperative library-registration calls from older workflow files.
+
+        Library resolution is now performed by run_workflow before exec via the
+        declarative metadata header. Workflows saved before that change contain
+        GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(...)) at the
+        top of the body; exec'ing them inside the running event loop trips the
+        sync-in-async guard. Strip them so legacy files keep loading until they
+        are naturally re-saved.
+        """
+        return WorkflowManager._LEGACY_PREREQ_CALL_REGEX.sub("", workflow_content)
 
     async def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it into a blank slate.
@@ -2267,12 +2338,10 @@ class WorkflowManager:
 
         ast_container = ASTContainer()
 
-        # Extract library names from workflow metadata
-        library_names = [lib.library_name for lib in workflow_metadata.node_libraries_referenced]
-
-        prereq_code = self._generate_workflow_run_prerequisite_code(
-            import_recorder=import_recorder, library_names=library_names
-        )
+        # Library resolution is handled declaratively by WorkflowManager.run_workflow at load time
+        # via workflow_metadata.node_libraries_referenced; generated files no longer embed
+        # RegisterLibraryFromFileRequest calls.
+        prereq_code = self._generate_workflow_run_prerequisite_code(import_recorder=import_recorder)
         for node in prereq_code:
             ast_container.add_node(node)
 
@@ -3344,45 +3413,9 @@ class WorkflowManager:
 
     def _generate_workflow_run_prerequisite_code(
         self,
-        import_recorder: ImportRecorder,
-        library_names: list[str],
+        import_recorder: ImportRecorder,  # noqa: ARG002 (kept for symmetry with other _generate_* helpers)
     ) -> list[ast.AST]:
-        import_recorder.add_from_import(
-            "griptape_nodes.retained_mode.events.library_events", "RegisterLibraryFromFileRequest"
-        )
-
         code_blocks: list[ast.AST] = []
-
-        # Generate one RegisterLibraryFromFileRequest call per library
-        for library_name in library_names:
-            register_call = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                        attr="handle_request",
-                        ctx=ast.Load(),
-                    ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="RegisterLibraryFromFileRequest", ctx=ast.Load()),
-                            args=[],
-                            keywords=[
-                                ast.keyword(
-                                    arg="library_name",
-                                    value=ast.Constant(value=library_name),
-                                ),
-                                ast.keyword(
-                                    arg="perform_discovery_if_not_found",
-                                    value=ast.Constant(value=True),
-                                ),
-                            ],
-                        )
-                    ],
-                    keywords=[],
-                )
-            )
-            ast.fix_missing_locations(register_call)
-            code_blocks.append(register_call)
 
         # Generate context manager assignment
         assign_context_manager = ast.Assign(

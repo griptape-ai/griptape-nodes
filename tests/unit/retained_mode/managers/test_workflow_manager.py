@@ -111,7 +111,9 @@ class TestWorkflowManager:
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
+                AsyncMock(
+                    return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success")
+                ),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=False),
             patch.object(
@@ -122,7 +124,7 @@ class TestWorkflowManager:
             ),
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/full/path/to/workflow.py"),
         ):
-            result = workflow_manager.on_import_workflow_request(request)
+            result = asyncio.run(workflow_manager.on_import_workflow_request(request))
 
             assert isinstance(result, ImportWorkflowResultSuccess)
             # Registry key is derived from the file path (minus extension), not from metadata.name.
@@ -140,11 +142,13 @@ class TestWorkflowManager:
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
+                AsyncMock(
+                    return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success")
+                ),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=True),
         ):
-            result = workflow_manager.on_import_workflow_request(request)
+            result = asyncio.run(workflow_manager.on_import_workflow_request(request))
 
             assert isinstance(result, ImportWorkflowResultSuccess)
             # Registry key is derived from the file path (minus extension), not from metadata.name.
@@ -158,9 +162,9 @@ class TestWorkflowManager:
         with patch.object(
             workflow_manager,
             "on_load_workflow_metadata_request",
-            return_value=LoadWorkflowMetadataResultFailure(result_details="Failed to load metadata"),
+            AsyncMock(return_value=LoadWorkflowMetadataResultFailure(result_details="Failed to load metadata")),
         ):
-            result = workflow_manager.on_import_workflow_request(request)
+            result = asyncio.run(workflow_manager.on_import_workflow_request(request))
 
             assert isinstance(result, ImportWorkflowResultFailure)
             assert isinstance(result.result_details, ResultDetails)
@@ -178,7 +182,9 @@ class TestWorkflowManager:
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
+                AsyncMock(
+                    return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success")
+                ),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=False),
             patch.object(
@@ -187,7 +193,7 @@ class TestWorkflowManager:
                 return_value=RegisterWorkflowResultFailure(result_details="Registration failed"),
             ),
         ):
-            result = workflow_manager.on_import_workflow_request(request)
+            result = asyncio.run(workflow_manager.on_import_workflow_request(request))
 
             assert isinstance(result, ImportWorkflowResultFailure)
             assert isinstance(result.result_details, ResultDetails)
@@ -1315,3 +1321,144 @@ class TestVariableReferenceAccess:
 
         # Access being READ does not exclude the variable from save-to-disk serialization.
         assert {cmd.create_variable_command.name for cmd in commands} == {"only_read"}
+
+
+class TestLibraryResolutionOnLoad:
+    """run_workflow resolves declared libraries before exec via the metadata header."""
+
+    def test_strip_legacy_prereq_calls_removes_imperative_registrations(self, griptape_nodes: GriptapeNodes) -> None:
+        """_strip_legacy_prereq_calls removes every legacy RegisterLibraryFromFileRequest call."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        content = (
+            "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n"
+            "from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest\n"
+            "GriptapeNodes.handle_request(RegisterLibraryFromFileRequest("
+            "library_name='Example Library', perform_discovery_if_not_found=True))\n"
+            "GriptapeNodes.handle_request(RegisterLibraryFromFileRequest("
+            "library_name='Other Library', perform_discovery_if_not_found=True))\n"
+            "context_manager = GriptapeNodes.ContextManager()\n"
+        )
+
+        stripped = workflow_manager._strip_legacy_prereq_calls(content)
+
+        # The handle_request(RegisterLibraryFromFileRequest(...)) calls are gone;
+        # unrelated lines (including the now-dead import) are preserved.
+        assert "GriptapeNodes.handle_request(RegisterLibraryFromFileRequest" not in stripped
+        assert "context_manager = GriptapeNodes.ContextManager()" in stripped
+
+    def test_strip_legacy_prereq_calls_leaves_content_without_legacy_calls_unchanged(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """Modern generated content passes through _strip_legacy_prereq_calls untouched."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        content = (
+            "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n"
+            "context_manager = GriptapeNodes.ContextManager()\n"
+        )
+
+        assert workflow_manager._strip_legacy_prereq_calls(content) == content
+
+    def test_ensure_libraries_dispatches_ahandle_request_per_library(self, griptape_nodes: GriptapeNodes) -> None:
+        """_ensure_libraries_for_workflow dispatches one RegisterLibraryFromFileRequest per declared library."""
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+        from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterLibraryFromFileRequest,
+            RegisterLibraryFromFileResultSuccess,
+        )
+        from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadataResultSuccess
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        metadata = WorkflowMetadata(
+            name="t",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="0.0.0",
+            node_libraries_referenced=[
+                LibraryNameAndVersion(library_name="Example Library", library_version="0.1.0"),
+                LibraryNameAndVersion(library_name="Other Library", library_version="0.2.0"),
+            ],
+        )
+        load_result = LoadWorkflowMetadataResultSuccess(metadata=metadata, result_details="ok")
+
+        dispatched: list[RegisterLibraryFromFileRequest] = []
+
+        async def fake_ahandle_request(request: object) -> object:
+            dispatched.append(request)  # type: ignore[arg-type]
+            return RegisterLibraryFromFileResultSuccess(
+                library_name=request.library_name,  # type: ignore[attr-defined]
+                result_details="ok",
+            )
+
+        with (
+            patch.object(workflow_manager, "on_load_workflow_metadata_request", AsyncMock(return_value=load_result)),
+            patch.object(GriptapeNodes, "ahandle_request", side_effect=fake_ahandle_request),
+        ):
+            result = asyncio.run(
+                workflow_manager._ensure_libraries_for_workflow(
+                    relative_file_path="whatever.py",
+                    complete_file_path=Path("whatever.py"),
+                )
+            )
+
+        assert result is None
+        assert [r.library_name for r in dispatched] == ["Example Library", "Other Library"]
+        assert all(r.perform_discovery_if_not_found for r in dispatched)
+
+    def test_ensure_libraries_returns_failure_when_registration_fails(self, griptape_nodes: GriptapeNodes) -> None:
+        """A failed library registration short-circuits with a WorkflowExecutionResult failure."""
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+        from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+        from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileResultFailure
+        from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadataResultSuccess
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        metadata = WorkflowMetadata(
+            name="t",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="0.0.0",
+            node_libraries_referenced=[
+                LibraryNameAndVersion(library_name="Missing Library", library_version="0.1.0"),
+            ],
+        )
+        load_result = LoadWorkflowMetadataResultSuccess(metadata=metadata, result_details="ok")
+
+        with (
+            patch.object(workflow_manager, "on_load_workflow_metadata_request", AsyncMock(return_value=load_result)),
+            patch.object(
+                GriptapeNodes,
+                "ahandle_request",
+                AsyncMock(return_value=RegisterLibraryFromFileResultFailure(result_details="not found")),
+            ),
+        ):
+            result = asyncio.run(
+                workflow_manager._ensure_libraries_for_workflow(
+                    relative_file_path="whatever.py",
+                    complete_file_path=Path("whatever.py"),
+                )
+            )
+
+        assert result is not None
+        assert result.execution_successful is False
+        assert "Missing Library" in result.execution_details
+
+    def test_ensure_libraries_is_noop_when_metadata_missing(self, griptape_nodes: GriptapeNodes) -> None:
+        """If metadata can't be loaded, _ensure_libraries_for_workflow returns None (tolerant fallback)."""
+        from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadataResultFailure
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        load_result = LoadWorkflowMetadataResultFailure(result_details="no metadata")
+
+        ahandle_spy = AsyncMock()
+        with (
+            patch.object(workflow_manager, "on_load_workflow_metadata_request", AsyncMock(return_value=load_result)),
+            patch.object(GriptapeNodes, "ahandle_request", ahandle_spy),
+        ):
+            result = asyncio.run(
+                workflow_manager._ensure_libraries_for_workflow(
+                    relative_file_path="whatever.py",
+                    complete_file_path=Path("whatever.py"),
+                )
+            )
+
+        assert result is None
+        ahandle_spy.assert_not_awaited()
