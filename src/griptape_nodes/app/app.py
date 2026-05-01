@@ -42,6 +42,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils import install_file_url_support
+from griptape_nodes.utils.version_utils import engine_version
 
 
 # WebSocket thread communication message types
@@ -301,6 +302,7 @@ async def _run_worker(client: Client, role: Worker) -> None:
     reg_event = EventRequest(
         request=worker_events.RegisterWorkerRequest(
             worker_engine_id=worker_engine_id,
+            engine_version=engine_version,
             library_name=role.library_name,
         ),
         response_topic=None,

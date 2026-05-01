@@ -21,6 +21,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     WORKER_HEARTBEAT_TIMEOUT_KEY,
     WORKER_NODE_EXECUTION_TIMEOUT_KEY,
 )
+from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -172,6 +173,16 @@ class WorkerManager:
     ) -> worker_events.RegisterWorkerResultSuccess | worker_events.RegisterWorkerResultFailure:
         """Handle a worker registration request from a worker engine."""
         wid = request.worker_engine_id
+        if request.engine_version != engine_version:
+            details = (
+                f"Worker {wid} reported engine_version '{request.engine_version}' "
+                f"but orchestrator is running engine_version '{engine_version}'. "
+                "Workers and orchestrators must share an engine version because the "
+                "wire shape of every event is tied to the engine build."
+            )
+            logger.error(details)
+            return worker_events.RegisterWorkerResultFailure(result_details=details)
+
         session_id = self._griptape_nodes.get_session_id()
         request_topic = f"sessions/{session_id}/workers/{wid}/request"
         self._workers[wid] = WorkerRegistration(request_topic=request_topic, worker_key=request.library_name)
