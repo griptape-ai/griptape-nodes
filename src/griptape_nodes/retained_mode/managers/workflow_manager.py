@@ -5254,16 +5254,37 @@ class WorkflowManager:
         succeeded = []
         failed = []
 
+        # Resolve the libraries install directory so workflows belonging to downloaded
+        # libraries are skipped during the workspace scan. Library-declared workflows
+        # (listed in griptape_nodes_library.json) are registered separately via
+        # LibraryManager._collect_library_workflow_files before this scan runs.
+        config_mgr = GriptapeNodes.ConfigManager()
+        libraries_exclusion_root: Path | None = None
+        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
+        if libraries_dir_setting:
+            libraries_exclusion_root = resolve_workspace_path(
+                Path(libraries_dir_setting), config_mgr.workspace_path
+            ).resolve()
+        else:
+            logger.warning(
+                "libraries_directory config value is empty; workspace scan will not exclude downloaded "
+                "library workflows. Library-bundled tests and templates may appear as user workflows."
+            )
+
         # First pass: collect all workflow files to determine total count
         all_workflow_files: set[Path] = set()
 
-        def collect_workflow_files(path: Path) -> None:
+        def collect_workflow_files(path: Path) -> None:  # noqa: C901
             """Collect workflow files from a path."""
             if not path.exists():
                 return
             if path.is_dir():
                 for workflow_file in path.rglob("*.py"):
                     if ".venv" in workflow_file.parts:
+                        continue
+                    if libraries_exclusion_root is not None and workflow_file.resolve().is_relative_to(
+                        libraries_exclusion_root
+                    ):
                         continue
                     # Check if file has workflow metadata
                     try:
