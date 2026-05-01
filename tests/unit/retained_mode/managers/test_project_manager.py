@@ -2692,6 +2692,54 @@ class TestProjectEnvironmentVariableRecursion:
         finally:
             os.environ.pop("FOO", None)
 
+    def test_macro_falls_back_to_shell_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A bare {VAR} reference should resolve from os.environ when not declared elsewhere."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        monkeypatch.setenv("MY_SHELL_VAR", "from_shell")
+        pm = self._make_pm_with_template(environment={})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{MY_SHELL_VAR}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/from_shell/x.png")
+
+    def test_project_env_wins_over_shell_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """If a var exists in both project env and shell env, project env wins."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        monkeypatch.setenv("OVERRIDE_ME", "from_shell")
+        pm = self._make_pm_with_template(environment={"OVERRIDE_ME": "from_project"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{OVERRIDE_ME}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("outputs/from_project/x.png")
+
+    def test_env_value_references_shell_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A project env value can recursively reference a shell env var."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        monkeypatch.setenv("SHELL_ROOT", "/my/shell/root")
+        pm = self._make_pm_with_template(environment={"PROJECT": "{SHELL_ROOT}/sub"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{PROJECT}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/my/shell/root/sub/x.png")
+
+    def test_unknown_var_still_fails_when_not_in_shell(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A referenced var that exists nowhere (not in project env, not in shell) fails as before."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        monkeypatch.delenv("DEFINITELY_NOT_SET", raising=False)
+        pm = self._make_pm_with_template(environment={})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{DEFINITELY_NOT_SET}/x.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES
+
     def test_apply_project_env_skips_on_resolution_failure(self, caplog: pytest.LogCaptureFixture) -> None:
         """If an env value can't be resolved (e.g. cycle), apply is skipped and nothing is written."""
         pm = self._make_pm_with_template(environment={"A": "{B}", "B": "{A}"})

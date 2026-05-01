@@ -553,12 +553,13 @@ class ProjectManager:
                 result_details=f"Attempted to resolve macro path. Failed because cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
             )
 
-        # Project env vars fill any remaining referenced variable names (lowest precedence:
-        # builtins > directories > caller-supplied > project env). Env values are recursively
-        # resolved (may reference builtins, directories, or other env vars) before being
-        # placed into the resolution bag. Env keys that collide with a directory name or
-        # builtin AND are referenced by this macro are rejected as RESERVED_NAME_COLLISION
-        # so users don't silently shadow core resolution state.
+        # Project env vars fill any remaining referenced variable names. Precedence (high to
+        # low): builtins > directories > caller-supplied > project env > shell env. Project
+        # env values are recursively resolved (may reference builtins, directories, other
+        # project env vars, or shell env vars) before being placed into the resolution bag.
+        # Env keys that collide with a directory name or builtin AND are referenced by this
+        # macro are rejected as RESERVED_NAME_COLLISION so users don't silently shadow core
+        # resolution state.
         referenced_var_names = {v.name for v in variable_infos}
         project_env = template.environment
         env_collisions = set(project_env) & (directory_names | BUILTIN_VARIABLES) & referenced_var_names
@@ -580,6 +581,18 @@ class ProjectManager:
                 )
             for var_name in env_needed:
                 resolution_bag[var_name] = resolved_env[var_name]
+
+        # Shell environment is the final fallback, below project env. Lets authors reference
+        # any var set in their shell ({HOME}, {USER}, etc.) without declaring it in project.yml.
+        # Reserved names (builtins/directories) silently win: shells have hundreds of vars and
+        # we can't police accidental shadowing.
+        for var_info in variable_infos:
+            var_name = var_info.name
+            if var_name in resolution_bag:
+                continue
+            shell_value = os.environ.get(var_name)
+            if shell_value is not None:
+                resolution_bag[var_name] = shell_value
 
         required_vars = {v.name for v in variable_infos if v.is_required}
         provided_vars = set(resolution_bag.keys())
@@ -661,10 +674,11 @@ class ProjectManager:
           - directory names (recursively resolved via their own path_macro, so env values
             end up as fully-expanded strings suitable for os.environ / subprocesses)
           - other project environment variables
+          - shell environment variables (lowest precedence; see os.environ lookup below)
 
-        References to unknown names or cycles raise MacroResolutionError. Builtins that
-        cannot be resolved in the current context (e.g. workflow_name when no workflow is
-        active) also surface as resolution errors.
+        References to unknown names (not in any of the above sources) or cycles raise
+        MacroResolutionError. Builtins that cannot be resolved in the current context
+        (e.g. workflow_name when no workflow is active) also surface as resolution errors.
         """
         builtins_cache: dict[str, str] = {}
         env_resolved: dict[str, str] = {}
@@ -710,7 +724,11 @@ class ProjectManager:
                         bag[ref] = resolve_directory(ref)
                     elif ref in template.environment:
                         bag[ref] = resolve_env(ref)
-                    # else: leave unresolved; parsed.resolve() will raise MISSING_REQUIRED_VARIABLES
+                    else:
+                        shell_value = os.environ.get(ref)
+                        if shell_value is not None:
+                            bag[ref] = shell_value
+                        # else: leave unresolved; parsed.resolve() will raise MISSING_REQUIRED_VARIABLES
                 resolved = parsed.resolve(bag, self._secrets_manager)
             finally:
                 in_progress.discard(token)

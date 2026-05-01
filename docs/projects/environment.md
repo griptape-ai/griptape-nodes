@@ -73,6 +73,8 @@ When a macro is resolved, variables are supplied from these sources in priority 
 1. **Directory names** — resolved from the project's directory definitions; cannot be overridden by caller-supplied variables
 1. **Caller-supplied variables** — values passed by the node or operation requesting path resolution
 1. **Derived variables** — computed from the variables above plus project state, and injected before the situation macro is resolved. A derived variable abstains when the caller has already supplied its value, so caller-supplied entries still win.
+1. **Project environment variables** — values from the project's `environment:` block. Recursively resolved, so a project env value can reference builtins, directory names, other project env vars, or shell env vars.
+1. **Shell environment variables** — final fallback. Any variable set in the shell that launched Griptape Nodes (including `HOME`, `USER`, or anything the user exported) can be referenced with `{NAME}` in a macro. A project env var of the same name always wins. Reserved names (builtins, directories) silently win over the shell, since shells have many incidental variables that shouldn't shadow project state.
 
 If a caller tries to supply a value for a builtin or directory name that differs from the system value, the resolution fails with a `RESERVED_NAME_COLLISION` error.
 
