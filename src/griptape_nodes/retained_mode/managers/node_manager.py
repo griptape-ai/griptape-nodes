@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
 import pickle
@@ -60,6 +61,8 @@ from griptape_nodes.retained_mode.events.connection_events import (
 )
 from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
+    CancelExecuteNodeRequest,
+    CancelExecuteNodeResultSuccess,
     CancelFlowRequest,
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
@@ -265,6 +268,20 @@ class NodeManager:
     def __init__(self, event_manager: EventManager) -> None:
         self._name_to_parent_flow_name = {}
 
+        # Orchestrator-side: node_name → (target_request_id, worker_engine_id, worker_request_topic)
+        # for ExecuteNodeRequests currently routed to a worker. Populated in
+        # _execute_node_via_worker, cleared in its finally. Used by
+        # cancel_worker_execution to dispatch a CancelExecuteNodeRequest to the
+        # correct worker.
+        self._orch_worker_requests: dict[str, tuple[str, str, str]] = {}
+
+        # Worker-side: request_id → (asyncio.Task, BaseNode) for the aprocess
+        # task currently handling an ExecuteNodeRequest. Populated in
+        # _hydrate_and_run_node (which captures asyncio.current_task), cleared
+        # in its finally. Used by on_cancel_execute_node_request to locate the
+        # task to cancel.
+        self._worker_inflight_aprocesses: dict[str, tuple[asyncio.Task, BaseNode]] = {}
+
         event_manager.assign_manager_to_request_type(CreateNodeRequest, self.on_create_node_request)
         event_manager.assign_manager_to_request_type(
             AddNodesToNodeGroupRequest, self.on_add_nodes_to_node_group_request
@@ -345,6 +362,7 @@ class NodeManager:
             BatchSetNodeLockStateRequest, self.on_batch_set_lock_node_state_request
         )
         event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
+        event_manager.assign_manager_to_request_type(CancelExecuteNodeRequest, self.on_cancel_execute_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -2781,16 +2799,81 @@ class NodeManager:
         local and worker routes.
         """
         worker_engine_id, worker_request_topic = worker
-        execute_raw = await wm.route_to_worker(
-            EventRequest(request=request),
+        # Assign the request_id on the payload itself so the worker handler can
+        # read it from request.request_id. WorkerManager.route_to_worker will
+        # re-use this id on the outer EventRequest and on its pending-future
+        # registration, keeping both sides in sync. The id is what
+        # cancel_worker_execution dispatches as CancelExecuteNodeRequest.target_request_id.
+        if not request.request_id:
+            request.request_id = str(uuid4())
+        target_request_id = request.request_id
+        self._orch_worker_requests[request.node_name] = (
+            target_request_id,
             worker_engine_id,
             worker_request_topic,
         )
+        try:
+            event_request = EventRequest(request=request)
+            event_request.request_id = target_request_id
+            execute_raw = await wm.route_to_worker(
+                event_request,
+                worker_engine_id,
+                worker_request_topic,
+            )
+        finally:
+            # Drop the tracking entry regardless of success, failure, or cancellation
+            # so a subsequent execute on the same node doesn't see a stale record.
+            self._orch_worker_requests.pop(request.node_name, None)
         result_type_name = execute_raw.get("result_type", "")
         result_data = execute_raw.get("result", {})
         if result_type_name == ExecuteNodeResultSuccess.__name__:
             return ExecuteNodeResultSuccess(**result_data)
         return ExecuteNodeResultFailure(**result_data)
+
+    async def cancel_worker_execution(self, node_name: str) -> None:
+        """Dispatch CancelExecuteNodeRequest to the worker running node_name.
+
+        No-op when the node is not currently routed to a worker (either because
+        it runs locally or because no ExecuteNodeRequest is in flight). The
+        cancel is fire-and-forget: the worker's handler runs under SkipTheLine
+        and returns quickly, but the orchestrator does not await the ack --
+        cooperative cancellation is signalled via task.cancel() on the
+        orchestrator's own route_to_worker await, which unblocks here as soon
+        as the cancel event has been put on the wire.
+        """
+        entry = self._orch_worker_requests.get(node_name)
+        if entry is None:
+            return
+        target_request_id, worker_engine_id, worker_request_topic = entry
+        wm = GriptapeNodes.WorkerManager()
+        cancel_request = CancelExecuteNodeRequest(target_request_id=target_request_id)
+        await wm.forward_event_to_worker(
+            EventRequest(request=cancel_request),
+            worker_engine_id=worker_engine_id,
+            worker_request_topic=worker_request_topic,
+        )
+
+    async def on_cancel_execute_node_request(self, request: CancelExecuteNodeRequest) -> ResultPayload:
+        """Worker-side handler: cancel an in-flight aprocess task by request_id.
+
+        Sets the node's cooperative cancellation flag (so aprocess that checks
+        is_cancellation_requested can exit cleanly) and cancels the asyncio task
+        running aprocess (matches parallel_resolution.cancel_all_nodes semantics
+        for local execution). Returns success even when the target request is
+        not in flight so the cancel path is idempotent.
+        """
+        entry = self._worker_inflight_aprocesses.get(request.target_request_id)
+        if entry is None:
+            return CancelExecuteNodeResultSuccess(
+                result_details=f"No in-flight ExecuteNodeRequest for request_id '{request.target_request_id}'.",
+            )
+        task, node = entry
+        node.request_cancellation()
+        if not task.done():
+            task.cancel()
+        return CancelExecuteNodeResultSuccess(
+            result_details=f"Cancellation delivered for request_id '{request.target_request_id}'.",
+        )
 
     async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         """Hydrate a node's input parameters and execute it.
@@ -2804,6 +2887,22 @@ class NodeManager:
         orchestrator the scope is a no-op because forwarding is not configured
         there.
         """
+        # Register this aprocess task under its request_id so
+        # CancelExecuteNodeRequest can locate it. Only populated when the caller
+        # supplied a request_id (set by _execute_node_via_worker on the
+        # orchestrator; absent on the orchestrator-local path where the
+        # resolution machine already owns the task).
+        current_task = asyncio.current_task()
+        tracked_request_id = request.request_id if current_task is not None else None
+        if tracked_request_id and current_task is not None:
+            self._worker_inflight_aprocesses[tracked_request_id] = (current_task, node)
+        try:
+            return await self._hydrate_and_run_node_inner(node, request)
+        finally:
+            if tracked_request_id:
+                self._worker_inflight_aprocesses.pop(tracked_request_id, None)
+
+    async def _hydrate_and_run_node_inner(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         node_name = request.node_name
         with GriptapeNodes.EventManager().worker_node_execution_scope():
             # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.

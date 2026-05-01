@@ -138,6 +138,7 @@ class TestHandleRegisterWorkerRequestEngineVersion:
         result = await worker_manager.handle_register_worker_request(request)
 
         assert isinstance(result, worker_events.RegisterWorkerResultFailure)
+        assert isinstance(result.result_details, str)
         assert "0.0.0-mismatch" in result.result_details
         assert engine_version in result.result_details
 

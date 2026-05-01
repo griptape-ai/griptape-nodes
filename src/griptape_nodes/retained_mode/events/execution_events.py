@@ -7,6 +7,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    SkipTheLineMixin,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
@@ -511,3 +512,37 @@ class ExecuteNodeResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class ExecuteNodeResultFailure(ResultPayloadFailure):
     """Failed result from executing a node directly."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelExecuteNodeRequest(RequestPayload, SkipTheLineMixin):
+    """Cancel an in-flight ExecuteNodeRequest on this engine.
+
+    Dispatched by the orchestrator to a worker when a user cancels a flow and a
+    node in that flow is currently executing on the worker. The worker locates
+    the aprocess task registered under target_request_id, sets the cooperative
+    cancellation flag on the node, and cancels the task.
+
+    SkipTheLineMixin so the cancel bypasses the worker's event queue and reaches
+    the dispatcher even when the queue is blocked behind the aprocess we are
+    cancelling.
+
+    Args:
+        target_request_id: The request_id of the ExecuteNodeRequest to cancel.
+    """
+
+    target_request_id: str
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelExecuteNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Cancellation was delivered. The target request may or may not have been in-flight."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelExecuteNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Cancellation could not be delivered."""

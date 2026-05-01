@@ -528,7 +528,9 @@ async def _process_event_queue() -> None:
 
     def _handle_task_result(task: asyncio.Task) -> None:
         background_tasks.discard(task)
-        if task.exception() and not task.cancelled():
+        # Check cancelled() first -- calling exception() on a cancelled task
+        # raises CancelledError rather than returning it.
+        if not task.cancelled() and task.exception() is not None:
             logger.exception("Background task failed", exc_info=task.exception())
 
     try:
