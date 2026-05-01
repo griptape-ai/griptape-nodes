@@ -52,6 +52,7 @@ if TYPE_CHECKING:
         OperationDepthManager,
     )
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
+    from griptape_nodes.retained_mode.managers.permissions_manager import PermissionsManager
     from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
     from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -101,6 +102,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _project_manager: ProjectManager
     _artifact_manager: ArtifactManager
     _worker_manager: WorkerManager
+    _permissions_manager: PermissionsManager
 
     def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -122,6 +124,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             OperationDepthManager,
         )
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
+        from griptape_nodes.retained_mode.managers.permissions_manager import PermissionsManager
         from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
         from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -172,6 +175,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._user_manager = UserManager(self._secrets_manager)
             self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
             self._artifact_manager = ArtifactManager(self._event_manager)
+            self._permissions_manager = PermissionsManager(self._event_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -365,6 +369,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def WorkerManager(cls) -> WorkerManager:
         return GriptapeNodes.get_instance()._worker_manager
+
+    @classmethod
+    def PermissionsManager(cls) -> PermissionsManager:
+        return GriptapeNodes.get_instance()._permissions_manager
 
     @classmethod
     def clear_data(cls) -> None:

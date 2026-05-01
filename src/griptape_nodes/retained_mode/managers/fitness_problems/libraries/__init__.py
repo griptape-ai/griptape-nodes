@@ -3,6 +3,7 @@
 from .advanced_library_load_failure_problem import AdvancedLibraryLoadFailureProblem
 from .after_library_callback_problem import AfterLibraryCallbackProblem
 from .before_library_callback_problem import BeforeLibraryCallbackProblem
+from .builtin_permission_shadowed_problem import BuiltinPermissionShadowedProblem
 from .create_config_category_problem import CreateConfigCategoryProblem
 from .dependency_installation_failed_problem import DependencyInstallationFailedProblem
 from .deprecated_node_warning_problem import DeprecatedNodeWarningProblem
@@ -28,6 +29,13 @@ from .old_xdg_location_warning_problem import OldXdgLocationWarningProblem
 from .sandbox_directory_missing_problem import SandboxDirectoryMissingProblem
 from .ui_options_field_modified_incompatible_problem import UiOptionsFieldModifiedIncompatibleProblem
 from .ui_options_field_modified_warning_problem import UiOptionsFieldModifiedWarningProblem
+from .undeclared_model_usage_reference_problem import UndeclaredModelUsageReferenceProblem
+from .undeclared_permission_reference_problem import (
+    PermissionReferenceSite,
+    UndeclaredPermissionReferenceProblem,
+)
+from .unrecognized_marker_discriminator_problem import UnrecognizedMarkerDiscriminatorProblem
+from .unreferenced_catalog_permission_problem import UnreferencedCatalogPermissionProblem
 from .update_config_category_problem import UpdateConfigCategoryProblem
 from .venv_creation_failed_problem import VenvCreationFailedProblem
 
@@ -35,6 +43,7 @@ __all__ = [
     "AdvancedLibraryLoadFailureProblem",
     "AfterLibraryCallbackProblem",
     "BeforeLibraryCallbackProblem",
+    "BuiltinPermissionShadowedProblem",
     "CreateConfigCategoryProblem",
     "DependencyInstallationFailedProblem",
     "DeprecatedNodeWarningProblem",
@@ -57,9 +66,14 @@ __all__ = [
     "NodeClassNotFoundProblem",
     "NodeModuleImportProblem",
     "OldXdgLocationWarningProblem",
+    "PermissionReferenceSite",
     "SandboxDirectoryMissingProblem",
     "UiOptionsFieldModifiedIncompatibleProblem",
     "UiOptionsFieldModifiedWarningProblem",
+    "UndeclaredModelUsageReferenceProblem",
+    "UndeclaredPermissionReferenceProblem",
+    "UnrecognizedMarkerDiscriminatorProblem",
+    "UnreferencedCatalogPermissionProblem",
     "UpdateConfigCategoryProblem",
     "VenvCreationFailedProblem",
 ]

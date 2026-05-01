@@ -36,6 +36,11 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
+from griptape_nodes.retained_mode.events.permission_events import (
+    EvaluatePermissionDenied,
+    EvaluatePermissionGranted,
+    EvaluatePermissionResultFailure,
+)
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.widget import Widget
 from griptape_nodes.utils import async_utils
@@ -579,6 +584,50 @@ class BaseNode(ABC):
             details=f"Node '{self.name}' was sent a message of type '{message_type}'. Failed because no message handler was specified for this node. Implement the on_node_message_received method in this node class in order for it to receive messages.",
             response=None,
         )
+
+    def check_permission(
+        self, permission_name: str
+    ) -> EvaluatePermissionGranted | EvaluatePermissionDenied | EvaluatePermissionResultFailure:
+        """Ask the permissions manager whether this node is granted the named permission.
+
+        Dispatches an `EvaluatePermissionRequest` through the event bus. The manager
+        scopes the check to this node type's declared permission surface, validates the
+        name against the library's effective catalog, and delegates to policy
+        evaluation.
+
+        Returns one of three result types (callers can `isinstance`-narrow):
+          - `EvaluatePermissionGranted` - the permission is granted.
+          - `EvaluatePermissionDenied` - evaluation completed and denied the
+            permission; `denial_reasons` enumerates every reason that applied.
+          - `EvaluatePermissionResultFailure` - evaluation could not complete
+            (unknown library or node type). Treat as a programmer error in the
+            calling context, not a policy denial.
+
+        Assumes `self.metadata["library"]` and `self.metadata["node_type"]` have been
+        populated by `Library.create_node`.
+        """
+        # Lazy imports: library_registry imports BaseNode from this module under
+        # TYPE_CHECKING, so a top-level import here would cause a circular import.
+        from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
+        from griptape_nodes.retained_mode.events.permission_events import EvaluatePermissionRequest
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        subject = LibraryNameAndNodeType(
+            library_name=self.metadata["library"],
+            node_type=self.metadata["node_type"],
+        )
+        result = GriptapeNodes.handle_request(
+            EvaluatePermissionRequest(subject=subject, permission_name=permission_name),
+        )
+        if not isinstance(
+            result, (EvaluatePermissionGranted, EvaluatePermissionDenied, EvaluatePermissionResultFailure)
+        ):
+            msg = (
+                f"Expected a permission-evaluation result type from EvaluatePermissionRequest "
+                f"for node '{self.name}', got {type(result).__name__}."
+            )
+            raise TypeError(msg)
+        return result
 
     def does_name_exist(self, param_name: str) -> bool:
         for parameter in self.parameters:
