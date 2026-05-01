@@ -244,7 +244,7 @@ class ProjectManager:
         self._load_system_defaults()
         self._current_project_id = SYSTEM_DEFAULTS_KEY
 
-    def on_load_project_template_request(
+    async def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
     ) -> LoadProjectTemplateResultSuccess | LoadProjectTemplateResultFailure:
         """Load user's project.yml and merge with system defaults.
@@ -270,7 +270,7 @@ class ProjectManager:
             encoding="utf-8",
             workspace_only=False,
         )
-        read_result = GriptapeNodes.handle_request(read_request)
+        read_result = await GriptapeNodes.ahandle_request(read_request)
 
         if read_result.failed():
             validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
@@ -610,7 +610,7 @@ class ProjectManager:
                 f"Config updated but library reload failed: {reload_result.result_details}",
             )
         if workspace_changed:
-            GriptapeNodes.WorkflowManager().refresh_workflow_registry()
+            await GriptapeNodes.WorkflowManager().refresh_workflow_registry()
         return None
 
     async def on_set_current_project_request(  # noqa: C901
@@ -974,7 +974,7 @@ class ProjectManager:
             self._current_project_id is not None and self._current_project_id != SYSTEM_DEFAULTS_KEY
         )
         if explicit_project_selected:
-            self._load_registered_projects()
+            await self._load_registered_projects()
             self._initialization_complete = True
             return
 
@@ -992,7 +992,7 @@ class ProjectManager:
         await self._load_workspace_project()
 
         # Load any additional project templates previously registered by the user
-        self._load_registered_projects()
+        await self._load_registered_projects()
 
         # Mark initialization complete so subsequent project switches trigger
         # workspace detection and library reload when the workspace actually changes.
@@ -1441,7 +1441,7 @@ class ProjectManager:
 
         logger.debug("Successfully loaded workspace project from '%s'", workspace_project_path)
 
-    def _load_registered_projects(self) -> None:
+    async def _load_registered_projects(self) -> None:
         """Load project templates from paths persisted in user config.
 
         Called after workspace project loading so that user-registered paths
@@ -1459,7 +1459,7 @@ class ProjectManager:
             if resolved_id in self._successfully_loaded_project_templates:
                 continue
             load_request = LoadProjectTemplateRequest(project_path=Path(path_str))
-            result = self.on_load_project_template_request(load_request)
+            result = await self.on_load_project_template_request(load_request)
             if result.failed():
                 logger.warning(
                     "Failed to load registered project '%s' on startup: %s",

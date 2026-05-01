@@ -440,7 +440,7 @@ class WorkflowManager:
         """
         return self._referenced_workflow_stack[-1]
 
-    def refresh_workflow_registry(self, workflows_to_register: list[str] | None = None) -> None:
+    async def refresh_workflow_registry(self, workflows_to_register: list[str] | None = None) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
         # Clear any previously registered user/workspace workflows before re-registering, so that
         # a workspace change (e.g. project switch) takes effect cleanly. Library-provided workflows
@@ -466,7 +466,7 @@ class WorkflowManager:
                 workflows_to_register.extend([str(workspace_path)])
 
             # Register all discovered workflows at once if any were found
-            self._process_workflows_for_registration(workflows_to_register)
+            await self._process_workflows_for_registration(workflows_to_register)
 
             # Now remove any workflows that were missing files.
             paths_to_remove = set()
@@ -819,10 +819,10 @@ class WorkflowManager:
             ),
         )
 
-    def on_import_workflow_request(self, request: ImportWorkflowRequest) -> ResultPayload:
+    async def on_import_workflow_request(self, request: ImportWorkflowRequest) -> ResultPayload:
         # First, attempt to load metadata from the file
         load_metadata_request = LoadWorkflowMetadata(file_name=request.file_path)
-        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+        load_metadata_result = await self.on_load_workflow_metadata_request(load_metadata_request)
 
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             return ImportWorkflowResultFailure(result_details=load_metadata_result.result_details)
@@ -1052,7 +1052,7 @@ class WorkflowManager:
             result_details="Successfully retrieved workflow metadata.",
         )
 
-    def on_get_workflow_run_command_request(self, request: GetWorkflowRunCommandRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    async def on_get_workflow_run_command_request(self, request: GetWorkflowRunCommandRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         workflow_name = request.workflow_name
         file_path = request.file_path
 
@@ -1143,7 +1143,7 @@ class WorkflowManager:
         # Optional: load workflow_shape from file when resolved by file_path only
         if workflow_shape is None:
             load_metadata_request = LoadWorkflowMetadata(file_name=relative_file_path)
-            load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+            load_metadata_result = await self.on_load_workflow_metadata_request(load_metadata_request)
             if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
                 workflow_shape = load_metadata_result.metadata.workflow_shape
 
@@ -1346,13 +1346,13 @@ class WorkflowManager:
                 result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
-    def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
+    async def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
         self, request: LoadWorkflowMetadata
     ) -> ResultPayload:
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
         str_path = str(complete_file_path)
-        if not Path(complete_file_path).is_file():
+        if not Path(complete_file_path).is_file():  # noqa: ASYNC240
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
                 status=WorkflowManager.WorkflowStatus.MISSING,
                 workflow_path=str_path,
@@ -1445,11 +1445,9 @@ class WorkflowManager:
             workflow_metadata.last_modified_date = WorkflowManager.EPOCH_START
             problems.append(MissingLastModifiedDateProblem(default_date=str(WorkflowManager.EPOCH_START)))
 
-        # Get list of registered libraries once (silent check - no error logging)
-        list_libraries_result = GriptapeNodes.handle_request(ListRegisteredLibrariesRequest())
+        list_libraries_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
 
         if not isinstance(list_libraries_result, ListRegisteredLibrariesResultSuccess):
-            # Should not happen, but handle gracefully - treat as no libraries registered
             registered_libraries = []
         else:
             registered_libraries = list_libraries_result.libraries
@@ -1595,8 +1593,8 @@ class WorkflowManager:
             )
 
         # Check for workflow version-based compatibility issues and add to problems
-        workflow_version_issues = GriptapeNodes.VersionCompatibilityManager().check_workflow_version_compatibility(
-            workflow_metadata
+        workflow_version_issues = (
+            await GriptapeNodes.VersionCompatibilityManager().check_workflow_version_compatibility(workflow_metadata)
         )
         for issue in workflow_version_issues:
             problems.append(issue.problem)
@@ -1622,15 +1620,15 @@ class WorkflowManager:
             metadata=workflow_metadata, result_details="Workflow metadata loaded successfully."
         )
 
-    def register_workflows_from_config(self, config_section: str) -> None:
+    async def register_workflows_from_config(self, config_section: str) -> None:
         workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(config_section)
         if workflows_to_register:
-            self.register_list_of_workflows(workflows_to_register)
+            await self.register_list_of_workflows(workflows_to_register)
 
-    def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:
-        self._process_workflows_for_registration(workflows_to_register)
+    async def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:
+        await self._process_workflows_for_registration(workflows_to_register)
 
-    def _register_workflow(self, workflow_to_register: str) -> bool:
+    async def _register_workflow(self, workflow_to_register: str) -> bool:
         """Registers a workflow from a file.
 
         Args:
@@ -1648,7 +1646,7 @@ class WorkflowManager:
 
         # Attempt to extract the metadata out of the workflow.
         load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_to_register))
-        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+        load_metadata_result = await self.on_load_workflow_metadata_request(load_metadata_request)
         if not load_metadata_result.succeeded():
             # SKIP IT
             return False
@@ -4497,7 +4495,7 @@ class WorkflowManager:
             result = await asyncio.to_thread(publishing_handler.handler, request)
             if isinstance(result, PublishWorkflowResultSuccess) and not result.skip_published_workflow_registration:
                 workflow_file = Path(result.published_workflow_file_path)
-                result = self._register_published_workflow_file(workflow_file, result)
+                result = await self._register_published_workflow_file(workflow_file, result)
 
             return result  # noqa: TRY300
         except Exception as e:
@@ -4505,7 +4503,7 @@ class WorkflowManager:
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e, result_details=details)
 
-    def _register_published_workflow_file(
+    async def _register_published_workflow_file(
         self, workflow_file: Path, result: PublishWorkflowResultSuccess
     ) -> ResultPayload:
         """Register a published workflow file in the workflow registry."""
@@ -4517,11 +4515,11 @@ class WorkflowManager:
         else:
             result_messages.append(ResultDetail(message=result.result_details, level=logging.INFO))
 
-        if workflow_file.exists() and workflow_file.is_file():
+        if workflow_file.exists() and workflow_file.is_file():  # noqa: ASYNC240
             load_workflow_metadata_request = LoadWorkflowMetadata(
                 file_name=workflow_file.name,
             )
-            load_metadata_result = self.on_load_workflow_metadata_request(load_workflow_metadata_request)
+            load_metadata_result = await self.on_load_workflow_metadata_request(load_workflow_metadata_request)
             if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
                 workflow_registry_key = derive_registry_key(workflow_file.name)
                 try:
@@ -5217,7 +5215,9 @@ class WorkflowManager:
 
         self._walk_object_tree(obj, collect_class_import)
 
-    def on_register_workflows_from_config_request(self, request: RegisterWorkflowsFromConfigRequest) -> ResultPayload:
+    async def on_register_workflows_from_config_request(
+        self, request: RegisterWorkflowsFromConfigRequest
+    ) -> ResultPayload:
         """Register workflows from a configuration section."""
         try:
             workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(request.config_section)
@@ -5228,7 +5228,7 @@ class WorkflowManager:
                 )
 
             # Process all workflows and track results
-            succeeded, failed = self._process_workflows_for_registration(workflows_to_register)
+            succeeded, failed = await self._process_workflows_for_registration(workflows_to_register)
 
         except Exception as e:
             details = f"Failed to register workflows from configuration section '{request.config_section}': {e!s}"
@@ -5243,7 +5243,9 @@ class WorkflowManager:
                 ),
             )
 
-    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:  # noqa: C901
+    async def _process_workflows_for_registration(  # noqa: C901
+        self, workflows_to_register: list[str]
+    ) -> WorkflowRegistrationResult:
         """Process a list of workflow paths for registration.
 
         Returns:
@@ -5311,7 +5313,7 @@ class WorkflowManager:
             )
 
             # Process the workflow
-            result_name = self._process_single_workflow_file(workflow_file)
+            result_name = await self._process_single_workflow_file(workflow_file)
             if result_name:
                 succeeded.append(result_name)
                 # Emit success event
@@ -5344,7 +5346,7 @@ class WorkflowManager:
 
         return WorkflowRegistrationResult(succeeded=succeeded, failed=failed)
 
-    def _process_single_workflow_file(self, workflow_file: Path) -> str | None:
+    async def _process_single_workflow_file(self, workflow_file: Path) -> str | None:
         """Process a single workflow file for registration.
 
         Returns:
@@ -5354,7 +5356,7 @@ class WorkflowManager:
 
         # Parse metadata once and use it for both registration check and actual registration
         load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_file))
-        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+        load_metadata_result = await self.on_load_workflow_metadata_request(load_metadata_request)
 
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             logger.debug("Skipping workflow with invalid metadata: %s", workflow_file)
@@ -5380,7 +5382,7 @@ class WorkflowManager:
         # Register workflow using existing method with parsed metadata available
         # The _register_workflow method will re-parse metadata, but this is acceptable
         # since we've already validated it's parseable and the duplicate work is minimal
-        if self._register_workflow(file_path_to_register):
+        if await self._register_workflow(file_path_to_register):
             return registry_key
         return None
 

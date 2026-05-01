@@ -3771,7 +3771,7 @@ class NodeExecutor:
             # Register the workflow so DeleteWorkflowRequest can find and remove it.
             # A subprocess may have registered it in its own process but not in the main process.
             load_workflow_metadata_request = LoadWorkflowMetadata(file_name=workflow_path.name)
-            result = GriptapeNodes.handle_request(load_workflow_metadata_request)
+            result = await GriptapeNodes.ahandle_request(load_workflow_metadata_request)
             if isinstance(result, LoadWorkflowMetadataResultSuccess):
                 WorkflowRegistry.generate_new_workflow(path_for_key, result.metadata)
 
