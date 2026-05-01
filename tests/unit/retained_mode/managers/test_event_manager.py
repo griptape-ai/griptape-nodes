@@ -1,10 +1,12 @@
 """Test EventManager functionality including sync/async event broadcasting."""
 
+from dataclasses import dataclass
 from unittest.mock import AsyncMock
 
 import pytest
 
 from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayloadSuccess
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
@@ -167,3 +169,99 @@ class TestEventManagerBroadcasting:
         assert received.key == "workspace_directory"
         assert received.old_value == "/old/path"
         assert received.new_value == "/new/path"
+
+
+@dataclass(kw_only=True)
+class _ProbeRequest(RequestPayload):
+    """Minimal request type used only to exercise dispatch routing in tests."""
+
+
+@dataclass(kw_only=True)
+class _ProbeResult(ResultPayloadSuccess):
+    """Minimal success payload paired with _ProbeRequest."""
+
+
+class TestHandleRequestLoopSafety:
+    """`handle_request` must fail loudly when invoked from a running loop with an async target.
+
+    The failure mode replaces the silent side-loop dispatch that caused the
+    worker-library-load deadlock documented in issue #4469. Tests cover:
+
+    - An async handler reached from inside a running loop raises with a
+      diagnostic that names the request type and points at ahandle_request.
+    - A sync handler reached from inside a running loop still works (no async
+      boundary means no deadlock hazard).
+    - Outside any running loop, an async handler continues to work via
+      `asyncio.run` -- preserves the startup/main-thread dispatch path.
+    - `ahandle_request` remains the safe async alternative.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sync_dispatch_from_running_loop_raises_when_handler_is_async(self) -> None:
+        event_manager = EventManager()
+
+        async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            event_manager.handle_request(_ProbeRequest())
+        message = str(exc_info.value)
+        assert "_ProbeRequest" in message
+        assert "ahandle_request" in message
+
+    @pytest.mark.asyncio
+    async def test_sync_dispatch_from_running_loop_works_when_handler_is_sync(self) -> None:
+        event_manager = EventManager()
+
+        def sync_handler(_request: _ProbeRequest) -> _ProbeResult:
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, sync_handler)
+
+        event = event_manager.handle_request(_ProbeRequest())
+        assert event.result.succeeded()
+
+    def test_sync_dispatch_outside_running_loop_drives_async_handler(self) -> None:
+        event_manager = EventManager()
+
+        async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
+
+        event = event_manager.handle_request(_ProbeRequest())
+        assert event.result.succeeded()
+
+    @pytest.mark.asyncio
+    async def test_ahandle_request_is_the_recommended_async_alternative(self) -> None:
+        event_manager = EventManager()
+
+        async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
+
+        event = await event_manager.ahandle_request(_ProbeRequest())
+        assert event.result.succeeded()
+
+
+class TestBroadcastAppEventLoopSafety:
+    """`broadcast_app_event` uses the same fail-fast guard as handle_request."""
+
+    @pytest.mark.asyncio
+    async def test_sync_broadcast_from_running_loop_raises(self) -> None:
+        event_manager = EventManager()
+
+        async def async_listener(_event: ConfigChanged) -> None:
+            return None
+
+        event_manager.add_listener_to_app_event(ConfigChanged, async_listener)
+
+        event = ConfigChanged(key="k", old_value="a", new_value="b")
+        with pytest.raises(RuntimeError) as exc_info:
+            event_manager.broadcast_app_event(event)
+        message = str(exc_info.value)
+        assert "ConfigChanged" in message
+        assert "abroadcast_app_event" in message

@@ -1840,7 +1840,7 @@ class LibraryManager:
 
         library_path = str(files(package_name).joinpath(request.library_config_name))
 
-        register_result = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path=library_path))
+        register_result = await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(file_path=library_path))
         if isinstance(register_result, RegisterLibraryFromFileResultFailure):
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {register_result}"
             return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
@@ -3595,7 +3595,7 @@ class LibraryManager:
 
         # Unload all libraries now.
         all_libraries_request = ListRegisteredLibrariesRequest()
-        all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
+        all_libraries_result = await GriptapeNodes.ahandle_request(all_libraries_request)
         if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
             details = "When preparing to reload all libraries, failed to get registered libraries."
             logger.error(details)

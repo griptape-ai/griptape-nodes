@@ -1376,7 +1376,7 @@ class ProjectManager:
         logger.debug("Found workspace project file at '%s', loading", workspace_project_path)
 
         try:
-            yaml_text = File(str(workspace_project_path)).read_text()
+            yaml_text = await File(str(workspace_project_path)).aread_text()
         except FileLoadError as e:
             logger.error(
                 "Attempted to read workspace project file at '%s'. Failed with: %s",

@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 from typing import cast
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -1371,7 +1371,7 @@ situations:
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
-            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_instance.aread_text = AsyncMock(return_value=self.VALID_PROJECT_YAML)
             mock_file_cls.return_value = mock_file_instance
 
             await pm._load_workspace_project()
@@ -1401,7 +1401,7 @@ situations:
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
-            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_instance.aread_text = AsyncMock(return_value=self.VALID_PROJECT_YAML)
             mock_file_cls.return_value = mock_file_instance
 
             await pm._load_workspace_project()
@@ -1442,9 +1442,11 @@ situations:
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
-            mock_file_instance.read_text.side_effect = FileLoadError(
-                failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
-                result_details="permission denied",
+            mock_file_instance.aread_text = AsyncMock(
+                side_effect=FileLoadError(
+                    failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
+                    result_details="permission denied",
+                )
             )
             mock_file_cls.return_value = mock_file_instance
 
@@ -1474,7 +1476,7 @@ situations:
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
-            mock_file_instance.read_text.return_value = "not: valid: yaml: ]["
+            mock_file_instance.aread_text = AsyncMock(return_value="not: valid: yaml: ][")
             mock_file_cls.return_value = mock_file_instance
 
             await pm._load_workspace_project()
@@ -1522,7 +1524,7 @@ situations:
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
-            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_instance.aread_text = AsyncMock(return_value=self.VALID_PROJECT_YAML)
             mock_file_cls.return_value = mock_file_instance
 
             await pm.on_app_initialization_complete(AppInitializationComplete())
@@ -1573,7 +1575,7 @@ situations:
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
-            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_instance.aread_text = AsyncMock(return_value=self.VALID_PROJECT_YAML)
             mock_file_cls.return_value = mock_file_instance
 
             await pm._load_workspace_project()
@@ -1605,7 +1607,7 @@ situations:
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
-            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_instance.aread_text = AsyncMock(return_value=self.VALID_PROJECT_YAML)
             mock_file_cls.return_value = mock_file_instance
 
             await pm._load_workspace_project()
@@ -1639,7 +1641,7 @@ situations:
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
             mock_file_instance = Mock()
-            mock_file_instance.read_text.return_value = self.VALID_PROJECT_YAML
+            mock_file_instance.aread_text = AsyncMock(return_value=self.VALID_PROJECT_YAML)
             mock_file_cls.return_value = mock_file_instance
 
             await pm._load_workspace_project()

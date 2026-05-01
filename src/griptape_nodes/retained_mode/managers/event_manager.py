@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
-from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -44,6 +43,35 @@ AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
 # Add result types to this set if they should never trigger a flush (typically because they ARE
 # the flush operation itself, or other internal operations that don't modify workflow state).
 RESULT_TYPES_THAT_SKIP_FLUSH = {}
+
+
+def _running_loop() -> asyncio.AbstractEventLoop | None:
+    """Return the currently running event loop, or None if not inside one."""
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
+
+def _sync_in_async_loop_error_message(
+    *,
+    request_type_name: str,
+    handler_description: str,
+    recommended_call: str,
+) -> str:
+    """Build a diagnostic for the sync-dispatch-inside-running-loop hazard.
+
+    The message names the request, the target, and the async alternative so the
+    caller can see at the failure site what to change. Paired with the check in
+    EventManager.handle_request / broadcast_app_event.
+    """
+    return (
+        f"Refusing to dispatch '{request_type_name}' via sync handle_request from inside "
+        f"a running event loop. The target is {handler_description}; driving it from the "
+        "running loop's thread would either block the caller's loop or race its primitives "
+        "via a side loop (see issue #4469).\n"
+        f"Fix: call `{recommended_call}` from this async context."
+    )
 
 
 class ResultContext(TypedDict, total=False):
@@ -503,12 +531,14 @@ class EventManager:
             result_context = ResultContext()
 
         if self._should_forward(request):
-            try:
-                asyncio.get_running_loop()
-                with ThreadRunner() as runner:
-                    return runner.run(self._forward_to_orchestrator(request, result_context))
-            except RuntimeError:
-                return asyncio.run(self._forward_to_orchestrator(request, result_context))
+            if _running_loop() is not None:
+                msg = _sync_in_async_loop_error_message(
+                    request_type_name=type(request).__name__,
+                    handler_description="worker-to-orchestrator forwarding",
+                    recommended_call="await GriptapeNodes.ahandle_request(request)",
+                )
+                raise RuntimeError(msg)
+            return asyncio.run(self._forward_to_orchestrator(request, result_context))
 
         # Notify the manager of the event type
         request_type = type(request)
@@ -517,15 +547,21 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
-        # Support async callbacks for sync method ONLY if there is no running event loop
+        # Support async callbacks for sync method ONLY if there is no running event loop.
+        # A sync caller already inside a running loop cannot drive an async handler without
+        # blocking its own loop; that shape is the structural source of the deadlock
+        # documented in https://github.com/griptape-ai/griptape-nodes/issues/4469. Rather
+        # than queue the coroutine onto a side loop (which races any primitive the caller's
+        # loop owns), fail fast with a diagnostic that points at the fix.
         if inspect.iscoroutinefunction(callback):
-            try:
-                asyncio.get_running_loop()
-                with ThreadRunner() as runner:
-                    result_payload: ResultPayload = runner.run(callback(request))
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run
-                result_payload: ResultPayload = asyncio.run(callback(request))
+            if _running_loop() is not None:
+                msg = _sync_in_async_loop_error_message(
+                    request_type_name=type(request).__name__,
+                    handler_description=f"async handler '{getattr(callback, '__qualname__', repr(callback))}'",
+                    recommended_call="await GriptapeNodes.ahandle_request(request)",
+                )
+                raise RuntimeError(msg)
+            result_payload: ResultPayload = asyncio.run(callback(request))
         else:
             result_payload: ResultPayload = callback(request)
 
@@ -572,13 +608,14 @@ class EventManager:
                     for listener_callback in listener_set:
                         tg.create_task(call_function(listener_callback, app_event))
 
-            try:
-                asyncio.get_running_loop()
-                with ThreadRunner() as runner:
-                    runner.run(_broadcast_async())
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run
-                asyncio.run(_broadcast_async())
+            if _running_loop() is not None:
+                msg = _sync_in_async_loop_error_message(
+                    request_type_name=type(app_event).__name__,
+                    handler_description="async app-event listeners",
+                    recommended_call="await GriptapeNodes.EventManager().abroadcast_app_event(app_event)",
+                )
+                raise RuntimeError(msg)
+            asyncio.run(_broadcast_async())
 
     async def abroadcast_app_event(self, app_event: AP) -> None:
         """Broadcast an app event to all registered listeners (async version).
