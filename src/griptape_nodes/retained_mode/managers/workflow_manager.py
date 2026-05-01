@@ -317,7 +317,13 @@ class WorkflowManager:
         self._workflow_file_path_to_info = {}
         self._squelch_workflow_altered_count = 0
         self._referenced_workflow_stack = []
+        # Initialize as set: before refresh_workflow_registry has run, the registry
+        # is simply empty. Handlers invoked during library load (e.g. from a node
+        # __init__ that issues a workflow query) should return an empty result
+        # rather than block on an event that's waiting on the same call stack to
+        # unwind. refresh_workflow_registry clears this while it mutates the registry.
         self._workflows_loading_complete = asyncio.Event()
+        self._workflows_loading_complete.set()
 
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request

@@ -1462,3 +1462,38 @@ class TestLibraryResolutionOnLoad:
 
         assert result is None
         ahandle_spy.assert_not_awaited()
+
+
+class TestWorkflowsLoadingGate:
+    """Gated handlers must not deadlock when invoked during library load (issue #4470)."""
+
+    def test_workflows_loading_complete_is_set_on_init(self, griptape_nodes: GriptapeNodes) -> None:
+        """The gate starts as set so handlers invoked before first refresh return immediately.
+
+        The hazard is: a node __init__ fires a workflow query during library load, but
+        the task that would set the gate is higher up the same call stack. If the gate
+        started unset, the handler would block forever. Starting set means handlers
+        see an empty registry (the truth during startup) and return a clean empty result.
+        """
+        workflow_manager = griptape_nodes.WorkflowManager()
+
+        assert workflow_manager._workflows_loading_complete.is_set()
+
+    def test_list_all_workflows_returns_immediately_before_first_refresh(self, griptape_nodes: GriptapeNodes) -> None:
+        """on_list_all_workflows_request does not hang when invoked before refresh_workflow_registry."""
+        from griptape_nodes.retained_mode.events.workflow_events import (
+            ListAllWorkflowsRequest,
+            ListAllWorkflowsResultSuccess,
+        )
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+
+        async def gated() -> object:
+            return await asyncio.wait_for(
+                workflow_manager.on_list_all_workflows_request(ListAllWorkflowsRequest()),
+                timeout=1.0,
+            )
+
+        result = asyncio.run(gated())
+
+        assert isinstance(result, ListAllWorkflowsResultSuccess)
