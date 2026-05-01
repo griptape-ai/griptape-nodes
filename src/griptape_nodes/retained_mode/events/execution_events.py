@@ -477,16 +477,23 @@ class ExecuteNodeRequest(RequestPayload):
     Unlike ResolveNodeRequest, this bypasses flow/DAG machinery and executes
     the node's process method directly.
 
-    If the node does not already exist in ObjectManager and node_metadata is provided,
-    the node is created first (idempotent: no-op if already present). This covers both
-    orchestrator-local execution (node always exists) and worker execution (created on
-    first call, reused on subsequent calls).
+    Handling depends on where the request lands:
+
+    - **Orchestrator**: the node must already exist in ObjectManager. If it does
+      not, the request fails; node_metadata is ignored on this path. The
+      orchestrator is the sole source of truth for node identity and parameter
+      values.
+    - **Worker**: a fresh transient node is constructed from node_metadata on
+      every call via LibraryRegistry.create_node, hydrated, run, and discarded.
+      The worker never persists nodes across requests. node_metadata is
+      therefore required on this path.
 
     Args:
         node_name: Name of the node to execute.
         parameter_values: Input parameter values to set before execution.
-        node_metadata: Full node metadata from the orchestrator. When provided and the
-            node does not exist, it is created from this metadata.
+        node_metadata: Full node metadata from the orchestrator. Required when
+            the target library spawns a worker (used to construct the transient
+            worker-side node). Ignored on the orchestrator path.
 
     Results: ExecuteNodeResultSuccess | ExecuteNodeResultFailure
     """
