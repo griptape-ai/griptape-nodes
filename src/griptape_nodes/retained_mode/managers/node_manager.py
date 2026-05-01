@@ -2825,6 +2825,18 @@ class NodeManager:
                     return ExecuteNodeResultFailure(
                         result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
                     )
+            # Materialize parameter defaults into parameter_values so that user
+            # process() code reading self.parameter_values[name] directly (rather
+            # than via get_parameter_value) sees the default. Newly-dropped nodes
+            # never receive a SetParameterValueRequest for still-default values,
+            # so without this pass those params are absent from the dict on the
+            # worker-side fresh node.
+            for param in node.parameters:
+                if param.name in node.parameter_values:
+                    continue
+                if param.default_value is None:
+                    continue
+                node.parameter_values[param.name] = param.default_value
             try:
                 await node.aprocess()
             except Exception as e:
