@@ -14,24 +14,44 @@ environment:
 
 Environment entries from your project file are merged on top of the system defaults. If a key exists in the defaults, your value replaces it. New keys are added.
 
-### Referencing environment variables in macros
+### Referencing other variables from an environment value
 
-Values in the `environment` section can reference operating-system environment variables using `$` prefix:
+Environment values are macros themselves. A value can reference a builtin, a directory, another project environment variable, or a shell environment variable by using `{NAME}`:
 
-```yaml
-environment:
-  OUTPUT_ROOT: "$RENDER_FARM_SHARE"
-```
-
-When `OUTPUT_ROOT` is used in a macro, the system first substitutes the environment variable `$RENDER_FARM_SHARE` from the operating system environment, then uses the result.
-
-You can also use `$`-prefixed references directly in `path_macro` fields:
+Assume the shell that launched Griptape Nodes has `SHARED_DRIVE=/mnt/renders` exported. Then:
 
 ```yaml
 directories:
   outputs:
-    path_macro: "$SHARED_DRIVE/outputs"
+    # Reference a shell env var directly — no need to declare it under `environment:`
+    path_macro: "{SHARED_DRIVE}/outputs"
+
+environment:
+  CLIENT_CODE: "ACME"
+  # Reference a builtin
+  PROJECT_RENDERS: "{project_dir}/renders"
+  # Compose a shell env var, a project env var, and literal text
+  CLIENT_RENDERS: "{SHARED_DRIVE}/{CLIENT_CODE}/renders"
 ```
+
+References are resolved recursively, following the priority order in [Variable priority](#variable-priority). Cycles (for example, `A: "{B}"` and `B: "{A}"`) are detected and surfaced as macro resolution errors.
+
+#### Legacy `$VAR` syntax
+
+For backwards compatibility, an environment value that is **exactly** `$NAME` (no surrounding text, no suffix, no other macros) is expanded using the operating-system environment **when the value is consumed by a macro**:
+
+```yaml
+environment:
+  OUTPUT_ROOT: "$RENDER_FARM_SHARE"  # works in macros: {OUTPUT_ROOT} -> /mnt/renders
+```
+
+Important limitations — the `$VAR` form is narrow and has known gaps:
+
+- **Whole value only.** Anything appended (for example `"$SHARED_DRIVE/outputs"`) or any adjacent text is **not** expanded and is treated as a literal string. Macro resolution will fail looking up the entire trailing string as a secret name.
+- **Macro-only, not process.** `$VAR` is only expanded at macro resolution time. It is **not** expanded when the value is written to `os.environ` — subprocesses and nodes calling `os.environ.get("OUTPUT_ROOT")` will see the literal string `"$RENDER_FARM_SHARE"`, not the expanded value.
+- **Cannot be composed.** A `$`-prefixed value cannot reference another project env var, a builtin, or a directory.
+
+Prefer the `{NAME}` form for all new projects — it composes cleanly, expands consistently in macros **and** `os.environ`, and works in both `environment` values and directory `path_macro` fields.
 
 ## Builtin variables
 
