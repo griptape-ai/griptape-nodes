@@ -2680,10 +2680,14 @@ class TestProjectEnvironmentVariableRecursion:
         pm = self._make_pm_with_template(environment={"FOO": "{workspace_dir}/sub"})
         assert pm._current_project_id is not None
         project_info = pm._successfully_loaded_project_templates[pm._current_project_id]
+        # {workspace_dir} is substituted via str(Path(...)), so the platform's native
+        # separator appears in the env value. Compare against the same construction
+        # rather than hardcoding forward slashes.
+        expected = f"{Path('/workspace')}/sub"
         try:
             original = os.environ.get("FOO")
             pm._apply_project_env(project_info)
-            assert os.environ["FOO"] == "/workspace/sub"
+            assert os.environ["FOO"] == expected
             pm._restore_project_env()
             if original is None:
                 assert "FOO" not in os.environ
@@ -2756,3 +2760,127 @@ class TestProjectEnvironmentVariableRecursion:
         finally:
             os.environ.pop("A", None)
             os.environ.pop("B", None)
+
+
+class TestProjectDirectoryRecursion:
+    """Tests for recursive resolution of directory path_macros.
+
+    A directory's path_macro may reference other directories, builtins, env vars,
+    or shell env vars. Those references must resolve through the same machinery
+    as project env values so nested directory graphs flatten to final paths.
+    """
+
+    def _make_pm_with_directories(
+        self,
+        directories: dict[str, str],
+        *,
+        environment: dict[str, str] | None = None,
+        workspace_path: Path = Path("/workspace"),
+        project_file_path: Path = Path("/proj/project.yml"),
+    ) -> ProjectManager:
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_config = Mock()
+        mock_config.workspace_path = workspace_path
+        mock_config.get_config_value.return_value = "staticfiles"
+        pm = ProjectManager(Mock(), mock_config, Mock())
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="test_project",
+            directories={
+                name: DirectoryDefinition(name=name, path_macro=path_macro) for name, path_macro in directories.items()
+            },
+            situations={},
+            environment=environment or {},
+        )
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(template.situations, validation)
+        directory_schemas = pm._parse_directory_macros(template.directories, validation)
+
+        project_id = str(project_file_path)
+        pm._successfully_loaded_project_templates[project_id] = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_file_path,
+            project_base_dir=project_file_path.parent,
+            template=template,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._current_project_id = project_id
+        return pm
+
+    def test_directory_references_another_directory(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_directories(
+            {
+                "watch_folder": "{workspace_dir}/watch",
+                "watch_output": "{watch_folder}/outputs",
+            }
+        )
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{watch_output}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/watch/outputs/img.png")
+
+    def test_directory_references_env_var(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_directories(
+            directories={"outputs": "{BASE}/outputs"},
+            environment={"BASE": "my_base"},
+        )
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("my_base/outputs/img.png")
+
+    def test_directory_references_shell_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        monkeypatch.setenv("SHELL_ROOT", "/from/shell")
+        pm = self._make_pm_with_directories({"outputs": "{SHELL_ROOT}/outputs"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/from/shell/outputs/img.png")
+
+    def test_directory_cycle_detected(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_directories(
+            {
+                "a": "{b}/a",
+                "b": "{a}/b",
+            }
+        )
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{a}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails
+
+        assert isinstance(result.result_details, ResultDetails)
+        assert "cycle" in str(result.result_details).lower()
+
+    def test_directory_references_unknown_name(self) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_directories({"outputs": "{NOT_DEFINED}/outputs"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
