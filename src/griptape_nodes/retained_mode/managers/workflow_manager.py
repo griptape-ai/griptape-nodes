@@ -5254,10 +5254,21 @@ class WorkflowManager:
         succeeded = []
         failed = []
 
+        # Build the set of registered-library roots (excluding sandbox) so their bundled
+        # workflow files are skipped during the workspace scan. Library-declared workflows
+        # (listed in griptape_nodes_library.json) are registered separately via
+        # LibraryManager._collect_library_workflow_files before this scan runs. Sandbox
+        # libraries are intentionally left scannable so in-development workflows appear.
+        library_exclusion_roots: list[Path] = []
+        for library_info in GriptapeNodes.LibraryManager()._library_file_path_to_info.values():
+            if library_info.is_sandbox:
+                continue
+            library_exclusion_roots.append(Path(library_info.library_path).parent.resolve())
+
         # First pass: collect all workflow files to determine total count
         all_workflow_files: set[Path] = set()
 
-        def collect_workflow_files(path: Path) -> None:
+        def collect_workflow_files(path: Path) -> None:  # noqa: C901
             """Collect workflow files from a path."""
             if not path.exists():
                 return
@@ -5265,6 +5276,10 @@ class WorkflowManager:
                 for workflow_file in path.rglob("*.py"):
                     if ".venv" in workflow_file.parts:
                         continue
+                    if library_exclusion_roots:
+                        resolved_workflow_file = workflow_file.resolve()
+                        if any(resolved_workflow_file.is_relative_to(root) for root in library_exclusion_roots):
+                            continue
                     # Check if file has workflow metadata
                     try:
                         metadata_blocks = self.get_workflow_metadata(
