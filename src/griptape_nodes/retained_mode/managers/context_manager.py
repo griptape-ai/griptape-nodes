@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
@@ -255,6 +256,23 @@ class ContextManager:
         if self.has_current_workflow():
             msg = f"Attempted to set the Workflow '{request.workflow_name}' as the Current Context. Failed because an existing workflow, '{self.get_current_workflow_name()}', is already in the Current Context. In order to clear the existing workflow and remove all objects and references to it, issue a ClearAllObjectState request."
             return SetWorkflowContextFailure(result_details=msg)
+
+        # Auto-register an unsaved registry entry when the caller is activating an
+        # "unsaved:<uuid>" key that hasn't been materialized yet. This makes every
+        # workflow (saved or not) a first-class registry entry, so list/metadata/etc.
+        # calls don't need special-casing for pre-save state.
+        if request.workflow_name.startswith(
+            WorkflowRegistry.UNSAVED_KEY_PREFIX
+        ) and not WorkflowRegistry.has_workflow_with_name(request.workflow_name):
+            display_name = request.display_name or "Untitled"
+            try:
+                WorkflowRegistry.create_unsaved_with_key(key=request.workflow_name, name=display_name)
+            except (ValueError, KeyError) as err:
+                msg = (
+                    f"Attempted to auto-register unsaved workflow '{request.workflow_name}' "
+                    f"before setting it as the Current Context. Failed because of '{err}'."
+                )
+                return SetWorkflowContextFailure(result_details=msg)
 
         self.push_workflow(request.workflow_name)
         msg = f"Successfully set the Workflow '{request.workflow_name}' as the Current Context."
