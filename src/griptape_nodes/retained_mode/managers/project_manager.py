@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -85,6 +86,8 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -138,6 +141,91 @@ _BUILTIN_VARIABLE_INFO: dict[str, BuiltinVariableInfo] = {var.name: var for var 
 
 # Builtin variables available in all macros (read-only)
 BUILTIN_VARIABLES = frozenset(var.name for var in _BUILTIN_VARIABLE_DEFINITIONS)
+
+
+@dataclass
+class _ProjectVariableResolver:
+    """Recursive resolver for project directory path_macros and environment values.
+
+    Both directories and env vars may contain macros that reference builtins, other
+    directories, other env vars, or shell env vars. Resolution walks those references
+    transitively, caches results per name, and detects cycles. References that hit
+    none of the known sources and are absent from shell env are left unresolved so
+    the underlying ParsedMacro.resolve raises MISSING_REQUIRED_VARIABLES.
+
+    Construct via `ProjectManager._build_variable_resolver`. Cycle detection and caches
+    are instance-scoped so resolvers are single-use per call site.
+    """
+
+    template: ProjectTemplate
+    get_builtin: Callable[[str], str]
+    secrets_manager: SecretsManager
+    builtins_cache: dict[str, str] = field(default_factory=dict)
+    env_resolved: dict[str, str] = field(default_factory=dict)
+    directories_resolved: dict[str, str] = field(default_factory=dict)
+    in_progress: set[str] = field(default_factory=set)
+
+    def resolve_directory(self, name: str) -> str:
+        if name in self.directories_resolved:
+            return self.directories_resolved[name]
+        resolved = self._resolve_macro_string("directory", name, self.template.directories[name].path_macro)
+        self.directories_resolved[name] = resolved
+        return resolved
+
+    def resolve_env(self, name: str) -> str:
+        if name in self.env_resolved:
+            return self.env_resolved[name]
+        resolved = self._resolve_macro_string("environment variable", name, self.template.environment[name])
+        self.env_resolved[name] = resolved
+        return resolved
+
+    def _get_builtin(self, name: str) -> str:
+        if name not in self.builtins_cache:
+            self.builtins_cache[name] = self.get_builtin(name)
+        return self.builtins_cache[name]
+
+    def _resolve_macro_string(self, owner_kind: str, owner_name: str, raw_value: str) -> str:
+        token = f"{owner_kind}:{owner_name}"
+        if token in self.in_progress:
+            cycle = " -> ".join([*sorted(self.in_progress), token])
+            msg = f"Cycle detected while resolving {owner_kind} '{owner_name}': {cycle}"
+            raise MacroResolutionError(
+                msg,
+                failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                variable_name=owner_name,
+            )
+        self.in_progress.add(token)
+        try:
+            parsed = ParsedMacro(raw_value)
+            bag: MacroVariables = {}
+            for var_info in parsed.get_variables():
+                ref = var_info.name
+                if ref in BUILTIN_VARIABLES:
+                    try:
+                        bag[ref] = self._get_builtin(ref)
+                    except (RuntimeError, NotImplementedError) as e:
+                        msg = (
+                            f"Cannot resolve {owner_kind} '{owner_name}': "
+                            f"builtin '{ref}' unavailable in current context ({e})"
+                        )
+                        raise MacroResolutionError(
+                            msg,
+                            failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                            variable_name=ref,
+                        ) from e
+                elif ref in self.template.directories:
+                    bag[ref] = self.resolve_directory(ref)
+                elif ref in self.template.environment:
+                    bag[ref] = self.resolve_env(ref)
+                else:
+                    shell_value = os.environ.get(ref)
+                    if shell_value is not None:
+                        bag[ref] = shell_value
+                    # else: leave unresolved; parsed.resolve() will raise MISSING_REQUIRED_VARIABLES
+            resolved = parsed.resolve(bag, self.secrets_manager)
+        finally:
+            self.in_progress.discard(token)
+        return resolved
 
 
 @dataclass
@@ -203,6 +291,11 @@ class ProjectManager:
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
         # This allows UI to query why a project failed to load
         self._registered_template_status: dict[Path, ProjectValidationInfo] = {}
+
+        # Snapshot of os.environ entries mutated by the currently-active project.
+        # Maps env var name -> original value (or None if the var was not set before).
+        # Restored on project switch so each project's env is isolated.
+        self._applied_env_snapshot: dict[str, str | None] = {}
 
         # Register event handlers
         event_manager.assign_manager_to_request_type(LoadProjectTemplateRequest, self.on_load_project_template_request)
@@ -462,7 +555,7 @@ class ProjectManager:
         4. For each variable:
            - If in directories dict → resolve directory, add to resolution bag
            - Else if in user_supplied_vars → use user value
-           - If in BOTH → ERROR: DIRECTORY_OVERRIDE_ATTEMPTED
+           - If in BOTH → ERROR: RESERVED_NAME_COLLISION
            - Else → collect as missing
         5. If any missing → ERROR: MISSING_REQUIRED_VARIABLES
         6. Resolve macro with complete variable bag
@@ -497,20 +590,31 @@ class ProjectManager:
         conflicting = directory_names & user_provided_names
         if conflicting:
             return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
                 conflicting_variables=conflicting,
                 result_details=f"Attempted to resolve macro path. Failed because variables conflict with directory names: {', '.join(sorted(conflicting))}",
             )
 
         resolution_bag: MacroVariables = {}
         disallowed_overrides: set[str] = set()
+        # Directories and project env vars may reference each other, builtins, or shell
+        # env vars via inner macros (e.g. `watch_output: "{watch_folder}/outputs"`).
+        # A shared resolver caches results across both sources so nested references
+        # don't re-parse or re-evaluate the same path_macro twice per request.
+        resolver = self._build_variable_resolver(template, project_info)
 
         for var_info in variable_infos:
             var_name = var_info.name
 
             if var_name in directory_names:
-                directory_def = template.directories[var_name]
-                resolution_bag[var_name] = directory_def.path_macro
+                try:
+                    resolution_bag[var_name] = resolver.resolve_directory(var_name)
+                except MacroResolutionError as e:
+                    return GetPathForMacroResultFailure(
+                        failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                        missing_variables=e.missing_variables,
+                        result_details=f"Attempted to resolve macro path. Failed to resolve directory '{var_name}': {e}",
+                    )
             elif var_name in user_provided_names:
                 resolution_bag[var_name] = effective_variables[var_name]
 
@@ -542,10 +646,49 @@ class ProjectManager:
         # Check if user tried to override builtins with different values
         if disallowed_overrides:
             return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
                 conflicting_variables=disallowed_overrides,
                 result_details=f"Attempted to resolve macro path. Failed because cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
             )
+
+        # Project env vars fill any remaining referenced variable names. Precedence (high to
+        # low): builtins > directories > caller-supplied > project env > shell env. Project
+        # env values are recursively resolved (may reference builtins, directories, other
+        # project env vars, or shell env vars) before being placed into the resolution bag.
+        # Env keys that collide with a directory name or builtin AND are referenced by this
+        # macro are rejected as RESERVED_NAME_COLLISION so users don't silently shadow core
+        # resolution state.
+        referenced_var_names = {v.name for v in variable_infos}
+        project_env = template.environment
+        env_collisions = set(project_env) & (directory_names | BUILTIN_VARIABLES) & referenced_var_names
+        if env_collisions:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
+                conflicting_variables=env_collisions,
+                result_details=f"Attempted to resolve macro path. Failed because project environment variables collide with directory or builtin names: {', '.join(sorted(env_collisions))}",
+            )
+        env_needed = {v.name for v in variable_infos if v.name not in resolution_bag and v.name in project_env}
+        for var_name in env_needed:
+            try:
+                resolution_bag[var_name] = resolver.resolve_env(var_name)
+            except MacroResolutionError as e:
+                return GetPathForMacroResultFailure(
+                    failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                    missing_variables=e.missing_variables,
+                    result_details=f"Attempted to resolve macro path. Failed to resolve project environment variable '{var_name}': {e}",
+                )
+
+        # Shell environment is the final fallback, below project env. Lets authors reference
+        # any var set in their shell ({HOME}, {USER}, etc.) without declaring it in project.yml.
+        # Reserved names (builtins/directories) silently win: shells have hundreds of vars and
+        # we can't police accidental shadowing.
+        for var_info in variable_infos:
+            var_name = var_info.name
+            if var_name in resolution_bag:
+                continue
+            shell_value = os.environ.get(var_name)
+            if shell_value is not None:
+                resolution_bag[var_name] = shell_value
 
         required_vars = {v.name for v in variable_infos if v.is_required}
         provided_vars = set(resolution_bag.keys())
@@ -585,6 +728,59 @@ class ProjectManager:
             result_details=f"Successfully resolved macro path. Result: {resolved_path}",
         )
 
+    # Keys we refuse to silently clobber. Users can still set them from their
+    # project.yml, but we emit a warning so overrides are visible in logs.
+    _DANGEROUS_ENV_KEYS: frozenset[str] = frozenset({"PATH", "HOME", "PYTHONPATH", "LD_LIBRARY_PATH"})
+
+    def _restore_project_env(self) -> None:
+        """Revert any os.environ entries mutated by the currently-active project."""
+        for key, original in self._applied_env_snapshot.items():
+            if original is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = original
+        self._applied_env_snapshot = {}
+
+    def _apply_project_env(self, project_info: ProjectInfo) -> None:
+        """Apply template.environment to os.environ, snapshotting originals for later restore.
+
+        Env values are recursively resolved before being written to os.environ. Values that
+        fail to resolve (e.g. reference a workflow-context builtin when no workflow is active,
+        or form a cycle) are skipped with a warning so one bad entry doesn't poison the rest.
+        """
+        template = project_info.template
+        try:
+            resolved_env = self._resolve_project_env_values(template, project_info)
+        except MacroResolutionError as e:
+            logger.warning("Failed to resolve project environment variables; skipping os.environ application: %s", e)
+            return
+        for key, value in resolved_env.items():
+            if key in self._DANGEROUS_ENV_KEYS:
+                logger.warning("Project template is overriding sensitive environment variable '%s'", key)
+            self._applied_env_snapshot[key] = os.environ.get(key)
+            os.environ[key] = value
+
+    def _resolve_project_env_values(self, template: ProjectTemplate, project_info: ProjectInfo) -> dict[str, str]:
+        """Recursively resolve every entry in template.environment to a final string.
+
+        Returns the full env-resolution map. See `_ProjectVariableResolver` for the
+        recursion and reference-lookup rules.
+        """
+        resolver = self._build_variable_resolver(template, project_info)
+        for key in template.environment:
+            resolver.resolve_env(key)
+        return dict(resolver.env_resolved)
+
+    def _build_variable_resolver(
+        self, template: ProjectTemplate, project_info: ProjectInfo
+    ) -> _ProjectVariableResolver:
+        """Build a resolver that recursively resolves directories and env vars for this project."""
+        return _ProjectVariableResolver(
+            template=template,
+            get_builtin=lambda name: self._get_builtin_variable_value(name, project_info),
+            secrets_manager=self._secrets_manager,
+        )
+
     def _find_workspace_override(self, project_file_path: Path, project_workspaces: dict[str, str]) -> str | None:
         """Return the user-configured workspace override for a project file, or None if not mapped."""
         resolved_project_path = str(canonicalize_for_identity(project_file_path))
@@ -613,7 +809,7 @@ class ProjectManager:
             GriptapeNodes.WorkflowManager().refresh_workflow_registry()
         return None
 
-    async def on_set_current_project_request(  # noqa: C901
+    async def on_set_current_project_request(  # noqa: C901, PLR0912
         self, request: SetCurrentProjectRequest
     ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
         """Set which project user has selected.
@@ -624,6 +820,11 @@ class ProjectManager:
         During startup, LibraryManager handles library loading concurrently, so
         the workspace switch is skipped.
         """
+        # Restore os.environ entries mutated by the outgoing project before any config
+        # layer changes. Workspace resolution below may consult env vars, so the old
+        # project's values must not leak into the new project's workspace decision.
+        self._restore_project_env()
+
         # Capture workspace BEFORE config changes for comparison after
         old_workspace = self._config_manager.workspace_path
 
@@ -665,6 +866,15 @@ class ProjectManager:
                 # and reload configs so workspace_path resolves from default config layers.
                 self._config_manager.set_workspace_override(None)
                 self._config_manager.load_configs()
+
+        # Apply the new project's environment variables to os.environ. Happens after
+        # workspace resolution (so it doesn't affect workspace lookup -- the outgoing
+        # project's entries were already restored above) and before library reload
+        # (so nodes imported during reload observe the new values).
+        if request.project_id is not None:
+            new_project_info = self._successfully_loaded_project_templates.get(request.project_id)
+            if new_project_info is not None:
+                self._apply_project_env(new_project_info)
 
         new_workspace = self._config_manager.workspace_path
         workspace_changed = old_workspace != new_workspace
@@ -1176,9 +1386,7 @@ class ProjectManager:
                 msg = f"Unknown builtin variable: {var_name}"
                 raise ValueError(msg)
 
-    def _absolute_path_to_macro_path(  # noqa: C901, PLR0912
-        self, absolute_path: Path, project_info: ProjectInfo
-    ) -> str | None:
+    def _absolute_path_to_macro_path(self, absolute_path: Path, project_info: ProjectInfo) -> str | None:
         """Convert an absolute path to macro form using longest prefix matching.
 
         Resolves all project directories at runtime (to support env vars and macros),
@@ -1209,18 +1417,11 @@ class ProjectManager:
         workspace_dir = resolve_path_safely(self._config_manager.workspace_path)
         project_base_dir = resolve_path_safely(project_info.project_base_dir)
 
-        # Collect all variables used across ALL directory macros
-        variables_needed: set[str] = set()
-        for parsed_macro in project_info.parsed_directory_schemas.values():
-            variable_infos = parsed_macro.get_variables()
-            variables_needed.update(var_info.name for var_info in variable_infos)
-
-        # Build builtin variables dict - only resolve variables actually needed by the macros
-        # If a required variable fails to resolve, let the error propagate (will be caught by handler)
-        builtin_vars: MacroVariables = {}
-        for var_name in variables_needed:
-            if var_name in BUILTIN_VARIABLES:
-                builtin_vars[var_name] = self._get_builtin_variable_value(var_name, project_info)
+        # Shared recursive resolver so directories referencing other directories
+        # (e.g. watch_output -> watch_folder) flatten through the same machinery
+        # as forward macro resolution. Caches results across the whole inversion
+        # pass below.
+        resolver = self._build_variable_resolver(template, project_info)
 
         # Find all matching directories (where absolute_path is inside the directory)
         class DirectoryMatch(NamedTuple):
@@ -1231,14 +1432,8 @@ class ProjectManager:
         matches: list[DirectoryMatch] = []
 
         for directory_name in template.directories:
-            # Get parsed macro from project info cache
-            parsed_macro = project_info.parsed_directory_schemas.get(directory_name)
-            if parsed_macro is None:
-                msg = f"Directory '{directory_name}' not found in parsed schemas"
-                raise RuntimeError(msg)
-
             try:
-                resolved_path_str = parsed_macro.resolve(builtin_vars, self._secrets_manager)
+                resolved_path_str = resolver.resolve_directory(directory_name)
             except MacroResolutionError as e:
                 msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
                 raise RuntimeError(msg) from e
