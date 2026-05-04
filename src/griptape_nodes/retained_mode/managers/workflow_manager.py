@@ -1426,6 +1426,11 @@ class WorkflowManager:
     async def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
         self, request: LoadWorkflowMetadata
     ) -> ResultPayload:
+        # The editor can send LoadWorkflowMetadata before library registration finishes
+        # (observed on Windows, engine cold start). Without this gate, the dependency
+        # check below would race LibraryRegistry and return LibraryNotRegisteredProblem
+        # for libraries that are milliseconds from being registered.
+        await GriptapeNodes.LibraryManager()._libraries_loading_complete.wait()
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
         str_path = str(complete_file_path)
