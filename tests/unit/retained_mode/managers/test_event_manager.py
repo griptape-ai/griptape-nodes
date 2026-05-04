@@ -1,12 +1,18 @@
 """Test EventManager functionality including sync/async event broadcasting."""
 
+import asyncio
+import threading
 from dataclasses import dataclass
 from unittest.mock import AsyncMock
 
 import pytest
 
 from griptape_nodes.retained_mode.events.app_events import ConfigChanged
-from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayloadSuccess
+from griptape_nodes.retained_mode.events.base_events import (
+    ForwardFromWorkerMixin,
+    RequestPayload,
+    ResultPayloadSuccess,
+)
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
@@ -245,6 +251,65 @@ class TestHandleRequestLoopSafety:
 
         event = await event_manager.ahandle_request(_ProbeRequest())
         assert event.result.succeeded()
+
+
+@dataclass(kw_only=True)
+class _ForwardableProbeRequest(RequestPayload, ForwardFromWorkerMixin):
+    """Minimal forwardable request used to drive the worker-forwarding path in tests."""
+
+
+@dataclass(kw_only=True)
+class _ForwardableProbeResult(ResultPayloadSuccess):
+    """Minimal success payload paired with _ForwardableProbeRequest."""
+
+
+class TestHandleRequestForwardingFromRunningLoop:
+    """Forwarding dispatch from a running loop must succeed, not raise.
+
+    When worker forwarding is enabled, `_forward_to_orchestrator` routes onto
+    a dedicated WebSocket event loop running on a separate thread. That loop
+    does not share primitives with the caller's loop, so blocking the caller
+    thread on the resulting future is safe -- the #4469 deadlock shape does
+    not apply. This is distinct from the local async-handler case, which
+    must still fail fast because dispatching locally would block the caller's
+    own loop.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sync_dispatch_from_running_loop_forwards_via_websocket_loop(self) -> None:
+        event_manager = EventManager()
+
+        # Spin up a dedicated loop on another thread to stand in for the websocket loop.
+        ws_loop = asyncio.new_event_loop()
+        ws_thread = threading.Thread(target=ws_loop.run_forever, daemon=True)
+        ws_thread.start()
+
+        captured: dict[str, object] = {}
+
+        async def fake_forward(
+            _request: RequestPayload,
+            _result_context: object,
+        ) -> object:
+            # Record which loop actually executed the forward.
+            captured["forward_loop"] = asyncio.get_running_loop()
+            return _ForwardableProbeResult(result_details="forwarded")
+
+        # Enable the forward branch by configuring just enough state.
+        event_manager._worker_forwarding_enabled = True
+        event_manager._websocket_event_loop = ws_loop
+        event_manager._forward_to_orchestrator = fake_forward  # type: ignore[method-assign]
+
+        try:
+            with event_manager.worker_node_execution_scope():
+                result = event_manager.handle_request(_ForwardableProbeRequest())
+        finally:
+            ws_loop.call_soon_threadsafe(ws_loop.stop)
+            ws_thread.join(timeout=1.0)
+            ws_loop.close()
+
+        assert captured["forward_loop"] is ws_loop
+        assert isinstance(result, _ForwardableProbeResult)
+        assert "forwarded" in str(result.result_details)
 
 
 class TestBroadcastAppEventLoopSafety:

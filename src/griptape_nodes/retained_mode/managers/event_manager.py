@@ -531,13 +531,26 @@ class EventManager:
             result_context = ResultContext()
 
         if self._should_forward(request):
+            # Forwarding is safe from a running loop because _forward_to_orchestrator
+            # already dispatches onto a separate loop (the WebSocket loop set up by
+            # configure_worker_forwarding). run_coroutine_threadsafe hands the
+            # coroutine to that loop and we block the caller's thread on the
+            # resulting concurrent.futures.Future. Because the WS loop runs on a
+            # different thread than the caller's loop, no primitives are shared
+            # and the #4469 deadlock shape does not apply.
             if _running_loop() is not None:
-                msg = _sync_in_async_loop_error_message(
-                    request_type_name=type(request).__name__,
-                    handler_description="worker-to-orchestrator forwarding",
-                    recommended_call="await GriptapeNodes.ahandle_request(request)",
+                if self._websocket_event_loop is None:
+                    msg = (
+                        "Cannot forward request from a running event loop: "
+                        "worker forwarding is enabled but the websocket event loop "
+                        "is not configured. This indicates a bootstrap order bug."
+                    )
+                    raise RuntimeError(msg)
+                future = asyncio.run_coroutine_threadsafe(
+                    self._forward_to_orchestrator(request, result_context),
+                    self._websocket_event_loop,
                 )
-                raise RuntimeError(msg)
+                return future.result()
             return asyncio.run(self._forward_to_orchestrator(request, result_context))
 
         # Notify the manager of the event type
