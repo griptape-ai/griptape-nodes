@@ -238,19 +238,9 @@ Use this process for minor and major version bumps that include new features or 
     git pull origin main
     ```
 
-1. Bump the version:
+1. Check the version:
 
-    ```shell
-    # For patch releases (e.g., 0.65.2 → 0.65.3)
-    make version/patch
-    ```
-
-    or:
-
-    ```shell
-    # For minor releases (e.g., 0.65.0 → 0.66.0)
-    make version/minor
-    ```
+    There should be an existing `chore: bump v0.66.0` commit elevating the minor version on `main` 1 higher than what is currently `stable`. If not, perform step 4 an additional time right now so the version on `main` is greater than the current `stable` version.
 
 1. Publish the release:
 
@@ -263,6 +253,15 @@ Use this process for minor and major version bumps that include new features or 
     - A version tag (e.g., `v0.66.0`)
     - An updated `stable` tag
     - A release branch (e.g., `release/v0.66`) for future patch releases
+
+1. Update the version on `main`
+
+    ```shell
+    # For minor releases (e.g., 0.65.0 → 0.66.0)
+    make version/minor
+    ```
+
+    PR and merge that change to `main`.
 
 ### Patch Releases (from release branches)
 
