@@ -2804,10 +2804,12 @@ class NodeManager:
     ) -> ResultPayload:
         """Dispatch ExecuteNodeRequest to a worker and return its result.
 
-        The worker creates the node on first call (idempotent) and runs aprocess
-        remotely. Output copy-back onto the orchestrator's live node happens in
-        the caller (NodeExecutor.execute) so the write path is identical for
-        local and worker routes.
+        The worker constructs a fresh transient node from request.node_metadata
+        on every call and discards it after aprocess returns (see #4476);
+        ExecuteNodeRequest is a pure RPC from the orchestrator's perspective.
+        Output copy-back onto the orchestrator's live node happens in the caller
+        (NodeExecutor.execute) so the write path is identical for local and
+        worker routes.
         """
         worker_engine_id, worker_request_topic = worker
         # Assign the request_id on the payload itself so the worker handler can
