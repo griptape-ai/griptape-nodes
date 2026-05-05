@@ -165,7 +165,7 @@ class StaticFilesManager:
             raise RuntimeError(msg)
         return self._static_server_base_url
 
-    def _generate_preview_if_needed(self, file_path: Path) -> tuple[Path, dict | None]:
+    async def _generate_preview_if_needed(self, file_path: Path) -> tuple[Path, dict | None]:
         """Generate preview for a file if needed.
 
         Returns (path, artifact_metadata) where path is the preview if generated/cached,
@@ -189,7 +189,7 @@ class StaticFilesManager:
 
         provider_name = provider_classes[0].get_friendly_name()
 
-        result = GriptapeNodes.handle_request(
+        result = await GriptapeNodes.ahandle_request(
             GetPreviewForArtifactRequest(
                 macro_path=MacroPath(ParsedMacro(str(file_path)), {}),
                 artifact_provider_name=provider_name,
@@ -314,7 +314,7 @@ class StaticFilesManager:
             static_files_directory=static_files_directory,
         )
 
-    def _resolve_preview_path(self, file_path: Path, *, preview: bool) -> tuple[Path, dict | None]:
+    async def _resolve_preview_path(self, file_path: Path, *, preview: bool) -> tuple[Path, dict | None]:
         """Return the path to serve and any source metadata, generating a preview when requested.
 
         Args:
@@ -328,7 +328,7 @@ class StaticFilesManager:
             logger.debug("Serving full image for %s", file_path)
             return file_path, None
         try:
-            preview_path, artifact_metadata = self._generate_preview_if_needed(file_path)
+            preview_path, artifact_metadata = await self._generate_preview_if_needed(file_path)
         except Exception as e:
             logger.warning("Preview generation failed for %s, using original: %s", file_path, e)
             return file_path, None
@@ -336,7 +336,7 @@ class StaticFilesManager:
             logger.debug("Serving full image (no thumbnail available) for %s", file_path)
         return preview_path, artifact_metadata
 
-    def on_handle_create_static_file_download_url_from_path_request(
+    async def on_handle_create_static_file_download_url_from_path_request(
         self,
         request: CreateStaticFileDownloadUrlFromPathRequest,
     ) -> CreateStaticFileDownloadUrlFromPathResultSuccess | CreateStaticFileDownloadUrlResultFailure:
@@ -385,7 +385,9 @@ class StaticFilesManager:
             file_path_for_driver = Path(uri_to_path(file_path))
 
         # If preview requested, generate preview and get preview path + artifact metadata
-        file_path_to_use, artifact_metadata = self._resolve_preview_path(file_path_for_driver, preview=request.preview)
+        file_path_to_use, artifact_metadata = await self._resolve_preview_path(
+            file_path_for_driver, preview=request.preview
+        )
 
         try:
             url = driver.create_signed_download_url(file_path_to_use)

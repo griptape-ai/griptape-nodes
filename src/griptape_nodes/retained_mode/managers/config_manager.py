@@ -42,9 +42,6 @@ from griptape_nodes.retained_mode.events.os_events import (
     FileIOFailureReason,
     GetFileInfoRequest,
     GetFileInfoResultFailure,
-    ReadFileRequest,
-    ReadFileResultFailure,
-    ReadFileResultSuccess,
     RenameFileRequest,
     RenameFileResultFailure,
     WriteFileRequest,
@@ -641,7 +638,7 @@ class ConfigManager:
 
         return SetConfigValueResultSuccess(result_details=result_details)
 
-    def _write_user_config_delta(self, user_config_delta: dict) -> None:  # noqa: C901, PLR0912, PLR0915
+    def _write_user_config_delta(self, user_config_delta: dict) -> None:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Write user configuration delta to config file with atomic read-modify-write.
 
         This method performs an atomic read-modify-write operation on the user config file:
@@ -703,56 +700,48 @@ class ConfigManager:
                 )
                 return
 
-        # Step 3: Read current config with file locking
-        read_request = ReadFileRequest(
-            file_path=config_path_str,
-            encoding="utf-8",
-            workspace_only=False,
-        )
-        read_result = GriptapeNodes.handle_request(read_request)
-
-        # Handle read failures
-        if isinstance(read_result, ReadFileResultFailure):
-            match read_result.failure_reason:
-                case FileIOFailureReason.FILE_NOT_FOUND:
-                    logger.error(
-                        "Attempted to read user config at '%s'. File not found despite creation attempt.",
-                        config_path_str,
-                    )
-                case FileIOFailureReason.PERMISSION_DENIED:
-                    logger.error(
-                        "Attempted to read user config at '%s'. Permission denied: %s",
-                        config_path_str,
-                        read_result.result_details,
-                    )
-                case FileIOFailureReason.FILE_LOCKED:
-                    logger.error(
-                        "Attempted to read user config at '%s'. File is locked by another process: %s",
-                        config_path_str,
-                        read_result.result_details,
-                    )
-                case FileIOFailureReason.ENCODING_ERROR:
-                    logger.error(
-                        "Attempted to read user config at '%s'. Encoding error: %s",
-                        config_path_str,
-                        read_result.result_details,
-                    )
-                case _:
-                    logger.error(
-                        "Attempted to read user config at '%s'. Failed with: %s",
-                        config_path_str,
-                        read_result.result_details,
-                    )
-            return
-
-        # Step 4: Parse JSON from file content (success case only)
-        # Type narrowing: At this point read_result must be ReadFileResultSuccess
-        if not isinstance(read_result, ReadFileResultSuccess):
-            logger.error("Unexpected result type from read request at '%s'", config_path_str)
-            return
-
+        # Step 3: Read current config directly from disk.
+        #
+        # We intentionally bypass the ReadFileRequest handler here. `_write_user_config_delta`
+        # is called from both sync (set_config_value) and async (app-init handlers that
+        # register provider settings) contexts; the ReadFileRequest handler is async, so
+        # dispatching it from an async context via sync handle_request trips the
+        # sync-in-async fail-fast (issue #4469). The enclosing writes already use
+        # os_manager.on_write_file_request directly (sync), so the read matches that
+        # bootstrap-path style and avoids coupling config load to event-loop state.
         try:
-            current_config = json.loads(read_result.content)
+            file_content = Path(config_path_str).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.error(
+                "Attempted to read user config at '%s'. File not found despite creation attempt.",
+                config_path_str,
+            )
+            return
+        except PermissionError as e:
+            logger.error(
+                "Attempted to read user config at '%s'. Permission denied: %s",
+                config_path_str,
+                e,
+            )
+            return
+        except UnicodeDecodeError as e:
+            logger.error(
+                "Attempted to read user config at '%s'. Encoding error: %s",
+                config_path_str,
+                e,
+            )
+            return
+        except OSError as e:
+            logger.error(
+                "Attempted to read user config at '%s'. Failed with: %s",
+                config_path_str,
+                e,
+            )
+            return
+
+        # Step 4: Parse JSON from file content
+        try:
+            current_config = json.loads(file_content)
         except json.JSONDecodeError as e:
             # Config file is corrupted - back it up and start fresh
             backup_path_str = str(USER_CONFIG_PATH.with_suffix(".bak"))

@@ -1,11 +1,25 @@
+import asyncio
+import threading
+from dataclasses import dataclass
 from unittest.mock import Mock
 
 import pytest
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayloadSuccess
+from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 from .mocks import MockNode
+
+
+@dataclass
+class _ProbeRequest(RequestPayload):
+    pass
+
+
+class _ProbeResult(ResultPayloadSuccess):
+    pass
 
 
 class TestNodeTypes:
@@ -36,6 +50,62 @@ class TestNodeTypes:
 
         # Verify all yields were processed
         assert results == ["result1", "result2"]
+
+    @pytest.mark.asyncio
+    async def test_aprocess_runs_sync_process_off_event_loop_thread(self) -> None:
+        """Sync process() must run in a worker thread, not on the event loop thread.
+
+        This is the guarantee that lets sync GriptapeNodes.handle_request(...) calls
+        from inside sync node code dispatch async handlers via asyncio.run without
+        tripping the running-loop guard documented in issue #4469.
+        """
+        loop_thread_id = threading.get_ident()
+        captured: dict[str, int | bool] = {}
+
+        class _ThreadProbingNode(MockNode):
+            def process(self) -> AsyncResult | None:
+                captured["process_thread_id"] = threading.get_ident()
+                try:
+                    asyncio.get_running_loop()
+                except RuntimeError:
+                    captured["has_running_loop"] = False
+                else:
+                    captured["has_running_loop"] = True
+                return None
+
+        node = _ThreadProbingNode()
+        await node.aprocess()
+
+        assert captured["process_thread_id"] != loop_thread_id
+        assert captured["has_running_loop"] is False
+
+    @pytest.mark.asyncio
+    async def test_aprocess_sync_process_can_reach_async_handler_via_sync_dispatch(self) -> None:
+        """Regression test for #4469 trips from sync nodes.
+
+        A sync process() that calls the sync handle_request entry point with an
+        async handler target must succeed, because aprocess runs process() on a
+        worker thread (no running loop there), not on the event loop thread.
+        """
+        event_manager = EventManager()
+
+        async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
+
+        captured: dict[str, bool] = {}
+
+        class _DispatchingNode(MockNode):
+            def process(self) -> AsyncResult | None:
+                event = event_manager.handle_request(_ProbeRequest())
+                captured["succeeded"] = event.result.succeeded()
+                return None
+
+        node = _DispatchingNode()
+        await node.aprocess()
+
+        assert captured["succeeded"] is True
 
 
 class TestConnectionRemovedHooks:

@@ -22,6 +22,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager, WorkerRegistration
+from griptape_nodes.utils.version_utils import engine_version
 
 _SESSION = "sess-abc"
 _ENGINE = "eng-xyz"
@@ -75,7 +76,7 @@ def worker_manager() -> WorkerManager:
 class TestHandleRegisterWorkerRequest:
     @pytest.mark.asyncio
     async def test_adds_worker_to_registered_workers(self, worker_manager: WorkerManager) -> None:
-        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, engine_version=engine_version)
 
         await worker_manager.handle_register_worker_request(request)
 
@@ -84,7 +85,7 @@ class TestHandleRegisterWorkerRequest:
 
     @pytest.mark.asyncio
     async def test_seeds_last_seen_timestamp(self, worker_manager: WorkerManager) -> None:
-        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, engine_version=engine_version)
 
         await worker_manager.handle_register_worker_request(request)
 
@@ -93,7 +94,7 @@ class TestHandleRegisterWorkerRequest:
 
     @pytest.mark.asyncio
     async def test_subscribes_to_worker_response_topic(self, worker_manager: WorkerManager) -> None:
-        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, engine_version=engine_version)
 
         await worker_manager.handle_register_worker_request(request)
 
@@ -101,12 +102,45 @@ class TestHandleRegisterWorkerRequest:
 
     @pytest.mark.asyncio
     async def test_returns_success_with_engine_id(self, worker_manager: WorkerManager) -> None:
-        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, engine_version=engine_version)
 
         result = await worker_manager.handle_register_worker_request(request)
 
         assert isinstance(result, worker_events.RegisterWorkerResultSuccess)
         assert result.worker_engine_id == _ENGINE
+
+
+class TestHandleRegisterWorkerRequestEngineVersion:
+    @pytest.mark.asyncio
+    async def test_rejects_mismatched_engine_version(self, worker_manager: WorkerManager) -> None:
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, engine_version="0.0.0-mismatch")
+
+        result = await worker_manager.handle_register_worker_request(request)
+
+        assert isinstance(result, worker_events.RegisterWorkerResultFailure)
+
+    @pytest.mark.asyncio
+    async def test_mismatched_version_does_not_register_worker(self, worker_manager: WorkerManager) -> None:
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, engine_version="0.0.0-mismatch")
+
+        await worker_manager.handle_register_worker_request(request)
+
+        assert _ENGINE not in worker_manager._workers
+        assert _ENGINE not in worker_manager._worker_last_seen
+        worker_manager._tx.subscribe_to_topic.assert_not_called()  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_mismatched_version_failure_details_identify_both_versions(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, engine_version="0.0.0-mismatch")
+
+        result = await worker_manager.handle_register_worker_request(request)
+
+        assert isinstance(result, worker_events.RegisterWorkerResultFailure)
+        details = str(result.result_details)
+        assert "0.0.0-mismatch" in details
+        assert engine_version in details
 
 
 class TestHandleWorkerHeartbeatRequest:
@@ -325,7 +359,9 @@ class TestRelayWorkerResultPendingFuture:
 class TestLibraryWorkerRegistration:
     @pytest.mark.asyncio
     async def test_library_name_stored_on_registration(self, worker_manager: WorkerManager) -> None:
-        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, library_name="My Library")
+        request = worker_events.RegisterWorkerRequest(
+            worker_engine_id=_ENGINE, engine_version=engine_version, library_name="My Library"
+        )
 
         await worker_manager.handle_register_worker_request(request)
 
@@ -333,7 +369,7 @@ class TestLibraryWorkerRegistration:
 
     @pytest.mark.asyncio
     async def test_general_worker_has_none_library(self, worker_manager: WorkerManager) -> None:
-        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE)
+        request = worker_events.RegisterWorkerRequest(worker_engine_id=_ENGINE, engine_version=engine_version)
 
         await worker_manager.handle_register_worker_request(request)
 

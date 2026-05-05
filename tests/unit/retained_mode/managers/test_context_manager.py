@@ -109,7 +109,6 @@ class TestGeneratedWorkflowCode:
         import_recorder = ImportRecorder()
         code_blocks = workflow_manager._generate_workflow_run_prerequisite_code(
             import_recorder=import_recorder,
-            library_names=[],
         )
 
         module = ast.Module(body=[n for n in code_blocks if isinstance(n, ast.stmt)], type_ignores=[])

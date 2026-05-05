@@ -177,7 +177,11 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     UpdateConfigCategoryProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
+from griptape_nodes.retained_mode.managers.settings import (
+    LIBRARIES_TO_DOWNLOAD_KEY,
+    LIBRARIES_TO_REGISTER_KEY,
+    WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
+)
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts, normalize_secrets_to_register
 from griptape_nodes.utils.file_utils import find_file_in_directory, find_files_recursive
@@ -1724,7 +1728,7 @@ class LibraryManager:
                             and library_info.lifecycle_state == LibraryManager.LibraryLifecycleState.LOADED
                             and library_info.library_name
                         ):
-                            node_schemas = self._serialize_library_node_schemas(library_info.library_name)
+                            node_schemas = await self._serialize_library_node_schemas(library_info.library_name)
                             await GriptapeNodes.abroadcast_app_event(
                                 LibraryLoadedNotification(
                                     library_name=library_info.library_name,
@@ -1836,7 +1840,7 @@ class LibraryManager:
 
         library_path = str(files(package_name).joinpath(request.library_config_name))
 
-        register_result = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path=library_path))
+        register_result = await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(file_path=library_path))
         if isinstance(register_result, RegisterLibraryFromFileResultFailure):
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {register_result}"
             return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
@@ -2762,7 +2766,7 @@ class LibraryManager:
 
             # Still need to tell WorkflowManager to register workflows
             # Pass the specific workflows if provided, otherwise it will scan workspace
-            GriptapeNodes.WorkflowManager().refresh_workflow_registry(
+            await GriptapeNodes.WorkflowManager().refresh_workflow_registry(
                 workflows_to_register=payload.workflows_to_register
             )
             return
@@ -2787,8 +2791,8 @@ class LibraryManager:
         # Wait for workers only when restarting into an existing session (workers were just
         # spawned above). On a fresh boot there is no session yet -- workers start later
         # when AppStartSessionRequest arrives and will finish before the user can open a
-        # workflow. Awaiting here on fresh boot would wait 120s for workers that haven't
-        # started yet.
+        # workflow. Awaiting here on fresh boot would wait the full worker-startup grace
+        # period for workers that haven't started yet.
         if GriptapeNodes.get_session_id():
             await self._await_pending_workers()
 
@@ -2804,10 +2808,10 @@ class LibraryManager:
 
         # This will (attempts to) load all workflows specified by LIBRARIES. User workflows are loaded later.
         library_workflow_files_to_register = await self._collect_library_workflow_files()
-        GriptapeNodes.WorkflowManager().register_list_of_workflows(library_workflow_files_to_register)
+        await GriptapeNodes.WorkflowManager().register_list_of_workflows(library_workflow_files_to_register)
 
         # Go tell the Workflow Manager that it's turn is now.
-        GriptapeNodes.WorkflowManager().refresh_workflow_registry()
+        await GriptapeNodes.WorkflowManager().refresh_workflow_registry()
 
         # Only print the engine ready banner for the orchestrator — not for dedicated library workers.
         self._maybe_print_engine_ready_banner(is_worker=self._is_worker)
@@ -2871,12 +2875,16 @@ class LibraryManager:
             worker_manager.set_session_ready()
             await self._start_workers()
 
-    async def _await_pending_workers(self, wait_seconds: float = 120) -> None:
+    async def _await_pending_workers(self, wait_seconds: float | None = None) -> None:
         """Wait for all WORKER_PENDING libraries to report back via LibraryLoadedNotification.
 
         On timeout, marks remaining pending libraries as FAILURE/UNUSABLE so the rest of
         initialization can continue. Per-library worker_ready events are set by
         _on_library_loaded_notification when the worker sends its LibraryLoadedNotification.
+
+        When wait_seconds is None, reads the worker heartbeat startup grace from config so
+        the orchestrator ceiling stays aligned with the worker self-timeout; first-time
+        installs of large libraries can easily exceed the default heartbeat timeout.
         """
         pending_events = [
             info.worker_ready
@@ -2885,6 +2893,12 @@ class LibraryManager:
         ]
         if not pending_events:
             return
+
+        if wait_seconds is None:
+            config_mgr = GriptapeNodes.ConfigManager()
+            wait_seconds = config_mgr.get_config_value(
+                WORKER_HEARTBEAT_STARTUP_GRACE_KEY, default=600.0, cast_type=float
+            )
 
         timed_out = False
         try:
@@ -3225,7 +3239,13 @@ class LibraryManager:
         # Update lifecycle state to LOADED
         library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
 
-    def _serialize_library_node_schemas(self, library_name: str) -> list[WorkerNodeSchema]:
+    # Per-node timeout for the schema probe. Node __init__ methods that make
+    # synchronous handle_request calls can deadlock against async handlers that
+    # await init-time events (e.g. WorkflowManager._workflows_loading_complete),
+    # so each probe runs in a worker thread with this ceiling.
+    _SCHEMA_PROBE_TIMEOUT_S: float = 10.0
+
+    async def _serialize_library_node_schemas(self, library_name: str) -> list[WorkerNodeSchema]:
         """Serialize node parameter schemas for a loaded library.
 
         Called on the worker process after library nodes are loaded. Probes each
@@ -3244,7 +3264,20 @@ class LibraryManager:
             if node_class is None:
                 continue
             try:
-                probe = node_class(name="__schema_probe__")
+                probe = await asyncio.wait_for(
+                    asyncio.to_thread(node_class, name="__schema_probe__"),
+                    timeout=self._SCHEMA_PROBE_TIMEOUT_S,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Schema probe for node class '%s' in library '%s' timed out after %.1fs; "
+                    "skipping. The node's __init__ likely makes a blocking call that cannot "
+                    "complete during library load.",
+                    class_name,
+                    library_name,
+                    self._SCHEMA_PROBE_TIMEOUT_S,
+                )
+                continue
             except Exception:
                 logger.debug("Could not probe node class '%s' for schema serialization.", class_name, exc_info=True)
                 continue
@@ -3562,7 +3595,7 @@ class LibraryManager:
 
         # Unload all libraries now.
         all_libraries_request = ListRegisteredLibrariesRequest()
-        all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
+        all_libraries_result = await GriptapeNodes.ahandle_request(all_libraries_request)
         if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
             details = "When preparing to reload all libraries, failed to get registered libraries."
             logger.error(details)

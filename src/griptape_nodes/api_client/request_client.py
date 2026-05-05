@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from griptape_nodes.api_client.client import Client
+    from griptape_nodes.retained_mode.events.base_events import EventRequest
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +154,69 @@ class RequestClient:
             raise
         else:
             logger.debug("Request %s completed successfully", request_id)
+            return result
+
+    async def request_to_orchestrator(
+        self,
+        event_request: EventRequest,
+        orchestrator_request_topic: str,
+        worker_response_topic: str,
+        timeout_ms: int | None = None,
+    ) -> dict[str, Any]:
+        """Publish an EventRequest to the orchestrator and await its matching EventResult.
+
+        Sets event_request.response_topic to worker_response_topic so the orchestrator
+        replies on a topic this RequestClient is subscribed to. Tracks the future by
+        event_request.request_id (generated if missing), publishes the serialized
+        EventRequest to orchestrator_request_topic, and awaits the matching response.
+
+        Args:
+            event_request: EventRequest wrapping the RequestPayload to forward.
+            orchestrator_request_topic: Topic the orchestrator listens on.
+            worker_response_topic: Topic this worker listens on for the reply.
+            timeout_ms: Optional timeout in milliseconds.
+
+        Returns:
+            The response payload dict (EventResultSuccess or EventResultFailure shape).
+
+        Raises:
+            TimeoutError: If no response arrives before timeout_ms.
+        """
+        if not event_request.request_id:
+            event_request.request_id = str(uuid.uuid4())
+        request_id = event_request.request_id
+        event_request.response_topic = worker_response_topic
+
+        response_future = await self._track_request(request_id)
+
+        if worker_response_topic not in self._subscribed_response_topics:
+            await self.client.subscribe(worker_response_topic)
+            self._subscribed_response_topics.add(worker_response_topic)
+
+        payload_dict = json.loads(event_request.json())
+
+        logger.debug("Forwarding request %s to orchestrator on %s", request_id, orchestrator_request_topic)
+
+        try:
+            await self.client.publish("EventRequest", payload_dict, orchestrator_request_topic)
+
+            if timeout_ms:
+                timeout_sec = timeout_ms / 1000
+                result = await asyncio.wait_for(response_future, timeout=timeout_sec)
+            else:
+                result = await response_future
+
+        except TimeoutError:
+            logger.error("Forwarded request %s timed out", request_id)
+            await self._cancel_request(request_id)
+            raise
+
+        except Exception as e:
+            logger.error("Forwarded request %s failed: %s", request_id, e)
+            await self._cancel_request(request_id)
+            raise
+        else:
+            logger.debug("Forwarded request %s completed", request_id)
             return result
 
     async def track_request(self, request_id: str, tag: str = "") -> asyncio.Future:

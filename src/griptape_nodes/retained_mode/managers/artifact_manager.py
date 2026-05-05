@@ -603,7 +603,7 @@ class ArtifactManager:
             workspace_only=False,
             should_transform_image_content_to_thumbnail=False,
         )
-        read_metadata_result = GriptapeNodes.handle_request(read_metadata_request)
+        read_metadata_result = await GriptapeNodes.ahandle_request(read_metadata_request)
 
         if not isinstance(read_metadata_result, ReadFileResultSuccess):
             return GetPreviewForArtifactResultFailure(

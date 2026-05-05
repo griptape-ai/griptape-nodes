@@ -182,6 +182,22 @@ class SkipTheLineMixin:
     """
 
 
+class ForwardFromWorkerMixin:
+    """Opt-in marker: on a worker, forward this request to the orchestrator.
+
+    Applied to request types whose handler needs orchestrator-owned state
+    (cross-node graph topology, structural mutations against the flow
+    registry, cross-flow parameter reads). Forwarding only activates when
+    the worker is inside EventManager.worker_node_execution_scope -- i.e.
+    the request originated from node execution rather than worker
+    bootstrap. See EventManager._should_forward for the predicate.
+
+    Requests without this mixin dispatch locally on the worker even during
+    node execution. This is the right default for file I/O, config,
+    secrets, library queries, and other worker-owned state.
+    """
+
+
 # Success result payload abstract base class
 @dataclass(kw_only=True)
 class ResultPayloadSuccess(ResultPayload, ABC):

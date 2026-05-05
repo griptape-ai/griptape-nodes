@@ -42,6 +42,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils import install_file_url_support
+from griptape_nodes.utils.version_utils import engine_version
 
 
 # WebSocket thread communication message types
@@ -107,6 +108,11 @@ install_file_url_support()
 
 # Maximum length for log messages forwarded to the GUI.
 LOG_MESSAGE_MAX_LENGTH = 500
+
+# Timeout for worker-originated requests forwarded to the orchestrator.
+# Orchestrator handlers for graph-introspection requests complete in milliseconds;
+# a 30s ceiling bounds the wait if the orchestrator is overloaded or unreachable.
+ORCHESTRATOR_REQUEST_TIMEOUT_MS = 30_000
 
 
 class EventLogHandler(logging.Handler):
@@ -296,6 +302,7 @@ async def _run_worker(client: Client, role: Worker) -> None:
     reg_event = EventRequest(
         request=worker_events.RegisterWorkerRequest(
             worker_engine_id=worker_engine_id,
+            engine_version=engine_version,
             library_name=role.library_name,
         ),
         response_topic=None,
@@ -344,6 +351,23 @@ async def _run_worker(client: Client, role: Worker) -> None:
             )
             for topic in worker_manager.get_topics_to_subscribe(is_worker=True):
                 await client.subscribe(topic)
+
+            # Enable worker -> orchestrator forwarding for requests originated
+            # from node execution (gated by EventManager.worker_node_execution_scope,
+            # opened around ExecuteNodeRequest dispatch in _process_event_request).
+            # Must be configured before the event queue processor can dispatch any
+            # AppInitializationComplete handlers -- those run outside the scope and
+            # will stay local, but the forwarding plumbing needs to be live in case
+            # one ever opens a scope itself.
+            worker_response_topic = f"engines/{worker_engine_id}/response"
+            await client.subscribe(worker_response_topic)
+            griptape_nodes.EventManager().configure_worker_forwarding(
+                request_client=request_client,
+                orchestrator_request_topic=f"sessions/{role.session_id}/request",
+                worker_response_topic=worker_response_topic,
+                websocket_event_loop=asyncio.get_running_loop(),
+                timeout_ms=ORCHESTRATOR_REQUEST_TIMEOUT_MS,
+            )
 
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_send_outgoing_messages(client))
@@ -504,7 +528,9 @@ async def _process_event_queue() -> None:
 
     def _handle_task_result(task: asyncio.Task) -> None:
         background_tasks.discard(task)
-        if task.exception() and not task.cancelled():
+        # Check cancelled() first -- calling exception() on a cancelled task
+        # raises CancelledError rather than returning it.
+        if not task.cancelled() and task.exception() is not None:
             logger.exception("Background task failed", exc_info=task.exception())
 
     try:
@@ -537,12 +563,22 @@ async def _process_event_queue() -> None:
 
 
 async def _process_event_request(event: EventRequest) -> None:
-    """Handle request and emit success/failure events based on result."""
+    """Handle request and emit success/failure events based on result.
+
+    Two independent reasons to emit the result:
+    - broadcast_result=True: the request wants its result fanned out (typically
+      to the GUI or default session topic).
+    - response_topic is set: the caller is waiting for a reply on that topic
+      (e.g. a worker that forwarded this request to us). The reply is required
+      regardless of broadcast_result, otherwise the caller's future hangs until
+      timeout. This covers request types like WriteFileRequest that default to
+      broadcast_result=False but must still reply when they arrive over the wire.
+    """
     result_event = await griptape_nodes.EventManager().ahandle_request(
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},
     )
-    if event.request.broadcast_result:
+    if event.request.broadcast_result or event.response_topic is not None:
         await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 
 

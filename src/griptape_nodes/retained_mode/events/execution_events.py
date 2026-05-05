@@ -7,6 +7,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    SkipTheLineMixin,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
@@ -476,16 +477,23 @@ class ExecuteNodeRequest(RequestPayload):
     Unlike ResolveNodeRequest, this bypasses flow/DAG machinery and executes
     the node's process method directly.
 
-    If the node does not already exist in ObjectManager and node_metadata is provided,
-    the node is created first (idempotent: no-op if already present). This covers both
-    orchestrator-local execution (node always exists) and worker execution (created on
-    first call, reused on subsequent calls).
+    Handling depends on where the request lands:
+
+    - **Orchestrator**: the node must already exist in ObjectManager. If it does
+      not, the request fails; node_metadata is ignored on this path. The
+      orchestrator is the sole source of truth for node identity and parameter
+      values.
+    - **Worker**: a fresh transient node is constructed from node_metadata on
+      every call via LibraryRegistry.create_node, hydrated, run, and discarded.
+      The worker never persists nodes across requests. node_metadata is
+      therefore required on this path.
 
     Args:
         node_name: Name of the node to execute.
         parameter_values: Input parameter values to set before execution.
-        node_metadata: Full node metadata from the orchestrator. When provided and the
-            node does not exist, it is created from this metadata.
+        node_metadata: Full node metadata from the orchestrator. Required when
+            the target library spawns a worker (used to construct the transient
+            worker-side node). Ignored on the orchestrator path.
 
     Results: ExecuteNodeResultSuccess | ExecuteNodeResultFailure
     """
@@ -511,3 +519,37 @@ class ExecuteNodeResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class ExecuteNodeResultFailure(ResultPayloadFailure):
     """Failed result from executing a node directly."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelExecuteNodeRequest(RequestPayload, SkipTheLineMixin):
+    """Cancel an in-flight ExecuteNodeRequest on this engine.
+
+    Dispatched by the orchestrator to a worker when a user cancels a flow and a
+    node in that flow is currently executing on the worker. The worker locates
+    the aprocess task registered under target_request_id, sets the cooperative
+    cancellation flag on the node, and cancels the task.
+
+    SkipTheLineMixin so the cancel bypasses the worker's event queue and reaches
+    the dispatcher even when the queue is blocked behind the aprocess we are
+    cancelling.
+
+    Args:
+        target_request_id: The request_id of the ExecuteNodeRequest to cancel.
+    """
+
+    target_request_id: str
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelExecuteNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Cancellation was delivered. The target request may or may not have been in-flight."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelExecuteNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Cancellation could not be delivered."""

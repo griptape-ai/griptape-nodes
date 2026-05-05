@@ -692,8 +692,15 @@ class ErrorState(State):
             task_to_node.pop(task)
 
         if len(task_to_node) == 0:
-            # Finish up. We failed.
-            context.workflow_state = WorkflowState.ERRORED
+            # ErrorState is entered either because a task raised an exception
+            # (error_message is set) or because a task was cancelled via user-
+            # initiated flow cancel (error_message is None). Distinguish here
+            # so flow_manager.is_errored() doesn't surface "Exception occurred:
+            # None" for a clean cancel.
+            if context.error_message is None:
+                context.workflow_state = WorkflowState.CANCELED
+            else:
+                context.workflow_state = WorkflowState.ERRORED
             context.networks.clear()
             context.node_to_reference.clear()
             context.task_to_node.clear()
@@ -737,6 +744,17 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
         # Set cancellation flag on all nodes being tracked
         for dag_node in self.context.node_to_reference.values():
             dag_node.node_reference.request_cancellation()
+
+        # For nodes whose ExecuteNodeRequest is routed to a worker subprocess,
+        # the asyncio task we'd cancel below is only the orchestrator's wait on
+        # the worker's response. Cancelling it leaves the worker running to
+        # completion and pinning the per-worker request slot. Dispatch an
+        # explicit CancelExecuteNodeRequest to each affected worker so its
+        # aprocess task is cancelled on the worker side too. No-op for nodes
+        # running locally on the orchestrator.
+        node_manager = GriptapeNodes.NodeManager()
+        for dag_node in self.context.node_to_reference.values():
+            await node_manager.cancel_worker_execution(dag_node.node_reference.name)
 
         # Cancel all running tasks
         tasks = list(self.context.task_to_node.keys())
