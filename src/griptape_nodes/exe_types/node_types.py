@@ -9,7 +9,13 @@ from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
-from griptape_nodes.common.strict_mode import node_init_scope
+from griptape_nodes.common.strict_mode import (
+    any_scope_active_threadsafe,
+    in_sanctioned_parameter_mutation,
+    node_init_scope,
+    report_violation,
+)
+from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
@@ -614,6 +620,7 @@ class BaseNode(ABC):
 
     def add_parameter(self, param: Parameter) -> None:
         """Adds a Parameter to the Node. Control and Data Parameters are all treated equally."""
+        self._report_parameter_mutation_if_in_aprocess(parameter_name=param.name, mutation="add_parameter")
         if any(char.isspace() for char in param.name):
             msg = f"Failed to add Parameter `{param.name}`. Parameter names cannot currently any whitespace characters. Please see https://github.com/griptape-ai/griptape-nodes/issues/714 to check the status on a remedy for this issue."
             raise ValueError(msg)
@@ -635,6 +642,7 @@ class BaseNode(ABC):
             self.remove_parameter_element(element)
 
     def remove_parameter_element(self, param: BaseNodeElement) -> None:
+        self._report_parameter_mutation_if_in_aprocess(parameter_name=param.name, mutation="remove_parameter_element")
         # Emit event before removal if it's a Parameter
         if isinstance(param, Parameter):
             self._emit_parameter_lifecycle_event(param)
@@ -1376,6 +1384,26 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
+
+    def _report_parameter_mutation_if_in_aprocess(self, *, parameter_name: str, mutation: str) -> None:
+        """Report parameter-mutation-during-aprocess when a node mutates its own params directly.
+
+        Request handlers reach ``add_parameter`` / ``remove_parameter_element``
+        via ``AddParameterToNodeRequest`` / ``RemoveParameterFromNodeRequest``
+        and wrap the call in ``sanctioned_parameter_mutation()``. Any call
+        that arrives here from aprocess without that wrapper is a direct
+        mutation, which does not sync back to the orchestrator when the
+        node runs in a worker subprocess.
+        """
+        if in_sanctioned_parameter_mutation():
+            return
+        if not any_scope_active_threadsafe():
+            return
+        rule = RULES["parameter-mutation-during-aprocess"]
+        report_violation(
+            rule_id=rule.rule_id,
+            message=rule.render(parameter_name=parameter_name, mutation=mutation),
+        )
 
     def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, *, remove: bool = False) -> None:
         """Emit an AlterElementEvent for parameter add/remove operations."""

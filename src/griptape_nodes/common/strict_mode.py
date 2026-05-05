@@ -146,6 +146,34 @@ def in_node_init() -> bool:
     return getattr(_node_init_depth, "depth", 0) > 0
 
 
+_sanctioned_param_mutation_depth = threading.local()
+
+
+@contextmanager
+def sanctioned_parameter_mutation() -> Iterator[None]:
+    """Mark an add_parameter / remove_parameter_element call as handler-driven.
+
+    The ``parameter-mutation-during-aprocess`` detector fires whenever a
+    node mutates its own parameter list while a strict-mode execution
+    scope is active. The AddParameterToNodeRequest and
+    RemoveParameterFromNodeRequest handlers reach ``BaseNode.add_parameter``
+    /``remove_parameter_element`` by design -- they are the sanctioned
+    path. Handlers wrap their call with this context so the detector
+    only fires on direct calls from ``aprocess`` code.
+    """
+    depth = getattr(_sanctioned_param_mutation_depth, "depth", 0)
+    _sanctioned_param_mutation_depth.depth = depth + 1
+    try:
+        yield
+    finally:
+        _sanctioned_param_mutation_depth.depth -= 1
+
+
+def in_sanctioned_parameter_mutation() -> bool:
+    """Return True when the current thread is inside a handler-sanctioned param mutation."""
+    return getattr(_sanctioned_param_mutation_depth, "depth", 0) > 0
+
+
 def _resolve_severity(*, rule_id: str, is_worker: bool) -> StrictModeSeverity:
     """Pick the severity for a reported rule.
 
