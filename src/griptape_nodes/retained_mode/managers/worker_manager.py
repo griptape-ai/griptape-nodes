@@ -19,7 +19,6 @@ from griptape_nodes.retained_mode.managers.settings import (
     WORKER_HEARTBEAT_INTERVAL_KEY,
     WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
     WORKER_HEARTBEAT_TIMEOUT_KEY,
-    WORKER_NODE_EXECUTION_TIMEOUT_KEY,
 )
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -74,7 +73,6 @@ class WorkerManager:
 
     DEFAULT_HEARTBEAT_INTERVAL_S: float = 5.0
     DEFAULT_HEARTBEAT_TIMEOUT_S: float = 15.0
-    DEFAULT_NODE_EXECUTION_TIMEOUT_S: float = 1800.0
     # How long after spawn to wait before enforcing heartbeat timeout.
     # Workers install venv deps and import modules before receiving heartbeats;
     # this matches the _await_pending_workers() ceiling so a worker never kills
@@ -117,9 +115,6 @@ class WorkerManager:
         )
         self.heartbeat_timeout_s: float = config.get_config_value(
             WORKER_HEARTBEAT_TIMEOUT_KEY, default=WorkerManager.DEFAULT_HEARTBEAT_TIMEOUT_S, cast_type=float
-        )
-        self.node_execution_timeout_s: float = config.get_config_value(
-            WORKER_NODE_EXECUTION_TIMEOUT_KEY, default=WorkerManager.DEFAULT_NODE_EXECUTION_TIMEOUT_S, cast_type=float
         )
         self.heartbeat_startup_grace_s: float = config.get_config_value(
             WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
@@ -353,11 +348,13 @@ class WorkerManager:
             worker_engine_id=worker_engine_id,
             worker_request_topic=worker_request_topic,
         )
-        try:
-            return await asyncio.wait_for(future, timeout=self.node_execution_timeout_s)
-        except TimeoutError:
-            msg = f"Worker request timed out after {self.node_execution_timeout_s:.0f}s."
-            raise RuntimeError(msg) from None
+        # No wall-clock timeout here: long-running AI workloads (diffusion,
+        # multi-pass refinement) routinely exceed any sensible default. Worker
+        # liveness is enforced by the heartbeat loop, which evicts silent
+        # workers and cancels their in-flight requests via
+        # RequestClient.cancel_requests_by_tag, so a dead worker still surfaces
+        # to the caller without a per-request ceiling.
+        return await future
 
     async def evict_worker(self, worker_engine_id: str) -> None:
         """Remove a worker from the registry and unsubscribe from its response topic."""

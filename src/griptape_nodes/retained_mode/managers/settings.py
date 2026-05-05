@@ -15,7 +15,6 @@ PROJECT_WORKSPACES_KEY = "project_workspaces"
 EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
 WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
 WORKER_HEARTBEAT_TIMEOUT_KEY = "worker.heartbeat_timeout_s"
-WORKER_NODE_EXECUTION_TIMEOUT_KEY = "worker.node_execution_timeout_s"
 WORKER_HEARTBEAT_STARTUP_GRACE_KEY = "worker.heartbeat_startup_grace_s"
 
 
@@ -168,10 +167,6 @@ class WorkerSettings(BaseModel):
     heartbeat_timeout_s: float = Field(
         default=15.0,
         description="Seconds without a heartbeat response before a worker is evicted.",
-    )
-    node_execution_timeout_s: float = Field(
-        default=300.0,
-        description="Maximum seconds to wait for a node execution response from a worker before timing out.",
     )
     heartbeat_startup_grace_s: float = Field(
         default=600.0,
