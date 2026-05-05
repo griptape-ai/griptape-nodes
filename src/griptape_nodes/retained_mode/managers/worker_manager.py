@@ -261,15 +261,13 @@ class WorkerManager:
     async def worker_heartbeat_monitor(self) -> None:
         """Shut down the worker if orchestrator heartbeats stop arriving.
 
-        A startup grace period is added to the initial seed so the worker does not
-        time out during library loading (venv creation, pip install, module import).
-        Once the first heartbeat arrives the timer resets to normal operation.
+        Waits out a startup grace period before enforcing the timeout, so
+        library loading (venv creation, pip install, module import) cannot kill
+        the worker before the orchestrator has a chance to start sending
+        challenges. Does not mutate `_worker_heartbeat_last_received_at`; that
+        attribute is owned by `handle_worker_heartbeat_request`.
         """
-        # Seed with extra time so the first timeout cannot fire until after the
-        # startup grace period.  Library loading can take tens of seconds; we do
-        # not want the worker to kill itself before the orchestrator even has a
-        # chance to start sending challenges.
-        self._worker_heartbeat_last_received_at = time.monotonic() + self.heartbeat_startup_grace_s
+        await asyncio.sleep(self.heartbeat_startup_grace_s)
         while True:
             await asyncio.sleep(self.heartbeat_interval_s)
             elapsed = time.monotonic() - self._worker_heartbeat_last_received_at

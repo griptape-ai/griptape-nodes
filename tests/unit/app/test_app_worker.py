@@ -167,6 +167,7 @@ class TestWorkerHeartbeatMonitor:
         """Monitor raises RuntimeError when no heartbeat arrives within the timeout."""
         monkeypatch.setattr(worker_manager, "heartbeat_interval_s", 0.01)
         monkeypatch.setattr(worker_manager, "heartbeat_timeout_s", 0.0)
+        monkeypatch.setattr(worker_manager, "heartbeat_startup_grace_s", 0.0)
         worker_manager._worker_heartbeat_last_received_at = 0.0
 
         with pytest.raises(RuntimeError, match="Orchestrator heartbeat lost"):
@@ -179,6 +180,8 @@ class TestWorkerHeartbeatMonitor:
         """Monitor does not raise when the timestamp is kept current."""
         monkeypatch.setattr(worker_manager, "heartbeat_interval_s", 0.01)
         monkeypatch.setattr(worker_manager, "heartbeat_timeout_s", 60.0)
+        monkeypatch.setattr(worker_manager, "heartbeat_startup_grace_s", 0.0)
+        worker_manager._worker_heartbeat_last_received_at = time.monotonic()
 
         task = asyncio.create_task(worker_manager.worker_heartbeat_monitor())
         await asyncio.sleep(0.05)
