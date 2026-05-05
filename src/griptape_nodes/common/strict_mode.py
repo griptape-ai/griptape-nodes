@@ -192,7 +192,9 @@ def _resolve_severity(*, rule_id: str, is_worker: bool) -> StrictModeSeverity:
         return StrictModeSeverity.ERROR if is_worker else StrictModeSeverity.WARNING
     if rule.correctness:
         return StrictModeSeverity.ERROR
-    return StrictModeSeverity.ERROR if is_worker else StrictModeSeverity.WARNING
+    if is_worker and rule.worker_escalation:
+        return StrictModeSeverity.ERROR
+    return StrictModeSeverity.WARNING
 
 
 def report_violation(*, rule_id: str, message: str) -> StrictModeScope | None:

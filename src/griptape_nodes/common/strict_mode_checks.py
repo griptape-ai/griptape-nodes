@@ -39,18 +39,20 @@ class StrictModeRule:
     correctness: bool
     description: str
     remediation_template: str
+    worker_escalation: bool = True
 
     def render(self, **context: Any) -> str:
         return self.remediation_template.format(**context)
 
 
-def _rule(
+def _rule(  # noqa: PLR0913
     rule_id: str,
     *,
     severity: StrictModeSeverity,
     correctness: bool,
     description: str,
     remediation: str,
+    worker_escalation: bool = True,
 ) -> StrictModeRule:
     return StrictModeRule(
         rule_id=rule_id,
@@ -58,6 +60,7 @@ def _rule(
         correctness=correctness,
         description=description,
         remediation_template=remediation,
+        worker_escalation=worker_escalation,
     )
 
 
@@ -139,6 +142,10 @@ RULES: dict[str, StrictModeRule] = {
                 "execute on the orchestrator stub; behavior may differ from "
                 "a local-library node."
             ),
+            # Reported during library load on the worker; escalating to ERROR
+            # would cause the class to be skipped entirely, which is too harsh
+            # for an ergonomics warning.
+            worker_escalation=False,
         ),
         _rule(
             "parameter-mutation-during-aprocess",
