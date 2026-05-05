@@ -276,5 +276,6 @@ nav:
       - Overview: developing_nodes/index.md
       - Getting Started: developing_nodes/getting_started.md
       - Comprehensive Guide: developing_nodes/comprehensive_guide.md
+      - Strict Mode Reference: developing_nodes/strict_mode.md
       - Example Control Node: developing_nodes/example_control_node.py
   - Glossary: glossary.md
