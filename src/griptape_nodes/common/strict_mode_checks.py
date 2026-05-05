@@ -126,38 +126,6 @@ RULES: dict[str, StrictModeRule] = {
             ),
         ),
         _rule(
-            "drag-load-bypass",
-            severity=StrictModeSeverity.ERROR,
-            correctness=True,
-            description=(
-                "BaseNode.aprocess was invoked outside of a RUNTIME_EXECUTE "
-                "scope on the worker. The drag-load UI path calls "
-                "node.process() directly on the orchestrator, which silently "
-                "no-ops for worker libraries."
-            ),
-            remediation=(
-                "Node class '{node_class}' was executed outside an "
-                "ExecuteNodeRequest on the worker path. Route through "
-                "ExecuteNodeRequest so the stateless worker sees a well-formed "
-                "request."
-            ),
-        ),
-        _rule(
-            "worker-library-version-mismatch",
-            severity=StrictModeSeverity.ERROR,
-            correctness=True,
-            description=(
-                "Worker's loaded library disagrees with the orchestrator's "
-                "registered library on version or identity. Parameter specs "
-                "may drift, producing silently incorrect runs."
-            ),
-            remediation=(
-                "Library '{library_name}' version '{worker_version}' on worker "
-                "does not match orchestrator version '{orchestrator_version}'. "
-                "Reinstall the library on the worker or restart the engine."
-            ),
-        ),
-        _rule(
             "exception-fidelity-lost",
             severity=StrictModeSeverity.ERROR,
             correctness=True,
@@ -203,39 +171,6 @@ RULES: dict[str, StrictModeRule] = {
                 "{mutation}. Emit AddParameterRequest or "
                 "RemoveParameterFromNodeRequest (both ForwardFromWorkerMixin) "
                 "to propagate the change to the orchestrator."
-            ),
-        ),
-        _rule(
-            "partial-output-streaming-race",
-            severity=StrictModeSeverity.WARNING,
-            correctness=False,
-            description=(
-                "A node emitted a streaming parameter update fewer than "
-                "STREAMING_RACE_THRESHOLD_MS milliseconds before its final "
-                "ExecuteNodeResult. The two messages can arrive at the "
-                "editor out of order."
-            ),
-            remediation=(
-                "Node '{node_name}' published a streaming update {delta_ms}ms "
-                "before the final result. Flush or drain partial outputs "
-                "before returning from aprocess."
-            ),
-        ),
-        _rule(
-            "aprocess-thread-offload-sync-loop",
-            severity=StrictModeSeverity.ERROR,
-            correctness=True,
-            description=(
-                "A node override of aprocess ran sync code on the event loop "
-                "that issued a synchronous handle_request against an async "
-                "handler. The default thread-offloaded aprocess guards "
-                "against this; custom overrides bypass the guard."
-            ),
-            remediation=(
-                "Override of aprocess on '{node_class}' invoked sync "
-                "handle_request for '{request_type}' on the event-loop thread. "
-                "Call await ahandle_request, or route the sync work through "
-                "asyncio.to_thread."
             ),
         ),
     )

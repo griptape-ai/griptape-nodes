@@ -37,6 +37,17 @@ def _resolve_payload_type(event_data: dict[str, Any], type_key: str) -> type:
 
     resolved = PayloadRegistry.get_type(type_name)
     if resolved is None:
+        # Lazy import: strict_mode imports nothing from this module, but
+        # strict_mode_checks imports base_events transitively through
+        # attach_violations_to_result. Break the cycle at the call site.
+        from griptape_nodes.common.strict_mode import report_violation
+        from griptape_nodes.common.strict_mode_checks import RULES
+
+        rule = RULES["unknown-payload-type"]
+        report_violation(
+            rule_id=rule.rule_id,
+            message=rule.render(type_name=type_name),
+        )
         msg = f"Cannot resolve payload type: '{type_name}' is not registered."
         raise ValueError(msg)
 
