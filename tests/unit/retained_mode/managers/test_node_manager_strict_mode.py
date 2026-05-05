@@ -9,6 +9,7 @@ orchestrator violations alone.
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -39,6 +40,8 @@ class TestExecuteNodeStrictMode:
         node.parameter_values = {}
         node.parameter_output_values = {"out": 1}
         node.metadata = {"library": "libA"}
+        node._cancellation_requested = threading.Event()
+        node.parameters = []
 
         async def _aprocess() -> None:
             if aprocess_reports:

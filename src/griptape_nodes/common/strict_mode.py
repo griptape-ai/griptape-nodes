@@ -117,6 +117,35 @@ def any_scope_active_threadsafe() -> bool:
         return _scope_refcount > 0
 
 
+_node_init_depth = threading.local()
+
+
+@contextmanager
+def node_init_scope() -> Iterator[None]:
+    """Mark the calling thread as executing ``BaseNode.__init__``.
+
+    ``EventManager.handle_request`` checks the flag to detect the
+    ``reentrant-bus-in-init`` rule: a node class that issues an
+    event-bus request from its constructor deadlocks the worker's
+    schema probe, which calls ``__init__`` on the worker thread.
+
+    Nested constructors (subclass __init__ calls super().__init__) are
+    supported via a depth counter -- the flag is cleared only when the
+    outermost __init__ returns.
+    """
+    depth = getattr(_node_init_depth, "depth", 0)
+    _node_init_depth.depth = depth + 1
+    try:
+        yield
+    finally:
+        _node_init_depth.depth -= 1
+
+
+def in_node_init() -> bool:
+    """Return True when the calling thread is inside ``BaseNode.__init__``."""
+    return getattr(_node_init_depth, "depth", 0) > 0
+
+
 def _resolve_severity(*, rule_id: str, is_worker: bool) -> StrictModeSeverity:
     """Pick the severity for a reported rule.
 
