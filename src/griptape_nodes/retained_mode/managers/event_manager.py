@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import TypedDict, TypeVar
 
+from griptape_nodes.common.strict_mode import report_violation
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
@@ -573,6 +574,7 @@ class EventManager:
                     handler_description=f"async handler '{getattr(callback, '__qualname__', repr(callback))}'",
                     recommended_call="await GriptapeNodes.ahandle_request(request)",
                 )
+                report_violation(rule_id="sync-in-async-loop", message=msg)
                 raise RuntimeError(msg)
             result_payload: ResultPayload = asyncio.run(callback(request))
         else:
@@ -627,6 +629,7 @@ class EventManager:
                     handler_description="async app-event listeners",
                     recommended_call="await GriptapeNodes.EventManager().abroadcast_app_event(app_event)",
                 )
+                report_violation(rule_id="sync-in-async-loop", message=msg)
                 raise RuntimeError(msg)
             asyncio.run(_broadcast_async())
 

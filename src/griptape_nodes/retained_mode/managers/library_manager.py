@@ -29,6 +29,11 @@ from rich.text import Text
 from semver import Version
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.common.strict_mode import (
+    StrictModeScopeKind,
+    StrictModeSeverity,
+    strict_mode_scope,
+)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_workspace_path
@@ -3263,23 +3268,32 @@ class LibraryManager:
             node_class = library._node_types.get(class_name)
             if node_class is None:
                 continue
-            try:
-                probe = await asyncio.wait_for(
-                    asyncio.to_thread(node_class, name="__schema_probe__"),
-                    timeout=self._SCHEMA_PROBE_TIMEOUT_S,
-                )
-            except TimeoutError:
-                logger.warning(
-                    "Schema probe for node class '%s' in library '%s' timed out after %.1fs; "
-                    "skipping. The node's __init__ likely makes a blocking call that cannot "
-                    "complete during library load.",
-                    class_name,
-                    library_name,
-                    self._SCHEMA_PROBE_TIMEOUT_S,
-                )
-                continue
-            except Exception:
-                logger.debug("Could not probe node class '%s' for schema serialization.", class_name, exc_info=True)
+            with strict_mode_scope(
+                kind=StrictModeScopeKind.LOAD_PROBE,
+                subject=class_name,
+                library_name=library_name,
+                is_worker=True,
+            ) as scope:
+                try:
+                    probe = await asyncio.wait_for(
+                        asyncio.to_thread(node_class, name="__schema_probe__"),
+                        timeout=self._SCHEMA_PROBE_TIMEOUT_S,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "Schema probe for node class '%s' in library '%s' timed out after %.1fs; "
+                        "skipping. The node's __init__ likely makes a blocking call that cannot "
+                        "complete during library load.",
+                        class_name,
+                        library_name,
+                        self._SCHEMA_PROBE_TIMEOUT_S,
+                    )
+                    continue
+                except Exception:
+                    logger.debug("Could not probe node class '%s' for schema serialization.", class_name, exc_info=True)
+                    continue
+
+            if any(v.severity is StrictModeSeverity.ERROR for v in scope.violations):
                 continue
 
             param_schemas: list[WorkerParameterSchema] = []

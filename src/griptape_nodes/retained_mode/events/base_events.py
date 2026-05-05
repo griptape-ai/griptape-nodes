@@ -52,6 +52,21 @@ class ResultDetail:
 
 
 @dataclass
+class StrictModeViolationDetail(ResultDetail):
+    """A ResultDetail that carries structured strict-mode violation metadata.
+
+    Editor renders ``ResultDetail`` today, so this subclass surfaces on
+    the result payload for free. The extra fields let future tooling
+    filter or group violations without parsing ``message``.
+    """
+
+    rule_id: str = ""
+    severity: str = ""
+    subject: str = ""
+    library_name: str | None = None
+
+
+@dataclass
 class ResultDetails:
     """Container for multiple ResultDetail objects."""
 
