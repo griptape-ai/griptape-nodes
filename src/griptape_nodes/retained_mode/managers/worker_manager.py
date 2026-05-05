@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import json
 import logging
@@ -105,6 +106,10 @@ class WorkerManager:
 
         # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
         self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
+
+        # Fire-and-forget broadcast tasks scheduled from sync callers; held here so
+        # the event loop's weak-ref to tasks does not GC them before completion.
+        self._inflight_broadcast_tasks: set[asyncio.Task] = set()
 
         # Set when an active session becomes available; gates worker spawning.
         self._session_ready_event: asyncio.Event = asyncio.Event()
@@ -492,6 +497,69 @@ class WorkerManager:
         forwarded = event.model_copy(update={"response_topic": worker_response_topic})
         logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
         await self._tx.send_message("EventRequest", forwarded.json(), worker_request_topic)
+
+    def schedule_config_reload_broadcast(self) -> None:
+        """Tell every registered worker to reload config from disk.
+
+        Workers share the config file on the same machine but cache a merged
+        config in memory; they must re-read the file to pick up new values.
+        Safe to call from sync code and from inside a running event loop --
+        the fan-out is scheduled as a background task; the caller does not wait.
+        On a worker process (no registered workers) this is a cheap no-op.
+        """
+        if self._transport is None or not self._workers:
+            return
+        reload_event = EventRequest(request=worker_events.WorkerReloadConfigRequest())
+        self._schedule_broadcast(reload_event)
+
+    def schedule_secret_refresh_broadcast(self) -> None:
+        """Tell every registered worker to re-read the shared .env file.
+
+        The .env file is re-read by each worker so its os.environ shadow
+        (which get_secret consults first) reflects the new value. Same
+        fire-and-forget semantics as schedule_config_reload_broadcast.
+        """
+        if self._transport is None or not self._workers:
+            return
+        refresh_event = EventRequest(request=worker_events.WorkerRefreshSecretsRequest())
+        self._schedule_broadcast(refresh_event)
+
+    def _schedule_broadcast(self, event: EventRequest) -> None:
+        """Schedule broadcast_to_workers as a task on the running loop.
+
+        If there is no running loop (e.g. test harness, offline sync code),
+        drive the broadcast to completion via asyncio.run. Inside a running
+        loop we cannot await without blocking the caller, so we hand the
+        coroutine to the loop and retain the task reference to keep the GC
+        from cancelling it mid-flight.
+        """
+        running_loop: asyncio.AbstractEventLoop | None = None
+        with contextlib.suppress(RuntimeError):
+            running_loop = asyncio.get_running_loop()
+        if running_loop is not None:
+            task = running_loop.create_task(self.broadcast_to_workers(event))
+            self._inflight_broadcast_tasks.add(task)
+            task.add_done_callback(self._inflight_broadcast_tasks.discard)
+            return
+        asyncio.run(self.broadcast_to_workers(event))
+
+    async def broadcast_to_workers(self, event: EventRequest) -> None:
+        """Fire-and-forget fan out of an EventRequest to every registered worker.
+
+        Used for orchestrator-originated notifications that every worker must
+        act on locally (e.g. reload config, refresh secrets). The request is
+        sent to each worker's dedicated request topic; no response is awaited.
+
+        Safe to call with zero registered workers -- it is a no-op.
+        """
+        if not self._workers:
+            return
+        for wid, registration in list(self._workers.items()):
+            await self.forward_event_to_worker(
+                event,
+                worker_engine_id=wid,
+                worker_request_topic=registration.request_topic,
+            )
 
     async def relay_worker_result(self, payload: dict) -> None:
         """Relay an unmatched worker result to the GUI session response topic.

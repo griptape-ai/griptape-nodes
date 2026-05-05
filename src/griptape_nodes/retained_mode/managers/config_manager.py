@@ -47,6 +47,10 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileRequest,
     WriteFileResultFailure,
 )
+from griptape_nodes.retained_mode.events.worker_events import (
+    WorkerReloadConfigRequest,
+    WorkerReloadConfigResultSuccess,
+)
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY, Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
@@ -112,6 +116,9 @@ class ConfigManager:
                 GetConfigSchemaRequest, self.on_handle_get_config_schema_request
             )
             event_manager.assign_manager_to_request_type(ResetConfigRequest, self.on_handle_reset_config_request)
+            event_manager.assign_manager_to_request_type(
+                WorkerReloadConfigRequest, self.on_handle_worker_reload_config_request
+            )
 
     @property
     def workspace_path(self) -> Path:
@@ -440,6 +447,7 @@ class ConfigManager:
         if self._event_manager is not None:
             event = ConfigChanged(key=key, old_value=old_value, new_value=value)
             self._event_manager.broadcast_app_event(event)
+        self._broadcast_reload_to_workers()
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -485,6 +493,7 @@ class ConfigManager:
                     new_value=request.contents,
                 )
                 self._event_manager.broadcast_app_event(event)
+            self._broadcast_reload_to_workers()
 
             return SetConfigCategoryResultSuccess(result_details=result_details)
 
@@ -557,6 +566,35 @@ class ConfigManager:
         except Exception as e:
             result_details = f"Failed to generate configuration schema: {e}"
             return GetConfigSchemaResultFailure(result_details=result_details)
+
+    def on_handle_worker_reload_config_request(
+        self,
+        request: WorkerReloadConfigRequest,  # noqa: ARG002
+    ) -> ResultPayload:
+        """Reload all config sources from disk.
+
+        Invoked on a worker when the orchestrator has mutated the shared config
+        file. Rebuilds merged_config so subsequent get_config_value() reads see
+        the fresh values. No-op (but safe) on the orchestrator.
+        """
+        self.load_configs()
+        return WorkerReloadConfigResultSuccess(result_details="Reloaded config from disk.")
+
+    def _broadcast_reload_to_workers(self) -> None:
+        """Ask the orchestrator's WorkerManager to tell every worker to reload config.
+
+        Imported lazily because ConfigManager is constructed before the singleton
+        accessor is ready during engine boot. Skipped entirely when the
+        GriptapeNodes singleton has not been instantiated yet (e.g. isolated
+        unit tests that construct ConfigManager on its own), so this is safe to
+        call in any engine role.
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        from griptape_nodes.utils.metaclasses import SingletonMeta
+
+        if GriptapeNodes not in SingletonMeta._instances:
+            return
+        GriptapeNodes.WorkerManager().schedule_config_reload_broadcast()
 
     def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
         try:

@@ -8,6 +8,7 @@ from dotenv import dotenv_values, get_key, load_dotenv, set_key, unset_key
 from dotenv.main import DotEnv
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.retained_mode.events.app_events import SecretChanged
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.secrets_events import (
     DeleteSecretValueRequest,
@@ -20,6 +21,10 @@ from griptape_nodes.retained_mode.events.secrets_events import (
     GetSecretValueResultSuccess,
     SetSecretValueRequest,
     SetSecretValueResultSuccess,
+)
+from griptape_nodes.retained_mode.events.worker_events import (
+    WorkerRefreshSecretsRequest,
+    WorkerRefreshSecretsResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -34,6 +39,7 @@ ENV_VAR_PATH = xdg_config_home() / "griptape_nodes" / ".env"
 class SecretsManager:
     def __init__(self, config_manager: ConfigManager, event_manager: EventManager | None = None) -> None:
         self.config_manager = config_manager
+        self._event_manager = event_manager
 
         # So that users can access secrets directly via `os.environ`
         load_dotenv(self.workspace_env_path, override=False)
@@ -49,6 +55,48 @@ class SecretsManager:
             event_manager.assign_manager_to_request_type(
                 DeleteSecretValueRequest, self.on_handle_delete_secret_value_request
             )
+            event_manager.assign_manager_to_request_type(
+                WorkerRefreshSecretsRequest, self.on_handle_worker_refresh_secrets_request
+            )
+
+    def on_handle_worker_refresh_secrets_request(
+        self,
+        request: WorkerRefreshSecretsRequest,  # noqa: ARG002
+    ) -> ResultPayload:
+        self.refresh_from_env_file()
+        return WorkerRefreshSecretsResultSuccess(result_details="Refreshed secrets from shared .env file.")
+
+    def _broadcast_refresh_to_workers(self) -> None:
+        """Ask the orchestrator's WorkerManager to tell every worker to re-read .env.
+
+        Imported lazily because SecretsManager is constructed before the singleton
+        accessor is ready during engine boot. Skipped entirely when the
+        GriptapeNodes singleton has not been instantiated yet (e.g. isolated
+        unit tests that construct SecretsManager on its own), so this is safe
+        to call in any engine role.
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        from griptape_nodes.utils.metaclasses import SingletonMeta
+
+        if GriptapeNodes not in SingletonMeta._instances:
+            return
+        GriptapeNodes.WorkerManager().schedule_secret_refresh_broadcast()
+
+    def refresh_from_env_file(self) -> None:
+        """Re-read the shared .env file into os.environ, overriding stale values.
+
+        Same-machine workers share ~/.config/griptape_nodes/.env with the
+        orchestrator, but each process captures the file contents into os.environ
+        at boot. When the orchestrator updates the file, a worker's os.environ
+        keeps the old value -- and get_secret() sees environment variables first,
+        so it returns the stale value. Calling load_dotenv with override=True
+        repopulates os.environ from the current file contents.
+        """
+        if self.workspace_env_path.exists():
+            load_dotenv(self.workspace_env_path, override=True)
+        if ENV_VAR_PATH.exists():
+            load_dotenv(ENV_VAR_PATH, override=True)
+        logger.debug("Refreshed secrets from .env files")
 
     @property
     def workspace_env_path(self) -> Path:
@@ -98,6 +146,10 @@ class SecretsManager:
 
         self.set_secret(secret_name, secret_value)
 
+        if self._event_manager is not None:
+            self._event_manager.broadcast_app_event(SecretChanged(key=secret_name))
+        self._broadcast_refresh_to_workers()
+
         return SetSecretValueResultSuccess(result_details=f"Successfully set secret value for key: {secret_name}")
 
     def on_handle_get_all_secret_values_request(self, request: GetAllSecretValuesRequest) -> ResultPayload:  # noqa: ARG002
@@ -123,6 +175,10 @@ class SecretsManager:
         unset_key(ENV_VAR_PATH, secret_name)
 
         logger.info("Secret '%s' deleted.", secret_name)
+
+        if self._event_manager is not None:
+            self._event_manager.broadcast_app_event(SecretChanged(key=secret_name))
+        self._broadcast_refresh_to_workers()
 
         return DeleteSecretValueResultSuccess(result_details=f"Successfully deleted secret: {secret_name}")
 

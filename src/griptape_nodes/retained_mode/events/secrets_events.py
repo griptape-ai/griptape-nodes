@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
+    ForwardFromWorkerMixin,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -49,7 +50,7 @@ class GetSecretValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class SetSecretValueRequest(RequestPayload):
+class SetSecretValueRequest(RequestPayload, ForwardFromWorkerMixin):
     """Set a secret value by key.
 
     Use when: Storing API keys, database credentials, authentication tokens,
@@ -110,7 +111,7 @@ class GetAllSecretValuesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 @PayloadRegistry.register
-class DeleteSecretValueRequest(RequestPayload):
+class DeleteSecretValueRequest(RequestPayload, ForwardFromWorkerMixin):
     """Delete a secret value by key.
 
     Use when: Removing obsolete secrets, cleaning up configurations, implementing secret rotation,
