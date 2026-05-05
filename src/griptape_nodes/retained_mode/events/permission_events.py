@@ -1,6 +1,6 @@
 """Events for querying permission state.
 
-Two request types:
+Three request types:
 
 - `EvaluatePermissionRequest` asks whether a permission is granted *for a specific
   node type in a specific library*. The manager returns one of three result types:
@@ -14,13 +14,16 @@ Two request types:
   model entitlements that are permitted. Convenience over per-entitlement
   `EvaluatePermissionRequest` calls for the common "render a permitted-options
   dropdown" case.
+- `EvaluateNodePermissionsRequest` reports grant/deny outcomes for every permission
+  a node declared. Lets nodes iterate their own permission surface instead of
+  hard-coding permission names that already live in the library JSON.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
 from griptape_nodes.retained_mode.events.base_events import (
@@ -155,6 +158,70 @@ class ListModelEntitlementsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
     Returned when the subject's library or node type cannot be resolved. Callers can
     inspect `result_details` for a human-readable message.
+
+    Args:
+        failure_code: Machine-readable reason the subject could not be resolved.
+    """
+
+    failure_code: EvaluationFailureCode | None = None
+
+
+class PermissionOutcome(NamedTuple):
+    """One permission's name and the reasons that applied during evaluation.
+
+    Used by `EvaluateNodePermissionsRequest` to report multiple permissions in a
+    single response. `reasons` is empty when the permission was granted;
+    populated with `DenialReason` entries when the permission was denied.
+
+    Single-permission evaluations (`EvaluatePermissionRequest`) do not use this
+    type: the caller already knows the name from the request, and the response
+    doesn't need to echo it back. `PermissionOutcome` exists specifically for
+    the "report on many permissions at once" case.
+    """
+
+    name: str
+    reasons: list[DenialReason]
+
+
+@dataclass
+@PayloadRegistry.register
+class EvaluateNodePermissionsRequest(RequestPayload):
+    """Evaluate every permission declared by a node type and report outcomes.
+
+    Answers the question: 'For the node at (library, node_type), which of its
+    declared permissions are currently granted and which are denied?'
+
+    Args:
+        subject: Library name + node_type identifying the node whose declared
+            permission surface the manager evaluates.
+    """
+
+    subject: LibraryNameAndNodeType
+
+
+@dataclass
+@PayloadRegistry.register
+class EvaluateNodePermissionsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Per-permission outcomes for every permission a node declared.
+
+    These are lists, not sets, because preserving the node's declaration order
+    matters: a user reading a permission-denial error message wants the
+    permissions in the same order the library declared them, not a
+    hash-bucket-dependent order. Correlating an out-of-order list back to
+    source is painful; preserving declaration order keeps error messages,
+    logs, and UI readable.
+    """
+
+    granted: list[PermissionOutcome] = field(default_factory=list)
+    denied: list[PermissionOutcome] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class EvaluateNodePermissionsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node-permission evaluation could not complete.
+
+    Returned when the subject's library or node type cannot be resolved.
 
     Args:
         failure_code: Machine-readable reason the subject could not be resolved.

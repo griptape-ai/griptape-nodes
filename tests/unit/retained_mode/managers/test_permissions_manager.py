@@ -31,6 +31,9 @@ from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.events.permission_events import (
     DenialReasonCode,
+    EvaluateNodePermissionsRequest,
+    EvaluateNodePermissionsResultFailure,
+    EvaluateNodePermissionsResultSuccess,
     EvaluatePermissionDenied,
     EvaluatePermissionGranted,
     EvaluatePermissionRequest,
@@ -39,6 +42,7 @@ from griptape_nodes.retained_mode.events.permission_events import (
     ListModelEntitlementsRequest,
     ListModelEntitlementsResultFailure,
     ListModelEntitlementsResultSuccess,
+    PermissionOutcome,
 )
 from griptape_nodes.retained_mode.managers.permissions_manager import PermissionsManager
 
@@ -125,6 +129,20 @@ def registered_library() -> Iterator[str]:
             ),
             # Declares nothing.
             _make_node_def("NodeWithNoDeclarations", []),
+            # Declares a mix of paths in a specific order, used to verify that
+            # EvaluateNodePermissions preserves declaration order. The declared
+            # sequence (first-appearance):
+            #   use_custom (direct RequiredPermissions)
+            #   run_arbitrary_python (execute_arbitrary_code marker)
+            #   use_openai (model_usage -> entitlement)
+            _make_node_def(
+                "NodeWithMixedDeclarations",
+                [
+                    RequiredPermissionsNodeProperty(names=["use_custom"]),
+                    ExecuteArbitraryCodeNodeProperty(),
+                    ModelUsageNodeProperty(name="openai_gpt4o"),
+                ],
+            ),
         ],
     )
     LibraryRegistry.generate_new_library(library_data=schema)
@@ -269,6 +287,7 @@ class TestEventWiring:
         }
         assert EvaluatePermissionRequest in registered
         assert ListModelEntitlementsRequest in registered
+        assert EvaluateNodePermissionsRequest in registered
 
     def test_evaluate_handler_delegates_to_check_permission(self, registered_library: str) -> None:
         manager = PermissionsManager()
@@ -291,6 +310,18 @@ class TestEventWiring:
 
         assert isinstance(result, ListModelEntitlementsResultSuccess)
         assert [e.display_name for e in result.entitlements] == ["GPT-4o"]
+
+    def test_evaluate_node_permissions_handler_delegates(self, registered_library: str) -> None:
+        manager = PermissionsManager()
+        request = EvaluateNodePermissionsRequest(
+            subject=LibraryNameAndNodeType(library_name=registered_library, node_type="NodeWithDirectPermission"),
+        )
+
+        result = manager.on_evaluate_node_permissions_request(request)
+
+        assert isinstance(result, EvaluateNodePermissionsResultSuccess)
+        assert [o.name for o in result.granted] == ["use_custom"]
+        assert result.denied == []
 
 
 class TestPermissionEventRegistration:
@@ -317,6 +348,21 @@ class TestPermissionEventRegistration:
     def test_list_failure_result_registered(self) -> None:
         assert (
             PayloadRegistry.get_type(ListModelEntitlementsResultFailure.__name__) is ListModelEntitlementsResultFailure
+        )
+
+    def test_evaluate_node_permissions_request_registered(self) -> None:
+        assert PayloadRegistry.get_type(EvaluateNodePermissionsRequest.__name__) is EvaluateNodePermissionsRequest
+
+    def test_evaluate_node_permissions_success_result_registered(self) -> None:
+        assert (
+            PayloadRegistry.get_type(EvaluateNodePermissionsResultSuccess.__name__)
+            is EvaluateNodePermissionsResultSuccess
+        )
+
+    def test_evaluate_node_permissions_failure_result_registered(self) -> None:
+        assert (
+            PayloadRegistry.get_type(EvaluateNodePermissionsResultFailure.__name__)
+            is EvaluateNodePermissionsResultFailure
         )
 
 
@@ -377,4 +423,105 @@ class TestListModelEntitlements:
         )
 
         assert isinstance(result, ListModelEntitlementsResultFailure)
+        assert result.failure_code is EvaluationFailureCode.UNKNOWN_NODE_TYPE
+
+
+# ---------- evaluate_node_permissions: self-introspection ----------
+
+
+@pytest.mark.usefixtures("registered_library")
+class TestEvaluateNodePermissions:
+    """`_evaluate_node_permissions` reports granted/denied outcomes for every declared permission."""
+
+    def test_node_with_single_direct_permission_reports_granted(self) -> None:
+        manager = PermissionsManager()
+
+        result = manager._evaluate_node_permissions(
+            subject=LibraryNameAndNodeType(library_name=TEST_LIBRARY_NAME, node_type="NodeWithDirectPermission"),
+        )
+
+        assert isinstance(result, EvaluateNodePermissionsResultSuccess)
+        assert result.granted == [PermissionOutcome(name="use_custom", reasons=[])]
+        assert result.denied == []
+
+    def test_node_with_marker_reports_mapped_permission(self) -> None:
+        """Marker-mapped permissions surface under their mapped name (run_arbitrary_python)."""
+        manager = PermissionsManager()
+
+        result = manager._evaluate_node_permissions(
+            subject=LibraryNameAndNodeType(library_name=TEST_LIBRARY_NAME, node_type="NodeWithMarker"),
+        )
+
+        assert isinstance(result, EvaluateNodePermissionsResultSuccess)
+        assert [o.name for o in result.granted] == ["run_arbitrary_python"]
+
+    def test_node_with_model_entitlement_reports_required_permission(self) -> None:
+        manager = PermissionsManager()
+
+        result = manager._evaluate_node_permissions(
+            subject=LibraryNameAndNodeType(library_name=TEST_LIBRARY_NAME, node_type="NodeWithModelUsage"),
+        )
+
+        assert isinstance(result, EvaluateNodePermissionsResultSuccess)
+        assert [o.name for o in result.granted] == ["use_openai"]
+
+    def test_node_with_no_declarations_returns_empty_lists(self) -> None:
+        """A node that declared no permissions is a success with both lists empty."""
+        manager = PermissionsManager()
+
+        result = manager._evaluate_node_permissions(
+            subject=LibraryNameAndNodeType(library_name=TEST_LIBRARY_NAME, node_type="NodeWithNoDeclarations"),
+        )
+
+        assert isinstance(result, EvaluateNodePermissionsResultSuccess)
+        assert result.granted == []
+        assert result.denied == []
+
+    def test_preserves_declaration_order(self) -> None:
+        """Granted outcomes appear in the order the node declared them."""
+        manager = PermissionsManager()
+
+        result = manager._evaluate_node_permissions(
+            subject=LibraryNameAndNodeType(library_name=TEST_LIBRARY_NAME, node_type="NodeWithMixedDeclarations"),
+        )
+
+        assert isinstance(result, EvaluateNodePermissionsResultSuccess)
+        # Fixture declares: RequiredPermissions(use_custom), marker (run_arbitrary_python),
+        # model_usage -> use_openai. Outcome order must match.
+        assert [o.name for o in result.granted] == ["use_custom", "run_arbitrary_python", "use_openai"]
+        assert result.denied == []
+
+    def test_partial_denial_buckets_correctly(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A denied permission lands in `denied` with its reasons; granted ones stay in `granted`."""
+        manager = PermissionsManager()
+        monkeypatch.setattr(manager, "_is_allowed", lambda name: name != "use_openai")
+
+        result = manager._evaluate_node_permissions(
+            subject=LibraryNameAndNodeType(library_name=TEST_LIBRARY_NAME, node_type="NodeWithMixedDeclarations"),
+        )
+
+        assert isinstance(result, EvaluateNodePermissionsResultSuccess)
+        assert [o.name for o in result.granted] == ["use_custom", "run_arbitrary_python"]
+        assert [o.name for o in result.denied] == ["use_openai"]
+        assert result.denied[0].reasons  # non-empty
+        assert result.denied[0].reasons[0].code is DenialReasonCode.POLICY_DENIED
+
+    def test_unknown_library_returns_failure(self) -> None:
+        manager = PermissionsManager()
+
+        result = manager._evaluate_node_permissions(
+            subject=LibraryNameAndNodeType(library_name="NoSuchLibrary", node_type="X"),
+        )
+
+        assert isinstance(result, EvaluateNodePermissionsResultFailure)
+        assert result.failure_code is EvaluationFailureCode.UNKNOWN_LIBRARY
+
+    def test_unknown_node_type_returns_failure(self) -> None:
+        manager = PermissionsManager()
+
+        result = manager._evaluate_node_permissions(
+            subject=LibraryNameAndNodeType(library_name=TEST_LIBRARY_NAME, node_type="NoSuchNode"),
+        )
+
+        assert isinstance(result, EvaluateNodePermissionsResultFailure)
         assert result.failure_code is EvaluationFailureCode.UNKNOWN_NODE_TYPE

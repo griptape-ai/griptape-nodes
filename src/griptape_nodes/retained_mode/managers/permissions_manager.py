@@ -21,6 +21,9 @@ from griptape_nodes.node_library.permission_builtins import BUILTIN_MARKER_MAPPI
 from griptape_nodes.retained_mode.events.permission_events import (
     DenialReason,
     DenialReasonCode,
+    EvaluateNodePermissionsRequest,
+    EvaluateNodePermissionsResultFailure,
+    EvaluateNodePermissionsResultSuccess,
     EvaluatePermissionDenied,
     EvaluatePermissionGranted,
     EvaluatePermissionRequest,
@@ -29,6 +32,7 @@ from griptape_nodes.retained_mode.events.permission_events import (
     ListModelEntitlementsRequest,
     ListModelEntitlementsResultFailure,
     ListModelEntitlementsResultSuccess,
+    PermissionOutcome,
 )
 
 if TYPE_CHECKING:
@@ -82,6 +86,10 @@ class PermissionsManager:
                 request_type=ListModelEntitlementsRequest,
                 callback=self.on_list_model_entitlements_request,
             )
+            event_manager.assign_manager_to_request_type(
+                request_type=EvaluateNodePermissionsRequest,
+                callback=self.on_evaluate_node_permissions_request,
+            )
 
     def on_evaluate_permission_request(self, request: EvaluatePermissionRequest) -> ResultPayload:
         """Handle an `EvaluatePermissionRequest`."""
@@ -90,6 +98,10 @@ class PermissionsManager:
     def on_list_model_entitlements_request(self, request: ListModelEntitlementsRequest) -> ResultPayload:
         """Handle a `ListModelEntitlementsRequest`."""
         return self._list_model_entitlements(subject=request.subject)
+
+    def on_evaluate_node_permissions_request(self, request: EvaluateNodePermissionsRequest) -> ResultPayload:
+        """Handle an `EvaluateNodePermissionsRequest`."""
+        return self._evaluate_node_permissions(subject=request.subject)
 
     def _is_allowed(self, permission_name: str) -> bool:  # noqa: ARG002
         """Internal hook: returns whether the named permission is granted for the caller.
@@ -222,6 +234,56 @@ class PermissionsManager:
             ),
         )
 
+    def _evaluate_node_permissions(
+        self,
+        subject: LibraryNameAndNodeType,
+    ) -> EvaluateNodePermissionsResultSuccess | EvaluateNodePermissionsResultFailure:
+        """Internal implementation of `EvaluateNodePermissionsRequest`.
+
+        Evaluates every permission name the node declares (direct required,
+        marker-mapped, and model-entitlement-derived) and buckets them into
+        `granted` / `denied` lists. Preserves first-appearance order from the
+        node's declared properties so callers can surface results in the same
+        order the library author wrote them.
+
+        Returns failure only when the subject itself (library or node type) cannot
+        be resolved. A node that declared no permissions is still a success; both
+        lists are just empty.
+        """
+        resolved = self._resolve_subject(subject)
+        if isinstance(resolved, _SubjectNotFound):
+            return EvaluateNodePermissionsResultFailure(
+                failure_code=resolved.code,
+                result_details=resolved.message,
+            )
+
+        declared_ordered = self._resolve_declared_permissions_ordered(
+            node_metadata=resolved.node_metadata,
+            permission_catalog=resolved.permission_catalog,
+            model_catalog=resolved.model_catalog,
+        )
+
+        granted: list[PermissionOutcome] = []
+        denied: list[PermissionOutcome] = []
+        for name in declared_ordered:
+            outcome_result = self._check_permission(subject=subject, permission_name=name)
+            if isinstance(outcome_result, EvaluatePermissionGranted):
+                granted.append(PermissionOutcome(name=name, reasons=[]))
+            elif isinstance(outcome_result, EvaluatePermissionDenied):
+                denied.append(PermissionOutcome(name=name, reasons=list(outcome_result.denial_reasons)))
+            # _check_permission only returns Failure when the subject is unknown; we
+            # resolved the subject above, so a Failure here would be an engine bug.
+            # Fall through without appending to either bucket.
+
+        return EvaluateNodePermissionsResultSuccess(
+            granted=granted,
+            denied=denied,
+            result_details=(
+                f"Node type {subject.node_type!r} in library {subject.library_name!r}: "
+                f"{len(granted)} granted, {len(denied)} denied."
+            ),
+        )
+
     def _resolve_subject(self, subject: LibraryNameAndNodeType) -> _ResolvedSubject | _SubjectNotFound:
         try:
             library = LibraryRegistry.get_library(subject.library_name)
@@ -289,61 +351,89 @@ class PermissionsManager:
           - The target of a marker-mapping entry (built-in or library-declared) for a
             marker property the node carries
         """
-        declared: set[str] = set()
+        return set(
+            PermissionsManager._resolve_declared_permissions_ordered(
+                node_metadata=node_metadata,
+                permission_catalog=permission_catalog,
+                model_catalog=model_catalog,
+            )
+        )
+
+    @staticmethod
+    def _resolve_declared_permissions_ordered(
+        *,
+        node_metadata: NodeMetadata,
+        permission_catalog: PermissionCatalogLibraryProperty | None,
+        model_catalog: ModelCatalogLibraryProperty | None,
+    ) -> list[str]:
+        """Same as `_resolve_declared_permissions` but preserves declaration order.
+
+        Returns a list of permission names in the order they first appear when
+        walking the node's properties. Duplicates are suppressed (first occurrence
+        wins) so the same name referenced by two properties appears only once.
+
+        Callers that surface declarations back to users (error messages, dropdown
+        labels) should use this; callers doing set membership / containment checks
+        should use `_resolve_declared_permissions`.
+        """
         effective_marker_mapping: dict[str, str] = dict(BUILTIN_MARKER_MAPPING)
         if permission_catalog is not None:
             effective_marker_mapping.update(permission_catalog.marker_mapping)
 
+        # dict[str, None] as an ordered-set: preserves insertion order (Python 3.7+)
+        # and gives O(1) "already seen" checks without a separate set.
+        ordered: dict[str, None] = {}
         for node_prop in node_metadata.properties:
-            PermissionsManager._accumulate_declarations_from_property(
+            for name in PermissionsManager._declarations_from_property(
                 node_prop=node_prop,
                 model_catalog=model_catalog,
                 marker_mapping=effective_marker_mapping,
-                declared=declared,
-            )
-        return declared
+            ):
+                ordered.setdefault(name, None)
+        return list(ordered.keys())
 
     @staticmethod
-    def _accumulate_declarations_from_property(
+    def _declarations_from_property(  # noqa: PLR0911  -- one return per match arm is clearer than accumulating into a local
         *,
         node_prop: NodeProperty,
         model_catalog: ModelCatalogLibraryProperty | None,
         marker_mapping: dict[str, str],
-        declared: set[str],
-    ) -> None:
-        """Add any permission names that `node_prop` implicitly declares.
+    ) -> list[str]:
+        """Return the permission names `node_prop` implicitly declares, in property-local order.
 
         Every NodeProperty subclass must be represented in one of the match arms --
-        either contributing a declaration or explicitly opting out. An unrecognized
+        either contributing declarations or explicitly opting out. An unrecognized
         subclass raises NotImplementedError so that adding a new NodeProperty without
         considering its declaration contribution is a loud, development-time failure.
         """
         match node_prop:
             case RequiredPermissionsNodeProperty():
-                declared.update(node_prop.names)
+                return list(node_prop.names)
 
             case ModelUsageNodeProperty():
                 # Contributes the entitlement's requires_permission if the library's
                 # model catalog declares one for this name. Library load-time validation
                 # has already guaranteed the name resolves when a catalog is present.
                 if model_catalog is None:
-                    return
+                    return []
                 entitlement = model_catalog.entitlements.get(node_prop.name)
-                if entitlement is not None and entitlement.requires_permission is not None:
-                    declared.add(entitlement.requires_permission)
+                if entitlement is None or entitlement.requires_permission is None:
+                    return []
+                return [entitlement.requires_permission]
 
             case ExecuteArbitraryCodeNodeProperty() | EngineControlNodeProperty() | ProxyModelNodeProperty():
                 # Capability markers contribute via marker_mapping. A marker without a
                 # mapping target (custom marker, or mapping explicitly cleared) contributes
                 # nothing -- that's the author saying "this marker is informational only."
                 target = marker_mapping.get(node_prop.type)
-                if target is not None:
-                    declared.add(target)
+                if target is None:
+                    return []
+                return [target]
 
             case ProductionStatusNodeProperty() | KeySupportNodeProperty():
                 # These properties describe the node's lifecycle and key requirements;
                 # they don't gate execution on permissions and contribute no declarations.
-                pass
+                return []
 
             case _:  # pyright: ignore[reportUnreachable]
                 # Runtime guard: if a new NodeProperty subclass is added without a
@@ -353,7 +443,7 @@ class PermissionsManager:
                 # is a closed union; the guard is defensive against future additions.
                 msg = (
                     f"Unhandled NodeProperty subclass {type(node_prop).__name__!r} in "
-                    f"_accumulate_declarations_from_property. Add a match arm for it -- "
+                    f"_declarations_from_property. Add a match arm for it -- "
                     f"either contributing to declarations or explicitly opting out."
                 )
                 raise NotImplementedError(msg)

@@ -37,6 +37,8 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.retained_mode.events.permission_events import (
+    EvaluateNodePermissionsResultFailure,
+    EvaluateNodePermissionsResultSuccess,
     EvaluatePermissionDenied,
     EvaluatePermissionGranted,
     EvaluatePermissionResultFailure,
@@ -624,6 +626,46 @@ class BaseNode(ABC):
         ):
             msg = (
                 f"Expected a permission-evaluation result type from EvaluatePermissionRequest "
+                f"for node '{self.name}', got {type(result).__name__}."
+            )
+            raise TypeError(msg)
+        return result
+
+    def evaluate_node_permissions(
+        self,
+    ) -> EvaluateNodePermissionsResultSuccess | EvaluateNodePermissionsResultFailure:
+        """Report grant/deny outcomes for every permission this node declared.
+
+        Dispatches an `EvaluateNodePermissionsRequest`. Authors iterate the returned
+        outcomes rather than hard-coding permission names that already live in the
+        library JSON, eliminating one source of JSON-code drift. Outcomes appear
+        in the order the library author declared them on the node's properties.
+
+        Returns one of two result types (callers can `isinstance`-narrow):
+          - `EvaluateNodePermissionsResultSuccess` - carries `granted` and `denied`
+            lists of `PermissionOutcome` entries. Either list may be empty; a
+            node that declared no permissions yields two empty lists, still a
+            success.
+          - `EvaluateNodePermissionsResultFailure` - evaluation could not complete
+            (unknown library or node type).
+
+        Assumes `self.metadata["library"]` and `self.metadata["node_type"]` have been
+        populated by `Library.create_node`.
+        """
+        # Lazy imports: library_registry imports BaseNode from this module under
+        # TYPE_CHECKING, so a top-level import here would cause a circular import.
+        from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
+        from griptape_nodes.retained_mode.events.permission_events import EvaluateNodePermissionsRequest
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        subject = LibraryNameAndNodeType(
+            library_name=self.metadata["library"],
+            node_type=self.metadata["node_type"],
+        )
+        result = GriptapeNodes.handle_request(EvaluateNodePermissionsRequest(subject=subject))
+        if not isinstance(result, (EvaluateNodePermissionsResultSuccess, EvaluateNodePermissionsResultFailure)):
+            msg = (
+                f"Expected an EvaluateNodePermissions result type from EvaluateNodePermissionsRequest "
                 f"for node '{self.name}', got {type(result).__name__}."
             )
             raise TypeError(msg)

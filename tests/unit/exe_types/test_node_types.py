@@ -234,3 +234,90 @@ class TestBaseNodeCheckPermission:
 # Model-entitlement resolution now lives on PermissionsManager; see
 # tests/unit/retained_mode/managers/test_permissions_manager.py::TestListModelEntitlements
 # for the equivalent coverage.
+
+
+@pytest.fixture
+def registered_evaluate_node_permissions_library() -> Iterator[str]:
+    """Register a library used by TestBaseNodeEvaluateNodePermissions.
+
+    Declares two permissions and one node that references them in a specific
+    order so the test can verify order preservation end-to-end through the
+    BaseNode wrapper.
+    """
+    from griptape_nodes.node_library.library_properties import (
+        ExecuteArbitraryCodeNodeProperty,
+        PermissionCatalogLibraryProperty,
+        PermissionDeclaration,
+        RequiredPermissionsNodeProperty,
+    )
+
+    library_name = "TestBaseNodeEvaluateNodePermissionsLibrary"
+    schema = LibrarySchema(
+        name=library_name,
+        library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+        metadata=LibraryMetadata(
+            author="t",
+            description="t",
+            library_version="1.0.0",
+            engine_version="1.0.0",
+            tags=[],
+            properties=[
+                PermissionCatalogLibraryProperty(
+                    permissions={"use_zeta": PermissionDeclaration(description="zeta")},
+                ),
+            ],
+        ),
+        categories=[{"Test": CategoryDefinition(title="Test", description="t", color="#000", icon="Folder")}],
+        nodes=[
+            NodeDefinition(
+                class_name="OrderedNode",
+                file_path="ordered.py",
+                metadata=NodeMetadata(
+                    category="Test",
+                    description="t",
+                    display_name="OrderedNode",
+                    # Declaration order: use_zeta first, then the marker (which
+                    # maps to the built-in run_arbitrary_python). Outcome order
+                    # must match this order.
+                    properties=[
+                        RequiredPermissionsNodeProperty(names=["use_zeta"]),
+                        ExecuteArbitraryCodeNodeProperty(),
+                    ],
+                ),
+            ),
+        ],
+    )
+    LibraryRegistry.generate_new_library(library_data=schema)
+    try:
+        yield library_name
+    finally:
+        LibraryRegistry.unregister_library(library_name)
+
+
+class TestBaseNodeEvaluateNodePermissions:
+    """BaseNode.evaluate_node_permissions dispatches EvaluateNodePermissionsRequest via handle_request."""
+
+    def test_returns_outcomes_in_declaration_order(self, registered_evaluate_node_permissions_library: str) -> None:
+        from griptape_nodes.retained_mode.events.permission_events import EvaluateNodePermissionsResultSuccess
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        GriptapeNodes()  # Ensure singleton init so GriptapeNodes.handle_request() works.
+        node = MockNode(
+            name="n",
+            metadata={
+                "library": registered_evaluate_node_permissions_library,
+                "node_type": "OrderedNode",
+                "library_node_metadata": NodeMetadata(
+                    category="Test",
+                    description="t",
+                    display_name="OrderedNode",
+                ),
+            },
+        )
+
+        result = node.evaluate_node_permissions()
+
+        assert isinstance(result, EvaluateNodePermissionsResultSuccess)
+        # First the directly-declared use_zeta, then the marker-mapped run_arbitrary_python.
+        assert [o.name for o in result.granted] == ["use_zeta", "run_arbitrary_python"]
+        assert result.denied == []
