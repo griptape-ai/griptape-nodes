@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import os
 import platform
-from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -54,6 +53,7 @@ from tests.unit.worker.harness import InProcessWorkerHarness
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -89,9 +89,9 @@ class TestSecretPropagation:
         shared_global_env: Path,
         shared_workspace: Path,
     ) -> None:
-        secret_key = "INTEG_TEST_SECRET"
+        secret_key = "INTEG_TEST_SECRET"  # noqa: S105
         # Prime the shared file and both processes' os.environ.
-        shared_global_env.write_text(f"{secret_key}=boot_value\n")
+        shared_global_env.write_text(f"{secret_key}=boot_value\n")  # noqa: ASYNC240
 
         with patch.dict(os.environ, {secret_key: "boot_value"}, clear=False):
             harness = InProcessWorkerHarness()
@@ -141,12 +141,14 @@ class TestSecretPropagation:
         shared_global_env: Path,
         shared_workspace: Path,
     ) -> None:
-        """Without the refresh signal, a worker whose os.environ was set at boot
-        keeps returning the old value even after the orchestrator rewrites the
-        shared file. This is the motivating bug for PR #4477.
+        """Without the refresh signal, a worker holds the boot value.
+
+        A worker whose os.environ was set at boot keeps returning the old
+        value even after the orchestrator rewrites the shared file. This
+        is the motivating bug for PR #4477.
         """
-        secret_key = "INTEG_STALE_SECRET"
-        shared_global_env.write_text(f"{secret_key}=boot_value\n")
+        secret_key = "INTEG_STALE_SECRET"  # noqa: S105
+        shared_global_env.write_text(f"{secret_key}=boot_value\n")  # noqa: ASYNC240
 
         # Only the worker side has the old value in its environment. The
         # orchestrator side will write through load_dotenv(override=True).
@@ -159,7 +161,7 @@ class TestSecretPropagation:
             assert worker_secrets.get_secret(secret_key) == "boot_value"
 
             # Someone else (the orchestrator in production) rewrites the file.
-            shared_global_env.write_text(f"{secret_key}=external_update\n")
+            shared_global_env.write_text(f"{secret_key}=external_update\n")  # noqa: ASYNC240
 
             # Without a refresh, the worker still returns the boot value because
             # os.environ is consulted first and has not been touched.

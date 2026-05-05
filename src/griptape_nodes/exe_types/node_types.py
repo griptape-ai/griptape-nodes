@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from griptape_nodes.common.strict_mode import (
     any_scope_active_threadsafe,
+    in_node_init,
     in_sanctioned_parameter_mutation,
     node_init_scope,
     report_violation,
@@ -1394,8 +1395,16 @@ class BaseNode(ABC):
         that arrives here from aprocess without that wrapper is a direct
         mutation, which does not sync back to the orchestrator when the
         node runs in a worker subprocess.
+
+        ``LibraryManager._serialize_library_node_schemas`` instantiates every
+        node class inside a ``LOAD_PROBE`` scope to extract its schema. Nodes
+        routinely call ``self.add_parameter(...)`` from ``__init__``, which
+        is the intended way to declare parameters, so calls made from inside
+        a constructor are not a violation of this rule.
         """
         if in_sanctioned_parameter_mutation():
+            return
+        if in_node_init():
             return
         if not any_scope_active_threadsafe():
             return

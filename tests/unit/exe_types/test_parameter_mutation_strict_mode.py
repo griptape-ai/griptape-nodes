@@ -106,3 +106,26 @@ class TestParameterMutationDetector:
         assert len(scope.violations) == 1
         violation = scope.violations[0]
         assert violation.severity.value == "error"
+
+    def test_no_violation_when_add_parameter_called_from_init_under_load_probe(self) -> None:
+        """__init__ calls to add_parameter during a LOAD_PROBE scope are not violations.
+
+        LibraryManager._serialize_library_node_schemas instantiates every node
+        class inside a LOAD_PROBE scope. Nodes legitimately declare their
+        parameters by calling self.add_parameter(...) from __init__, so those
+        calls must not report parameter-mutation-during-aprocess.
+        """
+
+        class NodeAddsParameterInInit(MockNode):
+            def __init__(self, name: str = "probe_node") -> None:
+                super().__init__(name=name)
+                self.add_parameter(Parameter(name="declared_in_init", type="str"))
+
+        with strict_mode_scope(
+            kind=StrictModeScopeKind.LOAD_PROBE,
+            subject="NodeAddsParameterInInit",
+            library_name="test_library",
+            is_worker=True,
+        ) as scope:
+            NodeAddsParameterInInit(name="__schema_probe__")
+        assert scope.violations == []
