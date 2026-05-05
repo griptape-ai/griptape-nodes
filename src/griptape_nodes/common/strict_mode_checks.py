@@ -109,23 +109,6 @@ RULES: dict[str, StrictModeRule] = {
             ),
         ),
         _rule(
-            "local-only-state-access-from-worker",
-            severity=StrictModeSeverity.ERROR,
-            correctness=True,
-            description=(
-                "A worker-side node issued a request whose handler reads "
-                "orchestrator-only state (flow, connections, context). The "
-                "request is not ForwardFromWorkerMixin, so it cannot cross "
-                "back to the orchestrator."
-            ),
-            remediation=(
-                "Node on worker issued '{request_type}', which touches "
-                "orchestrator-only state ({manager}). Mark the request type "
-                "with ForwardFromWorkerMixin or avoid the call from worker-side "
-                "node code."
-            ),
-        ),
-        _rule(
             "exception-fidelity-lost",
             severity=StrictModeSeverity.ERROR,
             correctness=True,

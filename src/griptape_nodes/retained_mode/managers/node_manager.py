@@ -2948,12 +2948,14 @@ class NodeManager:
             except ParameterHydrationError as e:
                 return ExecuteNodeResultFailure(
                     result_details=f"Attempted to set parameter '{e.parameter_name}' on node '{node_name}'. Failed with error: {e.original}",
+                    exception=e.original,
                 )
             try:
                 await node.aprocess()
             except Exception as e:
                 return ExecuteNodeResultFailure(
                     result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
+                    exception=e,
                 )
         return ExecuteNodeResultSuccess(
             parameter_output_values=dict(node.parameter_output_values),
