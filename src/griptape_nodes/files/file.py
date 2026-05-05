@@ -84,7 +84,7 @@ class FileContent(NamedTuple):
 _PATH_FAILURE_TO_FILE_IO: dict[PathResolutionFailureReason, FileIOFailureReason] = {
     PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES: FileIOFailureReason.MISSING_MACRO_VARIABLES,
     PathResolutionFailureReason.MACRO_RESOLUTION_ERROR: FileIOFailureReason.INVALID_PATH,
-    PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED: FileIOFailureReason.INVALID_PATH,
+    PathResolutionFailureReason.RESERVED_NAME_COLLISION: FileIOFailureReason.INVALID_PATH,
 }
 
 
