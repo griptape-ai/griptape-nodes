@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
-from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
@@ -259,25 +258,15 @@ class ContextManager:
             return SetWorkflowContextFailure(result_details=msg)
 
         # Auto-register an unsaved registry entry when the caller is activating an
-        # "unsaved:<uuid>" key that hasn't been materialized yet. This makes every
-        # workflow (saved or not) a first-class registry entry, so list/metadata/etc.
-        # calls don't need special-casing for pre-save state.
-        if request.workflow_name.startswith(
-            WorkflowRegistry.UNSAVED_KEY_PREFIX
-        ) and not WorkflowRegistry.has_workflow_with_name(request.workflow_name):
-            display_name = request.display_name or "Untitled"
-            metadata = WorkflowMetadata(
-                name=display_name,
-                schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
-                engine_version_created_with="",
-                node_libraries_referenced=[],
-                creation_date=datetime.now(UTC),
-            )
+        # "unsaved:<uuid>" key. This makes every workflow (saved or not) a first-class
+        # registry entry, so list/metadata/etc. calls don't need special-casing for
+        # pre-save state. `ensure_unsaved` is idempotent.
+        if request.workflow_name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX):
             try:
-                WorkflowRegistry.generate_new_workflow(
-                    registry_key=request.workflow_name, metadata=metadata, file_path=None
+                WorkflowRegistry.ensure_unsaved(
+                    key=request.workflow_name, display_name=request.display_name or "Untitled"
                 )
-            except (ValueError, KeyError) as err:
+            except ValueError as err:
                 msg = (
                     f"Attempted to auto-register unsaved workflow '{request.workflow_name}' "
                     f"before setting it as the Current Context. Failed because of '{err}'."

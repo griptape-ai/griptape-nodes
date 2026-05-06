@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
@@ -184,6 +184,29 @@ class WorkflowRegistry(metaclass=SingletonMeta):
             workflow = Workflow.from_disk(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
         instance._workflows[registry_key] = workflow
         return workflow
+
+    @classmethod
+    def ensure_unsaved(cls, key: str, display_name: str) -> Workflow:
+        """Idempotently register an unsaved workflow under `key`.
+
+        Returns the existing entry if `key` is already registered; otherwise constructs
+        a default WorkflowMetadata and registers a new in-memory workflow. `key` must
+        start with `UNSAVED_KEY_PREFIX`; `display_name` is only consulted on first
+        registration.
+        """
+        if not key.startswith(cls.UNSAVED_KEY_PREFIX):
+            msg = f"Unsaved registry key '{key}' must start with '{cls.UNSAVED_KEY_PREFIX}'."
+            raise ValueError(msg)
+        if cls.has_workflow_with_name(key):
+            return cls.get_workflow_by_name(key)
+        metadata = WorkflowMetadata(
+            name=display_name,
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="",
+            node_libraries_referenced=[],
+            creation_date=datetime.now(UTC),
+        )
+        return cls.generate_new_workflow(registry_key=key, metadata=metadata, file_path=None)
 
     @classmethod
     def get_workflow_by_name(cls, name: str) -> Workflow:
