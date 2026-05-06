@@ -1250,3 +1250,71 @@ class InspectLibraryRepoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 @PayloadRegistry.register
 class InspectLibraryRepoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Library repository inspection failed. Common causes: invalid git URL, network error, no library JSON found, invalid JSON format."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetLibrarySourceInfoRequest(RequestPayload):
+    """Get filesystem paths for a registered library's source code.
+
+    Use when: Locating library source files on disk, reading node source code.
+
+    Args:
+        library: Name of the registered library (e.g. "Griptape Nodes Library")
+
+    Results: GetLibrarySourceInfoResultSuccess (with paths) | GetLibrarySourceInfoResultFailure (library not found)
+    """
+
+    library: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetLibrarySourceInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library source info retrieved successfully.
+
+    Args:
+        library_name: Echo of the requested library name
+        library_json_path: Absolute path to the library's griptape_nodes_library.json
+        library_directory: Absolute path to the directory containing the JSON file
+    """
+
+    library_name: str
+    library_json_path: str
+    library_directory: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetLibrarySourceInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library source info retrieval failed. Common causes: library not found, library not yet loaded."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetEngineSourceInfoRequest(RequestPayload):
+    """Get the filesystem path of the griptape_nodes engine source tree.
+
+    Use when: Reading engine base class definitions (e.g. exe_types/node_types.py),
+    inspecting engine internals, locating engine source code on disk.
+
+    Results: GetEngineSourceInfoResultSuccess (with path) | GetEngineSourceInfoResultFailure (resolution error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class GetEngineSourceInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Engine source info retrieved successfully.
+
+    Args:
+        package_directory: Absolute path to the griptape_nodes package root
+    """
+
+    package_directory: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetEngineSourceInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Engine source info retrieval failed. Common causes: package path could not be resolved."""

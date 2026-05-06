@@ -86,9 +86,15 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetAllInfoForLibraryRequest,
     GetAllInfoForLibraryResultFailure,
     GetAllInfoForLibraryResultSuccess,
+    GetEngineSourceInfoRequest,
+    GetEngineSourceInfoResultFailure,
+    GetEngineSourceInfoResultSuccess,
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultFailure,
     GetLibraryMetadataResultSuccess,
+    GetLibrarySourceInfoRequest,
+    GetLibrarySourceInfoResultFailure,
+    GetLibrarySourceInfoResultSuccess,
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultFailure,
     GetNodeMetadataFromLibraryResultSuccess,
@@ -451,6 +457,10 @@ class LibraryManager:
         )
         event_manager.assign_manager_to_request_type(SyncLibrariesRequest, self.sync_libraries_request)
         event_manager.assign_manager_to_request_type(InspectLibraryRepoRequest, self.inspect_library_repo_request)
+        event_manager.assign_manager_to_request_type(
+            GetLibrarySourceInfoRequest, self.on_get_library_source_info_request
+        )
+        event_manager.assign_manager_to_request_type(GetEngineSourceInfoRequest, self.on_get_engine_source_info_request)
 
         event_manager.add_listener_to_app_event(
             LibraryLoadedNotification,
@@ -736,6 +746,74 @@ class LibraryManager:
             result_details=details,
         )
         return result
+
+    async def on_get_library_source_info_request(self, request: GetLibrarySourceInfoRequest) -> ResultPayload:
+        """Return the filesystem paths for a registered library's source files.
+
+        Waits for all libraries to finish loading before resolving the request,
+        ensuring the library registry is in a consistent state.
+
+        The response provides two path variants for the named library:
+        - ``library_json_path``: the absolute path to the library's
+          ``griptape_nodes_library.json`` manifest file.
+        - ``library_directory``: the absolute path to the directory that contains the
+          manifest file (i.e. the library root folder).
+
+        Args:
+            request: A :class:`GetLibrarySourceInfoRequest` carrying the ``library``
+              field — the registered name of the library whose source paths are being
+              queried (e.g. ``"Griptape Nodes Library"``).
+
+        Returns:
+            :class:`GetLibrarySourceInfoResultSuccess` containing ``library_name``,
+              ``library_json_path``, and ``library_directory`` when the library is
+              found.
+
+            :class:`GetLibrarySourceInfoResultFailure` when no library with the
+              requested name has been registered.
+        """
+        await self._libraries_loading_complete.wait()
+        lib_info = self.get_library_info_by_library_name(request.library)
+        if lib_info is None:
+            return GetLibrarySourceInfoResultFailure(
+                result_details=f"Library '{request.library}' not found.",
+            )
+        library_dir = str(Path(lib_info.library_path).parent.absolute())
+        return GetLibrarySourceInfoResultSuccess(
+            library_name=request.library,
+            library_json_path=lib_info.library_path,
+            library_directory=library_dir,
+            result_details=f"Source info for library '{request.library}'.",
+        )
+
+    def on_get_engine_source_info_request(self, _request: GetEngineSourceInfoRequest) -> ResultPayload:
+        """Return the filesystem path of the installed ``griptape_nodes`` package.
+
+        Resolves the location of the ``griptape_nodes`` package on disk. The returned
+        directory is the package root.
+
+        This is useful for tools that need to read engine source files directly, for
+        example to inspect base-class definitions in ``exe_types/node_types.py`` or
+        locate built-in node implementations.
+
+        Args:
+            _request: A :class:`GetEngineSourceInfoRequest` (no fields required; the
+                argument is accepted for handler-dispatch consistency).
+
+        Returns:
+            :class:`GetEngineSourceInfoResultSuccess` containing ``package_directory`` —
+                the absolute path to the ``griptape_nodes`` package root directory.
+        """
+        spec = importlib.util.find_spec("griptape_nodes")
+        if spec is None or spec.origin is None:
+            return GetEngineSourceInfoResultFailure(
+                result_details="Attempted to resolve engine source path. Failed because the griptape_nodes package spec could not be located.",
+            )
+        package_dir = str(Path(spec.origin).parent.absolute())
+        return GetEngineSourceInfoResultSuccess(
+            package_directory=package_dir,
+            result_details="Engine source info.",
+        )
 
     def on_list_node_types_in_library_request(self, request: ListNodeTypesInLibraryRequest) -> ResultPayload:
         # Does this library exist?
