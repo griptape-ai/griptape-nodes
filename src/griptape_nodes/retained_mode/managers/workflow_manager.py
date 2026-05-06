@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from inspect import getmodule, isclass
+from inspect import getmodule, isclass, iscoroutinefunction
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
@@ -192,6 +192,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY
+from griptape_nodes.utils.ast_utils import rewrite_string_comments
 from griptape_nodes.utils.string_utils import normalize_display_name
 
 if TYPE_CHECKING:
@@ -690,7 +691,22 @@ class WorkflowManager:
             # Now execute the workflow.
             async with await anyio.open_file(Path(complete_file_path), encoding="utf-8") as file:
                 workflow_content = await file.read()
-            exec(workflow_content)  # noqa: S102
+
+            # Execute the workflow module with a dedicated namespace so `__file__` resolves
+            # to the workflow path and the `if __name__ == "__main__"` guard does not fire
+            # (which would try to spin up a second event loop via asyncio.run).
+            namespace: dict[str, Any] = {
+                "__file__": str(complete_file_path),
+                "__name__": "__gtn_workflow__",
+            }
+            exec(workflow_content, namespace)  # noqa: S102
+
+            # New-style workflows wrap graph-building requests in `async def build_workflow()`
+            # so the module is inert at import time. Await it here. Legacy workflows without
+            # build_workflow() have already executed their requests top-to-bottom during exec().
+            workflow_builder = namespace.get("build_workflow")
+            if workflow_builder is not None and iscoroutinefunction(workflow_builder):
+                await workflow_builder()
 
             # After workflow execution, ensure there's always a current context by pushing
             # the top-level flow if the context is empty. This fixes regressions where
@@ -2269,14 +2285,17 @@ class WorkflowManager:
 
         ast_container = ASTContainer()
 
+        # Graph-building statements accumulate into the body of `async def main()`,
+        # so the emitted workflow file only mutates engine state when main() is awaited.
+        main_body: list[ast.stmt] = []
+
         # Extract library names from workflow metadata
         library_names = [lib.library_name for lib in workflow_metadata.node_libraries_referenced]
 
         prereq_code = self._generate_workflow_run_prerequisite_code(
             import_recorder=import_recorder, library_names=library_names
         )
-        for node in prereq_code:
-            ast_container.add_node(node)
+        main_body.extend(cast("ast.stmt", node) for node in prereq_code)
 
         # Generate unique values code AST node
         unique_values_node = self._generate_unique_values_code(
@@ -2284,7 +2303,8 @@ class WorkflowManager:
             prefix="top_level",
             import_recorder=import_recorder,
         )
-        ast_container.add_node(unique_values_node)
+        # Helper returns an ast.Module; unpack its body into statements.
+        main_body.extend(cast("ast.stmt", stmt) for stmt in unique_values_node.body)
 
         # Keep track of each flow and node index we've created
         flow_creation_index = 0
@@ -2298,15 +2318,13 @@ class WorkflowManager:
                 create_flow_context_module = self._generate_create_flow(
                     flow_initialization_command, import_recorder, flow_creation_index
                 )
-                for node in create_flow_context_module.body:
-                    ast_container.add_node(node)
+                main_body.extend(cast("ast.stmt", node) for node in create_flow_context_module.body)
             case ImportWorkflowAsReferencedSubFlowRequest():
                 # Generate import workflow context AST module
                 import_workflow_context_module = self._generate_import_workflow(
                     flow_initialization_command, import_recorder, flow_creation_index
                 )
-                for node in import_workflow_context_module.body:
-                    ast_container.add_node(node)
+                main_body.extend(cast("ast.stmt", node) for node in import_workflow_context_module.body)
             case None:
                 # No initialization command, deserialize into current context
                 pass
@@ -2476,9 +2494,38 @@ class WorkflowManager:
             )
             assign_flow_context_node.body.extend(set_parameter_value_asts)
 
-            ast_container.add_node(assign_flow_context_node)
+            main_body.append(cast("ast.stmt", assign_flow_context_node))
 
-        # Generate workflow execution code
+        # Wrap all graph-building statements in `async def build_workflow()` so the file is
+        # inert until build_workflow() is awaited (by the engine loader or the CLI entrypoint).
+        # The name pairs with the executor entrypoints (execute_workflow / aexecute_workflow)
+        # to make the two phases — graph construction vs execution — visually distinct.
+        main_func_def = ast.AsyncFunctionDef(
+            name="build_workflow",
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=main_body or [ast.Pass()],
+            decorator_list=[],
+            returns=ast.Constant(value=None),
+            type_params=[],
+        )
+        ast.fix_missing_locations(main_func_def)
+        ast_container.add_node(main_func_def)
+
+        # Generate workflow execution code. Only emitted when the workflow has a Start/End
+        # shape — that's what makes the file runnable as a CLI program. Shapeless workflows
+        # have no input/output surface and are loaded by the engine via `await build_workflow()`
+        # (see WorkflowManager.run_workflow), so they don't need a `__main__` guard.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4205 — decide how shapeless
+        # workflows should behave when invoked directly (build-only vs build + StartFlowRequest)
+        # and emit an appropriate `__main__` guard.
         workflow_execution_code = self._generate_workflow_execution(
             import_recorder=import_recorder,
             workflow_metadata=workflow_metadata,
@@ -2488,8 +2535,12 @@ class WorkflowManager:
             for node in workflow_execution_code:
                 ast_container.add_node(node)
 
-        # Generate final code from ASTContainer
+        # Generate final code from ASTContainer.
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
+        # Rewrite string-literal lines of the form `'# foo'` or `"# foo"` into real `# foo`
+        # comments. `ast.unparse` cannot emit comments directly, so the generators above
+        # smuggle them in as bare-string statements and we unwrap them here.
+        ast_output = rewrite_string_comments(ast_output)
         import_output = import_recorder.generate_imports()
         return f"{metadata_block}\n\n{import_output}\n\n{ast_output}\n"
 
@@ -2729,11 +2780,25 @@ class WorkflowManager:
             )
         )
 
+        # `await build_workflow()` constructs the graph before the executor runs;
+        # build_workflow() is the async function emitted by _generate_workflow_file_content
+        # that contains all graph-building requests.
+        await_main_call = ast.Expr(
+            value=ast.Await(
+                value=ast.Call(
+                    func=ast.Name(id="build_workflow", ctx=ast.Load()),
+                    args=[],
+                    keywords=[],
+                )
+            )
+        )
+
         # === Generate async aexecute_workflow function ===
         async_func_def = ast.AsyncFunctionDef(
             name="aexecute_workflow",
             args=args,
             body=[
+                await_main_call,
                 ensure_context_call,
                 storage_backend_convert,
                 project_file_path_resolve,
@@ -3156,15 +3221,15 @@ class WorkflowManager:
     def _generate_ensure_flow_context_function(
         self,
         import_recorder: ImportRecorder,
-    ) -> ast.FunctionDef:
-        """Generates the _ensure_workflow_context function for the serialized workflow file."""
+    ) -> ast.AsyncFunctionDef:
+        """Generates the async _ensure_workflow_context function for the serialized workflow file."""
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "GetTopLevelFlowRequest")
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.flow_events", "GetTopLevelFlowResultSuccess"
         )
 
-        # Function signature: def _ensure_workflow_context():
-        func_def = ast.FunctionDef(
+        # Function signature: async def _ensure_workflow_context():
+        func_def = ast.AsyncFunctionDef(
             name="_ensure_workflow_context",
             args=ast.arguments(
                 posonlyargs=[],
@@ -3218,17 +3283,19 @@ class WorkflowManager:
             ),
         )
 
-        # top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)  # noqa: ERA001
+        # top_level_flow_result = await GriptapeNodes.ahandle_request(top_level_flow_request)  # noqa: ERA001
         flow_result_assign = ast.Assign(
             targets=[ast.Name(id="top_level_flow_result", ctx=ast.Store())],
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                    attr="handle_request",
-                    ctx=ast.Load(),
+            value=ast.Await(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                        attr="ahandle_request",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Name(id="top_level_flow_request", ctx=ast.Load())],
+                    keywords=[],
                 ),
-                args=[ast.Name(id="top_level_flow_request", ctx=ast.Load())],
-                keywords=[],
             ),
         )
 
@@ -3335,12 +3402,14 @@ class WorkflowManager:
     def _generate_ensure_flow_context_call(
         self,
     ) -> ast.Expr:
-        """Generates the call to _ensure_workflow_context() function."""
+        """Generates the call to await _ensure_workflow_context() function."""
         return ast.Expr(
-            value=ast.Call(
-                func=ast.Name(id="_ensure_workflow_context", ctx=ast.Load()),
-                args=[],
-                keywords=[],
+            value=ast.Await(
+                value=ast.Call(
+                    func=ast.Name(id="_ensure_workflow_context", ctx=ast.Load()),
+                    args=[],
+                    keywords=[],
+                )
             )
         )
 
@@ -3358,29 +3427,31 @@ class WorkflowManager:
         # Generate one RegisterLibraryFromFileRequest call per library
         for library_name in library_names:
             register_call = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                        attr="handle_request",
-                        ctx=ast.Load(),
-                    ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="RegisterLibraryFromFileRequest", ctx=ast.Load()),
-                            args=[],
-                            keywords=[
-                                ast.keyword(
-                                    arg="library_name",
-                                    value=ast.Constant(value=library_name),
-                                ),
-                                ast.keyword(
-                                    arg="perform_discovery_if_not_found",
-                                    value=ast.Constant(value=True),
-                                ),
-                            ],
-                        )
-                    ],
-                    keywords=[],
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="RegisterLibraryFromFileRequest", ctx=ast.Load()),
+                                args=[],
+                                keywords=[
+                                    ast.keyword(
+                                        arg="library_name",
+                                        value=ast.Constant(value=library_name),
+                                    ),
+                                    ast.keyword(
+                                        arg="perform_discovery_if_not_found",
+                                        value=ast.Constant(value=True),
+                                    ),
+                                ],
+                            )
+                        ],
+                        keywords=[],
+                    )
                 )
             )
             ast.fix_missing_locations(register_call)
@@ -3440,7 +3511,7 @@ class WorkflowManager:
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         prefix: str,
         import_recorder: ImportRecorder,
-    ) -> ast.AST:
+    ) -> ast.Module:
         if len(unique_parameter_uuid_to_values) == 0:
             return ast.Module(body=[], type_ignores=[])
 
@@ -3480,16 +3551,18 @@ class WorkflowManager:
             # Collect import statements for all classes in the object tree
             self._collect_object_imports(unique_parameter_value, import_recorder, global_modules_set)
 
-        # Generate a comment explaining what we're doing:
-        comment_text = (
-            "\n"
-            "1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.\n"
-            "   This minimizes the size of the code, especially for large objects like serialized image files.\n"
-            "2. We're using a prefix so that it's clear which Flow these values are associated with.\n"
-            "3. The values are serialized using pickle, which is a binary format. This makes them harder to read, but makes\n"
-            "   them consistently save and load. It allows us to serialize complex objects like custom classes, which otherwise\n"
-            "   would be difficult to serialize.\n"
-        )
+        # Comment lines explaining what we're doing. Each line is emitted as its own bare-string
+        # statement so that it unparses onto a single source line. A post-process pass in
+        # _generate_workflow_file_content (via rewrite_string_comments) then strips the surrounding
+        # quotes to turn each line into a real Python `#` comment.
+        comment_lines = [
+            "# 1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.",
+            "#    This minimizes the size of the code, especially for large objects like serialized image files.",
+            "# 2. We're using a prefix so that it's clear which Flow these values are associated with.",
+            "# 3. The values are serialized using pickle, which is a binary format. This makes them harder to read, but makes",
+            "#    them consistently save and load. It allows us to serialize complex objects like custom classes, which otherwise",
+            "#    would be difficult to serialize.",
+        ]
 
         # Generate the dictionary of unique values
         unique_values_dict_name = f"{prefix}_unique_values_dict"
@@ -3520,11 +3593,12 @@ class WorkflowManager:
             col_offset=0,
         )
 
-        # Create the final AST with comments
-        module_body = [
-            ast.Expr(value=ast.Constant(value=comment_text, lineno=1, col_offset=0), lineno=1, col_offset=0),
-            unique_values_ast,
+        # Create the final AST with comment lines followed by the dict assignment.
+        comment_exprs = [
+            ast.Expr(value=ast.Constant(value=line, lineno=1, col_offset=0), lineno=1, col_offset=0)
+            for line in comment_lines
         ]
+        module_body: list[ast.stmt] = [*comment_exprs, unique_values_ast]
         full_ast = ast.Module(body=module_body, type_ignores=[])
         return full_ast
 
@@ -3575,24 +3649,28 @@ class WorkflowManager:
         create_flow_result = ast.Assign(
             targets=[ast.Name(id=flow_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
             value=ast.Attribute(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                                args=[],
+                                keywords=create_flow_request_args,
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
-                            args=[],
-                            keywords=create_flow_request_args,
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
@@ -3628,9 +3706,9 @@ class WorkflowManager:
             AST assignment node representing the import workflow command
 
         Example output:
-            flow1_name = GriptapeNodes.handle_request(ImportWorkflowAsReferencedSubFlowRequest(
+            flow1_name = (await GriptapeNodes.ahandle_request(ImportWorkflowAsReferencedSubFlowRequest(
                 file_path='/path/to/workflow.py'
-            )).created_flow_name
+            ))).created_flow_name
         """
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.workflow_events", "ImportWorkflowAsReferencedSubFlowRequest"
@@ -3653,26 +3731,33 @@ class WorkflowManager:
         import_workflow_result = ast.Assign(
             targets=[ast.Name(id=flow_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
             value=ast.Attribute(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(
+                                    id="ImportWorkflowAsReferencedSubFlowRequest",
+                                    ctx=ast.Load(),
+                                    lineno=1,
+                                    col_offset=0,
+                                ),
+                                args=[],
+                                keywords=import_workflow_request_args,
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(
-                                id="ImportWorkflowAsReferencedSubFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0
-                            ),
-                            args=[],
-                            keywords=import_workflow_request_args,
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
@@ -3883,24 +3968,28 @@ class WorkflowManager:
         create_node_call_ast = ast.Assign(
             targets=[ast.Name(id=node_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
             value=ast.Attribute(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id=request_class_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                                args=[],
+                                keywords=create_node_request_args,
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id=request_class_name, ctx=ast.Load(), lineno=1, col_offset=0),
-                            args=[],
-                            keywords=create_node_request_args,
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
@@ -3974,28 +4063,32 @@ class WorkflowManager:
                                 )
                             )
 
-                # Create the handle_request call
+                # Create the await ahandle_request call
                 handle_request_call = ast.Expr(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                            attr="handle_request",
-                            ctx=ast.Load(),
+                    value=ast.Await(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                                attr="ahandle_request",
+                                ctx=ast.Load(),
+                                lineno=1,
+                                col_offset=0,
+                            ),
+                            args=[
+                                ast.Call(
+                                    func=ast.Name(
+                                        id=element_command.__class__.__name__, ctx=ast.Load(), lineno=1, col_offset=0
+                                    ),
+                                    args=[],
+                                    keywords=element_command_args,
+                                    lineno=1,
+                                    col_offset=0,
+                                )
+                            ],
+                            keywords=[],
                             lineno=1,
                             col_offset=0,
                         ),
-                        args=[
-                            ast.Call(
-                                func=ast.Name(
-                                    id=element_command.__class__.__name__, ctx=ast.Load(), lineno=1, col_offset=0
-                                ),
-                                args=[],
-                                keywords=element_command_args,
-                                lineno=1,
-                                col_offset=0,
-                            )
-                        ],
-                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
@@ -4044,18 +4137,22 @@ class WorkflowManager:
             ]
 
             create_connection_call = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()), attr="handle_request", ctx=ast.Load()
-                    ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="CreateConnectionRequest", ctx=ast.Load()),
-                            args=[],
-                            keywords=create_connection_request_args,
-                        )
-                    ],
-                    keywords=[],
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="CreateConnectionRequest", ctx=ast.Load()),
+                                args=[],
+                                keywords=create_connection_request_args,
+                            )
+                        ],
+                        keywords=[],
+                    )
                 )
             )
 
@@ -4218,45 +4315,53 @@ class WorkflowManager:
             )
 
             set_parameter_value_request_call = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="SetParameterValueRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                                args=[],
+                                keywords=[
+                                    ast.keyword(
+                                        arg="parameter_name",
+                                        value=ast.Constant(
+                                            value=command.set_parameter_value_command.parameter_name,
+                                            lineno=1,
+                                            col_offset=0,
+                                        ),
+                                    ),
+                                    ast.keyword(
+                                        arg="node_name",
+                                        value=ast.Name(id=node_variable_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                                    ),
+                                    ast.keyword(arg="value", value=value_lookup, lineno=1, col_offset=0),
+                                    ast.keyword(
+                                        arg="initial_setup", value=ast.Constant(value=True, lineno=1, col_offset=0)
+                                    ),
+                                    ast.keyword(
+                                        arg="is_output",
+                                        value=ast.Constant(
+                                            value=command.set_parameter_value_command.is_output,
+                                            lineno=1,
+                                            col_offset=0,
+                                        ),
+                                    ),
+                                ],
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="SetParameterValueRequest", ctx=ast.Load(), lineno=1, col_offset=0),
-                            args=[],
-                            keywords=[
-                                ast.keyword(
-                                    arg="parameter_name",
-                                    value=ast.Constant(
-                                        value=command.set_parameter_value_command.parameter_name, lineno=1, col_offset=0
-                                    ),
-                                ),
-                                ast.keyword(
-                                    arg="node_name",
-                                    value=ast.Name(id=node_variable_name, ctx=ast.Load(), lineno=1, col_offset=0),
-                                ),
-                                ast.keyword(arg="value", value=value_lookup, lineno=1, col_offset=0),
-                                ast.keyword(
-                                    arg="initial_setup", value=ast.Constant(value=True, lineno=1, col_offset=0)
-                                ),
-                                ast.keyword(
-                                    arg="is_output",
-                                    value=ast.Constant(
-                                        value=command.set_parameter_value_command.is_output, lineno=1, col_offset=0
-                                    ),
-                                ),
-                            ],
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
@@ -4272,29 +4377,36 @@ class WorkflowManager:
             )
 
             lock_node_call_ast = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="SetLockNodeStateRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                                args=[],
+                                keywords=[
+                                    ast.keyword(
+                                        arg="node_name", value=ast.Constant(value=None, lineno=1, col_offset=0)
+                                    ),
+                                    ast.keyword(
+                                        arg="lock",
+                                        value=ast.Constant(value=lock_node_command.lock, lineno=1, col_offset=0),
+                                    ),
+                                ],
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="SetLockNodeStateRequest", ctx=ast.Load(), lineno=1, col_offset=0),
-                            args=[],
-                            keywords=[
-                                ast.keyword(arg="node_name", value=ast.Constant(value=None, lineno=1, col_offset=0)),
-                                ast.keyword(
-                                    arg="lock", value=ast.Constant(value=lock_node_command.lock, lineno=1, col_offset=0)
-                                ),
-                            ],
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
