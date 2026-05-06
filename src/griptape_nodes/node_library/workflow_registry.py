@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
@@ -186,26 +186,6 @@ class WorkflowRegistry(metaclass=SingletonMeta):
         return workflow
 
     @classmethod
-    def create_unsaved_with_key(cls, key: str, name: str) -> Workflow:
-        """Create an in-memory ("unsaved") workflow entry with a caller-supplied key.
-
-        Used when the caller (typically the frontend) has already minted the key and
-        needs the registry entry to use that exact value. The key must start with the
-        UNSAVED_KEY_PREFIX so it can never collide with a path-derived key.
-        """
-        if not key.startswith(cls.UNSAVED_KEY_PREFIX):
-            msg = f"Unsaved registry key '{key}' must start with '{cls.UNSAVED_KEY_PREFIX}'."
-            raise ValueError(msg)
-        metadata = WorkflowMetadata(
-            name=name,
-            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
-            engine_version_created_with="",
-            node_libraries_referenced=[],
-            creation_date=datetime.now(UTC),
-        )
-        return cls.generate_new_workflow(registry_key=key, metadata=metadata, file_path=None)
-
-    @classmethod
     def get_workflow_by_name(cls, name: str) -> Workflow:
         instance = cls()
         if name not in instance._workflows:
@@ -282,10 +262,9 @@ class Workflow:
     A workflow has two possible states:
     - **Saved**: backed by a file on disk. `file_path` is a string (relative or absolute).
       Created via `Workflow.from_disk`.
-    - **Unsaved**: in-memory only. `file_path is None`. Created by constructing directly
-      (typically through `WorkflowRegistry.create_unsaved_with_key` or `generate_new_workflow`
-      with `file_path=None`). Transitions to saved when `SaveWorkflowRequest` is handled
-      for this workflow's registry key.
+    - **Unsaved**: in-memory only. `file_path is None`. Created via
+      `WorkflowRegistry.generate_new_workflow` with `file_path=None`. Transitions to
+      saved when `SaveWorkflowRequest` is handled for this workflow's registry key.
     """
 
     metadata: WorkflowMetadata

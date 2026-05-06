@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,7 +11,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.workflow_events import (
     CreateWorkflowFromTemplateRequest,
@@ -44,6 +45,17 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+
+
+def _register_unsaved_workflow(key: str, name: str) -> None:
+    metadata = WorkflowMetadata(
+        name=name,
+        schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+        engine_version_created_with="",
+        node_libraries_referenced=[],
+        creation_date=datetime.now(UTC),
+    )
+    WorkflowRegistry.generate_new_workflow(registry_key=key, metadata=metadata, file_path=None)
 
 
 class TestWorkflowManager:
@@ -605,7 +617,7 @@ class TestWorkflowManager:
         saved_key = "my_flow"
 
         with patch.dict(WorkflowRegistry._workflows, {}, clear=True):
-            WorkflowRegistry.create_unsaved_with_key(key=unsaved_key, name="Untitled")
+            _register_unsaved_workflow(key=unsaved_key, name="Untitled")
             unsaved_workflow = WorkflowRegistry.get_workflow_by_name(unsaved_key)
             context_manager.push_workflow(workflow_name=unsaved_key)
 
@@ -691,7 +703,7 @@ class TestWorkflowManager:
         unsaved_key = "unsaved:meta-test"
 
         with patch.dict(WorkflowRegistry._workflows, {}, clear=True):
-            WorkflowRegistry.create_unsaved_with_key(key=unsaved_key, name="Untitled")
+            _register_unsaved_workflow(key=unsaved_key, name="Untitled")
             workflow = WorkflowRegistry.get_workflow_by_name(unsaved_key)
             assert workflow.file_path is None
 
@@ -714,9 +726,6 @@ class TestWorkflowManager:
         self, griptape_nodes: GriptapeNodes
     ) -> None:
         """First save of an unsaved workflow derives the filename from metadata.name, not the synthetic key."""
-        from datetime import UTC, datetime
-
-        from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
         from griptape_nodes.retained_mode.events.flow_events import (
             GetTopLevelFlowResultSuccess,
             SerializedFlowCommands,
@@ -736,7 +745,7 @@ class TestWorkflowManager:
         display_name = "workflow_25"
 
         with patch.dict(WorkflowRegistry._workflows, {}, clear=True):
-            WorkflowRegistry.create_unsaved_with_key(key=unsaved_key, name=display_name)
+            _register_unsaved_workflow(key=unsaved_key, name=display_name)
             context_manager.push_workflow(workflow_name=unsaved_key)
 
             empty_commands = SerializedFlowCommands(
