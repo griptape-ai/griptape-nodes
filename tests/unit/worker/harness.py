@@ -15,10 +15,11 @@ What this harness covers
 - Orchestrator initiates an `ExecuteNodeRequest` by calling the harness's
   `route_to_worker`, which simulates the WebSocket round-trip and resolves
   with the worker's real `EventManager.ahandle_request` result.
-- Worker-side forwarding of `ForwardFromWorkerMixin` requests back to the
-  orchestrator via `worker_node_execution_scope` is wired by overriding
-  `EventManager._forward_to_orchestrator` on the worker-side instance so the
-  forward hits the orchestrator-side `EventManager.ahandle_request`.
+- Worker-side forwarding of orchestrator-owned requests back to the
+  orchestrator is wired by registering a test RemoteHandler (mirrors the
+  production `install_remote_handlers` swap) that, when the worker is inside
+  a `worker_node_execution_scope`, dispatches to the orchestrator-side
+  `EventManager.ahandle_request` instead of running locally.
 
 Intentional limits
 ------------------
@@ -42,11 +43,7 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from griptape_nodes.retained_mode.events.base_events import (
-        EventRequest,
-        EventResultFailure,
-        EventResultSuccess,
-    )
+    from griptape_nodes.retained_mode.events.base_events import EventRequest, RequestPayload, ResultPayload
 
 
 @dataclass
@@ -68,8 +65,35 @@ class InProcessWorkerHarness:
     _worker_inbox: asyncio.Queue[EventRequest] | None = field(default=None, init=False)
     _worker_task: asyncio.Task[None] | None = field(default=None, init=False)
 
-    def __post_init__(self) -> None:
-        self._install_worker_forwarding()
+    def install_remote_handler(self, request_type: type[RequestPayload]) -> None:
+        """Register a RemoteHandler on the worker for ``request_type``.
+
+        Mirrors production ``install_remote_handlers``: while the worker side is
+        inside a ``worker_node_execution_scope``, dispatches to the orchestrator-
+        side EventManager. Outside the scope, delegates to whatever handler was
+        already registered on the worker (if any).
+        """
+
+        async def _forward(request: RequestPayload) -> ResultPayload:
+            result_event = await self.orchestrator.ahandle_request(request)
+            return result_event.result
+
+        original = self.worker.get_manager_for_request_type(request_type)
+
+        async def remote(request: RequestPayload) -> ResultPayload:
+            if self.worker.in_node_execution():
+                return await _forward(request)
+            if original is None:
+                msg = (
+                    f"Harness RemoteHandler for {request_type.__name__} was invoked "
+                    "outside a worker_node_execution_scope and no local worker handler is registered."
+                )
+                raise RuntimeError(msg)
+            return await _invoke_handler(original, request)
+
+        if original is not None:
+            self.worker.remove_manager_from_request_type(request_type)
+        self.worker.assign_manager_to_request_type(request_type, remote)
 
     async def start(self) -> None:
         """Start the worker-side dispatch loop. Safe to call multiple times."""
@@ -121,20 +145,6 @@ class InProcessWorkerHarness:
         finally:
             await self.stop()
 
-    def _install_worker_forwarding(self) -> None:
-        """Route `ForwardFromWorkerMixin` requests on the worker back to the orchestrator.
-
-        The real implementation lives in `EventManager._forward_to_orchestrator`
-        (goes over WebSocket). For the harness we short-circuit it to the
-        orchestrator-side EventManager's async dispatch, skipping the wire.
-        """
-
-        async def _forward(request: Any, _result_context: Any) -> EventResultSuccess | EventResultFailure:
-            return await self.orchestrator.ahandle_request(request)
-
-        self.worker._worker_forwarding_enabled = True
-        self.worker._forward_to_orchestrator = _forward  # type: ignore[method-assign]
-
     async def _run_worker_loop(self) -> None:
         assert self._worker_inbox is not None
         while True:
@@ -162,6 +172,15 @@ class InProcessWorkerHarness:
                 "request_id": request_id,
             }
         )
+
+
+async def _invoke_handler(handler: Any, request: RequestPayload) -> ResultPayload:
+    """Call a handler that may be sync or async; mirrors ``call_function`` without the import cycle."""
+    import inspect
+
+    if inspect.iscoroutinefunction(handler):
+        return await handler(request)
+    return handler(request)
 
 
 def _payload_to_dict(payload: Any) -> dict[str, Any]:

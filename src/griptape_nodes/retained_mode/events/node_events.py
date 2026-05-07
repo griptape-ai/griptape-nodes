@@ -8,7 +8,6 @@ from uuid import uuid4
 from griptape_nodes.exe_types.core_types import NodeMessagePayload
 from griptape_nodes.exe_types.node_types import NodeDependencies, NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
-    ForwardFromWorkerMixin,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -52,7 +51,7 @@ class NewPosition(NamedTuple):
 
 @dataclass
 @PayloadRegistry.register
-class CreateNodeRequest(RequestPayload, ForwardFromWorkerMixin):
+class CreateNodeRequest(RequestPayload):
     """Create a new node in a workflow.
 
     Use when: Building workflows programmatically, responding to user requests ("add a CSV reader"),
@@ -134,7 +133,7 @@ class CreateNodeGroupRequest:
 
 @dataclass
 @PayloadRegistry.register
-class DeleteNodeRequest(RequestPayload, ForwardFromWorkerMixin):
+class DeleteNodeRequest(RequestPayload):
     """Delete a node from a workflow.
 
     Use when: Removing obsolete nodes, cleaning up failed nodes, restructuring workflows,
@@ -204,7 +203,7 @@ class GetNodeResolutionStateResultFailure(WorkflowNotAlteredMixin, ResultPayload
 
 @dataclass
 @PayloadRegistry.register
-class ListParametersOnNodeRequest(RequestPayload, ForwardFromWorkerMixin):
+class ListParametersOnNodeRequest(RequestPayload):
     """List all parameter names available on a node.
 
     Use when: Parameter discovery, validation before setting values, generating UIs,
@@ -864,7 +863,7 @@ class SendNodeMessageResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowForNodeRequest(RequestPayload, ForwardFromWorkerMixin):
+class GetFlowForNodeRequest(RequestPayload):
     """Get the flow name that contains a specific node.
 
     Use when: Need to determine which flow a node belongs to for variable scoping,

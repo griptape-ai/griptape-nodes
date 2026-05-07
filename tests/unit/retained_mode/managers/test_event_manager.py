@@ -7,9 +7,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from griptape_nodes.app.worker_routing import RemoteHandler
 from griptape_nodes.retained_mode.events.app_events import ConfigChanged
 from griptape_nodes.retained_mode.events.base_events import (
-    ForwardFromWorkerMixin,
+    EventResultSuccess,
     RequestPayload,
     ResultPayloadSuccess,
 )
@@ -254,8 +255,8 @@ class TestHandleRequestLoopSafety:
 
 
 @dataclass(kw_only=True)
-class _ForwardableProbeRequest(RequestPayload, ForwardFromWorkerMixin):
-    """Minimal forwardable request used to drive the worker-forwarding path in tests."""
+class _ForwardableProbeRequest(RequestPayload):
+    """Minimal request used to drive the worker-forwarding path in tests."""
 
 
 @dataclass(kw_only=True)
@@ -264,15 +265,15 @@ class _ForwardableProbeResult(ResultPayloadSuccess):
 
 
 class TestHandleRequestForwardingFromRunningLoop:
-    """Forwarding dispatch from a running loop must succeed, not raise.
+    """``handle_request`` dispatch of a RemoteHandler from inside a running loop.
 
-    When worker forwarding is enabled, `_forward_to_orchestrator` routes onto
-    a dedicated WebSocket event loop running on a separate thread. That loop
-    does not share primitives with the caller's loop, so blocking the caller
-    thread on the resulting future is safe -- the #4469 deadlock shape does
-    not apply. This is distinct from the local async-handler case, which
-    must still fail fast because dispatching locally would block the caller's
-    own loop.
+    A RemoteHandler's forwarding path hops onto a dedicated websocket event
+    loop running on a separate thread. That loop does not share primitives
+    with the caller's loop, so blocking the caller thread on the resulting
+    future is safe -- the #4469 deadlock shape does not apply. This is
+    distinct from the local async-handler case (still fails fast) because
+    dispatching a regular async handler locally would block the caller's own
+    loop.
     """
 
     @pytest.mark.asyncio
@@ -289,15 +290,23 @@ class TestHandleRequestForwardingFromRunningLoop:
         async def fake_forward(
             _request: RequestPayload,
             _result_context: object,
-        ) -> object:
+        ) -> EventResultSuccess:
             # Record which loop actually executed the forward.
             captured["forward_loop"] = asyncio.get_running_loop()
-            return _ForwardableProbeResult(result_details="forwarded")
+            return EventResultSuccess(
+                request=_request,
+                result=_ForwardableProbeResult(result_details="forwarded"),
+            )
 
-        # Enable the forward branch by configuring just enough state.
-        event_manager._worker_forwarding_enabled = True
+        # Register a RemoteHandler shape: dispatch table entry points at it directly.
+        # ``handle_request`` detects RemoteHandler via isinstance and routes onto the WS loop.
+        async def original(_request: _ForwardableProbeRequest) -> _ForwardableProbeResult:
+            return _ForwardableProbeResult(result_details="local")
+
+        remote = RemoteHandler(original=original, event_manager=event_manager)
+        event_manager.assign_manager_to_request_type(_ForwardableProbeRequest, remote)
         event_manager._websocket_event_loop = ws_loop
-        event_manager._forward_to_orchestrator = fake_forward  # type: ignore[method-assign]
+        event_manager.forward_to_orchestrator = fake_forward  # type: ignore[method-assign]
 
         try:
             with event_manager.worker_node_execution_scope():
@@ -308,8 +317,9 @@ class TestHandleRequestForwardingFromRunningLoop:
             ws_loop.close()
 
         assert captured["forward_loop"] is ws_loop
-        assert isinstance(result, _ForwardableProbeResult)
-        assert "forwarded" in str(result.result_details)
+        assert isinstance(result, EventResultSuccess)
+        assert isinstance(result.result, _ForwardableProbeResult)
+        assert "forwarded" in str(result.result.result_details)
 
 
 class TestBroadcastAppEventLoopSafety:

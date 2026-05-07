@@ -7,10 +7,12 @@ Covers the two routing paths the harness is meant to exercise:
    result comes back shaped like the production `route_to_worker`
    wire response (`event_type` / `result_type` / `result` /
    `request_id`).
-2. Worker -> orchestrator: a `ForwardFromWorkerMixin` request issued
-   on the worker side (while inside `worker_node_execution_scope`) is
-   forwarded to the orchestrator's handler instead of dispatching
-   locally.
+2. Worker -> orchestrator: a request whose worker-side handler is a
+   ``RemoteHandler`` (installed via
+   ``harness.install_remote_handler(...)`` for test purposes, mirroring
+   production ``install_remote_handlers``) is forwarded to the
+   orchestrator's handler while the worker is inside
+   ``worker_node_execution_scope``.
 
 These are the invariants the harness owes its callers. Anything
 finer-grained (serialization fidelity, concurrency) belongs in
@@ -26,7 +28,6 @@ import pytest
 from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     EventResultSuccess,
-    ForwardFromWorkerMixin,
     RequestPayload,
     ResultPayloadSuccess,
 )
@@ -51,7 +52,7 @@ class _EchoResult(ResultPayloadSuccess):
 
 
 @dataclass(kw_only=True)
-class _ForwardableRequest(RequestPayload, ForwardFromWorkerMixin):
+class _ForwardableRequest(RequestPayload):
     """Worker-side request that should forward to the orchestrator during node execution."""
 
     marker: str
@@ -103,7 +104,7 @@ class TestHarnessOrchestratorToWorker:
 
 
 class TestHarnessWorkerToOrchestratorForwarding:
-    """`ForwardFromWorkerMixin` requests on the worker-side EventManager should hit the orchestrator's handler."""
+    """Worker-side RemoteHandler should forward to the orchestrator during node execution."""
 
     @pytest.mark.asyncio
     async def test_forwardable_request_reaches_orchestrator_handler(self) -> None:
@@ -112,8 +113,9 @@ class TestHarnessWorkerToOrchestratorForwarding:
         async def orchestrator_handler(request: _ForwardableRequest) -> _ForwardableResult:
             return _ForwardableResult(seen_by=f"orchestrator:{request.marker}", result_details="ok")
 
-        # Orchestrator owns the real handler; worker does not register one.
+        # Orchestrator owns the real handler; worker side installs a RemoteHandler for it.
         harness.orchestrator.assign_manager_to_request_type(_ForwardableRequest, orchestrator_handler)
+        harness.install_remote_handler(_ForwardableRequest)
 
         # Forwarding only activates inside worker_node_execution_scope.
         with harness.worker.worker_node_execution_scope():

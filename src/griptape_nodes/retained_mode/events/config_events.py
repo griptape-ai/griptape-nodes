@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
-    ForwardFromWorkerMixin,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -48,7 +47,7 @@ class GetConfigValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class SetConfigValueRequest(RequestPayload, ForwardFromWorkerMixin):
+class SetConfigValueRequest(RequestPayload):
     """Set a specific configuration value.
 
     Use when: Updating application settings, configuring node behavior, storing user preferences,
@@ -114,7 +113,7 @@ class GetConfigCategoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailu
 
 @dataclass
 @PayloadRegistry.register
-class SetConfigCategoryRequest(RequestPayload, ForwardFromWorkerMixin):
+class SetConfigCategoryRequest(RequestPayload):
     """Set multiple configuration values within a category.
 
     Use when: Bulk updating configuration settings, restoring configuration sections,
@@ -175,7 +174,7 @@ class GetConfigPathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ResetConfigRequest(RequestPayload, ForwardFromWorkerMixin):
+class ResetConfigRequest(RequestPayload):
     """Reset configuration to default values.
 
     Use when: Recovering from configuration errors, restoring default settings,

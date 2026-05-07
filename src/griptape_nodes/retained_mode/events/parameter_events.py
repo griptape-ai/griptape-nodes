@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
-    ForwardFromWorkerMixin,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -22,7 +21,7 @@ if TYPE_CHECKING:
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterToNodeRequest(RequestPayload, ForwardFromWorkerMixin):
+class AddParameterToNodeRequest(RequestPayload):
     """Add a new parameter to a node.
 
     Use when: Dynamically adding inputs/outputs to nodes, customizing node interfaces,
@@ -109,7 +108,7 @@ class AddParameterToNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class RemoveParameterFromNodeRequest(RequestPayload, ForwardFromWorkerMixin):
+class RemoveParameterFromNodeRequest(RequestPayload):
     """Remove a parameter from a node.
 
     Use when: Cleaning up unused parameters, dynamically restructuring node interfaces,
@@ -227,7 +226,7 @@ class AlterParameterGroupDetailsResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SetParameterValueRequest(RequestPayload, ForwardFromWorkerMixin):
+class SetParameterValueRequest(RequestPayload):
     """Set the value of a parameter on a node.
 
     Use when: Configuring node inputs, setting property values, loading saved workflows,
@@ -285,7 +284,7 @@ class SetParameterValueResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsRequest(RequestPayload, ForwardFromWorkerMixin):
+class GetParameterDetailsRequest(RequestPayload):
     """Get detailed information about a parameter.
 
     Use when: Inspecting parameter configuration, validating parameter properties,
@@ -349,7 +348,7 @@ class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterDetailsRequest(RequestPayload, ForwardFromWorkerMixin):
+class AlterParameterDetailsRequest(RequestPayload):
     """Alter the details and configuration of a parameter.
 
     Use when: Modifying parameter types, updating tooltips, changing allowed modes,
@@ -452,7 +451,7 @@ class AlterParameterDetailsResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueRequest(RequestPayload, ForwardFromWorkerMixin):
+class GetParameterValueRequest(RequestPayload):
     """Get the current value of a parameter.
 
     Use when: Reading parameter values, debugging workflow state, displaying current values in UIs,
@@ -640,7 +639,7 @@ class RenameParameterResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetConnectionsForParameterRequest(RequestPayload, ForwardFromWorkerMixin):
+class GetConnectionsForParameterRequest(RequestPayload):
     """Get connections for a specific parameter on a node.
 
     Use when: Checking if a parameter is connected, getting connection details for a parameter,
