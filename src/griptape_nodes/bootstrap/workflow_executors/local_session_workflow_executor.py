@@ -41,8 +41,9 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         session_id: str,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         on_start_flow_result: Callable[[ResultPayload], None] | None = None,
+        save_on_failure_path: str | None = None,
     ):
-        super().__init__(storage_backend=storage_backend)
+        super().__init__(storage_backend=storage_backend, save_on_failure_path=save_on_failure_path)
         self._init_websocket_sender(session_id)
         self._on_start_flow_result = on_start_flow_result
 
@@ -111,6 +112,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
             self.send_event("execution_event", execution_event.json())
             await self._wait_for_websocket_queue_flush()
             await asyncio.sleep(1)
+            await self._save_failed_workflow(e)
             raise LocalExecutorError(msg) from e
         finally:
             await self._stop_websocket_connection()
@@ -229,4 +231,5 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         await self._wait_for_websocket_queue_flush()
 
         if error is not None:
+            await self._save_failed_workflow(error)
             raise error
