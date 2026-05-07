@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -257,25 +258,28 @@ class ContextManager:
             msg = f"Attempted to set the Workflow '{request.workflow_name}' as the Current Context. Failed because an existing workflow, '{self.get_current_workflow_name()}', is already in the Current Context. In order to clear the existing workflow and remove all objects and references to it, issue a ClearAllObjectState request."
             return SetWorkflowContextFailure(result_details=msg)
 
+        # When no workflow_name is supplied, mint a fresh "unsaved:<uuid>" key here so the
+        # engine owns the namespace. Callers doing "create a new workflow" should omit the
+        # name and read the resolved key off the success result.
+        resolved_name = request.workflow_name or f"{WorkflowRegistry.UNSAVED_KEY_PREFIX}{uuid.uuid4()}"
+
         # Auto-register an unsaved registry entry when the caller is activating an
         # "unsaved:<uuid>" key. This makes every workflow (saved or not) a first-class
         # registry entry, so list/metadata/etc. calls don't need special-casing for
         # pre-save state. `ensure_unsaved` is idempotent.
-        if request.workflow_name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX):
+        if resolved_name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX):
             try:
-                WorkflowRegistry.ensure_unsaved(
-                    key=request.workflow_name, display_name=request.display_name or "Untitled"
-                )
+                WorkflowRegistry.ensure_unsaved(key=resolved_name, display_name=request.display_name or "Untitled")
             except ValueError as err:
                 msg = (
-                    f"Attempted to auto-register unsaved workflow '{request.workflow_name}' "
+                    f"Attempted to auto-register unsaved workflow '{resolved_name}' "
                     f"before setting it as the Current Context. Failed because of '{err}'."
                 )
                 return SetWorkflowContextFailure(result_details=msg)
 
-        self.push_workflow(request.workflow_name)
-        msg = f"Successfully set the Workflow '{request.workflow_name}' as the Current Context."
-        return SetWorkflowContextSuccess(result_details=msg)
+        self.push_workflow(resolved_name)
+        msg = f"Successfully set the Workflow '{resolved_name}' as the Current Context."
+        return SetWorkflowContextSuccess(workflow_name=resolved_name, result_details=msg)
 
     def on_get_workflow_context_request(self, request: GetWorkflowContextRequest) -> ResultPayload:  # noqa: ARG002
         workflow_name = None
