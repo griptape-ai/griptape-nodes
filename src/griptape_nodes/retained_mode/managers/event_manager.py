@@ -18,7 +18,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     EventResultFailure,
     EventResultSuccess,
-    ForwardFromWorkerMixin,
     ProgressEvent,
     RequestPayload,
     ResultDetails,
@@ -105,7 +104,7 @@ class EventManager:
         # decremented on exit. Plain instance state guarded by a lock so any thread
         # -- including threads spawned inside third-party libraries (diffusers,
         # transformers, etc.) during node execution -- can observe it via
-        # _should_forward. ContextVar was tried first and lost the flag when
+        # in_node_execution(). ContextVar was tried first and lost the flag when
         # library-internal ThreadPoolExecutors ran node-emitted requests.
         self._node_execution_depth: int = 0
         self._node_execution_lock = threading.Lock()
@@ -272,8 +271,10 @@ class EventManager:
         """Mark this worker as actively executing a node.
 
         Increments a thread-safe refcount on entry and decrements on exit.
-        While the refcount is > 0, requests marked ForwardFromWorkerMixin
-        dispatched on this worker are forwarded to the orchestrator.
+        While the refcount is > 0, in_node_execution() returns True; the
+        worker-side RemoteHandler consults that flag to decide whether to
+        forward a request to the orchestrator or delegate to the original
+        local handler.
 
         The refcount is plain instance state guarded by a lock, so any
         thread -- including threads spawned internally by third-party
@@ -295,32 +296,16 @@ class EventManager:
             with self._node_execution_lock:
                 self._node_execution_depth -= 1
 
-    def _in_node_execution(self) -> bool:
+    def in_node_execution(self) -> bool:
         """Return True when this worker is currently inside a node-execution scope."""
         with self._node_execution_lock:
             return self._node_execution_depth > 0
 
-    def _should_forward(self, request: RequestPayload) -> bool:
-        """Return True when this request should be forwarded to the orchestrator.
+    def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
+        """Return the currently-registered handler callback for a request type, or None."""
+        return self._request_type_to_manager.get(request_type)
 
-        Forwarding is active only when:
-          (1) configure_worker_forwarding has been called (we're on a worker),
-          (2) the request type is marked ForwardFromWorkerMixin (opt-in),
-          (3) the worker is currently inside a worker_node_execution_scope
-              (i.e. the request originated from node execution, not bootstrap).
-
-        ExecuteNodeRequest is excluded structurally: the scope is opened by
-        NodeManager._hydrate_and_run_node around node.aprocess(), *inside* the
-        ExecuteNodeRequest handler. The request that enters the handler runs
-        outside the scope, so forwarding naturally skips it.
-        """
-        if not self._worker_forwarding_enabled:
-            return False
-        if not isinstance(request, ForwardFromWorkerMixin):
-            return False
-        return self._in_node_execution()
-
-    async def _forward_to_orchestrator(
+    async def forward_to_orchestrator(
         self,
         request: RP,
         result_context: ResultContext,
@@ -488,9 +473,6 @@ class EventManager:
         if result_context is None:
             result_context = ResultContext()
 
-        if self._should_forward(request):
-            return await self._forward_to_orchestrator(request, result_context)
-
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -530,29 +512,6 @@ class EventManager:
         if result_context is None:
             result_context = ResultContext()
 
-        if self._should_forward(request):
-            # Forwarding is safe from a running loop because _forward_to_orchestrator
-            # already dispatches onto a separate loop (the WebSocket loop set up by
-            # configure_worker_forwarding). run_coroutine_threadsafe hands the
-            # coroutine to that loop and we block the caller's thread on the
-            # resulting concurrent.futures.Future. Because the WS loop runs on a
-            # different thread than the caller's loop, no primitives are shared
-            # and the #4469 deadlock shape does not apply.
-            if _running_loop() is not None:
-                if self._websocket_event_loop is None:
-                    msg = (
-                        "Cannot forward request from a running event loop: "
-                        "worker forwarding is enabled but the websocket event loop "
-                        "is not configured. This indicates a bootstrap order bug."
-                    )
-                    raise RuntimeError(msg)
-                future = asyncio.run_coroutine_threadsafe(
-                    self._forward_to_orchestrator(request, result_context),
-                    self._websocket_event_loop,
-                )
-                return future.result()
-            return asyncio.run(self._forward_to_orchestrator(request, result_context))
-
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -560,13 +519,33 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
+        # Worker-side RemoteHandler callbacks are async but safe to invoke from a
+        # running loop: forward_to_orchestrator dispatches onto the WS loop via
+        # run_coroutine_threadsafe, which runs on a different thread than the caller's
+        # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
+        # Hop the callback onto the WS loop here and block the caller's thread on the
+        # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
+        from griptape_nodes.app.worker_routing import RemoteHandler
+
+        if isinstance(callback, RemoteHandler):
+            if _running_loop() is not None:
+                if self._websocket_event_loop is None:
+                    msg = (
+                        f"Cannot forward '{type(request).__name__}' from a running event loop: "
+                        "the websocket event loop is not configured. This indicates a bootstrap order bug."
+                    )
+                    raise RuntimeError(msg)
+                future = asyncio.run_coroutine_threadsafe(callback(request), self._websocket_event_loop)
+                result_payload: ResultPayload = future.result()
+            else:
+                result_payload: ResultPayload = asyncio.run(callback(request))
         # Support async callbacks for sync method ONLY if there is no running event loop.
         # A sync caller already inside a running loop cannot drive an async handler without
         # blocking its own loop; that shape is the structural source of the deadlock
         # documented in https://github.com/griptape-ai/griptape-nodes/issues/4469. Rather
         # than queue the coroutine onto a side loop (which races any primitive the caller's
         # loop owns), fail fast with a diagnostic that points at the fix.
-        if inspect.iscoroutinefunction(callback):
+        elif inspect.iscoroutinefunction(callback):
             if _running_loop() is not None:
                 msg = _sync_in_async_loop_error_message(
                     request_type_name=type(request).__name__,
@@ -574,9 +553,9 @@ class EventManager:
                     recommended_call="await GriptapeNodes.ahandle_request(request)",
                 )
                 raise RuntimeError(msg)
-            result_payload: ResultPayload = asyncio.run(callback(request))
+            result_payload = asyncio.run(callback(request))
         else:
-            result_payload: ResultPayload = callback(request)
+            result_payload = callback(request)
 
         # Queue flush request for sync context (unless result type should skip flush)
         with operation_depth_mgr:

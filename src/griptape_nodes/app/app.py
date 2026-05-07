@@ -23,6 +23,7 @@ from rich.panel import Panel
 
 from griptape_nodes.api_client import Client, RequestClient
 from griptape_nodes.app.engine_log import _engine_role_filter, _rich_handler
+from griptape_nodes.app.worker_routing import install_remote_handlers
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
 from griptape_nodes.retained_mode.events import app_events, execution_events, worker_events
@@ -368,6 +369,11 @@ async def _run_worker(client: Client, role: Worker) -> None:
                 websocket_event_loop=asyncio.get_running_loop(),
                 timeout_ms=ORCHESTRATOR_REQUEST_TIMEOUT_MS,
             )
+            # Swap orchestrator-owned request handlers for RemoteHandler shims so requests
+            # made inside a worker_node_execution_scope forward to the orchestrator instead
+            # of dispatching locally. Bootstrap paths (library load, AppInitializationComplete
+            # fan-out) run outside the scope and continue to hit the original local handlers.
+            install_remote_handlers(griptape_nodes.EventManager())
 
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_send_outgoing_messages(client))
