@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from griptape_nodes.node_library.library_registry import (
     LibraryMetadata,
@@ -169,6 +169,93 @@ class GetNodeMetadataFromLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPay
 @PayloadRegistry.register
 class GetNodeMetadataFromLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Node metadata retrieval failed. Common causes: library not found, node type not found, library not loaded."""
+
+
+@dataclass
+class ParameterDescription:
+    """Schema of a single parameter on a node type, surfaced without instantiating the node into a flow.
+
+    Args:
+        name: Parameter name, used when wiring connections and setting values
+        type: Canonical parameter type
+        input_types: Accepted input types when used as an input
+        output_type: Type produced when used as an output
+        default_value: Default value for the parameter (may be None)
+        tooltip: General tooltip text (string or structured list)
+        tooltip_as_input/property/output: Mode-specific tooltips (None if unset)
+        mode_allowed_input/property/output: Whether the parameter supports each mode
+        settable: Whether the parameter can be set directly by the user
+        ui_options: UI configuration options (includes display_name when set)
+        parent_container_name: Name of the parent ParameterGroup, if any
+    """
+
+    name: str
+    type: str
+    input_types: list[str]
+    output_type: str
+    default_value: Any | None
+    tooltip: str | list[dict]
+    tooltip_as_input: str | list[dict] | None
+    tooltip_as_property: str | list[dict] | None
+    tooltip_as_output: str | list[dict] | None
+    mode_allowed_input: bool
+    mode_allowed_property: bool
+    mode_allowed_output: bool
+    settable: bool
+    ui_options: dict | None
+    parent_container_name: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class DescribeNodeTypeRequest(RequestPayload):
+    """Describe a node type's metadata and parameter schema without adding a node to a flow.
+
+    Use when: choosing between similar node types, building a node-creation UI, or inspecting
+    parameter defaults, tooltips, and ui_options before committing to CreateNode. Avoids the
+    create/inspect/delete cycle otherwise required to learn a node type's surface area.
+
+    Note: the engine instantiates a throwaway node to read its parameters. Node types whose
+    __init__ performs network or disk I/O will incur that cost here as well.
+
+    Args:
+        node_type: Name of the node type to describe
+        library: Name of the library providing the node type. If omitted and exactly one
+            library registers this node type, that library is used; otherwise the request fails.
+
+    Results: DescribeNodeTypeResultSuccess | DescribeNodeTypeResultFailure
+    """
+
+    node_type: str
+    library: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class DescribeNodeTypeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node type described successfully.
+
+    Args:
+        library: Library that provided the node type
+        node_type: Name of the node type
+        metadata: Library-level node metadata (category, description, display_name, tags, icon, color, group)
+        parameters: Parameter schemas in declaration order. Empty when `probe_error` is set.
+        probe_error: Non-null when the engine could not instantiate the probe node used to read
+            parameter declarations (typically because the node's `__init__` performed I/O that
+            failed). When present, the node-level `metadata` is still valid but `parameters` is empty.
+    """
+
+    library: str
+    node_type: str
+    metadata: NodeMetadata
+    parameters: list[ParameterDescription] = field(default_factory=list)
+    probe_error: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class DescribeNodeTypeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node type description failed. Common causes: library not registered, node type not found, node instantiation raised."""
 
 
 @dataclass

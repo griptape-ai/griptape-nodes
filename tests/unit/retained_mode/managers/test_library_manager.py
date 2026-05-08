@@ -2,15 +2,24 @@ import asyncio
 import sys
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.node_library.library_registry import (
+    LibraryMetadata,
     LibraryRegistry,
+    LibrarySchema,
+    NodeMetadata,
 )
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
+    DescribeNodeTypeRequest,
+    DescribeNodeTypeResultFailure,
+    DescribeNodeTypeResultSuccess,
     GetAllInfoForAllLibrariesRequest,
     GetAllInfoForAllLibrariesResultFailure,
     GetAllInfoForAllLibrariesResultSuccess,
@@ -1146,3 +1155,189 @@ class TestRegisterSandboxNodeFromSourceRequest:
 
         assert isinstance(result, RegisterSandboxNodeFromSourceResultFailure)
         assert "BaseNode" in str(result.result_details)
+
+
+class _DescribeNodeTypeProbe(BaseNode):
+    """Concrete BaseNode used to exercise describe_node_type_request."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name=name, metadata=metadata)
+
+        prompt = Parameter(
+            name="prompt",
+            type="str",
+            input_types=["str"],
+            output_type="str",
+            default_value="hello",
+            tooltip="Prompt text",
+            ui_options={"display_name": "Prompt"},
+        )
+        self.add_parameter(prompt)
+
+        temperature = Parameter(
+            name="temperature",
+            type="float",
+            input_types=["float"],
+            output_type="float",
+            default_value=0.5,
+            tooltip="Sampling temperature",
+            allowed_modes={ParameterMode.PROPERTY},
+        )
+        self.add_parameter(temperature)
+
+
+class _RaisingProbe(BaseNode):
+    """Stand-in for node types whose __init__ performs failing I/O (auth, network, disk)."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name=name, metadata=metadata)
+        msg = "simulated I/O failure"
+        raise RuntimeError(msg)
+
+
+class TestDescribeNodeTypeRequest:
+    """Exercise LibraryManager.describe_node_type_request."""
+
+    _LIBRARY_NAME = "describe-node-type-test-library"
+
+    @pytest.fixture(autouse=True)
+    def _clean_registry(self) -> Generator[None, None, None]:
+        """LibraryRegistry holds class-level state that survives the singleton reset fixture."""
+        LibraryRegistry._libraries.clear()
+        LibraryRegistry._node_aliases.clear()
+        LibraryRegistry._collision_node_names_to_library_names.clear()
+        LibraryRegistry._registered_widgets.clear()
+        yield
+        LibraryRegistry._libraries.clear()
+        LibraryRegistry._node_aliases.clear()
+        LibraryRegistry._collision_node_names_to_library_names.clear()
+        LibraryRegistry._registered_widgets.clear()
+
+    def _register_probe_library(self) -> None:
+        schema = LibrarySchema(
+            name=self._LIBRARY_NAME,
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=LibraryMetadata(
+                author="test",
+                description="probe library",
+                library_version="1.0.0",
+                engine_version="1.0.0",
+                tags=[],
+            ),
+            categories=[],
+            nodes=[],
+        )
+        library = LibraryRegistry.generate_new_library(library_data=schema)
+        library.register_new_node_type(
+            _DescribeNodeTypeProbe,
+            NodeMetadata(
+                category="test",
+                description="Probe node used by DescribeNodeType tests",
+                display_name="Probe",
+            ),
+        )
+
+    def test_returns_parameter_schema_without_touching_object_manager(self, griptape_nodes: GriptapeNodes) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        self._register_probe_library()
+
+        request = DescribeNodeTypeRequest(
+            node_type=_DescribeNodeTypeProbe.__name__,
+            library=self._LIBRARY_NAME,
+        )
+
+        result = library_manager.describe_node_type_request(request)
+
+        assert isinstance(result, DescribeNodeTypeResultSuccess)
+        assert result.library == self._LIBRARY_NAME
+        assert result.node_type == _DescribeNodeTypeProbe.__name__
+        assert result.metadata.display_name == "Probe"
+
+        by_name = {param.name: param for param in result.parameters}
+        assert "prompt" in by_name
+        assert "temperature" in by_name
+
+        prompt = by_name["prompt"]
+        assert prompt.type == "str"
+        assert prompt.default_value == "hello"
+        assert prompt.mode_allowed_input is True
+        assert prompt.mode_allowed_output is True
+        assert prompt.mode_allowed_property is True
+        assert prompt.ui_options == {"display_name": "Prompt"}
+        assert prompt.parent_container_name is None
+
+        temperature = by_name["temperature"]
+        assert temperature.default_value == pytest.approx(0.5)
+        assert temperature.mode_allowed_input is False
+        assert temperature.mode_allowed_output is False
+        assert temperature.mode_allowed_property is True
+        assert temperature.parent_container_name is None
+
+        # Probe node must not leak into the ObjectManager.
+        assert (
+            griptape_nodes.ObjectManager().attempt_get_object_by_name(
+                f"__describe_node_type_probe__{_DescribeNodeTypeProbe.__name__}"
+            )
+            is None
+        )
+
+    def test_resolves_library_when_node_type_is_unambiguous(self, griptape_nodes: GriptapeNodes) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        self._register_probe_library()
+
+        request = DescribeNodeTypeRequest(node_type=_DescribeNodeTypeProbe.__name__)
+
+        result = library_manager.describe_node_type_request(request)
+
+        assert isinstance(result, DescribeNodeTypeResultSuccess)
+        assert result.library == self._LIBRARY_NAME
+
+    def test_returns_failure_when_node_type_missing(self, griptape_nodes: GriptapeNodes) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        self._register_probe_library()
+
+        request = DescribeNodeTypeRequest(node_type="NotARealNode", library=self._LIBRARY_NAME)
+
+        result = library_manager.describe_node_type_request(request)
+
+        assert isinstance(result, DescribeNodeTypeResultFailure)
+
+    def test_returns_success_with_probe_error_when_init_raises(self, griptape_nodes: GriptapeNodes) -> None:
+        """Nodes whose __init__ performs I/O can raise (e.g. auth). We still want the node-level metadata."""
+        library_manager = griptape_nodes.LibraryManager()
+
+        schema = LibrarySchema(
+            name=self._LIBRARY_NAME,
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=LibraryMetadata(
+                author="test",
+                description="probe library",
+                library_version="1.0.0",
+                engine_version="1.0.0",
+                tags=[],
+            ),
+            categories=[],
+            nodes=[],
+        )
+        library = LibraryRegistry.generate_new_library(library_data=schema)
+        library.register_new_node_type(
+            _RaisingProbe,
+            NodeMetadata(
+                category="test",
+                description="Node that explodes during __init__",
+                display_name="Raising Probe",
+            ),
+        )
+
+        request = DescribeNodeTypeRequest(node_type=_RaisingProbe.__name__, library=self._LIBRARY_NAME)
+
+        result = library_manager.describe_node_type_request(request)
+
+        assert isinstance(result, DescribeNodeTypeResultSuccess)
+        # Library-level metadata still surfaces so callers can at least show the node.
+        assert result.metadata.display_name == "Raising Probe"
+        # Parameters are empty because the probe failed before they could be declared.
+        assert result.parameters == []
+        # The probe_error carries the concrete reason so callers can tell it apart from "no params".
+        assert result.probe_error is not None
+        assert "simulated I/O failure" in result.probe_error

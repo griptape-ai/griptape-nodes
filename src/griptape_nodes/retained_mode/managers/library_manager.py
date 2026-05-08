@@ -66,6 +66,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     CheckLibraryUpdateRequest,
     CheckLibraryUpdateResultFailure,
     CheckLibraryUpdateResultSuccess,
+    DescribeNodeTypeRequest,
+    DescribeNodeTypeResultFailure,
+    DescribeNodeTypeResultSuccess,
     DiscoveredLibrary,
     DiscoverLibrariesRequest,
     DiscoverLibrariesResultFailure,
@@ -113,6 +116,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     LoadLibraryMetadataFromFileResultSuccess,
     LoadMetadataForAllLibrariesRequest,
     LoadMetadataForAllLibrariesResultSuccess,
+    ParameterDescription,
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
@@ -389,6 +393,10 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             GetNodeMetadataFromLibraryRequest,
             self.get_node_metadata_from_library_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            DescribeNodeTypeRequest,
+            self.describe_node_type_request,
         )
         event_manager.assign_manager_to_request_type(
             LoadLibraryMetadataFromFileRequest,
@@ -1399,6 +1407,85 @@ class LibraryManager:
             registered_class_names=registered_class_names,
             replaced_class_names=replaced_class_names,
             result_details=summary,
+        )
+
+    def describe_node_type_request(self, request: DescribeNodeTypeRequest) -> ResultPayload:
+        # Resolve the library for this node type. When no library is supplied, we rely on
+        # LibraryRegistry to pick the unique library that provides it.
+        try:
+            library = LibraryRegistry.get_library_for_node_type(
+                node_type=request.node_type, specific_library_name=request.library
+            )
+        except KeyError as err:
+            details = f"Attempted to describe node type '{request.node_type}'. Failed when looking up its library because: {err}"
+            return DescribeNodeTypeResultFailure(result_details=details)
+
+        library_name = library.get_library_data().name
+
+        # Make sure the node type really is registered in this library before we go further.
+        try:
+            node_metadata = library.get_node_metadata(node_type=request.node_type)
+        except KeyError:
+            details = f"Attempted to describe node type '{request.node_type}' in Library '{library_name}'. Failed because the Library has no node type with that name."
+            return DescribeNodeTypeResultFailure(result_details=details)
+
+        # Instantiate a throwaway node so we can read the parameters its __init__ declares.
+        # The node is never added to a flow or the ObjectManager, so it is garbage-collected
+        # when this method returns.
+        #
+        # Nodes whose __init__ performs I/O (network calls, auth checks, disk reads) can raise.
+        # In that case we still return a success payload with the library-level metadata and an
+        # explicit `probe_error`, so callers can present the node at all instead of getting an
+        # opaque failure for every such node type.
+        probe_name = f"__describe_node_type_probe__{request.node_type}"
+        try:
+            probe_node = library.create_node(node_type=request.node_type, name=probe_name)
+        except Exception as err:
+            probe_error = f"{type(err).__name__}: {err}"
+            details = (
+                f"Described node type '{request.node_type}' in Library '{library_name}' with library metadata only; "
+                f"parameter probe failed because: {probe_error}"
+            )
+            return DescribeNodeTypeResultSuccess(
+                library=library_name,
+                node_type=request.node_type,
+                metadata=node_metadata,
+                parameters=[],
+                probe_error=probe_error,
+                result_details=details,
+            )
+
+        parameters = [self._build_parameter_description(param) for param in probe_node.parameters]
+
+        details = f"Successfully described node type '{request.node_type}' in Library '{library_name}'."
+        return DescribeNodeTypeResultSuccess(
+            library=library_name,
+            node_type=request.node_type,
+            metadata=node_metadata,
+            parameters=parameters,
+            result_details=details,
+        )
+
+    @staticmethod
+    def _build_parameter_description(param: Parameter) -> ParameterDescription:
+        allowed_modes = param.allowed_modes
+
+        return ParameterDescription(
+            name=param.name,
+            type=getattr(param, "type", "") or "",
+            input_types=list(getattr(param, "input_types", []) or []),
+            output_type=getattr(param, "output_type", "") or "",
+            default_value=getattr(param, "default_value", None),
+            tooltip=getattr(param, "tooltip", ""),
+            tooltip_as_input=getattr(param, "tooltip_as_input", None),
+            tooltip_as_property=getattr(param, "tooltip_as_property", None),
+            tooltip_as_output=getattr(param, "tooltip_as_output", None),
+            mode_allowed_input=ParameterMode.INPUT in allowed_modes,
+            mode_allowed_property=ParameterMode.PROPERTY in allowed_modes,
+            mode_allowed_output=ParameterMode.OUTPUT in allowed_modes,
+            settable=getattr(param, "settable", True),
+            ui_options=getattr(param, "ui_options", None),
+            parent_container_name=getattr(param, "parent_container_name", None),
         )
 
     def list_categories_in_library_request(self, request: ListCategoriesInLibraryRequest) -> ResultPayload:
