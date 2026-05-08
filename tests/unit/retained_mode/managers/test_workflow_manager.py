@@ -1487,38 +1487,6 @@ class TestVariableReferenceAccess:
 class TestLibraryResolutionOnLoad:
     """run_workflow resolves declared libraries before exec via the metadata header."""
 
-    def test_strip_legacy_prereq_calls_removes_imperative_registrations(self, griptape_nodes: GriptapeNodes) -> None:
-        """_strip_legacy_prereq_calls removes every legacy RegisterLibraryFromFileRequest call."""
-        workflow_manager = griptape_nodes.WorkflowManager()
-        content = (
-            "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n"
-            "from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest\n"
-            "GriptapeNodes.handle_request(RegisterLibraryFromFileRequest("
-            "library_name='Example Library', perform_discovery_if_not_found=True))\n"
-            "GriptapeNodes.handle_request(RegisterLibraryFromFileRequest("
-            "library_name='Other Library', perform_discovery_if_not_found=True))\n"
-            "context_manager = GriptapeNodes.ContextManager()\n"
-        )
-
-        stripped = workflow_manager._strip_legacy_prereq_calls(content)
-
-        # The handle_request(RegisterLibraryFromFileRequest(...)) calls are gone;
-        # unrelated lines (including the now-dead import) are preserved.
-        assert "GriptapeNodes.handle_request(RegisterLibraryFromFileRequest" not in stripped
-        assert "context_manager = GriptapeNodes.ContextManager()" in stripped
-
-    def test_strip_legacy_prereq_calls_leaves_content_without_legacy_calls_unchanged(
-        self, griptape_nodes: GriptapeNodes
-    ) -> None:
-        """Modern generated content passes through _strip_legacy_prereq_calls untouched."""
-        workflow_manager = griptape_nodes.WorkflowManager()
-        content = (
-            "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n"
-            "context_manager = GriptapeNodes.ContextManager()\n"
-        )
-
-        assert workflow_manager._strip_legacy_prereq_calls(content) == content
-
     def test_ensure_libraries_dispatches_ahandle_request_per_library(self, griptape_nodes: GriptapeNodes) -> None:
         """_ensure_libraries_for_workflow dispatches one RegisterLibraryFromFileRequest per declared library."""
         from griptape_nodes.node_library.library_registry import LibraryNameAndVersion

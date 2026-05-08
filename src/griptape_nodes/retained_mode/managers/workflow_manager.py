@@ -700,16 +700,13 @@ class WorkflowManager:
             # Resolve the workflow's declared library dependencies before exec.
             # The metadata header lists every library the workflow uses; each must
             # be registered (discovery is triggered if needed) so node construction
-            # inside the script can succeed. Older saved files also embed imperative
-            # RegisterLibraryFromFileRequest calls in their body; strip those here
-            # so they don't trip the sync-in-async guard when the script is exec'd.
+            # inside the script can succeed.
             library_resolution_error = await self._ensure_libraries_for_workflow(
                 relative_file_path=relative_file_path,
                 complete_file_path=complete_file_path,
             )
             if library_resolution_error is not None:
                 return library_resolution_error
-            workflow_content = self._strip_legacy_prereq_calls(workflow_content)
 
             # Execute the workflow module with a dedicated namespace so `__file__` resolves
             # to the workflow path and the `if __name__ == "__main__"` guard does not fire
@@ -741,14 +738,6 @@ class WorkflowManager:
             execution_successful=True,
             execution_details=f"Succeeded in running workflow on path '{complete_file_path}'.",
         )
-
-    # Shape of the imperative library-registration block that older generated
-    # workflows embed at the top of the file. Kept tight because the emitter
-    # (before this change) always produced exactly this call shape.
-    _LEGACY_PREREQ_CALL_REGEX: ClassVar[re.Pattern[str]] = re.compile(
-        r"^GriptapeNodes\.handle_request\(\s*RegisterLibraryFromFileRequest\([^)]*\)\s*\)\s*\n",
-        re.MULTILINE,
-    )
 
     async def _ensure_libraries_for_workflow(
         self, *, relative_file_path: str, complete_file_path: Path
@@ -786,18 +775,6 @@ class WorkflowManager:
                     execution_details=details,
                 )
         return None
-
-    def _strip_legacy_prereq_calls(self, workflow_content: str) -> str:
-        """Remove imperative library-registration calls from older workflow files.
-
-        Library resolution is now performed by run_workflow before exec via the
-        declarative metadata header. Workflows saved before that change contain
-        GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(...)) at the
-        top of the body; exec'ing them inside the running event loop trips the
-        sync-in-async guard. Strip them so legacy files keep loading until they
-        are naturally re-saved.
-        """
-        return WorkflowManager._LEGACY_PREREQ_CALL_REGEX.sub("", workflow_content)
 
     async def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it into a blank slate.
