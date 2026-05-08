@@ -370,29 +370,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._worker_manager
 
     @classmethod
-    def clear_data(cls) -> None:
-        # Get canvas
-        more_flows = True
-        while more_flows:
-            flows = GriptapeNodes.ObjectManager().get_filtered_subset(type=ControlFlow)
-            found_orphan = False
-            for flow_name in flows:
-                try:
-                    parent = GriptapeNodes.FlowManager().get_parent_flow(flow_name)
-                except Exception as e:
-                    raise RuntimeError(e) from e
-                if not parent:
-                    event = DeleteFlowRequest(flow_name=flow_name)
-                    GriptapeNodes.handle_request(event)
-                    found_orphan = True
-                    break
-            if not flows or not found_orphan:
-                more_flows = False
-        if GriptapeNodes.ObjectManager()._name_to_objects:
-            msg = "Failed to successfully delete all objects"
-            raise ValueError(msg)
-
-    @classmethod
     def clear_current_workflow_data(cls) -> None:  # noqa: C901
         """Tear down the active workflow: cancel running flows, delete its orphan flows, then pop it.
 
@@ -415,9 +392,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         # Delete all orphan (top-level) flows. We can't rely on
         # `ListFlowsInCurrentContextRequest` here because the caller may only have a
         # workflow on the context stack (no child flow), and that request requires a
-        # current flow. Mirror `clear_data`'s orphan-loop instead: repeatedly find a
-        # flow with no parent and delete it; `on_delete_flow_request` cascades into
-        # its children and nodes.
+        # current flow. Instead, repeatedly find a flow with no parent and delete it;
+        # `on_delete_flow_request` cascades into its children and nodes.
         more_flows = True
         while more_flows:
             flows = GriptapeNodes.ObjectManager().get_filtered_subset(type=ControlFlow)

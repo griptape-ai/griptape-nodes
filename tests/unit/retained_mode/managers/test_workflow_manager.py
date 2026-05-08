@@ -1479,11 +1479,11 @@ class TestWorkflowVariablePersistence:
         variables_manager = griptape_nodes.VariablesManager()
         context_manager = griptape_nodes.ContextManager()
 
-        GriptapeNodes.clear_data()
+        if context_manager.has_current_workflow():
+            GriptapeNodes.clear_current_workflow_data()
         variables_manager.on_clear_object_state()
 
-        if not context_manager.has_current_workflow():
-            context_manager.push_workflow(workflow_name="round_trip_workflow")
+        context_manager.push_workflow(workflow_name="round_trip_workflow")
 
         flow_result = GriptapeNodes.handle_request(
             CreateFlowRequest(parent_flow_name=None, flow_name=flow_name, set_as_new_context=False)
@@ -1731,7 +1731,7 @@ class TestWorkflowVariablePersistence:
         assert "name='flow_scoped_var'" in script_source
 
         # Clear everything, then exec the script and confirm the variable is rebuilt.
-        GriptapeNodes.clear_data()
+        GriptapeNodes.clear_current_workflow_data()
         variables_manager.on_clear_object_state()
 
         exec_globals: dict[str, object] = {"__file__": "test_workflow.py"}
