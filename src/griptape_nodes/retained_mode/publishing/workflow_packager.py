@@ -615,7 +615,12 @@ dependencies = [
 
         # Copy workflow file
         self.emit_progress(10.0, "Copying workflow file...")
-        full_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
+        workflow_file_path = workflow.file_path
+        if workflow_file_path is None:
+            msg = f"Cannot package unsaved workflow '{workflow.metadata.name}'. Save the workflow before packaging."
+            logger.error(msg)
+            raise TypeError(msg)
+        full_path = WorkflowRegistry.get_complete_file_path(workflow_file_path)
         self.copy_file(full_path, destination / Path(full_path).name)
 
         # Copy libraries
