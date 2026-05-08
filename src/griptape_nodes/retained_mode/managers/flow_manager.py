@@ -44,9 +44,12 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
+    ConnectionOutcome,
     CreateConnectionRequest,
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
+    CreateConnectionsRequest,
+    CreateConnectionsResultSuccess,
     DeleteConnectionRequest,
     DeleteConnectionResultFailure,
     DeleteConnectionResultSuccess,
@@ -265,6 +268,7 @@ class FlowManager:
             ListFlowsInCurrentContextRequest, self.on_list_flows_in_current_context_request
         )
         event_manager.assign_manager_to_request_type(CreateConnectionRequest, self.on_create_connection_request)
+        event_manager.assign_manager_to_request_type(CreateConnectionsRequest, self.on_create_connections_request)
         event_manager.assign_manager_to_request_type(DeleteConnectionRequest, self.on_delete_connection_request)
         event_manager.assign_manager_to_request_type(StartFlowRequest, self.on_start_flow_request)
         event_manager.assign_manager_to_request_type(StartFlowFromNodeRequest, self.on_start_flow_from_node_request)
@@ -1122,6 +1126,50 @@ class FlowManager:
         result = CreateConnectionResultSuccess(result_details=details)
 
         return result
+
+    def on_create_connections_request(self, request: CreateConnectionsRequest) -> ResultPayload:
+        """Apply a list of connection specs by delegating each to on_create_connection_request.
+
+        Edges are attempted in submission order. A single failure does not abort the batch; it
+        is recorded in `outcomes` and the batch continues. Callers can inspect
+        `failed_count`/`outcomes` to decide whether the partial result is acceptable.
+        """
+        outcomes: list[ConnectionOutcome] = []
+        created = 0
+        failed = 0
+        for spec in request.connections:
+            single_request = CreateConnectionRequest(
+                source_parameter_name=spec.source_parameter_name,
+                target_parameter_name=spec.target_parameter_name,
+                source_node_name=spec.source_node_name,
+                target_node_name=spec.target_node_name,
+                initial_setup=spec.initial_setup,
+                is_node_group_internal=spec.is_node_group_internal,
+            )
+            # Dispatch through GriptapeNodes.handle_request so the per-spec
+            # CreateConnectionResultSuccess event is broadcast to subscribers (the editor
+            # listens on the singular event to add edges to the canvas one at a time).
+            single_result = GriptapeNodes.handle_request(single_request)
+            succeeded = isinstance(single_result, CreateConnectionResultSuccess)
+            if succeeded:
+                created += 1
+            else:
+                failed += 1
+            outcomes.append(
+                ConnectionOutcome(
+                    spec=spec,
+                    succeeded=succeeded,
+                    details=str(single_result.result_details),
+                )
+            )
+
+        summary = f"Created {created} of {len(request.connections)} connections (failed: {failed})."
+        return CreateConnectionsResultSuccess(
+            outcomes=outcomes,
+            created_count=created,
+            failed_count=failed,
+            result_details=summary,
+        )
 
     def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (complex logic, multiple edge cases)
         # Vet the two nodes first.

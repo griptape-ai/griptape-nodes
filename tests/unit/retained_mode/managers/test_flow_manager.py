@@ -106,3 +106,72 @@ class TestExtractFlowCommandsFromImageMetadata:
         assert isinstance(result, ExtractFlowCommandsFromImageMetadataResultSuccess)
         assert result.serialized_flow_commands == {"sentinel": "flow"}
         assert result.altered_workflow_state is False
+
+
+class TestCreateConnectionsRequest:
+    """Tests for FlowManager.on_create_connections_request (bulk wiring)."""
+
+    def test_returns_empty_outcomes_for_empty_list(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.connection_events import (
+            CreateConnectionsRequest,
+            CreateConnectionsResultSuccess,
+        )
+
+        flow_manager = griptape_nodes.FlowManager()
+
+        result = flow_manager.on_create_connections_request(CreateConnectionsRequest(connections=[]))
+
+        assert isinstance(result, CreateConnectionsResultSuccess)
+        assert result.outcomes == []
+        assert result.created_count == 0
+        assert result.failed_count == 0
+
+    def test_reports_per_spec_success_and_failure(self, griptape_nodes: GriptapeNodes) -> None:
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.events.connection_events import (
+            ConnectionSpec,
+            CreateConnectionRequest,
+            CreateConnectionResultFailure,
+            CreateConnectionResultSuccess,
+            CreateConnectionsRequest,
+            CreateConnectionsResultSuccess,
+        )
+
+        flow_manager = griptape_nodes.FlowManager()
+
+        # First call succeeds, second fails. The batch handler must still process both.
+        results = [
+            CreateConnectionResultSuccess(result_details="ok"),
+            CreateConnectionResultFailure(result_details="nope"),
+        ]
+
+        def fake_single(
+            request: CreateConnectionRequest,  # noqa: ARG001
+        ) -> CreateConnectionResultSuccess | CreateConnectionResultFailure:
+            return results.pop(0)
+
+        specs = [
+            ConnectionSpec(
+                source_node_name="A",
+                source_parameter_name="out",
+                target_node_name="B",
+                target_parameter_name="in",
+            ),
+            ConnectionSpec(
+                source_node_name="B",
+                source_parameter_name="out",
+                target_node_name="C",
+                target_parameter_name="in",
+            ),
+        ]
+
+        with patch.object(GriptapeNodes, "handle_request", side_effect=fake_single):
+            result = flow_manager.on_create_connections_request(CreateConnectionsRequest(connections=specs))
+
+        assert isinstance(result, CreateConnectionsResultSuccess)
+        assert result.created_count == 1
+        assert result.failed_count == 1
+        assert [outcome.succeeded for outcome in result.outcomes] == [True, False]
+        assert result.outcomes[0].spec.source_node_name == "A"
+        assert result.outcomes[1].spec.source_node_name == "B"

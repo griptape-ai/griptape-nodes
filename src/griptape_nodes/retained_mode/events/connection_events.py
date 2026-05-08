@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -54,6 +54,79 @@ class CreateConnectionResultFailure(ResultPayloadFailure):
     Common causes: incompatible types, nodes/parameters not found,
     connection already exists, circular dependency.
     """
+
+
+@dataclass
+class ConnectionSpec:
+    """A single edge to create via `CreateConnectionsRequest`.
+
+    Fields mirror `CreateConnectionRequest` so the batch handler can dispatch each spec to
+    the existing single-connection logic unchanged.
+
+    Args:
+        source_node_name: Name of the node providing the data.
+        source_parameter_name: Name of the source parameter.
+        target_node_name: Name of the node receiving the data.
+        target_parameter_name: Name of the target parameter.
+        initial_setup: Skip setup work when loading from file.
+        is_node_group_internal: Mark this connection as internal to a node group proxy parameter.
+    """
+
+    source_node_name: str
+    source_parameter_name: str
+    target_node_name: str
+    target_parameter_name: str
+    initial_setup: bool = False
+    is_node_group_internal: bool = False
+
+
+@dataclass
+class ConnectionOutcome:
+    """Per-edge result surfaced by `CreateConnectionsResultSuccess.outcomes`.
+
+    Args:
+        spec: The spec that was submitted.
+        succeeded: Whether the engine created this connection.
+        details: Message from the underlying single-connection handler (useful on failure).
+    """
+
+    spec: ConnectionSpec
+    succeeded: bool
+    details: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateConnectionsRequest(RequestPayload):
+    """Create multiple connections in a single request.
+
+    Use when: Wiring a freshly built graph, where the natural per-edge round-trip cost of
+    `CreateConnectionRequest` dominates. Edges are applied in list order; a failed edge does
+    not abort the batch. Callers should inspect `outcomes` to see which edges landed.
+
+    Args:
+        connections: Ordered list of connection specs.
+
+    Results: CreateConnectionsResultSuccess
+    """
+
+    connections: list[ConnectionSpec] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateConnectionsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Bulk connection results.
+
+    Args:
+        outcomes: Per-spec outcome in submission order.
+        created_count: Number of connections that succeeded.
+        failed_count: Number of connections that failed.
+    """
+
+    outcomes: list[ConnectionOutcome] = field(default_factory=list)
+    created_count: int = 0
+    failed_count: int = 0
 
 
 @dataclass

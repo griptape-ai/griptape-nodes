@@ -22,6 +22,7 @@ from griptape_nodes.api_client import Client, RequestClient
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
+    CreateConnectionsRequest,
     DeleteConnectionRequest,
     ListConnectionsForNodeRequest,
 )
@@ -83,6 +84,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "RenameObjectRequest": RenameObjectRequest,
     # Connections
     "CreateConnectionRequest": CreateConnectionRequest,
+    "CreateConnectionsRequest": CreateConnectionsRequest,
     "DeleteConnectionRequest": DeleteConnectionRequest,
     "ListConnectionsForNodeRequest": ListConnectionsForNodeRequest,
     # Parameters
