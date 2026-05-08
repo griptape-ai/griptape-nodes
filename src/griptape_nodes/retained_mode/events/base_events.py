@@ -326,6 +326,42 @@ class EventRequest[P: Payload](BaseEvent):
         return cls(request=request_payload, **event_data)
 
 
+class EventRequestBatch(BaseEvent):
+    """Wire-only envelope that fans out into N individual EventRequests on ingest.
+
+    Each inner EventRequest carries its own request_id and response_topic, so the
+    engine does not need a batch-aware handler: results come back as individual
+    EventResultSuccess/Failure messages and the caller correlates them by request_id.
+    Use this to dispatch many requests in a single WebSocket frame without paying
+    per-request envelope overhead.
+
+    The envelope intentionally does not carry its own request_id/response_topic.
+    Identity and routing live on the inner requests, which keeps the engine path
+    identical to a stream of individual EventRequest frames.
+    """
+
+    requests: list[EventRequest] = Field(default_factory=list)
+
+    def dict(self, *args, **kwargs) -> dict[str, Any]:
+        """Serialize the envelope, recursing into each inner request's own serializer."""
+        result = super().dict(*args, **kwargs)
+        result["requests"] = [inner.dict() for inner in self.requests]
+        return result
+
+    def get_request(self) -> Payload:
+        """EventRequestBatch is a transport envelope; inspect .requests instead."""
+        msg = "EventRequestBatch is a transport envelope; inspect .requests instead."
+        raise NotImplementedError(msg)
+
+    @classmethod
+    def from_dict(cls, data: builtins.dict[str, Any]) -> EventRequestBatch:  # pyright: ignore[reportIncompatibleMethodOverride]
+        """Create a batch envelope by deserializing each inner request individually."""
+        event_data = data.copy()
+        raw_requests = event_data.pop("requests", [])
+        requests = [EventRequest.from_dict(raw) for raw in raw_requests]
+        return cls(requests=requests, **event_data)
+
+
 class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
     """Abstract base class for result events."""
 

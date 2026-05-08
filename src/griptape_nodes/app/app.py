@@ -31,6 +31,7 @@ from griptape_nodes.retained_mode.events import app_events, execution_events, wo
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
     EventRequest,
+    EventRequestBatch,
     EventResultFailure,
     EventResultSuccess,
     ExecutionEvent,
@@ -445,6 +446,12 @@ async def _process_api_event(event: dict) -> None:
         griptape_nodes.EventManager().put_event(_deserialize_event(AppEvent.from_dict, payload, "AppEvent"))
         return
 
+    if event_type == "EventRequestBatch":
+        batch = _deserialize_event(EventRequestBatch.from_dict, payload, "EventRequestBatch")
+        for inner in batch.requests:
+            await _dispatch_event_request(inner)
+        return
+
     try:
         payload["request"]
     except KeyError:
@@ -462,6 +469,11 @@ async def _process_api_event(event: dict) -> None:
         msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
         raise TypeError(msg)
 
+    await _dispatch_event_request(request_event)
+
+
+async def _dispatch_event_request(request_event: EventRequest) -> None:
+    """Route a single EventRequest into the engine: skip-the-line goes inline, others queue."""
     # Check if the event implements SkipTheLineMixin for priority processing
     if isinstance(request_event.request, SkipTheLineMixin):
         # Handle the event immediately without queuing
