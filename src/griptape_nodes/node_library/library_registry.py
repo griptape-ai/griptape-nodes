@@ -431,6 +431,23 @@ class Library:
         self._node_metadata[node_class_as_str] = metadata
         return library_problem
 
+    def unregister_node_type(self, node_class_name: str) -> None:
+        """Remove a single node type from this library.
+
+        Exists to support incremental re-registration (e.g. an agent iterates on a sandbox
+        node's source code during a session). Does not touch existing node instances of this
+        class that are already living in a flow; callers are responsible for deleting and
+        recreating them if they want the new class to take effect.
+        """
+        if node_class_name not in self._node_types:
+            msg = (
+                f"Node type '{node_class_name}' was requested to be unregistered from library "
+                f"'{self._library_data.name}', but it wasn't registered in the first place."
+            )
+            raise KeyError(msg)
+        del self._node_types[node_class_name]
+        self._node_metadata.pop(node_class_name, None)
+
     def get_library_data(self) -> LibrarySchema:
         return self._library_data
 

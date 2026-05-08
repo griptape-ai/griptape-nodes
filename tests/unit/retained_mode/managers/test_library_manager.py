@@ -1,11 +1,14 @@
 import asyncio
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.node_library.library_registry import (
+    LibraryRegistry,
+)
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
     GetAllInfoForAllLibrariesRequest,
@@ -874,3 +877,272 @@ class TestAddLibraryPathsToSysPath:
             assert str(base_dir) in sys.path
         finally:
             sys.path[:] = original_sys_path
+            sys.path[:] = original_sys_path
+
+
+class TestRegisterSandboxNodeFromSourceRequest:
+    """Tests for LibraryManager.register_sandbox_node_from_source_request."""
+
+    _LIBRARY_NAME = "Sandbox Library"
+    _FILE_NAME = "probe_sandbox_node.py"
+    _SOURCE_OK = (
+        "from griptape_nodes.exe_types.node_types import BaseNode\n"
+        "\n"
+        "class ProbeSandboxNode(BaseNode):\n"
+        "    def process(self) -> None:  # noqa: D401\n"
+        '        """Probe."""\n'
+        "        return None\n"
+    )
+
+    @pytest.fixture(autouse=True)
+    def _isolate_registry_and_config(
+        self,
+        griptape_nodes: GriptapeNodes,
+        tmp_path: Path,
+    ) -> Generator[Path, None, None]:
+        """Configure a temp sandbox directory + register the Sandbox Library for this test.
+
+        The Sandbox Library is normally created during engine startup. Our tests start from a
+        bare engine, so we recreate the minimal state the handler expects.
+
+        We stub `_get_sandbox_directory` rather than round-tripping `set_config_value`, which
+        calls `load_configs` and reads the on-disk USER_CONFIG_PATH. The conftest patches
+        USER_CONFIG_PATH to an empty file, so config-layer writes get clobbered between the
+        fixture and the handler call. Stubbing the resolver keeps the test focused on handler
+        behaviour, not config serialisation.
+        """
+        from unittest.mock import patch
+
+        from griptape_nodes.node_library.library_registry import (
+            CategoryDefinition,
+        )
+        from griptape_nodes.node_library.library_registry import (
+            LibraryMetadata as _LibraryMetadata,
+        )
+        from griptape_nodes.node_library.library_registry import (
+            LibrarySchema as _LibrarySchema,
+        )
+        from griptape_nodes.retained_mode.managers.library_manager import (
+            LibraryManager as _LibraryManager,
+        )
+
+        LibraryRegistry._libraries.clear()
+        LibraryRegistry._node_aliases.clear()
+        LibraryRegistry._collision_node_names_to_library_names.clear()
+        LibraryRegistry._registered_widgets.clear()
+
+        sandbox_dir = tmp_path / "sandbox"
+        sandbox_dir.mkdir()
+
+        # Stand up a minimal Sandbox Library so the handler has somewhere to register into.
+        sandbox_schema = _LibrarySchema(
+            name=_LibraryManager.SANDBOX_LIBRARY_NAME,
+            library_schema_version=_LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=_LibraryMetadata(
+                author="test",
+                description="test sandbox",
+                library_version="1.0.0",
+                engine_version="1.0.0",
+                tags=[],
+            ),
+            categories=[
+                {
+                    _LibraryManager.SANDBOX_CATEGORY_NAME: CategoryDefinition(
+                        title="Sandbox",
+                        description="test",
+                        color="#000",
+                        icon="Folder",
+                    )
+                }
+            ],
+            nodes=[],
+        )
+        LibraryRegistry.generate_new_library(library_data=sandbox_schema)
+
+        library_manager = griptape_nodes.LibraryManager()
+        # Default: return the tmp sandbox. Individual tests that need the "not configured"
+        # branch override via their own patch.
+        with patch.object(library_manager, "_get_sandbox_directory", return_value=sandbox_dir):
+            try:
+                yield sandbox_dir
+            finally:
+                LibraryRegistry._libraries.clear()
+                LibraryRegistry._node_aliases.clear()
+                LibraryRegistry._collision_node_names_to_library_names.clear()
+                LibraryRegistry._registered_widgets.clear()
+
+    def test_imports_existing_file_and_registers_node_type(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to locate the source file
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultSuccess,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+        source_file = sandbox_dir / self._FILE_NAME
+        source_file.write_text(self._SOURCE_OK)
+
+        result = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=str(source_file))
+        )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultSuccess)
+        assert result.registered_class_names == ["ProbeSandboxNode"]
+        assert result.replaced_class_names == []
+        assert result.library_name == self._LIBRARY_NAME
+        # Class is now registered and retrievable via the registry.
+        assert LibraryRegistry.get_library(self._LIBRARY_NAME).has_node_type("ProbeSandboxNode")
+
+    def test_accepts_path_relative_to_sandbox_directory(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to locate the source file
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultSuccess,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+        (sandbox_dir / self._FILE_NAME).write_text(self._SOURCE_OK)
+
+        # Bare filename, no directory component: must resolve under the sandbox dir.
+        result = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=self._FILE_NAME)
+        )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultSuccess)
+        assert result.registered_class_names == ["ProbeSandboxNode"]
+
+    def test_replace_if_exists_swaps_the_old_class(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to locate the source file
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultSuccess,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+        source_file = sandbox_dir / self._FILE_NAME
+        source_file.write_text(self._SOURCE_OK)
+
+        # First registration: baseline.
+        first = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=str(source_file), replace_if_exists=True)
+        )
+        assert isinstance(first, RegisterSandboxNodeFromSourceResultSuccess)
+        assert first.replaced_class_names == []
+
+        # Second registration of the same class name should report the prior was replaced.
+        second = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=str(source_file), replace_if_exists=True)
+        )
+        assert isinstance(second, RegisterSandboxNodeFromSourceResultSuccess)
+        assert second.replaced_class_names == ["ProbeSandboxNode"]
+
+    def test_fails_when_sandbox_directory_is_not_configured(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - fixture installs the default sandbox stub we override here
+    ) -> None:
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultFailure,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        # Override the fixture's default stub so the resolver returns None, simulating the
+        # "no sandbox configured" case.
+        with patch.object(library_manager, "_get_sandbox_directory", return_value=None):
+            result = library_manager.register_sandbox_node_from_source_request(
+                RegisterSandboxNodeFromSourceRequest(file_path=self._FILE_NAME)
+            )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultFailure)
+        assert "sandbox_library_directory" in str(result.result_details)
+
+    def test_rejects_paths_outside_sandbox_or_with_wrong_extension(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to seed source files
+        tmp_path: Path,
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultFailure,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+
+        # Create a real file outside the sandbox so the failure is about containment, not
+        # about the file being missing.
+        outside = tmp_path / "outside.py"
+        outside.write_text(self._SOURCE_OK)
+
+        # Wrong extension: write a real file inside the sandbox so the failure is purely
+        # about the suffix check, not about existence.
+        wrong_ext = sandbox_dir / "probe.txt"
+        wrong_ext.write_text(self._SOURCE_OK)
+
+        # Escape attempt: a relative path with `..` resolves outside the sandbox dir.
+        escape_target = tmp_path / "escape.py"
+        escape_target.write_text(self._SOURCE_OK)
+
+        bad_paths = [str(outside), str(wrong_ext), "../escape.py"]
+        for bad_path in bad_paths:
+            result = library_manager.register_sandbox_node_from_source_request(
+                RegisterSandboxNodeFromSourceRequest(file_path=bad_path)
+            )
+            assert isinstance(result, RegisterSandboxNodeFromSourceResultFailure), bad_path
+
+    def test_fails_when_file_does_not_exist(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - fixture installs the sandbox stub
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultFailure,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+
+        result = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path="never_written.py")
+        )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultFailure)
+        assert "never_written.py" in str(result.result_details)
+
+    def test_fails_when_source_has_no_base_node_subclass(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to locate the source file
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultFailure,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+        no_node_file = sandbox_dir / "no_node.py"
+        no_node_file.write_text("x = 1\n")
+
+        result = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=str(no_node_file))
+        )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultFailure)
+        assert "BaseNode" in str(result.result_details)
