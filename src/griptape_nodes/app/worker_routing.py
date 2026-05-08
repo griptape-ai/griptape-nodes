@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from griptape_nodes.common.strict_mode import report_violation
+from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.retained_mode.events.config_events import (
     ResetConfigRequest,
     SetConfigCategoryRequest,
@@ -129,6 +131,11 @@ class RemoteHandler:
 
     async def __call__(self, request: RequestPayload) -> ResultPayload:
         if self.event_manager.in_node_execution():
+            rule = RULES["worker-reach-into-orchestrator"]
+            report_violation(
+                rule_id=rule.rule_id,
+                message=rule.render(request_type=type(request).__name__),
+            )
             event_result = await self.event_manager.forward_to_orchestrator(request, ResultContext())
             return cast("ResultPayload", event_result.result)
         return await call_function(self.original, request)

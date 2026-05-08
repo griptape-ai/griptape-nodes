@@ -148,6 +148,29 @@ RULES: dict[str, StrictModeRule] = {
             worker_escalation=False,
         ),
         _rule(
+            "worker-reach-into-orchestrator",
+            severity=StrictModeSeverity.WARNING,
+            correctness=False,
+            description=(
+                "A node running on a worker issued a request whose "
+                "authoritative state lives on the orchestrator (flow "
+                "graph, connections, parameter registry, config, or "
+                "secrets). The request was forwarded to the orchestrator "
+                "over the WebSocket bus; each call is a network round-"
+                "trip and the returned view is stale-by-call. Events are "
+                "the sanctioned cross-side boundary, but authors are "
+                "often unaware they are paying for it."
+            ),
+            remediation=(
+                "Worker-side node issued '{request_type}' from aprocess. "
+                "If this is an intentional write (e.g. publishing a "
+                "parameter value), ignore. If this is a read of flow/ "
+                "connection state, consider whether the data could be "
+                "passed in via parameters instead of fetched per-call."
+            ),
+            worker_escalation=False,
+        ),
+        _rule(
             "parameter-mutation-during-aprocess",
             severity=StrictModeSeverity.WARNING,
             correctness=False,
