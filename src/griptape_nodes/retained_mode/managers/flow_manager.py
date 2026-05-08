@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import copy
 import logging
@@ -1127,39 +1128,34 @@ class FlowManager:
 
         return result
 
-    def on_create_connections_request(self, request: CreateConnectionsRequest) -> ResultPayload:
-        """Apply a list of connection specs by delegating each to on_create_connection_request.
+    async def on_create_connections_request(self, request: CreateConnectionsRequest) -> ResultPayload:
+        """Dispatch a list of `CreateConnectionRequest` payloads concurrently.
 
-        Edges are attempted in submission order. A single failure does not abort the batch; it
-        is recorded in `outcomes` and the batch continues. Callers can inspect
-        `failed_count`/`outcomes` to decide whether the partial result is acceptable.
+        Each request is dispatched through `GriptapeNodes.ahandle_request` so the per-edge
+        `CreateConnectionResultSuccess` event is broadcast to subscribers (the editor listens
+        on the singular event to add edges to the canvas one at a time). A single failure
+        does not abort the batch; it is recorded in `outcomes` and the batch continues.
+        Callers can inspect `failed_count`/`outcomes` to decide whether the partial result is
+        acceptable. Outcomes are returned in submission order.
         """
+        sub_results = await asyncio.gather(
+            *(GriptapeNodes.ahandle_request(sub_request) for sub_request in request.connections)
+        )
+
         outcomes: list[ConnectionOutcome] = []
         created = 0
         failed = 0
-        for spec in request.connections:
-            single_request = CreateConnectionRequest(
-                source_parameter_name=spec.source_parameter_name,
-                target_parameter_name=spec.target_parameter_name,
-                source_node_name=spec.source_node_name,
-                target_node_name=spec.target_node_name,
-                initial_setup=spec.initial_setup,
-                is_node_group_internal=spec.is_node_group_internal,
-            )
-            # Dispatch through GriptapeNodes.handle_request so the per-spec
-            # CreateConnectionResultSuccess event is broadcast to subscribers (the editor
-            # listens on the singular event to add edges to the canvas one at a time).
-            single_result = GriptapeNodes.handle_request(single_request)
-            succeeded = isinstance(single_result, CreateConnectionResultSuccess)
+        for sub_request, sub_result in zip(request.connections, sub_results, strict=True):
+            succeeded = isinstance(sub_result, CreateConnectionResultSuccess)
             if succeeded:
                 created += 1
             else:
                 failed += 1
             outcomes.append(
                 ConnectionOutcome(
-                    spec=spec,
+                    request=sub_request,
                     succeeded=succeeded,
-                    details=str(single_result.result_details),
+                    details=str(sub_result.result_details),
                 )
             )
 
