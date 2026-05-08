@@ -1,4 +1,4 @@
-"""Tests for worker-side RemoteHandler dispatch and install_remote_handlers.
+"""Tests for worker-side RemoteHandler dispatch and register_remote_handlers.
 
 These tests pin down the two invariants that replaced the old
 ``ForwardFromWorkerMixin`` machinery:
@@ -8,7 +8,7 @@ These tests pin down the two invariants that replaced the old
    to the ``original`` handler it displaced, which preserves bootstrap and
    library-load behaviour (e.g. nodes calling ``self.add_parameter(...)``
    during LOAD_PROBE).
-2. ``install_remote_handlers`` swaps the dispatch table entry for every
+2. ``register_remote_handlers`` swaps the dispatch table entry for every
    entry in ``FORWARDED_REQUEST_TYPES``, preserving the "one handler per
    request type" invariant enforced by ``assign_manager_to_request_type``.
    Missing an original handler raises with a bootstrap-order diagnostic.
@@ -24,7 +24,7 @@ import pytest
 from griptape_nodes.app.worker_routing import (
     FORWARDED_REQUEST_TYPES,
     RemoteHandler,
-    install_remote_handlers,
+    register_remote_handlers,
 )
 from griptape_nodes.retained_mode.events.base_events import (
     EventResultSuccess,
@@ -129,7 +129,7 @@ class _StubResult(ResultPayloadSuccess):
 
 
 class TestInstallRemoteHandlersSwap:
-    """install_remote_handlers must displace each FORWARDED type's handler."""
+    """register_remote_handlers must displace each FORWARDED type's handler."""
 
     def test_swap_replaces_each_forwarded_handler(self) -> None:
         event_manager = EventManager()
@@ -144,7 +144,7 @@ class TestInstallRemoteHandlersSwap:
             originals[request_type] = original
             event_manager.assign_manager_to_request_type(request_type, original)
 
-        install_remote_handlers(event_manager)
+        register_remote_handlers(event_manager)
 
         for request_type, original in originals.items():
             swapped = event_manager.get_manager_for_request_type(request_type)
@@ -157,7 +157,7 @@ class TestInstallRemoteHandlersSwap:
     def test_missing_original_raises_bootstrap_error(self) -> None:
         event_manager = EventManager()
 
-        # Register everything except CreateNodeRequest so install_remote_handlers
+        # Register everything except CreateNodeRequest so register_remote_handlers
         # trips on the first missing original it encounters.
         for request_type in FORWARDED_REQUEST_TYPES:
             if request_type is CreateNodeRequest:
@@ -169,7 +169,7 @@ class TestInstallRemoteHandlersSwap:
             event_manager.assign_manager_to_request_type(request_type, original)
 
         with pytest.raises(RuntimeError, match="CreateNodeRequest"):
-            install_remote_handlers(event_manager)
+            register_remote_handlers(event_manager)
 
     def test_post_install_out_of_scope_still_runs_original(self) -> None:
         """Bootstrap-path regression guard: LOAD_PROBE-style calls must stay local.
@@ -187,7 +187,7 @@ class TestInstallRemoteHandlersSwap:
             local_calls.append(request)
             return _StubResult(result_details="local")
 
-        # Register the single type we assert on; install_remote_handlers needs
+        # Register the single type we assert on; register_remote_handlers needs
         # every forwarded type registered, so fill in trivial stubs for the rest.
         event_manager.assign_manager_to_request_type(AddParameterToNodeRequest, local_add_parameter)
         for request_type in FORWARDED_REQUEST_TYPES:
@@ -199,7 +199,7 @@ class TestInstallRemoteHandlersSwap:
 
             event_manager.assign_manager_to_request_type(request_type, stub)
 
-        install_remote_handlers(event_manager)
+        register_remote_handlers(event_manager)
 
         assert not event_manager.in_node_execution()
 

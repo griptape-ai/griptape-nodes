@@ -17,7 +17,7 @@ What this harness covers
   with the worker's real `EventManager.ahandle_request` result.
 - Worker-side forwarding of orchestrator-owned requests back to the
   orchestrator is wired by registering a test RemoteHandler (mirrors the
-  production `install_remote_handlers` swap) that, when the worker is inside
+  production `register_remote_handlers` swap) that, when the worker is inside
   a `worker_node_execution_scope`, dispatches to the orchestrator-side
   `EventManager.ahandle_request` instead of running locally.
 
@@ -68,7 +68,7 @@ class InProcessWorkerHarness:
     def install_remote_handler(self, request_type: type[RequestPayload]) -> None:
         """Register a RemoteHandler on the worker for ``request_type``.
 
-        Mirrors production ``install_remote_handlers``: while the worker side is
+        Mirrors production ``register_remote_handlers``: while the worker side is
         inside a ``worker_node_execution_scope``, dispatches to the orchestrator-
         side EventManager. Outside the scope, delegates to whatever handler was
         already registered on the worker (if any).

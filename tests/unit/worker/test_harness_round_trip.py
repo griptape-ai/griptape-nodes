@@ -10,7 +10,7 @@ Covers the two routing paths the harness is meant to exercise:
 2. Worker -> orchestrator: a request whose worker-side handler is a
    ``RemoteHandler`` (installed via
    ``harness.install_remote_handler(...)`` for test purposes, mirroring
-   production ``install_remote_handlers``) is forwarded to the
+   production ``register_remote_handlers``) is forwarded to the
    orchestrator's handler while the worker is inside
    ``worker_node_execution_scope``.
 
