@@ -189,34 +189,33 @@ class _ProbeResult(ResultPayloadSuccess):
 
 
 class TestHandleRequestLoopSafety:
-    """`handle_request` must fail loudly when invoked from a running loop with an async target.
+    """`handle_request` drives async handlers via ThreadRunner from inside a running loop.
 
-    The failure mode replaces the silent side-loop dispatch that caused the
-    worker-library-load deadlock documented in issue #4469. Tests cover:
-
-    - An async handler reached from inside a running loop raises with a
-      diagnostic that names the request type and points at ahandle_request.
-    - A sync handler reached from inside a running loop still works (no async
-      boundary means no deadlock hazard).
-    - Outside any running loop, an async handler continues to work via
-      `asyncio.run` -- preserves the startup/main-thread dispatch path.
-    - `ahandle_request` remains the safe async alternative.
+    The #4469 deadlock is specific to callbacks whose coroutines share
+    primitives with the caller's loop; ``RemoteHandler`` is the only such
+    shape and is routed onto the WS loop via ``run_coroutine_threadsafe``.
+    For every other async handler the side-loop path is safe, so we keep
+    it to preserve back-compat for pre-#4449 workflows that ``exec()``
+    sync code from inside the engine loop.
     """
 
     @pytest.mark.asyncio
-    async def test_sync_dispatch_from_running_loop_raises_when_handler_is_async(self) -> None:
+    async def test_sync_dispatch_from_running_loop_drives_async_handler_via_thread_runner(self) -> None:
         event_manager = EventManager()
 
+        captured: dict[str, object] = {}
+
         async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
+            captured["handler_loop"] = asyncio.get_running_loop()
             return _ProbeResult(result_details="ok")
 
         event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
 
-        with pytest.raises(RuntimeError) as exc_info:
-            event_manager.handle_request(_ProbeRequest())
-        message = str(exc_info.value)
-        assert "_ProbeRequest" in message
-        assert "ahandle_request" in message
+        caller_loop = asyncio.get_running_loop()
+        event = event_manager.handle_request(_ProbeRequest())
+
+        assert event.result.succeeded()
+        assert captured["handler_loop"] is not caller_loop
 
     @pytest.mark.asyncio
     async def test_sync_dispatch_from_running_loop_works_when_handler_is_sync(self) -> None:
@@ -323,20 +322,22 @@ class TestHandleRequestForwardingFromRunningLoop:
 
 
 class TestBroadcastAppEventLoopSafety:
-    """`broadcast_app_event` uses the same fail-fast guard as handle_request."""
+    """`broadcast_app_event` drives async listeners via ThreadRunner from inside a running loop."""
 
     @pytest.mark.asyncio
-    async def test_sync_broadcast_from_running_loop_raises(self) -> None:
+    async def test_sync_broadcast_from_running_loop_drives_async_listener(self) -> None:
         event_manager = EventManager()
 
+        captured: dict[str, object] = {}
+
         async def async_listener(_event: ConfigChanged) -> None:
-            return None
+            captured["listener_loop"] = asyncio.get_running_loop()
 
         event_manager.add_listener_to_app_event(ConfigChanged, async_listener)
 
+        caller_loop = asyncio.get_running_loop()
         event = ConfigChanged(key="k", old_value="a", new_value="b")
-        with pytest.raises(RuntimeError) as exc_info:
-            event_manager.broadcast_app_event(event)
-        message = str(exc_info.value)
-        assert "ConfigChanged" in message
-        assert "abroadcast_app_event" in message
+        event_manager.broadcast_app_event(event)
+
+        assert "listener_loop" in captured
+        assert captured["listener_loop"] is not caller_loop

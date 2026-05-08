@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
+from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -50,27 +51,6 @@ def _running_loop() -> asyncio.AbstractEventLoop | None:
         return asyncio.get_running_loop()
     except RuntimeError:
         return None
-
-
-def _sync_in_async_loop_error_message(
-    *,
-    request_type_name: str,
-    handler_description: str,
-    recommended_call: str,
-) -> str:
-    """Build a diagnostic for the sync-dispatch-inside-running-loop hazard.
-
-    The message names the request, the target, and the async alternative so the
-    caller can see at the failure site what to change. Paired with the check in
-    EventManager.handle_request / broadcast_app_event.
-    """
-    return (
-        f"Refusing to dispatch '{request_type_name}' via sync handle_request from inside "
-        f"a running event loop. The target is {handler_description}; driving it from the "
-        "running loop's thread would either block the caller's loop or race its primitives "
-        "via a side loop (see issue #4469).\n"
-        f"Fix: call `{recommended_call}` from this async context."
-    )
 
 
 class ResultContext(TypedDict, total=False):
@@ -539,21 +519,20 @@ class EventManager:
                 result_payload: ResultPayload = future.result()
             else:
                 result_payload: ResultPayload = asyncio.run(callback(request))
-        # Support async callbacks for sync method ONLY if there is no running event loop.
-        # A sync caller already inside a running loop cannot drive an async handler without
-        # blocking its own loop; that shape is the structural source of the deadlock
-        # documented in https://github.com/griptape-ai/griptape-nodes/issues/4469. Rather
-        # than queue the coroutine onto a side loop (which races any primitive the caller's
-        # loop owns), fail fast with a diagnostic that points at the fix.
+        # Support async callbacks invoked from sync code. If no loop is running
+        # (bootstrap, worker threads) asyncio.run drives the coroutine directly.
+        # If a loop IS running (pre-#4449 workflow files exec'd from inside the
+        # engine loop), dispatch onto a side loop via ThreadRunner. The #4469
+        # deadlock shape is specific to callbacks whose coroutines share
+        # primitives with the caller's loop; RemoteHandler is the only such case
+        # and is handled above via run_coroutine_threadsafe onto the WS loop.
+        # For all other async handlers the side-loop path is safe.
         elif inspect.iscoroutinefunction(callback):
             if _running_loop() is not None:
-                msg = _sync_in_async_loop_error_message(
-                    request_type_name=type(request).__name__,
-                    handler_description=f"async handler '{getattr(callback, '__qualname__', repr(callback))}'",
-                    recommended_call="await GriptapeNodes.ahandle_request(request)",
-                )
-                raise RuntimeError(msg)
-            result_payload = asyncio.run(callback(request))
+                with ThreadRunner() as runner:
+                    result_payload: ResultPayload = runner.run(callback(request))
+            else:
+                result_payload = asyncio.run(callback(request))
         else:
             result_payload = callback(request)
 
@@ -594,20 +573,20 @@ class EventManager:
         if app_event_type in self._app_event_listeners:
             listener_set = self._app_event_listeners[app_event_type]
 
-            # Support async callbacks for sync method
+            # Support async callbacks for sync method. See the matching comment
+            # in handle_request for the ThreadRunner rationale: listeners here
+            # are user-supplied callbacks that do not share primitives with the
+            # caller's loop, so the side-loop path is safe.
             async def _broadcast_async() -> None:
                 async with asyncio.TaskGroup() as tg:
                     for listener_callback in listener_set:
                         tg.create_task(call_function(listener_callback, app_event))
 
             if _running_loop() is not None:
-                msg = _sync_in_async_loop_error_message(
-                    request_type_name=type(app_event).__name__,
-                    handler_description="async app-event listeners",
-                    recommended_call="await GriptapeNodes.EventManager().abroadcast_app_event(app_event)",
-                )
-                raise RuntimeError(msg)
-            asyncio.run(_broadcast_async())
+                with ThreadRunner() as runner:
+                    runner.run(_broadcast_async())
+            else:
+                asyncio.run(_broadcast_async())
 
     async def abroadcast_app_event(self, app_event: AP) -> None:
         """Broadcast an app event to all registered listeners (async version).
