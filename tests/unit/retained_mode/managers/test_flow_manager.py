@@ -106,3 +106,112 @@ class TestExtractFlowCommandsFromImageMetadata:
         assert isinstance(result, ExtractFlowCommandsFromImageMetadataResultSuccess)
         assert result.serialized_flow_commands == {"sentinel": "flow"}
         assert result.altered_workflow_state is False
+
+
+class TestAwaitFlowCompletion:
+    """Tests for FlowManager._await_flow_completion (the wait_for_completion helper)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_flow_finishes_cleanly(self, griptape_nodes: GriptapeNodes) -> None:
+        from unittest.mock import patch
+
+        flow_manager = griptape_nodes.FlowManager()
+
+        # No control flow machine -> no error to report; simulate "flow finished" with a single False.
+        with patch.object(flow_manager, "check_for_existing_running_flow", return_value=False):
+            result = await flow_manager._await_flow_completion(timeout_ms=None)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_timeout_string_when_timeout_exceeded(self, griptape_nodes: GriptapeNodes) -> None:
+        from unittest.mock import patch
+
+        flow_manager = griptape_nodes.FlowManager()
+
+        # Keep reporting "still running" so the timeout path fires quickly.
+        with patch.object(flow_manager, "check_for_existing_running_flow", return_value=True):
+            result = await flow_manager._await_flow_completion(timeout_ms=10)
+
+        assert result is not None
+        assert "Timed out" in result
+
+    @pytest.mark.asyncio
+    async def test_returns_error_message_when_resolution_machine_errored(self, griptape_nodes: GriptapeNodes) -> None:
+        from unittest.mock import MagicMock, patch
+
+        flow_manager = griptape_nodes.FlowManager()
+
+        fake_resolution_machine = MagicMock()
+        fake_resolution_machine.is_errored.return_value = True
+        fake_resolution_machine.get_error_message.return_value = "boom"
+        fake_machine = MagicMock()
+        fake_machine.resolution_machine = fake_resolution_machine
+
+        with (
+            patch.object(flow_manager, "check_for_existing_running_flow", return_value=False),
+            patch.object(flow_manager, "_global_control_flow_machine", fake_machine),
+        ):
+            result = await flow_manager._await_flow_completion(timeout_ms=None)
+
+        assert result == "boom"
+
+
+class TestStartFlowRequestDefaultsToCurrentContext:
+    """Tests for StartFlowRequest / StartFlowFromNodeRequest current-context fallback."""
+
+    @pytest.mark.asyncio
+    async def test_start_flow_fails_cleanly_when_no_flow_and_no_context(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.execution_events import (
+            StartFlowRequest,
+            StartFlowResultFailure,
+        )
+
+        flow_manager = griptape_nodes.FlowManager()
+        griptape_nodes.handle_request(
+            __import__(
+                "griptape_nodes.retained_mode.events.object_events",
+                fromlist=["ClearAllObjectStateRequest"],
+            ).ClearAllObjectStateRequest(i_know_what_im_doing=True)
+        )
+
+        assert not griptape_nodes.ContextManager().has_current_flow()
+
+        result = await flow_manager.on_start_flow_request(StartFlowRequest())
+
+        assert isinstance(result, StartFlowResultFailure)
+        # Message should now name a concrete remediation, not the old generic one.
+        assert "Current Context" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_start_flow_uses_current_context_flow_when_name_omitted(self, griptape_nodes: GriptapeNodes) -> None:
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.events.execution_events import (
+            StartFlowRequest,
+            StartFlowResultFailure,
+        )
+        from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
+        from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+
+        flow_manager = griptape_nodes.FlowManager()
+        griptape_nodes.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+        # Bootstrap manually via push_workflow + CreateFlowRequest so this test does not
+        # depend on any sibling MCP-bootstrap PR landing first.
+        griptape_nodes.ContextManager().push_workflow("wf")
+        create_flow_result = griptape_nodes.handle_request(
+            CreateFlowRequest(parent_flow_name=None, flow_name="flow_in_ctx", set_as_new_context=True)
+        )
+        assert isinstance(create_flow_result, CreateFlowResultSuccess)
+
+        # Short-circuit get_flow_by_name so we can assert on the resolved name without
+        # actually running a control flow.
+        with patch.object(flow_manager, "get_flow_by_name", side_effect=KeyError("stop here")) as get_flow:
+            result = await flow_manager.on_start_flow_request(StartFlowRequest())
+
+        # The handler should have looked up the current-context flow name, not bailed with
+        # the "must provide flow name" error.
+        assert isinstance(result, StartFlowResultFailure)
+        get_flow.assert_called_once_with("flow_in_ctx")
+
+        griptape_nodes.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
