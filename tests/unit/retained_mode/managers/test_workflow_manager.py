@@ -20,6 +20,8 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     CreateWorkflowFromTemplateRequest,
     CreateWorkflowFromTemplateResultFailure,
     CreateWorkflowFromTemplateResultSuccess,
+    DeleteWorkflowRequest,
+    DeleteWorkflowResultSuccess,
     GetWorkflowInfoRequest,
     GetWorkflowInfoResultFailure,
     GetWorkflowInfoResultSuccess,
@@ -825,6 +827,116 @@ class TestWorkflowManager:
             finally:
                 if context_manager.has_current_workflow():
                     context_manager.pop_workflow()
+
+    def test_delete_active_workflow_clears_context_stack(self, griptape_nodes: GriptapeNodes) -> None:
+        """Deleting the active workflow tears down its flows and pops the context stack.
+
+        Regression guard for the "phantom workflow" bug: a frontend that reloads after
+        a delete used to see a stale context pointing at the dead registry key.
+        """
+        from griptape_nodes.exe_types.flow import ControlFlow
+        from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workflow_manager._workflows_loading_complete.set()
+        context_manager = griptape_nodes.ContextManager()
+        object_manager = griptape_nodes.ObjectManager()
+
+        workflow_key = "unsaved:delete-active"
+
+        with patch.dict(WorkflowRegistry._workflows, {}, clear=True):
+            _register_unsaved_workflow(key=workflow_key, name="Untitled")
+            context_manager.push_workflow(workflow_name=workflow_key)
+
+            # Create a top-level flow under the active workflow so there's state to tear down.
+            create_result = griptape_nodes.handle_request(CreateFlowRequest(parent_flow_name=None))
+            assert isinstance(create_result, CreateFlowResultSuccess)
+            flow_name = create_result.flow_name
+            assert object_manager.has_object_with_name(flow_name)
+
+            try:
+                result = asyncio.run(
+                    workflow_manager.on_delete_workflows_request(DeleteWorkflowRequest(name=workflow_key))
+                )
+
+                assert isinstance(result, DeleteWorkflowResultSuccess)
+                # Context stack is fully torn down.
+                assert not context_manager.has_current_workflow()
+                # Child flow was deleted too; no orphans left in the ObjectManager.
+                assert not object_manager.has_object_with_name(flow_name)
+                assert not object_manager.get_filtered_subset(type=ControlFlow)
+                # Registry entry is gone.
+                assert workflow_key not in WorkflowRegistry._workflows
+            finally:
+                if context_manager.has_current_workflow():
+                    context_manager.pop_workflow()
+
+    def test_delete_non_active_workflow_leaves_context_untouched(self, griptape_nodes: GriptapeNodes) -> None:
+        """Deleting a workflow that isn't the active one must not touch the context stack.
+
+        Covers the published-workflow subprocess cleanup path, which deletes by key without
+        expecting the context stack to change.
+        """
+        workflow_manager = griptape_nodes.WorkflowManager()
+        workflow_manager._workflows_loading_complete.set()
+        context_manager = griptape_nodes.ContextManager()
+
+        active_key = "unsaved:keep-me"
+        other_key = "unsaved:delete-me"
+
+        with patch.dict(WorkflowRegistry._workflows, {}, clear=True):
+            _register_unsaved_workflow(key=active_key, name="Active")
+            _register_unsaved_workflow(key=other_key, name="Other")
+            context_manager.push_workflow(workflow_name=active_key)
+
+            try:
+                result = asyncio.run(
+                    workflow_manager.on_delete_workflows_request(DeleteWorkflowRequest(name=other_key))
+                )
+
+                assert isinstance(result, DeleteWorkflowResultSuccess)
+                # The active workflow is still active.
+                assert context_manager.has_current_workflow()
+                assert context_manager.get_current_workflow_name() == active_key
+                # Only the non-active workflow was removed.
+                assert other_key not in WorkflowRegistry._workflows
+                assert active_key in WorkflowRegistry._workflows
+            finally:
+                if context_manager.has_current_workflow():
+                    context_manager.pop_workflow()
+
+    def test_startup_scan_skips_unsaved_prefix_files(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+        """Leaked `unsaved:<uuid>.py` files on disk must be skipped during the workspace scan.
+
+        Pre-fix saves wrote these files; `_determine_save_target` no longer does, but any
+        previously-leaked file must not trip the scanner with `Failed to register workflow`.
+        """
+        workflow_manager = griptape_nodes.WorkflowManager()
+
+        header = WorkflowManager.WORKFLOW_METADATA_HEADER
+        metadata_block = "\n".join(
+            [
+                f"# /// {header}",
+                '# name = "leaked"',
+                '# schema_version = "0.7.0"',
+                '# engine_version_created_with = "0.0.0"',
+                "# node_libraries_referenced = []",
+                "# ///",
+                "",
+            ]
+        )
+
+        leaked_path = tmp_path / "unsaved:abc-123.py"
+        leaked_path.write_text(metadata_block, encoding="utf-8")
+        good_path = tmp_path / "regular_workflow.py"
+        good_path.write_text(metadata_block, encoding="utf-8")
+
+        result = workflow_manager._process_workflows_for_registration([str(tmp_path)])
+
+        scanned_names = {Path(name).name for name in result.succeeded + result.failed}
+        assert leaked_path.name not in scanned_names
+        # Sanity check: a regular file in the same directory still reaches the processor.
+        assert good_path.name in scanned_names
 
     # --- WorkflowInfo payload helpers ---
 
