@@ -38,6 +38,7 @@ def hydrate_parameter_values(values: dict[str, Any]) -> dict[str, Any]:
     return {name: _hydrate(value) for name, value in values.items()}
 
 
+# TODO: This is hacky and needs to be solved for non-griptape artifacts as well: https://github.com/griptape-ai/griptape-nodes/issues/4475
 def _hydrate(value: Any) -> Any:
     if isinstance(value, dict) and "type" in value:
         try:
