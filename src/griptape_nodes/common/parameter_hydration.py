@@ -3,10 +3,17 @@
 Parameter values cross JSON boundaries between the orchestrator and worker
 processes. SerializableMixin instances are unstructured via `to_dict()` on
 send, producing dicts like ``{"type": "VideoUrlArtifact", "value": "..."}``.
-The cattrs converter in ``event_converter.py`` has no matching structure
-hook for SerializableMixin, and parameter_values/parameter_output_values
-are typed ``dict[str, Any]``, so the reverse direction is a no-op without
-this helper.
+
+cattrs dispatches structure hooks by target type. ``parameter_values`` and
+``parameter_output_values`` are typed ``dict[str, Any]`` because the set of
+valid parameter types is user-extensible (any node library can introduce
+new artifact types). With ``Any`` as the target, cattrs has nothing to
+dispatch on, so a ``SerializableMixin`` structure hook in
+``event_converter`` would never fire for these fields. Registering a
+broader ``Any`` hook would fire for every ``Any``-typed field across every
+event -- too much collateral damage.
+
+This module is the targeted post-structure pass for exactly those fields.
 """
 
 from __future__ import annotations

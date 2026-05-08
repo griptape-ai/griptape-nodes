@@ -748,6 +748,15 @@ class WorkflowManager:
         and dispatches a RegisterLibraryFromFileRequest for each entry via
         ahandle_request. Returns a failure WorkflowExecutionResult if a library
         cannot be resolved; None on success.
+
+        The engine (not the workflow file itself) owns library registration
+        because worker-backed libraries spin up a dedicated subprocess when they
+        register. If the workflow file emitted RegisterLibraryFromFileRequest
+        during exec(), a worker library would need to start its own subprocess
+        while the workflow was mid-execution -- bootstrapping a worker from
+        inside code running on that worker is a circular dependency. Declaring
+        libraries in the metadata header and resolving them here, before exec(),
+        breaks the cycle.
         """
         load_metadata_result = await self.on_load_workflow_metadata_request(
             LoadWorkflowMetadata(file_name=relative_file_path)
@@ -2345,7 +2354,10 @@ class WorkflowManager:
         # so the emitted workflow file only mutates engine state when build_workflow() is awaited.
         # Library resolution is handled declaratively by WorkflowManager.run_workflow at load time
         # via workflow_metadata.node_libraries_referenced; generated files no longer embed
-        # RegisterLibraryFromFileRequest calls.
+        # RegisterLibraryFromFileRequest calls. Worker-backed libraries spawn a subprocess at
+        # registration, so registering from inside exec() would recursively start a worker from
+        # code already running on one. Pre-registering via _ensure_libraries_for_workflow breaks
+        # that cycle.
         main_body: list[ast.stmt] = []
 
         prereq_code = self._generate_workflow_run_prerequisite_code(import_recorder=import_recorder)
