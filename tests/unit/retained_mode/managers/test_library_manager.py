@@ -874,3 +874,89 @@ class TestAddLibraryPathsToSysPath:
             assert str(base_dir) in sys.path
         finally:
             sys.path[:] = original_sys_path
+
+
+class TestEvaluateLibraryFitnessSurfacesDeclarationWarnings:
+    """`evaluate_library_fitness_request` should include declaration-validation warnings."""
+
+    def test_unreferenced_permission_surfaces_as_warning(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.node_library.library_properties import (
+            PermissionCatalogLibraryProperty,
+            PermissionDeclaration,
+        )
+        from griptape_nodes.node_library.library_registry import (
+            CategoryDefinition,
+            LibraryMetadata,
+            LibrarySchema,
+        )
+        from griptape_nodes.retained_mode.events.library_events import (
+            EvaluateLibraryFitnessRequest,
+            EvaluateLibraryFitnessResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
+            UnreferencedCatalogPermissionProblem,
+        )
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+        library_manager = griptape_nodes.LibraryManager()
+        schema = LibrarySchema(
+            name="TestFitnessWarningLibrary",
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=LibraryMetadata(
+                author="t",
+                description="t",
+                library_version="1.0.0",
+                engine_version="1.0.0",
+                tags=[],
+                properties=[
+                    PermissionCatalogLibraryProperty(
+                        permissions={"use_dangling": PermissionDeclaration(description="dangling")},
+                    ),
+                ],
+            ),
+            categories=[{"Test": CategoryDefinition(title="T", description="t", color="#000", icon="Folder")}],
+            nodes=[],
+        )
+
+        result = library_manager.evaluate_library_fitness_request(EvaluateLibraryFitnessRequest(schema=schema))
+
+        assert isinstance(result, EvaluateLibraryFitnessResultSuccess)
+        assert result.fitness is LibraryManager.LibraryFitness.FLAWED
+        unreferenced = [p for p in result.problems if isinstance(p, UnreferencedCatalogPermissionProblem)]
+        assert len(unreferenced) == 1
+        assert unreferenced[0].permission_name == "use_dangling"
+
+    def test_library_with_no_catalog_has_no_declaration_warnings(self, griptape_nodes: GriptapeNodes) -> None:
+        """A library that declares no PermissionCatalogLibraryProperty yields no warnings."""
+        from griptape_nodes.node_library.library_registry import (
+            CategoryDefinition,
+            LibraryMetadata,
+            LibrarySchema,
+        )
+        from griptape_nodes.retained_mode.events.library_events import (
+            EvaluateLibraryFitnessRequest,
+            EvaluateLibraryFitnessResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
+            UnreferencedCatalogPermissionProblem,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        schema = LibrarySchema(
+            name="TestFitnessCleanLibrary",
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=LibraryMetadata(
+                author="t",
+                description="t",
+                library_version="1.0.0",
+                engine_version="1.0.0",
+                tags=[],
+            ),
+            categories=[{"Test": CategoryDefinition(title="T", description="t", color="#000", icon="Folder")}],
+            nodes=[],
+        )
+
+        result = library_manager.evaluate_library_fitness_request(EvaluateLibraryFitnessRequest(schema=schema))
+
+        assert isinstance(result, EvaluateLibraryFitnessResultSuccess)
+        assert [p for p in result.problems if isinstance(p, UnreferencedCatalogPermissionProblem)] == []

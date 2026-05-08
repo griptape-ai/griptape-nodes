@@ -1,9 +1,18 @@
+from collections.abc import Iterator
 from unittest.mock import Mock
 
 import pytest
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.node_library.library_registry import (
+    CategoryDefinition,
+    LibraryMetadata,
+    LibraryRegistry,
+    LibrarySchema,
+    NodeDefinition,
+    NodeMetadata,
+)
 
 from .mocks import MockNode
 
@@ -117,3 +126,198 @@ class TestConnectionRemovedHooks:
 
         # Should not raise when no callbacks are registered
         source_node.after_outgoing_connection_removed(source_param, target_node, target_param)
+
+
+@pytest.fixture
+def registered_check_permission_library() -> Iterator[str]:
+    """Register a library used by TestBaseNodeCheckPermission.
+
+    Declares a permission catalog with `use_custom`, and a node type `PermissionedNode`
+    that references it via RequiredPermissionsNodeProperty.
+    """
+    from griptape_nodes.node_library.library_properties import (
+        PermissionCatalogLibraryProperty,
+        PermissionDeclaration,
+        RequiredPermissionsNodeProperty,
+    )
+
+    library_name = "TestBaseNodeCheckPermissionLibrary"
+    schema = LibrarySchema(
+        name=library_name,
+        library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+        metadata=LibraryMetadata(
+            author="t",
+            description="t",
+            library_version="1.0.0",
+            engine_version="1.0.0",
+            tags=[],
+            properties=[
+                PermissionCatalogLibraryProperty(
+                    permissions={"use_custom": PermissionDeclaration(description="custom")},
+                ),
+            ],
+        ),
+        categories=[{"Test": CategoryDefinition(title="Test", description="t", color="#000", icon="Folder")}],
+        nodes=[
+            NodeDefinition(
+                class_name="PermissionedNode",
+                file_path="permissioned.py",
+                metadata=NodeMetadata(
+                    category="Test",
+                    description="t",
+                    display_name="PermissionedNode",
+                    properties=[RequiredPermissionsNodeProperty(names=["use_custom"])],
+                ),
+            ),
+        ],
+    )
+    LibraryRegistry.generate_new_library(library_data=schema)
+    try:
+        yield library_name
+    finally:
+        LibraryRegistry.unregister_library(library_name)
+
+
+class TestBaseNodeCheckPermission:
+    """BaseNode.check_permission dispatches EvaluatePermissionRequest via handle_request."""
+
+    def test_granted_permission_returns_granted_result(self, registered_check_permission_library: str) -> None:
+        from griptape_nodes.retained_mode.events.permission_events import EvaluatePermissionGranted
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        GriptapeNodes()  # Ensure singleton init so GriptapeNodes.handle_request() works.
+        node = MockNode(
+            name="n",
+            metadata={
+                "library": registered_check_permission_library,
+                "node_type": "PermissionedNode",
+                "library_node_metadata": NodeMetadata(
+                    category="Test",
+                    description="t",
+                    display_name="PermissionedNode",
+                ),
+            },
+        )
+
+        result = node.check_permission("use_custom")
+
+        assert isinstance(result, EvaluatePermissionGranted)
+
+    def test_scope_violation_returns_denied_with_reason(self, registered_check_permission_library: str) -> None:
+        from griptape_nodes.retained_mode.events.permission_events import (
+            DenialReasonCode,
+            EvaluatePermissionDenied,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        GriptapeNodes()
+        node = MockNode(
+            name="n",
+            metadata={
+                "library": registered_check_permission_library,
+                "node_type": "PermissionedNode",
+                "library_node_metadata": NodeMetadata(
+                    category="Test",
+                    description="t",
+                    display_name="PermissionedNode",
+                ),
+            },
+        )
+
+        result = node.check_permission("not_declared_by_this_node")
+
+        assert isinstance(result, EvaluatePermissionDenied)
+        codes = {reason.code for reason in result.denial_reasons}
+        assert DenialReasonCode.DECLARATION_SCOPE_VIOLATION in codes
+
+
+# Model-entitlement resolution now lives on PermissionsManager; see
+# tests/unit/retained_mode/managers/test_permissions_manager.py::TestListModelEntitlements
+# for the equivalent coverage.
+
+
+@pytest.fixture
+def registered_evaluate_node_permissions_library() -> Iterator[str]:
+    """Register a library used by TestBaseNodeEvaluateNodePermissions.
+
+    Declares two permissions and one node that references them in a specific
+    order so the test can verify order preservation end-to-end through the
+    BaseNode wrapper.
+    """
+    from griptape_nodes.node_library.library_properties import (
+        ExecuteArbitraryCodeNodeProperty,
+        PermissionCatalogLibraryProperty,
+        PermissionDeclaration,
+        RequiredPermissionsNodeProperty,
+    )
+
+    library_name = "TestBaseNodeEvaluateNodePermissionsLibrary"
+    schema = LibrarySchema(
+        name=library_name,
+        library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+        metadata=LibraryMetadata(
+            author="t",
+            description="t",
+            library_version="1.0.0",
+            engine_version="1.0.0",
+            tags=[],
+            properties=[
+                PermissionCatalogLibraryProperty(
+                    permissions={"use_zeta": PermissionDeclaration(description="zeta")},
+                ),
+            ],
+        ),
+        categories=[{"Test": CategoryDefinition(title="Test", description="t", color="#000", icon="Folder")}],
+        nodes=[
+            NodeDefinition(
+                class_name="OrderedNode",
+                file_path="ordered.py",
+                metadata=NodeMetadata(
+                    category="Test",
+                    description="t",
+                    display_name="OrderedNode",
+                    # Declaration order: use_zeta first, then the marker (which
+                    # maps to the built-in run_arbitrary_python). Outcome order
+                    # must match this order.
+                    properties=[
+                        RequiredPermissionsNodeProperty(names=["use_zeta"]),
+                        ExecuteArbitraryCodeNodeProperty(),
+                    ],
+                ),
+            ),
+        ],
+    )
+    LibraryRegistry.generate_new_library(library_data=schema)
+    try:
+        yield library_name
+    finally:
+        LibraryRegistry.unregister_library(library_name)
+
+
+class TestBaseNodeEvaluateNodePermissions:
+    """BaseNode.evaluate_node_permissions dispatches EvaluateNodePermissionsRequest via handle_request."""
+
+    def test_returns_outcomes_in_declaration_order(self, registered_evaluate_node_permissions_library: str) -> None:
+        from griptape_nodes.retained_mode.events.permission_events import EvaluateNodePermissionsResultSuccess
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        GriptapeNodes()  # Ensure singleton init so GriptapeNodes.handle_request() works.
+        node = MockNode(
+            name="n",
+            metadata={
+                "library": registered_evaluate_node_permissions_library,
+                "node_type": "OrderedNode",
+                "library_node_metadata": NodeMetadata(
+                    category="Test",
+                    description="t",
+                    display_name="OrderedNode",
+                ),
+            },
+        )
+
+        result = node.evaluate_node_permissions()
+
+        assert isinstance(result, EvaluateNodePermissionsResultSuccess)
+        # First the directly-declared use_zeta, then the marker-mapped run_arbitrary_python.
+        assert [o.name for o in result.granted] == ["use_zeta", "run_arbitrary_python"]
+        assert result.denied == []
