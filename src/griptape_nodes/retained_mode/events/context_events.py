@@ -77,9 +77,12 @@ class GetWorkflowContextSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 
     Args:
         workflow_name: Name of the current workflow context (None if no context set)
+        is_saved: Whether the current workflow is backed by a file on disk. None when
+                  no context is set or the context key is not in the registry.
     """
 
     workflow_name: str | None
+    is_saved: bool | None = None
 
 
 @dataclass

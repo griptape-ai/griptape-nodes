@@ -283,10 +283,14 @@ class ContextManager:
 
     def on_get_workflow_context_request(self, request: GetWorkflowContextRequest) -> ResultPayload:  # noqa: ARG002
         workflow_name = None
+        is_saved = None
         if self.has_current_workflow():
             workflow_name = self.get_current_workflow_name()
+            if WorkflowRegistry.has_workflow_with_name(workflow_name):
+                is_saved = WorkflowRegistry.get_workflow_by_name(workflow_name).is_saved
         return GetWorkflowContextSuccess(
             workflow_name=workflow_name,
+            is_saved=is_saved,
             result_details=f"Successfully retrieved workflow context: {workflow_name or 'None'}",
         )
 
