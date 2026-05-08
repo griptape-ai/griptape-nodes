@@ -1426,7 +1426,7 @@ class WorkflowManager:
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
         str_path = str(complete_file_path)
-        if not Path(complete_file_path).is_file():  # noqa: ASYNC240
+        if not await anyio.Path(complete_file_path).is_file():
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
                 status=WorkflowManager.WorkflowStatus.MISSING,
                 workflow_path=str_path,
