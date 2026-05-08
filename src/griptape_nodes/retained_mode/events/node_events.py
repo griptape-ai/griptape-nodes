@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.core_types import NodeMessagePayload
 from griptape_nodes.exe_types.node_types import NodeDependencies, NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
+    ResultPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
@@ -70,6 +71,10 @@ class CreateNodeRequest(RequestPayload):
         node_names_to_add: List of existing node names to add to this node after creation (used by SubflowNodeGroup, defaults to None)
         subflow_name: Subflow name for node groups (if None, a fresh one will be created; used by SubflowNodeGroup, defaults to None)
         parent_group_name: Name of the group node to add this node to after creation (defaults to None)
+        parameter_values: Parameter name -> value assignments to apply after the node is
+            created. Each assignment dispatches its own SetParameterValueRequest and is
+            recorded independently in `CreateNodeResultSuccess.parameter_assignments`.
+            Skipped if the node fails to create.
 
     Results: CreateNodeResultSuccess (with assigned name) | CreateNodeResultFailure (invalid type, missing library, flow not found)
     """
@@ -93,6 +98,9 @@ class CreateNodeRequest(RequestPayload):
     subflow_name: str | None = None
     # Name of the group node to add this node to after creation
     parent_group_name: str | None = None
+    # Parameter values applied after the node is created. Stripped from the broadcast
+    # result echo so large payloads do not flow back to subscribers.
+    parameter_values: dict[str, Any] = field(default_factory=dict, metadata={"omit_from_result": True})
 
 
 @dataclass
@@ -106,6 +114,8 @@ class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
         specific_library_name: Library that provided this node type
         parent_flow_name: Name of the flow the node was created in
         parent_group_name: Name of the group this node belongs to (None if not in a group)
+        parameter_assignments: Per-parameter success flags for any `parameter_values`
+            supplied on the request. Empty when no values were requested.
     """
 
     node_name: str
@@ -113,6 +123,7 @@ class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     specific_library_name: str | None = None
     parent_flow_name: str | None = None
     parent_group_name: str | None = None
+    parameter_assignments: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass
@@ -123,6 +134,45 @@ class CreateNodeResultFailure(ResultPayloadFailure):
     Common causes: invalid node_type, missing library, flow not found,
     no current context, or instantiation errors. Workflow unchanged.
     """
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateNodesRequest(RequestPayload):
+    """Create multiple nodes (optionally with initial parameter values) in one request.
+
+    Use when: Building a graph from scratch. Pairs with `CreateConnectionsRequest` so a
+    typical cold-start construction becomes Ensure -> CreateNodes -> CreateConnections ->
+    StartFlow(wait=True). Per-node failures do not abort the batch; each individual
+    `CreateNodeResult*` is returned in `results`.
+
+    Args:
+        nodes: Ordered list of `CreateNodeRequest`s. Use the embedded `parameter_values`
+            on each request to fuse CreateNode + SetParameterValue into one round trip.
+
+    Results: CreateNodesResultSuccess
+    """
+
+    nodes: list[CreateNodeRequest] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateNodesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Bulk node-creation results.
+
+    Args:
+        results: Per-node `ResultPayload` from each dispatched `CreateNodeRequest`, in
+            submission order. Typically a `CreateNodeResultSuccess` or
+            `CreateNodeResultFailure`; an unhandled exception in the singular handler
+            surfaces as a generic `ResultPayloadFailure`.
+        created_count: Number of nodes that were created (including any error-proxy nodes).
+        failed_count: Number of nodes that could not be created.
+    """
+
+    results: list[ResultPayload] = field(default_factory=list)
+    created_count: int = 0
+    failed_count: int = 0
 
 
 # Backwards compatibility for workflows that use the deprecated CreateNodeGroupRequest

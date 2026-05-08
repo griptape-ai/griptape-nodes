@@ -39,6 +39,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
+    CreateNodesRequest,
     DeleteNodeRequest,
     GetNodeMetadataRequest,
     GetNodeResolutionStateRequest,
@@ -72,6 +73,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "StartFlowFromNodeRequest": StartFlowFromNodeRequest,
     # Nodes
     "CreateNodeRequest": CreateNodeRequest,
+    "CreateNodesRequest": CreateNodesRequest,
     "DeleteNodeRequest": DeleteNodeRequest,
     "ListNodesInFlowRequest": ListNodesInFlowRequest,
     "GetNodeResolutionStateRequest": GetNodeResolutionStateRequest,

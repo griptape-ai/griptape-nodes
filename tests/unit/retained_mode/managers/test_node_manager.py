@@ -157,3 +157,73 @@ class TestNodeManagerAlterParameterDetailsClearDefaultValue:
         assert "clear_default_value takes precedence" in caplog.records[0].message
         assert "test_param" in caplog.records[0].message
         assert "test_node" in caplog.records[0].message
+
+
+class TestCreateNodesRequest:
+    """Tests for NodeManager.on_create_nodes_request (bulk node creation)."""
+
+    def test_returns_empty_results_for_empty_list(self) -> None:
+        from griptape_nodes.retained_mode.events.node_events import (
+            CreateNodesRequest,
+            CreateNodesResultSuccess,
+        )
+
+        result = GriptapeNodes.handle_request(CreateNodesRequest(nodes=[]))
+
+        assert isinstance(result, CreateNodesResultSuccess)
+        assert result.results == []
+        assert result.created_count == 0
+        assert result.failed_count == 0
+
+    def test_reports_per_node_success_and_failure(self) -> None:
+        import asyncio
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.events.node_events import (
+            CreateNodeRequest,
+            CreateNodeResultFailure,
+            CreateNodeResultSuccess,
+            CreateNodesRequest,
+            CreateNodesResultSuccess,
+        )
+
+        node_manager = GriptapeNodes.NodeManager()
+
+        # The bulk handler dispatches each CreateNodeRequest through ahandle_request, so
+        # the embedded parameter_values are applied by the singular create handler
+        # itself; the bulk handler only stitches together per-node results.
+        create_results = [
+            CreateNodeResultSuccess(
+                node_name="Alpha_1",
+                node_type="Alpha",
+                parameter_assignments={"greeting": True, "extra": False},
+                result_details="ok",
+            ),
+            CreateNodeResultFailure(result_details="bad type"),
+        ]
+
+        async def fake_ahandle_request(
+            request: object,
+        ) -> CreateNodeResultSuccess | CreateNodeResultFailure:
+            assert isinstance(request, CreateNodeRequest)
+            return create_results.pop(0)
+
+        nodes = [
+            CreateNodeRequest(node_type="Alpha", parameter_values={"greeting": "hi", "extra": 7}),
+            CreateNodeRequest(node_type="Bogus", parameter_values={"never": "set"}),
+        ]
+
+        with patch.object(GriptapeNodes, "ahandle_request", side_effect=fake_ahandle_request):
+            result = asyncio.run(node_manager.on_create_nodes_request(CreateNodesRequest(nodes=nodes)))
+
+        assert isinstance(result, CreateNodesResultSuccess)
+        assert result.created_count == 1
+        assert result.failed_count == 1
+        assert len(result.results) == 2  # noqa: PLR2004
+
+        first, second = result.results
+        assert isinstance(first, CreateNodeResultSuccess)
+        assert first.node_name == "Alpha_1"
+        assert first.parameter_assignments == {"greeting": True, "extra": False}
+
+        assert isinstance(second, CreateNodeResultFailure)

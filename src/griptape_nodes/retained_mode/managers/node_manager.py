@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import logging
 import pickle
@@ -86,6 +87,8 @@ from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
+    CreateNodesRequest,
+    CreateNodesResultSuccess,
     DeleteNodeRequest,
     DeleteNodeResultFailure,
     DeleteNodeResultSuccess,
@@ -255,6 +258,7 @@ class NodeManager:
         self._name_to_parent_flow_name = {}
 
         event_manager.assign_manager_to_request_type(CreateNodeRequest, self.on_create_node_request)
+        event_manager.assign_manager_to_request_type(CreateNodesRequest, self.on_create_nodes_request)
         event_manager.assign_manager_to_request_type(
             AddNodesToNodeGroupRequest, self.on_add_nodes_to_node_group_request
         )
@@ -408,7 +412,7 @@ class NodeManager:
         for node_name in node_names:
             self._cleanup_node_on_failed_deserialization(node_name)
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    async def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -473,7 +477,7 @@ class NodeManager:
             if request.create_error_proxy_on_failure:
                 try:
                     # Use fitness problem details if available for a more actionable error message
-                    library_metadata_result = GriptapeNodes.handle_request(
+                    library_metadata_result = await GriptapeNodes.ahandle_request(
                         GetLibraryMetadataRequest(library=request.specific_library_name or "")
                     )
                     if (
@@ -552,7 +556,7 @@ class NodeManager:
                 logger.error(msg)  # while this is bad, it's not unsalvageable, so we'll consider this a success.
             else:
                 # Create the EndNode
-                end_loop = GriptapeNodes.handle_request(
+                end_loop = await GriptapeNodes.ahandle_request(
                     CreateNodeRequest(
                         node_type=end_class_name,
                         metadata={
@@ -566,7 +570,7 @@ class NodeManager:
                     logger.error(msg)  # while this is bad, it's not unsalvageable, so we'll consider this a success.
                 else:
                     # Create Loop between output and input to the start node.
-                    GriptapeNodes.handle_request(
+                    await GriptapeNodes.ahandle_request(
                         CreateConnectionRequest(
                             source_node_name=node.name,
                             source_parameter_name="loop",
@@ -645,14 +649,67 @@ class NodeManager:
                     request.parent_group_name,
                 )
 
+        parameter_assignments = await self._apply_parameter_values_to_node(
+            node_name=node.name, parameter_values=request.parameter_values
+        )
+
         return CreateNodeResultSuccess(
             node_name=node.name,
             node_type=node.__class__.__name__,
             specific_library_name=request.specific_library_name,
             parent_flow_name=parent_flow_name,
             parent_group_name=node.parent_group.name if node.parent_group else None,
+            parameter_assignments=parameter_assignments,
             result_details=ResultDetails(message=details, level=log_level),
         )
+
+    async def on_create_nodes_request(self, request: CreateNodesRequest) -> ResultPayload:
+        """Dispatch each `CreateNodeRequest` through `ahandle_request` concurrently.
+
+        Per-node failures do not abort the batch; results are returned in submission
+        order regardless of completion order. Each `CreateNodeRequest` may carry
+        `parameter_values`, which the singular handler applies and reports back via
+        `CreateNodeResultSuccess.parameter_assignments`.
+        """
+        # Dispatch through GriptapeNodes.ahandle_request so each per-node
+        # CreateNodeResult* event is broadcast to subscribers (the editor listens on the
+        # singular event to add nodes to the canvas one at a time).
+        results = await asyncio.gather(
+            *(GriptapeNodes.ahandle_request(create_request) for create_request in request.nodes)
+        )
+        created = sum(1 for result in results if isinstance(result, CreateNodeResultSuccess))
+        failed = len(results) - created
+        summary = f"Created {created} of {len(request.nodes)} nodes (failed: {failed})."
+        return CreateNodesResultSuccess(
+            results=list(results),
+            created_count=created,
+            failed_count=failed,
+            result_details=summary,
+        )
+
+    async def _apply_parameter_values_to_node(
+        self, node_name: str, parameter_values: dict[str, Any]
+    ) -> dict[str, bool]:
+        """Dispatch SetParameterValueRequest concurrently for each (name, value) and return a success map."""
+        if not parameter_values:
+            return {}
+        names = list(parameter_values.keys())
+        set_results = await asyncio.gather(
+            *(
+                GriptapeNodes.ahandle_request(
+                    SetParameterValueRequest(
+                        parameter_name=name,
+                        value=parameter_values[name],
+                        node_name=node_name,
+                    )
+                )
+                for name in names
+            )
+        )
+        return {
+            name: isinstance(result, SetParameterValueResultSuccess)
+            for name, result in zip(names, set_results, strict=False)
+        }
 
     def _get_flow_for_node_group_operation(self, flow_name: str | None) -> AddNodesToNodeGroupResultFailure | None:
         """Get the flow for a node group operation."""
@@ -4577,7 +4634,7 @@ class NodeManager:
             result_details=details,
         )
 
-    def on_reset_node_to_defaults_request(self, request: ResetNodeToDefaultsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    async def on_reset_node_to_defaults_request(self, request: ResetNodeToDefaultsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Reset a node to its default state while preserving connections where possible."""
         node_name = request.node_name
         node = None
@@ -4638,7 +4695,7 @@ class NodeManager:
             override_parent_flow_name=parent_flow_name,
             create_error_proxy_on_failure=False,
         )
-        create_result = self.on_create_node_request(create_node_request)
+        create_result = await self.on_create_node_request(create_node_request)
         if not isinstance(create_result, CreateNodeResultSuccess):
             details = f"Attempted to reset Node '{node_name}'. Failed to create new node of type '{node_type}'."
             return ResetNodeToDefaultsResultFailure(result_details=details)
