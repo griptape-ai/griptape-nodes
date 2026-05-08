@@ -89,3 +89,50 @@ class GetWorkflowContextSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class GetWorkflowContextFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Workflow context retrieval failed. Common causes: context not initialized, system error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class EnsureWorkflowAndFlowRequest(RequestPayload):
+    """Ensure a workflow + flow context exists, creating scratch ones if needed.
+
+    Use when: Bootstrapping from a cold engine state. This is the typical opening call from
+    an MCP client that is about to build a workflow from scratch. Idempotent: if both a
+    workflow and a flow are already in the current context, returns their names without
+    creating new ones. Only creates the pieces that are missing.
+
+    Args:
+        workflow_name: Name to use if a new workflow must be created. Ignored when a
+            workflow is already in context. Defaults to an auto-generated scratch name.
+        flow_name: Name to use if a new flow must be created. Ignored when a flow is
+            already in context. Defaults to the engine-assigned name.
+
+    Results: EnsureWorkflowAndFlowResultSuccess | EnsureWorkflowAndFlowResultFailure
+    """
+
+    workflow_name: str | None = None
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class EnsureWorkflowAndFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Workflow + flow context is ready for subsequent CreateNode calls.
+
+    Args:
+        workflow_name: Name of the workflow in the current context.
+        flow_name: Name of the flow in the current context.
+        created_workflow: True if this call created the workflow; False if an existing one was reused.
+        created_flow: True if this call created the flow; False if an existing one was reused.
+    """
+
+    workflow_name: str
+    flow_name: str
+    created_workflow: bool
+    created_flow: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class EnsureWorkflowAndFlowResultFailure(ResultPayloadFailure):
+    """EnsureWorkflowAndFlow failed. Common causes: could not push workflow context, flow creation rejected by the engine."""
