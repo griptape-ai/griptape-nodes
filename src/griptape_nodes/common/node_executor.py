@@ -3808,7 +3808,9 @@ class NodeExecutor:
             load_workflow_metadata_request = LoadWorkflowMetadata(file_name=workflow_path.name)
             result = GriptapeNodes.handle_request(load_workflow_metadata_request)
             if isinstance(result, LoadWorkflowMetadataResultSuccess):
-                WorkflowRegistry.generate_new_workflow(path_for_key, result.metadata)
+                WorkflowRegistry.generate_new_workflow(
+                    registry_key=workflow_name, metadata=result.metadata, file_path=path_for_key
+                )
 
         delete_request = DeleteWorkflowRequest(name=workflow_name)
         delete_result = await GriptapeNodes.ahandle_request(delete_request)

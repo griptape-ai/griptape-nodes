@@ -476,11 +476,12 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 workflow_info["current_workflow"] = workflow_name
                 workflow_info["has_active_flow"] = context_manager.has_current_flow()
 
-                # Get workflow file path from registry
+                # Get workflow file path from registry (None for unsaved workflows).
                 if WorkflowRegistry.has_workflow_with_name(workflow_name):
                     workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
-                    absolute_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
-                    workflow_info["workflow_file_path"] = absolute_path
+                    if workflow.file_path is not None:
+                        absolute_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
+                        workflow_info["workflow_file_path"] = absolute_path
 
         except Exception as err:
             logger.warning("Failed to get current workflow info: %s", err)
