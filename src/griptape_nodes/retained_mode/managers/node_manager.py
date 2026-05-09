@@ -2620,9 +2620,6 @@ class NodeManager:
         node_name = request.node_name
         debug_mode = request.debug_mode
 
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4532 - fall back to
-        # ContextManager().get_current_node() when node_name is omitted, mirroring
-        # StartFlowRequest / StartFlowFromNodeRequest.
         if node_name is None:
             details = "No Node name was provided. Failed to resolve node."
 
@@ -2693,6 +2690,9 @@ class NodeManager:
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4532 - support
+        # wait_for_completion / completion_timeout_ms here, mirroring StartFlowRequest so
+        # callers do not have to poll check_for_existing_running_flow() themselves.
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         return ResolveNodeResultSuccess(result_details=details)
 
