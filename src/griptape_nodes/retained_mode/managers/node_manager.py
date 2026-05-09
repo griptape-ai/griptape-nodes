@@ -2620,6 +2620,9 @@ class NodeManager:
         node_name = request.node_name
         debug_mode = request.debug_mode
 
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4532 - fall back to
+        # ContextManager().get_current_node() when node_name is omitted, mirroring
+        # StartFlowRequest / StartFlowFromNodeRequest.
         if node_name is None:
             details = "No Node name was provided. Failed to resolve node."
 
