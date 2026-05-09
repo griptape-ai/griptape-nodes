@@ -2690,6 +2690,21 @@ class FlowManager:
         if request.wait_for_completion:
             wait_error = await self._await_flow_completion(request.completion_timeout_ms)
             if wait_error is not None:
+                # On timeout the flow is still running, so cancel it before returning
+                # failure. If the wait ended because the flow already errored, there is
+                # nothing left to cancel and check_for_existing_running_flow() returns False.
+                if self.check_for_existing_running_flow():
+                    try:
+                        await self.cancel_flow_run()
+                    except Exception as cancel_err:
+                        # Defensive: cancellation is best-effort cleanup. Surface a warning
+                        # but keep the original wait_error as the user-visible failure.
+                        logger.warning(
+                            "Attempted to cancel flow '%s' after wait_for_completion failure. "
+                            "Cancellation itself failed because of: %s",
+                            flow_name,
+                            cancel_err,
+                        )
                 exception = RuntimeError(wait_error)
                 return StartFlowResultFailure(
                     validation_exceptions=[exception],
@@ -2702,19 +2717,28 @@ class FlowManager:
         return StartFlowResultSuccess(result_details=details)
 
     async def on_start_flow_from_node_request(self, request: StartFlowFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+        # Resolve the node first, falling back to the current-context node when node_name is
+        # omitted. flow_name on this request is deprecated; when not supplied we derive it
+        # from the node's parent flow so callers do not have to keep them in sync.
+        node_name = request.node_name
+        if node_name is None:
+            if GriptapeNodes.ContextManager().has_current_node():
+                node_name = GriptapeNodes.ContextManager().get_current_node().name
+            else:
+                details = "Must provide node_name, or set a node in the Current Context first."
+                return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
+        start_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if not start_node:
+            details = f"Provided node with name {node_name} does not exist"
+            return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
         # which flow
         flow_name = request.flow_name
         if not flow_name:
-            # Same current-context fallback as on_start_flow_request so StartFlowFromNode
-            # behaves consistently.
-            if GriptapeNodes.ContextManager().has_current_flow():
-                flow_name = GriptapeNodes.ContextManager().get_current_flow().name
-            else:
-                details = (
-                    "Must provide flow_name, or set a flow in the Current Context "
-                    "(e.g. via EnsureWorkflowAndFlowRequest or CreateFlowRequest) first."
-                )
-                return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+            try:
+                flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
+            except KeyError as err:
+                details = f"Could not derive parent flow for node '{node_name}': {err}"
+                return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
         # get the flow by ID
         try:
             flow = self.get_flow_by_name(flow_name)
@@ -2725,14 +2749,6 @@ class FlowManager:
         if self.check_for_existing_running_flow():
             details = "Cannot start flow. Flow is already running."
             return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
-        node_name = request.node_name
-        if node_name is None:
-            details = "Must provide node name to start a flow."
-            return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
-        start_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
-        if not start_node:
-            details = f"Provided node with name {node_name} does not exist"
-            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
         result = await self.on_validate_flow_dependencies_request(
             ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
         )

@@ -215,3 +215,175 @@ class TestStartFlowRequestDefaultsToCurrentContext:
         get_flow.assert_called_once_with("flow_in_ctx")
 
         griptape_nodes.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+    @pytest.mark.asyncio
+    async def test_start_flow_from_node_fails_cleanly_when_no_node_and_no_context(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        from griptape_nodes.retained_mode.events.execution_events import (
+            StartFlowFromNodeRequest,
+            StartFlowFromNodeResultFailure,
+        )
+        from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+
+        flow_manager = griptape_nodes.FlowManager()
+        griptape_nodes.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+        assert not griptape_nodes.ContextManager().has_current_node()
+
+        result = await flow_manager.on_start_flow_from_node_request(StartFlowFromNodeRequest())
+
+        assert isinstance(result, StartFlowFromNodeResultFailure)
+        assert "Current Context" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_start_flow_from_node_uses_current_context_node_and_derives_parent_flow(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes.retained_mode.events.execution_events import (
+            StartFlowFromNodeRequest,
+            StartFlowFromNodeResultFailure,
+        )
+        from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+
+        flow_manager = griptape_nodes.FlowManager()
+        griptape_nodes.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+        # Stand in a current node so the handler can fall back to it. The node itself only
+        # needs to expose `.name`; we short-circuit object lookup below.
+        fake_node = MagicMock(spec=BaseNode)
+        fake_node.name = "node_in_ctx"
+        ctx = griptape_nodes.ContextManager()
+        with (
+            patch.object(ctx, "has_current_node", return_value=True),
+            patch.object(ctx, "get_current_node", return_value=fake_node),
+            patch.object(
+                griptape_nodes.ObjectManager(),
+                "attempt_get_object_by_name_as_type",
+                return_value=fake_node,
+            ),
+            patch.object(
+                griptape_nodes.NodeManager(),
+                "get_node_parent_flow_by_name",
+                return_value="derived_parent_flow",
+            ) as get_parent_flow,
+            patch.object(flow_manager, "get_flow_by_name", side_effect=KeyError("stop here")) as get_flow,
+        ):
+            result = await flow_manager.on_start_flow_from_node_request(StartFlowFromNodeRequest())
+
+        # The handler should have used the current-context node and derived its parent flow,
+        # not bailed with the "must provide node name" error.
+        assert isinstance(result, StartFlowFromNodeResultFailure)
+        get_parent_flow.assert_called_once_with("node_in_ctx")
+        get_flow.assert_called_once_with("derived_parent_flow")
+
+        griptape_nodes.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+
+class TestStartFlowCancelsOnWaitTimeout:
+    """Tests for the wait_for_completion cancel-on-timeout cleanup in on_start_flow_request."""
+
+    @pytest.mark.asyncio
+    async def test_cancels_running_flow_when_wait_for_completion_times_out(self, griptape_nodes: GriptapeNodes) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from griptape_nodes.retained_mode.events.execution_events import (
+            StartFlowRequest,
+            StartFlowResultFailure,
+        )
+        from griptape_nodes.retained_mode.events.validation_events import (
+            ValidateFlowDependenciesResultSuccess,
+        )
+
+        flow_manager = griptape_nodes.FlowManager()
+
+        fake_flow = MagicMock()
+        fake_flow.name = "timeout_flow"
+        validate_success = ValidateFlowDependenciesResultSuccess(
+            validation_succeeded=True, exceptions=[], result_details="validated"
+        )
+        cancel_mock = AsyncMock()
+
+        # check_for_existing_running_flow is consulted twice along the wait path:
+        # once before kicking off (must be False), and once after the timeout to decide
+        # whether to cancel (must be True since the flow is still churning).
+        running_flow_states = iter([False, True])
+
+        with (
+            patch.object(flow_manager, "get_flow_by_name", return_value=fake_flow),
+            patch.object(
+                flow_manager,
+                "check_for_existing_running_flow",
+                side_effect=lambda: next(running_flow_states),
+            ),
+            patch.object(
+                flow_manager,
+                "on_validate_flow_dependencies_request",
+                AsyncMock(return_value=validate_success),
+            ),
+            patch.object(flow_manager, "start_flow", AsyncMock()),
+            patch.object(flow_manager, "_global_control_flow_machine", None),
+            patch.object(
+                flow_manager,
+                "_await_flow_completion",
+                AsyncMock(return_value="Timed out waiting for flow completion after 10 ms."),
+            ),
+            patch.object(flow_manager, "cancel_flow_run", cancel_mock),
+        ):
+            result = await flow_manager.on_start_flow_request(
+                StartFlowRequest(flow_name="timeout_flow", wait_for_completion=True, completion_timeout_ms=10)
+            )
+
+        assert isinstance(result, StartFlowResultFailure)
+        assert "did not complete cleanly" in str(result.result_details)
+        cancel_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_does_not_cancel_when_flow_already_finished_with_error(self, griptape_nodes: GriptapeNodes) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from griptape_nodes.retained_mode.events.execution_events import (
+            StartFlowRequest,
+            StartFlowResultFailure,
+        )
+        from griptape_nodes.retained_mode.events.validation_events import (
+            ValidateFlowDependenciesResultSuccess,
+        )
+
+        flow_manager = griptape_nodes.FlowManager()
+
+        fake_flow = MagicMock()
+        fake_flow.name = "errored_flow"
+        validate_success = ValidateFlowDependenciesResultSuccess(
+            validation_succeeded=True, exceptions=[], result_details="validated"
+        )
+        cancel_mock = AsyncMock()
+
+        # First call (kickoff gate) returns False; second call (post-wait cancel gate) also
+        # returns False because the flow already finished with an error.
+        with (
+            patch.object(flow_manager, "get_flow_by_name", return_value=fake_flow),
+            patch.object(flow_manager, "check_for_existing_running_flow", return_value=False),
+            patch.object(
+                flow_manager,
+                "on_validate_flow_dependencies_request",
+                AsyncMock(return_value=validate_success),
+            ),
+            patch.object(flow_manager, "start_flow", AsyncMock()),
+            patch.object(flow_manager, "_global_control_flow_machine", None),
+            patch.object(
+                flow_manager,
+                "_await_flow_completion",
+                AsyncMock(return_value="boom"),
+            ),
+            patch.object(flow_manager, "cancel_flow_run", cancel_mock),
+        ):
+            result = await flow_manager.on_start_flow_request(
+                StartFlowRequest(flow_name="errored_flow", wait_for_completion=True)
+            )
+
+        assert isinstance(result, StartFlowResultFailure)
+        cancel_mock.assert_not_called()
