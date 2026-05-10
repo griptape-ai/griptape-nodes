@@ -707,6 +707,127 @@ def _update_option_choices(self, param_name: str, choices: list, default_value: 
     self.set_parameter_value(param_name, default_value)
 ```
 
+### Dynamic Parameter Schemas with ParameterTransitionComponent
+
+Some nodes expose a dropdown — a model picker, a mode selector, an operation chooser — where each choice implies a different set of input and output parameters. The naive approach (clear every parameter, rebuild from scratch) destroys every connection the user set up. `ParameterTransitionComponent` solves this by computing the diff between the current parameter surface and the one the new choice needs, then acting one of four ways per name:
+
+- **Preserve** — the name exists on both sides with identical signatures. Nothing is touched.
+- **Replace** — the name exists on both sides but the signature changed (types, modes, or both). The component captures the existing incoming and outgoing connections, removes the old parameter, adds a new one with the new signature, and then re-dispatches each captured connection through `CreateConnectionRequest`. The platform's connection handler validates type compatibility, so connections that are still valid under the new signature come back; connections that are no longer valid are dropped. Because connection re-creation goes through the same path as a fresh connection, values re-flow through incoming edges the normal way.
+- **Remove** — the name no longer exists in the desired schema. Removed via `RemoveParameterFromNodeRequest`, which cleans up all connections.
+- **Add** — the name is new. Added via the caller-supplied factory.
+
+One consequence of always-replace: a replaced parameter's stored *property* value is lost (the new Parameter starts empty). Connections and their re-flowed values are what survive. For nodes that don't want this behavior for certain same-name-same-signature cases, declaring identical signatures keeps the parameter in the preserve bucket.
+
+#### Walkthrough — Multi-model image generation (hypothetical)
+
+> **Note on this example.** The `MultiModelImageGenerator` node used below is **hypothetical** — it does not exist in Griptape today, and this walkthrough is not a description of how any shipped node works. We use a hypothetical consolidated node here because it's the kind of node an author might build *on top of* `ParameterTransitionComponent`, and it makes the "switching between shapes" story concrete for an artist audience.
+
+**The hypothetical node.** `MultiModelImageGenerator` has a **Model** dropdown offering **FLUX**, **SDXL**, and **Stable Diffusion 3**, plus a "— none —" option for an unconfigured starting state. Every model shares some parameters; each has its own extras. Here's the parameter surface per model:
+
+| Parameter         | FLUX  | SDXL          | SD3               |
+| ----------------- | ----- | ------------- | ----------------- |
+| `prompt`          | str   | str           | str               |
+| `width`           | int   | int           | int               |
+| `height`          | int   | int           | int               |
+| `seed`            | int   | int           | int               |
+| `guidance`        | float | —             | —                 |
+| `steps`           | —     | int           | —                 |
+| `cfg_scale`       | —     | float         | —                 |
+| `reference_image` | —     | **str (URL)** | **ImageArtifact** |
+| `negative_prompt` | —     | —             | str               |
+
+Notice `reference_image` appears on both SDXL and SD3 but with different types — SDXL's driver accepts a URL string, SD3's accepts a Griptape-native `ImageArtifact`. Real image-to-image APIs diverge exactly this way: some want a URL, some want uploaded bytes, some want a native artifact object.
+
+**The user session.** An artist opens a workflow. The `MultiModelImageGenerator` node starts with no model selected — its parameter surface is empty apart from the Model dropdown itself.
+
+**Step 1 — First selection (FLUX).** The artist picks **FLUX**. Every FLUX parameter (`prompt`, `width`, `height`, `seed`, `guidance`) appears. They connect a `TextPrompt` node to `prompt`, connect a `ResolutionPicker` node to `width` and `height`, type `42` into `seed`, leave `guidance` at its default. They render.
+
+*Under the hood:* the component sees an empty "current" set and a full "desired" set for FLUX. Every FLUX parameter lands in `to_add`. Nothing in `to_remove` or `to_preserve`.
+
+**Step 2 — Comparing models (FLUX → SDXL).** The artist wants to see how SDXL handles the same prompt. They switch the dropdown to **SDXL**.
+
+- `prompt`, `width`, `height` → `to_preserve`. The connections to `TextPrompt` and `ResolutionPicker` are untouched.
+- `seed` → `to_preserve`. Same name, both `int`. Value `42` survives.
+- `guidance` → `to_remove`. SDXL doesn't have it.
+- `steps`, `cfg_scale`, `reference_image` → `to_add`. The SDXL-specific parameters appear, ready for the artist to tune.
+
+The artist tweaks `steps`, connects an `ImageURL` node to `reference_image`, and renders. Every connection they set up in Step 1 is still live. They didn't have to redo anything.
+
+**Step 3 — Signature change (SDXL → SD3).** Curious about SD3, they switch the dropdown again.
+
+- `prompt`, `width`, `height`, `seed` → `to_preserve`. Signatures unchanged, so nothing is touched.
+- `reference_image` → `to_replace`. Both models use the name `reference_image`, but SDXL's accepts a URL string and SD3's accepts an `ImageArtifact`. The component captures the existing connection from `ImageURL`, removes the old parameter, adds the new `ImageArtifact`-typed one, and then re-dispatches the captured connection through `CreateConnectionRequest`. The connection handler sees the source provides `str` but the new parameter accepts only `ImageArtifact` and rejects it. Net result: `reference_image` exists with the new signature, no connection, ready for the artist to connect an artifact source (e.g., a `LoadImage` node).
+- `steps`, `cfg_scale` → `to_remove`. SD3 doesn't use them.
+- `negative_prompt` → `to_add`. SD3's distinguishing parameter appears, empty and ready for input.
+
+Type narrowing behaves exactly as an artist would expect. If `reference_image` had previously accepted `[ImageArtifact, str]` with a connection providing `ImageArtifact`, and the new schema narrowed it to `[ImageArtifact]`, the replace path captures the connection, rebuilds the parameter, and re-dispatches the connection — the platform's connection handler sees `ImageArtifact` is still valid and the edge comes back automatically. Only connections that are no longer type-compatible get dropped.
+
+**Step 4 — Clearing the node (SD3 → no selection).** The artist decides this node isn't working out and selects "— none —" from the dropdown. Everything the node was managing goes to `to_remove`. `prompt`, `width`, `height`, `seed`, `reference_image`, `negative_prompt` — all gone. The parameter surface returns to just the Model dropdown. The artist can start fresh or pick a different approach.
+
+#### What the node author writes
+
+```python
+from griptape_nodes.exe_types.param_components.parameter_transition_component import (
+    ParameterTransitionComponent,
+    TransitionParameter,
+)
+
+# In MultiModelImageGenerator.__init__:
+self._model_params = ParameterTransitionComponent(
+    self,
+    manages_parameter=lambda p: p.name in self._MODEL_PARAM_NAMES,
+)
+
+# In the model-dropdown change handler:
+desired = self._build_transition_parameters_for_model(selected_model)  # author's domain logic
+self._model_params.transition_to(desired)
+```
+
+`_build_transition_parameters_for_model` is the author's — the component doesn't care how the list is computed (from a dataclass, a config file, a registry, hand-rolled). It only cares about the resulting `list[TransitionParameter]`. The author also decides how `manages_parameter` scopes the component's view of the node's parameters (here: a known set of model-parameter names, excluding the Model dropdown itself and any other ambient parameters the node owns).
+
+#### API reference
+
+**Constructor:**
+
+```python
+ParameterTransitionComponent(
+    node: BaseNode,
+    *,
+    manages_parameter: Callable[[Parameter], bool],
+)
+```
+
+- `node` — the node instance that owns the parameter surface.
+- `manages_parameter` — predicate identifying which of the node's parameters this component manages. Everything outside the predicate is left alone.
+
+**`TransitionParameter` fields:**
+
+- `name: str` — parameter name, must be unique within a single `transition_to` call.
+- `allowed_modes: frozenset[ParameterMode]` — which modes the parameter supports (`INPUT`, `PROPERTY`, `OUTPUT`). Must match the existing Parameter's `allowed_modes` for preservation.
+- `input_types: frozenset[str]` — the set of types the parameter accepts as input, matching what `Parameter.input_types` will return after creation. The property applies fallbacks when no input types are declared on the underlying request, so populate this to reflect the *effective* signature (e.g., for an output-only parameter built with `output_type="X"`, use `frozenset({"X"})` because `Parameter.input_types` falls back to `[output_type]`).
+- `output_type: str` — the type the parameter emits, matching what `Parameter.output_type` will return after creation. For an input-only parameter built with `input_types=[X, Y, Z]`, use `X` because the property falls back to the first input type.
+- `add_request_factory: Callable[[], AddParameterToNodeRequest]` — a zero-arg callable the component invokes only for parameters that actually need adding. Typically a `functools.partial` wrapping the author's builder method.
+
+**`TransitionPlan` fields:**
+
+- `to_preserve: frozenset[str]` — parameters left completely untouched (name + signature both match). Connections and stored values are unaffected because nothing was dispatched.
+- `to_replace: frozenset[str]` — same-named parameters whose signature differed. The component captured their existing connections, removed the old Parameter, added a new one, and re-dispatched each connection through `CreateConnectionRequest` (the platform validates type compatibility and rejects ones that are no longer valid). Stored property values on replaced parameters are lost; connection values re-flow normally.
+- `to_remove: frozenset[str]` — parameters removed via `RemoveParameterFromNodeRequest`.
+- `to_add: frozenset[str]` — parameters added via `AddParameterToNodeRequest`.
+
+**Signature-match check.** Two same-named parameters are considered a match when *all three* of `allowed_modes`, `input_types`, and `output_type` match exactly. The component reads these off the existing Parameter's public properties (the same accessors used elsewhere for connection type checks). Any difference — a widened input-type list, a dropped mode, a changed output type — puts the parameter in the replace bucket. This is identity equality over the effective schema, not directional type-compatibility: two parameters that happen to be assignment-compatible but were declared differently represent different schema intent.
+
+#### When to reach for this
+
+- A single node's parameter surface depends on a **discrete user choice** (model picker, mode selector, operation chooser).
+- Users are expected to switch between choices during normal workflow authoring and should not lose their connections each time.
+
+#### When NOT to reach for this
+
+- You want to **hide or show** parameters based on a value — use the [Dynamic Parameter Visibility](#dynamic-parameter-visibility) pattern with `hide_parameter_by_name` / `show_parameter_by_name`.
+- You only need to **update a dropdown's options** — use the [Dynamic Options Updates](#dynamic-options-updates) pattern.
+- The parameter set is fixed; only values change.
+
 ### Advanced ParameterList Usage
 
 Include both individual and list types for maximum flexibility:
