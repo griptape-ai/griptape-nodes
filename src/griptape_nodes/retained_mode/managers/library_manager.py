@@ -1455,7 +1455,7 @@ class LibraryManager:
                 result_details=details,
             )
 
-        parameters = [self._build_parameter_description(param) for param in probe_node.parameters]
+        parameters = [ParameterDescription.from_parameter(param) for param in probe_node.parameters]
 
         details = f"Successfully described node type '{request.node_type}' in Library '{library_name}'."
         return DescribeNodeTypeResultSuccess(
@@ -1464,28 +1464,6 @@ class LibraryManager:
             metadata=node_metadata,
             parameters=parameters,
             result_details=details,
-        )
-
-    @staticmethod
-    def _build_parameter_description(param: Parameter) -> ParameterDescription:
-        allowed_modes = param.allowed_modes
-
-        return ParameterDescription(
-            name=param.name,
-            type=getattr(param, "type", "") or "",
-            input_types=list(getattr(param, "input_types", []) or []),
-            output_type=getattr(param, "output_type", "") or "",
-            default_value=getattr(param, "default_value", None),
-            tooltip=getattr(param, "tooltip", ""),
-            tooltip_as_input=getattr(param, "tooltip_as_input", None),
-            tooltip_as_property=getattr(param, "tooltip_as_property", None),
-            tooltip_as_output=getattr(param, "tooltip_as_output", None),
-            mode_allowed_input=ParameterMode.INPUT in allowed_modes,
-            mode_allowed_property=ParameterMode.PROPERTY in allowed_modes,
-            mode_allowed_output=ParameterMode.OUTPUT in allowed_modes,
-            settable=getattr(param, "settable", True),
-            ui_options=getattr(param, "ui_options", None),
-            parent_container_name=getattr(param, "parent_container_name", None),
         )
 
     def list_categories_in_library_request(self, request: ListCategoriesInLibraryRequest) -> ResultPayload:

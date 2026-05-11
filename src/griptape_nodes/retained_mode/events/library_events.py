@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.node_library.library_registry import (
     LibraryMetadata,
     LibrarySchema,
@@ -19,6 +20,8 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from griptape_nodes.exe_types.core_types import Parameter
 
     # Circular import: library_events -> library_manager -> library_events
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
@@ -204,6 +207,29 @@ class ParameterDescription:
     settable: bool
     ui_options: dict | None
     parent_container_name: str | None
+
+    @classmethod
+    def from_parameter(cls, param: Parameter) -> ParameterDescription:
+        """Build a ParameterDescription from a live Parameter instance."""
+        allowed_modes = param.allowed_modes
+
+        return cls(
+            name=param.name,
+            type=getattr(param, "type", "") or "",
+            input_types=list(getattr(param, "input_types", []) or []),
+            output_type=getattr(param, "output_type", "") or "",
+            default_value=getattr(param, "default_value", None),
+            tooltip=getattr(param, "tooltip", ""),
+            tooltip_as_input=getattr(param, "tooltip_as_input", None),
+            tooltip_as_property=getattr(param, "tooltip_as_property", None),
+            tooltip_as_output=getattr(param, "tooltip_as_output", None),
+            mode_allowed_input=ParameterMode.INPUT in allowed_modes,
+            mode_allowed_property=ParameterMode.PROPERTY in allowed_modes,
+            mode_allowed_output=ParameterMode.OUTPUT in allowed_modes,
+            settable=getattr(param, "settable", True),
+            ui_options=getattr(param, "ui_options", None),
+            parent_container_name=getattr(param, "parent_container_name", None),
+        )
 
 
 @dataclass
