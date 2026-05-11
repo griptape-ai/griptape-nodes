@@ -25,13 +25,22 @@ from griptape_nodes.retained_mode.events.connection_events import (
     DeleteConnectionRequest,
     ListConnectionsForNodeRequest,
 )
+from griptape_nodes.retained_mode.events.context_events import (
+    GetWorkflowContextRequest,
+    SetWorkflowContextRequest,
+)
 from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeRequest,
     ResolveNodeRequest,
     StartFlowFromNodeRequest,
     StartFlowRequest,
 )
-from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest
+from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowRequest,
+    DeleteFlowRequest,
+    ListFlowsInCurrentContextRequest,
+    ListNodesInFlowRequest,
+)
 from griptape_nodes.retained_mode.events.library_events import (
     ListCategoriesInLibraryRequest,
     ListNodeTypesInLibraryRequest,
@@ -47,20 +56,30 @@ from griptape_nodes.retained_mode.events.node_events import (
     SetLockNodeStateRequest,
     SetNodeMetadataRequest,
 )
-from griptape_nodes.retained_mode.events.object_events import RenameObjectRequest
+from griptape_nodes.retained_mode.events.object_events import (
+    ClearAllObjectStateRequest,
+    RenameObjectRequest,
+)
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetConnectionsForParameterRequest,
     GetParameterDetailsRequest,
     GetParameterValueRequest,
     SetParameterValueRequest,
 )
-from griptape_nodes.retained_mode.events.workflow_events import RunWorkflowWithCurrentStateRequest
+from griptape_nodes.retained_mode.events.workflow_events import (
+    ListAllWorkflowsRequest,
+    RunWorkflowWithCurrentStateRequest,
+)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     # Workflows
     "RunWorkflowWithCurrentStateRequest": RunWorkflowWithCurrentStateRequest,
+    "ListAllWorkflowsRequest": ListAllWorkflowsRequest,
+    # Workflow context
+    "SetWorkflowContextRequest": SetWorkflowContextRequest,
+    "GetWorkflowContextRequest": GetWorkflowContextRequest,
     # Libraries
     "ListRegisteredLibrariesRequest": ListRegisteredLibrariesRequest,
     "ListNodeTypesInLibraryRequest": ListNodeTypesInLibraryRequest,
@@ -70,6 +89,10 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "ExecuteNodeRequest": ExecuteNodeRequest,
     "StartFlowRequest": StartFlowRequest,
     "StartFlowFromNodeRequest": StartFlowFromNodeRequest,
+    # Flows
+    "CreateFlowRequest": CreateFlowRequest,
+    "DeleteFlowRequest": DeleteFlowRequest,
+    "ListFlowsInCurrentContextRequest": ListFlowsInCurrentContextRequest,
     # Nodes
     "CreateNodeRequest": CreateNodeRequest,
     "DeleteNodeRequest": DeleteNodeRequest,
@@ -81,6 +104,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "SetLockNodeStateRequest": SetLockNodeStateRequest,
     # Objects
     "RenameObjectRequest": RenameObjectRequest,
+    "ClearAllObjectStateRequest": ClearAllObjectStateRequest,
     # Connections
     "CreateConnectionRequest": CreateConnectionRequest,
     "DeleteConnectionRequest": DeleteConnectionRequest,
@@ -104,6 +128,48 @@ secrets_manager = SecretsManager(config_manager)
 mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
 mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 mcp_server_logger.setLevel(logging.INFO)
+
+
+def _summarize_result_details(result_details: object) -> str | list[dict] | None:
+    """Collapse the engine's nested result_details payload into something terse.
+
+    The engine emits `result_details` as a dict wrapping a list of ResultDetail entries,
+    e.g. ``{"result_details": [{"level": 10, "message": "..."}, ...]}``. For the MCP
+    surface we only really need the messages, joined on newlines. Anything we do not
+    recognize is returned as-is so we never hide information we did not intend to hide.
+    """
+    if result_details is None:
+        return None
+    if isinstance(result_details, str):
+        return result_details
+    if isinstance(result_details, dict):
+        inner = result_details.get("result_details")
+        if isinstance(inner, list):
+            messages = [entry.get("message", "") for entry in inner if isinstance(entry, dict)]
+            joined = "\n".join(message for message in messages if message)
+            if joined:
+                return joined
+            return inner
+    return result_details  # type: ignore[return-value]
+
+
+def _trim_response(result: dict) -> dict:
+    """Strip envelope noise from an engine response before we hand it back to the MCP client.
+
+    The raw response wraps the real payload in engine/session/routing metadata and an echoed
+    request. Agents only need to know whether the call succeeded and the payload fields the
+    handler produced, so we surface a success discriminator, a terse `details` string, and the
+    rest of the inner `result` object.
+    """
+    inner = dict(result.get("result") or {})
+    result_type = result.get("result_type", "")
+    details = _summarize_result_details(inner.pop("result_details", None))
+
+    trimmed: dict = {"ok": result_type.endswith("Success")}
+    if details is not None:
+        trimmed["details"] = details
+    trimmed.update(inner)
+    return trimmed
 
 
 def start_mcp_server(api_key: str, sock: socket.socket) -> None:
@@ -144,7 +210,7 @@ def start_mcp_server(api_key: str, sock: socket.socket) -> None:
         )
         mcp_server_logger.debug("Got result: %s", result)
 
-        return [TextContent(type="text", text=json.dumps(result))]
+        return [TextContent(type="text", text=json.dumps(_trim_response(result)))]
 
     # Create the session manager with our app and event store
     session_manager = StreamableHTTPSessionManager(

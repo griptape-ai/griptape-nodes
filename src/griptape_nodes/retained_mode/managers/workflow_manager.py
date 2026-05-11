@@ -982,6 +982,14 @@ class WorkflowManager:
         )
 
     async def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
+        # If the deleted workflow is the active one, tear down its flows/nodes and
+        # pop the context stack BEFORE removing the registry entry, so downstream
+        # `DeleteFlowRequest` calls can still push a flow context (they require an
+        # active workflow). Non-active deletes (e.g. published-workflow subprocess
+        # cleanup) skip this and go straight to the registry/file cleanup.
+        context_manager = GriptapeNodes.ContextManager()
+        if context_manager.has_current_workflow() and context_manager.get_current_workflow_name() == request.name:
+            GriptapeNodes.clear_current_workflow_data()
         try:
             workflow = WorkflowRegistry.delete_workflow_by_name(request.name)
         except Exception as e:
@@ -5639,6 +5647,11 @@ class WorkflowManager:
             if path.is_dir():
                 for workflow_file in path.rglob("*.py"):
                     if ".venv" in workflow_file.parts:
+                        continue
+                    # Unsaved workflows are ephemeral; any file with this prefix is a
+                    # leak from a pre-fix save and cannot be registered (the registry
+                    # rejects unsaved keys paired with a file path).
+                    if workflow_file.name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX):
                         continue
                     if library_exclusion_roots:
                         resolved_workflow_file = workflow_file.resolve()

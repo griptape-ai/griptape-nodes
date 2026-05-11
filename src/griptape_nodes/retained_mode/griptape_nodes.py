@@ -21,6 +21,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
     ResultPayloadFailure,
 )
+from griptape_nodes.retained_mode.events.execution_events import (
+    CancelFlowRequest,
+)
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
@@ -367,27 +370,51 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._worker_manager
 
     @classmethod
-    def clear_data(cls) -> None:
-        # Get canvas
+    def clear_current_workflow_data(cls) -> None:  # noqa: C901
+        """Tear down the active workflow: cancel running flows, delete its orphan flows, then pop it.
+
+        Requires an active workflow on the ContextManager stack. Order matters:
+        `on_delete_flow_request` pushes a flow context via `ContextManager().flow(...)`,
+        which raises `NoActiveWorkflowError` if the workflow has already been popped.
+        So we delete flows first and pop the workflow last.
+        """
+        context_manager = GriptapeNodes.ContextManager()
+        if not context_manager.has_current_workflow():
+            msg = "Cannot clear current workflow data without an active workflow context."
+            raise RuntimeError(msg)
+
+        # Cancel any running flow so the delete path doesn't race with execution.
+        flow_manager = GriptapeNodes.FlowManager()
+        for flow_name in GriptapeNodes.ObjectManager().get_filtered_subset(type=ControlFlow):
+            if flow_manager.check_for_existing_running_flow():
+                GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
+
+        # Delete all orphan (top-level) flows. We can't rely on
+        # `ListFlowsInCurrentContextRequest` here because the caller may only have a
+        # workflow on the context stack (no child flow), and that request requires a
+        # current flow. Instead, repeatedly find a flow with no parent and delete it;
+        # `on_delete_flow_request` cascades into its children and nodes.
         more_flows = True
         while more_flows:
             flows = GriptapeNodes.ObjectManager().get_filtered_subset(type=ControlFlow)
             found_orphan = False
             for flow_name in flows:
-                try:
-                    parent = GriptapeNodes.FlowManager().get_parent_flow(flow_name)
-                except Exception as e:
-                    raise RuntimeError(e) from e
+                parent = flow_manager.get_parent_flow(flow_name)
                 if not parent:
-                    event = DeleteFlowRequest(flow_name=flow_name)
-                    GriptapeNodes.handle_request(event)
+                    GriptapeNodes.handle_request(DeleteFlowRequest(flow_name=flow_name))
                     found_orphan = True
                     break
             if not flows or not found_orphan:
                 more_flows = False
-        if GriptapeNodes.ObjectManager()._name_to_objects:
-            msg = "Failed to successfully delete all objects"
-            raise ValueError(msg)
+
+        # Drain this workflow's context substack before popping the workflow itself.
+        while context_manager.has_current_flow():
+            while context_manager.has_current_node():
+                while context_manager.has_current_element():
+                    context_manager.pop_element()
+                context_manager.pop_node()
+            context_manager.pop_flow()
+        context_manager.pop_workflow()
 
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
         try:
