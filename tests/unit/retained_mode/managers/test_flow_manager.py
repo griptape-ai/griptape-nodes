@@ -442,7 +442,8 @@ class TestAutoLayoutFlowRequest:
 
         return "layout_flow"
 
-    def test_fails_cleanly_when_no_flow_in_context_and_no_name(self, griptape_nodes: GriptapeNodes) -> None:
+    @pytest.mark.asyncio
+    async def test_fails_cleanly_when_no_flow_in_context_and_no_name(self, griptape_nodes: GriptapeNodes) -> None:
         from griptape_nodes.retained_mode.events.flow_events import (
             AutoLayoutFlowRequest,
             AutoLayoutFlowResultFailure,
@@ -451,11 +452,12 @@ class TestAutoLayoutFlowRequest:
         self._cleanup(griptape_nodes)
         flow_manager = griptape_nodes.FlowManager()
 
-        result = flow_manager.on_auto_layout_flow_request(AutoLayoutFlowRequest())
+        result = await flow_manager.on_auto_layout_flow_request(AutoLayoutFlowRequest())
 
         assert isinstance(result, AutoLayoutFlowResultFailure)
 
-    def test_lays_out_linear_chain_into_columns(self, griptape_nodes: GriptapeNodes) -> None:
+    @pytest.mark.asyncio
+    async def test_lays_out_linear_chain_into_columns(self, griptape_nodes: GriptapeNodes) -> None:
         from griptape_nodes.retained_mode.events.flow_events import (
             AutoLayoutFlowRequest,
             AutoLayoutFlowResultSuccess,
@@ -464,7 +466,7 @@ class TestAutoLayoutFlowRequest:
         flow_name = self._bootstrap_graph(griptape_nodes)
         flow_manager = griptape_nodes.FlowManager()
 
-        result = flow_manager.on_auto_layout_flow_request(
+        result = await flow_manager.on_auto_layout_flow_request(
             AutoLayoutFlowRequest(
                 flow_name=flow_name,
                 origin_x=10.0,
@@ -489,7 +491,8 @@ class TestAutoLayoutFlowRequest:
 
         self._cleanup(griptape_nodes)
 
-    def test_empty_flow_is_handled_gracefully(self, griptape_nodes: GriptapeNodes) -> None:
+    @pytest.mark.asyncio
+    async def test_empty_flow_is_handled_gracefully(self, griptape_nodes: GriptapeNodes) -> None:
         from griptape_nodes.retained_mode.events.flow_events import (
             AutoLayoutFlowRequest,
             AutoLayoutFlowResultSuccess,
@@ -498,7 +501,7 @@ class TestAutoLayoutFlowRequest:
         self._bootstrap_workflow_and_flow(griptape_nodes, workflow="empty_wf", flow="empty_flow")
 
         flow_manager = griptape_nodes.FlowManager()
-        result = flow_manager.on_auto_layout_flow_request(AutoLayoutFlowRequest(flow_name="empty_flow"))
+        result = await flow_manager.on_auto_layout_flow_request(AutoLayoutFlowRequest(flow_name="empty_flow"))
 
         assert isinstance(result, AutoLayoutFlowResultSuccess)
         assert result.positioned_nodes == []

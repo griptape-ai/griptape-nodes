@@ -3168,7 +3168,7 @@ class FlowManager:
 
         return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list, result_details=details)
 
-    def on_auto_layout_flow_request(self, request: AutoLayoutFlowRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    async def on_auto_layout_flow_request(self, request: AutoLayoutFlowRequest) -> ResultPayload:  # noqa: C901, PLR0912
         """Assign editor positions to every node in a flow by topological column layout.
 
         Algorithm (Kahn-ish): walk the data+control edges internal to this flow, compute a
@@ -3250,12 +3250,12 @@ class FlowManager:
             for row_idx, name in enumerate(sorted(layers[layer_idx])):
                 x = request.origin_x + layer_idx * request.layer_spacing
                 y = request.origin_y + row_idx * request.row_spacing
-                # Dispatch the position update through GriptapeNodes.handle_request so the
+                # Dispatch the position update through GriptapeNodes.ahandle_request so the
                 # per-node SetNodeMetadataResultSuccess event is broadcast to subscribers.
                 # The editor listens on that event to move nodes on the canvas live; mutating
                 # node.metadata directly here would update the engine state but leave the UI
                 # stale until a reload.
-                set_metadata_result = GriptapeNodes.handle_request(
+                set_metadata_result = await GriptapeNodes.ahandle_request(
                     SetNodeMetadataRequest(node_name=name, metadata={"position": {"x": x, "y": y}})
                 )
                 if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
