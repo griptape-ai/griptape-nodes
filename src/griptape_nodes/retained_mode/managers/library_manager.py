@@ -212,7 +212,6 @@ from griptape_nodes.utils.library_utils import (
     filter_old_xdg_library_paths,
     is_monorepo,
 )
-from griptape_nodes.utils.node_probe_utils import NodeProbeError, probe_node_class
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -1441,8 +1440,9 @@ class LibraryManager:
         node_class = library._node_types[request.node_type]
         probe_name = f"__describe_node_type_probe__{request.node_type}"
         try:
-            probe_node = probe_node_class(node_class, name=probe_name)
-        except NodeProbeError as err:
+            probe_node = node_class(name=probe_name)
+        except Exception as err:
+            probe_error = f"{type(err).__name__}: {err}"
             return DescribeNodeTypeResultSuccess(
                 library=library_name,
                 node_type=request.node_type,
@@ -1458,7 +1458,7 @@ class LibraryManager:
                     ),
                     ResultDetail(
                         level=logging.WARNING,
-                        message=f"Parameter probe failed because: {err}",
+                        message=f"Parameter probe failed because: {probe_error}",
                     ),
                 ),
             )
@@ -3460,13 +3460,9 @@ class LibraryManager:
             if node_class is None:
                 continue
             try:
-                probe = probe_node_class(node_class, name="__schema_probe__")
-            except NodeProbeError as err:
-                logger.debug(
-                    "Could not probe node class '%s' for schema serialization: %s",
-                    class_name,
-                    err,
-                )
+                probe = node_class(name="__schema_probe__")
+            except Exception:
+                logger.debug("Could not probe node class '%s' for schema serialization.", class_name, exc_info=True)
                 continue
 
             param_schemas: list[WorkerParameterSchema] = []
