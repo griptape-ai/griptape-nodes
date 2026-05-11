@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
+import pytest
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
@@ -911,7 +912,8 @@ class TestWorkflowManager:
                 if context_manager.has_current_workflow():
                     context_manager.pop_workflow()
 
-    def test_startup_scan_skips_unsaved_prefix_files(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_startup_scan_skips_unsaved_prefix_files(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
         """Leaked `unsaved:<uuid>.py` files on disk must be skipped during the workspace scan.
 
         Pre-fix saves wrote these files; `_determine_save_target` no longer does, but any
@@ -937,7 +939,7 @@ class TestWorkflowManager:
         good_path = tmp_path / "regular_workflow.py"
         good_path.write_text(metadata_block, encoding="utf-8")
 
-        result = workflow_manager._process_workflows_for_registration([str(tmp_path)])
+        result = await workflow_manager._process_workflows_for_registration([str(tmp_path)])
 
         scanned_names = {Path(name).name for name in result.succeeded + result.failed}
         assert leaked_path.name not in scanned_names
