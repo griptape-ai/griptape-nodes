@@ -424,6 +424,215 @@ class TestMacroParserParse:
             ParsedMacro("{}")
 
 
+class TestParseSequenceToken:
+    """Parser recognizes Nuke-style sequence tokens outside of braces."""
+
+    def test_parse_hash_token_width_4(self) -> None:
+        """`####` parses to a hash sequence token with width 4."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        parsed = ParsedMacro("render.####.exr")
+        seq_tokens = [s for s in parsed.segments if isinstance(s, ParsedSequenceToken)]
+        assert len(seq_tokens) == 1
+        assert seq_tokens[0].width == 4
+        assert seq_tokens[0].original_syntax is SequenceTokenSyntax.HASH
+
+    def test_parse_single_hash_width_1(self) -> None:
+        """Single `#` is a width-1 hash token (matches any integer on scan)."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken
+
+        parsed = ParsedMacro("frame_#.png")
+        seq_tokens = [s for s in parsed.segments if isinstance(s, ParsedSequenceToken)]
+        assert len(seq_tokens) == 1
+        assert seq_tokens[0].width == 1
+
+    def test_parse_printf_token_width_4(self) -> None:
+        """`%04d` parses to a printf sequence token with width 4."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        parsed = ParsedMacro("render.%04d.exr")
+        seq_tokens = [s for s in parsed.segments if isinstance(s, ParsedSequenceToken)]
+        assert len(seq_tokens) == 1
+        assert seq_tokens[0].width == 4
+        assert seq_tokens[0].original_syntax is SequenceTokenSyntax.PRINTF
+
+    def test_parse_printf_token_unpadded(self) -> None:
+        """`%d` is unpadded: width 0."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken
+
+        parsed = ParsedMacro("frame_%d.png")
+        seq_tokens = [s for s in parsed.segments if isinstance(s, ParsedSequenceToken)]
+        assert len(seq_tokens) == 1
+        assert seq_tokens[0].width == 0
+
+    def test_parse_printf_no_leading_zero(self) -> None:
+        """`%4d` parses with width 4 (leading zero optional in printf spec)."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken
+
+        parsed = ParsedMacro("frame_%4d.png")
+        seq_tokens = [s for s in parsed.segments if isinstance(s, ParsedSequenceToken)]
+        assert len(seq_tokens) == 1
+        assert seq_tokens[0].width == 4
+
+    def test_sequence_token_coexists_with_variable(self) -> None:
+        """`{outputs}/render.####.exr` produces static, variable, static, sequence, static."""
+        from griptape_nodes.common.macro_parser.segments import (
+            ParsedSequenceToken,
+            ParsedStaticValue,
+            ParsedVariable,
+        )
+
+        parsed = ParsedMacro("{outputs}/render.####.exr")
+        kinds = [type(s).__name__ for s in parsed.segments]
+        assert ParsedVariable.__name__ in kinds
+        assert ParsedStaticValue.__name__ in kinds
+        assert ParsedSequenceToken.__name__ in kinds
+
+    def test_sequence_token_in_directory_component(self) -> None:
+        """`render/####/beauty.exr` is legal (token in a directory component)."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken
+
+        parsed = ParsedMacro("render/####/beauty.exr")
+        seq_tokens = [s for s in parsed.segments if isinstance(s, ParsedSequenceToken)]
+        assert len(seq_tokens) == 1
+
+    def test_date_format_inside_braces_not_sequence(self) -> None:
+        """`{date:%Y-%m-%d}` keeps `%d` as part of the date format, not a sequence token."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        parsed = ParsedMacro("{date:%Y-%m-%d}/render.%04d.exr")
+        seq_tokens = [s for s in parsed.segments if isinstance(s, ParsedSequenceToken)]
+        # Only the outside-braces %04d is a sequence token; %d inside {...} is a date format.
+        assert len(seq_tokens) == 1
+        assert seq_tokens[0].width == 4
+        assert seq_tokens[0].original_syntax is SequenceTokenSyntax.PRINTF
+
+    def test_multiple_hash_tokens_rejected(self) -> None:
+        """Two hash tokens in one template raise MULTIPLE_SEQUENCE_TOKENS."""
+        from griptape_nodes.common.macro_parser import MacroParseFailureReason, MacroSyntaxError
+
+        with pytest.raises(MacroSyntaxError) as exc_info:
+            ParsedMacro("v##_f####.exr")
+        assert exc_info.value.failure_reason == MacroParseFailureReason.MULTIPLE_SEQUENCE_TOKENS
+
+    def test_mixed_hash_and_printf_rejected(self) -> None:
+        """Mixing `##` and `%04d` in one template is rejected."""
+        from griptape_nodes.common.macro_parser import MacroParseFailureReason, MacroSyntaxError
+
+        with pytest.raises(MacroSyntaxError) as exc_info:
+            ParsedMacro("render.##_%04d.exr")
+        assert exc_info.value.failure_reason == MacroParseFailureReason.MULTIPLE_SEQUENCE_TOKENS
+
+    def test_multiple_sequence_error_points_at_second_occurrence(self) -> None:
+        """The error position is the *second* sequence token."""
+        from griptape_nodes.common.macro_parser import MacroSyntaxError
+
+        with pytest.raises(MacroSyntaxError) as exc_info:
+            ParsedMacro("aa##bb####cc")
+        # First `##` at index 2, second `####` at index 6.
+        assert exc_info.value.error_position == 6
+
+    def test_parse_template_without_sequence_token(self) -> None:
+        """Templates with no sequence token still parse (no regression)."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken
+
+        parsed = ParsedMacro("{outputs}/photo.jpg")
+        seq_tokens = [s for s in parsed.segments if isinstance(s, ParsedSequenceToken)]
+        assert len(seq_tokens) == 0
+
+
+class TestSequenceTokenRender:
+    """Test ParsedSequenceToken.render_frame and to_literal helpers."""
+
+    def test_hash_to_literal(self) -> None:
+        """Hash token round-trips to its source form."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        assert ParsedSequenceToken(width=4, original_syntax=SequenceTokenSyntax.HASH).to_literal() == "####"
+        assert ParsedSequenceToken(width=1, original_syntax=SequenceTokenSyntax.HASH).to_literal() == "#"
+
+    def test_printf_to_literal(self) -> None:
+        """Printf token round-trips to its source form."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        assert ParsedSequenceToken(width=4, original_syntax=SequenceTokenSyntax.PRINTF).to_literal() == "%04d"
+        assert ParsedSequenceToken(width=0, original_syntax=SequenceTokenSyntax.PRINTF).to_literal() == "%d"
+
+    def test_render_frame_pads_to_width(self) -> None:
+        """Frame is zero-padded to declared width."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        t = ParsedSequenceToken(width=4, original_syntax=SequenceTokenSyntax.HASH)
+        assert t.render_frame(5) == "0005"
+        assert t.render_frame(42) == "0042"
+        assert t.render_frame(9999) == "9999"
+
+    def test_render_frame_overflow_allowed(self) -> None:
+        """Frame numbers exceeding declared width render at natural width (no truncation)."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        t = ParsedSequenceToken(width=4, original_syntax=SequenceTokenSyntax.HASH)
+        assert t.render_frame(12345) == "12345"
+
+    def test_render_frame_negative_sign_extra_to_padding(self) -> None:
+        """Negative frames prepend the sign in addition to the declared padding."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        t = ParsedSequenceToken(width=4, original_syntax=SequenceTokenSyntax.HASH)
+        assert t.render_frame(-5) == "-0005"
+        assert t.render_frame(-12345) == "-12345"
+
+    def test_render_frame_width_zero_unpadded(self) -> None:
+        """Width 0 (%d) is unpadded."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        t = ParsedSequenceToken(width=0, original_syntax=SequenceTokenSyntax.PRINTF)
+        assert t.render_frame(5) == "5"
+        assert t.render_frame(12345) == "12345"
+        assert t.render_frame(-5) == "-5"
+
+
+class TestSequenceResolve:
+    """ParsedMacro.resolve preserves sequence tokens as literal static text."""
+
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Any:
+        """Create a mock SecretsManager for testing."""
+        from unittest.mock import MagicMock
+
+        mock = MagicMock()
+        mock.get_secret.return_value = None
+        return mock
+
+    def test_resolve_hash_token_preserves_literal(self, mock_secrets_manager: Any) -> None:
+        """`resolve()` on a hash-sequence template returns the unexpanded literal."""
+        parsed = ParsedMacro("render.####.exr")
+        assert parsed.resolve({}, mock_secrets_manager) == "render.####.exr"
+
+    def test_resolve_printf_token_preserves_literal(self, mock_secrets_manager: Any) -> None:
+        """`resolve()` on a printf-sequence template returns the unexpanded literal."""
+        parsed = ParsedMacro("render.%04d.exr")
+        assert parsed.resolve({}, mock_secrets_manager) == "render.%04d.exr"
+
+    def test_resolve_sequence_plus_variable(self, mock_secrets_manager: Any) -> None:
+        """Variables resolve while sequence token stays literal."""
+        parsed = ParsedMacro("{outputs}/render.####.exr")
+        resolved = parsed.resolve({"outputs": "/workspace/out"}, mock_secrets_manager)
+        assert resolved == "/workspace/out/render.####.exr"
+
+    def test_resolve_round_trip_parse(self, mock_secrets_manager: Any) -> None:
+        """A resolved sequence template re-parses to an equivalent macro."""
+        from griptape_nodes.common.macro_parser.segments import ParsedSequenceToken, SequenceTokenSyntax
+
+        parsed = ParsedMacro("render.####.exr")
+        resolved = parsed.resolve({}, mock_secrets_manager)
+        reparsed = ParsedMacro(resolved)
+        seq_tokens = [s for s in reparsed.segments if isinstance(s, ParsedSequenceToken)]
+        assert len(seq_tokens) == 1
+        assert seq_tokens[0].width == 4
+        assert seq_tokens[0].original_syntax is SequenceTokenSyntax.HASH
+
+
 class TestMacroParserFindMatchesDetailed:
     """Test cases for MacroParser.find_matches_detailed() method."""
 
@@ -722,7 +931,8 @@ class TestMacroFailureTypes:
         assert MacroParseFailureReason.NESTED_BRACES == "NESTED_BRACES"
         assert MacroParseFailureReason.EMPTY_VARIABLE == "EMPTY_VARIABLE"
         assert MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE == "UNEXPECTED_SEGMENT_TYPE"
-        assert len(MacroParseFailureReason) == 5
+        assert MacroParseFailureReason.MULTIPLE_SEQUENCE_TOKENS == "MULTIPLE_SEQUENCE_TOKENS"
+        assert len(MacroParseFailureReason) == 6
 
     def test_macro_resolution_failure_dataclass(self) -> None:
         """Test creating MacroResolutionFailure with all fields."""

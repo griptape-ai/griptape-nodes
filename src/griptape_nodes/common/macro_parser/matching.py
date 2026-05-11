@@ -22,6 +22,12 @@ def extract_unknown_variables(
 ) -> dict[VariableInfo, str | int] | None:
     """Extract unknown variable values from path (greedy matching).
 
+    This operates on segments emitted by `partial_resolve`, which converts
+    sequence tokens to ParsedStaticValue containing the literal token form
+    (`####`/`%04d`). Sequence-aware read extraction lives on SequenceTemplate
+    via `ParsedMacro.to_regex()`; this function is variable-centric and is
+    not intended to see a raw ParsedSequenceToken.
+
     Args:
         pattern_segments: Partially resolved segments to match against
         path: Path string to extract variables from

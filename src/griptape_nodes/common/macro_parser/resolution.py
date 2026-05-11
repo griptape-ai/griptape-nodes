@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError, MacroResolutionFailureReason
-from griptape_nodes.common.macro_parser.segments import MacroVariables, ParsedSegment, ParsedStaticValue, ParsedVariable
+from griptape_nodes.common.macro_parser.segments import (
+    MacroVariables,
+    ParsedSegment,
+    ParsedSequenceToken,
+    ParsedStaticValue,
+    ParsedVariable,
+)
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -96,6 +102,14 @@ def partial_resolve(
 
                 # Optional variable not in variables dict - skip it
                 continue
+            case ParsedSequenceToken():
+                # Sequence tokens are not expanded by resolve(). They render
+                # back to their original source form (e.g., "####" or "%04d")
+                # as static text, so callers can hand the resolved string to
+                # a downstream tool (Nuke itself, ffmpeg, etc.) that performs
+                # its own per-frame expansion. Per-frame rendering for writes
+                # goes through SequenceTemplate.render_frame().
+                resolved_segments.append(ParsedStaticValue(text=segment.to_literal()))
             case _:
                 msg = f"Unexpected segment type: {type(segment).__name__}"
                 raise MacroResolutionError(
