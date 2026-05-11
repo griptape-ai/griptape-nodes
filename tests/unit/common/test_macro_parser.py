@@ -633,6 +633,29 @@ class TestSequenceResolve:
         assert seq_tokens[0].original_syntax is SequenceTokenSyntax.HASH
 
 
+class TestParsedMacroSequenceAccessors:
+    """sequence_token / is_sequence properties on ParsedMacro."""
+
+    def test_non_sequence_template_has_no_token(self) -> None:
+        """Non-sequence templates report is_sequence=False and sequence_token=None."""
+        parsed = ParsedMacro("{outputs}/photo.jpg")
+        assert parsed.is_sequence is False
+        assert parsed.sequence_token is None
+
+    def test_sequence_template_exposes_token(self) -> None:
+        """Sequence templates expose the parsed token through the property."""
+        parsed = ParsedMacro("render.####.exr")
+        assert parsed.is_sequence is True
+        assert parsed.sequence_token is not None
+        assert parsed.sequence_token.width == 4
+
+    def test_get_variables_excludes_sequence_token(self) -> None:
+        """Sequence tokens don't appear in get_variables() (not a named variable)."""
+        parsed = ParsedMacro("{outputs}/render.####.exr")
+        variable_names = {v.name for v in parsed.get_variables()}
+        assert variable_names == {"outputs"}
+
+
 class TestMacroParserFindMatchesDetailed:
     """Test cases for MacroParser.find_matches_detailed() method."""
 

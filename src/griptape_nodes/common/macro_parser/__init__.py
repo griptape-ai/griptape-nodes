@@ -19,7 +19,22 @@ from griptape_nodes.common.macro_parser.formats import (
     SlugFormat,
     UpperCaseFormat,
 )
-from griptape_nodes.common.macro_parser.segments import MacroVariables, ParsedStaticValue, ParsedVariable, VariableInfo
+from griptape_nodes.common.macro_parser.segments import (
+    MacroVariables,
+    ParsedSequenceToken,
+    ParsedStaticValue,
+    ParsedVariable,
+    SequenceTokenSyntax,
+    VariableInfo,
+)
+from griptape_nodes.common.macro_parser.sequence import (
+    MissingFrameError,
+    MissingFrameMarker,
+    MissingFramePolicy,
+    Sequence,
+    SequenceTemplate,
+    SequenceTemplateError,
+)
 
 __all__ = [
     "DateFormat",
@@ -33,11 +48,19 @@ __all__ = [
     "MacroResolutionFailureReason",
     "MacroSyntaxError",
     "MacroVariables",
+    "MissingFrameError",
+    "MissingFrameMarker",
+    "MissingFramePolicy",
     "NumericPaddingFormat",
     "ParsedMacro",
+    "ParsedSequenceToken",
     "ParsedStaticValue",
     "ParsedVariable",
     "SeparatorFormat",
+    "Sequence",
+    "SequenceTemplate",
+    "SequenceTemplateError",
+    "SequenceTokenSyntax",
     "SlugFormat",
     "UpperCaseFormat",
     "VariableInfo",

@@ -156,6 +156,103 @@ Extracted: outputs="outputs", node_name="StyleTransfer", file_name_base="portrai
 
 Numeric padding is reversed by parsing the number (`"003"` → integer `3`). Case transformations and slugification cannot be reliably reversed and return the value as-is.
 
+## Image sequences (Nuke-style)
+
+Macros accept Nuke-style sequence tokens for filenames that represent a range of per-frame image files. A sequence token is a placeholder for the *frame number*; it appears **outside** any `{...}` block and is written as either a run of hash characters or a printf specifier.
+
+```
+render.####.exr    # hash form: four `#` = four-digit zero-padded frame number
+render.%04d.exr    # printf form: equivalent to ####
+frame_#.png        # single `#` = any integer frame (no minimum digits on read)
+frame_%d.png       # printf with no width = any integer frame
+```
+
+A template may contain **at most one** sequence token. Mixing two hash runs, two printf specifiers, or one of each is rejected at parse time.
+
+### Where sequence tokens can appear
+
+A sequence token may appear anywhere in the path — in the basename, the extension stem, or a directory component:
+
+```
+render.####.exr             # basename
+sequence_####.exr           # anywhere in the basename
+frames/####/beauty.exr      # directory component
+{outputs}/shot/####.exr     # alongside regular variables
+```
+
+### Read and write behave differently (intentionally)
+
+Sequence tokens represent a *set* of files on read but a *single file* on write. The semantics are asymmetric:
+
+- **Write**: pad to the declared width, with overflow allowed. Frame 5 with `####` renders as `0005`. Frame 12345 with `####` renders as `12345` — the number isn't truncated.
+- **Read**: the declared width is a **minimum**. `####` matches any integer with **at least four digits**, so it picks up `0001`, `0099`, `12345`, and so on. Files with fewer digits than the declared width (like `render.1.exr` against `####`) are ignored. A single `#` or `%d` effectively matches any frame number.
+
+Negative frames are supported on both sides. The sign is extra to the padding: frame `-5` with `####` renders as `-0005`, not `-005`.
+
+### Working with sequences in code
+
+Parse a template the usual way. If the template contains a sequence token, wrap it in `SequenceTemplate` to access read/write operations:
+
+```python
+from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.macro_parser.sequence import (
+    MissingFramePolicy,
+    SequenceTemplate,
+)
+
+macro = ParsedMacro("{outputs}/render.####.exr")
+
+# Calling .resolve() on a sequence macro preserves the sequence token as
+# literal text — useful when handing the unexpanded pattern to a downstream
+# tool (Nuke itself, ffmpeg, etc.) that performs its own per-frame expansion.
+macro.resolve({"outputs": "/workspace/out"}, secrets_manager)
+# → "/workspace/out/render.####.exr"
+
+# Render a specific frame for writing.
+seq_template = SequenceTemplate(macro)
+seq_template.render_frame(5, {"outputs": "/workspace/out"}, secrets_manager)
+# → "/workspace/out/render.0005.exr"
+
+# Scan for files matching the pattern. The directory to scan is derived
+# from the resolved template — all required variables must be supplied
+# (the scan refuses to run when it doesn't know where to look).
+sequence = seq_template.scan(
+    variables={"outputs": "/workspace/out"},
+    secrets_manager=secrets_manager,
+    policy=MissingFramePolicy.ERROR,
+)
+sequence.frames        # sorted [(frame_int, Path), ...]
+sequence.first         # lowest scanned frame
+sequence.last          # highest scanned frame
+sequence.missing       # set of frame numbers in [first, last] that aren't on disk
+sequence.shadowed_files  # {frame: [non-winning paths, ...]} for duplicates
+```
+
+All filesystem access flows through the `ListDirectoryRequest` event, so
+scan inherits the engine's path normalization, permission handling, and
+long-path support automatically — no manual directory walking in caller code.
+
+### Missing-frame policy
+
+If a caller asks for a frame that isn't on disk, the `MissingFramePolicy` controls the behavior. Names mirror Nuke's `on_error` Read-node knob.
+
+| Policy              | Behavior                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERROR` *(default)* | Raise `MissingFrameError`.                                                                                                                  |
+| `NEAREST`           | Return the path of the closest existing frame. Ties resolve toward the lower frame.                                                         |
+| `BLACK`             | Return a `MissingFrameMarker(policy=BLACK, frame=N)` sentinel. The caller (e.g., a node-level renderer) synthesizes the actual black frame. |
+| `CHECKERBOARD`      | Same as `BLACK`, but with the checkerboard policy on the marker.                                                                            |
+
+Iterate the whole declared range via `sequence.iter_dense()`, which yields `(frame, Path | MissingFrameMarker)` for every frame in `[first, last]` with the policy applied consistently.
+
+### Duplicate frames
+
+If two files on disk resolve to the same frame number — for example `render.0001.exr` and `render.001.exr` both matching `render.####.exr` — the lexicographically-first filename keeps the slot and the others are recorded on `sequence.shadowed_files`. A warning is logged for each duplicate. This matches Nuke's observed behavior (scan-order wins, with lexicographic sort for cross-platform determinism).
+
+### Not related to `{_index}`
+
+`{_index}` is an auto-incrementing integer used for filename collision avoidance on write (the project system scans for the next free index). Sequence tokens (`####` / `%04d`) represent frame numbers supplied by the caller or extracted from disk. The two concepts share a regex-scanning primitive internally but serve different purposes — don't use one where you mean the other.
+
 ## Syntax errors
 
 The macro parser reports syntax errors with a position number to help you find the problem:
@@ -164,3 +261,4 @@ The macro parser reports syntax errors with a position number to help you find t
 - Unmatched closing brace: `variable}name`
 - Nested braces: `{outer{inner}}`
 - Empty variable: `{}`
+- Multiple sequence tokens: `v##_f####.exr` (only one `#` run or `%Nd` per template is allowed)
