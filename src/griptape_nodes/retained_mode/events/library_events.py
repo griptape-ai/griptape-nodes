@@ -265,17 +265,18 @@ class DescribeNodeTypeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
         library: Library that provided the node type
         node_type: Name of the node type
         metadata: Library-level node metadata (category, description, display_name, tags, icon, color, group)
-        parameters: Parameter schemas in declaration order. Empty when `probe_error` is set.
-        probe_error: Non-null when the engine could not instantiate the probe node used to read
-            parameter declarations (typically because the node's `__init__` performed I/O that
-            failed). When present, the node-level `metadata` is still valid but `parameters` is empty.
+        parameters: Parameter schemas in declaration order. Empty when the engine could not
+            instantiate the probe node used to read parameter declarations (typically because the
+            node's `__init__` performed I/O that failed). When that happens, the node-level
+            `metadata` is still valid and `result_details` carries a WARNING-level entry naming
+            the cause, so callers can distinguish a probe failure from a node that legitimately
+            declares no parameters.
     """
 
     library: str
     node_type: str
     metadata: NodeMetadata
     parameters: list[ParameterDescription] = field(default_factory=list)
-    probe_error: str | None = None
 
 
 @dataclass

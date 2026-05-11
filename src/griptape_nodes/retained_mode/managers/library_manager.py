@@ -55,7 +55,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails, ResultPayloadFailure
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetail, ResultDetails, ResultPayloadFailure
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -212,6 +212,7 @@ from griptape_nodes.utils.library_utils import (
     filter_old_xdg_library_paths,
     is_monorepo,
 )
+from griptape_nodes.utils.node_probe_utils import NodeProbeError, probe_node_class
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -1434,25 +1435,32 @@ class LibraryManager:
         # when this method returns.
         #
         # Nodes whose __init__ performs I/O (network calls, auth checks, disk reads) can raise.
-        # In that case we still return a success payload with the library-level metadata and an
-        # explicit `probe_error`, so callers can present the node at all instead of getting an
-        # opaque failure for every such node type.
+        # In that case we still return a success payload with the library-level metadata and a
+        # WARNING entry in result_details, so callers can present the node at all instead of
+        # getting an opaque failure for every such node type.
+        node_class = library._node_types[request.node_type]
         probe_name = f"__describe_node_type_probe__{request.node_type}"
         try:
-            probe_node = library.create_node(node_type=request.node_type, name=probe_name)
-        except Exception as err:
-            probe_error = f"{type(err).__name__}: {err}"
-            details = (
-                f"Described node type '{request.node_type}' in Library '{library_name}' with library metadata only; "
-                f"parameter probe failed because: {probe_error}"
-            )
+            probe_node = probe_node_class(node_class, name=probe_name)
+        except NodeProbeError as err:
             return DescribeNodeTypeResultSuccess(
                 library=library_name,
                 node_type=request.node_type,
                 metadata=node_metadata,
                 parameters=[],
-                probe_error=probe_error,
-                result_details=details,
+                result_details=ResultDetails(
+                    ResultDetail(
+                        level=logging.INFO,
+                        message=(
+                            f"Described node type '{request.node_type}' in Library '{library_name}' "
+                            "with library metadata only."
+                        ),
+                    ),
+                    ResultDetail(
+                        level=logging.WARNING,
+                        message=f"Parameter probe failed because: {err}",
+                    ),
+                ),
             )
 
         parameters = [ParameterDescription.from_parameter(param) for param in probe_node.parameters]
@@ -3452,9 +3460,13 @@ class LibraryManager:
             if node_class is None:
                 continue
             try:
-                probe = node_class(name="__schema_probe__")
-            except Exception:
-                logger.debug("Could not probe node class '%s' for schema serialization.", class_name, exc_info=True)
+                probe = probe_node_class(node_class, name="__schema_probe__")
+            except NodeProbeError as err:
+                logger.debug(
+                    "Could not probe node class '%s' for schema serialization: %s",
+                    class_name,
+                    err,
+                )
                 continue
 
             param_schemas: list[WorkerParameterSchema] = []

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import sys
 from collections.abc import Generator
 from pathlib import Path
@@ -1302,7 +1303,7 @@ class TestDescribeNodeTypeRequest:
 
         assert isinstance(result, DescribeNodeTypeResultFailure)
 
-    def test_returns_success_with_probe_error_when_init_raises(self, griptape_nodes: GriptapeNodes) -> None:
+    def test_returns_success_with_warning_detail_when_init_raises(self, griptape_nodes: GriptapeNodes) -> None:
         """Nodes whose __init__ performs I/O can raise (e.g. auth). We still want the node-level metadata."""
         library_manager = griptape_nodes.LibraryManager()
 
@@ -1338,6 +1339,8 @@ class TestDescribeNodeTypeRequest:
         assert result.metadata.display_name == "Raising Probe"
         # Parameters are empty because the probe failed before they could be declared.
         assert result.parameters == []
-        # The probe_error carries the concrete reason so callers can tell it apart from "no params".
-        assert result.probe_error is not None
-        assert "simulated I/O failure" in result.probe_error
+        # result_details carries the concrete reason at WARNING level so callers can tell
+        # a probe failure apart from "this node legitimately has no parameters".
+        assert isinstance(result.result_details, ResultDetails)
+        assert any(detail.level == logging.WARNING for detail in result.result_details.result_details)
+        assert "simulated I/O failure" in str(result.result_details)
