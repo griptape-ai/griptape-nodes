@@ -10,7 +10,7 @@ there. This module provides:
   handler for those request types on the worker. While the worker is actively
   executing a node it forwards; outside that scope it delegates back to the
   original local handler (which preserves bootstrap / library-load behavior).
-- ``install_remote_handlers``: swaps the dispatch table entries on a
+- ``register_remote_handlers``: swaps the dispatch table entries on a
   just-configured worker after ``configure_worker_forwarding`` has wired up
   the RequestClient and loop references.
 
@@ -141,7 +141,7 @@ class RemoteHandler:
         return await call_function(self.original, request)
 
 
-def install_remote_handlers(event_manager: EventManager) -> None:
+def register_remote_handlers(event_manager: EventManager) -> None:
     """Swap every FORWARDED_REQUEST_TYPE handler for a RemoteHandler.
 
     Must be called after every manager that claims one of these request types
@@ -156,7 +156,7 @@ def install_remote_handlers(event_manager: EventManager) -> None:
         original = event_manager.get_manager_for_request_type(request_type)
         if original is None:
             msg = (
-                f"install_remote_handlers: no manager registered for "
+                f"register_remote_handlers: no manager registered for "
                 f"{request_type.__name__}. Worker bootstrap must finish manager "
                 f"registration before remote handlers are installed."
             )

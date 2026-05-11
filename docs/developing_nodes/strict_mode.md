@@ -47,15 +47,6 @@ to a failure on the worker unless `worker_escalation=False`).
 
 ### Correctness rules (fail execution)
 
-#### `sync-in-async-loop`
-
-A synchronous `GriptapeNodes.handle_request` or
-`broadcast_app_event` was invoked from inside a running event loop
-against an async handler. This deadlocks or stalls the loop.
-
-**Remediation**: call the async counterpart
-(`GriptapeNodes.ahandle_request` / `abroadcast_app_event`) instead.
-
 #### `reentrant-bus-in-init`
 
 A node issued an event-bus request from inside its `__init__`. The

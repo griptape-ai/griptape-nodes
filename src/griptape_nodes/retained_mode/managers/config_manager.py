@@ -740,13 +740,9 @@ class ConfigManager:
 
         # Step 3: Read current config directly from disk.
         #
-        # We intentionally bypass the ReadFileRequest handler here. `_write_user_config_delta`
-        # is called from both sync (set_config_value) and async (app-init handlers that
-        # register provider settings) contexts; the ReadFileRequest handler is async, so
-        # dispatching it from an async context via sync handle_request trips the
-        # sync-in-async fail-fast (issue #4469). The enclosing writes already use
-        # os_manager.on_write_file_request directly (sync), so the read matches that
-        # bootstrap-path style and avoids coupling config load to event-loop state.
+        # We intentionally bypass the ReadFileRequest handler here. The enclosing writes
+        # already use os_manager.on_write_file_request directly (sync), so the read matches
+        # that bootstrap-path style and avoids coupling config load to event-loop state.
         try:
             file_content = Path(config_path_str).read_text(encoding="utf-8")
         except FileNotFoundError:

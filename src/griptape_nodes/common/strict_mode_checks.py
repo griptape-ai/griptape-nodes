@@ -68,21 +68,6 @@ RULES: dict[str, StrictModeRule] = {
     rule.rule_id: rule
     for rule in (
         _rule(
-            "sync-in-async-loop",
-            severity=StrictModeSeverity.ERROR,
-            correctness=True,
-            description=(
-                "A synchronous GriptapeNodes.handle_request or broadcast_app_event "
-                "was invoked from within a running event loop against an async "
-                "handler. This deadlocks or stalls the loop."
-            ),
-            remediation=(
-                "Request '{request_type}' was dispatched synchronously from a running "
-                "event loop against an async handler ({handler_description}). "
-                "Call {recommended_call} instead."
-            ),
-        ),
-        _rule(
             "reentrant-bus-in-init",
             severity=StrictModeSeverity.ERROR,
             correctness=True,

@@ -1048,14 +1048,8 @@ class BaseNode(ABC):
 
         Default implementation wraps the existing process() method to maintain backwards compatibility.
         Subclasses can override this method to provide direct async implementation.
-
-        process() runs in a worker thread so that sync GriptapeNodes.handle_request(...) calls
-        made from sync node code can dispatch async handlers via asyncio.run without tripping
-        the running-loop guard (see #4469). ContextVars propagate into the thread via
-        contextvars.copy_context() inside asyncio.to_thread, so current_executing_node_name
-        and similar context survive the hop.
         """
-        result = await async_utils.to_thread(self.process)
+        result = self.process()
 
         if result is None:
             # Simple synchronous node - nothing to do

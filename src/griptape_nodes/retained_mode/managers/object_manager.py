@@ -13,9 +13,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
     ResultPayload,
 )
-from griptape_nodes.retained_mode.events.execution_events import (
-    CancelFlowRequest,
-)
 from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
 )
@@ -107,21 +104,11 @@ class ObjectManager:
             result_details = details
         return RenameObjectResultSuccess(final_name=final_name, result_details=result_details)
 
-    async def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:  # noqa: C901
+    async def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:
         if not request.i_know_what_im_doing:
             details = "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
             logger.warning(details)
             return ClearAllObjectStateResultFailure(result_details=details)
-        # Let's try and clear it all.
-        # Cancel any running flows.
-        flows = self.get_filtered_subset(type=ControlFlow)
-        for flow_name in flows:
-            if GriptapeNodes.FlowManager().check_for_existing_running_flow():
-                result = await GriptapeNodes.ahandle_request(CancelFlowRequest(flow_name=flow_name))
-                if result.failed():
-                    details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_name}' could not cancel."
-                    logger.error(details)
-                    return ClearAllObjectStateResultFailure(result_details=details)
 
         try:
             # Reset global execution state first to eliminate all references before deletion
@@ -131,24 +118,21 @@ class ObjectManager:
             logger.error(details)
             return ClearAllObjectStateResultFailure(result_details=details)
 
+        # Tear down each active workflow: cancel its running flows, delete its child
+        # flows, drain its context substack, pop it. Stack depth is typically 1.
         try:
-            # Delete the existing flows, which will clear all nodes and connections.
-            GriptapeNodes.clear_data()
+            context_mgr = GriptapeNodes.ContextManager()
+            while context_mgr.has_current_workflow():
+                GriptapeNodes.clear_current_workflow_data()
         except Exception as e:
             details = f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
             logger.error(details)
             return ClearAllObjectStateResultFailure(result_details=details)
 
-        # Clear the current context.
-        context_mgr = GriptapeNodes.ContextManager()
-        while context_mgr.has_current_workflow():
-            while context_mgr.has_current_flow():
-                while context_mgr.has_current_node():
-                    while context_mgr.has_current_element():
-                        context_mgr.pop_element()
-                    context_mgr.pop_node()
-                context_mgr.pop_flow()
-            context_mgr.pop_workflow()
+        if self._name_to_objects:
+            details = f"Attempted to clear all object state, but {len(self._name_to_objects)} object(s) remained after workflow teardown."
+            logger.error(details)
+            return ClearAllObjectStateResultFailure(result_details=details)
 
         # Clear all local workflow variables
         GriptapeNodes.VariablesManager().on_clear_object_state()
