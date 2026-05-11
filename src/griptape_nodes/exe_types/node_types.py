@@ -1013,13 +1013,8 @@ class BaseNode(ABC):
 
         Default implementation wraps the existing process() method to maintain backwards compatibility.
         Subclasses can override this method to provide direct async implementation.
-
-        process() is sync user code and may block for a long time (disk, model inference,
-        subprocess). Running it in a worker thread via asyncio.to_thread keeps the event
-        loop responsive. ContextVars propagate into the thread via contextvars.copy_context(),
-        so current_executing_node_name and similar context survive the hop.
         """
-        result = await async_utils.to_thread(self.process)
+        result = self.process()
 
         if result is None:
             # Simple synchronous node - nothing to do
