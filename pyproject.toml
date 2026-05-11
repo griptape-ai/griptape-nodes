@@ -1,5 +1,5 @@
 [project]
-name = "griptape-nodes"
+name = "griptape-nodes-engine"
 version = "0.84.0"
 description = "Add your description here"
 readme = "README.md"
@@ -71,12 +71,16 @@ test = [
 ]
 
 [project.scripts]
+# TODO: remove these entries when the CLI moves to the griptape-nodes-app repo. https://github.com/griptape-ai/griptape-nodes-app/issues/7
 griptape-nodes = "griptape_nodes:main"
 gtn = "griptape_nodes:main"
 
 [build-system]
 requires = ["uv_build>=0.7.2,<0.12"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "griptape_nodes"
 
 [tool.uv.sources]
 griptape-cloud-client = { git = "https://github.com/griptape-ai/griptape-cloud-python-client", rev = "main" }
