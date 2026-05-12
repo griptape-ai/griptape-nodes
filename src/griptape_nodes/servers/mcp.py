@@ -45,6 +45,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListCategoriesInLibraryRequest,
     ListNodeTypesInLibraryRequest,
     ListRegisteredLibrariesRequest,
+    RegisterSandboxNodeFromSourceRequest,
 )
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
@@ -84,6 +85,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "ListRegisteredLibrariesRequest": ListRegisteredLibrariesRequest,
     "ListNodeTypesInLibraryRequest": ListNodeTypesInLibraryRequest,
     "ListCategoriesInLibraryRequest": ListCategoriesInLibraryRequest,
+    "RegisterSandboxNodeFromSourceRequest": RegisterSandboxNodeFromSourceRequest,
     # Execution
     "ResolveNodeRequest": ResolveNodeRequest,
     "ExecuteNodeRequest": ExecuteNodeRequest,

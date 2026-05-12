@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.node_library.library_registry import (
@@ -169,6 +169,74 @@ class GetNodeMetadataFromLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPay
 @PayloadRegistry.register
 class GetNodeMetadataFromLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Node metadata retrieval failed. Common causes: library not found, node type not found, library not loaded."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterSandboxNodeFromSourceRequest(RequestPayload):
+    """Register the BaseNode subclasses declared in a Python source file already on disk inside the sandbox library directory.
+
+    Use when: An agent has just written a `.py` file into the configured sandbox directory
+    (via `WriteFileRequest` or any other means) and wants the engine to import it and
+    register its `BaseNode` subclasses without restarting. The engine never writes anything
+    itself; it only imports and registers what is already at `file_path`. The new node types
+    are immediately usable via `CreateNodeRequest` / `CreateNodesRequest`.
+
+    The file persists on disk, so subsequent engine startups pick it up through the normal
+    sandbox scan-and-load pipeline. Auto-generated metadata follows the same conventions the
+    engine applies to files placed in the sandbox directory through the UI.
+
+    Security note: the imported source runs inside the engine process with no isolation.
+    Anyone who can reach this request, or who can write into the sandbox directory, can
+    execute arbitrary Python. This mirrors the existing sandbox-directory behaviour, but
+    makes that surface reachable via MCP.
+
+    Args:
+        file_path: Path to a `.py` file inside the configured sandbox library directory.
+            Absolute paths must resolve under the sandbox directory; relative paths are
+            resolved against it. The file must already exist on disk.
+        replace_if_exists: When True, any node type of the same class name already registered
+            in the Sandbox Library is unregistered before registering the new class. Existing
+            node instances of that class in a running workflow are NOT migrated.
+
+    Results: RegisterSandboxNodeFromSourceResultSuccess | RegisterSandboxNodeFromSourceResultFailure
+    """
+
+    file_path: str
+    replace_if_exists: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterSandboxNodeFromSourceResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Source file imported and at least one BaseNode subclass registered.
+
+    Args:
+        file_path: Absolute path to the .py file that was imported.
+        library_name: Name of the library the class(es) were registered with (always the
+            Sandbox Library for now).
+        registered_class_names: Node class names that were registered by this call, in module
+            declaration order.
+        replaced_class_names: Subset of registered_class_names for which an existing
+            registration was unregistered first (only meaningful when replace_if_exists=True).
+    """
+
+    file_path: str
+    library_name: str
+    registered_class_names: list[str] = field(default_factory=list)
+    replaced_class_names: list[str] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterSandboxNodeFromSourceResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Sandbox node registration failed.
+
+    Common causes: sandbox_library_directory not configured, file_path resolves outside the
+    sandbox directory or has the wrong extension, file does not exist, Python import error
+    (syntax error, missing dependency), no BaseNode subclass found in the file, or name
+    collision when replace_if_exists=False.
+    """
 
 
 @dataclass
