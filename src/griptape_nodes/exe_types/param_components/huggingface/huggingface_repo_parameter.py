@@ -95,8 +95,23 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
         self.refresh_parameters()
 
     def get_download_commands(self) -> list[str]:
-        return [f'huggingface-cli download "{repo}"' for repo in self._repo_ids if not self._is_deprecated(repo)]
+        return [f'huggingface-cli download "{repo}"' for repo in self.get_download_models()]
 
     def get_download_models(self) -> list[str]:
-        """Returns a list of model names that should be downloaded (excluding deprecated models)."""
-        return [repo for repo in self._repo_ids if not self._is_deprecated(repo)]
+        """Returns a list of model names that should be downloaded (excluding deprecated models).
+
+        Strips any `::<subname>` postfix used by providers to encode a sub-model selector within a repo
+        (e.g. `Lightricks/LTX-2::ltx-2-19b-dev`). The postfix is not part of the HuggingFace repo ID,
+        so it must be removed before the name reaches the model manager UI or the download path.
+        """
+        seen: set[str] = set()
+        downloads: list[str] = []
+        for repo in self._repo_ids:
+            if self._is_deprecated(repo):
+                continue
+            base_repo = repo.split("::", 1)[0]
+            if base_repo in seen:
+                continue
+            seen.add(base_repo)
+            downloads.append(base_repo)
+        return downloads
