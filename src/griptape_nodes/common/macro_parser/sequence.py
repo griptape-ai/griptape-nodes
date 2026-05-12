@@ -37,7 +37,7 @@ import os
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError, MacroResolutionFailureReason
 from griptape_nodes.common.macro_parser.resolution import resolve_variable
@@ -85,6 +85,74 @@ class _EntryKind(StrEnum):
     EITHER = "either"
 
 
+class _DirectoryEntry(NamedTuple):
+    """One row returned from a directory listing.
+
+    `name` is the bare filename (used for regex matching against the token
+    component). `absolute_path` is the full path for downstream I/O. Kept as
+    a NamedTuple rather than a dataclass because callers sort on it by name.
+    """
+
+    name: str
+    absolute_path: str
+
+
+class SequenceFrame(NamedTuple):
+    """One frame in a scanned sequence: a frame number paired with its on-disk path."""
+
+    frame: int
+    path: Path
+
+
+class DenseFrame(NamedTuple):
+    """One frame from `Sequence.iter_dense()`: frame number with its resolved value.
+
+    `value` is a Path for real / nearest frames, a MissingFrameMarker for
+    policy-synthesized ones.
+    """
+
+    frame: int
+    value: Path | MissingFrameMarker
+
+
+class _SegmentSplit(NamedTuple):
+    """Result of partitioning resolved segments around the sequence token.
+
+    `prefix` resolves to the directory to scan; `token_component` is the
+    path component (basename or directory) containing the sequence token;
+    `suffix` is any trailing sub-path after the token component.
+    """
+
+    prefix: list[ParsedSegment]
+    token_component: list[ParsedSegment]
+    suffix: list[ParsedSegment]
+
+
+class _TokenComponentParts(NamedTuple):
+    """A token component broken into its three matchable pieces.
+
+    `prefix` is the static text before the sequence token inside the
+    component (e.g. `v_` in `v_####_final`). `suffix` is the static text
+    after. Either may be empty when the token is at the component boundary.
+    """
+
+    prefix: str
+    token: ParsedSequenceToken
+    suffix: str
+
+
+class _FrameCollection(NamedTuple):
+    """Result of matching directory candidates against the token component.
+
+    `frames_by_number` is the winning frame→path map (one entry per distinct
+    frame integer); `shadowed_files` records duplicate candidates that lost
+    the lex-first tie-break, keyed by frame number.
+    """
+
+    frames_by_number: dict[int, Path]
+    shadowed_files: dict[int, list[Path]]
+
+
 @dataclass(frozen=True)
 class MissingFrameMarker:
     """Sentinel returned for a missing frame under a BLACK/CHECKERBOARD policy.
@@ -115,8 +183,9 @@ class Sequence:
     """A scanned sequence of concrete per-frame files plus metadata.
 
     Attributes:
-        frames: Sorted list of (frame_number, path) pairs. Sorted by frame
-            number (not filename) so dense iteration is always in frame order.
+        frames: Sorted list of SequenceFrame (frame, path) pairs. Sorted by
+            frame number (not filename) so dense iteration is always in frame
+            order.
         first: Lowest frame number present (or the explicit floor if set).
         last: Highest frame number present (or the explicit ceiling if set).
         shadowed_files: For each frame that had multiple candidate files on
@@ -125,7 +194,7 @@ class Sequence:
         policy: How `.get()` handles a requested frame that is absent.
     """
 
-    frames: list[tuple[int, Path]]
+    frames: list[SequenceFrame]
     first: int
     last: int
     shadowed_files: dict[int, list[Path]] = field(default_factory=dict)
@@ -134,7 +203,7 @@ class Sequence:
     @property
     def missing(self) -> set[int]:
         """Frame numbers between `first` and `last` that aren't on disk."""
-        present = {frame for frame, _ in self.frames}
+        present = {f.frame for f in self.frames}
         return {f for f in range(self.first, self.last + 1) if f not in present}
 
     def get(self, frame: int) -> Path | MissingFrameMarker:
@@ -159,13 +228,13 @@ class Sequence:
                 msg = f"Unknown missing-frame policy: {self.policy}"
                 raise ValueError(msg)
 
-    def iter_dense(self) -> Iterator[tuple[int, Path | MissingFrameMarker]]:
-        """Yield (frame, path-or-marker) for every frame in [first, last].
+    def iter_dense(self) -> Iterator[DenseFrame]:
+        """Yield a DenseFrame for every frame in [first, last].
 
         Uses `get()` internally, so the policy applies consistently.
         """
         for frame in range(self.first, self.last + 1):
-            yield (frame, self.get(frame))
+            yield DenseFrame(frame=frame, value=self.get(frame))
 
     def _nearest_path(self, frame: int, frame_to_path: dict[int, Path]) -> Path:
         """Return the path of the frame closest to `frame`.
@@ -243,38 +312,40 @@ class SequenceTemplate:
         # Defer the resolve-and-scan orchestration to a private helper so
         # the public method stays a pure composition of small steps.
         resolved_segments = self._fully_resolve_non_sequence_segments(variables, secrets_manager)
-        prefix_segments, token_component_segments, suffix_segments = _split_on_token_component(resolved_segments)
+        split = _split_on_token_component(resolved_segments)
 
-        directory_path = _normalize_directory_path(_segments_to_string(prefix_segments))
-        token_component_glob = _segments_to_glob(token_component_segments)
-        suffix_path = _segments_to_string(suffix_segments)
+        directory_path = _normalize_directory_path(_segments_to_string(split.prefix))
+        token_component_glob = _segments_to_glob(split.token_component)
+        suffix_path = _segments_to_string(split.suffix)
 
         # When there's a suffix, the token component names a directory we'll
         # descend into. When there's no suffix, it's the final path component
         # and can be either a file or a directory (Nuke supports both).
-        entry_kind: _EntryKind = _EntryKind.DIRECTORIES if suffix_segments else _EntryKind.EITHER
+        entry_kind: _EntryKind = _EntryKind.DIRECTORIES if split.suffix else _EntryKind.EITHER
         candidates = _list_directory_entries(
             directory_path=directory_path,
             pattern=token_component_glob,
             kind=entry_kind,
         )
 
-        frames_by_number, shadowed_files = _collect_frames(
+        collection = _collect_frames(
             candidates=candidates,
-            token_component_segments=token_component_segments,
+            token_component_segments=split.token_component,
             suffix_path=suffix_path,
             template_display=self.macro.template,
         )
 
-        if not frames_by_number:
+        if not collection.frames_by_number:
             return Sequence(frames=[], first=0, last=-1, policy=policy)
 
-        sorted_frames = sorted(frames_by_number.items())
+        sorted_frames = [
+            SequenceFrame(frame=frame, path=path) for frame, path in sorted(collection.frames_by_number.items())
+        ]
         return Sequence(
             frames=sorted_frames,
-            first=sorted_frames[0][0],
-            last=sorted_frames[-1][0],
-            shadowed_files=shadowed_files,
+            first=sorted_frames[0].frame,
+            last=sorted_frames[-1].frame,
+            shadowed_files=collection.shadowed_files,
             policy=policy,
         )
 
@@ -352,21 +423,18 @@ def _normalize_directory_path(directory: str) -> str:
     return directory
 
 
-def _split_on_token_component(
-    segments: list[ParsedSegment],
-) -> tuple[list[ParsedSegment], list[ParsedSegment], list[ParsedSegment]]:
+def _split_on_token_component(segments: list[ParsedSegment]) -> _SegmentSplit:
     """Partition fully-resolved segments on the path component holding the sequence token.
 
-    Returns:
-        (prefix_segments, token_component_segments, suffix_segments)
+    Returns a `_SegmentSplit` with prefix / token_component / suffix lists.
 
-        - `prefix_segments` resolve to a literal directory path ending in a
-          separator (or empty for templates whose token is at position 0).
-        - `token_component_segments` cover the full path component containing
-          the sequence token — static text on either side of the token within
-          that component is preserved (e.g. `render_####_v2`).
-        - `suffix_segments` resolve to a literal sub-path starting with a
-          separator (or empty when the token is in the final component).
+    - `prefix` resolves to a literal directory path ending in a separator
+      (or empty for templates whose token is at position 0).
+    - `token_component` covers the full path component containing the
+      sequence token — static text on either side of the token within that
+      component is preserved (e.g. `render_####_v2`).
+    - `suffix` resolves to a literal sub-path starting with a separator
+      (or empty when the token is in the final component).
 
     All static segments have path separators in them pre-split; we walk by
     character position across the resolved-segments string.
@@ -398,10 +466,10 @@ def _split_on_token_component(
     else:
         suffix_split_char = separator_after  # include the separator in the suffix
 
-    return (
-        _slice_segments(segments, 0, prefix_split_char),
-        _slice_segments(segments, prefix_split_char, suffix_split_char),
-        _slice_segments(segments, suffix_split_char, len(full_text)),
+    return _SegmentSplit(
+        prefix=_slice_segments(segments, 0, prefix_split_char),
+        token_component=_slice_segments(segments, prefix_split_char, suffix_split_char),
+        suffix=_slice_segments(segments, suffix_split_char, len(full_text)),
     )
 
 
@@ -500,8 +568,8 @@ def _list_directory_entries(
     pattern: str,
     *,
     kind: _EntryKind,
-) -> list[tuple[str, str]]:
-    """Issue a ListDirectoryRequest and return (entry_name, absolute_path) pairs.
+) -> list[_DirectoryEntry]:
+    """Issue a ListDirectoryRequest and return matching entries.
 
     Filters by `kind`: FILES, DIRECTORIES, or EITHER. All filesystem access
     flows through the OSManager handler, which takes care of Windows
@@ -532,12 +600,13 @@ def _list_directory_entries(
             include_modified_time=False,
             include_mime_type=False,
             include_absolute_path=True,
+            broadcast_result=False,
         )
     )
     if not isinstance(result, ListDirectoryResultSuccess):
         return []
 
-    entries: list[tuple[str, str]] = []
+    entries: list[_DirectoryEntry] = []
     for entry in result.entries:
         match kind:
             case _EntryKind.FILES:
@@ -548,19 +617,19 @@ def _list_directory_entries(
                     continue
             case _EntryKind.EITHER:
                 pass
-        entries.append((entry.name, entry.absolute_path or entry.path))
+        entries.append(_DirectoryEntry(name=entry.name, absolute_path=entry.absolute_path or entry.path))
     # Sort lexicographically by filename for deterministic duplicate-frame
     # tie-breaking across platforms.
-    entries.sort(key=lambda e: e[0])
+    entries.sort(key=lambda e: e.name)
     return entries
 
 
 def _collect_frames(
-    candidates: list[tuple[str, str]],
+    candidates: list[_DirectoryEntry],
     token_component_segments: list[ParsedSegment],
     suffix_path: str,
     template_display: str,
-) -> tuple[dict[int, Path], dict[int, list[Path]]]:
+) -> _FrameCollection:
     """Match candidates, verify suffix existence if any, collect frames.
 
     For each candidate entry name matching the token component, extracts the
@@ -568,17 +637,17 @@ def _collect_frames(
     `<candidate>/<suffix>`; that file's existence is verified via another
     ListDirectoryRequest on the candidate directory.
     """
-    prefix_str, token, suffix_str = _decompose_token_component(token_component_segments)
+    parts = _decompose_token_component(token_component_segments)
 
     frames_by_number: dict[int, Path] = {}
     shadowed_files: dict[int, list[Path]] = {}
 
-    for entry_name, absolute_path in candidates:
-        frame = _extract_frame_from_entry(entry_name, prefix_str, token, suffix_str)
+    for candidate in candidates:
+        frame = _extract_frame_from_entry(candidate.name, parts.prefix, parts.token, parts.suffix)
         if frame is None:
             continue
 
-        final_path = _verified_final_path(absolute_path, suffix_path)
+        final_path = _verified_final_path(candidate.absolute_path, suffix_path)
         if final_path is None:
             continue
 
@@ -594,13 +663,11 @@ def _collect_frames(
             continue
         frames_by_number[frame] = final_path
 
-    return frames_by_number, shadowed_files
+    return _FrameCollection(frames_by_number=frames_by_number, shadowed_files=shadowed_files)
 
 
-def _decompose_token_component(
-    segments: list[ParsedSegment],
-) -> tuple[str, ParsedSequenceToken, str]:
-    """Split a token-component segment list into (prefix_str, token, suffix_str).
+def _decompose_token_component(segments: list[ParsedSegment]) -> _TokenComponentParts:
+    """Split a token-component segment list into (prefix, token, suffix) parts.
 
     The token component is guaranteed by `_split_on_token_component` to have
     the shape [ParsedStaticValue?, ParsedSequenceToken, ParsedStaticValue?] —
@@ -628,7 +695,7 @@ def _decompose_token_component(
     if token is None:
         msg = "Token component contains no sequence token (should be unreachable)"
         raise SequenceTemplateError(msg)
-    return prefix_str, token, suffix_str
+    return _TokenComponentParts(prefix=prefix_str, token=token, suffix=suffix_str)
 
 
 def _extract_frame_from_entry(

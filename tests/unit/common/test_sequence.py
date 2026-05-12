@@ -23,6 +23,7 @@ from griptape_nodes.common.macro_parser.sequence import (
     MissingFrameMarker,
     MissingFramePolicy,
     Sequence,
+    SequenceFrame,
     SequenceTemplate,
     SequenceTemplateError,
 )
@@ -345,7 +346,7 @@ class TestScanTokenInDirectoryWithSuffix:
 class TestMissingFramePolicy:
     def _build_sequence(self, policy: MissingFramePolicy) -> Sequence:
         """Build a Sequence with frames 1, 2, 4, 6, 7 directly (skip scan stubbing)."""
-        frames = [(n, Path(f"/workspace/out/render.{n:04d}.exr")) for n in [1, 2, 4, 6, 7]]
+        frames = [SequenceFrame(frame=n, path=Path(f"/workspace/out/render.{n:04d}.exr")) for n in [1, 2, 4, 6, 7]]
         return Sequence(frames=frames, first=1, last=7, policy=policy)
 
     def test_error_policy_raises(self) -> None:
@@ -397,11 +398,9 @@ class TestMissingFramePolicy:
 class TestIterDense:
     def test_iter_dense_yields_entry_per_frame(self) -> None:
         """`iter_dense` yields one entry for each frame in [first, last]."""
-        frames = [(n, Path(f"/workspace/out/render.{n:04d}.exr")) for n in [1, 2, 4]]
+        frames = [SequenceFrame(frame=n, path=Path(f"/workspace/out/render.{n:04d}.exr")) for n in [1, 2, 4]]
         seq = Sequence(frames=frames, first=1, last=4, policy=MissingFramePolicy.BLACK)
         dense = list(seq.iter_dense())
-        assert [f for f, _ in dense] == [1, 2, 3, 4]
-        _, entry_for_3 = dense[2]
-        assert isinstance(entry_for_3, MissingFrameMarker)
-        _, entry_for_1 = dense[0]
-        assert isinstance(entry_for_1, Path)
+        assert [d.frame for d in dense] == [1, 2, 3, 4]
+        assert isinstance(dense[2].value, MissingFrameMarker)
+        assert isinstance(dense[0].value, Path)
