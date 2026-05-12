@@ -3933,13 +3933,13 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "griptape-nodes",
+    "griptape-nodes-engine",
     "requests",
     # Add other dependencies
 ]
 
 [tool.uv.sources]
-griptape-nodes = { git = "https://github.com/griptape-ai/griptape-nodes", rev="latest"}
+griptape-nodes-engine = { git = "https://github.com/griptape-ai/griptape-nodes", rev="latest"}
 
 [tool.hatch.build.targets.wheel]
 packages = ["library_name"]

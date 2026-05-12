@@ -405,7 +405,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "griptape-nodes"
+name = "griptape-nodes-engine"
 version = "0.84.0"
 source = { editable = "." }
 dependencies = [
