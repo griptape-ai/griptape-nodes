@@ -65,6 +65,11 @@ class StartFlowRequest(RequestPayload):
         flow_name: Name of the flow to start (deprecated, use flow_node_name)
         flow_node_name: Name of the flow node to start
         debug_mode: Whether to run in debug mode (default: False)
+        wait_for_completion: When True, the handler polls until the flow resolves before
+            returning. Converts the fire-and-forget kickoff into a synchronous run so callers
+            can read output values immediately afterwards without polling node state themselves.
+        completion_timeout_ms: Only meaningful when wait_for_completion=True. Maximum time to
+            wait for the flow to resolve. None means wait indefinitely.
 
     Results: StartFlowResultSuccess | StartFlowResultFailure (with validation exceptions)
     """
@@ -75,6 +80,8 @@ class StartFlowRequest(RequestPayload):
     debug_mode: bool = False
     # If this is true, the final ControlFLowResolvedEvent will be pickled to be picked up from inside a subprocess.
     pickle_control_flow_result: bool = False
+    wait_for_completion: bool = False
+    completion_timeout_ms: int | None = None
 
 
 @dataclass
