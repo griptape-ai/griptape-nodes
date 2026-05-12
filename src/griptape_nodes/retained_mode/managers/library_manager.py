@@ -31,7 +31,7 @@ from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_workspace_path
+from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io, resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -119,6 +119,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromRequirementSpecifierRequest,
     RegisterLibraryFromRequirementSpecifierResultFailure,
     RegisterLibraryFromRequirementSpecifierResultSuccess,
+    RegisterSandboxNodeFromSourceRequest,
+    RegisterSandboxNodeFromSourceResultFailure,
+    RegisterSandboxNodeFromSourceResultSuccess,
     ReloadAllLibrariesRequest,
     ReloadAllLibrariesResultFailure,
     ReloadAllLibrariesResultSuccess,
@@ -418,6 +421,9 @@ class LibraryManager:
             LoadMetadataForAllLibrariesRequest, self.load_metadata_for_all_libraries_request
         )
         event_manager.assign_manager_to_request_type(ScanSandboxDirectoryRequest, self.scan_sandbox_directory_request)
+        event_manager.assign_manager_to_request_type(
+            RegisterSandboxNodeFromSourceRequest, self.register_sandbox_node_from_source_request
+        )
         event_manager.assign_manager_to_request_type(
             UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
         )
@@ -1261,6 +1267,143 @@ class LibraryManager:
             result_details=details,
         )
         return result
+
+    def register_sandbox_node_from_source_request(  # noqa: C901, PLR0911
+        self, request: RegisterSandboxNodeFromSourceRequest
+    ) -> ResultPayload:
+        """Import a Python source file from the sandbox dir and register its BaseNode subclasses.
+
+        Leverages existing engine primitives end to end:
+          * `_get_sandbox_directory` resolves the configured path.
+          * `_load_module_from_file` imports the source (with the existing hot-reload
+            semantics when replacing an iterating draft).
+          * `Library.register_new_node_type` attaches the class to the Sandbox Library, and
+            `Library.unregister_node_type` removes any prior registration first when
+            `replace_if_exists=True`.
+
+        The handler does not write `request.file_path`; the caller is expected to have placed
+        the file in the sandbox directory already (e.g. via `WriteFileRequest`). The file
+        stays on disk, so the normal sandbox scan-and-load pipeline picks it up on the next
+        engine start. We intentionally do not update the sandbox's
+        `griptape_nodes_library.json` here: startup's own merge step (`_merge_sandbox_nodes`)
+        discovers files that exist on disk but are absent from the manifest, and the loader
+        resolves their class names and writes the manifest back for us.
+        """
+        # Resolve and validate the sandbox directory. Agents cannot register nodes on a
+        # system that has not opted in to a sandbox.
+        sandbox_dir = self._get_sandbox_directory()
+        if sandbox_dir is None:
+            details = (
+                "Attempted to register a sandbox node from source. Failed because "
+                "`sandbox_library_directory` is not configured (or the configured path does "
+                "not exist). Set it in Settings -> Libraries -> Sandbox Settings first."
+            )
+            return RegisterSandboxNodeFromSourceResultFailure(result_details=details)
+
+        # Canonicalize the requested path against the sandbox dir. Relative paths anchor to
+        # the sandbox; absolute paths stay where they are. We then verify the result lives
+        # under the canonical sandbox dir so callers can never reach outside it via `..` or
+        # absolute paths to other locations.
+        sandbox_root = canonicalize_for_identity(sandbox_dir)
+        file_path = canonicalize_for_io(request.file_path, base=sandbox_dir)
+        file_identity = canonicalize_for_identity(request.file_path, base=sandbox_dir)
+        if not file_identity.is_relative_to(sandbox_root):
+            details = (
+                f"Attempted to register a sandbox node with file_path={request.file_path!r}. "
+                f"Failed because the resolved path '{file_identity}' is not inside the "
+                f"sandbox directory '{sandbox_root}'."
+            )
+            return RegisterSandboxNodeFromSourceResultFailure(result_details=details)
+        if file_path.suffix != ".py":
+            details = (
+                f"Attempted to register a sandbox node with file_path={request.file_path!r}. "
+                "Failed because file_path must point at a `.py` file so the sandbox loader "
+                "can pick it up."
+            )
+            return RegisterSandboxNodeFromSourceResultFailure(result_details=details)
+        if not file_path.is_file():
+            details = (
+                f"Attempted to register a sandbox node with file_path={request.file_path!r}. "
+                f"Failed because no file exists at the resolved path '{file_path}'. Write "
+                "the source file into the sandbox directory before calling this request."
+            )
+            return RegisterSandboxNodeFromSourceResultFailure(result_details=details)
+
+        # Import the module. `_load_module_from_file` handles both first-load and hot-reload
+        # (re-importing an existing module with fresh source), which is exactly what an agent
+        # iterating on a draft needs.
+        try:
+            module = self._load_module_from_file(file_path, LibraryManager.SANDBOX_LIBRARY_NAME)
+        except ImportError as err:
+            details = f"Attempted to register a sandbox node from '{file_path}'. Failed at import time: {err}"
+            return RegisterSandboxNodeFromSourceResultFailure(result_details=details)
+
+        # The Sandbox Library must already be registered. It is created as part of normal
+        # engine startup when the sandbox directory is configured; if it is missing here, the
+        # user hasn't run through the sandbox setup at all.
+        try:
+            sandbox_library = LibraryRegistry.get_library(LibraryManager.SANDBOX_LIBRARY_NAME)
+        except KeyError:
+            details = (
+                "Attempted to register a sandbox node, but the Sandbox Library is not "
+                "registered in the engine. Ensure the sandbox directory has been initialized "
+                "(it is scanned once at engine startup) before calling this request."
+            )
+            return RegisterSandboxNodeFromSourceResultFailure(result_details=details)
+
+        # Discover BaseNode subclasses defined in this module. The filter matches the one in
+        # `_attempt_load_nodes_from_sandbox_library_using_existing_schema` so that files
+        # registered via MCP and files scanned at startup surface identically.
+        registered_class_names: list[str] = []
+        replaced_class_names: list[str] = []
+        for class_name, obj in vars(module).items():
+            if not (
+                isinstance(obj, type)
+                and issubclass(obj, BaseNode)
+                and type(obj) is not BaseNode
+                and obj.__module__ == module.__name__
+            ):
+                continue
+
+            if sandbox_library.has_node_type(class_name):
+                if not request.replace_if_exists:
+                    details = (
+                        f"Attempted to register node type '{class_name}' from '{file_path}'. "
+                        "Failed because a node type with that name is already registered in "
+                        "the Sandbox Library and replace_if_exists=False."
+                    )
+                    return RegisterSandboxNodeFromSourceResultFailure(result_details=details)
+                sandbox_library.unregister_node_type(class_name)
+                replaced_class_names.append(class_name)
+
+            metadata = NodeMetadata(
+                category=self.SANDBOX_CATEGORY_NAME,
+                description=f"'{class_name}' (loaded from the {LibraryManager.SANDBOX_LIBRARY_NAME}).",
+                display_name=class_name,
+            )
+            sandbox_library.register_new_node_type(obj, metadata)
+            registered_class_names.append(class_name)
+
+        if not registered_class_names:
+            details = (
+                f"Imported '{file_path}' successfully, but it does not declare any BaseNode "
+                "subclasses (must be `class X(BaseNode):` defined in this file, not "
+                "re-exported from another module). Nothing was registered."
+            )
+            return RegisterSandboxNodeFromSourceResultFailure(result_details=details)
+
+        summary = (
+            f"Registered {len(registered_class_names)} node type(s) from '{file_path}' "
+            f"into the {LibraryManager.SANDBOX_LIBRARY_NAME} "
+            f"(replaced: {len(replaced_class_names)})."
+        )
+        return RegisterSandboxNodeFromSourceResultSuccess(
+            file_path=str(file_path),
+            library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
+            registered_class_names=registered_class_names,
+            replaced_class_names=replaced_class_names,
+            result_details=summary,
+        )
 
     def list_categories_in_library_request(self, request: ListCategoriesInLibraryRequest) -> ResultPayload:
         # Does this library exist?
@@ -3394,8 +3537,16 @@ class LibraryManager:
                     actual_node_definitions.append(node_definition)
 
         if not actual_node_definitions:
-            logger.debug("No nodes found in sandbox library '%s'. Skipping.", sandbox_library_dir)
-            return
+            # The sandbox directory exists but currently holds no files that declare a
+            # BaseNode subclass. Previously the loader bailed here and left the Sandbox
+            # Library unregistered, which made it impossible to add the first node via
+            # `RegisterSandboxNodeFromSourceRequest` (and similar incremental tools) without
+            # first seeding a throwaway file by hand. We now fall through and register the
+            # library with zero nodes so it is a valid target for subsequent registrations.
+            logger.debug(
+                "No nodes found in sandbox library '%s'. Registering empty library so it can be populated incrementally.",
+                sandbox_library_dir,
+            )
 
         # Use the existing schema but replace nodes with actual discovered ones
         library_data = LibrarySchema(
