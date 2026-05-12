@@ -103,6 +103,11 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
         Strips any `::<subname>` postfix used by providers to encode a sub-model selector within a repo
         (e.g. `Lightricks/LTX-2::ltx-2-19b-dev`). The postfix is not part of the HuggingFace repo ID,
         so it must be removed before the name reaches the model manager UI or the download path.
+
+        The `::` convention is produced by the LTX-2 diffusion pipeline in
+        `griptape-nodes-library-advanced-media` — see the LTX-2 `models.py` / `text2vid_parameters.py` /
+        `img2vid_parameters.py` where the postfix is generated and later split to select a variant
+        subfolder within the shared repo.
         """
         seen: set[str] = set()
         downloads: list[str] = []
