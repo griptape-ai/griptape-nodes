@@ -22,5 +22,5 @@ class TestNodeParamSplit:
         assert param == "param"
 
     def test_missing_dot_raises(self) -> None:
-        with pytest.raises(ValueError, match="Expected format 'node.param'"):
+        with pytest.raises(ValueError, match=r"Expected format 'node\.param'"):
             node_param_split("no_dot_here")
