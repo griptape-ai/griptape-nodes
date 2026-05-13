@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -1922,8 +1923,9 @@ class LibraryManager:
             # Determine venv path for dependency installation
             venv_path = self._get_library_venv_path(package_name, None)
 
-            # Check if venv already exists before initialization
-            venv_already_exists = await anyio.Path(venv_path).exists()
+            # Check if a functional venv already exists; a broken directory will be
+            # recreated by _init_library_venv, in which case dependencies must be installed.
+            venv_already_exists = self._is_library_venv_functional(venv_path)
 
             # Only install dependencies if conditions are met
             try:
@@ -1989,10 +1991,37 @@ class LibraryManager:
             result_details=f"Successfully registered library from requirement specifier: {request.requirement_specifier}",
         )
 
+    @staticmethod
+    def _library_venv_python_path(library_venv_path: Path) -> Path:
+        """Return the expected Python executable path inside a library venv."""
+        if OSManager.is_windows():
+            return library_venv_path / "Scripts" / "python.exe"
+        return library_venv_path / "bin" / "python"
+
+    @classmethod
+    def _is_library_venv_functional(cls, library_venv_path: Path) -> bool:
+        """Check whether a venv directory contains a usable virtual environment.
+
+        A venv is considered functional only if its directory exists, contains a
+        ``pyvenv.cfg`` marker, and has a Python executable at the expected
+        platform-specific location. The Python executable's target is not followed,
+        because uv's own venv check works the same way: a missing or unresolvable
+        interpreter on disk causes ``uv pip install --python <venv>/bin/python`` to
+        fail with ``No virtual environment or system Python installation found``.
+        """
+        if not library_venv_path.is_dir():
+            return False
+        if not (library_venv_path / "pyvenv.cfg").is_file():
+            return False
+        return cls._library_venv_python_path(library_venv_path).exists()
+
     async def _init_library_venv(self, library_venv_path: Path) -> Path:
         """Initialize a virtual environment for the library.
 
-        If the virtual environment already exists, it will not be recreated.
+        If a functional virtual environment already exists at the path, it is reused.
+        If a directory exists at the path but is not a functional venv (e.g. missing
+        ``pyvenv.cfg`` or Python executable, or referencing a Python interpreter that
+        has since been removed), it is deleted and recreated.
 
         Args:
             library_venv_path: Path to the virtual environment directory
@@ -2003,47 +2032,49 @@ class LibraryManager:
         Raises:
             RuntimeError: If the virtual environment cannot be created.
         """
-        # Create a virtual environment for the library
         python_version = platform.python_version()
 
+        if self._is_library_venv_functional(library_venv_path):
+            logger.debug("Reusing existing virtual environment at %s", library_venv_path)
+            return self._library_venv_python_path(library_venv_path)
+
         if await anyio.Path(library_venv_path).exists():
-            logger.debug("Virtual environment already exists at %s", library_venv_path)
-        else:
-            # Check disk space before creating virtual environment
-            config_manager = GriptapeNodes.ConfigManager()
-            min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
-            if not OSManager.check_available_disk_space(library_venv_path.parent, min_space_gb):
-                error_msg = OSManager.format_disk_space_error(library_venv_path.parent)
-                logger.error(
-                    "Attempted to create virtual environment (requires %.1f GB). Failed: %s", min_space_gb, error_msg
-                )
-                error_message = (
-                    f"Disk space error creating virtual environment (requires {min_space_gb} GB): {error_msg}"
-                )
-                raise RuntimeError(error_message)
-
+            logger.warning(
+                "Existing path at %s is not a functional virtual environment; recreating it", library_venv_path
+            )
             try:
-                uv_path = find_uv_bin()
-                logger.info("Creating virtual environment at %s with Python %s", library_venv_path, python_version)
-                is_debug = config_manager.get_config_value("log_level").upper() == "DEBUG"
-                await subprocess_run(
-                    [uv_path, "venv", str(library_venv_path), "--python", python_version],
-                    check=True,
-                    capture_output=not is_debug,
-                    text=True,
-                )
-            except subprocess.CalledProcessError as e:
-                msg = f"Failed to create virtual environment at {library_venv_path} with Python {python_version}: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
+                await asyncio.to_thread(shutil.rmtree, library_venv_path, onexc=OSManager.remove_readonly)
+            except OSError as e:
+                msg = f"Failed to remove broken virtual environment at {library_venv_path}: {e}"
                 raise RuntimeError(msg) from e
-            logger.debug("Created virtual environment at %s", library_venv_path)
 
-        # Grab the python executable from the virtual environment so that we can pip install there
-        if OSManager.is_windows():
-            library_venv_python_path = library_venv_path / "Scripts" / "python.exe"
-        else:
-            library_venv_python_path = library_venv_path / "bin" / "python"
+        # Check disk space before creating virtual environment
+        config_manager = GriptapeNodes.ConfigManager()
+        min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
+        if not OSManager.check_available_disk_space(library_venv_path.parent, min_space_gb):
+            error_msg = OSManager.format_disk_space_error(library_venv_path.parent)
+            logger.error(
+                "Attempted to create virtual environment (requires %.1f GB). Failed: %s", min_space_gb, error_msg
+            )
+            error_message = f"Disk space error creating virtual environment (requires {min_space_gb} GB): {error_msg}"
+            raise RuntimeError(error_message)
 
-        return library_venv_python_path
+        try:
+            uv_path = find_uv_bin()
+            logger.info("Creating virtual environment at %s with Python %s", library_venv_path, python_version)
+            is_debug = config_manager.get_config_value("log_level").upper() == "DEBUG"
+            await subprocess_run(
+                [uv_path, "venv", str(library_venv_path), "--python", python_version],
+                check=True,
+                capture_output=not is_debug,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            msg = f"Failed to create virtual environment at {library_venv_path} with Python {python_version}: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
+            raise RuntimeError(msg) from e
+        logger.debug("Created virtual environment at %s", library_venv_path)
+
+        return self._library_venv_python_path(library_venv_path)
 
     def _check_library_requirements(
         self, requirements: dict[str, Any], library_name: str
