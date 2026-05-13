@@ -303,9 +303,10 @@ class ContextManager:
     def on_ensure_workflow_and_flow_request(self, request: EnsureWorkflowAndFlowRequest) -> ResultPayload:
         """Cold-start bootstrap that guarantees a workflow + flow context exist.
 
-        Composes push_workflow (from this manager) with CreateFlowRequest (handled by
-        FlowManager) so callers can go straight from a blank engine to CreateNode in a
-        single round trip instead of three.
+        Delegates the workflow side to SetWorkflowContextRequest so the unsaved-registry-key
+        scheme ("unsaved:<uuid>") stays the single source of truth for scratch workflows;
+        composes that with CreateFlowRequest so callers can go from a blank engine to
+        CreateNode in a single round trip.
         """
         # Lazy import required: context_manager is imported by griptape_nodes, creating a circular dependency.
         from griptape_nodes.retained_mode.events.flow_events import (
@@ -318,8 +319,20 @@ class ContextManager:
         if self.has_current_workflow():
             workflow_name = self.get_current_workflow_name()
         else:
-            workflow_name = request.workflow_name or f"scratch_workflow_{uuid.uuid4().hex[:8]}"
-            self.push_workflow(workflow_name)
+            set_workflow_result = GriptapeNodes.handle_request(
+                SetWorkflowContextRequest(
+                    workflow_name=request.workflow_name,
+                    display_name=request.display_name,
+                )
+            )
+            if not isinstance(set_workflow_result, SetWorkflowContextSuccess):
+                return EnsureWorkflowAndFlowResultFailure(
+                    result_details=(
+                        f"Attempted to ensure a workflow + flow context. Failed while setting the workflow: "
+                        f"{set_workflow_result.result_details}"
+                    )
+                )
+            workflow_name = set_workflow_result.workflow_name
             created_workflow = True
 
         created_flow = False

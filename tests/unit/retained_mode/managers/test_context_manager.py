@@ -184,6 +184,7 @@ class TestEnsureWorkflowAndFlowRequest:
         self._cleanup(griptape_nodes)
 
     def test_auto_generates_workflow_name_when_none_given(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
         from griptape_nodes.retained_mode.events.context_events import (
             EnsureWorkflowAndFlowRequest,
             EnsureWorkflowAndFlowResultSuccess,
@@ -195,7 +196,8 @@ class TestEnsureWorkflowAndFlowRequest:
         result = context_manager.on_ensure_workflow_and_flow_request(EnsureWorkflowAndFlowRequest())
 
         assert isinstance(result, EnsureWorkflowAndFlowResultSuccess)
-        assert result.workflow_name.startswith("scratch_workflow_")
+        assert result.workflow_name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX)
+        assert WorkflowRegistry.has_workflow_with_name(result.workflow_name)
         assert result.created_workflow is True
         assert result.created_flow is True
 

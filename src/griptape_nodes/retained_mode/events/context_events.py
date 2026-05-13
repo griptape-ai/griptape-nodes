@@ -103,7 +103,12 @@ class EnsureWorkflowAndFlowRequest(RequestPayload):
 
     Args:
         workflow_name: Name to use if a new workflow must be created. Ignored when a
-            workflow is already in context. Defaults to an auto-generated scratch name.
+            workflow is already in context. When None or starting with the unsaved
+            registry-key prefix ("unsaved:"), the engine auto-registers an unsaved
+            entry and the resolved key is returned in the success result.
+        display_name: Human-readable name attached to the auto-registered unsaved
+            entry. Ignored when the workflow is already in context or when a saved
+            workflow_name is supplied.
         flow_name: Name to use if a new flow must be created. Ignored when a flow is
             already in context. Defaults to the engine-assigned name.
 
@@ -111,6 +116,7 @@ class EnsureWorkflowAndFlowRequest(RequestPayload):
     """
 
     workflow_name: str | None = None
+    display_name: str | None = None
     flow_name: str | None = None
 
 
