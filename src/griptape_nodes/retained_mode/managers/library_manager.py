@@ -1437,7 +1437,7 @@ class LibraryManager:
         # In that case we still return a success payload with the library-level metadata and a
         # WARNING entry in result_details, so callers can present the node at all instead of
         # getting an opaque failure for every such node type.
-        node_class = library._node_types[request.node_type]
+        node_class = library.get_node_class(request.node_type)
         probe_name = f"__describe_node_type_probe__{request.node_type}"
         try:
             probe_node = node_class(name=probe_name)
@@ -3456,9 +3456,7 @@ class LibraryManager:
 
         node_schemas: list[WorkerNodeSchema] = []
         for class_name in library.get_registered_nodes():
-            node_class = library._node_types.get(class_name)
-            if node_class is None:
-                continue
+            node_class = library.get_node_class(class_name)
             try:
                 probe = node_class(name="__schema_probe__")
             except Exception:

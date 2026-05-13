@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.node_library.library_registry import (
     LibraryMetadata,
     LibrarySchema,
@@ -210,25 +209,29 @@ class ParameterDescription:
 
     @classmethod
     def from_parameter(cls, param: Parameter) -> ParameterDescription:
-        """Build a ParameterDescription from a live Parameter instance."""
-        allowed_modes = param.allowed_modes
+        """Build a ParameterDescription from a live Parameter instance.
+
+        Projects from `Parameter.to_dict()` so this view stays in sync with the canonical
+        serialization used elsewhere (e.g. workflow shape extraction).
+        """
+        param_dict = param.to_dict()
 
         return cls(
-            name=param.name,
-            type=getattr(param, "type", "") or "",
-            input_types=list(getattr(param, "input_types", []) or []),
-            output_type=getattr(param, "output_type", "") or "",
-            default_value=getattr(param, "default_value", None),
-            tooltip=getattr(param, "tooltip", ""),
-            tooltip_as_input=getattr(param, "tooltip_as_input", None),
-            tooltip_as_property=getattr(param, "tooltip_as_property", None),
-            tooltip_as_output=getattr(param, "tooltip_as_output", None),
-            mode_allowed_input=ParameterMode.INPUT in allowed_modes,
-            mode_allowed_property=ParameterMode.PROPERTY in allowed_modes,
-            mode_allowed_output=ParameterMode.OUTPUT in allowed_modes,
-            settable=getattr(param, "settable", True),
-            ui_options=getattr(param, "ui_options", None),
-            parent_container_name=getattr(param, "parent_container_name", None),
+            name=param_dict["name"],
+            type=param_dict["type"],
+            input_types=list(param_dict["input_types"] or []),
+            output_type=param_dict["output_type"] or "",
+            default_value=param_dict["default_value"],
+            tooltip=param_dict["tooltip"],
+            tooltip_as_input=param_dict["tooltip_as_input"],
+            tooltip_as_property=param_dict["tooltip_as_property"],
+            tooltip_as_output=param_dict["tooltip_as_output"],
+            mode_allowed_input=param_dict["mode_allowed_input"],
+            mode_allowed_property=param_dict["mode_allowed_property"],
+            mode_allowed_output=param_dict["mode_allowed_output"],
+            settable=param_dict["settable"],
+            ui_options=param_dict["ui_options"],
+            parent_container_name=param_dict["parent_container_name"],
         )
 
 
