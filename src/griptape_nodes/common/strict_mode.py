@@ -256,8 +256,6 @@ def attach_violations_to_result(result: ResultPayload, scope: StrictModeScope) -
     """
     # Lazy import to avoid circular dependency: base_events imports nothing from this module,
     # but the caller chain (node_manager -> strict_mode) would circle back through base_events.
-    import logging as _logging
-
     from griptape_nodes.retained_mode.events.base_events import (
         ResultDetails,
         StrictModeViolationDetail,
@@ -268,11 +266,11 @@ def attach_violations_to_result(result: ResultPayload, scope: StrictModeScope) -
 
     existing = result.result_details
     if isinstance(existing, str):
-        existing = ResultDetails(message=existing, level=_logging.DEBUG)
+        existing = ResultDetails(message=existing, level=logging.DEBUG)
         result.result_details = existing
 
     for violation in scope.violations:
-        level = _logging.ERROR if violation.severity is StrictModeSeverity.ERROR else _logging.WARNING
+        level = logging.ERROR if violation.severity is StrictModeSeverity.ERROR else logging.WARNING
         existing.result_details.append(
             StrictModeViolationDetail(
                 level=level,
