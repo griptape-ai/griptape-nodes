@@ -8,6 +8,9 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.context_events import (
+    EnsureWorkflowAndFlowRequest,
+    EnsureWorkflowAndFlowResultFailure,
+    EnsureWorkflowAndFlowResultSuccess,
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
     SetWorkflowContextFailure,
@@ -251,6 +254,9 @@ class ContextManager:
         event_manager.assign_manager_to_request_type(
             request_type=GetWorkflowContextRequest, callback=self.on_get_workflow_context_request
         )
+        event_manager.assign_manager_to_request_type(
+            request_type=EnsureWorkflowAndFlowRequest, callback=self.on_ensure_workflow_and_flow_request
+        )
 
     def on_set_workflow_context_request(self, request: SetWorkflowContextRequest) -> ResultPayload:
         # As of today, we only allow a single Workflow context at a time. This may change in the future.
@@ -292,6 +298,76 @@ class ContextManager:
             workflow_name=workflow_name,
             is_saved=is_saved,
             result_details=f"Successfully retrieved workflow context: {workflow_name or 'None'}",
+        )
+
+    def on_ensure_workflow_and_flow_request(self, request: EnsureWorkflowAndFlowRequest) -> ResultPayload:
+        """Cold-start bootstrap that guarantees a workflow + flow context exist.
+
+        Delegates the workflow side to SetWorkflowContextRequest so the unsaved-registry-key
+        scheme ("unsaved:<uuid>") stays the single source of truth for scratch workflows;
+        composes that with CreateFlowRequest so callers can go from a blank engine to
+        CreateNode in a single round trip.
+        """
+        # Lazy import required: context_manager is imported by griptape_nodes, creating a circular dependency.
+        from griptape_nodes.retained_mode.events.flow_events import (
+            CreateFlowRequest,
+            CreateFlowResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        created_workflow = False
+        if self.has_current_workflow():
+            workflow_name = self.get_current_workflow_name()
+        else:
+            set_workflow_result = GriptapeNodes.handle_request(
+                SetWorkflowContextRequest(
+                    workflow_name=request.workflow_name,
+                    display_name=request.display_name,
+                )
+            )
+            if not isinstance(set_workflow_result, SetWorkflowContextSuccess):
+                return EnsureWorkflowAndFlowResultFailure(
+                    result_details=(
+                        f"Attempted to ensure a workflow + flow context. Failed while setting the workflow: "
+                        f"{set_workflow_result.result_details}"
+                    )
+                )
+            workflow_name = set_workflow_result.workflow_name
+            created_workflow = True
+
+        created_flow = False
+        if self.has_current_flow():
+            flow_name = self.get_current_flow().name
+        else:
+            create_flow_result = GriptapeNodes.handle_request(
+                CreateFlowRequest(
+                    parent_flow_name=None,
+                    flow_name=request.flow_name,
+                    set_as_new_context=True,
+                )
+            )
+            if not isinstance(create_flow_result, CreateFlowResultSuccess):
+                # Roll the workflow push back so a partial failure does not leave hanging state.
+                if created_workflow:
+                    self.pop_workflow()
+                return EnsureWorkflowAndFlowResultFailure(
+                    result_details=(
+                        f"Attempted to ensure a workflow + flow context. Failed while creating the flow: "
+                        f"{create_flow_result.result_details}"
+                    )
+                )
+            flow_name = create_flow_result.flow_name
+            created_flow = True
+
+        return EnsureWorkflowAndFlowResultSuccess(
+            workflow_name=workflow_name,
+            flow_name=flow_name,
+            created_workflow=created_workflow,
+            created_flow=created_flow,
+            result_details=(
+                f"Workflow '{workflow_name}' and Flow '{flow_name}' are ready "
+                f"(created_workflow={created_workflow}, created_flow={created_flow})."
+            ),
         )
 
     def workflow(self, workflow_name: str) -> ContextManager.WorkflowContext:
