@@ -532,6 +532,10 @@ class EventManager:
         # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
         # Hop the callback onto the WS loop here and block the caller's thread on the
         # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
+        #
+        # Lazy import: worker_routing imports ResultContext from this module at
+        # runtime, so a top-level import here would cycle through event_manager
+        # -> worker_routing -> event_manager during module load.
         from griptape_nodes.app.worker_routing import RemoteHandler
 
         if isinstance(callback, RemoteHandler):
