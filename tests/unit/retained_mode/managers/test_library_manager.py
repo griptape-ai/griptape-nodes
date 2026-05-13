@@ -699,6 +699,124 @@ class TestLibraryManagerInstallLibraryDependencies:
         assert isinstance(result, InstallLibraryDependenciesResultFailure)
 
 
+def _fake_config_value(key: str, **_: object) -> object:
+    """Return realistic values for config keys touched by venv initialization."""
+    if key == "log_level":
+        return "INFO"
+    if key == "minimum_disk_space_gb_libraries":
+        return 5.0
+    return None
+
+
+class TestLibraryManagerVenvHealth:
+    """Tests for broken-venv recovery in _init_library_venv."""
+
+    @staticmethod
+    def _make_functional_venv(venv_path: Path) -> Path:
+        """Create a directory layout that mimics a working venv on the current platform."""
+        venv_path.mkdir(parents=True, exist_ok=True)
+        (venv_path / "pyvenv.cfg").write_text("home = /fake\n")
+        if sys.platform == "win32":
+            python_dir = venv_path / "Scripts"
+            python_path = python_dir / "python.exe"
+        else:
+            python_dir = venv_path / "bin"
+            python_path = python_dir / "python"
+        python_dir.mkdir(parents=True, exist_ok=True)
+        python_path.write_text("")
+        return python_path
+
+    @pytest.mark.asyncio
+    async def test_init_reuses_functional_venv_without_running_uv(
+        self, griptape_nodes: GriptapeNodes, tmp_path: Path
+    ) -> None:
+        mgr = griptape_nodes.LibraryManager()
+        venv_path = tmp_path / ".venv"
+        expected_python = self._make_functional_venv(venv_path)
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.subprocess_run",
+                new_callable=AsyncMock,
+            ) as mock_subprocess,
+            patch("griptape_nodes.retained_mode.managers.library_manager.find_uv_bin") as mock_find_uv,
+        ):
+            python_path = await mgr._init_library_venv(venv_path)
+
+        assert python_path == expected_python
+        mock_subprocess.assert_not_called()
+        mock_find_uv.assert_not_called()
+        assert (venv_path / "pyvenv.cfg").exists()
+
+    @pytest.mark.asyncio
+    async def test_init_recreates_broken_venv(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+        """A directory at the venv path that is missing the python executable must be recreated."""
+        mgr = griptape_nodes.LibraryManager()
+        venv_path = tmp_path / ".venv"
+        venv_path.mkdir()
+        (venv_path / "pyvenv.cfg").write_text("home = /fake\n")
+        # Leave a stray file behind to prove the directory was wiped
+        (venv_path / "stray.txt").write_text("old")
+
+        recreated_python_path: dict[str, Path] = {}
+
+        async def fake_subprocess_run(args: list[str], **_: object) -> MagicMock:
+            recreated_venv = Path(args[2])
+            recreated_python_path["path"] = self._make_functional_venv(recreated_venv)
+            return MagicMock()
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.subprocess_run",
+                side_effect=fake_subprocess_run,
+            ) as mock_subprocess,
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.find_uv_bin",
+                return_value="/fake/uv",
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.OSManager.check_available_disk_space",
+                return_value=True,
+            ),
+            patch.object(griptape_nodes.ConfigManager(), "get_config_value", side_effect=_fake_config_value),
+        ):
+            python_path = await mgr._init_library_venv(venv_path)
+
+        mock_subprocess.assert_called_once()
+        assert python_path == recreated_python_path["path"]
+        assert not (venv_path / "stray.txt").exists()
+
+    @pytest.mark.asyncio
+    async def test_init_creates_venv_when_directory_absent(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+        mgr = griptape_nodes.LibraryManager()
+        venv_path = tmp_path / ".venv"
+
+        async def fake_subprocess_run(args: list[str], **_: object) -> MagicMock:
+            self._make_functional_venv(Path(args[2]))
+            return MagicMock()
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.subprocess_run",
+                side_effect=fake_subprocess_run,
+            ) as mock_subprocess,
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.find_uv_bin",
+                return_value="/fake/uv",
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.OSManager.check_available_disk_space",
+                return_value=True,
+            ),
+            patch.object(griptape_nodes.ConfigManager(), "get_config_value", side_effect=_fake_config_value),
+        ):
+            python_path = await mgr._init_library_venv(venv_path)
+
+        mock_subprocess.assert_called_once()
+        assert python_path.exists()
+        assert (venv_path / "pyvenv.cfg").exists()
+
+
 class TestListRegisteredLibraries:
     """Test the on_list_registered_libraries_request functionality in LibraryManager."""
 
