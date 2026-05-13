@@ -15,9 +15,14 @@ from griptape_nodes.retained_mode.events.worker_events import (
 
 class TestRegisterWorkerEvents:
     def test_request_stores_engine_id(self) -> None:
-        request = RegisterWorkerRequest(worker_engine_id="eng-1")
+        request = RegisterWorkerRequest(worker_engine_id="eng-1", engine_version="1.0.0")
 
         assert request.worker_engine_id == "eng-1"
+
+    def test_request_stores_engine_version(self) -> None:
+        request = RegisterWorkerRequest(worker_engine_id="eng-1", engine_version="1.2.3")
+
+        assert request.engine_version == "1.2.3"
 
     def test_result_success_stores_engine_id(self) -> None:
         result = RegisterWorkerResultSuccess(worker_engine_id="eng-1", result_details="ok")
