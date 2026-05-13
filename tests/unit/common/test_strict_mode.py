@@ -82,6 +82,9 @@ class TestReportViolation:
         assert caplog.records == []
 
     def test_orchestrator_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        # Use a registered ergonomics rule (correctness=False, worker_escalation=False)
+        # so the resolved severity on the orchestrator path is WARNING.
+        rule_id = "parameter-behaviors-dropped-in-schema"
         caplog.set_level(logging.DEBUG, logger="griptape_nodes.strict_mode")
         with strict_mode_scope(
             kind=StrictModeScopeKind.RUNTIME_EXECUTE,
@@ -89,10 +92,10 @@ class TestReportViolation:
             library_name="libA",
             is_worker=False,
         ) as scope:
-            report_violation(rule_id="rule-1", message="something bad")
+            report_violation(rule_id=rule_id, message="something bad")
             assert len(scope.violations) == 1
             v = scope.violations[0]
-            assert v.rule_id == "rule-1"
+            assert v.rule_id == rule_id
             assert v.severity is StrictModeSeverity.WARNING
             assert v.scope_kind is StrictModeScopeKind.RUNTIME_EXECUTE
             assert v.subject == "n"
@@ -103,9 +106,11 @@ class TestReportViolation:
         errors = [r for r in caplog.records if r.levelno == logging.ERROR]
         assert len(warnings) == 1
         assert len(errors) == 0
-        assert "rule-1" not in warnings[0].getMessage() or "something bad" in warnings[0].getMessage()
+        assert "something bad" in warnings[0].getMessage()
 
     def test_worker_logs_error(self, caplog: pytest.LogCaptureFixture) -> None:
+        # Use a correctness rule so worker resolution yields ERROR.
+        rule_id = "reentrant-bus-in-init"
         caplog.set_level(logging.DEBUG, logger="griptape_nodes.strict_mode")
         with strict_mode_scope(
             kind=StrictModeScopeKind.RUNTIME_EXECUTE,
@@ -113,7 +118,7 @@ class TestReportViolation:
             library_name="libA",
             is_worker=True,
         ) as scope:
-            report_violation(rule_id="rule-2", message="very bad")
+            report_violation(rule_id=rule_id, message="very bad")
             assert scope.violations[0].severity is StrictModeSeverity.ERROR
 
         errors = [r for r in caplog.records if r.levelno == logging.ERROR]
