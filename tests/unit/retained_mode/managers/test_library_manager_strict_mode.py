@@ -41,7 +41,7 @@ class TestSerializeSchemasStrictMode:
     def _make_library(self, nodes: dict[str, type]) -> MagicMock:
         lib = MagicMock()
         lib.get_registered_nodes.return_value = list(nodes.keys())
-        lib._node_types = nodes
+        lib.get_node_class.side_effect = lambda name: nodes[name]
         return lib
 
     @pytest.mark.asyncio
@@ -137,7 +137,7 @@ class TestParameterBehaviorsDropped:
     def _make_library(self, nodes: dict[str, type]) -> MagicMock:
         lib = MagicMock()
         lib.get_registered_nodes.return_value = list(nodes.keys())
-        lib._node_types = nodes
+        lib.get_node_class.side_effect = lambda name: nodes[name]
         return lib
 
     @pytest.mark.asyncio

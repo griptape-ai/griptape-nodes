@@ -3515,8 +3515,9 @@ class LibraryManager:
 
         node_schemas: list[WorkerNodeSchema] = []
         for class_name in library.get_registered_nodes():
-            node_class = library._node_types.get(class_name)
-            if node_class is None:
+            try:
+                node_class = library.get_node_class(class_name)
+            except KeyError:
                 continue
             probe = None
             with strict_mode_scope(
