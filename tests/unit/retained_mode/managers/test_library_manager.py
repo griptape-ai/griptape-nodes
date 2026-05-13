@@ -36,7 +36,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.library_manager import _RegisterEntry
+from griptape_nodes.retained_mode.managers.settings import LibraryRegistration
 
 
 class TestLibraryManagerLoadLibraries:
@@ -68,7 +68,7 @@ class TestLibraryManagerLoadLibraries:
         with (
             patch.object(library_manager, "_library_file_path_to_info", {"some_lib": mock_lib_info}),
             patch.object(
-                library_manager, "_discover_library_files", return_value=[_RegisterEntry(path="some_lib", enabled=True)]
+                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="some_lib")]
             ),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
             patch.object(LibraryRegistry, "get_library", return_value=mock_library),
@@ -93,7 +93,7 @@ class TestLibraryManagerLoadLibraries:
         with (
             patch.object(library_manager, "_library_file_path_to_info", {}),
             patch.object(
-                library_manager, "_discover_library_files", return_value=[_RegisterEntry(path="new_lib", enabled=True)]
+                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="new_lib")]
             ),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
@@ -120,7 +120,7 @@ class TestLibraryManagerLoadLibraries:
         with (
             patch.object(library_manager, "_library_file_path_to_info", {}),
             patch.object(
-                library_manager, "_discover_library_files", return_value=[_RegisterEntry(path="new_lib", enabled=True)]
+                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="new_lib")]
             ),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):

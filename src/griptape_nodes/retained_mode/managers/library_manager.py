@@ -189,6 +189,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     LIBRARIES_TO_DOWNLOAD_KEY,
     LIBRARIES_TO_REGISTER_KEY,
     WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
+    LibraryRegistration,
 )
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts, normalize_secrets_to_register
@@ -214,8 +215,10 @@ from griptape_nodes.utils.git_utils import (
 from griptape_nodes.utils.library_utils import (
     LIBRARY_GIT_URLS,
     clone_and_get_library_version,
+    extract_library_path,
     filter_old_xdg_library_paths,
     is_monorepo,
+    normalize_library_registrations,
 )
 from griptape_nodes.utils.uv_utils import find_uv_bin, is_venv_functional, venv_python_path
 from griptape_nodes.utils.version_utils import get_complete_version_string
@@ -262,58 +265,6 @@ class LibraryUpdateResult(NamedTuple):
     old_version: str
     new_version: str
     result: ResultPayload
-
-
-class _RegisterEntry(NamedTuple):
-    """A normalized libraries_to_register entry.
-
-    The config field accepts either a bare path string or an object with `path`
-    and `enabled` fields. Both shapes are normalized to this tuple before consumption.
-    """
-
-    path: str
-    enabled: bool
-
-
-def _entry_path(entry: Any) -> str:
-    """Extract the path string from a libraries_to_register entry (str or dict).
-
-    Returns an empty string for entries with no usable path.
-    """
-    if isinstance(entry, str):
-        return entry
-    if isinstance(entry, dict):
-        path = entry.get("path")
-        return path if isinstance(path, str) else ""
-    path_attr = getattr(entry, "path", None)
-    return path_attr if isinstance(path_attr, str) else ""
-
-
-def _normalize_register_entries(raw: list[Any]) -> list[_RegisterEntry]:
-    """Normalize a libraries_to_register config list into typed entries.
-
-    Bare strings become enabled entries. Dict-shaped entries honor their `enabled`
-    field (defaulting to True). Entries without a usable path are skipped with a warning.
-    """
-    entries: list[_RegisterEntry] = []
-    for item in raw:
-        if isinstance(item, str):
-            if item:
-                entries.append(_RegisterEntry(path=item, enabled=True))
-        elif isinstance(item, dict):
-            path = item.get("path")
-            if not isinstance(path, str) or not path:
-                logger.warning("Skipping libraries_to_register entry without a 'path': %r", item)
-                continue
-            enabled = item.get("enabled", True)
-            entries.append(_RegisterEntry(path=path, enabled=bool(enabled)))
-        else:
-            logger.warning(
-                "Skipping libraries_to_register entry of unexpected type %s: %r",
-                type(item).__name__,
-                item,
-            )
-    return entries
 
 
 class LibraryManager:
@@ -3799,7 +3750,7 @@ class LibraryManager:
             libraries_to_register_category = [
                 library
                 for library in libraries_to_register_category
-                if _entry_path(library).lower() not in paths_to_remove
+                if extract_library_path(library).lower() not in paths_to_remove
             ]
             config_mgr.set_config_value(config_category, libraries_to_register_category)
 
@@ -3829,7 +3780,7 @@ class LibraryManager:
         # surviving entry's original shape (so disabled entries keep their `enabled: false`).
         path_to_entry: dict[str, Any] = {}
         for entry in libraries_to_register:
-            entry_path = _entry_path(entry)
+            entry_path = extract_library_path(entry)
             if entry_path:
                 path_to_entry[entry_path] = entry
 
@@ -4215,18 +4166,18 @@ class LibraryManager:
 
         return LoadLibrariesResultSuccess(result_details=ResultDetails(message=message, level=logging.INFO))
 
-    def _discover_library_files(self) -> list[_RegisterEntry]:
+    def _discover_library_files(self) -> list[LibraryRegistration]:
         """Discover library JSON files from config and workspace recursively.
 
         Returns:
-            List of register entries (path string + enabled flag) in the order they appear
-            in config. Directory entries expand to one entry per discovered library file,
-            inheriting the directory entry's enabled flag.
+            List of LibraryRegistration entries (path + enabled flag) in the order they
+            appear in config. Directory entries expand to one entry per discovered library
+            file, inheriting the directory entry's enabled flag.
         """
         config_mgr = GriptapeNodes.ConfigManager()
         user_libraries_section = LIBRARIES_TO_REGISTER_KEY
 
-        discovered_entries: list[_RegisterEntry] = []
+        discovered_entries: list[LibraryRegistration] = []
         seen_paths: set[Path] = set()
 
         def process_path(path: Path, *, enabled: bool) -> None:
@@ -4236,14 +4187,14 @@ class LibraryManager:
                 for lib_path in find_files_recursive(path, LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN):
                     if lib_path not in seen_paths:
                         seen_paths.add(lib_path)
-                        discovered_entries.append(_RegisterEntry(path=str(lib_path), enabled=enabled))
+                        discovered_entries.append(LibraryRegistration(path=str(lib_path), enabled=enabled))
             elif path.suffix == ".json" and path not in seen_paths:
                 seen_paths.add(path)
-                discovered_entries.append(_RegisterEntry(path=str(path), enabled=enabled))
+                discovered_entries.append(LibraryRegistration(path=str(path), enabled=enabled))
 
         # Add from config
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
-        for entry in _normalize_register_entries(config_libraries):
+        for entry in normalize_library_registrations(config_libraries):
             # TODO: Update to check on project manager for workspace path. https://github.com/griptape-ai/griptape-nodes/issues/4396
             library_path = resolve_workspace_path(Path(entry.path), Path(config_mgr.workspace_path))
             if library_path.exists():
@@ -4748,7 +4699,7 @@ class LibraryManager:
         # Add library JSON file path to config so it's registered on future startups
         libraries_to_register = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])
         library_json_str = str(library_json_path)
-        existing_paths = {_entry_path(entry) for entry in libraries_to_register}
+        existing_paths = {extract_library_path(entry) for entry in libraries_to_register}
         if library_json_str not in existing_paths:
             libraries_to_register.append(library_json_str)
             config_mgr.set_config_value(LIBRARIES_TO_REGISTER_KEY, libraries_to_register)
@@ -4856,7 +4807,7 @@ class LibraryManager:
         download_config = config_mgr.get_config_value(LIBRARIES_TO_DOWNLOAD_KEY, default=[])
         register_config = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])
         # Disabled entries are still synced; disabling only affects loading.
-        git_urls_from_register = [path for entry in register_config if is_git_url(path := _entry_path(entry))]
+        git_urls_from_register = [path for entry in register_config if is_git_url(path := extract_library_path(entry))]
 
         # Combine and deduplicate
         all_git_urls = list(set(download_config + git_urls_from_register))
