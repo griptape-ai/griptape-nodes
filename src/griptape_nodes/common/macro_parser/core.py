@@ -16,7 +16,6 @@ from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import (
     MacroVariables,
     ParsedSegment,
-    ParsedSequenceToken,
     ParsedStaticValue,
     ParsedVariable,
     VariableInfo,
@@ -52,30 +51,8 @@ class ParsedMacro:
             segments.append(ParsedStaticValue(text=""))
         self.segments = segments
 
-    @property
-    def sequence_token(self) -> ParsedSequenceToken | None:
-        """Return this template's sequence token, or None if it has none.
-
-        The parser guarantees at most one sequence token per template.
-        """
-        for seg in self.segments:
-            if isinstance(seg, ParsedSequenceToken):
-                return seg
-        return None
-
-    @property
-    def is_sequence(self) -> bool:
-        """True if this template contains a Nuke-style sequence token."""
-        return self.sequence_token is not None
-
     def get_variables(self) -> set[VariableInfo]:
-        """Extract all VariableInfo from parsed segments.
-
-        Sequence tokens are deliberately excluded: they bind to a frame
-        integer supplied at render time, not to a named variable. Callers
-        that need to know whether a template requires a frame value should
-        check `is_sequence` alongside `get_variables()`.
-        """
+        """Extract all VariableInfo from parsed segments."""
         return {seg.info for seg in self.segments if isinstance(seg, ParsedVariable)}
 
     def resolve(
