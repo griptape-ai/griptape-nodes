@@ -36,7 +36,7 @@ ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
 
 # URLs and constants
-PACKAGE_NAME = "griptape-nodes"
+PACKAGE_NAME = "griptape-nodes-engine"
 NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
 GT_CLOUD_BASE_URL = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
