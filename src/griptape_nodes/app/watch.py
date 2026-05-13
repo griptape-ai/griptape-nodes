@@ -12,7 +12,7 @@ def start_process() -> subprocess.Popen:
     """Start the gtn process."""
     uv_path = find_uv_bin()
     return subprocess.Popen(  # noqa: S603
-        [uv_path, "run", "gtn"],
+        [uv_path, "run", "python", "-m", "griptape_nodes"],
         stdout=sys.stdout,
         stderr=sys.stderr,
     )

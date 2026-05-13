@@ -11,7 +11,7 @@ from rich.console import Console
 
 console = Console()
 
-engine_version = importlib.metadata.version("griptape_nodes")
+engine_version = importlib.metadata.version("griptape-nodes-engine")
 
 
 def get_current_version() -> str:
@@ -44,7 +44,7 @@ def get_install_source() -> tuple[Literal["git", "file", "pypi", "unknown"], str
             (
                 d
                 for d in importlib.metadata.distributions(path=[str(code_site_packages)])
-                if d.metadata.get("Name", "").lower() in ("griptape-nodes", "griptape_nodes")
+                if d.metadata.get("Name", "").lower() in ("griptape-nodes-engine", "griptape_nodes_engine")
             ),
             None,
         )
@@ -53,7 +53,7 @@ def get_install_source() -> tuple[Literal["git", "file", "pypi", "unknown"], str
     # rather than site-packages, so the dist-info won't be found above.
     if dist is None:
         try:
-            dist = importlib.metadata.distribution("griptape_nodes")
+            dist = importlib.metadata.distribution("griptape-nodes-engine")
         except importlib.metadata.PackageNotFoundError:
             return "unknown", None
 

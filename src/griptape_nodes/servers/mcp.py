@@ -26,6 +26,7 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
 )
 from griptape_nodes.retained_mode.events.context_events import (
+    EnsureWorkflowAndFlowRequest,
     GetWorkflowContextRequest,
     SetWorkflowContextRequest,
 )
@@ -42,9 +43,11 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowRequest,
 )
 from griptape_nodes.retained_mode.events.library_events import (
+    DescribeNodeTypeRequest,
     ListCategoriesInLibraryRequest,
     ListNodeTypesInLibraryRequest,
     ListRegisteredLibrariesRequest,
+    RegisterSandboxNodeFromSourceRequest,
 )
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
@@ -80,10 +83,13 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     # Workflow context
     "SetWorkflowContextRequest": SetWorkflowContextRequest,
     "GetWorkflowContextRequest": GetWorkflowContextRequest,
+    "EnsureWorkflowAndFlowRequest": EnsureWorkflowAndFlowRequest,
     # Libraries
     "ListRegisteredLibrariesRequest": ListRegisteredLibrariesRequest,
     "ListNodeTypesInLibraryRequest": ListNodeTypesInLibraryRequest,
     "ListCategoriesInLibraryRequest": ListCategoriesInLibraryRequest,
+    "RegisterSandboxNodeFromSourceRequest": RegisterSandboxNodeFromSourceRequest,
+    "DescribeNodeTypeRequest": DescribeNodeTypeRequest,
     # Execution
     "ResolveNodeRequest": ResolveNodeRequest,
     "ExecuteNodeRequest": ExecuteNodeRequest,

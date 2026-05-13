@@ -1,6 +1,6 @@
 [project]
-name = "griptape-nodes"
-version = "0.83.0"
+name = "griptape-nodes-engine"
+version = "0.84.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
@@ -70,13 +70,12 @@ test = [
   "coverage>=7.0.0",
 ]
 
-[project.scripts]
-griptape-nodes = "griptape_nodes:main"
-gtn = "griptape_nodes:main"
-
 [build-system]
 requires = ["uv_build>=0.7.2,<0.12"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "griptape_nodes"
 
 [tool.uv.sources]
 griptape-cloud-client = { git = "https://github.com/griptape-ai/griptape-cloud-python-client", rev = "main" }

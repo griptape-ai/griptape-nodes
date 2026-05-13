@@ -1,5 +1,6 @@
 """ParameterString component for string inputs with enhanced UI options."""
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -173,6 +174,10 @@ class ParameterString(Parameter):
     def _accept_any(self, value: Any) -> str:
         """Convert any input value to a string.
 
+        Dicts and lists are serialized via ``json.dumps`` so JSON-shaped data
+        round-trips cleanly. ``str()`` on a dict/list emits Python-repr
+        quoting (single quotes, ``True``/``None``), which is not valid JSON.
+
         Args:
             value: The value to convert to string
 
@@ -181,6 +186,13 @@ class ParameterString(Parameter):
         """
         if value is None:
             return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (dict, list)):
+            try:
+                return json.dumps(value)
+            except (TypeError, ValueError):
+                return str(value)
         return str(value)
 
     @property

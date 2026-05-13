@@ -117,3 +117,87 @@ class TestGeneratedWorkflowCode:
 
         assert "push_workflow(file_path=__file__)" in source
         assert "workflow_name=" not in source
+        assert "workflow_name=" not in source
+
+
+class TestEnsureWorkflowAndFlowRequest:
+    """Tests for ContextManager.on_ensure_workflow_and_flow_request."""
+
+    def _cleanup(self, griptape_nodes: GriptapeNodes) -> None:
+        """Tear down any workflow/flow state left over between tests."""
+        from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+
+        griptape_nodes.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+    def test_creates_workflow_and_flow_from_cold_start(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.context_events import (
+            EnsureWorkflowAndFlowRequest,
+            EnsureWorkflowAndFlowResultSuccess,
+        )
+
+        self._cleanup(griptape_nodes)
+        context_manager = griptape_nodes.ContextManager()
+        assert not context_manager.has_current_workflow()
+        assert not context_manager.has_current_flow()
+
+        result = context_manager.on_ensure_workflow_and_flow_request(
+            EnsureWorkflowAndFlowRequest(workflow_name="my_workflow", flow_name="my_flow")
+        )
+
+        assert isinstance(result, EnsureWorkflowAndFlowResultSuccess)
+        assert result.workflow_name == "my_workflow"
+        assert result.flow_name == "my_flow"
+        assert result.created_workflow is True
+        assert result.created_flow is True
+        assert context_manager.has_current_workflow()
+        assert context_manager.has_current_flow()
+
+        self._cleanup(griptape_nodes)
+
+    def test_reuses_existing_workflow_and_flow(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.context_events import (
+            EnsureWorkflowAndFlowRequest,
+            EnsureWorkflowAndFlowResultSuccess,
+        )
+
+        self._cleanup(griptape_nodes)
+        context_manager = griptape_nodes.ContextManager()
+
+        # Bootstrap once.
+        first = context_manager.on_ensure_workflow_and_flow_request(
+            EnsureWorkflowAndFlowRequest(workflow_name="scratch", flow_name="canvas")
+        )
+        assert isinstance(first, EnsureWorkflowAndFlowResultSuccess)
+
+        # Calling again with different names should be a no-op: existing context wins.
+        second = context_manager.on_ensure_workflow_and_flow_request(
+            EnsureWorkflowAndFlowRequest(workflow_name="ignored", flow_name="also_ignored")
+        )
+
+        assert isinstance(second, EnsureWorkflowAndFlowResultSuccess)
+        assert second.workflow_name == "scratch"
+        assert second.flow_name == "canvas"
+        assert second.created_workflow is False
+        assert second.created_flow is False
+
+        self._cleanup(griptape_nodes)
+
+    def test_auto_generates_workflow_name_when_none_given(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+        from griptape_nodes.retained_mode.events.context_events import (
+            EnsureWorkflowAndFlowRequest,
+            EnsureWorkflowAndFlowResultSuccess,
+        )
+
+        self._cleanup(griptape_nodes)
+        context_manager = griptape_nodes.ContextManager()
+
+        result = context_manager.on_ensure_workflow_and_flow_request(EnsureWorkflowAndFlowRequest())
+
+        assert isinstance(result, EnsureWorkflowAndFlowResultSuccess)
+        assert result.workflow_name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX)
+        assert WorkflowRegistry.has_workflow_with_name(result.workflow_name)
+        assert result.created_workflow is True
+        assert result.created_flow is True
+
+        self._cleanup(griptape_nodes)

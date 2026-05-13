@@ -219,6 +219,90 @@ class RequestClient:
             logger.debug("Forwarded request %s completed", request_id)
             return result
 
+    async def request_batch(
+        self,
+        requests: list[tuple[str, dict[str, Any]]],
+        topic: str | None = None,
+        timeout_ms: int | None = None,
+        *,
+        return_exceptions: bool = False,
+    ) -> list[Any]:
+        """Send a batch of requests in one frame and gather their responses.
+
+        Each inner request is published as its own EventRequest under one
+        EventRequestBatch envelope. Inner requests carry their own request_ids,
+        so responses arrive as individual EventResultSuccess/Failure messages and
+        are correlated back to per-call futures.
+
+        Args:
+            requests: List of (request_type, payload) pairs. Each becomes an
+                inner EventRequest with its own request_id.
+            topic: Optional per-call request topic override.
+            timeout_ms: Optional timeout applied to the whole batch.
+            return_exceptions: If True, failures and timeouts are returned in
+                their slot instead of raising. Matches asyncio.gather semantics.
+
+        Returns:
+            Responses in submission order. When return_exceptions is False, a
+            single failure raises immediately and pending sub-requests are
+            cancelled. When True, the returned list mirrors submission order
+            with exceptions in failed slots.
+
+        Raises:
+            TimeoutError: If the batch exceeds timeout_ms (only when
+                return_exceptions is False).
+            Exception: First failing inner request's error (only when
+                return_exceptions is False).
+        """
+        if not requests:
+            return []
+
+        # Determine topics and ensure response subscription, just like request().
+        request_topic = topic or self.request_topic_fn()
+        response_topic = self.response_topic_fn()
+        if response_topic not in self._subscribed_response_topics:
+            await self.client.subscribe(response_topic)
+            self._subscribed_response_topics.add(response_topic)
+
+        # Pre-register futures for every inner request so _try_match can resolve
+        # them as responses arrive in arbitrary order.
+        inner_events: list[dict[str, Any]] = []
+        futures: list[asyncio.Future] = []
+        request_ids: list[str] = []
+        for request_type, raw_payload in requests:
+            request_id = str(uuid.uuid4())
+            payload = {**raw_payload, "request_id": request_id}
+            futures.append(await self._track_request(request_id))
+            request_ids.append(request_id)
+            inner_events.append(
+                {
+                    "event_type": "EventRequest",
+                    "request_type": request_type,
+                    "request_id": request_id,
+                    "request": payload,
+                    "response_topic": response_topic,
+                }
+            )
+
+        batch_payload = {"event_type": "EventRequestBatch", "requests": inner_events}
+        logger.debug("Sending batch of %d requests on %s", len(inner_events), request_topic)
+
+        try:
+            await self.client.publish("EventRequestBatch", batch_payload, request_topic)
+            gather = asyncio.gather(*futures, return_exceptions=return_exceptions)
+            if timeout_ms:
+                results = await asyncio.wait_for(gather, timeout=timeout_ms / 1000)
+            else:
+                results = await gather
+        except (TimeoutError, Exception) as e:
+            logger.error("Batch request failed: %s", e)
+            for request_id in request_ids:
+                await self._cancel_request(request_id)
+            raise
+        else:
+            logger.debug("Batch of %d requests completed", len(inner_events))
+            return results
+
     async def track_request(self, request_id: str, tag: str = "") -> asyncio.Future:
         """Register a future for an outgoing request and return it.
 
