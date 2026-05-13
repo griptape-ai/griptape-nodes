@@ -189,6 +189,15 @@ def _resolve_severity(*, rule_id: str, is_worker: bool) -> StrictModeSeverity:
 
     rule = RULES.get(rule_id)
     if rule is None:
+        # A typo'd or unregistered rule_id should not silently produce a
+        # violation. Log loudly so it surfaces in dev; production callers
+        # still get the historical worker=ERROR / orchestrator=WARNING
+        # fallback so existing detectors are not broken by the change.
+        logger.warning(
+            "strict-mode rule '%s' is not registered in RULES. Falling back to worker=%s default severity.",
+            rule_id,
+            "ERROR" if is_worker else "WARNING",
+        )
         return StrictModeSeverity.ERROR if is_worker else StrictModeSeverity.WARNING
     if rule.correctness:
         return StrictModeSeverity.ERROR
