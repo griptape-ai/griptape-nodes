@@ -70,11 +70,6 @@ test = [
   "coverage>=7.0.0",
 ]
 
-[project.scripts]
-# TODO: remove these entries when the CLI moves to the griptape-nodes-app repo. https://github.com/griptape-ai/griptape-nodes-app/issues/7
-griptape-nodes = "griptape_nodes:main"
-gtn = "griptape_nodes:main"
-
 [build-system]
 requires = ["uv_build>=0.7.2,<0.12"]
 build-backend = "uv_build"
