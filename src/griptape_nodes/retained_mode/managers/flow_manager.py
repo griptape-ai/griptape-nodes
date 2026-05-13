@@ -1974,7 +1974,7 @@ class FlowManager:
                     request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
                     request.end_node_library_name,
                 )
-                end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+                end_node_class = end_library.get_node_class(request.end_node_type)  # type: ignore[arg-type]
 
                 # Validate from package node's perspective (we know source param name, not target)
                 valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
@@ -2048,7 +2048,7 @@ class FlowManager:
                         request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
                         request.end_node_library_name,
                     )
-                    end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+                    end_node_class = end_library.get_node_class(request.end_node_type)  # type: ignore[arg-type]
 
                     # Validate from package node's perspective (we know source param name, not target)
                     valid_connection = package_node.__class__.allow_outgoing_connection_by_class(

@@ -485,6 +485,18 @@ class Library:
             raise KeyError(self._library_data.name, node_type)
         return self._node_metadata[node_type]
 
+    def get_node_class(self, node_type: str) -> type[BaseNode]:
+        """Return the BaseNode subclass registered under `node_type`.
+
+        For callers that need the class itself, e.g. classmethod checks like
+        `allow_outgoing_connection_by_class` or building a throwaway probe instance,
+        rather than an instance produced by `create_node` (which also injects library
+        metadata into the node).
+        """
+        if node_type not in self._node_types:
+            raise KeyError(self._library_data.name, node_type)
+        return self._node_types[node_type]
+
     def get_categories(self) -> list[dict[str, CategoryDefinition]]:
         return self._library_data.categories
 

@@ -56,7 +56,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails, ResultPayloadFailure
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetail, ResultDetails, ResultPayloadFailure
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -67,6 +67,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     CheckLibraryUpdateRequest,
     CheckLibraryUpdateResultFailure,
     CheckLibraryUpdateResultSuccess,
+    DescribeNodeTypeRequest,
+    DescribeNodeTypeResultFailure,
+    DescribeNodeTypeResultSuccess,
     DiscoveredLibrary,
     DiscoverLibrariesRequest,
     DiscoverLibrariesResultFailure,
@@ -114,6 +117,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     LoadLibraryMetadataFromFileResultSuccess,
     LoadMetadataForAllLibrariesRequest,
     LoadMetadataForAllLibrariesResultSuccess,
+    ParameterDescription,
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
@@ -390,6 +394,10 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             GetNodeMetadataFromLibraryRequest,
             self.get_node_metadata_from_library_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            DescribeNodeTypeRequest,
+            self.describe_node_type_request,
         )
         event_manager.assign_manager_to_request_type(
             LoadLibraryMetadataFromFileRequest,
@@ -1400,6 +1408,71 @@ class LibraryManager:
             registered_class_names=registered_class_names,
             replaced_class_names=replaced_class_names,
             result_details=summary,
+        )
+
+    def describe_node_type_request(self, request: DescribeNodeTypeRequest) -> ResultPayload:
+        # Resolve the library for this node type. When no library is supplied, we rely on
+        # LibraryRegistry to pick the unique library that provides it.
+        try:
+            library = LibraryRegistry.get_library_for_node_type(
+                node_type=request.node_type, specific_library_name=request.library
+            )
+        except KeyError as err:
+            details = f"Attempted to describe node type '{request.node_type}'. Failed when looking up its library because: {err}"
+            return DescribeNodeTypeResultFailure(result_details=details)
+
+        library_name = library.get_library_data().name
+
+        # Make sure the node type really is registered in this library before we go further.
+        try:
+            node_metadata = library.get_node_metadata(node_type=request.node_type)
+        except KeyError:
+            details = f"Attempted to describe node type '{request.node_type}' in Library '{library_name}'. Failed because the Library has no node type with that name."
+            return DescribeNodeTypeResultFailure(result_details=details)
+
+        # Instantiate a throwaway node so we can read the parameters its __init__ declares.
+        # The node is never added to a flow or the ObjectManager, so it is garbage-collected
+        # when this method returns.
+        #
+        # Nodes whose __init__ performs I/O (network calls, auth checks, disk reads) can raise.
+        # In that case we still return a success payload with the library-level metadata and a
+        # WARNING entry in result_details, so callers can present the node at all instead of
+        # getting an opaque failure for every such node type.
+        node_class = library.get_node_class(request.node_type)
+        probe_name = f"__describe_node_type_probe__{request.node_type}"
+        try:
+            probe_node = node_class(name=probe_name)
+        except Exception as err:
+            probe_error = f"{type(err).__name__}: {err}"
+            return DescribeNodeTypeResultSuccess(
+                library=library_name,
+                node_type=request.node_type,
+                metadata=node_metadata,
+                parameters=[],
+                result_details=ResultDetails(
+                    ResultDetail(
+                        level=logging.INFO,
+                        message=(
+                            f"Described node type '{request.node_type}' in Library '{library_name}' "
+                            "with library metadata only."
+                        ),
+                    ),
+                    ResultDetail(
+                        level=logging.WARNING,
+                        message=f"Parameter probe failed because: {probe_error}",
+                    ),
+                ),
+            )
+
+        parameters = [ParameterDescription.from_parameter(param) for param in probe_node.parameters]
+
+        details = f"Successfully described node type '{request.node_type}' in Library '{library_name}'."
+        return DescribeNodeTypeResultSuccess(
+            library=library_name,
+            node_type=request.node_type,
+            metadata=node_metadata,
+            parameters=parameters,
+            result_details=details,
         )
 
     def list_categories_in_library_request(self, request: ListCategoriesInLibraryRequest) -> ResultPayload:
@@ -3390,9 +3463,7 @@ class LibraryManager:
 
         node_schemas: list[WorkerNodeSchema] = []
         for class_name in library.get_registered_nodes():
-            node_class = library._node_types.get(class_name)
-            if node_class is None:
-                continue
+            node_class = library.get_node_class(class_name)
             try:
                 probe = node_class(name="__schema_probe__")
             except Exception:
