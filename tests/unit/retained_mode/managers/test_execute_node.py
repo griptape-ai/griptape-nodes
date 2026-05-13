@@ -1,3 +1,4 @@
+import threading
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -25,6 +26,8 @@ def _make_mock_node(name: str = "test_node") -> MagicMock:
     node.parameter_values = {}
     node.parameter_output_values = {"output_param": "output_value"}
     node.metadata = {}
+    node._cancellation_requested = threading.Event()
+    node.parameters = []
     return node
 
 
@@ -408,6 +411,8 @@ class TestExecuteNodeWorkerRoute:
         node.metadata = {"library": "worker_library"}
         node.parameter_values = {}
         node.parameter_output_values = {}
+        node._cancellation_requested = threading.Event()
+        node.parameters = []
         return node
 
     def _make_mock_obj_mgr(self, existing_node: MagicMock | None = None) -> MagicMock:

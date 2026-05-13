@@ -30,7 +30,14 @@ from rich.text import Text
 from semver import Version
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.common.strict_mode import (
+    StrictModeScopeKind,
+    StrictModeSeverity,
+    report_violation,
+    strict_mode_scope,
+)
+from griptape_nodes.common.strict_mode_checks import RULES
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io, resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
@@ -3468,6 +3475,31 @@ class LibraryManager:
     # so each probe runs in a worker thread with this ceiling.
     _SCHEMA_PROBE_TIMEOUT_S: float = 10.0
 
+    def _report_parameter_behavior_losses(self, probe: BaseNode) -> None:
+        """Report parameter-behaviors-dropped-in-schema for any probe parameter that has live behaviors.
+
+        ``WorkerParameterSchema`` only carries the scalar-shaped fields of a
+        ``Parameter``. Converters, validators, and traits cannot be
+        serialized across the worker boundary and therefore will not run on
+        the orchestrator stub. If a parameter has any of these attached,
+        report it so the author sees a named warning during library load.
+        """
+        rule = RULES["parameter-behaviors-dropped-in-schema"]
+        for param in probe.parameters:
+            dropped: list[str] = []
+            if param._converters:
+                dropped.append("converters")
+            if param._validators:
+                dropped.append("validators")
+            if param.find_elements_by_type(Trait):
+                dropped.append("traits")
+            if not dropped:
+                continue
+            report_violation(
+                rule_id=rule.rule_id,
+                message=rule.render(parameter_name=param.name, dropped_attributes=", ".join(dropped)),
+            )
+
     async def _serialize_library_node_schemas(self, library_name: str) -> list[WorkerNodeSchema]:
         """Serialize node parameter schemas for a loaded library.
 
@@ -3483,24 +3515,41 @@ class LibraryManager:
 
         node_schemas: list[WorkerNodeSchema] = []
         for class_name in library.get_registered_nodes():
-            node_class = library.get_node_class(class_name)
             try:
-                probe = await asyncio.wait_for(
-                    asyncio.to_thread(node_class, name="__schema_probe__"),
-                    timeout=self._SCHEMA_PROBE_TIMEOUT_S,
-                )
-            except TimeoutError:
-                logger.warning(
-                    "Schema probe for node class '%s' in library '%s' timed out after %.1fs; "
-                    "skipping. The node's __init__ likely makes a blocking call that cannot "
-                    "complete during library load.",
-                    class_name,
-                    library_name,
-                    self._SCHEMA_PROBE_TIMEOUT_S,
-                )
+                node_class = library.get_node_class(class_name)
+            except KeyError:
                 continue
-            except Exception:
-                logger.debug("Could not probe node class '%s' for schema serialization.", class_name, exc_info=True)
+            probe = None
+            with strict_mode_scope(
+                kind=StrictModeScopeKind.LOAD_PROBE,
+                subject=class_name,
+                library_name=library_name,
+                is_worker=True,
+            ) as scope:
+                try:
+                    probe = await asyncio.wait_for(
+                        asyncio.to_thread(node_class, name="__schema_probe__"),
+                        timeout=self._SCHEMA_PROBE_TIMEOUT_S,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "Schema probe for node class '%s' in library '%s' timed out after %.1fs; "
+                        "skipping. The node's __init__ likely makes a blocking call that cannot "
+                        "complete during library load.",
+                        class_name,
+                        library_name,
+                        self._SCHEMA_PROBE_TIMEOUT_S,
+                    )
+                    continue
+                except Exception:
+                    logger.debug("Could not probe node class '%s' for schema serialization.", class_name, exc_info=True)
+                    continue
+                # Run the parameter-behavior-drop detector inside the scope so
+                # warnings attach to the same LOAD_PROBE scope that owns the
+                # probe attempt.
+                self._report_parameter_behavior_losses(probe)
+
+            if any(v.severity is StrictModeSeverity.ERROR for v in scope.violations):
                 continue
 
             param_schemas: list[WorkerParameterSchema] = []

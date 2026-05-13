@@ -237,6 +237,26 @@ class ConfigChanged(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
+class SecretChanged(AppPayload):
+    """Secret value mutation notification.
+
+    Emitted by the orchestrator's SecretsManager after a secret is set or
+    deleted. WorkerManager listens for this and fans out a refresh signal to
+    every registered worker so their os.environ shadow picks up the new value
+    from the shared .env file.
+
+    The secret value itself is intentionally not carried in this event --
+    workers re-read from the shared .env file on the same machine.
+
+    Args:
+        key: The secret name (normalized) that changed.
+    """
+
+    key: str
+
+
+@dataclass
+@PayloadRegistry.register
 class GetEngineVersionRequest(RequestPayload):
     """Get the engine version information.
 

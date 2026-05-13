@@ -37,6 +37,17 @@ def _resolve_payload_type(event_data: dict[str, Any], type_key: str) -> type:
 
     resolved = PayloadRegistry.get_type(type_name)
     if resolved is None:
+        # Lazy import: strict_mode imports nothing from this module, but
+        # strict_mode_checks imports base_events transitively through
+        # attach_violations_to_result. Break the cycle at the call site.
+        from griptape_nodes.common.strict_mode import report_violation
+        from griptape_nodes.common.strict_mode_checks import RULES
+
+        rule = RULES["unknown-payload-type"]
+        report_violation(
+            rule_id=rule.rule_id,
+            message=rule.render(type_name=type_name),
+        )
         msg = f"Cannot resolve payload type: '{type_name}' is not registered."
         raise ValueError(msg)
 
@@ -49,6 +60,21 @@ class ResultDetail:
 
     level: int
     message: str
+
+
+@dataclass
+class StrictModeViolationDetail(ResultDetail):
+    """A ResultDetail that carries structured strict-mode violation metadata.
+
+    Editor renders ``ResultDetail`` today, so this subclass surfaces on
+    the result payload for free. The extra fields let future tooling
+    filter or group violations without parsing ``message``.
+    """
+
+    rule_id: str = ""
+    severity: str = ""
+    subject: str = ""
+    library_name: str | None = None
 
 
 @dataclass
@@ -203,10 +229,36 @@ class ResultPayloadSuccess(ResultPayload, ABC):
         return True
 
 
+class ForwardedException(Exception):  # noqa: N818
+    """Placeholder for an exception that crossed the worker boundary.
+
+    The converter's Exception hook emits worker-side exceptions as a
+    ``{type, module, message, traceback}`` dict, then rebuilds them
+    into a ``ForwardedException`` on the receiving side. The
+    placeholder is still an ``Exception`` (so ``raise ... from result.exception``
+    still chains) but carries ``original_type`` / ``original_traceback``
+    attributes so callers can see the worker-side class name and
+    frames without any structured-field duplication on
+    ``ResultPayloadFailure``.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.original_type: str | None = None
+        self.original_traceback: str | None = None
+
+
 # Failure result payload abstract base class
 @dataclass(kw_only=True)
 class ResultPayloadFailure(ResultPayload, ABC):
-    """Abstract base class for failure result payloads."""
+    """Abstract base class for failure result payloads.
+
+    ``exception`` is the single source of truth. On the local path it
+    is the live ``Exception``. Across the worker -> orchestrator wire
+    the converter emits it as a structured dict and rebuilds it as a
+    ``ForwardedException`` carrying the original type name and
+    traceback as attributes, so callers can read both paths uniformly.
+    """
 
     result_details: ResultDetails | str
     exception: Exception | None = None
