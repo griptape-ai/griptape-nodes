@@ -709,7 +709,7 @@ def _fake_config_value(key: str, **_: object) -> object:
 
 
 class TestLibraryManagerVenvHealth:
-    """Tests for venv functional checks and broken-venv recovery in _init_library_venv."""
+    """Tests for broken-venv recovery in _init_library_venv."""
 
     @staticmethod
     def _make_functional_venv(venv_path: Path) -> Path:
@@ -725,41 +725,6 @@ class TestLibraryManagerVenvHealth:
         python_dir.mkdir(parents=True, exist_ok=True)
         python_path.write_text("")
         return python_path
-
-    def test_is_functional_returns_false_when_directory_missing(
-        self, griptape_nodes: GriptapeNodes, tmp_path: Path
-    ) -> None:
-        mgr = griptape_nodes.LibraryManager()
-        assert mgr._is_library_venv_functional(tmp_path / "nope") is False
-
-    def test_is_functional_returns_false_when_pyvenv_cfg_missing(
-        self, griptape_nodes: GriptapeNodes, tmp_path: Path
-    ) -> None:
-        mgr = griptape_nodes.LibraryManager()
-        venv_path = tmp_path / ".venv"
-        self._make_functional_venv(venv_path)
-        (venv_path / "pyvenv.cfg").unlink()
-
-        assert mgr._is_library_venv_functional(venv_path) is False
-
-    def test_is_functional_returns_false_when_python_executable_missing(
-        self, griptape_nodes: GriptapeNodes, tmp_path: Path
-    ) -> None:
-        mgr = griptape_nodes.LibraryManager()
-        venv_path = tmp_path / ".venv"
-        python_path = self._make_functional_venv(venv_path)
-        python_path.unlink()
-
-        assert mgr._is_library_venv_functional(venv_path) is False
-
-    def test_is_functional_returns_true_for_complete_layout(
-        self, griptape_nodes: GriptapeNodes, tmp_path: Path
-    ) -> None:
-        mgr = griptape_nodes.LibraryManager()
-        venv_path = tmp_path / ".venv"
-        self._make_functional_venv(venv_path)
-
-        assert mgr._is_library_venv_functional(venv_path) is True
 
     @pytest.mark.asyncio
     async def test_init_reuses_functional_venv_without_running_uv(

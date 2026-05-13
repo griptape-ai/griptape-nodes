@@ -209,7 +209,7 @@ from griptape_nodes.utils.library_utils import (
     filter_old_xdg_library_paths,
     is_monorepo,
 )
-from griptape_nodes.utils.uv_utils import find_uv_bin
+from griptape_nodes.utils.uv_utils import find_uv_bin, is_venv_functional, venv_python_path
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
 if TYPE_CHECKING:
@@ -1925,7 +1925,7 @@ class LibraryManager:
 
             # Check if a functional venv already exists; a broken directory will be
             # recreated by _init_library_venv, in which case dependencies must be installed.
-            venv_already_exists = self._is_library_venv_functional(venv_path)
+            venv_already_exists = is_venv_functional(venv_path)
 
             # Only install dependencies if conditions are met
             try:
@@ -1991,30 +1991,6 @@ class LibraryManager:
             result_details=f"Successfully registered library from requirement specifier: {request.requirement_specifier}",
         )
 
-    @staticmethod
-    def _library_venv_python_path(library_venv_path: Path) -> Path:
-        """Return the expected Python executable path inside a library venv."""
-        if OSManager.is_windows():
-            return library_venv_path / "Scripts" / "python.exe"
-        return library_venv_path / "bin" / "python"
-
-    @classmethod
-    def _is_library_venv_functional(cls, library_venv_path: Path) -> bool:
-        """Check whether a venv directory contains a usable virtual environment.
-
-        A venv is considered functional only if its directory exists, contains a
-        ``pyvenv.cfg`` marker, and has a Python executable at the expected
-        platform-specific location. The Python executable's target is not followed,
-        because uv's own venv check works the same way: a missing or unresolvable
-        interpreter on disk causes ``uv pip install --python <venv>/bin/python`` to
-        fail with ``No virtual environment or system Python installation found``.
-        """
-        if not library_venv_path.is_dir():
-            return False
-        if not (library_venv_path / "pyvenv.cfg").is_file():
-            return False
-        return cls._library_venv_python_path(library_venv_path).exists()
-
     async def _init_library_venv(self, library_venv_path: Path) -> Path:
         """Initialize a virtual environment for the library.
 
@@ -2034,9 +2010,9 @@ class LibraryManager:
         """
         python_version = platform.python_version()
 
-        if self._is_library_venv_functional(library_venv_path):
+        if is_venv_functional(library_venv_path):
             logger.debug("Reusing existing virtual environment at %s", library_venv_path)
-            return self._library_venv_python_path(library_venv_path)
+            return venv_python_path(library_venv_path)
 
         if await anyio.Path(library_venv_path).exists():
             logger.warning(
@@ -2074,7 +2050,7 @@ class LibraryManager:
             raise RuntimeError(msg) from e
         logger.debug("Created virtual environment at %s", library_venv_path)
 
-        return self._library_venv_python_path(library_venv_path)
+        return venv_python_path(library_venv_path)
 
     def _check_library_requirements(
         self, requirements: dict[str, Any], library_name: str
