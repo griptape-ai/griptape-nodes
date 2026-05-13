@@ -2957,9 +2957,7 @@ class NodeManager:
         # scope there would just bump a refcount that nothing reads. Skip it
         # to keep the depth counter accurate to its name.
         is_worker = GriptapeNodes.LibraryManager()._is_worker
-        scope_cm = (
-            GriptapeNodes.EventManager().worker_node_execution_scope() if is_worker else contextlib.nullcontext()
-        )
+        scope_cm = GriptapeNodes.EventManager().worker_node_execution_scope() if is_worker else contextlib.nullcontext()
         with scope_cm:
             try:
                 await prepare_node_for_aprocess(node, request)
