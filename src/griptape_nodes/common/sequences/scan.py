@@ -18,6 +18,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from fileseq.constants import PAD_STYLE_HASH1
 from fileseq.filesequence import FileSequence
@@ -46,6 +47,13 @@ class _PresentFrames:
 
     by_frame: dict[int, Path]
     dropped_negatives: int
+
+
+class _ActiveRange(NamedTuple):
+    """The [first, last] frame bounds after subset clipping is applied."""
+
+    first: int
+    last: int
 
 
 def scan_sequences(
@@ -95,8 +103,8 @@ def scan_sequences(
 
     discovered_first = min(present.by_frame)
     discovered_last = max(present.by_frame)
-    active_first, active_last = _compute_active_range(start, end, discovered_first, discovered_last)
-    if active_first > active_last:
+    active = _compute_active_range(start, end, discovered_first, discovered_last)
+    if active.first > active.last:
         return []
 
     return apply_policy(
@@ -105,8 +113,8 @@ def scan_sequences(
             present_frames=present.by_frame,
             directory=directory,
             policy=policy,
-            first=active_first,
-            last=active_last,
+            first=active.first,
+            last=active.last,
             discovered_first=discovered_first,
             discovered_last=discovered_last,
             dropped_negative_frame_count=present.dropped_negatives,
@@ -222,11 +230,17 @@ def _compute_active_range(
     end: int | None,
     discovered_first: int,
     discovered_last: int,
-) -> tuple[int, int]:
+) -> _ActiveRange:
     """Clip the discovered range to the optional [start, end] subset bounds."""
-    active_first = max(start, discovered_first) if start is not None else discovered_first
-    active_last = min(end, discovered_last) if end is not None else discovered_last
-    return active_first, active_last
+    if start is None:
+        active_first = discovered_first
+    else:
+        active_first = max(start, discovered_first)
+    if end is None:
+        active_last = discovered_last
+    else:
+        active_last = min(end, discovered_last)
+    return _ActiveRange(first=active_first, last=active_last)
 
 
 def _list_directory_filenames(directory: str) -> list[str]:
