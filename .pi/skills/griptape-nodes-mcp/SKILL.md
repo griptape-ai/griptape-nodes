@@ -363,24 +363,6 @@ read the returned `node_name` from `CreateNodeResultSuccess` and reuse it verbat
 A typo here surfaces as an opaque validation error from pydantic, not a friendly
 "unknown field" message.
 
-### `MathExpression` uses a..z variables
-
-`MathExpression` exposes 26 variables `a` through `z`, all as parameters.
-`num_variables` (a slider 1-26) controls how many are surfaced in the UI via
-`ui_options.hide`. To use variable `e`, set `num_variables >= 5`, then set `e`'s
-value.
-
-### `AddTextToImage` vs `AddTextToExistingImage`
-
-- `AddTextToImage` (`group: "create"`) **generates a new image**. It has `width`,
-    `height`, `background_color` and **no** `input_image`.
-- `AddTextToExistingImage` (`group: "edit"`) **overlays text on an existing image**.
-    It has `input_image`, `template_values`, alignment, margin, and hexa (alpha)
-    colors.
-
-Name alone does not make this clear. Read the `description` in DescribeNodeType's
-`metadata`.
-
 ### Only one workflow in context at a time
 
 `SetWorkflowContextRequest` refuses if a workflow is already in context. To swap,
