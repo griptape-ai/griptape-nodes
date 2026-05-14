@@ -10,7 +10,7 @@ By default the engine listens on:
 http://localhost:8125/mcp/
 ```
 
-The trailing slash matters. The transport is **Streamable HTTP**.
+The transport is **Streamable HTTP**. The trailing slash is recommended; the server redirects `/mcp` to `/mcp/` for clients that drop it.
 
 When the engine starts, it logs the actual bound address, for example:
 
@@ -102,10 +102,19 @@ Claude Desktop's `claude_desktop_config.json` only supports `stdio` servers. To 
 
 ## Verifying the connection
 
-With the engine running, list the tools the MCP server exposes from the command line:
+The simplest non-interactive check is the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) CLI. The engine speaks Streamable HTTP, so pass `--transport http`:
 
 ```bash
-npx @modelcontextprotocol/inspector http://localhost:8125/mcp/
+npx -y @modelcontextprotocol/inspector --cli http://localhost:8125/mcp/ \
+  --transport http --method tools/list
 ```
 
-You should see the engine's request tools (`CreateNodeRequest`, `RunWorkflowWithCurrentStateRequest`, etc.).
+Without `--transport http` the inspector defaults to SSE and you'll see `SSE error: Non-200 status code (400)`, which is the engine refusing an SSE-style GET without an MCP session.
+
+The inspector also has a browser UI:
+
+```bash
+npx -y @modelcontextprotocol/inspector
+```
+
+Paste `http://localhost:8125/mcp/` into the URL field and pick **Streamable HTTP** as the transport. If the connection fails with `TypeError: NetworkError when attempting to fetch resource`, it's almost always CORS: the engine's MCP server does not currently emit `Access-Control-Allow-Origin` headers, so cross-origin browser fetches are blocked. Use the CLI command above instead, or run the inspector with browser security relaxed.

@@ -15,7 +15,6 @@ from mcp.types import (
     Tool,
 )
 from pydantic import TypeAdapter
-from rich.logging import RichHandler
 from starlette.types import Receive, Scope, Send
 
 from griptape_nodes.api_client import Client, RequestClient
@@ -136,7 +135,6 @@ config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
 mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
-mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 mcp_server_logger.setLevel(logging.INFO)
 
 
