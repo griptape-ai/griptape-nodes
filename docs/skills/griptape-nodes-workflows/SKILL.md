@@ -1,11 +1,11 @@
 ---
 name: griptape-nodes-workflows
-description: Build, run, and inspect griptape-nodes workflows through the griptape-nodes MCP server. Use when the user asks to construct a node workflow, run an existing one, set parameter values, wire connections between nodes, or read output from a workflow run. Triggers include "build a workflow", "add a node to the flow", "connect these nodes", "run the flow", "what does node X output", and any task involving the `griptape_nodes_*` MCP tools.
+description: Build, run, and inspect Griptape Nodes workflows by driving the engine's MCP server. Use when the user asks to construct a node workflow, run an existing one, set parameter values, wire connections between nodes, or read output from a workflow run. Triggers include "build a workflow", "add a node to the flow", "connect these nodes", "run the flow", "what does node X output".
 ---
 
-# Griptape Nodes MCP: Workflow Construction Guide
+# Griptape Nodes Workflow Construction Guide
 
-This skill covers the full cold-start cycle (build → wire → run → read) against the griptape-nodes MCP server, plus the idioms and gotchas discovered from running real workflows.
+This skill covers the full cold-start cycle (build → wire → run → read) against the engine's MCP server, plus the idioms and gotchas discovered from running real workflows.
 
 ## Mental Model
 
