@@ -97,8 +97,9 @@ type you intend to use.
 `EventRequestBatch` (MCP tool name: `griptape_nodes_EventRequestBatch`) wraps an
 ordered list of inner requests in a single transport frame. Use it whenever the
 shape of the build phase is already decided — typical pattern is N `CreateNodeRequest`
-+ M `SetParameterValueRequest` + K `CreateConnectionRequest` + one
-`AutoLayoutFlowRequest`, all in one round trip.
+
+- M `SetParameterValueRequest` + K `CreateConnectionRequest` + one
+    `AutoLayoutFlowRequest`, all in one round trip.
 
 Shape:
 

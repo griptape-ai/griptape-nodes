@@ -133,10 +133,10 @@ Whichever scope you choose, the directory name **must** be `griptape-nodes-workf
 
 ### Per-client install paths
 
-| Client            | Project scope                                | User scope                                    |
-| ----------------- | -------------------------------------------- | --------------------------------------------- |
-| Claude Code       | `.claude/skills/griptape-nodes-workflows/SKILL.md` | `~/.claude/skills/griptape-nodes-workflows/SKILL.md` |
-| Cursor            | `.cursor/skills/griptape-nodes-workflows/SKILL.md` | `~/.cursor/skills/griptape-nodes-workflows/SKILL.md` |
+| Client            | Project scope                                      | User scope                                            |
+| ----------------- | -------------------------------------------------- | ----------------------------------------------------- |
+| Claude Code       | `.claude/skills/griptape-nodes-workflows/SKILL.md` | `~/.claude/skills/griptape-nodes-workflows/SKILL.md`  |
+| Cursor            | `.cursor/skills/griptape-nodes-workflows/SKILL.md` | `~/.cursor/skills/griptape-nodes-workflows/SKILL.md`  |
 | VS Code (Copilot) | `.github/skills/griptape-nodes-workflows/SKILL.md` | `~/.copilot/skills/griptape-nodes-workflows/SKILL.md` |
 
 Cursor and VS Code also pick up `.agents/skills/` (project) and `~/.agents/skills/` (user), and VS Code additionally recognizes `.claude/skills/` / `~/.claude/skills/`. If you want one folder to serve multiple clients, drop the skill at `~/.agents/skills/griptape-nodes-workflows/SKILL.md`.
