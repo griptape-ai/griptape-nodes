@@ -232,6 +232,44 @@ class TestLibraryManagerDisabledEntries:
         warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
         assert any("libraries_to_register" in m for m in warnings)
 
+    def test_rediscovery_reconciles_toggled_enabled_flag(
+        self, griptape_nodes: GriptapeNodes, lib_files: tuple[Path, Path]
+    ) -> None:
+        """Re-running discovery after a refresh updates lifecycle when the user toggles enabled.
+
+        Refreshing libraries (ReloadAllLibrariesRequest) does not unload entries that were
+        never registered with LibraryRegistry, such as DISABLED entries. The follow-up
+        discovery must therefore reconcile the lifecycle state itself; otherwise a library
+        flipped from disabled to enabled (or back) would never get picked up.
+        """
+        from griptape_nodes.retained_mode.events.library_events import DiscoverLibrariesRequest
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+        library_manager = griptape_nodes.LibraryManager()
+        first_lib, second_lib = lib_files
+        # Reset tracking so this test does not depend on prior state.
+        library_manager._library_file_path_to_info = {}
+
+        # Initial discovery: first_lib enabled, second_lib disabled.
+        initial_config = [str(first_lib), {"path": str(second_lib), "enabled": False}]
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=initial_config):
+            library_manager.discover_libraries_request(DiscoverLibrariesRequest(include_sandbox=False))
+
+        first_state = library_manager._library_file_path_to_info[str(first_lib)].lifecycle_state
+        second_state = library_manager._library_file_path_to_info[str(second_lib)].lifecycle_state
+        assert first_state != LibraryManager.LibraryLifecycleState.DISABLED
+        assert second_state == LibraryManager.LibraryLifecycleState.DISABLED
+
+        # User flips the config: first_lib disabled, second_lib enabled, then triggers refresh.
+        toggled_config = [{"path": str(first_lib), "enabled": False}, str(second_lib)]
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=toggled_config):
+            library_manager.discover_libraries_request(DiscoverLibrariesRequest(include_sandbox=False))
+
+        first_state_after = library_manager._library_file_path_to_info[str(first_lib)].lifecycle_state
+        second_state_after = library_manager._library_file_path_to_info[str(second_lib)].lifecycle_state
+        assert first_state_after == LibraryManager.LibraryLifecycleState.DISABLED
+        assert second_state_after != LibraryManager.LibraryLifecycleState.DISABLED
+
 
 class TestLibraryManagerMigrateOldXdgPaths:
     """Test the _migrate_old_xdg_library_paths functionality in LibraryManager."""

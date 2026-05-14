@@ -3902,11 +3902,20 @@ class LibraryManager:
 
         Loads metadata if possible and creates the entry in the appropriate lifecycle state.
         When `enabled` is False, the entry is created in the DISABLED terminal state and
-        is skipped by load_all_libraries_from_config. Only creates the entry if it doesn't
-        already exist in tracking.
+        is skipped by load_all_libraries_from_config.
+
+        If an entry already exists for this path, it is preserved unless the requested
+        `enabled` flag disagrees with the existing lifecycle state (DISABLED vs. anything
+        else). In that case the stale entry is dropped so a fresh one can be created,
+        which is what lets a refresh pick up libraries the user has just toggled in
+        libraries_to_register.
         """
-        if file_path_str in self._library_file_path_to_info:
-            return
+        existing = self._library_file_path_to_info.get(file_path_str)
+        if existing is not None:
+            existing_is_disabled = existing.lifecycle_state == LibraryManager.LibraryLifecycleState.DISABLED
+            if existing_is_disabled == (not enabled):
+                return
+            del self._library_file_path_to_info[file_path_str]
 
         metadata_result = self.load_library_metadata_from_file_request(
             LoadLibraryMetadataFromFileRequest(file_path=file_path_str)
