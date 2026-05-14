@@ -3913,8 +3913,12 @@ class LibraryManager:
         existing = self._library_file_path_to_info.get(file_path_str)
         if existing is not None:
             existing_is_disabled = existing.lifecycle_state == LibraryManager.LibraryLifecycleState.DISABLED
-            if existing_is_disabled == (not enabled):
+            requested_is_disabled = not enabled
+            if existing_is_disabled == requested_is_disabled:
+                # Already in the right state; keep the existing entry as-is.
                 return
+            # The user toggled enabled in libraries_to_register; drop the stale entry so
+            # the block below recreates it with the new lifecycle.
             del self._library_file_path_to_info[file_path_str]
 
         metadata_result = self.load_library_metadata_from_file_request(
