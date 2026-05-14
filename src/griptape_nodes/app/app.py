@@ -279,9 +279,9 @@ async def _run_websocket_tasks(role: EngineRole) -> None:
             libraries_to_register = [role.library_name]
         else:
             # For orchestrator, load from config (unified for headless and non-headless)
-            libraries_to_register = config_manager.get_config_value(
-                "app_events.on_app_initialization_complete.libraries_to_register"
-            ) or []
+            libraries_to_register = (
+                config_manager.get_config_value("app_events.on_app_initialization_complete.libraries_to_register") or []
+            )
 
         griptape_nodes.EventManager().put_event(
             AppEvent(
