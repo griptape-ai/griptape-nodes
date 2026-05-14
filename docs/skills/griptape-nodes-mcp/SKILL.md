@@ -404,7 +404,7 @@ flow keeps running in the engine until it finishes or errors. A subsequent
 
 ## Custom nodes
 
-If the task involves writing a new node type via `RegisterSandboxNodeFromSourceRequest`, read [`docs/developing_nodes/comprehensive_guide.md`](../../../docs/developing_nodes/comprehensive_guide.md) **before** drafting source. The guide documents the engine-side conventions a sandbox class must follow:
+If the task involves writing a new node type via `RegisterSandboxNodeFromSourceRequest`, read [`docs/developing_nodes/comprehensive_guide.md`](../../developing_nodes/comprehensive_guide.md) **before** drafting source. The guide documents the engine-side conventions a sandbox class must follow:
 
 - `BaseNode` subclassing and the `process` / `aprocess` contract
 - `Parameter` declaration, modes (`mode_allowed_input` / `..._property` / `..._output`), traits
