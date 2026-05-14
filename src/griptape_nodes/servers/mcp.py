@@ -319,7 +319,6 @@ def _resolve_batch_timeout_ms(override: object, num_requests: int) -> int:
         )
         raise ValueError(msg)
     return override
-    return override
 
 
 def _trim_batch_results(raw_results: list[Any]) -> list[dict[str, Any]]:
