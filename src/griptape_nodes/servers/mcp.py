@@ -16,7 +16,6 @@ from mcp.types import (
     Tool,
 )
 from pydantic import TypeAdapter
-from rich.logging import RichHandler
 from starlette.types import Receive, Scope, Send
 
 from griptape_nodes.api_client import Client, RequestClient
@@ -154,15 +153,16 @@ _BATCH_PER_REQUEST_TIMEOUT_MS = 30000
 _BATCH_MAX_AUTO_TIMEOUT_MS = 300000
 
 GTN_MCP_SERVER_HOST = os.getenv("GTN_MCP_SERVER_HOST", "localhost")
-# Port of the MCP server (where uvicorn binds). 0 means the OS assigns a free port automatically.
-GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "0"))
+# Port of the MCP server (where uvicorn binds). Stable by default so external MCP clients
+# (Claude Desktop, Cursor, VS Code, ...) can hard-code the URL in their config files.
+# Set to 0 to let the OS assign a free port; set to any other value to pin the port.
+GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "8125"))
 GTN_MCP_SERVER_LOG_LEVEL = os.getenv("GTN_MCP_SERVER_LOG_LEVEL", "ERROR").lower()
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
 mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
-mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 mcp_server_logger.setLevel(logging.INFO)
 
 
@@ -339,7 +339,8 @@ def start_mcp_server(api_key: str, sock: socket.socket) -> None:
     this function. Using a pre-bound socket avoids race conditions when discovering
     the actual port assigned by the OS.
     """
-    mcp_server_logger.debug("Starting MCP GTN server...")
+    bound_host, bound_port = sock.getsockname()[:2]
+    mcp_server_logger.info("MCP server listening at http://%s:%d/mcp/", bound_host, bound_port)
 
     app = Server("mcp-gtn")
 
