@@ -22,14 +22,20 @@ This skill covers the full cold-start cycle (build → wire → run → read) ag
 Every MCP tool corresponds 1:1 to a `RequestPayload` class registered in
 `SUPPORTED_REQUEST_EVENTS` (`src/griptape_nodes/servers/mcp.py`). The server name is
 prefixed onto each tool, so the request `CreateNodeRequest` is reachable as
-`griptape_nodes_CreateNodeRequest`. Two consequences worth remembering up front:
+`griptape_nodes_CreateNodeRequest`. A few consequences worth remembering up front:
 
 - **There are no plural variants of individual requests.** `CreateNodesRequest`,
     `CreateConnectionsRequest`, etc. do not exist. To create N nodes, send N
-    `CreateNodeRequest` calls.
+    `CreateNodeRequest` calls — or wrap them in a single `EventRequestBatch` call
+    (see below).
 - **`CreateNodeRequest` does not take parameter values.** Setting a parameter is
     always a separate `SetParameterValueRequest` after the node exists. There is no
     `parameter_values` / `inputs` shortcut on create.
+- **`EventRequestBatch` is the only fan-out primitive.** It is a synthetic tool
+    (no matching `RequestPayload` class) that ships an ordered list of inner
+    requests in one transport frame. Reach for it whenever you already know the
+    shape of a build phase. See "EventRequestBatch: collapse a build phase into
+    one round trip" below.
 
 ## Survey the Workspace First
 
@@ -85,6 +91,81 @@ C. (optional) griptape_nodes_ListCategoriesInLibraryRequest(library="<name>")
 Do this once per session, then reuse the catalog. Skip the survey only when you
 already know (from a prior call in the same session) which library provides each node
 type you intend to use.
+
+## EventRequestBatch: collapse a build phase into one round trip
+
+`EventRequestBatch` (MCP tool name: `griptape_nodes_EventRequestBatch`) wraps an
+ordered list of inner requests in a single transport frame. Use it whenever the
+shape of the build phase is already decided — typical pattern is N `CreateNodeRequest`
++ M `SetParameterValueRequest` + K `CreateConnectionRequest` + one
+`AutoLayoutFlowRequest`, all in one round trip.
+
+Shape:
+
+```json
+{
+  "requests": [
+    {"request_type": "CreateNodeRequest",
+     "request": {"node_type": "TextInput", "node_name": "TextInput_1"}},
+    {"request_type": "SetParameterValueRequest",
+     "request": {"node_name": "TextInput_1", "parameter_name": "text", "value": "..."}}
+  ],
+  "timeout_ms": 60000
+}
+```
+
+Behavior:
+
+- **Sequential dispatch.** The engine awaits inner requests in submission order
+    (`for inner in batch.requests: await _dispatch_event_request(inner)`), so a
+    `CreateNodeRequest` followed by a `SetParameterValueRequest` on that same node
+    is safe inside one batch.
+- **Pre-flight validation.** Every inner request is constructed against its
+    `RequestPayload` class before anything goes on the wire. An unknown
+    `request_type`, a `request` that is not a JSON object, or unknown kwargs in the
+    inner payload all reject the entire batch up front with a `TypeError` /
+    `ValueError`.
+- **Per-slot failure isolation.** Once the batch is dispatched, a failure in one
+    slot does not abort siblings. Failed slots come back as
+    `{"ok": false, "details": "..."}` in the result array; successful slots come
+    back as the same flattened object a single tool call would return. Walk every
+    slot before assuming the batch succeeded.
+- **No nesting.** `EventRequestBatch` is intentionally absent from
+    `SUPPORTED_REQUEST_EVENTS` and the inner `request_type` enum, so a batch cannot
+    contain another batch.
+- **Default timeout scales with size.** `timeout_ms` defaults to
+    `30000 × len(requests)` clamped at `300000` ms (5 min). Pass an explicit
+    override when the last slot is `StartFlowRequest(wait_for_completion=True)` or
+    any other long-running call; otherwise the synchronous run can eat the budget
+    meant for the rest of the batch. `bool` is rejected explicitly so `True`
+    cannot silently become 1ms.
+
+Return shape: a JSON array of trimmed slot responses in submission order. Each slot
+looks identical to the response that single-tool dispatch would have returned for
+that `request_type`.
+
+```json
+[
+  {"ok": true, "node_name": "TextInput_1", "...": "..."},
+  {"ok": true, "finalized_value": "...", "...": "..."}
+]
+```
+
+### Critical idiom: pre-name nodes you reference later in the same batch
+
+Inside one batch you cannot read `CreateNodeResultSuccess.node_name` from an
+earlier slot before composing a later one — every entry is fixed when the batch is
+submitted. So either:
+
+- Pass an explicit `node_name` on every `CreateNodeRequest` and reuse those names
+    verbatim in later `SetParameterValueRequest` / `CreateConnectionRequest`
+    entries, or
+- Split the build across two batches: one that creates nodes (read the assigned
+    names back from the result array), then a second that sets parameters and
+    wires them up.
+
+The one-batch + explicit names path is almost always shorter and is what the
+batched recipe below uses.
 
 ## Canonical Cold-Start Recipe
 
@@ -144,6 +225,40 @@ Thirteen MCP calls: 1 ensure + 3 describe + 3 create + 1 set + 2 connect + 1 lay
 1 run + 1 read. Wider graphs scale linearly: every node adds one CreateNode plus its
 SetParameterValue calls; every edge adds one CreateConnection.
 
+### Batched variant (4 round trips)
+
+The build phase (steps 5-11 above) has fixed shape, so it collapses into one
+`EventRequestBatch` call. The describe phase still benefits from being a separate
+batch because its results inform the build payload, and `StartFlowRequest` is
+usually kept out of the build batch so its long timeout does not gate the rest:
+
+```
+1. EnsureWorkflowAndFlowRequest                        (1 call)
+2. EventRequestBatch([                                  (1 call, runs sequentially)
+     DescribeNodeTypeRequest("TextInput"),
+     DescribeNodeTypeRequest("Agent"),
+     DescribeNodeTypeRequest("DisplayText"),
+   ])
+3. EventRequestBatch([                                  (1 call, runs sequentially)
+     CreateNodeRequest(node_type="TextInput",   node_name="TextInput_1"),
+     CreateNodeRequest(node_type="Agent",       node_name="Agent_1"),
+     CreateNodeRequest(node_type="DisplayText", node_name="DisplayText_1"),
+     SetParameterValueRequest(node_name="TextInput_1", parameter_name="text", value="..."),
+     CreateConnectionRequest(source_node_name="TextInput_1",   source_parameter_name="text",
+                             target_node_name="Agent_1",       target_parameter_name="prompt"),
+     CreateConnectionRequest(source_node_name="Agent_1",       source_parameter_name="output",
+                             target_node_name="DisplayText_1", target_parameter_name="text"),
+     AutoLayoutFlowRequest(),
+   ])
+4. StartFlowRequest(wait_for_completion=True, completion_timeout_ms=60000)
+   + GetParameterValueRequest("DisplayText_1", "text")            (2 calls)
+```
+
+Four round trips instead of thirteen. Walk the result arrays after each batch and
+verify every slot returned `ok: true` before moving on; per-slot failures don't
+abort the rest of the batch, so a typo in slot 4 still lets slots 5 and 6 run
+against stale state.
+
 ## Key Idioms
 
 - **Survey the workspace before picking node types.** Read the JSON config at
@@ -158,6 +273,12 @@ SetParameterValue calls; every edge adds one CreateConnection.
 - **Discover before wiring.** Always call `DescribeNodeType` for each node type you
     intend to use before guessing parameter names. The cost is 3-5 calls up front but
     saves many round trips fighting typos and assumed-wrong names.
+- **Batch with `EventRequestBatch` once the shape is known.** Anything past the
+    discovery phase usually has fixed shape (N creates + M sets + K connects + a
+    layout). Wrap them in one `EventRequestBatch` call and pre-name every node you
+    reference later in the same batch. Inspect every slot of the result array;
+    per-slot failures do not abort siblings. Keep `StartFlowRequest` out of the
+    build batch unless you raise `timeout_ms` to cover the synchronous run.
 - **Wire data, not control.** The engine derives execution order from data
     dependencies, so `exec_out` → `exec_in` connections are usually noise. Only add
     them when two nodes must run in a specific order but don't exchange data.
@@ -196,6 +317,12 @@ fields are flattened from the inner result class, so for example
 `created_workflow`, `created_flow` at the top level, and `AutoLayoutFlowResultSuccess`
 exposes `flow_name` and `positioned_nodes`. Failures surface as MCP tool errors with
 the engine's `result_details` message attached.
+
+`EventRequestBatch` returns a JSON **array** instead of a single object. Each slot
+mirrors the single-call shape above, so a batched build phase looks like
+`[{"ok": true, "node_name": "TextInput_1", ...}, {"ok": true, ...}, ...]`. Failed
+slots come back as `{"ok": false, "details": "..."}` in place; the rest of the array
+still executes.
 
 ## Gotchas
 
@@ -272,6 +399,7 @@ flow keeps running in the engine until it finishes or errors. A subsequent
 | Goal                                                            | Tool                                                                                                                                                      |
 | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Bootstrap a workflow + flow from cold                           | `EnsureWorkflowAndFlowRequest`                                                                                                                            |
+| Fan N requests out in one round trip                            | `EventRequestBatch` (synthetic; pre-name nodes that later slots reference)                                                                                |
 | Discover libraries / node types                                 | `ListRegisteredLibrariesRequest`, `ListNodeTypesInLibraryRequest`, `ListCategoriesInLibraryRequest`                                                       |
 | Inspect a node type's parameters                                | `DescribeNodeTypeRequest`                                                                                                                                 |
 | Create a node                                                   | `CreateNodeRequest`                                                                                                                                       |
@@ -330,3 +458,15 @@ Goal: run an `Agent` on a one-line prompt and read the output.
 1. `GetParameterValueRequest(node_name="DisplayText_1", parameter_name="text")`
 
 Total: 13 MCP calls from empty engine to rendered output.
+
+### Same pipeline, batched (4 round trips)
+
+1. `EnsureWorkflowAndFlowRequest()`
+1. `EventRequestBatch([DescribeNodeTypeRequest × 3])`
+1. `EventRequestBatch([CreateNodeRequest × 3 (with explicit node_name), SetParameterValueRequest, CreateConnectionRequest × 2, AutoLayoutFlowRequest])`
+1. `StartFlowRequest(wait_for_completion=True, completion_timeout_ms=60000)` then `GetParameterValueRequest("DisplayText_1", "text")`
+
+The build batch in step 3 only works because every `CreateNodeRequest` carries an
+explicit `node_name`; the later `SetParameterValueRequest` and
+`CreateConnectionRequest` slots reference those names directly instead of waiting on
+the per-create response.
