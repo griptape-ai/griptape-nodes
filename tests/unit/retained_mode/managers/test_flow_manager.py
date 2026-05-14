@@ -1,6 +1,7 @@
 """Tests for FlowManager.on_extract_flow_commands_from_image_metadata."""
 
 import base64
+import itertools
 import pickle
 import tempfile
 from collections.abc import Generator
@@ -387,3 +388,122 @@ class TestStartFlowCancelsOnWaitTimeout:
 
         assert isinstance(result, StartFlowResultFailure)
         cancel_mock.assert_not_called()
+
+
+class TestAutoLayoutFlowRequest:
+    """Tests for FlowManager.on_auto_layout_flow_request."""
+
+    def _cleanup(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+
+        griptape_nodes.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+    def _bootstrap_workflow_and_flow(self, griptape_nodes: GriptapeNodes, workflow: str, flow: str) -> None:
+        """Push a workflow + create a flow without depending on any sibling bootstrap PR."""
+        from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
+
+        self._cleanup(griptape_nodes)
+        griptape_nodes.ContextManager().push_workflow(workflow)
+        result = griptape_nodes.handle_request(
+            CreateFlowRequest(parent_flow_name=None, flow_name=flow, set_as_new_context=True)
+        )
+        assert isinstance(result, CreateFlowResultSuccess)
+
+    def _bootstrap_graph(self, griptape_nodes: GriptapeNodes) -> str:
+        """Create a small Workflow + Flow + 3 chained Note nodes (A -> B -> C) for layout tests.
+
+        Uses `Note` from the registered Griptape Nodes Library because it has data params that
+        can actually be connected end to end without triggering LLM calls or external deps.
+        """
+        from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
+        from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
+
+        self._bootstrap_workflow_and_flow(griptape_nodes, workflow="layout_wf", flow="layout_flow")
+
+        names = []
+        for desired in ("A", "B", "C"):
+            result = griptape_nodes.handle_request(CreateNodeRequest(node_type="Note", node_name=desired))
+            assert isinstance(result, CreateNodeResultSuccess)
+            names.append(result.node_name)
+
+        # Wire A -> B -> C on the Note node's text parameter.
+        for source, target in itertools.pairwise(names):
+            conn_result = griptape_nodes.handle_request(
+                CreateConnectionRequest(
+                    source_node_name=source,
+                    source_parameter_name="note",
+                    target_node_name=target,
+                    target_parameter_name="note",
+                )
+            )
+            # We don't strictly need this to succeed for layout tests (layout runs even without edges),
+            # but the chain is what makes the topological case interesting.
+            _ = conn_result
+
+        return "layout_flow"
+
+    @pytest.mark.asyncio
+    async def test_fails_cleanly_when_no_flow_in_context_and_no_name(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.flow_events import (
+            AutoLayoutFlowRequest,
+            AutoLayoutFlowResultFailure,
+        )
+
+        self._cleanup(griptape_nodes)
+        flow_manager = griptape_nodes.FlowManager()
+
+        result = await flow_manager.on_auto_layout_flow_request(AutoLayoutFlowRequest())
+
+        assert isinstance(result, AutoLayoutFlowResultFailure)
+
+    @pytest.mark.asyncio
+    async def test_lays_out_linear_chain_into_columns(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.flow_events import (
+            AutoLayoutFlowRequest,
+            AutoLayoutFlowResultSuccess,
+        )
+
+        flow_name = self._bootstrap_graph(griptape_nodes)
+        flow_manager = griptape_nodes.FlowManager()
+
+        result = await flow_manager.on_auto_layout_flow_request(
+            AutoLayoutFlowRequest(
+                flow_name=flow_name,
+                origin_x=10.0,
+                origin_y=20.0,
+                layer_spacing=100.0,
+                row_spacing=50.0,
+            )
+        )
+
+        assert isinstance(result, AutoLayoutFlowResultSuccess)
+
+        # A -> B -> C on the single data edge makes them land in three separate columns at y=20.
+        positions = {p.node_name: (p.x, p.y) for p in result.positioned_nodes}
+        assert positions["A"] == (10.0, 20.0)
+        assert positions["B"] == (110.0, 20.0)
+        assert positions["C"] == (210.0, 20.0)
+
+        # Metadata was actually written on the live node objects.
+        flow = flow_manager.get_flow_by_name(flow_name)
+        assert flow.nodes["A"].metadata["position"] == {"x": 10.0, "y": 20.0}
+        assert flow.nodes["C"].metadata["position"] == {"x": 210.0, "y": 20.0}
+
+        self._cleanup(griptape_nodes)
+
+    @pytest.mark.asyncio
+    async def test_empty_flow_is_handled_gracefully(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.flow_events import (
+            AutoLayoutFlowRequest,
+            AutoLayoutFlowResultSuccess,
+        )
+
+        self._bootstrap_workflow_and_flow(griptape_nodes, workflow="empty_wf", flow="empty_flow")
+
+        flow_manager = griptape_nodes.FlowManager()
+        result = await flow_manager.on_auto_layout_flow_request(AutoLayoutFlowRequest(flow_name="empty_flow"))
+
+        assert isinstance(result, AutoLayoutFlowResultSuccess)
+        assert result.positioned_nodes == []
+
+        self._cleanup(griptape_nodes)
