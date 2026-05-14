@@ -1,5 +1,5 @@
 ---
-name: griptape-nodes-mcp
+name: griptape-nodes-workflows
 description: Build, run, and inspect griptape-nodes workflows through the griptape-nodes MCP server. Use when the user asks to construct a node workflow, run an existing one, set parameter values, wire connections between nodes, or read output from a workflow run. Triggers include "build a workflow", "add a node to the flow", "connect these nodes", "run the flow", "what does node X output", and any task involving the `griptape_nodes_*` MCP tools.
 ---
 
