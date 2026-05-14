@@ -275,7 +275,14 @@ async def _run_websocket_tasks(role: EngineRole) -> None:
     async with Client() as client:
         logger.debug("WebSocket connection established")
         is_worker = isinstance(role, Worker)
-        libraries_to_register = [role.library_name] if isinstance(role, Worker) and role.library_name else []
+        if is_worker and role.library_name:
+            libraries_to_register = [role.library_name]
+        else:
+            # For orchestrator, load from config (unified for headless and non-headless)
+            libraries_to_register = config_manager.get_config_value(
+                "app_events.on_app_initialization_complete.libraries_to_register"
+            ) or []
+
         griptape_nodes.EventManager().put_event(
             AppEvent(
                 payload=app_events.AppInitializationComplete(
