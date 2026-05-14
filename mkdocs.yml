@@ -74,6 +74,8 @@ plugins:
           - how_to/mcp/servers/fetch.md
           - how_to/mcp/servers/filesystem.md
           - how_to/mcp/servers/time.md
+        Agent skills:
+          - skills/griptape-nodes-workflows/SKILL.md: Build, run, and inspect workflows through the engine's MCP server
         Node reference:
           - nodes/*.md
 
@@ -187,6 +189,8 @@ nav:
                   - Fetch: how_to/mcp/servers/fetch.md
                   - Filesystem: how_to/mcp/servers/filesystem.md
                   - Time: how_to/mcp/servers/time.md
+  - Agent Skills:
+      - Workflow Construction (MCP): skills/griptape-nodes-workflows/SKILL.md
   - FAQ: faq.md
   - For Agents: for_agents.md
   - Nodes Reference:
