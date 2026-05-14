@@ -36,6 +36,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import LibraryRegistration
 
 
 class TestLibraryManagerLoadLibraries:
@@ -66,7 +67,9 @@ class TestLibraryManagerLoadLibraries:
         mock_library.name = "SomeLib"
         with (
             patch.object(library_manager, "_library_file_path_to_info", {"some_lib": mock_lib_info}),
-            patch.object(library_manager, "_discover_library_files", return_value=[Path("some_lib")]),
+            patch.object(
+                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="some_lib")]
+            ),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
             patch.object(LibraryRegistry, "get_library", return_value=mock_library),
         ):
@@ -89,7 +92,9 @@ class TestLibraryManagerLoadLibraries:
         mock_load_config = AsyncMock()
         with (
             patch.object(library_manager, "_library_file_path_to_info", {}),
-            patch.object(library_manager, "_discover_library_files", return_value=[Path("new_lib")]),
+            patch.object(
+                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="new_lib")]
+            ),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
             request = LoadLibrariesRequest()
@@ -114,7 +119,9 @@ class TestLibraryManagerLoadLibraries:
         mock_load_config = AsyncMock(side_effect=Exception("Config error"))
         with (
             patch.object(library_manager, "_library_file_path_to_info", {}),
-            patch.object(library_manager, "_discover_library_files", return_value=[Path("new_lib")]),
+            patch.object(
+                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="new_lib")]
+            ),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
             request = LoadLibrariesRequest()
@@ -126,6 +133,104 @@ class TestLibraryManagerLoadLibraries:
             assert isinstance(result.result_details, ResultDetails)
             # Test that failure was indicated in the result message
             assert "failed" in result.result_details.result_details[0].message.lower()
+
+
+class TestLibraryManagerDisabledEntries:
+    """Behavior when libraries_to_register entries have enabled=False."""
+
+    @pytest.fixture
+    def lib_files(self, tmp_path: Path) -> tuple[Path, Path]:
+        """Two empty library JSON files in distinct directories."""
+        enabled_dir = tmp_path / "enabled"
+        disabled_dir = tmp_path / "disabled"
+        enabled_dir.mkdir()
+        disabled_dir.mkdir()
+        enabled_lib = enabled_dir / "griptape_nodes_library.json"
+        disabled_lib = disabled_dir / "griptape_nodes_library.json"
+        enabled_lib.write_text("{}")
+        disabled_lib.write_text("{}")
+        return enabled_lib, disabled_lib
+
+    def test_discover_library_files_marks_disabled_entries(
+        self, griptape_nodes: GriptapeNodes, lib_files: tuple[Path, Path]
+    ) -> None:
+        """Object-shaped entries with enabled=False produce disabled register entries."""
+        library_manager = griptape_nodes.LibraryManager()
+        enabled_lib, disabled_lib = lib_files
+
+        config = [
+            str(enabled_lib),
+            {"path": str(disabled_lib), "enabled": False},
+        ]
+
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=config):
+            result = library_manager._discover_library_files()
+
+        by_path = {Path(entry.path): entry.enabled for entry in result}
+        assert by_path[enabled_lib] is True
+        assert by_path[disabled_lib] is False
+
+    def test_discover_library_files_bare_string_defaults_to_enabled(
+        self, griptape_nodes: GriptapeNodes, lib_files: tuple[Path, Path]
+    ) -> None:
+        """Bare path strings continue to be treated as enabled."""
+        library_manager = griptape_nodes.LibraryManager()
+        enabled_lib, _ = lib_files
+
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=[str(enabled_lib)]):
+            result = library_manager._discover_library_files()
+
+        assert len(result) == 1
+        assert result[0].enabled is True
+
+    def test_discover_libraries_request_marks_disabled_lifecycle(
+        self, griptape_nodes: GriptapeNodes, lib_files: tuple[Path, Path]
+    ) -> None:
+        """discover_libraries_request creates LibraryInfo with DISABLED lifecycle for disabled entries."""
+        from griptape_nodes.retained_mode.events.library_events import DiscoverLibrariesRequest
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+        library_manager = griptape_nodes.LibraryManager()
+        enabled_lib, disabled_lib = lib_files
+
+        config = [str(enabled_lib), {"path": str(disabled_lib), "enabled": False}]
+        # Reset tracking so this test does not depend on prior state.
+        library_manager._library_file_path_to_info = {}
+
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=config):
+            result = library_manager.discover_libraries_request(DiscoverLibrariesRequest(include_sandbox=False))
+
+        from griptape_nodes.retained_mode.events.library_events import DiscoverLibrariesResultSuccess
+
+        assert isinstance(result, DiscoverLibrariesResultSuccess)
+        states = {
+            entry.path: library_manager._library_file_path_to_info[str(entry.path)].lifecycle_state
+            for entry in result.libraries_discovered
+        }
+        assert states[enabled_lib] != LibraryManager.LibraryLifecycleState.DISABLED
+        assert states[disabled_lib] == LibraryManager.LibraryLifecycleState.DISABLED
+        # The discovery result also surfaces the enabled flag.
+        flags = {entry.path: entry.enabled for entry in result.libraries_discovered}
+        assert flags[enabled_lib] is True
+        assert flags[disabled_lib] is False
+
+    def test_invalid_entry_is_skipped_with_warning(
+        self, griptape_nodes: GriptapeNodes, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Entries that are neither strings nor dicts with a path are skipped."""
+        library_manager = griptape_nodes.LibraryManager()
+
+        config = [42, {"enabled": True}]  # missing 'path', and a bare int
+
+        with (
+            patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=config),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            result = library_manager._discover_library_files()
+
+        assert result == []
+        warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("libraries_to_register" in m for m in warnings)
 
 
 class TestLibraryManagerMigrateOldXdgPaths:

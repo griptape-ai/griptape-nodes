@@ -107,14 +107,34 @@ class MCPServerConfig(BaseModel):
         return f"{self.name} ({'enabled' if self.enabled else 'disabled'})"
 
 
+class LibraryRegistration(BaseModel):
+    """A library entry in libraries_to_register with optional metadata.
+
+    Bare path strings remain valid in the config; this object form is used when
+    additional fields (such as `enabled`) need to be set per entry.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(description="Path to a griptape_nodes_library.json file or a directory scanned recursively.")
+    enabled: bool = Field(
+        default=True,
+        description="When False, the library remains in config but is not loaded on startup.",
+    )
+
+
 class AppInitializationComplete(BaseModel):
     libraries_to_download: list[str] = Field(
         default_factory=list,
         description="Git URLs of libraries to automatically download when the engine starts. Downloaded into libraries_directory. Supports full URLs or GitHub shorthand (e.g., 'user/repo'). Optionally specify a branch, tag, or commit with @ref syntax (e.g., 'user/repo@stable' or 'https://github.com/user/repo@v1.0.0'). If no ref is specified, uses the repository's default branch.",
     )
-    libraries_to_register: list[str] = Field(
+    libraries_to_register: list[str | LibraryRegistration] = Field(
         default_factory=list,
-        description="Libraries to automatically load when the engine starts. Can contain paths to individual griptape_nodes_library.json files or directory paths (scanned recursively for library JSON files).",
+        description=(
+            "Libraries to automatically load when the engine starts. Each entry is either a path string "
+            "(loaded as enabled) or an object with `path` and `enabled` fields. Paths may point to a "
+            "griptape_nodes_library.json file or a directory scanned recursively for library JSON files."
+        ),
     )
     workflows_to_register: list[str] = Field(default_factory=list)
     secrets_to_register: list[str] | dict[str, str] = Field(
