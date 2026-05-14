@@ -153,7 +153,3 @@ mkdir -p "$DEST" \
 ```
 
 Confirm it loaded by typing `/skills` in chat (Claude Code or VS Code) or opening the Skills tab in the customization menu (Cursor).
-
-### Claude Desktop
-
-Claude Desktop has no skill loader. Either paste the published URL into a Claude **Project**'s custom instructions so the contents become system context for every chat in that project, or reference the URL at the start of a conversation that needs to drive the engine.
