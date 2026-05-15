@@ -8,6 +8,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameterInput,
+    ControlParameterOutput,
     Parameter,
     ParameterMode,
     ParameterTypeBuiltin,
@@ -68,6 +69,27 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         metadata: dict[Any, Any] | None = None,
     ) -> None:
         super().__init__(name, metadata)
+
+        # Top-level control flow ports — wires this group into a control chain
+        self.exec_in = ControlParameterInput(
+            tooltip="Start the loop",
+            name="exec_in",
+        )
+        self.exec_in.ui_options = {"display_name": "Start Loop"}
+        self.add_parameter(self.exec_in)
+        if LEFT_PARAMETERS_KEY not in self.metadata:
+            self.metadata[LEFT_PARAMETERS_KEY] = []
+        self.metadata[LEFT_PARAMETERS_KEY].insert(0, "exec_in")
+
+        self.exec_out = ControlParameterOutput(
+            tooltip="Fired after all iterations complete",
+            name="exec_out",
+        )
+        self.exec_out.ui_options = {"display_name": "On Complete"}
+        self.add_parameter(self.exec_out)
+        if RIGHT_PARAMETERS_KEY not in self.metadata:
+            self.metadata[RIGHT_PARAMETERS_KEY] = []
+        self.metadata[RIGHT_PARAMETERS_KEY].insert(0, "exec_out")
 
         # Initialize iteration state
         self._items = []
@@ -185,6 +207,10 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
                 # Hide controls when running in parallel (not supported)
                 self.hide_parameter_by_name(self.skip_iteration.name)
                 self.hide_parameter_by_name(self.break_loop.name)
+
+    def get_next_control_output(self) -> Parameter | None:
+        """Return exec_out so the DAG executor advances downstream after iteration completes."""
+        return self.exec_out
 
     @abstractmethod
     def _get_iteration_items(self) -> list[Any]:
