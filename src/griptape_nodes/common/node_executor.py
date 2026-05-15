@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import base64
 import logging
 import pickle
 from contextvars import ContextVar
@@ -3599,13 +3600,21 @@ class NodeExecutor:
             actual_bytes = ast.literal_eval(stored_value)
             if isinstance(actual_bytes, bytes):
                 return pickle.loads(actual_bytes)  # noqa: S301
-        except (ValueError, SyntaxError, pickle.UnpicklingError) as e:
-            logger.warning(
-                "Failed to unpickle string-represented bytes for parameter '%s': %s",
-                param_name,
-                e,
-            )
-            return stored_value
+        except (ValueError, SyntaxError, pickle.UnpicklingError):
+            pass
+
+        # cattrs JSON converter base85-encodes bytes during WebSocket serialization;
+        # try decoding as base85 and unpickling the result.
+        try:
+            decoded_bytes = base64.b85decode(stored_value)
+            return pickle.loads(decoded_bytes)  # noqa: S301
+        except Exception:
+            pass
+
+        logger.warning(
+            "Failed to deserialize pickled value for parameter '%s'",
+            param_name,
+        )
         return stored_value
 
     def _apply_parameter_values_to_node(
