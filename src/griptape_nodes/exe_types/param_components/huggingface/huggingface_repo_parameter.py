@@ -75,7 +75,7 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
             if not is_deprecated or choice == current_value:
                 filtered_choices.append(choice)
 
-        # If no choices after filtering, fall back to base behaviour
+        # If no choices after filtering, include all (initial state)
         if not filtered_choices:
             super().refresh_parameters()
             return
