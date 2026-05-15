@@ -104,10 +104,6 @@ class HuggingFaceModelParameter(ABC):
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name(self._parameter_name)
 
-    def _on_refresh_click(self, _button: Button, _button_details: ButtonDetailsMessagePayload) -> NodeMessageResult | None:
-        self.refresh_parameters()
-        return None
-
     def get_choices(self) -> list[str]:
         # Ensure the latest repo revisions are fetched
         self._repo_revisions = self.fetch_repo_revisions()
@@ -162,6 +158,12 @@ class HuggingFaceModelParameter(ABC):
 
         # If revision was provided, return it directly
         return repo_id, revision
+
+    def _on_refresh_click(
+        self, _button: Button, _button_details: ButtonDetailsMessagePayload
+    ) -> NodeMessageResult | None:
+        self.refresh_parameters()
+        return None
 
     def _build_model_badge(self) -> BadgeData | None:
         download_models = self.get_download_models()
