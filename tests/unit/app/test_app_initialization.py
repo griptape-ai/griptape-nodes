@@ -1,5 +1,7 @@
 """Unit tests for orchestrator startup AppInitializationComplete event emission and library registration logic."""
 
+import types
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,7 +11,7 @@ from griptape_nodes.retained_mode.events.app_events import AppInitializationComp
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_emits_app_initialization_complete_with_config_libraries(monkeypatch):
+async def test_orchestrator_emits_app_initialization_complete_with_config_libraries(monkeypatch: Any) -> None:
     """Test that the orchestrator emits AppInitializationComplete with libraries_to_register from config."""
     # Arrange
     fake_libraries = ["lib1", "lib2"]
@@ -23,10 +25,15 @@ async def test_orchestrator_emits_app_initialization_complete_with_config_librar
 
     # Patch Client context manager to avoid real network/async operations
     class DummyAsyncContext:
-        async def __aenter__(self):
+        async def __aenter__(self) -> MagicMock:
             return MagicMock()
 
-        async def __aexit__(self, exc_type, exc, tb):
+        async def __aexit__(
+            self,
+            exc_type: object,
+            exc: object,
+            tb: types.TracebackType | None,
+        ) -> bool:
             return False
 
     monkeypatch.setattr(app, "Client", DummyAsyncContext)
@@ -46,17 +53,22 @@ async def test_orchestrator_emits_app_initialization_complete_with_config_librar
 
 
 @pytest.mark.asyncio
-async def test_worker_emits_app_initialization_complete_with_library_name(monkeypatch):
+async def test_worker_emits_app_initialization_complete_with_library_name(monkeypatch: Any) -> None:
     """Test that a Worker emits AppInitializationComplete with its library_name."""
     worker_role = app.Worker(session_id="sess", library_name="libA")
     event_manager = MagicMock()
     monkeypatch.setattr(app.griptape_nodes, "EventManager", lambda: event_manager)
 
     class DummyAsyncContext:
-        async def __aenter__(self):
+        async def __aenter__(self) -> MagicMock:
             return MagicMock()
 
-        async def __aexit__(self, exc_type, exc, tb):
+        async def __aexit__(
+            self,
+            exc_type: object,
+            exc: object,
+            tb: types.TracebackType | None,
+        ) -> bool:
             return False
 
     monkeypatch.setattr(app, "Client", DummyAsyncContext)
