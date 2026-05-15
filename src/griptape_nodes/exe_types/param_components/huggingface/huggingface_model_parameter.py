@@ -2,9 +2,10 @@ import logging
 import re
 from abc import ABC, abstractmethod
 
-from griptape_nodes.exe_types.core_types import BadgeData, ParameterMode
+from griptape_nodes.exe_types.core_types import BadgeData, NodeMessageResult, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
@@ -82,7 +83,15 @@ class HuggingFaceModelParameter(ABC):
             name=self._parameter_name,
             default_value=default_value,
             display_name=self._parameter_name,
-            traits={Options(choices=display_choices)},
+            traits={
+                Options(choices=display_choices),
+                Button(
+                    icon="list-restart",
+                    size="icon",
+                    variant="secondary",
+                    on_click=self._on_refresh_click,
+                ),
+            },
             tooltip=self._parameter_name,
             allowed_modes={ParameterMode.PROPERTY},
             accept_any=False,
@@ -94,6 +103,10 @@ class HuggingFaceModelParameter(ABC):
 
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name(self._parameter_name)
+
+    def _on_refresh_click(self, _button: Button, _button_details: ButtonDetailsMessagePayload) -> NodeMessageResult | None:
+        self.refresh_parameters()
+        return None
 
     def get_choices(self) -> list[str]:
         # Ensure the latest repo revisions are fetched
@@ -160,18 +173,17 @@ class HuggingFaceModelParameter(ABC):
 
         model_lines = []
         for model in download_models:
+            hf_link = f"[↗](https://huggingface.co/{model})"
             if model in downloaded_repo_ids:
-                model_lines.append(f"✓ {model}")
+                model_lines.append(f"✓ {model} {hf_link}")
             else:
-                model_lines.append(f"[{model}](#model-management?search={model})")
+                model_lines.append(f"[↓ {model}](#model-management?search={model}) {hf_link}")
 
         message = (
             "Model download required to continue.\n\n"
-            "To download models:\n\n"
-            "- Navigate to **Settings → Model Management**\n\n"
-            "-Search for the model(s) you need and click the download button:\n\n"
+            "Click a model name below to open it in Model Management, then click the download button:\n\n"
             + "\n\n".join(model_lines)
-            + "\n\nAfter completing these steps, a dropdown with available models will appear."
+            + "\n\nAfter downloading, a dropdown with available models will appear."
         )
 
         return BadgeData(
