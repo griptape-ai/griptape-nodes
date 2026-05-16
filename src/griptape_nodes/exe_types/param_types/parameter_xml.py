@@ -1,12 +1,11 @@
 """ParameterXml component for XML inputs with enhanced UI options."""
 
-import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
+import defusedxml.ElementTree as ET
 
-_PARAM_TYPE = "xml"
+from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
 
 
 class ParameterXml(Parameter):

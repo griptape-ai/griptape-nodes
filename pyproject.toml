@@ -30,6 +30,7 @@ dependencies = [
   "semver>=3.0.4",
   "anyio>=4.0",
   "ruamel.yaml>=0.18.15",
+  "defusedxml>=0.7.1",
   "asyncio-thread-runner>=1.0",
   "portalocker>=2.10.0",
   "pygit2>=1.19.0",

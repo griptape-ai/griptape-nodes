@@ -83,6 +83,7 @@ class ParameterJson(Parameter):
             converters: Parameter converters
             validators: Parameter validators
             ui_options: Dictionary of UI options
+            placeholder_text: Placeholder text shown in the input field when empty
             accept_any: Whether to accept any input type and convert to JSON (default: True)
             button: Whether to show a button in the UI (default: False)
             button_label: Label text for the button (default: "Edit")
