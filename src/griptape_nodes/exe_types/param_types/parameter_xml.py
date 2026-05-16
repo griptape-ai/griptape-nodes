@@ -3,7 +3,9 @@
 from collections.abc import Callable
 from typing import Any
 
-import defusedxml.ElementTree as ET
+from xml.etree.ElementTree import ParseError as XmlParseError
+
+from defusedxml.ElementTree import fromstring as parse_xml
 
 from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
 
@@ -138,8 +140,8 @@ class ParameterXml(Parameter):
             stripped = value.strip()
             if stripped:
                 try:
-                    ET.fromstring(stripped)
-                except ET.ParseError as e:
+                    parse_xml(stripped)
+                except XmlParseError as e:
                     msg = f"ParameterXml: Failed to validate XML string: {e}. Input: {value[:200]!r}"
                     raise ValueError(msg) from e
             return value
