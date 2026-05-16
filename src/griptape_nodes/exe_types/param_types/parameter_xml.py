@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from typing import Any
-
 from xml.etree.ElementTree import ParseError as XmlParseError
 
 from defusedxml.ElementTree import fromstring as parse_xml
