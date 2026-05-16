@@ -44,7 +44,7 @@ class ParameterXml(Parameter):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         ui_options: dict | None = None,
-        placeholder_text: str | None = "<root>\n  <item key=\"value\" />\n</root>",
+        placeholder_text: str | None = '<root>\n  <item key="value" />\n</root>',
         accept_any: bool = True,
         button: bool = False,
         button_label: str | None = "Edit",
