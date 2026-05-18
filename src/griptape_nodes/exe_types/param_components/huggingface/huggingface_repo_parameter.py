@@ -57,6 +57,7 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
         # Get all cached models
         all_choices = self.get_choices()
         if not all_choices:
+            super().refresh_parameters()
             return
 
         # Get current value - use value_being_set if provided (during after_value_set)
@@ -76,6 +77,7 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
 
         # If no choices after filtering, include all (initial state)
         if not filtered_choices:
+            super().refresh_parameters()
             return
 
         # Determine default value
@@ -88,6 +90,19 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
             self._node._update_option_choices(self._parameter_name, filtered_choices, default_value)
         else:
             parameter.add_trait(Options(choices=filtered_choices))
+
+        # Update badge to reflect current download status
+        badge = self._build_model_badge()
+        if badge is None:
+            parameter.clear_badge()
+        else:
+            parameter.set_badge(
+                variant=badge.variant,
+                title=badge.title,
+                message=badge.message,
+                icon=badge.icon,
+                hide_clear_button=badge.hide_clear_button,
+            )
 
     def add_input_parameters(self) -> None:
         """Override to apply deprecated model filtering after parameter creation."""

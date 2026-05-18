@@ -33,10 +33,13 @@ class DiscoveredLibrary(NamedTuple):
     Attributes:
         path: Absolute path to the library JSON file or sandbox directory
         is_sandbox: True if this is a sandbox library (user-created nodes in workspace), False for regular libraries
+        enabled: False when the entry is present in libraries_to_register but explicitly disabled.
+            Disabled libraries are still discovered (so they appear in status output) but are not loaded.
     """
 
     path: Path
     is_sandbox: bool
+    enabled: bool = True
 
 
 @dataclass
