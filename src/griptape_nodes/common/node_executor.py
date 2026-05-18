@@ -2042,6 +2042,26 @@ class NodeExecutor:
 
         return sources
 
+    def _resolve_on_each_entry(self, node: SubflowNodeGroup) -> tuple[str | None, str | None]:
+        """Return (entry_node_name, entry_param_name) from on_each connection, or (None, None)."""
+        if not (isinstance(node, BaseIterativeNodeGroup) and hasattr(node, "on_each")):
+            return None, None
+        flow_manager = GriptapeNodes.FlowManager()
+        connections = flow_manager.get_connections()
+        on_each_conns = connections.outgoing_index.get(node.name, {}).get("on_each", [])
+        if not on_each_conns:
+            return None, None
+        first_conn = connections.connections[on_each_conns[0]]
+        if first_conn.target_node.name == node.name:
+            proxy_param = first_conn.target_parameter
+            proxy_conns = connections.outgoing_index.get(node.name, {}).get(proxy_param.name, [])
+            if proxy_conns:
+                internal_conn = connections.connections[proxy_conns[0]]
+                if internal_conn.is_node_group_internal:
+                    return internal_conn.target_node.name, internal_conn.target_parameter.name
+            return None, None
+        return first_conn.target_node.name, first_conn.target_parameter.name
+
     async def _package_subflow_group_body(
         self, node: SubflowNodeGroup, label: str
     ) -> PackageNodesAsSerializedFlowResultSuccess | None:
@@ -2075,6 +2095,8 @@ class NodeExecutor:
         sanitized_node_name = node.name.replace(" ", "_")
         output_parameter_prefix = f"{sanitized_node_name}_{label}_"
 
+        entry_control_node_name, entry_control_parameter_name = self._resolve_on_each_entry(node)
+
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
             start_node_type=workflow_start_end_nodes.start_flow_node_type,
@@ -2082,8 +2104,8 @@ class NodeExecutor:
             start_node_library_name=workflow_start_end_nodes.start_flow_node_library_name,
             end_node_library_name=workflow_start_end_nodes.end_flow_node_library_name,
             output_parameter_prefix=output_parameter_prefix,
-            entry_control_node_name=None,
-            entry_control_parameter_name=None,
+            entry_control_node_name=entry_control_node_name,
+            entry_control_parameter_name=entry_control_parameter_name,
             node_group_name=node.name,
         )
 
