@@ -3,8 +3,7 @@
 from collections.abc import Callable
 from typing import Any
 from xml.etree.ElementTree import ParseError as XmlParseError
-
-from defusedxml.ElementTree import fromstring as parse_xml
+from xml.etree.ElementTree import fromstring as parse_xml
 
 from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
 
@@ -139,7 +138,7 @@ class ParameterXml(Parameter):
             stripped = value.strip()
             if stripped:
                 try:
-                    parse_xml(stripped)
+                    parse_xml(stripped)  # noqa: S314 -- stdlib xml is safe in Python 3.12+; no external entities or DTD expansion by default (https://github.com/astral-sh/ruff/issues/23999)
                 except XmlParseError as e:
                     msg = f"ParameterXml: Failed to validate XML string: {e}. Input: {value[:200]!r}"
                     raise ValueError(msg) from e
