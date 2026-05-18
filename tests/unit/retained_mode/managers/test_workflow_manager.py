@@ -1323,6 +1323,68 @@ class TestWorkflowManager:
         assert "context_manager = GriptapeNodes.ContextManager()" in body_src
         assert "context_manager.push_workflow(file_path=__file__)" in body_src
 
+    def test_generate_workflow_file_content_registers_declared_libraries_in_build_workflow(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """build_workflow() must register every library named in node_libraries_referenced.
+
+        Regression test for https://github.com/griptape-ai/griptape-nodes/issues/4584:
+        when a generated workflow is run as a standalone script via LocalWorkflowExecutor,
+        no engine-side library bootstrap runs before build_workflow(), so the file itself
+        must register its declared libraries to avoid every CreateNodeRequest collapsing
+        into an ErrorProxyNode.
+        """
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        metadata = WorkflowMetadata(
+            name="test_workflow",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="1.0.0",
+            node_libraries_referenced=[
+                LibraryNameAndVersion(library_name="Griptape Nodes Library", library_version="0.1.0"),
+                LibraryNameAndVersion(library_name="Other Library", library_version="0.2.0"),
+            ],
+            workflow_shape=None,
+        )
+        content = workflow_manager._generate_workflow_file_content(
+            serialized_flow_commands=self._empty_serialized_flow_commands(),
+            workflow_metadata=metadata,
+        )
+
+        module = ast.parse(content)
+
+        # Each declared library must appear as an awaited RegisterLibraryFromFileRequest inside
+        # build_workflow(), with perform_discovery_if_not_found=True so the engine can locate
+        # the library JSON via the standard config-driven discovery path.
+        build_workflow = next(
+            node for node in module.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "build_workflow"
+        )
+        body_src = "\n".join(ast.unparse(stmt) for stmt in build_workflow.body)
+        for library_name in ("Griptape Nodes Library", "Other Library"):
+            assert (
+                f"RegisterLibraryFromFileRequest(library_name='{library_name}', perform_discovery_if_not_found=True)"
+            ) in body_src, f"build_workflow() must register library {library_name!r}; got body:\n{body_src}"
+
+        # The corresponding import must also be present at module scope, since build_workflow()
+        # references RegisterLibraryFromFileRequest by name.
+        top_level_imports = [
+            f"{alias.name}" for stmt in module.body if isinstance(stmt, ast.ImportFrom) for alias in stmt.names
+        ]
+        assert "RegisterLibraryFromFileRequest" in top_level_imports
+
+    def test_generate_workflow_file_content_omits_register_calls_when_no_libraries_declared(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """With an empty node_libraries_referenced list, no register calls are emitted.
+
+        Keeps the import set tight for shape-free workflows that don't actually reference
+        a library, and makes sure the empty-loop branch in _generate_workflow_run_prerequisite_code
+        does not regress to emitting stray RegisterLibraryFromFileRequest noise.
+        """
+        content = self._generate(griptape_nodes)
+        assert "RegisterLibraryFromFileRequest" not in content
+
     def test_generate_workflow_file_content_empty_build_workflow_has_pass_body(
         self, griptape_nodes: GriptapeNodes
     ) -> None:
