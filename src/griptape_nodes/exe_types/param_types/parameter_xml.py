@@ -1,11 +1,23 @@
 """ParameterXml component for XML inputs with enhanced UI options."""
 
+import warnings
+import xml.parsers.expat
 from collections.abc import Callable
 from typing import Any
 from xml.etree.ElementTree import ParseError as XmlParseError
 from xml.etree.ElementTree import fromstring as parse_xml
 
 from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
+
+_MIN_EXPAT = (2, 6, 0)
+if xml.parsers.expat.version_info < _MIN_EXPAT:
+    _min = ".".join(str(v) for v in _MIN_EXPAT)
+    warnings.warn(
+        f"Your system's XML parser (libexpat {xml.parsers.expat.EXPAT_VERSION}) is out of date and has known security vulnerabilities. "
+        f"XML and HTML nodes may be unsafe to use. "
+        f"To fix this, please upgrade to a newer version of Python (libexpat {_min} or later is required) — libexpat is bundled with Python and cannot be upgraded separately.",
+        stacklevel=1,
+    )
 
 
 class ParameterXml(Parameter):
