@@ -81,6 +81,17 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
             self.metadata[LEFT_PARAMETERS_KEY] = []
         self.metadata[LEFT_PARAMETERS_KEY].insert(0, "exec_in")
 
+        # Per-iteration control output — pairs visually with exec_in on the LEFT rail.
+        # Connect this to the first body node to make that node each iteration's entry point.
+        # If unconnected, executor falls back to implicit child-discovery.
+        self.on_each = ControlParameterOutput(
+            tooltip="Fired at the start of each iteration. Connect to the first node in the loop body.",
+            name="on_each",
+        )
+        self.on_each.ui_options = {"display_name": "On Each"}
+        self.add_parameter(self.on_each)
+        self.metadata[LEFT_PARAMETERS_KEY].append("on_each")
+
         self.exec_out = ControlParameterOutput(
             tooltip="Fired after all iterations complete",
             name="exec_out",
