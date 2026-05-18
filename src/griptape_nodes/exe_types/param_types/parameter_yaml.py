@@ -8,9 +8,6 @@ from ruamel.yaml import YAML
 
 from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
 
-_yaml = YAML()
-_yaml.preserve_quotes = True
-
 
 class ParameterYaml(Parameter):
     """A specialized Parameter class for YAML inputs with enhanced UI options.
@@ -144,16 +141,20 @@ class ParameterYaml(Parameter):
             return ""
 
         if isinstance(value, str):
+            yaml = YAML()
+            yaml.preserve_quotes = True
             try:
-                _yaml.load(value)
+                yaml.load(value)
             except Exception as e:
                 msg = f"ParameterYaml: Failed to validate YAML string: {e}. Input: {value[:200]!r}"
                 raise ValueError(msg) from e
             return value
 
         if isinstance(value, (dict, list)):
+            yaml = YAML()
+            yaml.preserve_quotes = True
             stream = StringIO()
-            _yaml.dump(value, stream)
+            yaml.dump(value, stream)
             return stream.getvalue()
 
         return str(value)
