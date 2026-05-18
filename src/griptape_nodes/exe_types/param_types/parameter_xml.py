@@ -151,7 +151,7 @@ class ParameterXml(Parameter):
             if stripped:
                 try:
                     parse_xml(stripped)  # noqa: S314 -- stdlib xml is safe in Python 3.12+; no external entities or DTD expansion by default (https://github.com/astral-sh/ruff/issues/23999)
-                except XmlParseError as e:
+                except (XmlParseError, UnicodeEncodeError) as e:
                     msg = f"ParameterXml: Failed to validate XML string: {e}. Input: {value[:200]!r}"
                     raise ValueError(msg) from e
             return value
