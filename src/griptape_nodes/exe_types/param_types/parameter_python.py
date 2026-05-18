@@ -125,7 +125,7 @@ class ParameterPython(Parameter):
             if stripped:
                 try:
                     ast.parse(stripped)
-                except SyntaxError as e:
+                except (SyntaxError, ValueError, UnicodeEncodeError) as e:
                     msg = f"ParameterPython: Invalid Python syntax: {e}. Input: {value[:200]!r}"
                     raise ValueError(msg) from e
             return value
