@@ -2865,6 +2865,14 @@ class WorkflowManager:
                 right=ast.Constant(value=None),
             ),
         )
+        arg_save_on_failure_path = ast.arg(
+            arg="save_on_failure_path",
+            annotation=ast.BinOp(
+                left=ast.Name(id="str", ctx=ast.Load()),
+                op=ast.BitOr(),
+                right=ast.Constant(value=None),
+            ),
+        )
         arg_workflow_executor = ast.arg(
             arg="workflow_executor",
             annotation=ast.BinOp(
@@ -2882,6 +2890,7 @@ class WorkflowManager:
                 arg_input,
                 arg_storage_backend,
                 arg_project_file_path,
+                arg_save_on_failure_path,
                 arg_workflow_executor,
                 arg_pickle_control_flow_result,
             ],
@@ -2891,6 +2900,7 @@ class WorkflowManager:
             kwarg=None,
             defaults=[
                 ast.Constant(StorageBackend.LOCAL.value),
+                ast.Constant(value=None),
                 ast.Constant(value=None),
                 ast.Constant(value=None),
                 ast.Constant(value=pickle_control_flow_result),
@@ -2952,6 +2962,10 @@ class WorkflowManager:
                             ast.keyword(
                                 arg="project_file_path",
                                 value=ast.Name(id="project_file_path_resolved", ctx=ast.Load()),
+                            ),
+                            ast.keyword(
+                                arg="save_on_failure_path",
+                                value=ast.Name(id="save_on_failure_path", ctx=ast.Load()),
                             ),
                             ast.keyword(arg="skip_library_loading", value=ast.Constant(value=True)),
                             ast.keyword(
@@ -3057,6 +3071,10 @@ class WorkflowManager:
                                     ast.keyword(
                                         arg="project_file_path",
                                         value=ast.Name(id="project_file_path", ctx=ast.Load()),
+                                    ),
+                                    ast.keyword(
+                                        arg="save_on_failure_path",
+                                        value=ast.Name(id="save_on_failure_path", ctx=ast.Load()),
                                     ),
                                     ast.keyword(
                                         arg="workflow_executor", value=ast.Name(id="workflow_executor", ctx=ast.Load())
@@ -3177,6 +3195,33 @@ class WorkflowManager:
                             arg="help",
                             value=ast.Constant(
                                 "JSON string containing parameter values. Takes precedence over individual parameter arguments if provided."
+                            ),
+                        ),
+                    ],
+                )
+            )
+        )
+
+        # Add save-on-failure argument
+        add_arg_calls.append(
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="parser", ctx=ast.Load()),
+                        attr="add_argument",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Constant("--save-on-failure")],
+                    keywords=[
+                        ast.keyword(arg="nargs", value=ast.Constant("?")),
+                        ast.keyword(arg="const", value=ast.Constant("")),
+                        ast.keyword(arg="default", value=ast.Constant(None)),
+                        ast.keyword(
+                            arg="help",
+                            value=ast.Constant(
+                                "On failure, save the current workflow state as a .py file. "
+                                "With no value: uses the project 'save_failed_workflow' situation. "
+                                "With a value: absolute or project-relative path."
                             ),
                         ),
                     ],
@@ -3382,6 +3427,14 @@ class WorkflowManager:
                         value=ast.Attribute(
                             value=ast.Name(id="args", ctx=ast.Load()),
                             attr="project_file_path",
+                            ctx=ast.Load(),
+                        ),
+                    ),
+                    ast.keyword(
+                        arg="save_on_failure_path",
+                        value=ast.Attribute(
+                            value=ast.Name(id="args", ctx=ast.Load()),
+                            attr="save_on_failure",
                             ctx=ast.Load(),
                         ),
                     ),
