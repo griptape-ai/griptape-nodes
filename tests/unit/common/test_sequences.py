@@ -16,8 +16,8 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.common.sequences import (
-    MissingFrameMarker,
-    MissingFramePolicy,
+    MissingItemMarker,
+    MissingItemPolicy,
     scan_sequences,
 )
 from griptape_nodes.retained_mode.events.os_events import (
@@ -69,12 +69,12 @@ class TestBasicScanning:
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 3, 4, 5]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT)
         assert len(seqs) == 1
         assert seqs[0].first == 1
         assert seqs[0].last == 5
-        assert [e.frame for e in seqs[0].entries] == [1, 2, 3, 4, 5]
-        assert [e.frame_string for e in seqs[0].entries] == ["0001", "0002", "0003", "0004", "0005"]
+        assert [e.number for e in seqs[0].entries] == [1, 2, 3, 4, 5]
+        assert [e.padded_number for e in seqs[0].entries] == ["0001", "0002", "0003", "0004", "0005"]
 
     def test_no_files_returns_empty(self) -> None:
         """An empty directory yields an empty list."""
@@ -100,9 +100,9 @@ class TestBasicScanning:
             "notes.txt",  # totally unrelated
         ]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT)
         assert len(seqs) == 1
-        assert [e.frame for e in seqs[0].entries] == [1, 2]
+        assert [e.number for e in seqs[0].entries] == [1, 2]
 
 
 # --- Policy semantics ---------------------------------------------------
@@ -110,11 +110,11 @@ class TestBasicScanning:
 
 class TestSplitPolicy:
     def test_three_runs(self) -> None:
-        """Frames 1-2, 4, 6-7 split into three sub-sequences."""
+        """Numbers 1-2, 4, 6-7 split into three sub-sequences."""
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 4, 6, 7]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT)
         assert len(seqs) == 3
         assert (seqs[0].first, seqs[0].last) == (1, 2)
         assert (seqs[1].first, seqs[1].last) == (4, 4)
@@ -125,7 +125,7 @@ class TestSplitPolicy:
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 4, 6, 7]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT)
         for s in seqs:
             assert s.discovered_first == 1
             assert s.discovered_last == 7
@@ -133,36 +133,36 @@ class TestSplitPolicy:
 
 class TestErrorPolicy:
     def test_error_omits_gaps(self) -> None:
-        """ERROR yields one sequence with only present frames; gaps absent from entries."""
+        """ERROR yields one sequence with only present numbers; gaps absent from entries."""
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 4, 6, 7]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.ERROR)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.ERROR)
         assert len(seqs) == 1
-        assert [e.frame for e in seqs[0].entries] == [1, 2, 4, 6, 7]
-        assert seqs[0].missing_frames == {3, 5}
+        assert [e.number for e in seqs[0].entries] == [1, 2, 4, 6, 7]
+        assert seqs[0].missing_numbers == {3, 5}
 
 
 class TestNearestPolicy:
     def test_nearest_backward_first(self) -> None:
-        """NEAREST fills gaps with the backward-first present frame."""
+        """NEAREST fills gaps with the backward-first present number."""
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 4, 6, 7]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.NEAREST)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.NEAREST)
         s = seqs[0]
-        # Gap at frame 3 -> backward to frame 2
-        entry_3 = next(e for e in s.entries if e.frame == 3)
+        # Gap at 3 -> backward to 2
+        entry_3 = next(e for e in s.entries if e.number == 3)
         assert isinstance(entry_3.path, Path)
         assert entry_3.path.name == "render.0002.png"
-        # Gap at frame 5 -> backward to frame 4
-        entry_5 = next(e for e in s.entries if e.frame == 5)
+        # Gap at 5 -> backward to 4
+        entry_5 = next(e for e in s.entries if e.number == 5)
         assert isinstance(entry_5.path, Path)
         assert entry_5.path.name == "render.0004.png"
 
     # Note: forward-fall is unreachable through scan_sequences with a single
     # subset clip — `active_first` is always clamped up to `discovered_first`,
-    # so there's always at least one earlier present frame for any in-range
+    # so there's always at least one earlier present number for any in-range
     # gap. Forward-fall remains in the policy code as a defensive fallback
     # for direct callers of `apply_policy`, but isn't exercised here.
 
@@ -172,44 +172,44 @@ class TestBlackAndCheckerboardPolicy:
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 4]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.BLACK)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.BLACK)
         s = seqs[0]
-        entry_3 = next(e for e in s.entries if e.frame == 3)
-        assert isinstance(entry_3.path, MissingFrameMarker)
-        assert entry_3.path.policy is MissingFramePolicy.BLACK
-        assert entry_3.path.frame == 3
-        assert entry_3.path.frame_string == "0003"
+        entry_3 = next(e for e in s.entries if e.number == 3)
+        assert isinstance(entry_3.path, MissingItemMarker)
+        assert entry_3.path.policy is MissingItemPolicy.BLACK
+        assert entry_3.path.number == 3
+        assert entry_3.path.padded_number == "0003"
 
     def test_checkerboard_marker(self) -> None:
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 4]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.CHECKERBOARD)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.CHECKERBOARD)
         s = seqs[0]
-        entry_3 = next(e for e in s.entries if e.frame == 3)
-        assert isinstance(entry_3.path, MissingFrameMarker)
-        assert entry_3.path.policy is MissingFramePolicy.CHECKERBOARD
+        entry_3 = next(e for e in s.entries if e.number == 3)
+        assert isinstance(entry_3.path, MissingItemMarker)
+        assert entry_3.path.policy is MissingItemPolicy.CHECKERBOARD
 
 
-# --- Negative frames ----------------------------------------------------
+# --- Negative numbers ---------------------------------------------------
 
 
-class TestNegativeFrames:
+class TestNegativeNumbers:
     def test_negatives_with_different_padding_filter_out_silently(self) -> None:
-        """Negative frames at a different padding width are filtered by the padding match.
+        """Negative numbers at a different padding width are filtered by the padding match.
 
         When `-0005.png` has 5 total chars (sign + 4 digits), fileseq groups
-        it as a width-5 sequence — separate from the positive width-4 frames.
+        it as a width-5 sequence — separate from the positive width-4 numbers.
         Our zfill filter discards it before we ever see the negative.
         """
         directory = "/work/in"
         filenames = ["render.-0005.png", "render.0001.png", "render.0002.png"]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT)
         assert len(seqs) == 1
-        assert [e.frame for e in seqs[0].entries] == [1, 2]
+        assert [e.number for e in seqs[0].entries] == [1, 2]
         # Negatives never entered our loop; the counter sees zero.
-        assert seqs[0].dropped_negative_frame_count == 0
+        assert seqs[0].dropped_negative_number_count == 0
 
     def test_negatives_with_matching_padding_dropped_with_counter(self) -> None:
         """When padding matches, negatives DO enter the loop and get filtered out."""
@@ -217,13 +217,13 @@ class TestNegativeFrames:
         # Width-5 pattern: `-0005` and `00005` both have 5 digits in their slot.
         filenames = ["render.-0005.png", "render.00005.png", "render.00010.png"]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.#####.png", policy=MissingFramePolicy.SPLIT)
+            seqs = scan_sequences(directory, "render.#####.png", policy=MissingItemPolicy.SPLIT)
         # The negative is dropped; positives 5 and 10 are in the same sequence
         # under SPLIT but they aren't contiguous, so they split into two runs.
         assert len(seqs) == 2
-        assert {e.frame for s in seqs for e in s.entries} == {5, 10}
+        assert {e.number for s in seqs for e in s.entries} == {5, 10}
         # The counter should have noted the dropped negative on every produced sequence.
-        assert all(s.dropped_negative_frame_count == 1 for s in seqs)
+        assert all(s.dropped_negative_number_count == 1 for s in seqs)
 
 
 # --- Subset clipping ----------------------------------------------------
@@ -234,9 +234,9 @@ class TestSubsetClipping:
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 3, 4, 5]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT, start=3)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT, start=3)
         assert len(seqs) == 1
-        assert [e.frame for e in seqs[0].entries] == [3, 4, 5]
+        assert [e.number for e in seqs[0].entries] == [3, 4, 5]
         assert seqs[0].discovered_first == 1
         assert seqs[0].first == 3
 
@@ -244,9 +244,9 @@ class TestSubsetClipping:
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 3, 4, 5]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT, end=3)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT, end=3)
         assert len(seqs) == 1
-        assert [e.frame for e in seqs[0].entries] == [1, 2, 3]
+        assert [e.number for e in seqs[0].entries] == [1, 2, 3]
         assert seqs[0].discovered_last == 5
         assert seqs[0].last == 3
 
@@ -254,15 +254,15 @@ class TestSubsetClipping:
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 3, 4, 5]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT, start=2, end=4)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT, start=2, end=4)
         assert len(seqs) == 1
-        assert [e.frame for e in seqs[0].entries] == [2, 3, 4]
+        assert [e.number for e in seqs[0].entries] == [2, 3, 4]
 
     def test_subset_outside_discovered_range_yields_empty(self) -> None:
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 3]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT, start=10, end=20)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT, start=10, end=20)
         assert seqs == []
 
     def test_negative_start_rejected(self) -> None:
@@ -283,20 +283,20 @@ class TestPatternVariants:
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 3]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.%04d.png", policy=MissingFramePolicy.SPLIT)
+            seqs = scan_sequences(directory, "render.%04d.png", policy=MissingItemPolicy.SPLIT)
         assert len(seqs) == 1
-        assert [e.frame for e in seqs[0].entries] == [1, 2, 3]
+        assert [e.number for e in seqs[0].entries] == [1, 2, 3]
 
     def test_mismatched_padding_returns_empty(self) -> None:
-        """Disk has 3-digit frames; user declared #### (4 digits). No match."""
+        """Disk has 3-digit numbers; user declared #### (4 digits). No match."""
         directory = "/work/in"
         filenames = [f"render.{n:03d}.png" for n in [1, 2, 3]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingFramePolicy.SPLIT)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SPLIT)
         assert seqs == []
 
     def test_unpadded_printf_round_trip(self) -> None:
-        """`%d` matches an unpadded directory and yields bare integer frame_strings.
+        """`%d` matches an unpadded directory and yields bare integer padded_numbers.
 
         fileseq treats `%d` as zfill=1 (same as a single `#`). The Sequence's
         canonical `pattern` preserves the user's input form (`%d`, not `#`).
@@ -304,12 +304,12 @@ class TestPatternVariants:
         directory = "/work/in"
         filenames = ["render.5.png", "render.42.png", "render.123.png"]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.%d.png", policy=MissingFramePolicy.SPLIT)
-        # Frames 5, 42, 123 aren't contiguous, so SPLIT yields three sequences.
+            seqs = scan_sequences(directory, "render.%d.png", policy=MissingItemPolicy.SPLIT)
+        # 5, 42, 123 aren't contiguous, so SPLIT yields three sequences.
         assert len(seqs) == 3
         all_entries = [e for s in seqs for e in s.entries]
-        assert [e.frame for e in all_entries] == [5, 42, 123]
-        assert [e.frame_string for e in all_entries] == ["5", "42", "123"]
+        assert [e.number for e in all_entries] == [5, 42, 123]
+        assert [e.padded_number for e in all_entries] == ["5", "42", "123"]
         for s in seqs:
             assert s.padding == 1
             assert s.pattern == "render.%d.png"

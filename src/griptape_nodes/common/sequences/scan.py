@@ -1,10 +1,10 @@
-"""Directory scanning for image sequences.
+"""Directory scanning for sequences.
 
 Single public function: `scan_sequences()`. Takes a directory + a fileseq
 pattern (either as a string like `render.####.exr` or a pre-constructed
 `FileSequence`), lists the directory via `ListDirectoryRequest`, hands the
 filenames to `fileseq.findSequencesInList`, applies subset clipping and the
-chosen missing-frame policy, and returns a list of `Sequence` objects.
+chosen missing-item policy, and returns a list of `Sequence` objects.
 
 All filesystem I/O is routed through the engine's request bus — this module
 never calls `os.scandir`, `os.walk`, or `pathlib.Path.glob` directly.
@@ -24,7 +24,7 @@ from fileseq.constants import PAD_STYLE_HASH1
 from fileseq.filesequence import FileSequence
 
 from griptape_nodes.common.sequences.models import (
-    MissingFramePolicy,
+    MissingItemPolicy,
     Sequence,
 )
 from griptape_nodes.common.sequences.policies import PolicyContext, apply_policy
@@ -42,15 +42,15 @@ PAD_STYLE = PAD_STYLE_HASH1
 
 
 @dataclass(frozen=True)
-class _PresentFrames:
-    """Map of frame integers to their on-disk paths, plus the dropped count."""
+class _PresentNumbers:
+    """Map of item numbers to their on-disk paths, plus the dropped count."""
 
-    by_frame: dict[int, Path]
+    by_number: dict[int, Path]
     dropped_negatives: int
 
 
 class _ActiveRange(NamedTuple):
-    """The [first, last] frame bounds after subset clipping is applied."""
+    """The [first, last] bounds after subset clipping is applied."""
 
     first: int
     last: int
@@ -60,7 +60,7 @@ def scan_sequences(
     directory: str,
     pattern: str | FileSequence,
     *,
-    policy: MissingFramePolicy = MissingFramePolicy.SPLIT,
+    policy: MissingItemPolicy = MissingItemPolicy.SPLIT,
     start: int | None = None,
     end: int | None = None,
 ) -> list[Sequence]:
@@ -76,9 +76,9 @@ def scan_sequences(
         policy: How to handle gaps within the matched range. SPLIT yields one
             Sequence per contiguous run; the others yield exactly one
             Sequence with policy-driven gap fills (or omissions for ERROR).
-        start: Optional lower bound (inclusive) for the active subset. Frames
+        start: Optional lower bound (inclusive) for the active subset. Items
             below this are dropped from output. Must be >= 0 if supplied.
-        end: Optional upper bound (inclusive) for the active subset. Frames
+        end: Optional upper bound (inclusive) for the active subset. Items
             above this are dropped from output. Must be >= start if both
             supplied.
 
@@ -87,8 +87,8 @@ def scan_sequences(
         directory contains no files matching the pattern, or the active
         subset is empty.
 
-    Negative frames on disk are filtered out before policy is applied;
-    `Sequence.dropped_negative_frame_count` records how many were skipped.
+    Negative numbers on disk are filtered out before policy is applied;
+    `Sequence.dropped_negative_number_count` records how many were skipped.
     """
     _validate_subset_bounds(start, end)
     target = _coerce_target_pattern(pattern)
@@ -97,12 +97,12 @@ def scan_sequences(
     if not relevant:
         return []
 
-    present = _collect_present_frames(directory, target, relevant)
-    if not present.by_frame:
+    present = _collect_present_numbers(directory, target, relevant)
+    if not present.by_number:
         return []
 
-    discovered_first = min(present.by_frame)
-    discovered_last = max(present.by_frame)
+    discovered_first = min(present.by_number)
+    discovered_last = max(present.by_number)
     active = _compute_active_range(start, end, discovered_first, discovered_last)
     if active.first > active.last:
         return []
@@ -110,14 +110,14 @@ def scan_sequences(
     return apply_policy(
         PolicyContext(
             fseq=target,
-            present_frames=present.by_frame,
+            present_numbers=present.by_number,
             directory=directory,
             policy=policy,
             first=active.first,
             last=active.last,
             discovered_first=discovered_first,
             discovered_last=discovered_last,
-            dropped_negative_frame_count=present.dropped_negatives,
+            dropped_negative_number_count=present.dropped_negatives,
         )
     )
 
@@ -184,12 +184,12 @@ def _list_pattern_matching_filenames(directory: str, target: FileSequence) -> li
     return [name for name in filenames if name.startswith(target_basename) and name.endswith(target_extension)]
 
 
-def _collect_present_frames(
+def _collect_present_numbers(
     directory: str,
     target: FileSequence,
     relevant_filenames: list[str],
-) -> _PresentFrames:
-    """Run fileseq inference on `relevant_filenames` and collect frame->path entries.
+) -> _PresentNumbers:
+    """Run fileseq inference on `relevant_filenames` and collect number->path entries.
 
     Drops negatives, filters to sequences whose padding matches `target`, and
     reconstructs absolute paths via fileseq's frame-rendering.
@@ -197,7 +197,7 @@ def _collect_present_frames(
     inferred = FileSequence.findSequencesInList(relevant_filenames, pad_style=PAD_STYLE)
     matching = [s for s in inferred if s.zfill() == target.zfill()]
     if not matching:
-        return _PresentFrames(by_frame={}, dropped_negatives=0)
+        return _PresentNumbers(by_number={}, dropped_negatives=0)
 
     present: dict[int, Path] = {}
     dropped = 0
@@ -205,24 +205,24 @@ def _collect_present_frames(
         frame_set = seq.frameSet()
         if frame_set is None:
             continue
-        for frame in frame_set:
+        for number in frame_set:
             # Subframes (Decimal/float) aren't enabled (allow_subframes is
             # False by default) so this is always an int in practice;
             # narrow the type for pyright.
-            if not isinstance(frame, int):
+            if not isinstance(number, int):
                 continue
-            if frame < 0:
+            if number < 0:
                 dropped += 1
                 continue
-            present[frame] = Path(directory) / seq.frame(frame)
+            present[number] = Path(directory) / seq.frame(number)
 
     if dropped:
         logger.warning(
-            "scan_sequences: dropped %d negative frame(s) from %r",
+            "scan_sequences: dropped %d negative number(s) from %r",
             dropped,
             f"{target.basename()}{target.padding()}{target.extension()}",
         )
-    return _PresentFrames(by_frame=present, dropped_negatives=dropped)
+    return _PresentNumbers(by_number=present, dropped_negatives=dropped)
 
 
 def _compute_active_range(

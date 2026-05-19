@@ -1,14 +1,14 @@
-"""Image-sequence support built on `fileseq`.
+"""Sequence support built on `fileseq`.
 
 This module provides a thin wrapper over `fileseq.FileSequence` that:
 
 - Routes all filesystem I/O through `ListDirectoryRequest` (no `os.scandir` calls).
-- Drops negative frames at scan time (intentional — they're a footgun in
+- Drops negative numbers at scan time (intentional — they're a footgun in
   downstream tools).
-- Adds explicit user-facing policy options for handling gaps within a frame
+- Adds explicit user-facing policy options for handling gaps within a number
   range (`SPLIT`, `ERROR`, `NEAREST`, `BLACK`, `CHECKERBOARD`).
-- Exposes both integer frame index and the zero-padded frame string per
-  Sequence entry, so downstream nodes can present either form.
+- Exposes both the integer key and the zero-padded string form per Sequence
+  entry, so downstream nodes can present either form.
 
 `fileseq` is used in `pad_style=PAD_STYLE_HASH1` mode throughout — this is
 mandatory for our use case because the default (HASH4) interprets `####` as
@@ -20,18 +20,18 @@ case here.
 """
 
 from griptape_nodes.common.sequences.models import (
-    MissingFrameError,
-    MissingFrameMarker,
-    MissingFramePolicy,
+    MissingItemError,
+    MissingItemMarker,
+    MissingItemPolicy,
     Sequence,
     SequenceEntry,
 )
 from griptape_nodes.common.sequences.scan import scan_sequences
 
 __all__ = [
-    "MissingFrameError",
-    "MissingFrameMarker",
-    "MissingFramePolicy",
+    "MissingItemError",
+    "MissingItemMarker",
+    "MissingItemPolicy",
     "Sequence",
     "SequenceEntry",
     "scan_sequences",

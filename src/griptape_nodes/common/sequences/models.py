@@ -1,9 +1,9 @@
 """Data shapes for the sequences module.
 
 Three concepts:
-    - `MissingFramePolicy`: how to fill gaps inside a sequence's range.
+    - `MissingItemPolicy`: how to fill gaps inside a sequence's range.
     - `Sequence`: one contiguous-or-gap-aware sequence with metadata.
-    - `SequenceEntry`: one frame inside a Sequence (frame number + path or marker).
+    - `SequenceEntry`: one item inside a Sequence (number + path or marker).
 """
 
 from __future__ import annotations
@@ -16,83 +16,83 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-class MissingFramePolicy(StrEnum):
-    """How to handle gaps inside a sequence's frame range.
+class MissingItemPolicy(StrEnum):
+    """How to handle gaps inside a sequence's number range.
 
     The choice changes the *shape* of `scan_sequences` output:
 
     - `SPLIT`: returns multiple Sequences, each contiguous (no gaps inside any).
     - All others: returns exactly one Sequence whose entries span the full
-      [first, last] range, with policy applied to fill missing frames.
+      [first, last] range, with policy applied to fill missing items.
     """
 
     SPLIT = "split"  # Sparse sequence becomes N contiguous sub-sequences.
-    ERROR = "error"  # Single sequence with only the present frames; gaps absent.
+    ERROR = "error"  # Single sequence with only the present items; gaps absent.
     NEAREST = "nearest"  # Dense sequence; gaps point at the backward-first neighbor.
-    BLACK = "black"  # Dense sequence; gaps hold a BLACK MissingFrameMarker.
+    BLACK = "black"  # Dense sequence; gaps hold a BLACK MissingItemMarker.
     CHECKERBOARD = "checkerboard"  # Dense sequence; gaps hold a CHECKERBOARD marker.
 
 
 @dataclass(frozen=True)
-class MissingFrameMarker:
-    """Sentinel returned for a missing frame under BLACK/CHECKERBOARD.
+class MissingItemMarker:
+    """Sentinel returned for a missing item under BLACK/CHECKERBOARD.
 
     Image-generating callers (e.g. node-level renderers) interpret the marker
-    and synthesize the appropriate frame. This module does not produce images.
+    and synthesize the appropriate item. This module does not produce images.
     """
 
-    policy: MissingFramePolicy
-    frame: int
-    frame_string: str
+    policy: MissingItemPolicy
+    number: int
+    padded_number: str
 
 
-class MissingFrameError(Exception):
-    """Raised when a sequence is queried for an unrepresented frame.
+class MissingItemError(Exception):
+    """Raised when a sequence is queried for an unrepresented item.
 
     Currently unused at scan time (ERROR policy just produces a sparse Sequence
     rather than raising). Reserved for future query APIs on Sequence.
     """
 
-    def __init__(self, frame: int) -> None:
-        super().__init__(f"Frame {frame} is missing from the sequence")
-        self.frame = frame
+    def __init__(self, number: int) -> None:
+        super().__init__(f"Item {number} is missing from the sequence")
+        self.number = number
 
 
 class SequenceEntry(NamedTuple):
-    """One frame entry in a Sequence.
+    """One entry in a Sequence.
 
     Attributes:
-        frame: The integer frame index (e.g. 5).
-        frame_string: The zero-padded form matching the sequence's declared
-            width (e.g. "0005" for frame 5 in a `####` sequence). For
+        number: The integer key (e.g. 5).
+        padded_number: The zero-padded form matching the sequence's declared
+            width (e.g. "0005" for number 5 in a `####` sequence). For
             unpadded `%d` patterns this is just the bare integer as a string.
-        path: The on-disk file path, OR a MissingFrameMarker for synthesized
+        path: The on-disk file path, OR a MissingItemMarker for synthesized
             slots under BLACK/CHECKERBOARD policy.
     """
 
-    frame: int
-    frame_string: str
-    path: Path | MissingFrameMarker
+    number: int
+    padded_number: str
+    path: Path | MissingItemMarker
 
 
 @dataclass
 class Sequence:
-    """A scanned sequence of frames plus metadata.
+    """A scanned sequence of items plus metadata.
 
     Attributes:
-        entries: List of SequenceEntry objects, one per frame inside the
+        entries: List of SequenceEntry objects, one per item inside the
             active range (after subset clipping). The exact contents depend
             on policy:
                 - SPLIT: contiguous range; no markers.
-                - ERROR: only frames that exist on disk; markers never appear.
-                - NEAREST: dense; missing frames carry the nearest existing
-                  frame's path.
-                - BLACK / CHECKERBOARD: dense; missing frames carry markers.
-        first: Lowest frame number in the active range (post-subset).
-        last: Highest frame number in the active range (post-subset).
-        discovered_first: Lowest frame number actually found on disk before
+                - ERROR: only items that exist on disk; markers never appear.
+                - NEAREST: dense; missing items carry the nearest existing
+                  item's path.
+                - BLACK / CHECKERBOARD: dense; missing items carry markers.
+        first: Lowest number in the active range (post-subset).
+        last: Highest number in the active range (post-subset).
+        discovered_first: Lowest number actually found on disk before
             subset clipping.
-        discovered_last: Highest frame number actually found on disk before
+        discovered_last: Highest number actually found on disk before
             subset clipping.
         padding: The fileseq zfill width (e.g. 4 for `####`, 0 for `%d`).
         pattern: The canonical fileseq pattern (e.g. "render.####.exr").
@@ -108,19 +108,19 @@ class Sequence:
     padding: int
     pattern: str
     directory: str
-    policy: MissingFramePolicy
-    dropped_negative_frame_count: int = 0
-    # Frames present on disk inside [first, last]. Useful when the policy
+    policy: MissingItemPolicy
+    dropped_negative_number_count: int = 0
+    # Numbers present on disk inside [first, last]. Useful when the policy
     # densified gaps — callers can still find out what was actually there.
-    present_frames: set[int] = field(default_factory=set)
+    present_numbers: set[int] = field(default_factory=set)
 
     @property
-    def missing_frames(self) -> set[int]:
-        """Frame numbers between `first` and `last` that aren't on disk.
+    def missing_numbers(self) -> set[int]:
+        """Numbers between `first` and `last` that aren't on disk.
 
-        Computed from `present_frames`. Always present regardless of policy
+        Computed from `present_numbers`. Always present regardless of policy
         (e.g. the SPLIT policy would have an empty set since each sub-sequence
         is contiguous; NEAREST/BLACK/CHECKERBOARD show the gaps that got
         filled).
         """
-        return {f for f in range(self.first, self.last + 1) if f not in self.present_frames}
+        return {n for n in range(self.first, self.last + 1) if n not in self.present_numbers}

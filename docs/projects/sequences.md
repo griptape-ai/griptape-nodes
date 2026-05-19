@@ -1,12 +1,12 @@
-# Image sequences
+# Sequences
 
-Griptape Nodes can read directories of numbered image files as **image sequences** — for example, a render output like `render.0001.exr`, `render.0002.exr`, … `render.0100.exr`. You point a sequence-aware node at a *pattern* (the filename with a placeholder for the frame number), and the engine finds the matching frames on disk, handles gaps, and gives you back a list of frames with their integer frame numbers and zero-padded frame strings.
+Griptape Nodes can read directories of numbered files as **sequences** — for example, a render output like `render.0001.exr`, `render.0002.exr`, … `render.0100.exr`, but also dialogue takes (`take_##.wav`), text chunks (`chapter_###.md`), or anything else where a numeric key in the filename groups items into an ordered set. You point a sequence-aware node at a *pattern* (the filename with a placeholder for the number), and the engine finds the matching items on disk, handles gaps, and gives you back a list of entries with their integer numbers and zero-padded string forms.
 
-This page explains the pattern syntax, the policies for handling missing frames, and the conventions you should know before authoring a template.
+This page explains the pattern syntax, the policies for handling missing items, and the conventions you should know before authoring a template.
 
 ## Pattern syntax
 
-A sequence pattern looks like a filename with a token in place of the frame number. Four token forms are supported:
+A sequence pattern looks like a filename with a token in place of the item number. Four token forms are supported:
 
 | Token  | Width | Notes                                                         |
 | ------ | ----- | ------------------------------------------------------------- |
@@ -20,12 +20,12 @@ All four are equivalent; pick whichever matches your pipeline conventions. We re
 A few examples:
 
 ```
-render.####.exr             frame 5 → render.0005.exr
-render.%04d.png             frame 12 → render.0012.png
-shot_a.####.tif             frame 100 → shot_a.0100.tif
+render.####.exr             item 5 → render.0005.exr
+render.%04d.png             item 12 → render.0012.png
+take_##.wav                 item 7 → take_07.wav
 ```
 
-The token always sits in the **filename**. Tokens inside directory components (e.g. `render/####/beauty.exr`) are not supported — keep the frame number in the filename portion only.
+The token always sits in the **filename**. Tokens inside directory components (e.g. `render/####/beauty.exr`) are not supported — keep the number in the filename portion only.
 
 ## Combining with macros
 
@@ -39,35 +39,35 @@ If `{inputs}` resolves to `/workspace/inputs`, the engine scans `/workspace/inpu
 
 ## Width matching is strict
 
-The number of `#` characters (or the `%0Nd` width) declares the **exact** number of digits to match. If your pattern says `####`, the engine matches files with exactly 4 digits in the frame slot — `render.0001.exr` matches, but `render.001.exr` (3 digits) and `render.12345.exr` (5 digits) do not.
+The number of `#` characters (or the `%0Nd` width) declares the **exact** number of digits to match. If your pattern says `####`, the engine matches files with exactly 4 digits in the slot — `render.0001.exr` matches, but `render.001.exr` (3 digits) and `render.12345.exr` (5 digits) do not.
 
-This matches what Nuke does. If your sequence has frames that overflow the declared padding (e.g., a 4-digit pattern but real frame numbers go above 9999), use a wider pattern (`#####`) to capture them.
+This matches what Nuke does. If your sequence has numbers that overflow the declared padding (e.g., a 4-digit pattern but real numbers go above 9999), use a wider pattern (`#####`) to capture them.
 
 If a directory contains files with mixed padding widths — for example both `render.0001.png` and `render.001.png` — they'll be treated as **separate sequences**. The engine matches the one whose padding matches your declared template; the others are silently ignored.
 
-## Missing-frame policies
+## Missing-item policies
 
-Real sequences often have gaps — a render that crashed on frame 47, or a sparse export that only saved every other frame. When you scan a sequence, you choose a **policy** for how those gaps are handled:
+Real sequences often have gaps — a render that crashed on frame 47, a sparse export that only saved every other take, a chapter that's still unwritten. When you scan a sequence, you choose a **policy** for how those gaps are handled:
 
-| Policy              | What you get                                                                                                                                                                                        |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SPLIT` *(default)* | One sequence per **contiguous run** of present frames. A sequence with frames 1–5, 8–12, 15 produces three separate sequences.                                                                      |
-| `ERROR`             | One sequence containing only the present frames. Gaps are absent from the output (but visible via the sequence's `missing_frames` set).                                                             |
-| `NEAREST`           | One sequence covering the full `[first, last]` range. Each missing frame is filled with the path of the nearest **earlier** present frame (or the nearest later one if no earlier neighbor exists). |
-| `BLACK`             | One sequence covering the full range. Missing frames are marked for synthesis as a solid-black image.                                                                                               |
-| `CHECKERBOARD`      | Same as `BLACK` but the synthesized image is a magenta/yellow checkerboard, matching Nuke's visual missing-frame indicator.                                                                         |
+| Policy              | What you get                                                                                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SPLIT` *(default)* | One sequence per **contiguous run** of present items. A sequence with items 1–5, 8–12, 15 produces three separate sequences.                                                                      |
+| `ERROR`             | One sequence containing only the present items. Gaps are absent from the output (but visible via the sequence's `missing_numbers` set).                                                           |
+| `NEAREST`           | One sequence covering the full `[first, last]` range. Each missing item is filled with the path of the nearest **earlier** present item (or the nearest later one if no earlier neighbor exists). |
+| `BLACK`             | One sequence covering the full range. Missing items are marked for synthesis as a solid-black image. Image-domain only — only meaningful when an image-rendering node consumes the marker.        |
+| `CHECKERBOARD`      | Same as `BLACK` but the synthesized image is a magenta/yellow checkerboard, matching Nuke's visual missing-frame indicator. Image-domain only.                                                    |
 
 Pick `SPLIT` when you want to *preserve* the gap structure (each contiguous run is meaningful on its own). Pick the others when you want a single dense sequence regardless of what's actually on disk.
 
 ## Subset clipping
 
-Both sequence-aware nodes accept optional `start_frame` and `end_frame` parameters. When supplied, the scan is clipped to that range:
+Sequence-aware nodes accept optional `start` and `end` bounds. When supplied, the scan is clipped to that range:
 
-- Frames below `start_frame` and above `end_frame` are dropped from the output.
+- Items below `start` and above `end` are dropped from the output.
 - The original disk range is still reported via `discovered_first` / `discovered_last`, so you can see what existed before the clip.
 - Subset bounds outside the discovered range yield an empty result (Failure).
 
-Set both to `-1` (the default) to use the discovered range as-is. Negative values are not allowed for either bound.
+`ListSequenceNode` exposes the bounds through a dropdown-driven UI: each side can be the discovered first/last, an absolute number, or an offset relative to the discovered first/last. Negative values are rejected at the node boundary.
 
 ## What you get back
 
@@ -79,21 +79,21 @@ Each sequence carries:
 - **`pattern`** — the canonical pattern (e.g. `render.####.exr`).
 - **`directory`** — the directory the scan ran in.
 - **`policy`** — which policy was applied.
-- **`entries`** — one record per frame in the active range. Each entry has:
-    - `frame` — the integer frame number (e.g. 5).
-    - `frame_string` — the zero-padded form (e.g. `0005`).
-    - `path` — the on-disk file path, or a missing-frame marker for synthesized slots.
-- **`missing_frames`** — the set of frame numbers in the active range that aren't on disk (useful for diagnostics under any policy).
+- **`entries`** — one record per item in the active range. Each entry has:
+    - `number` — the integer key (e.g. 5).
+    - `padded_number` — the zero-padded form (e.g. `0005`).
+    - `path` — the on-disk file path, or a missing-item marker for synthesized slots.
+- **`missing_numbers`** — the set of numbers in the active range that aren't on disk (useful for diagnostics under any policy).
 
-## Frames that are intentionally not supported
+## Cases that are intentionally not supported
 
 A few cases are deliberately excluded:
 
-- **Negative frame numbers**: files like `render.-0005.exr` are filtered out at scan time. The dropped count is reported on the resulting sequence.
-- **Sequence tokens in directory components**: patterns like `render/####/beauty.exr` aren't matched. Put the frame number in the filename.
+- **Negative numbers**: files like `render.-0005.exr` are filtered out at scan time. The dropped count is reported on the resulting sequence.
+- **Sequence tokens in directory components**: patterns like `render/####/beauty.exr` aren't matched. Put the number in the filename.
 - **Multi-token patterns**: templates with more than one sequence token (e.g. `v##_f####.exr`, `render.##.##.exr`) are rejected at scan time with a clear error. Use a single token per pattern.
 - **Time codes**: not yet supported.
 
 ## Where this comes from
 
-Sequence handling is built on [`fileseq`](https://github.com/justinfx/fileseq), the de facto Python library for VFX-style frame-range parsing. We use it as a parser and frame-math library; all filesystem listings still flow through the engine's request bus, so the same workspace permissions, path normalization, and Windows-long-path handling that govern other file operations apply here too.
+Sequence handling is built on [`fileseq`](https://github.com/justinfx/fileseq), the de facto Python library for VFX-style frame-range parsing. We use it as a parser and number-math library; all filesystem listings still flow through the engine's request bus, so the same workspace permissions, path normalization, and Windows-long-path handling that govern other file operations apply here too. fileseq itself uses "frame" terminology throughout — that's an implementation detail; the public API speaks "items" and "numbers" so the same code can serve any numbered-filename sequence, not just images.
