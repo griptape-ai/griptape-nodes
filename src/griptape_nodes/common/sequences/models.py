@@ -3,7 +3,7 @@
 Three concepts:
     - `MissingItemPolicy`: how to fill gaps inside a sequence's range.
     - `Sequence`: one contiguous-or-gap-aware sequence with metadata.
-    - `SequenceEntry`: one item inside a Sequence (number + path or marker).
+    - `SequenceEntry`: one item inside a Sequence (number + path).
 """
 
 from __future__ import annotations
@@ -22,40 +22,14 @@ class MissingItemPolicy(StrEnum):
     The choice changes the *shape* of `scan_sequences` output:
 
     - `SPLIT`: returns multiple Sequences, each contiguous (no gaps inside any).
-    - All others: returns exactly one Sequence whose entries span the full
-      [first, last] range, with policy applied to fill missing items.
+    - `ERROR`: one Sequence with only the present items; gaps absent from `entries`.
+    - `NEAREST`: one Sequence whose entries span the full [first, last] range,
+      with each missing slot's path pointing at the nearest present neighbor.
     """
 
     SPLIT = "split"  # Sparse sequence becomes N contiguous sub-sequences.
     ERROR = "error"  # Single sequence with only the present items; gaps absent.
     NEAREST = "nearest"  # Dense sequence; gaps point at the backward-first neighbor.
-    BLACK = "black"  # Dense sequence; gaps hold a BLACK MissingItemMarker.
-    CHECKERBOARD = "checkerboard"  # Dense sequence; gaps hold a CHECKERBOARD marker.
-
-
-@dataclass(frozen=True)
-class MissingItemMarker:
-    """Sentinel returned for a missing item under BLACK/CHECKERBOARD.
-
-    Image-generating callers (e.g. node-level renderers) interpret the marker
-    and synthesize the appropriate item. This module does not produce images.
-    """
-
-    policy: MissingItemPolicy
-    number: int
-    padded_number: str
-
-
-class MissingItemError(Exception):
-    """Raised when a sequence is queried for an unrepresented item.
-
-    Currently unused at scan time (ERROR policy just produces a sparse Sequence
-    rather than raising). Reserved for future query APIs on Sequence.
-    """
-
-    def __init__(self, number: int) -> None:
-        super().__init__(f"Item {number} is missing from the sequence")
-        self.number = number
 
 
 class SequenceEntry(NamedTuple):
@@ -66,13 +40,15 @@ class SequenceEntry(NamedTuple):
         padded_number: The zero-padded form matching the sequence's declared
             width (e.g. "0005" for number 5 in a `####` sequence). For
             unpadded `%d` patterns this is just the bare integer as a string.
-        path: The on-disk file path, OR a MissingItemMarker for synthesized
-            slots under BLACK/CHECKERBOARD policy.
+        path: The on-disk file path. Under NEAREST, gap entries carry the
+            nearest present neighbor's path (the entry's `number` still records
+            the slot the entry represents — cross-check against
+            `Sequence.present_numbers` to tell present from filled).
     """
 
     number: int
     padded_number: str
-    path: Path | MissingItemMarker
+    path: Path
 
 
 @dataclass
@@ -83,11 +59,10 @@ class Sequence:
         entries: List of SequenceEntry objects, one per item inside the
             active range (after subset clipping). The exact contents depend
             on policy:
-                - SPLIT: contiguous range; no markers.
-                - ERROR: only items that exist on disk; markers never appear.
+                - SPLIT: contiguous range; no gaps inside this Sequence.
+                - ERROR: only items that exist on disk.
                 - NEAREST: dense; missing items carry the nearest existing
                   item's path.
-                - BLACK / CHECKERBOARD: dense; missing items carry markers.
         first: Lowest number in the active range (post-subset).
         last: Highest number in the active range (post-subset).
         discovered_first: Lowest number actually found on disk before
@@ -120,7 +95,6 @@ class Sequence:
 
         Computed from `present_numbers`. Always present regardless of policy
         (e.g. the SPLIT policy would have an empty set since each sub-sequence
-        is contiguous; NEAREST/BLACK/CHECKERBOARD show the gaps that got
-        filled).
+        is contiguous; NEAREST shows the gaps that got filled).
         """
         return {n for n in range(self.first, self.last + 1) if n not in self.present_numbers}

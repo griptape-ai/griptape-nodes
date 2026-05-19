@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.sequences.models import (
-    MissingItemMarker,
     MissingItemPolicy,
     Sequence,
     SequenceEntry,
@@ -88,7 +87,7 @@ def _build_split_sequence(run: list[int], context: PolicyContext) -> Sequence:
 
 
 def _apply_single(context: PolicyContext) -> Sequence:
-    """ERROR / NEAREST / BLACK / CHECKERBOARD: emit one Sequence over [first, last]."""
+    """ERROR / NEAREST: emit one Sequence over [first, last]."""
     in_range_present = {n: p for n, p in context.present_numbers.items() if context.first <= n <= context.last}
     entries: list[SequenceEntry] = []
     for number in range(context.first, context.last + 1):
@@ -138,13 +137,6 @@ def _gap_entry(
                 padded_number=_format_number(fseq, number),
                 path=neighbor_path,
             )
-        case MissingItemPolicy.BLACK | MissingItemPolicy.CHECKERBOARD:
-            marker = MissingItemMarker(
-                policy=policy,
-                number=number,
-                padded_number=_format_number(fseq, number),
-            )
-            return SequenceEntry(number=number, padded_number=marker.padded_number, path=marker)
         case _:
             msg = f"Unknown missing-item policy: {policy}"
             raise ValueError(msg)

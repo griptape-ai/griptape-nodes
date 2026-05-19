@@ -54,10 +54,10 @@ Real sequences often have gaps — a render that crashed on frame 47, a sparse e
 | `SPLIT` *(default)* | One sequence per **contiguous run** of present items. A sequence with items 1–5, 8–12, 15 produces three separate sequences.                                                                      |
 | `ERROR`             | One sequence containing only the present items. Gaps are absent from the output (but visible via the sequence's `missing_numbers` set).                                                           |
 | `NEAREST`           | One sequence covering the full `[first, last]` range. Each missing item is filled with the path of the nearest **earlier** present item (or the nearest later one if no earlier neighbor exists). |
-| `BLACK`             | One sequence covering the full range. Missing items are marked for synthesis as a solid-black image. Image-domain only — only meaningful when an image-rendering node consumes the marker.        |
-| `CHECKERBOARD`      | Same as `BLACK` but the synthesized image is a magenta/yellow checkerboard, matching Nuke's visual missing-frame indicator. Image-domain only.                                                    |
 
-Pick `SPLIT` when you want to *preserve* the gap structure (each contiguous run is meaningful on its own). Pick the others when you want a single dense sequence regardless of what's actually on disk.
+Pick `SPLIT` when you want to *preserve* the gap structure (each contiguous run is meaningful on its own). Pick `ERROR` when you want a single sparse sequence, or `NEAREST` for a single dense sequence, regardless of what's actually on disk.
+
+**Domain-specific gap rendering belongs to nodes, not the engine.** If you want a black-frame placeholder, a magenta/yellow checkerboard, a silent audio chunk, an empty text chunk, or anything else synthesized in place of a missing item, scan with `ERROR` and walk `missing_numbers` in your node — render whatever your domain calls for. The engine deliberately stops at "this number isn't on disk"; the node owns the rest.
 
 ## Subset clipping
 

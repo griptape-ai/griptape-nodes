@@ -16,7 +16,6 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.common.sequences import (
-    MissingItemMarker,
     MissingItemPolicy,
     scan_sequences,
 )
@@ -165,30 +164,6 @@ class TestNearestPolicy:
     # so there's always at least one earlier present number for any in-range
     # gap. Forward-fall remains in the policy code as a defensive fallback
     # for direct callers of `apply_policy`, but isn't exercised here.
-
-
-class TestBlackAndCheckerboardPolicy:
-    def test_black_marker(self) -> None:
-        directory = "/work/in"
-        filenames = [f"render.{n:04d}.png" for n in [1, 2, 4]]
-        with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.BLACK)
-        s = seqs[0]
-        entry_3 = next(e for e in s.entries if e.number == 3)
-        assert isinstance(entry_3.path, MissingItemMarker)
-        assert entry_3.path.policy is MissingItemPolicy.BLACK
-        assert entry_3.path.number == 3
-        assert entry_3.path.padded_number == "0003"
-
-    def test_checkerboard_marker(self) -> None:
-        directory = "/work/in"
-        filenames = [f"render.{n:04d}.png" for n in [1, 2, 4]]
-        with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.CHECKERBOARD)
-        s = seqs[0]
-        entry_3 = next(e for e in s.entries if e.number == 3)
-        assert isinstance(entry_3.path, MissingItemMarker)
-        assert entry_3.path.policy is MissingItemPolicy.CHECKERBOARD
 
 
 # --- Negative numbers ---------------------------------------------------
