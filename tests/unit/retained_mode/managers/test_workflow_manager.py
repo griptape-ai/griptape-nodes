@@ -1323,6 +1323,153 @@ class TestWorkflowManager:
         assert "context_manager = GriptapeNodes.ContextManager()" in body_src
         assert "context_manager.push_workflow(file_path=__file__)" in body_src
 
+    def test_generate_workflow_file_content_registers_declared_libraries_in_build_workflow(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """build_workflow() must register every library named in node_libraries_referenced.
+
+        Regression test for https://github.com/griptape-ai/griptape-nodes/issues/4584:
+        when a generated workflow is run as a standalone script via LocalWorkflowExecutor,
+        no engine-side library bootstrap runs before build_workflow(), so the file itself
+        must register its declared libraries to avoid every CreateNodeRequest collapsing
+        into an ErrorProxyNode.
+        """
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        metadata = WorkflowMetadata(
+            name="test_workflow",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="1.0.0",
+            node_libraries_referenced=[
+                LibraryNameAndVersion(library_name="Griptape Nodes Library", library_version="0.1.0"),
+                LibraryNameAndVersion(library_name="Other Library", library_version="0.2.0"),
+            ],
+            workflow_shape=None,
+        )
+        content = workflow_manager._generate_workflow_file_content(
+            serialized_flow_commands=self._empty_serialized_flow_commands(),
+            workflow_metadata=metadata,
+        )
+
+        module = ast.parse(content)
+
+        # Each declared library must appear as an awaited RegisterLibraryFromFileRequest inside
+        # build_workflow(), with perform_discovery_if_not_found=True so the engine can locate
+        # the library JSON via the standard config-driven discovery path.
+        build_workflow = next(
+            node for node in module.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "build_workflow"
+        )
+        body_src = "\n".join(ast.unparse(stmt) for stmt in build_workflow.body)
+        for library_name in ("Griptape Nodes Library", "Other Library"):
+            assert (
+                f"RegisterLibraryFromFileRequest(library_name='{library_name}', perform_discovery_if_not_found=True)"
+            ) in body_src, f"build_workflow() must register library {library_name!r}; got body:\n{body_src}"
+
+        # The corresponding import must also be present at module scope, since build_workflow()
+        # references RegisterLibraryFromFileRequest by name.
+        top_level_imports = [
+            f"{alias.name}" for stmt in module.body if isinstance(stmt, ast.ImportFrom) for alias in stmt.names
+        ]
+        assert "RegisterLibraryFromFileRequest" in top_level_imports
+
+    def test_generate_workflow_file_content_omits_register_calls_when_no_libraries_declared(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """With an empty node_libraries_referenced list, no register calls are emitted.
+
+        Keeps the import set tight for shape-free workflows that don't actually reference
+        a library, and makes sure the empty-loop branch in _generate_workflow_run_prerequisite_code
+        does not regress to emitting stray RegisterLibraryFromFileRequest noise.
+        """
+        content = self._generate(griptape_nodes)
+        assert "RegisterLibraryFromFileRequest" not in content
+
+    def test_generated_build_workflow_registers_libraries_before_creating_nodes(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """build_workflow() must dispatch RegisterLibraryFromFileRequest before any CreateNodeRequest.
+
+        Captures the runtime contract for issue #4584: when a generated workflow runs as a
+        standalone script (no engine bootstrap, no _ensure_libraries_for_workflow), the file
+        itself must register every declared library before issuing CreateNodeRequest, or every
+        node collapses into an ErrorProxyNode. Verified by exec()ing the generated source and
+        recording the request order via a stub ahandle_request, which is cheap and does not
+        require a real library on disk.
+        """
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+        from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest as _CreateFlowRequest
+        from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest
+        from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, SerializedNodeCommands
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+
+        flow = SerializedFlowCommands(
+            flow_initialization_command=_CreateFlowRequest(
+                parent_flow_name=None, flow_name="ControlFlow_1", set_as_new_context=False, metadata={}
+            ),
+            serialized_node_commands=[
+                SerializedNodeCommands(
+                    create_node_command=CreateNodeRequest(
+                        node_type="Note",
+                        specific_library_name="Foo Library",
+                        node_name="Note_1",
+                        initial_setup=True,
+                    ),
+                    element_modification_commands=[],
+                    node_dependencies=NodeDependencies(),
+                ),
+            ],
+            serialized_connections=[],
+            unique_parameter_uuid_to_values={},
+            set_parameter_value_commands={},
+            set_lock_commands_per_node={},
+            sub_flows_commands=[],
+            node_dependencies=NodeDependencies(),
+            node_types_used=set(),
+        )
+        metadata = WorkflowMetadata(
+            name="runtime_order_test",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="1.0.0",
+            node_libraries_referenced=[
+                LibraryNameAndVersion(library_name="Foo Library", library_version="0.1.0"),
+                LibraryNameAndVersion(library_name="Bar Library", library_version="0.2.0"),
+            ],
+            workflow_shape=None,
+        )
+        script_source = workflow_manager._generate_workflow_file_content(
+            serialized_flow_commands=flow,
+            workflow_metadata=metadata,
+        )
+
+        dispatched: list[object] = []
+
+        original_ahandle = GriptapeNodes.ahandle_request
+
+        async def recording_ahandle_request(request: object) -> object:
+            dispatched.append(request)
+            return await original_ahandle(request)  # type: ignore[arg-type]
+
+        exec_globals: dict[str, object] = {"__file__": "runtime_order_test.py"}
+        exec(compile(script_source, "<runtime_order_test>", "exec"), exec_globals)  # noqa: S102
+        with patch.object(GriptapeNodes, "ahandle_request", side_effect=recording_ahandle_request):
+            asyncio.run(exec_globals["build_workflow"]())  # type: ignore[operator]
+
+        register_indices = [i for i, req in enumerate(dispatched) if isinstance(req, RegisterLibraryFromFileRequest)]
+        register_names = {dispatched[i].library_name for i in register_indices}  # type: ignore[attr-defined]
+        create_indices = [i for i, req in enumerate(dispatched) if isinstance(req, CreateNodeRequest)]
+
+        assert register_names == {"Foo Library", "Bar Library"}, (
+            f"build_workflow must register every declared library; got {register_names!r}"
+        )
+        assert create_indices, "build_workflow must dispatch the serialized CreateNodeRequest"
+        assert max(register_indices) < min(create_indices), (
+            "every RegisterLibraryFromFileRequest must precede every CreateNodeRequest, otherwise"
+            " CreateNodeRequest will fall back to ErrorProxyNode in standalone runs;"
+            f" got order {[type(r).__name__ for r in dispatched]}"
+        )
+
     def test_generate_workflow_file_content_empty_build_workflow_has_pass_body(
         self, griptape_nodes: GriptapeNodes
     ) -> None:
