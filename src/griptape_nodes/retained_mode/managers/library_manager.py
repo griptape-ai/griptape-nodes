@@ -4512,7 +4512,11 @@ class LibraryManager:
             retryable = "uncommitted changes" in error_msg or "unstaged changes" in error_msg
 
             details = f"Failed to update Library '{library_name}': {e}"
-            return UpdateLibraryResultFailure(result_details=details, retryable=retryable)
+            return UpdateLibraryResultFailure(
+                result_details=details,
+                retryable=retryable,
+                existing_path=str(library_dir) if retryable else None,
+            )
 
         # Reload library
         reload_result = await self._reload_library_after_git_operation(
@@ -4646,7 +4650,11 @@ class LibraryManager:
                 if request.fail_on_exists:
                     # Fail with retryable error for interactive CLI
                     details = f"Cannot download library: target directory already exists at {target_path}"
-                    return DownloadLibraryResultFailure(result_details=details, retryable=True)
+                    return DownloadLibraryResultFailure(
+                        result_details=details,
+                        retryable=True,
+                        existing_path=str(target_path),
+                    )
 
                 # Skip cloning since directory already exists, but continue with registration
                 skip_clone = True
