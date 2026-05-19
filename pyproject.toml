@@ -71,6 +71,12 @@ test = [
   "coverage>=7.0.0",
 ]
 
+[project.scripts]
+# Restored locally so the Desktop App can spawn `gtn` against this branch.
+# Upstream removed these in PR #4558 because the CLI is moving to griptape-nodes-app.
+griptape-nodes = "griptape_nodes:main"
+gtn = "griptape_nodes:main"
+
 [build-system]
 requires = ["uv_build>=0.7.2,<0.12"]
 build-backend = "uv_build"

@@ -1843,6 +1843,7 @@ class LibraryManager:
 
                         # Add library directory and venv site-packages to sys.path
                         await self._add_library_paths_to_sys_path(library_data.name, file_path, base_dir)
+                        self._log_torch_probe(f"after-syspath:{library_data.name}")
 
                         # Load the advanced library module if specified
                         advanced_library_instance = None
@@ -1852,6 +1853,7 @@ class LibraryManager:
                                     library_data=library_data,
                                     base_dir=base_dir,
                                 )
+                                self._log_torch_probe(f"after-advanced-load:{library_data.name}")
                             except Exception as err:
                                 library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
                                 library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
@@ -1991,6 +1993,7 @@ class LibraryManager:
                         await self._add_library_paths_to_sys_path(
                             library_data.name, library_info.library_path, sandbox_directory
                         )
+                        self._log_torch_probe(f"after-syspath-sandbox:{library_data.name}")
 
                         # Discover real class names by importing files
                         await self._attempt_generate_sandbox_library_from_schema(
@@ -2291,6 +2294,17 @@ class LibraryManager:
             )
             sys.path.insert(0, site_packages)
             logger.debug("Added library '%s' venv to sys.path: %s", library_name, site_packages)
+
+    def _log_torch_probe(self, label: str) -> None:
+        """Log torch / torchvision / torchaudio state in sys.modules at a probe point."""
+        for pkg in ("torch", "torchvision", "torchaudio"):
+            mod = sys.modules.get(pkg)
+            if mod is None:
+                logger.warning("[torch-probe %s] %s not yet in sys.modules", label, pkg)
+                continue
+            version = getattr(mod, "__version__", "<unknown>")
+            file = getattr(mod, "__file__", "<unknown>")
+            logger.warning("[torch-probe %s] %s=%s file=%s", label, pkg, version, file)
 
     def _can_write_to_venv_location(self, venv_python_path: Path) -> bool:
         """Check if we can write to the venv location (either create it or modify existing).
