@@ -1,0 +1,35 @@
+{
+  "name": "Echo Library",
+  "library_schema_version": "0.7.0",
+  "metadata": {
+    "author": "Test Fixture",
+    "description": "Minimal library used by standalone-workflow execution tests",
+    "library_version": "0.1.0",
+    "engine_version": "0.0.0",
+    "tags": ["test"],
+    "dependencies": {
+      "pip_dependencies": []
+    }
+  },
+  "categories": [
+    {
+      "test": {
+        "title": "test",
+        "description": "Test nodes",
+        "color": "border-gray-500",
+        "icon": "Folder"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "class_name": "EchoNode",
+      "file_path": "echo_node.py",
+      "metadata": {
+        "category": "test",
+        "description": "Copies its `text` input to its `result` output",
+        "display_name": "Echo"
+      }
+    }
+  ]
+}

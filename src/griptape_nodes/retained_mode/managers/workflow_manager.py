@@ -2507,15 +2507,18 @@ class WorkflowManager:
 
         # Graph-building statements accumulate into the body of `async def build_workflow()`,
         # so the emitted workflow file only mutates engine state when build_workflow() is awaited.
-        # Library resolution is handled declaratively by WorkflowManager.run_workflow at load time
-        # via workflow_metadata.node_libraries_referenced; generated files no longer embed
-        # RegisterLibraryFromFileRequest calls. Worker-backed libraries spawn a subprocess at
-        # registration, so registering from inside exec() would recursively start a worker from
-        # code already running on one. Pre-registering via _ensure_libraries_for_workflow breaks
-        # that cycle.
+        # build_workflow() also registers every library named in the workflow metadata header so
+        # the file is self-sufficient: it works whether it is loaded by WorkflowManager.run_workflow
+        # (which also calls _ensure_libraries_for_workflow before exec) or executed directly as a
+        # standalone script via LocalWorkflowExecutor (which has no equivalent pre-exec hook).
+        # RegisterLibraryFromFileRequest is idempotent, so the redundant engine-side call is safe.
+        library_names = [lib.library_name for lib in workflow_metadata.node_libraries_referenced]
+
         main_body: list[ast.stmt] = []
 
-        prereq_code = self._generate_workflow_run_prerequisite_code(import_recorder=import_recorder)
+        prereq_code = self._generate_workflow_run_prerequisite_code(
+            import_recorder=import_recorder, library_names=library_names
+        )
         main_body.extend(cast("ast.stmt", node) for node in prereq_code)
 
         # Generate unique values code AST node
@@ -3636,9 +3639,47 @@ class WorkflowManager:
 
     def _generate_workflow_run_prerequisite_code(
         self,
-        import_recorder: ImportRecorder,  # noqa: ARG002 (kept for symmetry with other _generate_* helpers)
+        import_recorder: ImportRecorder,
+        library_names: list[str],
     ) -> list[ast.AST]:
         code_blocks: list[ast.AST] = []
+
+        # Emit `await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(...))` once
+        # per declared library so build_workflow() registers its own dependencies before any
+        # CreateNodeRequest runs. Without this, running the workflow file as a standalone script
+        # (uv run workflow.py) would have no libraries registered when nodes are created, since
+        # LocalWorkflowExecutor's __aenter__ runs after build_workflow() and is gated by
+        # skip_library_loading=True. perform_discovery_if_not_found=True lets the registration
+        # find the library JSON via the engine's normal config-driven discovery path.
+        if library_names:
+            import_recorder.add_from_import(
+                "griptape_nodes.retained_mode.events.library_events", "RegisterLibraryFromFileRequest"
+            )
+        for library_name in library_names:
+            register_call = ast.Expr(
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="RegisterLibraryFromFileRequest", ctx=ast.Load()),
+                                args=[],
+                                keywords=[
+                                    ast.keyword(arg="library_name", value=ast.Constant(value=library_name)),
+                                    ast.keyword(arg="perform_discovery_if_not_found", value=ast.Constant(value=True)),
+                                ],
+                            )
+                        ],
+                        keywords=[],
+                    )
+                )
+            )
+            ast.fix_missing_locations(register_call)
+            code_blocks.append(register_call)
 
         # Generate context manager assignment
         assign_context_manager = ast.Assign(
