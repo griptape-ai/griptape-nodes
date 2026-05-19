@@ -99,7 +99,7 @@ check/spell:
 	@uv run typos 
 
 .PHONY: test  ## Run all tests.
-test: test/unit test/integration
+test: test/unit test/integration test/e2e
 
 .PHONY: test/unit
 test/unit: ## Run unit tests.
@@ -116,6 +116,10 @@ test/coverage: ## Run all tests with coverage.
 .PHONY: test/integration
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration
+
+.PHONY: test/e2e
+test/e2e: ## Run end-to-end tests (spawns subprocesses; slower than unit/integration).
+	@uv run pytest tests/e2e
 
 .PHONY: docs
 docs: ## Build documentation.
