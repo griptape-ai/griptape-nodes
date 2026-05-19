@@ -152,12 +152,10 @@ class TestNearestPolicy:
         s = seqs[0]
         # Gap at 3 -> backward to 2
         entry_3 = next(e for e in s.entries if e.number == 3)
-        assert isinstance(entry_3.path, Path)
-        assert entry_3.path.name == "render.0002.png"
+        assert Path(entry_3.path).name == "render.0002.png"
         # Gap at 5 -> backward to 4
         entry_5 = next(e for e in s.entries if e.number == 5)
-        assert isinstance(entry_5.path, Path)
-        assert entry_5.path.name == "render.0004.png"
+        assert Path(entry_5.path).name == "render.0004.png"
 
     # Note: forward-fall is unreachable through scan_sequences with a single
     # subset clip — `active_first` is always clamped up to `discovered_first`,

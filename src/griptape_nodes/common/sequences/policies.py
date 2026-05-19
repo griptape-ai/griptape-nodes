@@ -135,7 +135,7 @@ def _gap_entry(
             return SequenceEntry(
                 number=number,
                 padded_number=_format_number(fseq, number),
-                path=neighbor_path,
+                path=str(neighbor_path),
             )
         case _:
             msg = f"Unknown missing-item policy: {policy}"
@@ -175,7 +175,7 @@ def _nearest_path(number: int, present: dict[int, Path]) -> Path | None:
 
 def _present_entry(fseq: FileSequence, number: int, path: Path) -> SequenceEntry:
     """Build a SequenceEntry for a present-on-disk item."""
-    return SequenceEntry(number=number, padded_number=_format_number(fseq, number), path=path)
+    return SequenceEntry(number=number, padded_number=_format_number(fseq, number), path=str(path))
 
 
 def _format_number(fseq: FileSequence, number: int) -> str:

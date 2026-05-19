@@ -8,12 +8,9 @@ Three concepts:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, NamedTuple
 
-if TYPE_CHECKING:
-    from pathlib import Path
+from pydantic import BaseModel, Field, computed_field
 
 
 class MissingItemPolicy(StrEnum):
@@ -32,7 +29,7 @@ class MissingItemPolicy(StrEnum):
     NEAREST = "nearest"  # Dense sequence; gaps point at the backward-first neighbor.
 
 
-class SequenceEntry(NamedTuple):
+class SequenceEntry(BaseModel):
     """One entry in a Sequence.
 
     Attributes:
@@ -40,19 +37,19 @@ class SequenceEntry(NamedTuple):
         padded_number: The zero-padded form matching the sequence's declared
             width (e.g. "0005" for number 5 in a `####` sequence). For
             unpadded `%d` patterns this is just the bare integer as a string.
-        path: The on-disk file path. Under NEAREST, gap entries carry the
-            nearest present neighbor's path (the entry's `number` still records
-            the slot the entry represents — cross-check against
-            `Sequence.present_numbers` to tell present from filled).
+        path: Absolute on-disk file path as a string (platform-neutral payload).
+            Under NEAREST, gap entries carry the nearest present neighbor's
+            path; the entry's `number` still records the slot the entry
+            represents — cross-check against `Sequence.present_numbers` to
+            tell present from filled.
     """
 
     number: int
     padded_number: str
-    path: Path
+    path: str
 
 
-@dataclass
-class Sequence:
+class Sequence(BaseModel):
     """A scanned sequence of items plus metadata.
 
     Attributes:
@@ -73,6 +70,9 @@ class Sequence:
         pattern: The canonical fileseq pattern (e.g. "render.####.exr").
         directory: Absolute directory the sequence was scanned from.
         policy: The policy applied during scan.
+        present_numbers: Numbers present on disk inside [first, last].
+            Useful when the policy densified gaps — callers can still find
+            out what was actually there.
     """
 
     entries: list[SequenceEntry]
@@ -85,10 +85,9 @@ class Sequence:
     directory: str
     policy: MissingItemPolicy
     dropped_negative_number_count: int = 0
-    # Numbers present on disk inside [first, last]. Useful when the policy
-    # densified gaps — callers can still find out what was actually there.
-    present_numbers: set[int] = field(default_factory=set)
+    present_numbers: set[int] = Field(default_factory=set)
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def missing_numbers(self) -> set[int]:
         """Numbers between `first` and `last` that aren't on disk.

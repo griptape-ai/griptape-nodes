@@ -71,7 +71,9 @@ Sequence-aware nodes accept optional `start` and `end` bounds. When supplied, th
 
 ## What you get back
 
-Each sequence carries:
+`Sequence` is a Pydantic model — read fields by attribute (`seq.first`, `seq.entries[0].number`). Nodes that operate on sequences should declare their input as `type="Sequence"`; the engine validates the connection by name, so `ListSequenceNode`'s `sequences` and `entries_by_sequence` outputs route into any `Sequence`-typed input cleanly.
+
+Each `Sequence` carries:
 
 - **`first`** / **`last`** — the active range (after subset clipping).
 - **`discovered_first`** / **`discovered_last`** — what was actually on disk, ignoring any subset.
@@ -79,11 +81,12 @@ Each sequence carries:
 - **`pattern`** — the canonical pattern (e.g. `render.####.exr`).
 - **`directory`** — the directory the scan ran in.
 - **`policy`** — which policy was applied.
-- **`entries`** — one record per item in the active range. Each entry has:
+- **`entries`** — one `SequenceEntry` per item in the active range. Each has:
     - `number` — the integer key (e.g. 5).
     - `padded_number` — the zero-padded form (e.g. `0005`).
-    - `path` — the on-disk file path, or a missing-item marker for synthesized slots.
-- **`missing_numbers`** — the set of numbers in the active range that aren't on disk (useful for diagnostics under any policy).
+    - `path` — the on-disk file path as a plain string. Under NEAREST, gap entries carry the nearest present neighbor's path; cross-check `entry.number in seq.present_numbers` to tell present from filled.
+- **`present_numbers`** — the set of numbers actually on disk inside `[first, last]`.
+- **`missing_numbers`** — derived from `present_numbers`: the numbers in the active range that aren't on disk (useful for diagnostics under any policy).
 
 ## Cases that are intentionally not supported
 
