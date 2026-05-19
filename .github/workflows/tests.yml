@@ -1,4 +1,4 @@
-name: Unit Tests
+name: Tests
 
 on:
   push:
@@ -56,3 +56,16 @@ jobs:
         # make (e=2): The system cannot find the file specified.
         # make: *** [Makefile:24: test/unit] Error 2
         run: uv run pytest -n auto tests/unit
+  e2e-test-ubuntu:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - name: Checkout actions
+        uses: actions/checkout@v6
+      - name: Init environment
+        uses: ./.github/actions/init-environment
+      - name: Run e2e tests
+        run: make test/e2e
