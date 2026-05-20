@@ -3608,7 +3608,7 @@ class NodeExecutor:
         try:
             decoded_bytes = base64.b85decode(stored_value)
             return pickle.loads(decoded_bytes)  # noqa: S301
-        except Exception:
+        except (ValueError, OverflowError, pickle.UnpicklingError):
             pass
 
         logger.warning(
