@@ -41,8 +41,9 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         session_id: str,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         on_start_flow_result: Callable[[ResultPayload], None] | None = None,
+        save_on_failure_path: str | None = None,
     ):
-        super().__init__(storage_backend=storage_backend)
+        super().__init__(storage_backend=storage_backend, save_on_failure_path=save_on_failure_path)
         self._init_websocket_sender(session_id)
         self._on_start_flow_result = on_start_flow_result
 
