@@ -20,11 +20,16 @@ class RegisterWorkerRequest(RequestPayload):
 
     Args:
         worker_engine_id: The engine_id of the registering worker.
+        engine_version: The griptape_nodes engine version the worker is running.
+            The orchestrator rejects registrations whose engine_version does not
+            match its own; workers and orchestrators must share a version because
+            the wire shape of every event is tied to the engine build.
         library_name: The library this worker exclusively serves, or None for a
             general-purpose worker that can handle any request.
     """
 
     worker_engine_id: str
+    engine_version: str
     library_name: str | None = None
     broadcast_result: bool = field(default=False, kw_only=True)
 

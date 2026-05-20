@@ -165,39 +165,33 @@ class TestWorkflowRegistryOperations:
         with patch.dict(WorkflowRegistry._workflows, {}, clear=True), pytest.raises(KeyError, match="not_there"):
             WorkflowRegistry.rekey_workflow("not_there", "new_key")
 
-    def test_generate_new_workflow_uses_file_path_as_key(self) -> None:
+    def test_generate_new_workflow_uses_caller_supplied_key(self) -> None:
         mock_metadata = MagicMock()
         with (
             patch.dict(WorkflowRegistry._workflows, {}, clear=True),
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/my_workflow.py"),
             patch.object(Path, "is_file", return_value=True),
         ):
-            workflow = WorkflowRegistry.generate_new_workflow("my_workflow.py", mock_metadata)
+            workflow = WorkflowRegistry.generate_new_workflow(
+                registry_key="my_workflow", metadata=mock_metadata, file_path="my_workflow.py"
+            )
 
             assert "my_workflow" in WorkflowRegistry._workflows
             assert WorkflowRegistry._workflows["my_workflow"] is workflow
 
-    def test_generate_new_workflow_preserves_subdirectory_in_key(self) -> None:
-        mock_metadata = MagicMock()
-        with (
-            patch.dict(WorkflowRegistry._workflows, {}, clear=True),
-            patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/subdir/my_workflow.py"),
-            patch.object(Path, "is_file", return_value=True),
-        ):
-            WorkflowRegistry.generate_new_workflow("subdir/my_workflow.py", mock_metadata)
-
-            assert "subdir/my_workflow" in WorkflowRegistry._workflows
-            assert "my_workflow" not in WorkflowRegistry._workflows
-
-    def test_generate_new_workflow_same_filename_different_dirs_no_collision(self) -> None:
+    def test_generate_new_workflow_same_key_different_paths_collide(self) -> None:
         mock_metadata = MagicMock()
         with (
             patch.dict(WorkflowRegistry._workflows, {}, clear=True),
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/some/path.py"),
             patch.object(Path, "is_file", return_value=True),
         ):
-            WorkflowRegistry.generate_new_workflow("subdir_a/my_workflow.py", mock_metadata)
-            WorkflowRegistry.generate_new_workflow("subdir_b/my_workflow.py", mock_metadata)
+            WorkflowRegistry.generate_new_workflow(
+                registry_key="subdir_a/my_workflow", metadata=mock_metadata, file_path="subdir_a/my_workflow.py"
+            )
+            WorkflowRegistry.generate_new_workflow(
+                registry_key="subdir_b/my_workflow", metadata=mock_metadata, file_path="subdir_b/my_workflow.py"
+            )
 
             assert "subdir_a/my_workflow" in WorkflowRegistry._workflows
             assert "subdir_b/my_workflow" in WorkflowRegistry._workflows
@@ -209,7 +203,29 @@ class TestWorkflowRegistryOperations:
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/my_workflow.py"),
             patch.object(Path, "is_file", return_value=True),
         ):
-            WorkflowRegistry.generate_new_workflow("my_workflow.py", mock_metadata)
+            WorkflowRegistry.generate_new_workflow(
+                registry_key="my_workflow", metadata=mock_metadata, file_path="my_workflow.py"
+            )
 
             with pytest.raises(KeyError, match="my_workflow"):
-                WorkflowRegistry.generate_new_workflow("my_workflow.py", mock_metadata)
+                WorkflowRegistry.generate_new_workflow(
+                    registry_key="my_workflow", metadata=mock_metadata, file_path="my_workflow.py"
+                )
+
+    def test_generate_new_workflow_unsaved_key_rejects_file_path(self) -> None:
+        mock_metadata = MagicMock()
+        with (
+            patch.dict(WorkflowRegistry._workflows, {}, clear=True),
+            pytest.raises(ValueError, match="cannot be paired with a file_path"),
+        ):
+            WorkflowRegistry.generate_new_workflow(
+                registry_key="unsaved:abc", metadata=mock_metadata, file_path="my_workflow.py"
+            )
+
+    def test_generate_new_workflow_saved_key_requires_file_path(self) -> None:
+        mock_metadata = MagicMock()
+        with (
+            patch.dict(WorkflowRegistry._workflows, {}, clear=True),
+            pytest.raises(ValueError, match="requires a file_path"),
+        ):
+            WorkflowRegistry.generate_new_workflow(registry_key="my_workflow", metadata=mock_metadata)

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
+from pydantic import ValidationError
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.retained_mode.managers.settings import LibraryRegistration
 from griptape_nodes.utils.file_utils import find_all_files_in_directory
 from griptape_nodes.utils.git_utils import (
     get_git_repository_root,
@@ -122,3 +124,49 @@ def filter_old_xdg_library_paths(library_paths: list[str]) -> tuple[list[str], s
             filtered_libraries.append(library)
 
     return filtered_libraries, removed_library_names
+
+
+def extract_library_path(entry: Any) -> str:
+    """Extract the path string from a libraries_to_register entry.
+
+    Accepts a bare path string, a dict-shaped entry from raw config, or an already
+    parsed LibraryRegistration. Returns an empty string for entries that contain no
+    usable path.
+    """
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, LibraryRegistration):
+        return entry.path
+    if isinstance(entry, dict):
+        path = entry.get("path")
+        return path if isinstance(path, str) else ""
+    return ""
+
+
+def normalize_library_registrations(raw: list[Any]) -> list[LibraryRegistration]:
+    """Normalize a libraries_to_register config list into LibraryRegistration entries.
+
+    Bare strings become enabled entries. Dict-shaped entries are validated against
+    the LibraryRegistration schema. Already parsed LibraryRegistration instances pass
+    through unchanged. Malformed entries are skipped with a warning so a single bad
+    entry cannot block startup.
+    """
+    entries: list[LibraryRegistration] = []
+    for item in raw:
+        if isinstance(item, LibraryRegistration):
+            entries.append(item)
+        elif isinstance(item, str):
+            if item:
+                entries.append(LibraryRegistration(path=item))
+        elif isinstance(item, dict):
+            try:
+                entries.append(LibraryRegistration.model_validate(item))
+            except ValidationError as err:
+                logger.warning("Skipping malformed libraries_to_register entry %r: %s", item, err)
+        else:
+            logger.warning(
+                "Skipping libraries_to_register entry of unexpected type %s: %r",
+                type(item).__name__,
+                item,
+            )
+    return entries

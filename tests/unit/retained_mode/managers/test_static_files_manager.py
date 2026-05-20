@@ -370,7 +370,10 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
             manager.storage_driver = Mock()
             return manager
 
-    def test_create_download_url_from_path_local_file(self, mock_static_files_manager: StaticFilesManager) -> None:
+    @pytest.mark.asyncio
+    async def test_create_download_url_from_path_local_file(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
         """Test creating download URL from local file path."""
         from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlFromPathRequest
 
@@ -381,7 +384,7 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
         # Test with local file path
         request = CreateStaticFileDownloadUrlFromPathRequest(file_path="file:///path/to/file.txt")
 
-        result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+        result = await mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
 
         # Verify success
         from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlResultSuccess
@@ -393,7 +396,8 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
         # Verify local storage driver was used
         assert mock_static_files_manager.storage_driver.create_signed_download_url.called
 
-    def test_create_download_url_from_path_cloud_url(self, mock_static_files_manager: StaticFilesManager) -> None:
+    @pytest.mark.asyncio
+    async def test_create_download_url_from_path_cloud_url(self, mock_static_files_manager: StaticFilesManager) -> None:
         """Test creating download URL from Griptape Cloud URL."""
         from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
         from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlFromPathRequest
@@ -414,7 +418,9 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
             mock_cloud_driver.get_asset_url.return_value = "http://cloud-asset-url.com"
             mock_create_driver.return_value = mock_cloud_driver
 
-            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+            result = await mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(
+                request
+            )
 
             # Verify extract_bucket_id_from_url was called
             mock_extract.assert_called_once_with(cloud_url)
@@ -431,7 +437,8 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
             assert result.url == "http://cloud-signed-url.com"
             assert result.file_url == "http://cloud-asset-url.com"
 
-    def test_create_download_url_from_path_cloud_url_no_api_key(
+    @pytest.mark.asyncio
+    async def test_create_download_url_from_path_cloud_url_no_api_key(
         self, mock_static_files_manager: StaticFilesManager
     ) -> None:
         """Test failure when cloud URL is used but API key is not available."""
@@ -451,7 +458,9 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
             # Mock that API key is not available
             mock_create_driver.return_value = None
 
-            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+            result = await mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(
+                request
+            )
 
             # Verify extract_bucket_id_from_url was called
             mock_extract.assert_called_once_with(cloud_url)
@@ -464,7 +473,10 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
             assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
             assert "GT_CLOUD_API_KEY secret is not available" in result.error
 
-    def test_create_download_url_from_path_non_cloud_url(self, mock_static_files_manager: StaticFilesManager) -> None:
+    @pytest.mark.asyncio
+    async def test_create_download_url_from_path_non_cloud_url(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
         """Test that non-cloud URLs use local storage driver."""
         from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
         from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlFromPathRequest
@@ -477,7 +489,9 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
         request = CreateStaticFileDownloadUrlFromPathRequest(file_path="http://example.com/file.txt")
 
         with patch.object(GriptapeCloudStorageDriver, "extract_bucket_id_from_url", return_value=None) as mock_extract:
-            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+            result = await mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(
+                request
+            )
 
             # Verify extract_bucket_id_from_url was called
             mock_extract.assert_called_once_with("http://example.com/file.txt")
@@ -493,7 +507,8 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
             # Verify local storage driver was used
             assert mock_static_files_manager.storage_driver.create_signed_download_url.called
 
-    def test_create_download_url_from_path_exception_handling(
+    @pytest.mark.asyncio
+    async def test_create_download_url_from_path_exception_handling(
         self, mock_static_files_manager: StaticFilesManager
     ) -> None:
         """Test exception handling when creating download URL fails."""
@@ -507,7 +522,7 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
         # Test with local file path
         request = CreateStaticFileDownloadUrlFromPathRequest(file_path="file:///path/to/file.txt")
 
-        result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+        result = await mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
 
         # Verify failure
         from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlResultFailure
@@ -515,7 +530,10 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
         assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
         assert "Failed to create presigned URL" in result.error
 
-    def test_create_download_url_from_path_macro_path(self, mock_static_files_manager: StaticFilesManager) -> None:
+    @pytest.mark.asyncio
+    async def test_create_download_url_from_path_macro_path(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
         """Test creating download URL from a macro path like {outputs}/file.png."""
         from pathlib import Path
 
@@ -542,14 +560,17 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
                 absolute_path=resolved_path,
             ),
         ):
-            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+            result = await mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(
+                request
+            )
 
         assert isinstance(result, CreateStaticFileDownloadUrlResultSuccess)
         # Verify the storage driver was called with the resolved path
         call_args = mock_static_files_manager.storage_driver.create_signed_download_url.call_args
         assert call_args[0][0] == Path("/mock/workspace/outputs/file.png")
 
-    def test_create_download_url_from_path_macro_path_resolution_failure(
+    @pytest.mark.asyncio
+    async def test_create_download_url_from_path_macro_path_resolution_failure(
         self, mock_static_files_manager: StaticFilesManager
     ) -> None:
         """Test failure when macro path resolution fails."""
@@ -574,12 +595,15 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
                 missing_variables={"outputs"},
             ),
         ):
-            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+            result = await mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(
+                request
+            )
 
         assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
         assert "macro resolution failed" in result.error
 
-    def test_create_download_url_from_path_macro_syntax_error(
+    @pytest.mark.asyncio
+    async def test_create_download_url_from_path_macro_syntax_error(
         self, mock_static_files_manager: StaticFilesManager
     ) -> None:
         """Test failure when the file path has invalid macro syntax (e.g. unclosed brace)."""
@@ -591,7 +615,7 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
         # Unclosed brace triggers MacroSyntaxError
         request = CreateStaticFileDownloadUrlFromPathRequest(file_path="{outputs/file.png")
 
-        result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+        result = await mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
 
         assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
         assert "invalid macro syntax" in result.error

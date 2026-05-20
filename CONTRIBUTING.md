@@ -35,16 +35,16 @@ When developing, you typically want to run the engine using your local source co
 
 **Key Development Commands:**
 
-- **Run the Engine:** Use `uv run` to execute the engine script (`gtn` or `griptape-nodes`) within the virtual environment managed by `uv`.
+- **Run the Engine:** Use `uv run` to execute the engine module within the virtual environment managed by `uv`.
 
     ```shell
-    uv run gtn
+    uv run python -m griptape_nodes
     ```
 
     Or use the Makefile shortcut:
 
     ```shell
-    uv run griptape-nodes engine
+    make run
     ```
 
 - **Run the Engine In Watch Mode:** This command will automatically restart the engine when you make changes to the source code. This is useful for rapid development and testing.
@@ -62,7 +62,7 @@ When developing, you typically want to run the engine using your local source co
 - **Run Initialization:** To trigger the initial setup prompts (API Key, Workspace Directory) using the local code:
 
     ```shell
-    uv run gtn init
+    uv run python -m griptape_nodes init
     ```
 
 - **Run Unit Tests:**
@@ -123,7 +123,7 @@ When developing, you typically want to run the engine using your local source co
 To point your local engine at a different API instance (e.g., a local Griptape Nodes IDE server), set the `GRIPTAPE_NODES_API_BASE_URL` environment variable:
 
 ```shell
-GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001 uv run gtn
+GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001 uv run python -m griptape_nodes
 ```
 
 **Connecting to a Different UI**
@@ -133,16 +133,16 @@ GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001 uv run gtn
 To point your local engine at a different UI instance (e.g., a local Griptape Nodes UI), set the `GRIPTAPE_NODES_UI_BASE_URL` environment variable:
 
 ```shell
-GRIPTAPE_NODES_UI_BASE_URL=http://localhost:5173 uv run gtn
+GRIPTAPE_NODES_UI_BASE_URL=http://localhost:5173 uv run python -m griptape_nodes
 ```
 
 ## Configuration for Development
 
 Griptape Nodes uses a configuration loading system. For full details, see the [Configuration Documentation](docs/configuration.md). Here's what's crucial for development:
 
-1. **`.env` File:** The engine still needs your `GT_CLOUD_API_KEY` to communicate with the Workflow Editor. Ensure this is set in the system-wide environment file located via `gtn init` (typically `~/.config/griptape_nodes/.env`). Running `uv run gtn init` will guide you through creating this if needed.
+1. **`.env` File:** The engine still needs your `GT_CLOUD_API_KEY` to communicate with the Workflow Editor. Ensure this is set in the system-wide environment file located via `python -m griptape_nodes init` (typically `~/.config/griptape_nodes/.env`). Running `uv run python -m griptape_nodes init` will guide you through creating this if needed.
 
-1. **Using the Local Nodes Library:** By default, a regularly installed engine looks for node definitions (the library config file: `griptape_nodes_library.json` or `griptape-nodes-library.json`) in a system data directory. For development, you **must** tell the engine (run via `uv run gtn`) to use the library file directly from your cloned repository (`./libraries/griptape_nodes_library/griptape_nodes_library.json`).
+1. **Using the Local Nodes Library:** By default, a regularly installed engine looks for node definitions (the library config file: `griptape_nodes_library.json` or `griptape-nodes-library.json`) in a system data directory. For development, you **must** tell the engine (run via `uv run python -m griptape_nodes`) to use the library file directly from your cloned repository (`./libraries/griptape_nodes_library/griptape_nodes_library.json`).
 
     - **How to Override:** Create a configuration file in a location that has higher priority than the default system paths. The simplest location is the **root of your cloned `griptape-nodes` repository**.
     - Create a file named `griptape_nodes_config.json` in the project root.
@@ -160,7 +160,7 @@ Griptape Nodes uses a configuration loading system. For full details, see the [C
           }
         }
         ```
-    - **Why this works:** When you run `uv run gtn` from the project root, the engine's configuration loader finds this `griptape_nodes_config.json` first (due to the "Current Directory & Parents" search path) and uses its `libraries_to_register` setting, overriding the default path.
+    - **Why this works:** When you run `uv run python -m griptape_nodes` from the project root, the engine's configuration loader finds this `griptape_nodes_config.json` first (due to the "Current Directory & Parents" search path) and uses its `libraries_to_register` setting, overriding the default path.
 
 ## Environment Variables
 
