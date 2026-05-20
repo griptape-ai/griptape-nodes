@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
 import traceback
@@ -69,7 +68,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         self._skip_library_loading = skip_library_loading
         self._workflows_to_register = workflows_to_register or []
         self._save_on_failure_path = save_on_failure_path
-        self._failure_saved = False
 
     async def __aenter__(self) -> Self:
         """Async context manager entry: initialize queue and broadcast app initialization."""
@@ -97,7 +95,10 @@ class LocalWorkflowExecutor(WorkflowExecutor):
     ) -> None:
         """Async context manager exit."""
         # TODO: Broadcast shutdown https://github.com/griptape-ai/griptape-nodes/issues/2149
-        return
+        # Single save point: catches any exception that propagates out of arun(), including
+        # subclasses like LocalSessionWorkflowExecutor, without needing call sites in arun().
+        if exc_val is not None and self._save_on_failure_path is not None:
+            await self._save_failed_workflow(exc_val)
 
     def _get_workflow_name(self) -> str:
         try:
@@ -307,20 +308,23 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
         return str(path_result.absolute_path)
 
-    async def _save_failed_workflow(self, error: Exception | str) -> None:
+    async def _save_failed_workflow(self, error: BaseException | str) -> None:
         """Serialize and save the current flow state to a file for post-mortem debugging.
 
         Never raises — logs and returns on any internal failure so the original
         workflow exception propagates unchanged.
         """
-        if self._save_on_failure_path is None or self._failure_saved:
+        if self._save_on_failure_path is None:
             return
-        self._failure_saved = True
 
         try:
-            workflow_name = "workflow"
-            with contextlib.suppress(Exception):
+            # _get_workflow_name() can fail if the context manager is in a bad state at failure time;
+            # fall back to a generic name rather than letting that secondary failure surface.
+            try:
                 workflow_name = self._get_workflow_name()
+            except Exception:
+                logger.warning("save_failed_workflow: could not retrieve workflow name; using 'workflow'.")
+                workflow_name = "workflow"
 
             top_level_flow_result = await GriptapeNodes.ahandle_request(GetTopLevelFlowRequest())
             if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
@@ -342,7 +346,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                 return
 
             timestamp = datetime.now(UTC).isoformat()
-            if isinstance(error, Exception):
+            if isinstance(error, BaseException):
                 error_text = "".join(traceback.format_exception(type(error), error, error.__traceback__))
             else:
                 error_text = str(error)
@@ -399,7 +403,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
         if start_flow_result.failed():
             msg = f"Failed to start flow {flow_name}"
-            await self._save_failed_workflow(msg)
             raise LocalExecutorError(msg)
 
         logger.info("Workflow started!")
@@ -425,5 +428,4 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                 logger.info(msg)
 
         if error is not None:
-            await self._save_failed_workflow(error)
             raise error

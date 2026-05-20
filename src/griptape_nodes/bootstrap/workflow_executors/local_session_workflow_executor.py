@@ -112,7 +112,6 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
             self.send_event("execution_event", execution_event.json())
             await self._wait_for_websocket_queue_flush()
             await asyncio.sleep(1)
-            await self._save_failed_workflow(e)
             raise LocalExecutorError(msg) from e
         finally:
             await self._stop_websocket_connection()
@@ -231,5 +230,4 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         await self._wait_for_websocket_queue_flush()
 
         if error is not None:
-            await self._save_failed_workflow(error)
             raise error
