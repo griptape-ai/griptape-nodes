@@ -1,8 +1,8 @@
 import logging
 import mimetypes
 from pathlib import Path
-from urllib.parse import urlparse
-from urllib.request import url2pathname
+
+from griptape_nodes.files.path_utils import parse_file_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -28,11 +28,18 @@ def get_content_type_from_extension(file_path: str | Path) -> str | None:
 
 
 def uri_to_path(uri: str) -> Path:
-    """Convert a file URI to a file system path."""
+    r"""Convert a file URI to a file system path.
+
+    Strings that are not file:// URIs are passed through as Path unchanged.
+    This preserves Windows paths like "Z:\foo\bar" which urlparse would
+    otherwise treat as a URI with scheme "z".
+    """
     # TODO: replace with Path.from_uri() when we upgrade to python >=3.13
     # https://docs.python.org/3/library/pathlib.html#pathlib.Path.from_uri
-    parsed = urlparse(uri)
-    return Path(url2pathname(parsed.path))
+    file_path = parse_file_uri(uri)
+    if file_path is not None:
+        return Path(file_path)
+    return Path(uri)
 
 
 def is_url_or_path(value: str) -> bool:

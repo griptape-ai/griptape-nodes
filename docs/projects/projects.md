@@ -38,18 +38,23 @@ situations:
 
 environment:
   PROJECT_CODENAME: "aurora"
+
+file_extension_directories:
+  png: "images"
+  mp4: "{outputs}/videos"
 ```
 
 ### Fields reference
 
-| Field                             | Required | Description                                  |
-| --------------------------------- | -------- | -------------------------------------------- |
-| `project_template_schema_version` | Yes      | Must match the supported version (`"0.1.0"`) |
-| `name`                            | Yes      | Human-readable name for this project         |
-| `description`                     | No       | Optional description                         |
-| `situations`                      | No       | Dict of situation overrides and additions    |
-| `directories`                     | No       | Dict of directory overrides and additions    |
-| `environment`                     | No       | Dict of custom key-value variables           |
+| Field                             | Required | Description                                                                                  |
+| --------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| `project_template_schema_version` | Yes      | Must match the supported version (`"0.3.0"`)                                                 |
+| `name`                            | Yes      | Human-readable name for this project                                                         |
+| `description`                     | No       | Optional description                                                                         |
+| `situations`                      | No       | Dict of situation overrides and additions                                                    |
+| `directories`                     | No       | Dict of directory overrides and additions                                                    |
+| `environment`                     | No       | Dict of custom key-value variables                                                           |
+| `file_extension_directories`      | No       | Extension-to-folder routing; see [File Extension Directories](file_extension_directories.md) |
 
 ### Situation fields
 
@@ -86,6 +91,7 @@ The merge behavior is additive and field-level:
 
 - Situations and directories from the overlay are merged into the defaults. An overlay situation with the same name as a default situation changes only the fields you specify (e.g., just the macro, or just the policy). An overlay situation with a new name is added alongside the defaults.
 - Environment entries in the overlay override entries with the same key in the defaults. New keys are added.
+- `file_extension_directories` entries merge per-key the same way as environment entries. A `null` value tombstones the base entry.
 - The `name` field is always taken from the overlay (required).
 
 You never need to repeat default values. Your project file only needs to contain the things you want to change.

@@ -18,7 +18,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus, InvalidURI
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Awaitable, Callable
     from types import TracebackType
 
 logger = logging.getLogger("griptape_nodes_client")
@@ -71,6 +71,7 @@ class Client:
 
         # Event streaming management
         self._message_queue: asyncio.Queue = asyncio.Queue()
+        self._message_filters: list[Callable[[dict[str, Any]], Awaitable[bool]]] = []
         self._subscribed_topics: set[str] = set()
         self._receiving_task: asyncio.Task | None = None
         self._sending_task: asyncio.Task | None = None
@@ -145,6 +146,23 @@ class Client:
         """
         self._subscribed_topics.discard(topic)
         await self._send_unsubscribe_command(topic)
+
+    def add_message_filter(self, fn: Callable[[dict[str, Any]], Awaitable[bool]]) -> None:
+        """Register a filter that can claim incoming messages before they reach the queue.
+
+        Args:
+            fn: Async callable that returns True if it handled the message (claiming it),
+                or False to leave it for the next filter or the message queue.
+        """
+        self._message_filters.append(fn)
+
+    def remove_message_filter(self, fn: Callable[[dict[str, Any]], Awaitable[bool]]) -> None:
+        """Deregister a previously added message filter.
+
+        Args:
+            fn: The exact callable that was passed to add_message_filter.
+        """
+        self._message_filters.remove(fn)
 
     async def publish(self, event_type: str, payload: dict[str, Any], topic: str) -> None:
         """Publish an event to the server.
@@ -280,7 +298,13 @@ class Client:
             async for message in websocket:
                 try:
                     data = json.loads(message)
-                    await self._message_queue.put(data)
+                    claimed = False
+                    for f in self._message_filters:
+                        if await f(data):
+                            claimed = True
+                            break
+                    if not claimed:
+                        await self._message_queue.put(data)
                 except json.JSONDecodeError:
                     logger.error("Failed to parse message: %s", message)
                 except Exception as e:

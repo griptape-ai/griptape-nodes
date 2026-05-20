@@ -2,11 +2,15 @@ import logging
 import re
 from abc import ABC, abstractmethod
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import BadgeData, NodeMessageResult, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
+
+_NO_MODELS_PLACEHOLDER = "No models downloaded — see badge"
 
 
 class HuggingFaceModelParameter(ABC):
@@ -41,57 +45,64 @@ class HuggingFaceModelParameter(ABC):
             return
 
         choices = self.get_choices()
-        if not choices:
-            return
 
-        current_value = self._node.get_parameter_value(self._parameter_name)
-        if current_value in choices:
-            default_value = current_value
-        else:
+        if choices:
             default_value = choices[0]
+            display_choices = choices
+        else:
+            default_value = _NO_MODELS_PLACEHOLDER
+            display_choices = [_NO_MODELS_PLACEHOLDER]
 
         if parameter.find_elements_by_type(Options):
-            self._node._update_option_choices(self._parameter_name, choices, default_value)
+            self._node._update_option_choices(self._parameter_name, display_choices, default_value)
         else:
-            parameter.add_trait(Options(choices=choices))
+            parameter.add_trait(Options(choices=display_choices))
+
+        self._node.set_parameter_value(self._parameter_name, default_value)
+
+        badge = self._build_model_badge()
+        if badge is None:
+            parameter.clear_badge()
+        else:
+            parameter.set_badge(
+                variant=badge.variant,
+                title=badge.title,
+                message=badge.message,
+                icon=badge.icon,
+                hide_clear_button=badge.hide_clear_button,
+            )
 
     def add_input_parameters(self) -> None:
         choices = self.get_choices()
+        badge = self._build_model_badge()
 
-        if not choices:
-            self._node.add_node_element(
-                ParameterMessage(
-                    name=f"huggingface_repo_parameter_message_{self._parameter_name}",
-                    title="Huggingface Model Download Required",
-                    variant="warning",
-                    value=self.get_help_message(),
-                    button_link=f"#model-management?search={self.get_download_models()[0]}",
-                    button_text="Model Management",
-                    button_icon="hard-drive",
-                )
-            )
-            return
+        display_choices = choices or [_NO_MODELS_PLACEHOLDER]
+        default_value = choices[0] if choices else _NO_MODELS_PLACEHOLDER
 
-        self._node.add_parameter(
-            Parameter(
-                name=self._parameter_name,
-                default_value=choices[0] if choices else None,
-                input_types=["str"],
-                type="str",
-                ui_options={"display_name": self._parameter_name, "show_search": True},
-                traits={
-                    Options(
-                        choices=choices,
-                    )
-                },
-                tooltip=self._parameter_name,
-                allowed_modes={ParameterMode.PROPERTY},
-            )
+        parameter = ParameterString(
+            name=self._parameter_name,
+            default_value=default_value,
+            display_name=self._parameter_name,
+            traits={
+                Options(choices=display_choices),
+                Button(
+                    icon="list-restart",
+                    size="icon",
+                    variant="secondary",
+                    on_click=self._on_refresh_click,
+                ),
+            },
+            tooltip=self._parameter_name,
+            allowed_modes={ParameterMode.PROPERTY},
+            accept_any=False,
+            badge=badge,
         )
+
+        self._node.add_parameter(parameter)
+        self._node.set_parameter_value(self._parameter_name, default_value, initial_setup=True)
 
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name(self._parameter_name)
-        self._node.remove_parameter_element_by_name(f"huggingface_repo_parameter_message_{self._parameter_name}")
 
     def get_choices(self) -> list[str]:
         # Ensure the latest repo revisions are fetched
@@ -148,16 +159,41 @@ class HuggingFaceModelParameter(ABC):
         # If revision was provided, return it directly
         return repo_id, revision
 
-    def get_help_message(self) -> str:
-        download_models = "\n".join([f"  {model}" for model in self.get_download_models()])
+    def _on_refresh_click(
+        self, _button: Button, _button_details: ButtonDetailsMessagePayload
+    ) -> NodeMessageResult | None:
+        self.refresh_parameters()
+        return None
 
-        return (
+    def _build_model_badge(self) -> BadgeData | None:
+        download_models = self.get_download_models()
+        downloaded_repo_ids = {repo_id for repo_id, _ in self.list_repo_revisions()}
+
+        missing = [m for m in download_models if m not in downloaded_repo_ids]
+        if not missing:
+            return None
+
+        model_lines = []
+        for model in download_models:
+            hf_link = f"[↗](https://huggingface.co/{model})"
+            if model in downloaded_repo_ids:
+                model_lines.append(f"✓ {model} {hf_link}")
+            else:
+                model_lines.append(f"[↓ {model}](#model-management?search={model}) {hf_link}")
+
+        message = (
             "Model download required to continue.\n\n"
-            "To download models:\n\n"
-            "1. Navigate to Settings -> Model Management\n\n"
-            "2. Search for the model(s) you need and click the download button:\n"
-            f"{download_models}\n\n"
-            "After completing these steps, a dropdown menu with available models will appear."
+            "Click a model name below to open it in Model Management, then click the download button:\n\n"
+            + "\n\n".join(model_lines)
+            + "\n\nAfter downloading, a dropdown with available models will appear."
+        )
+
+        return BadgeData(
+            variant="warning",
+            title="Download Required",
+            message=message,
+            icon="hard-drive",
+            hide_clear_button=True,
         )
 
     @abstractmethod

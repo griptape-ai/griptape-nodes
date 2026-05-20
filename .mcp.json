@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "griptape-nodes": {
+      "url": "http://localhost:8125/mcp/",
+      "lifecycle": "lazy",
+      "directTools": true
+    }
+  }
+}

@@ -42,7 +42,7 @@ class PathResolutionFailureReason(StrEnum):
 
     MISSING_REQUIRED_VARIABLES = "MISSING_REQUIRED_VARIABLES"
     MACRO_RESOLUTION_ERROR = "MACRO_RESOLUTION_ERROR"
-    DIRECTORY_OVERRIDE_ATTEMPTED = "DIRECTORY_OVERRIDE_ATTEMPTED"
+    RESERVED_NAME_COLLISION = "RESERVED_NAME_COLLISION"
 
 
 @dataclass
@@ -131,6 +131,7 @@ class ProjectTemplateInfo:
 
     project_id: ProjectID
     validation: ProjectValidationInfo
+    name: str | None = None
 
 
 @dataclass
@@ -244,7 +245,7 @@ class GetPathForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
     Args:
         failure_reason: Specific reason for failure
         missing_variables: List of required variable names that were not provided (for MISSING_REQUIRED_VARIABLES)
-        conflicting_variables: List of variables that conflict with directory names (for DIRECTORY_OVERRIDE_ATTEMPTED)
+        conflicting_variables: List of variables that collide with a reserved name (for RESERVED_NAME_COLLISION)
     """
 
     failure_reason: PathResolutionFailureReason
@@ -259,10 +260,14 @@ class SetCurrentProjectRequest(RequestPayload):
 
     Use when: User switches between projects, opens a new workspace.
 
+    If the workspace directory changes as a result of setting the project,
+    and startup is complete, this handler automatically reloads all libraries
+    and re-registers workflows from config and the new workspace.
+
     Args:
         project_id: Identifier of the project to set as current (None to clear)
 
-    Results: SetCurrentProjectResultSuccess
+    Results: SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure
     """
 
     project_id: ProjectID | None
@@ -272,6 +277,12 @@ class SetCurrentProjectRequest(RequestPayload):
 @PayloadRegistry.register
 class SetCurrentProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Current project set successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SetCurrentProjectResultFailure(ResultPayloadFailure):
+    """Current project set failed."""
 
 
 @dataclass
@@ -337,6 +348,45 @@ class SaveProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
     - Invalid path
     - Disk full
     """
+
+
+@dataclass
+@PayloadRegistry.register
+class ValidateProjectTemplateRequest(RequestPayload):
+    """Validate a project template dict without saving or loading it.
+
+    Use when: UI needs to check whether a template would be accepted by the
+    engine before committing changes to disk. Runs the same validation pipeline
+    that LoadProjectTemplateRequest uses, without any side effects.
+
+    Args:
+        template_data: Dict representation of the template to validate
+
+    Results: ValidateProjectTemplateResultSuccess | ValidateProjectTemplateResultFailure
+    """
+
+    template_data: dict[str, Any]
+
+
+@dataclass
+@PayloadRegistry.register
+class ValidateProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Validation completed.
+
+    The validation itself always produces a structured result; check
+    `validation.status` to determine if the template is usable.
+
+    Args:
+        validation: Validation info with status and any problems encountered
+    """
+
+    validation: ProjectValidationInfo
+
+
+@dataclass
+@PayloadRegistry.register
+class ValidateProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Validation could not be performed (e.g. malformed request)."""
 
 
 @dataclass
@@ -517,6 +567,43 @@ class AttemptMapAbsolutePathToProjectResultFailure(WorkflowNotAlteredMixin, Resu
 
         Secrets manager unavailable:
             result_details = "Attempted to map absolute path. Failed because SecretsManager not available"
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterProjectTemplateRequest(RequestPayload):
+    """Remove a registered project template from the engine.
+
+    Removes the template from in-memory caches and from the persisted
+    projects_to_register config list so it is not reloaded on restart.
+
+    If the template is currently active, the current project is cleared.
+
+    Use when: User wants to remove a stale or unwanted project template reference.
+
+    Args:
+        project_id: Identifier of the project template to unregister
+
+    Results: UnregisterProjectTemplateResultSuccess | UnregisterProjectTemplateResultFailure
+    """
+
+    project_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Project template unregistered successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class UnregisterProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Project template unregistration failed.
+
+    Common causes:
+    - project_id not found in registered templates
     """
 
 

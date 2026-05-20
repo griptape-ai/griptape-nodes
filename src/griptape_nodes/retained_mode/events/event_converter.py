@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+import types
 from dataclasses import fields as dc_fields
 from dataclasses import is_dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Union, get_args, get_origin
 
 from cattrs.gen import make_dict_structure_fn, make_dict_unstructure_fn, override
 from cattrs.preconf.json import make_converter
@@ -54,6 +55,25 @@ converter.register_unstructure_hook(type, lambda t: f"{t.__module__}.{t.__qualna
 # no distinction between int and float, so coerce int -> float on input.
 converter.register_structure_hook(float, lambda v, _: float(v))
 
+# Union types composed entirely of JSON-primitive types (str, int, float, bool,
+# dict, list, None). The JSON parser already produces the correct Python type,
+# so no transformation is needed. This is required because cattrs cannot
+# disambiguate certain combinations (e.g. dict | list) in a Union.
+_JSON_PRIMITIVE_TYPES = frozenset({str, int, float, bool, dict, list, type(None)})
+
+
+def _is_json_primitive_union(cls: Any) -> bool:
+    origin = get_origin(cls)
+    if origin is Union or origin is types.UnionType:
+        return all(arg in _JSON_PRIMITIVE_TYPES for arg in get_args(cls))
+    return False
+
+
+converter.register_structure_hook_func(
+    _is_json_primitive_union,
+    lambda v, _: v,
+)
+
 # Pydantic BaseModel subclasses
 converter.register_structure_hook_func(
     lambda cls: isinstance(cls, type) and issubclass(cls, BaseModel),
@@ -65,14 +85,6 @@ converter.register_structure_hook_func(
     lambda cls: isinstance(cls, type) and issubclass(cls, Exception),
     lambda obj, cls: cls(obj) if isinstance(obj, str) else cls(str(obj)),
 )
-
-
-# --- Class-specific (un)structuring methods ---
-#
-# Classes that need custom serialization can define `_cattrs_structure` (classmethod)
-# and/or `_cattrs_unstructure` (instance method) instead of registering hooks here.
-
-use_class_methods(converter, structure_method_name="_cattrs_structure", unstructure_method_name="_cattrs_unstructure")
 
 
 # --- Hook factories for dataclasses ---
@@ -141,6 +153,15 @@ converter.register_structure_hook_factory(
     lambda cls: is_dataclass(cls) and isinstance(cls, type),
     _make_dataclass_structure_fn,
 )
+
+# --- Class-specific (un)structuring methods ---
+#
+# Classes that define `_cattrs_structure` (classmethod) and/or `_cattrs_unstructure`
+# (instance method) use those for custom serialization.  Registered after the dataclass
+# factories so that `use_class_methods` has higher priority (cattrs checks factories in
+# reverse registration order), ensuring _cattrs_structure/_cattrs_unstructure take
+# precedence over the generated dataclass code.
+use_class_methods(converter, structure_method_name="_cattrs_structure", unstructure_method_name="_cattrs_unstructure")
 
 
 def safe_unstructure(obj: Any) -> Any:

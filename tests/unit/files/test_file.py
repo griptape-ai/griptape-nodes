@@ -324,7 +324,7 @@ class TestFileMacroPath:
         macro_path = MacroPath(ParsedMacro("{outputs}/file.txt"), {"outputs": "custom_override"})
         resolve_failure = GetPathForMacroResultFailure(
             result_details="Directory override attempted",
-            failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+            failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
             conflicting_variables={"outputs"},
         )
         with patch(HANDLE_REQUEST_PATH, return_value=resolve_failure), pytest.raises(FileLoadError) as exc_info:

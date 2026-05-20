@@ -1,10 +1,19 @@
 """Test EventManager functionality including sync/async event broadcasting."""
 
+import asyncio
+import threading
+from dataclasses import dataclass
 from unittest.mock import AsyncMock
 
 import pytest
 
+from griptape_nodes.app.worker_routing import RemoteHandler
 from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+from griptape_nodes.retained_mode.events.base_events import (
+    EventResultSuccess,
+    RequestPayload,
+    ResultPayloadSuccess,
+)
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
@@ -167,3 +176,168 @@ class TestEventManagerBroadcasting:
         assert received.key == "workspace_directory"
         assert received.old_value == "/old/path"
         assert received.new_value == "/new/path"
+
+
+@dataclass(kw_only=True)
+class _ProbeRequest(RequestPayload):
+    """Minimal request type used only to exercise dispatch routing in tests."""
+
+
+@dataclass(kw_only=True)
+class _ProbeResult(ResultPayloadSuccess):
+    """Minimal success payload paired with _ProbeRequest."""
+
+
+class TestHandleRequestLoopSafety:
+    """`handle_request` drives async handlers via ThreadRunner from inside a running loop.
+
+    The #4469 deadlock is specific to callbacks whose coroutines share
+    primitives with the caller's loop; ``RemoteHandler`` is the only such
+    shape and is routed onto the WS loop via ``run_coroutine_threadsafe``.
+    For every other async handler the side-loop path is safe, so we keep
+    it to preserve back-compat for pre-#4449 workflows that ``exec()``
+    sync code from inside the engine loop.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sync_dispatch_from_running_loop_drives_async_handler_via_thread_runner(self) -> None:
+        event_manager = EventManager()
+
+        captured: dict[str, object] = {}
+
+        async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
+            captured["handler_loop"] = asyncio.get_running_loop()
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
+
+        caller_loop = asyncio.get_running_loop()
+        event = event_manager.handle_request(_ProbeRequest())
+
+        assert event.result.succeeded()
+        assert captured["handler_loop"] is not caller_loop
+
+    @pytest.mark.asyncio
+    async def test_sync_dispatch_from_running_loop_works_when_handler_is_sync(self) -> None:
+        event_manager = EventManager()
+
+        def sync_handler(_request: _ProbeRequest) -> _ProbeResult:
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, sync_handler)
+
+        event = event_manager.handle_request(_ProbeRequest())
+        assert event.result.succeeded()
+
+    def test_sync_dispatch_outside_running_loop_drives_async_handler(self) -> None:
+        event_manager = EventManager()
+
+        async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
+
+        event = event_manager.handle_request(_ProbeRequest())
+        assert event.result.succeeded()
+
+    @pytest.mark.asyncio
+    async def test_ahandle_request_is_the_recommended_async_alternative(self) -> None:
+        event_manager = EventManager()
+
+        async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
+
+        event = await event_manager.ahandle_request(_ProbeRequest())
+        assert event.result.succeeded()
+
+
+@dataclass(kw_only=True)
+class _ForwardableProbeRequest(RequestPayload):
+    """Minimal request used to drive the worker-forwarding path in tests."""
+
+
+@dataclass(kw_only=True)
+class _ForwardableProbeResult(ResultPayloadSuccess):
+    """Minimal success payload paired with _ForwardableProbeRequest."""
+
+
+class TestHandleRequestForwardingFromRunningLoop:
+    """``handle_request`` dispatch of a RemoteHandler from inside a running loop.
+
+    A RemoteHandler's forwarding path hops onto a dedicated websocket event
+    loop running on a separate thread. That loop does not share primitives
+    with the caller's loop, so blocking the caller thread on the resulting
+    future is safe -- the #4469 deadlock shape does not apply. This is
+    distinct from the local async-handler case (still fails fast) because
+    dispatching a regular async handler locally would block the caller's own
+    loop.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sync_dispatch_from_running_loop_forwards_via_websocket_loop(self) -> None:
+        event_manager = EventManager()
+
+        # Spin up a dedicated loop on another thread to stand in for the websocket loop.
+        ws_loop = asyncio.new_event_loop()
+        ws_thread = threading.Thread(target=ws_loop.run_forever, daemon=True)
+        ws_thread.start()
+
+        captured: dict[str, object] = {}
+
+        async def fake_forward(
+            _request: RequestPayload,
+            _result_context: object,
+        ) -> EventResultSuccess:
+            # Record which loop actually executed the forward.
+            captured["forward_loop"] = asyncio.get_running_loop()
+            return EventResultSuccess(
+                request=_request,
+                result=_ForwardableProbeResult(result_details="forwarded"),
+            )
+
+        # Register a RemoteHandler shape: dispatch table entry points at it directly.
+        # ``handle_request`` detects RemoteHandler via isinstance and routes onto the WS loop.
+        async def original(_request: _ForwardableProbeRequest) -> _ForwardableProbeResult:
+            return _ForwardableProbeResult(result_details="local")
+
+        remote = RemoteHandler(original=original, event_manager=event_manager)
+        event_manager.assign_manager_to_request_type(_ForwardableProbeRequest, remote)
+        event_manager._websocket_event_loop = ws_loop
+        event_manager.forward_to_orchestrator = fake_forward  # type: ignore[method-assign]
+
+        try:
+            with event_manager.worker_node_execution_scope():
+                result = event_manager.handle_request(_ForwardableProbeRequest())
+        finally:
+            ws_loop.call_soon_threadsafe(ws_loop.stop)
+            ws_thread.join(timeout=1.0)
+            ws_loop.close()
+
+        assert captured["forward_loop"] is ws_loop
+        assert isinstance(result, EventResultSuccess)
+        assert isinstance(result.result, _ForwardableProbeResult)
+        assert "forwarded" in str(result.result.result_details)
+
+
+class TestBroadcastAppEventLoopSafety:
+    """`broadcast_app_event` drives async listeners via ThreadRunner from inside a running loop."""
+
+    @pytest.mark.asyncio
+    async def test_sync_broadcast_from_running_loop_drives_async_listener(self) -> None:
+        event_manager = EventManager()
+
+        captured: dict[str, object] = {}
+
+        async def async_listener(_event: ConfigChanged) -> None:
+            captured["listener_loop"] = asyncio.get_running_loop()
+
+        event_manager.add_listener_to_app_event(ConfigChanged, async_listener)
+
+        caller_loop = asyncio.get_running_loop()
+        event = ConfigChanged(key="k", old_value="a", new_value="b")
+        event_manager.broadcast_app_event(event)
+
+        assert "listener_loop" in captured
+        assert captured["listener_loop"] is not caller_loop

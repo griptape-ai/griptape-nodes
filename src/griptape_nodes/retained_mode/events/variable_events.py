@@ -24,6 +24,8 @@ class CreateVariableRequest(RequestPayload):
         is_global: Whether this is a global variable (True) or current flow variable (False)
         value: The initial value of the variable
         owning_flow: Flow that should own this variable (None for current flow in the Context Manager)
+        initial_setup: If True, this request is part of workflow load/deserialization. Suppresses
+            workflow-altered signalling.
     """
 
     name: str
@@ -31,6 +33,7 @@ class CreateVariableRequest(RequestPayload):
     is_global: bool = False
     value: Any = None
     owning_flow: str | None = None
+    initial_setup: bool = False
 
 
 @dataclass

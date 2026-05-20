@@ -30,7 +30,7 @@ jobs:
           git tag "$tag" -f
           git push origin "$tag" -f --tags
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           token: ${{ secrets.RELEASE_PAT }}
           tag_name: latest

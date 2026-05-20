@@ -4,7 +4,6 @@ import logging
 import threading
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import urlparse
 
 from xdg_base_dirs import xdg_config_home
 
@@ -47,9 +46,6 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SituationPolicy,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
-    ImageArtifactProvider,
-)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -60,7 +56,6 @@ from griptape_nodes.utils.url_utils import uri_to_path
 logger = logging.getLogger("griptape_nodes")
 
 SAVE_STATIC_FILE_SITUATION = "save_static_file"
-COPY_EXTERNAL_FILE_SITUATION = "copy_external_file"
 
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
 
@@ -101,9 +96,17 @@ class StaticFilesManager:
         self.storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
         workspace_directory = config_manager.workspace_path
 
-        # Build base URL for LocalStorageDriver from configured base URL
-        self.static_server_base_url = config_manager.get_config_value("static_server_base_url").rstrip("/")
-        base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
+        # Capture any explicit base URL override now; leave the underlying field None otherwise
+        # so on_app_initialization_complete can derive the URL from the OS-assigned port. A set
+        # value here (including one that equals the server defaults) is the signal for "user
+        # override" and short-circuits the port refresh.
+        configured_base_url = config_manager.get_config_value("static_server_base_url")
+        self._static_server_base_url: str | None = (
+            configured_base_url.rstrip("/") if configured_base_url is not None else None
+        )
+        base_url = (
+            f"{self._static_server_base_url}{STATIC_SERVER_URL}" if self._static_server_base_url is not None else None
+        )
 
         match self.storage_backend:
             case StorageBackend.GTC:
@@ -150,11 +153,23 @@ class StaticFilesManager:
             )
             # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop static server
 
-    def _generate_preview_if_needed(self, file_path: Path) -> tuple[Path, dict | None]:
-        """Generate preview for an image file if needed.
+    @property
+    def static_server_base_url(self) -> str:
+        """Base URL for the static server.
+
+        Resolved during ``on_app_initialization_complete`` once the server has bound to a
+        port. Reading this before that event fires indicates a startup-ordering bug.
+        """
+        if self._static_server_base_url is None:
+            msg = "static_server_base_url accessed before on_app_initialization_complete resolved it."
+            raise RuntimeError(msg)
+        return self._static_server_base_url
+
+    async def _generate_preview_if_needed(self, file_path: Path) -> tuple[Path, dict | None]:
+        """Generate preview for a file if needed.
 
         Returns (path, artifact_metadata) where path is the preview if generated/cached,
-        or the original file path if the file is not an image or preview generation fails.
+        or the original file path if no provider supports the format or preview generation fails.
 
         Args:
             file_path: Path to the original file
@@ -162,27 +177,33 @@ class StaticFilesManager:
         Returns:
             Tuple of (path to serve, original source metadata or None)
         """
-        # TODO: Ask the Artifact Manager which providers support this file extension,
-        # then route to the correct provider — rather than hardcoding ImageArtifactProvider here.
-        # https://github.com/griptape-ai/griptape-nodes/issues/4251
-        if not ImageArtifactProvider.supports_file_extension(file_path.suffix):
-            logger.debug("Skipping preview for non-image file: %s", file_path)
+        extension = file_path.suffix.lstrip(".").lower()
+        if not extension:
             return file_path, None
 
-        result = GriptapeNodes.handle_request(
+        registry = GriptapeNodes.ArtifactManager()._registry
+        provider_classes = registry.get_provider_classes_by_format(extension)
+        if not provider_classes:
+            logger.debug("Skipping preview for unsupported file format: %s", file_path)
+            return file_path, None
+
+        provider_name = provider_classes[0].get_friendly_name()
+
+        result = await GriptapeNodes.ahandle_request(
             GetPreviewForArtifactRequest(
                 macro_path=MacroPath(ParsedMacro(str(file_path)), {}),
-                artifact_provider_name="Image",
+                artifact_provider_name=provider_name,
                 preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
+                failure_log_level=logging.DEBUG,
             )
         )
 
         if not isinstance(result, GetPreviewForArtifactResultSuccess) or not isinstance(result.paths_to_preview, str):
-            logger.warning("Preview generation failed for %s: %s", file_path, result.result_details)
+            logger.debug("Preview generation failed for %s: %s", file_path, result.result_details)
             return file_path, None
 
         preview_path = Path(result.paths_to_preview)
-        logger.debug("Serving thumbnail for %s -> %s", file_path, preview_path)
+        logger.debug("Serving preview for %s -> %s", file_path, preview_path)
         return preview_path, result.artifact_metadata
 
     def on_handle_create_static_file_request(
@@ -218,10 +239,11 @@ class StaticFilesManager:
             A result object indicating success or failure.
         """
         file_name = request.file_name
+        situation_name = request.situation_name
 
-        resolved = self._resolve_static_file_path(file_name, COPY_EXTERNAL_FILE_SITUATION)
+        resolved = self._resolve_static_file_path(file_name, situation_name)
         if resolved is None:
-            msg = f"Attempted to create upload URL for '{file_name}'. Failed because the project template is missing the '{COPY_EXTERNAL_FILE_SITUATION}' situation."
+            msg = f"Attempted to create upload URL for '{file_name}'. Failed because the project template is missing the '{situation_name}' situation."
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
         try:
@@ -250,9 +272,10 @@ class StaticFilesManager:
         Returns:
             A result object indicating success or failure.
         """
-        resolved = self._resolve_static_file_path(request.file_name, COPY_EXTERNAL_FILE_SITUATION)
+        situation_name = request.situation_name
+        resolved = self._resolve_static_file_path(request.file_name, situation_name)
         if resolved is None:
-            msg = f"Attempted to create download URL for '{request.file_name}'. Failed because the project template is missing the '{COPY_EXTERNAL_FILE_SITUATION}' situation."
+            msg = f"Attempted to create download URL for '{request.file_name}'. Failed because the project template is missing the '{situation_name}' situation."
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         try:
@@ -291,7 +314,7 @@ class StaticFilesManager:
             static_files_directory=static_files_directory,
         )
 
-    def _resolve_preview_path(self, file_path: Path, *, preview: bool) -> tuple[Path, dict | None]:
+    async def _resolve_preview_path(self, file_path: Path, *, preview: bool) -> tuple[Path, dict | None]:
         """Return the path to serve and any source metadata, generating a preview when requested.
 
         Args:
@@ -305,7 +328,7 @@ class StaticFilesManager:
             logger.debug("Serving full image for %s", file_path)
             return file_path, None
         try:
-            preview_path, artifact_metadata = self._generate_preview_if_needed(file_path)
+            preview_path, artifact_metadata = await self._generate_preview_if_needed(file_path)
         except Exception as e:
             logger.warning("Preview generation failed for %s, using original: %s", file_path, e)
             return file_path, None
@@ -313,7 +336,7 @@ class StaticFilesManager:
             logger.debug("Serving full image (no thumbnail available) for %s", file_path)
         return preview_path, artifact_metadata
 
-    def on_handle_create_static_file_download_url_from_path_request(
+    async def on_handle_create_static_file_download_url_from_path_request(
         self,
         request: CreateStaticFileDownloadUrlFromPathRequest,
     ) -> CreateStaticFileDownloadUrlFromPathResultSuccess | CreateStaticFileDownloadUrlResultFailure:
@@ -362,7 +385,9 @@ class StaticFilesManager:
             file_path_for_driver = Path(uri_to_path(file_path))
 
         # If preview requested, generate preview and get preview path + artifact metadata
-        file_path_to_use, artifact_metadata = self._resolve_preview_path(file_path_for_driver, preview=request.preview)
+        file_path_to_use, artifact_metadata = await self._resolve_preview_path(
+            file_path_for_driver, preview=request.preview
+        )
 
         try:
             url = driver.create_signed_download_url(file_path_to_use)
@@ -386,13 +411,12 @@ class StaticFilesManager:
             sock = bind_free_socket(STATIC_SERVER_HOST, STATIC_SERVER_PORT)
             actual_port = sock.getsockname()[1]
 
-            # Only update the base URL when the user hasn't configured a custom host
-            # (e.g. an ngrok tunnel or reverse proxy). If the configured host matches the
-            # server's bind host, it's a direct connection and we update the port.
-            parsed = urlparse(self.static_server_base_url)
-            if parsed.hostname == STATIC_SERVER_HOST:
-                self.static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}".rstrip("/")
-            self.storage_driver.base_url = f"{self.static_server_base_url}{STATIC_SERVER_URL}"
+            # When there's no explicit override, derive the base URL from the bind host and
+            # the OS-assigned port. An override set in __init__ (e.g. an ngrok tunnel, reverse
+            # proxy, or `ssh -L` tunnel on a different port) is taken verbatim.
+            if self._static_server_base_url is None:
+                self._static_server_base_url = f"http://{STATIC_SERVER_HOST}:{actual_port}"
+            self.storage_driver.base_url = f"{self._static_server_base_url}{STATIC_SERVER_URL}"
 
             threading.Thread(target=start_static_server, args=(sock,), daemon=True, name="static-server").start()
 
