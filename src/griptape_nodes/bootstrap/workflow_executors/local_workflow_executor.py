@@ -95,8 +95,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
     ) -> None:
         """Async context manager exit."""
         # TODO: Broadcast shutdown https://github.com/griptape-ai/griptape-nodes/issues/2149
-        # Single save point: catches any exception that propagates out of arun(), including
-        # subclasses like LocalSessionWorkflowExecutor, without needing call sites in arun().
         if exc_val is not None and self._save_on_failure_path is not None:
             await self._save_failed_workflow(exc_val)
 
