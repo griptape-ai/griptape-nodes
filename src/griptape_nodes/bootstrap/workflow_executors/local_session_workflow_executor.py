@@ -29,6 +29,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
+    from argparse import ArgumentParser, Namespace
     from collections.abc import Callable
     from types import TracebackType
 
@@ -231,3 +232,23 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
 
         if error is not None:
             raise error
+
+    @classmethod
+    def add_cli_arguments(cls, parser: ArgumentParser) -> None:
+        # Compose the smaller helpers directly: this executor's constructor does
+        # not accept project_file_path, so we skip --project-file-path.
+        cls._add_storage_backend_argument(parser)
+        cls._add_save_on_failure_argument(parser)
+        parser.add_argument(
+            "--session-id",
+            default=None,
+            help="ID of the session to use",
+        )
+
+    @classmethod
+    def _cli_constructor_kwargs(cls, args: Namespace) -> dict[str, Any]:
+        kwargs = super()._cli_constructor_kwargs(args)
+        # LocalSessionWorkflowExecutor.__init__ does not accept project_file_path; drop it.
+        kwargs.pop("project_file_path", None)
+        kwargs["session_id"] = args.session_id
+        return kwargs

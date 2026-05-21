@@ -43,6 +43,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
+    from argparse import ArgumentParser, Namespace
     from types import TracebackType
 
 logger = logging.getLogger(__name__)
@@ -427,3 +428,28 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
         if error is not None:
             raise error
+
+    @classmethod
+    def add_cli_arguments(cls, parser: ArgumentParser) -> None:
+        super().add_cli_arguments(parser)
+        cls._add_save_on_failure_argument(parser)
+
+    @classmethod
+    def _add_save_on_failure_argument(cls, parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--save-on-failure",
+            nargs="?",
+            const="",
+            default=None,
+            help=(
+                "On failure, save the current workflow state as a .py file. "
+                "With no value: uses the project 'save_failed_workflow' situation. "
+                "With a value: absolute or project-relative path."
+            ),
+        )
+
+    @classmethod
+    def _cli_constructor_kwargs(cls, args: Namespace) -> dict[str, Any]:
+        kwargs = super()._cli_constructor_kwargs(args)
+        kwargs["save_on_failure_path"] = args.save_on_failure
+        return kwargs

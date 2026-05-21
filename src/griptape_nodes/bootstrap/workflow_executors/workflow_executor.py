@@ -1,6 +1,8 @@
 import asyncio
 import logging
 from abc import abstractmethod
+from argparse import ArgumentParser, Namespace
+from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
 
@@ -41,3 +43,62 @@ class WorkflowExecutor:
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         **kwargs: Any,
     ) -> None: ...
+
+    @classmethod
+    def add_cli_arguments(cls, parser: ArgumentParser) -> None:
+        """Register executor-level CLI arguments on `parser`.
+
+        Subclasses override and call `super().add_cli_arguments(parser)` to
+        inherit the shared base-class flags before adding their own. Subclasses
+        whose constructor cannot accept a particular flag should compose the
+        smaller `_add_*_argument` helpers directly instead of calling super.
+        """
+        cls._add_storage_backend_argument(parser)
+        cls._add_project_file_path_argument(parser)
+
+    @classmethod
+    def _add_storage_backend_argument(cls, parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--storage-backend",
+            choices=[StorageBackend.LOCAL.value, StorageBackend.GTC.value],
+            default=StorageBackend.LOCAL.value,
+            help="Storage backend to use: 'local' for local filesystem or 'gtc' for Griptape Cloud",
+        )
+
+    @classmethod
+    def _add_project_file_path_argument(cls, parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--project-file-path",
+            default=None,
+            help="Path to a project file to load for the workflow execution",
+        )
+
+    @classmethod
+    def from_cli_args(cls, args: Namespace, **overrides: Any) -> Self:
+        """Construct an executor from a parsed argparse `Namespace`.
+
+        Subclasses override to map their own CLI arguments to constructor kwargs.
+        `**overrides` lets callers (e.g. the generated workflow file's __main__)
+        inject non-CLI constructor kwargs like `skip_library_loading` or
+        `workflows_to_register` that aren't exposed as flags.
+        """
+        kwargs = cls._cli_constructor_kwargs(args)
+        kwargs.update(overrides)
+        return cls(**kwargs)
+
+    @classmethod
+    def _cli_constructor_kwargs(cls, args: Namespace) -> dict[str, Any]:
+        """Return constructor kwargs derived from CLI args.
+
+        Subclasses override to extend the mapping; they should call
+        `super()._cli_constructor_kwargs(args)` first and then update the dict
+        with their own entries. Uses `getattr` with defaults so subclasses whose
+        `add_cli_arguments` deliberately omits a flag (e.g.
+        `LocalSessionWorkflowExecutor` skips `--project-file-path`) can still
+        call super without crashing on missing attributes.
+        """
+        project_file_path = getattr(args, "project_file_path", None)
+        return {
+            "storage_backend": StorageBackend(args.storage_backend),
+            "project_file_path": Path(project_file_path) if project_file_path is not None else None,
+        }
