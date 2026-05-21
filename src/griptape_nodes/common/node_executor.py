@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import asyncio
 import logging
 import pickle
@@ -3589,24 +3588,7 @@ class NodeExecutor:
             return param_value
 
         stored_value = unique_uuid_to_values[param_value]
-
-        # Non-string stored values are used directly
-        if not isinstance(stored_value, str):
-            return stored_value
-
-        # Attempt to unpickle string-represented bytes
-        try:
-            actual_bytes = ast.literal_eval(stored_value)
-            if isinstance(actual_bytes, bytes):
-                return pickle.loads(actual_bytes)  # noqa: S301
-        except (ValueError, SyntaxError, pickle.UnpicklingError) as e:
-            logger.warning(
-                "Failed to unpickle string-represented bytes for parameter '%s': %s",
-                param_name,
-                e,
-            )
-            return stored_value
-        return stored_value
+        return pickle.loads(stored_value)  # noqa: S301
 
     def _apply_parameter_values_to_node(
         self,
