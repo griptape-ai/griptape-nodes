@@ -116,6 +116,9 @@ class TestDeserializeParameterValue:
             def __eq__(self, other: object) -> bool:
                 return isinstance(other, _Point) and self.x == other.x and self.y == other.y
 
+            def __hash__(self) -> int:
+                return hash((self.x, self.y))
+
         original = _Point(3, 7)
 
         result = executor._deserialize_parameter_value(
@@ -288,10 +291,11 @@ class TestControlFlowResolvedEventCattrsRoundTrip:
     def test_bytes_values_survive_unstructure_structure_round_trip(self) -> None:
         from griptape_nodes.retained_mode.events.event_converter import converter, safe_unstructure
         from griptape_nodes.retained_mode.events.execution_events import ControlFlowResolvedEvent
+        from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
 
         original = {"answer": 42}
         pickled = pickle.dumps(original)
-        uuid = "test-uuid-1"
+        uuid = SerializedNodeCommands.UniqueParameterValueUUID("test-uuid-1")
 
         event = ControlFlowResolvedEvent(
             end_node_name="EndFlow",
@@ -310,6 +314,7 @@ class TestControlFlowResolvedEventCattrsRoundTrip:
         reconstructed = converter.structure(raw, ControlFlowResolvedEvent)
 
         # After structuring with the typed field, value must be bytes again
+        assert reconstructed.unique_parameter_uuid_to_values is not None
         stored = reconstructed.unique_parameter_uuid_to_values[uuid]
         assert isinstance(stored, bytes), "cattrs must decode base85 back to bytes during structure"
         assert stored == pickled

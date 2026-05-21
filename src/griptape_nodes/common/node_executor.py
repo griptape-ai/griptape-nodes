@@ -3588,7 +3588,15 @@ class NodeExecutor:
             return param_value
 
         stored_value = unique_uuid_to_values[param_value]
-        return pickle.loads(stored_value)  # noqa: S301
+        try:
+            return pickle.loads(stored_value)  # noqa: S301
+        except pickle.UnpicklingError as e:
+            logger.warning(
+                "Attempted to unpickle stored value for parameter '%s'. Failed because: %s",
+                param_name,
+                e,
+            )
+            raise
 
     def _apply_parameter_values_to_node(
         self,
