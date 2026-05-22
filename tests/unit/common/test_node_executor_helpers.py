@@ -107,19 +107,7 @@ class TestDeserializeParameterValue:
 
     def test_unpickles_arbitrary_python_objects(self) -> None:
         executor = _make_executor()
-
-        class _Point:
-            def __init__(self, x: int, y: int) -> None:
-                self.x = x
-                self.y = y
-
-            def __eq__(self, other: object) -> bool:
-                return isinstance(other, _Point) and self.x == other.x and self.y == other.y
-
-            def __hash__(self) -> int:
-                return hash((self.x, self.y))
-
-        original = _Point(3, 7)
+        original = complex(3, 7)
 
         result = executor._deserialize_parameter_value(
             param_name="point",
