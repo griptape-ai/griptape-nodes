@@ -84,6 +84,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseGeneratorParameters,
     ImageArtifactProvider,
     ProviderRegistry,
+    VideoArtifactProvider,
 )
 from griptape_nodes.retained_mode.managers.artifact_providers.artifact_schema_models import (
     ArtifactSchemas,
@@ -99,6 +100,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
     normalize_friendly_name_to_key,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.utils.async_utils import to_thread
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -245,7 +247,7 @@ class ArtifactManager:
         # Register default providers (order matters: Image, Video, Audio)
         # Generator settings are now registered automatically via _register_provider_settings()
         failures = []
-        for provider_class in [ImageArtifactProvider]:
+        for provider_class in [ImageArtifactProvider, VideoArtifactProvider]:
             request = RegisterArtifactProviderRequest(provider_class=provider_class)
             result = self.on_handle_register_artifact_provider_request(request)
             if isinstance(result, RegisterArtifactProviderResultFailure):
@@ -395,7 +397,9 @@ class ArtifactManager:
                 return GeneratePreviewResultFailure(result_details=error_details)
 
             # Step 1: Create metadata object
-            _artifact_metadata = provider_class.get_artifact_metadata(source_path)
+            # Run in a thread because video providers shell out to ffprobe synchronously,
+            # which would otherwise block the event loop.
+            _artifact_metadata = await to_thread(provider_class.get_artifact_metadata, source_path)
             metadata = PreviewMetadata(
                 version=PreviewMetadata.LATEST_SCHEMA_VERSION,
                 source_macro_path=request.macro_path.parsed_macro.template,
@@ -423,7 +427,7 @@ class ArtifactManager:
                 content=metadata_content,
                 create_parents=True,
                 existing_file_policy=ExistingFilePolicy.OVERWRITE,
-                file_metadata=resolved_path.file_metadata,
+                file_metadata=None,
             )
             metadata_write_result = GriptapeNodes.handle_request(metadata_write_request)
 
@@ -579,7 +583,7 @@ class ArtifactManager:
                     generate_result = await self.on_handle_generate_preview_from_defaults_request(generate_request)
 
                     if isinstance(generate_result, GeneratePreviewFromDefaultsResultSuccess):
-                        _artifact_metadata = provider_class.get_artifact_metadata(str(source_path))
+                        _artifact_metadata = await to_thread(provider_class.get_artifact_metadata, str(source_path))
                         return GetPreviewForArtifactResultSuccess(
                             result_details=f"Preview generated for '{source_path}'",
                             paths_to_preview=generate_result.paths_to_preview,
@@ -599,7 +603,7 @@ class ArtifactManager:
             workspace_only=False,
             should_transform_image_content_to_thumbnail=False,
         )
-        read_metadata_result = GriptapeNodes.handle_request(read_metadata_request)
+        read_metadata_result = await GriptapeNodes.ahandle_request(read_metadata_request)
 
         if not isinstance(read_metadata_result, ReadFileResultSuccess):
             return GetPreviewForArtifactResultFailure(
@@ -733,7 +737,7 @@ class ArtifactManager:
             generate_result = await self.on_handle_generate_preview_from_defaults_request(generate_request)
 
             if isinstance(generate_result, GeneratePreviewFromDefaultsResultSuccess):
-                _artifact_metadata = provider_class.get_artifact_metadata(str(source_path))
+                _artifact_metadata = await to_thread(provider_class.get_artifact_metadata, str(source_path))
                 return GetPreviewForArtifactResultSuccess(
                     result_details=f"Preview regenerated for '{source_path}'",
                     paths_to_preview=generate_result.paths_to_preview,
@@ -1076,7 +1080,7 @@ class ArtifactManager:
         """
         key_prefix = generator_class.get_config_key_prefix(provider_class.get_friendly_name())
 
-        request = GetConfigCategoryRequest(category=key_prefix)
+        request = GetConfigCategoryRequest(category=key_prefix, failure_log_level=logging.DEBUG)
         result = GriptapeNodes.handle_request(request)
 
         # Config category doesn't exist - no settings written yet

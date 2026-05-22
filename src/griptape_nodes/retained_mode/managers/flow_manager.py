@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import copy
 import logging
 import pickle
 from enum import StrEnum
@@ -31,6 +33,7 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeResolutionState,
     StartNode,
+    VariableReference,
 )
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder
@@ -88,6 +91,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     UnresolveFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    AutoLayoutFlowRequest,
+    AutoLayoutFlowResultFailure,
+    AutoLayoutFlowResultSuccess,
     CreateFlowRequest,
     CreateFlowResultFailure,
     CreateFlowResultSuccess,
@@ -117,6 +123,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowRequest,
     ListNodesInFlowResultFailure,
     ListNodesInFlowResultSuccess,
+    NodePosition,
     OriginalNodeParameter,
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultFailure,
@@ -140,6 +147,8 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultSuccess,
+    SetNodeMetadataRequest,
+    SetNodeMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -151,6 +160,13 @@ from griptape_nodes.retained_mode.events.validation_events import (
     ValidateFlowDependenciesResultFailure,
     ValidateFlowDependenciesResultSuccess,
 )
+from griptape_nodes.retained_mode.events.variable_events import (
+    CreateVariableRequest,
+    GetVariableRequest,
+    GetVariableResultSuccess,
+    ListVariablesRequest,
+    ListVariablesResultSuccess,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowRequest,
     ImportWorkflowAsReferencedSubFlowResultSuccess,
@@ -158,11 +174,13 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import FLOW_COMMANDS_KEY
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
+from griptape_nodes.retained_mode.variable_types import VariableScope
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowShapeNodes
+    from griptape_nodes.retained_mode.variable_types import FlowVariable
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -253,6 +271,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             ListFlowsInCurrentContextRequest, self.on_list_flows_in_current_context_request
         )
+        event_manager.assign_manager_to_request_type(AutoLayoutFlowRequest, self.on_auto_layout_flow_request)
         event_manager.assign_manager_to_request_type(CreateConnectionRequest, self.on_create_connection_request)
         event_manager.assign_manager_to_request_type(DeleteConnectionRequest, self.on_delete_connection_request)
         event_manager.assign_manager_to_request_type(StartFlowRequest, self.on_start_flow_request)
@@ -1962,7 +1981,7 @@ class FlowManager:
                     request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
                     request.end_node_library_name,
                 )
-                end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+                end_node_class = end_library.get_node_class(request.end_node_type)  # type: ignore[arg-type]
 
                 # Validate from package node's perspective (we know source param name, not target)
                 valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
@@ -2036,7 +2055,7 @@ class FlowManager:
                         request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
                         request.end_node_library_name,
                     )
-                    end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+                    end_node_class = end_library.get_node_class(request.end_node_type)  # type: ignore[arg-type]
 
                     # Validate from package node's perspective (we know source param name, not target)
                     valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
@@ -2588,13 +2607,21 @@ class FlowManager:
         sanitized_node_name = node_name.replace(" ", "_").replace(".", "_")
         return f"{prefix}{sanitized_node_name}_{parameter_name}"
 
-    async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # which flow
         flow_name = request.flow_name
         if not flow_name:
-            details = "Must provide flow name to start a flow."
-
-            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+            # Fall back to the current-context flow so callers do not have to echo the name
+            # EnsureWorkflowAndFlowRequest / CreateFlowRequest just returned. If nothing is in
+            # context either, preserve the original "you must provide one" error.
+            if GriptapeNodes.ContextManager().has_current_flow():
+                flow_name = GriptapeNodes.ContextManager().get_current_flow().name
+            else:
+                details = (
+                    "Must provide flow_name, or set a flow in the Current Context "
+                    "(e.g. via EnsureWorkflowAndFlowRequest or CreateFlowRequest) first."
+                )
+                return StartFlowResultFailure(validation_exceptions=[], result_details=details)
         # get the flow by ID
         try:
             flow = self.get_flow_by_name(flow_name)
@@ -2667,17 +2694,58 @@ class FlowManager:
                     validation_exceptions=[exception] if error_message else [], result_details=result_details
                 )
 
-        details = f"Successfully kicked off flow with name {flow_name}"
+        if request.wait_for_completion:
+            wait_error = await self._await_flow_completion(request.completion_timeout_ms)
+            if wait_error is not None:
+                # On timeout the flow is still running, so cancel it before returning
+                # failure. If the wait ended because the flow already errored, there is
+                # nothing left to cancel and check_for_existing_running_flow() returns False.
+                if self.check_for_existing_running_flow():
+                    try:
+                        await self.cancel_flow_run()
+                    except Exception as cancel_err:
+                        # Defensive: cancellation is best-effort cleanup. Surface a warning
+                        # but keep the original wait_error as the user-visible failure.
+                        logger.warning(
+                            "Attempted to cancel flow '%s' after wait_for_completion failure. "
+                            "Cancellation itself failed because of: %s",
+                            flow_name,
+                            cancel_err,
+                        )
+                exception = RuntimeError(wait_error)
+                return StartFlowResultFailure(
+                    validation_exceptions=[exception],
+                    result_details=f"Flow '{flow_name}' did not complete cleanly: {wait_error}",
+                )
+            details = f"Flow '{flow_name}' kicked off and completed successfully."
+        else:
+            details = f"Successfully kicked off flow with name {flow_name}"
 
         return StartFlowResultSuccess(result_details=details)
 
     async def on_start_flow_from_node_request(self, request: StartFlowFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+        # Resolve the node first, falling back to the current-context node when node_name is
+        # omitted. flow_name on this request is deprecated; when not supplied we derive it
+        # from the node's parent flow so callers do not have to keep them in sync.
+        node_name = request.node_name
+        if node_name is None:
+            if GriptapeNodes.ContextManager().has_current_node():
+                node_name = GriptapeNodes.ContextManager().get_current_node().name
+            else:
+                details = "Must provide node_name, or set a node in the Current Context first."
+                return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
+        start_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if not start_node:
+            details = f"Provided node with name {node_name} does not exist"
+            return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
         # which flow
         flow_name = request.flow_name
         if not flow_name:
-            details = "Must provide flow name to start a flow."
-
-            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+            try:
+                flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
+            except KeyError as err:
+                details = f"Could not derive parent flow for node '{node_name}': {err}"
+                return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
         # get the flow by ID
         try:
             flow = self.get_flow_by_name(flow_name)
@@ -2688,14 +2756,6 @@ class FlowManager:
         if self.check_for_existing_running_flow():
             details = "Cannot start flow. Flow is already running."
             return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
-        node_name = request.node_name
-        if node_name is None:
-            details = "Must provide node name to start a flow."
-            return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
-        start_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
-        if not start_node:
-            details = f"Provided node with name {node_name} does not exist"
-            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
         result = await self.on_validate_flow_dependencies_request(
             ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
         )
@@ -3108,6 +3168,113 @@ class FlowManager:
 
         return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list, result_details=details)
 
+    async def on_auto_layout_flow_request(self, request: AutoLayoutFlowRequest) -> ResultPayload:  # noqa: C901, PLR0912
+        """Assign editor positions to every node in a flow by topological column layout.
+
+        Algorithm (Kahn-ish): walk the data+control edges internal to this flow, compute a
+        layer per node as the longest path from any source (node with no incoming edges),
+        then place layers as columns (x = origin_x + layer * layer_spacing) and siblings
+        within a layer as rows (y = origin_y + row_index * row_spacing). Writes
+        `node.metadata['position'] = {'x', 'y'}` for each node, preserving other metadata
+        keys.
+
+        Cycles should not occur in a well-formed flow. If one is detected, nodes that
+        couldn't be topologically ordered are parked at layer 0 and a warning is logged.
+        """
+        flow_name = request.flow_name
+        if not flow_name:
+            if GriptapeNodes.ContextManager().has_current_flow():
+                flow_name = GriptapeNodes.ContextManager().get_current_flow().name
+            else:
+                details = (
+                    "Attempted to auto-layout a flow. Failed because no flow_name was provided "
+                    "and the Current Context has no flow."
+                )
+                return AutoLayoutFlowResultFailure(result_details=details)
+
+        try:
+            flow = self.get_flow_by_name(flow_name)
+        except KeyError as err:
+            details = f"Attempted to auto-layout flow '{flow_name}'. Failed because: {err}"
+            return AutoLayoutFlowResultFailure(result_details=details)
+
+        node_names = list(flow.nodes.keys())
+        if not node_names:
+            return AutoLayoutFlowResultSuccess(
+                flow_name=flow_name,
+                positioned_nodes=[],
+                result_details=f"Flow '{flow_name}' has no nodes; nothing to lay out.",
+            )
+
+        # Build directed edges restricted to this flow so sub-flows and other workflow state
+        # do not contaminate the topological ordering.
+        node_name_set = set(node_names)
+        incoming: dict[str, set[str]] = {name: set() for name in node_names}
+        outgoing: dict[str, set[str]] = {name: set() for name in node_names}
+        for connection in self._connections.connections.values():
+            src = connection.source_node.name
+            tgt = connection.target_node.name
+            if src in node_name_set and tgt in node_name_set and src != tgt:
+                outgoing[src].add(tgt)
+                incoming[tgt].add(src)
+
+        # Kahn's topological sort with layer assignment. `layer[n]` is the longest path from
+        # any source to n, which gives a column that lines up fan-out naturally.
+        layer: dict[str, int] = dict.fromkeys(node_names, 0)
+        in_degree = {name: len(incoming[name]) for name in node_names}
+        ready = [name for name in node_names if in_degree[name] == 0]
+        ready.sort()  # stable layer ordering across runs
+        visited = 0
+        while ready:
+            name = ready.pop(0)
+            visited += 1
+            for child in sorted(outgoing[name]):
+                layer[child] = max(layer[child], layer[name] + 1)
+                in_degree[child] -= 1
+                if in_degree[child] == 0:
+                    ready.append(child)
+
+        if visited < len(node_names):
+            logger.warning(
+                "Auto-layout detected a cycle in flow '%s'; %d node(s) could not be ordered and stay at layer 0.",
+                flow_name,
+                len(node_names) - visited,
+            )
+
+        layers: dict[int, list[str]] = {}
+        for name in node_names:
+            layers.setdefault(layer[name], []).append(name)
+
+        positioned: list[NodePosition] = []
+        for layer_idx in sorted(layers.keys()):
+            for row_idx, name in enumerate(sorted(layers[layer_idx])):
+                x = request.origin_x + layer_idx * request.layer_spacing
+                y = request.origin_y + row_idx * request.row_spacing
+                # Dispatch the position update through GriptapeNodes.ahandle_request so the
+                # per-node SetNodeMetadataResultSuccess event is broadcast to subscribers.
+                # The editor listens on that event to move nodes on the canvas live; mutating
+                # node.metadata directly here would update the engine state but leave the UI
+                # stale until a reload.
+                set_metadata_result = await GriptapeNodes.ahandle_request(
+                    SetNodeMetadataRequest(node_name=name, metadata={"position": {"x": x, "y": y}})
+                )
+                if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
+                    logger.warning(
+                        "Auto-layout failed to update position for node '%s' in flow '%s': %s",
+                        name,
+                        flow_name,
+                        set_metadata_result.result_details,
+                    )
+                    continue
+                positioned.append(NodePosition(node_name=name, x=x, y=y))
+
+        details = f"Laid out {len(positioned)} node(s) in flow '{flow_name}' across {len(layers)} layer(s)."
+        return AutoLayoutFlowResultSuccess(
+            flow_name=flow_name,
+            positioned_nodes=positioned,
+            result_details=details,
+        )
+
     def _aggregate_flow_dependencies(
         self, serialized_node_commands: list[SerializedNodeCommands], sub_flows_commands: list[SerializedFlowCommands]
     ) -> NodeDependencies:
@@ -3209,6 +3376,159 @@ class FlowManager:
             aggregated_values.update(sub_flow_cmd.unique_parameter_uuid_to_values)
 
         return aggregated_values
+
+    def _serialize_variables_for_flow(
+        self,
+        flow_name: str,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        variable_references: set[VariableReference],
+    ) -> list[SerializedFlowCommands.SerializedVariableCommand]:
+        """Build SerializedVariableCommands for flow-scoped variables owned by this flow and declared by a node.
+
+        Only variables that are:
+          (a) owned by ``flow_name``, AND
+          (b) named by at least one declared ``VariableReference`` after scope resolution
+        get serialized. Variables present in engine state but not claimed by any node
+        (orphans from deleted nodes) are silently dropped.
+
+        Variable values share the parameter value pool in ``unique_parameter_uuid_to_values`` — the
+        generated workflow script references both kinds through the same ``top_level_unique_values_dict``.
+
+        Args:
+            flow_name: The flow whose flow-scoped variables are being serialized.
+            unique_parameter_uuid_to_values: Shared unique-value pool; variable values are added in place.
+            variable_references: Aggregated set of references declared by nodes in this flow and its subtree.
+
+        Returns:
+            A list of ``SerializedVariableCommand``s for this flow's declared flow-scoped variables.
+        """
+        declared_names_for_this_flow = self._resolve_declared_variable_names_for_flow(
+            flow_name=flow_name, variable_references=variable_references
+        )
+        if not declared_names_for_this_flow:
+            return []
+
+        flow_list_result = GriptapeNodes.handle_request(
+            ListVariablesRequest(starting_flow=flow_name, lookup_scope=VariableScope.CURRENT_FLOW_ONLY)
+        )
+        if not isinstance(flow_list_result, ListVariablesResultSuccess):
+            logger.warning(
+                "Attempted to list flow-scoped variables for flow '%s' during serialization. Failed with: %s. Skipping.",
+                flow_name,
+                flow_list_result.result_details,
+            )
+            return []
+
+        return [
+            self._build_serialized_variable_command(
+                variable=variable,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+            )
+            for variable in flow_list_result.variables
+            if variable.name in declared_names_for_this_flow
+        ]
+
+    def _resolve_declared_variable_names_for_flow(
+        self,
+        flow_name: str,
+        variable_references: set[VariableReference],
+    ) -> set[str]:
+        """Return the names of variables owned by ``flow_name`` that are claimed by a declared reference.
+
+        Resolution rules per reference scope:
+          - CURRENT_FLOW_ONLY: claims ``ref.name`` only if a variable with that name exists in ``flow_name``.
+          - HIERARCHICAL: uses ``GetVariableRequest`` to resolve; claims ``ref.name`` only if the resolved
+            variable is owned by ``flow_name`` (ancestor-owned variables get claimed by the ancestor's
+            own serialization pass).
+          - GLOBAL_ONLY / ALL: out of scope for this pass; skipped with a debug log. Globals are a
+            deferred follow-up.
+        """
+        claimed_names: set[str] = set()
+
+        for ref in variable_references:
+            if ref.scope is VariableScope.CURRENT_FLOW_ONLY:
+                if self._variable_is_owned_by(name=ref.name, flow_name=flow_name):
+                    claimed_names.add(ref.name)
+            elif ref.scope is VariableScope.HIERARCHICAL:
+                owning_flow = self._hierarchical_owning_flow_for(name=ref.name, starting_flow=flow_name)
+                if owning_flow == flow_name:
+                    claimed_names.add(ref.name)
+            else:
+                logger.debug(
+                    "Skipping variable reference '%s' with unsupported scope '%s' during serialization.",
+                    ref.name,
+                    ref.scope,
+                )
+
+        return claimed_names
+
+    def _variable_is_owned_by(self, name: str, flow_name: str) -> bool:
+        """Return True if a flow-scoped variable with ``name`` exists directly in ``flow_name``."""
+        list_result = GriptapeNodes.handle_request(
+            ListVariablesRequest(starting_flow=flow_name, lookup_scope=VariableScope.CURRENT_FLOW_ONLY)
+        )
+        if not isinstance(list_result, ListVariablesResultSuccess):
+            logger.debug(
+                "Attempted variable ownership check for '%s' in flow '%s'. Failed to list variables: %s",
+                name,
+                flow_name,
+                list_result.result_details,
+            )
+            return False
+        return any(variable.name == name for variable in list_result.variables)
+
+    def _hierarchical_owning_flow_for(self, name: str, starting_flow: str) -> str | None:
+        """Return the owning flow name of a variable found by hierarchical lookup, or None if not found."""
+        result = GriptapeNodes.handle_request(
+            GetVariableRequest(name=name, lookup_scope=VariableScope.HIERARCHICAL, starting_flow=starting_flow)
+        )
+        if not isinstance(result, GetVariableResultSuccess):
+            # A failure here is the expected signal for "variable does not resolve hierarchically" —
+            # e.g. a declared reference whose target was deleted. Logged at debug so it is available
+            # for diagnosis without generating noise during normal saves.
+            logger.debug(
+                "Hierarchical lookup for variable '%s' starting at flow '%s' did not resolve: %s",
+                name,
+                starting_flow,
+                result.result_details,
+            )
+            return None
+        return result.variable.owning_flow_name
+
+    def _build_serialized_variable_command(
+        self,
+        variable: FlowVariable,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+    ) -> SerializedFlowCommands.SerializedVariableCommand:
+        """Register the variable's value in the unique-values pool and build the indirect command.
+
+        Values are stored as raw Python objects — ``_generate_unique_values_code`` pickles them at
+        AST-generation time. Each variable gets its own UUID even if another entry holds an equal
+        value; matching the existing parameter-value pattern, dedup-by-equality is not attempted here.
+        """
+        unique_value_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+        try:
+            unique_parameter_uuid_to_values[unique_value_uuid] = copy.deepcopy(variable.value)
+        except Exception:
+            # Fall back to by-reference storage; matches the parameter-value code path's warning.
+            logger.warning(
+                "Attempted to serialize variable '%s'. Value could not be deep-copied; storing by reference.",
+                variable.name,
+            )
+            unique_parameter_uuid_to_values[unique_value_uuid] = variable.value
+
+        create_variable_command = CreateVariableRequest(
+            name=variable.name,
+            type=variable.type,
+            is_global=False,
+            value=None,  # Overridden at deserialization via top_level_unique_values_dict lookup.
+            owning_flow=variable.owning_flow_name,
+            initial_setup=True,
+        )
+        return SerializedFlowCommands.SerializedVariableCommand(
+            create_variable_command=create_variable_command,
+            unique_value_uuid=unique_value_uuid,
+        )
 
     def _aggregate_set_parameter_value_commands(
         self,
@@ -3391,7 +3711,7 @@ class FlowManager:
                     )
                     sub_flow_commands.append(serialized_flow)
                 else:
-                    # For standalone sub-flows, use the existing recursive serialization
+                    # For standalone sub-flows, use the existing recursive serialization.
                     with GriptapeNodes.ContextManager().flow(flow=child_flow_obj):
                         child_flow_request = SerializeFlowToCommandsRequest()
                         child_flow_result = GriptapeNodes().handle_request(child_flow_request)
@@ -3480,6 +3800,13 @@ class FlowManager:
         # Aggregate all connections from this flow and all sub-flows
         aggregated_connections = self._aggregate_connections(create_connection_commands, sub_flow_commands)
 
+        # Serialize flow-scoped variables owned by this flow that are declared by a node.
+        serialized_variable_commands = self._serialize_variables_for_flow(
+            flow_name=flow_name,
+            unique_parameter_uuid_to_values=aggregated_unique_values,
+            variable_references=aggregated_dependencies.variable_references,
+        )
+
         # Extract flow name from initialization command if available
         extracted_flow_name = None
         if create_flow_request is not None and hasattr(create_flow_request, "flow_name"):
@@ -3496,6 +3823,7 @@ class FlowManager:
             node_dependencies=aggregated_dependencies,
             node_types_used=aggregated_node_types_used,
             flow_name=extracted_flow_name,
+            serialized_variable_commands=serialized_variable_commands,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)
@@ -3792,21 +4120,22 @@ class FlowManager:
                     file_path=file_url_or_path,
                 )
 
-        # Validation: Check if image has metadata
-        if not hasattr(pil_image, "info") or not pil_image.info:
-            return ExtractFlowCommandsFromImageMetadataResultFailure(
+        # An image without embedded flow commands is a valid state, not an error.
+        metadata = pil_image.info if hasattr(pil_image, "info") else {}
+        if not metadata:
+            return ExtractFlowCommandsFromImageMetadataResultSuccess(
                 result_details=f"Image has no metadata: {file_url_or_path}",
-                file_path=file_url_or_path,
+                serialized_flow_commands=None,
+                altered_workflow_state=False,
             )
 
-        metadata = pil_image.info
         metadata_keys = [str(key) for key in metadata]
 
-        # Validation: Check if flow commands metadata exists
         if FLOW_COMMANDS_KEY not in metadata:
-            return ExtractFlowCommandsFromImageMetadataResultFailure(
+            return ExtractFlowCommandsFromImageMetadataResultSuccess(
                 result_details=f"No flow commands metadata found in image. Available keys: {metadata_keys}",
-                file_path=file_url_or_path,
+                serialized_flow_commands=None,
+                altered_workflow_state=False,
             )
 
         encoded_flow_commands = metadata[FLOW_COMMANDS_KEY]
@@ -3871,6 +4200,28 @@ class FlowManager:
             not self._global_control_flow_machine.context.resolution_machine.is_complete()
             and self._global_control_flow_machine.context.resolution_machine.is_started()
         )
+
+    async def _await_flow_completion(self, timeout_ms: int | None) -> str | None:
+        """Block until the current flow resolves, erroring, or the timeout elapses.
+
+        Polls `check_for_existing_running_flow()` because the control flow machine does not
+        expose a completion future today; this is the same signal the UI uses to decide when
+        the run is idle. Returns None on clean completion, or an error string describing why
+        the wait ended unsuccessfully (timeout, or flow error).
+        """
+        poll_interval_sec = 0.05
+        elapsed_ms = 0
+        while self.check_for_existing_running_flow():
+            if timeout_ms is not None and elapsed_ms >= timeout_ms:
+                return f"Timed out waiting for flow completion after {timeout_ms} ms."
+            await asyncio.sleep(poll_interval_sec)
+            elapsed_ms += int(poll_interval_sec * 1000)
+
+        if self._global_control_flow_machine is not None:
+            resolution_machine = self._global_control_flow_machine.resolution_machine
+            if resolution_machine.is_errored():
+                return resolution_machine.get_error_message() or "Flow errored during execution."
+        return None
 
     async def cancel_flow_run(self) -> None:
         if not self.check_for_existing_running_flow():

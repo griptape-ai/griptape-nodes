@@ -1,4 +1,3 @@
-import os
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
@@ -14,6 +13,9 @@ MODELS_TO_DOWNLOAD_KEY = "app_events.on_app_initialization_complete.models_to_do
 PROJECTS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.projects_to_register"
 PROJECT_WORKSPACES_KEY = "project_workspaces"
 EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
+WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
+WORKER_HEARTBEAT_TIMEOUT_KEY = "worker.heartbeat_timeout_s"
+WORKER_HEARTBEAT_STARTUP_GRACE_KEY = "worker.heartbeat_startup_grace_s"
 
 
 class Category(BaseModel):
@@ -105,14 +107,34 @@ class MCPServerConfig(BaseModel):
         return f"{self.name} ({'enabled' if self.enabled else 'disabled'})"
 
 
+class LibraryRegistration(BaseModel):
+    """A library entry in libraries_to_register with optional metadata.
+
+    Bare path strings remain valid in the config; this object form is used when
+    additional fields (such as `enabled`) need to be set per entry.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(description="Path to a griptape_nodes_library.json file or a directory scanned recursively.")
+    enabled: bool = Field(
+        default=True,
+        description="When False, the library remains in config but is not loaded on startup.",
+    )
+
+
 class AppInitializationComplete(BaseModel):
     libraries_to_download: list[str] = Field(
         default_factory=list,
         description="Git URLs of libraries to automatically download when the engine starts. Downloaded into libraries_directory. Supports full URLs or GitHub shorthand (e.g., 'user/repo'). Optionally specify a branch, tag, or commit with @ref syntax (e.g., 'user/repo@stable' or 'https://github.com/user/repo@v1.0.0'). If no ref is specified, uses the repository's default branch.",
     )
-    libraries_to_register: list[str] = Field(
+    libraries_to_register: list[str | LibraryRegistration] = Field(
         default_factory=list,
-        description="Libraries to automatically load when the engine starts. Can contain paths to individual griptape_nodes_library.json files or directory paths (scanned recursively for library JSON files).",
+        description=(
+            "Libraries to automatically load when the engine starts. Each entry is either a path string "
+            "(loaded as enabled) or an object with `path` and `enabled` fields. Paths may point to a "
+            "griptape_nodes_library.json file or a directory scanned recursively for library JSON files."
+        ),
     )
     workflows_to_register: list[str] = Field(default_factory=list)
     secrets_to_register: list[str] | dict[str, str] = Field(
@@ -154,6 +176,27 @@ class AppEvents(BaseModel):
             "ContinueExecutionStepRequest",
             "SetLockNodeStateRequest",
         ]
+    )
+
+
+class WorkerSettings(BaseModel):
+    heartbeat_interval_s: float = Field(
+        default=5.0,
+        description="Interval in seconds between worker heartbeat challenges sent by the orchestrator.",
+    )
+    heartbeat_timeout_s: float = Field(
+        default=15.0,
+        description="Seconds without a heartbeat response before a worker is evicted.",
+    )
+    heartbeat_startup_grace_s: float = Field(
+        default=600.0,
+        description=(
+            "Grace period in seconds after worker spawn before heartbeat timeouts are enforced. "
+            "Workers need time to install venv deps and import modules before they can respond. "
+            "First-time installs of large libraries (e.g. torch, diffusers) can easily exceed "
+            "two minutes; this also bounds how long the orchestrator waits for worker libraries "
+            "to load before marking them as FAILURE."
+        ),
     )
 
 
@@ -227,6 +270,10 @@ class Settings(BaseModel):
         default=5,
         description="Maximum number of nodes executing at a time for parallel execution.",
     )
+    worker: WorkerSettings = Field(
+        category=EXECUTION,
+        default_factory=WorkerSettings,
+    )
     storage_backend: Literal["local", "gtc"] = Field(category=STORAGE, default="local")
     auto_inject_workflow_metadata: bool = Field(
         category=STORAGE,
@@ -263,12 +310,10 @@ class Settings(BaseModel):
         default_factory=list,
         description="List of Model Context Protocol server configurations",
     )
-    static_server_base_url: str = Field(
+    static_server_base_url: str | None = Field(
         category=STATIC_SERVER,
-        default_factory=lambda: (
-            f"http://{os.getenv('STATIC_SERVER_HOST', 'localhost')}:{os.getenv('STATIC_SERVER_PORT', '8124')}"
-        ),
-        description="Base URL for the static server. Defaults to http://localhost:8124 (or values from STATIC_SERVER_HOST/PORT env vars). Override this when using tunnels (ngrok, cloudflare) or reverse proxies.",
+        default=None,
+        description="Base URL for the static server. Leave unset to derive it from the server's host/port (including the OS-assigned port when the configured port is unavailable). Set this only to override the derived URL, e.g. when fronting the server with a tunnel (ngrok, cloudflare) or reverse proxy.",
     )
     artifacts: dict[str, Any] = Field(
         category=ARTIFACTS,

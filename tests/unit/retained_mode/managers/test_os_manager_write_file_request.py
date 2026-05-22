@@ -526,7 +526,11 @@ class TestSidecarMetadata:
     def temp_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
+            # Resolve so the path matches what ConfigManager.workspace_path and
+            # the canonicalized project_base_dir store. On Windows, tempfile
+            # returns the 8.3 short form (C:\Users\RUNNER~1\...); both sides
+            # must agree for decompose_source_path's relative_to() check to hold.
+            yield Path(tmpdir).resolve()
 
     @pytest.fixture(autouse=True)
     def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
@@ -536,7 +540,7 @@ class TestSidecarMetadata:
 
         # Create a project template file so sidecar path resolution has a project to use
         project_yml = temp_dir / "project_template.yml"
-        project_yml.write_text(DEFAULT_PROJECT_TEMPLATE.to_yaml(include_comments=False))
+        project_yml.write_text(DEFAULT_PROJECT_TEMPLATE.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE))
         load_result = GriptapeNodes.handle_request(LoadProjectTemplateRequest(project_path=project_yml))
         if isinstance(load_result, LoadProjectTemplateResultSuccess):
             GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=load_result.project_id))

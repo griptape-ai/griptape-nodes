@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
+
+from pydantic import ValidationError
 
 from griptape_nodes.common.macro_parser import (
     MacroMatchFailure,
@@ -23,12 +26,16 @@ from griptape_nodes.common.project_templates import (
     ProjectValidationStatus,
     SituationTemplate,
     load_partial_project_template,
-    load_project_template_from_yaml,
 )
-from griptape_nodes.files.file import File, FileLoadError
-from griptape_nodes.files.path_utils import resolve_file_path
+from griptape_nodes.files.derivation import DERIVATION_RULES, apply_derivation_rules
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError
+from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_file_path, resolve_path_safely
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+from griptape_nodes.retained_mode.events.library_events import (
+    ReloadAllLibrariesRequest,
+    ReloadAllLibrariesResultFailure,
+)
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
@@ -60,16 +67,27 @@ from griptape_nodes.retained_mode.events.project_events import (
     LoadProjectTemplateRequest,
     LoadProjectTemplateResultFailure,
     LoadProjectTemplateResultSuccess,
+    MacroPath,
     PathResolutionFailureReason,
     ProjectTemplateInfo,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
+    SaveProjectTemplateResultSuccess,
     SetCurrentProjectRequest,
+    SetCurrentProjectResultFailure,
     SetCurrentProjectResultSuccess,
+    UnregisterProjectTemplateRequest,
+    UnregisterProjectTemplateResultFailure,
+    UnregisterProjectTemplateResultSuccess,
+    ValidateProjectTemplateRequest,
+    ValidateProjectTemplateResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -126,6 +144,91 @@ BUILTIN_VARIABLES = frozenset(var.name for var in _BUILTIN_VARIABLE_DEFINITIONS)
 
 
 @dataclass
+class _ProjectVariableResolver:
+    """Recursive resolver for project directory path_macros and environment values.
+
+    Both directories and env vars may contain macros that reference builtins, other
+    directories, other env vars, or shell env vars. Resolution walks those references
+    transitively, caches results per name, and detects cycles. References that hit
+    none of the known sources and are absent from shell env are left unresolved so
+    the underlying ParsedMacro.resolve raises MISSING_REQUIRED_VARIABLES.
+
+    Construct via `ProjectManager._build_variable_resolver`. Cycle detection and caches
+    are instance-scoped so resolvers are single-use per call site.
+    """
+
+    template: ProjectTemplate
+    get_builtin: Callable[[str], str]
+    secrets_manager: SecretsManager
+    builtins_cache: dict[str, str] = field(default_factory=dict)
+    env_resolved: dict[str, str] = field(default_factory=dict)
+    directories_resolved: dict[str, str] = field(default_factory=dict)
+    in_progress: set[str] = field(default_factory=set)
+
+    def resolve_directory(self, name: str) -> str:
+        if name in self.directories_resolved:
+            return self.directories_resolved[name]
+        resolved = self._resolve_macro_string("directory", name, self.template.directories[name].path_macro)
+        self.directories_resolved[name] = resolved
+        return resolved
+
+    def resolve_env(self, name: str) -> str:
+        if name in self.env_resolved:
+            return self.env_resolved[name]
+        resolved = self._resolve_macro_string("environment variable", name, self.template.environment[name])
+        self.env_resolved[name] = resolved
+        return resolved
+
+    def _get_builtin(self, name: str) -> str:
+        if name not in self.builtins_cache:
+            self.builtins_cache[name] = self.get_builtin(name)
+        return self.builtins_cache[name]
+
+    def _resolve_macro_string(self, owner_kind: str, owner_name: str, raw_value: str) -> str:
+        token = f"{owner_kind}:{owner_name}"
+        if token in self.in_progress:
+            cycle = " -> ".join([*sorted(self.in_progress), token])
+            msg = f"Cycle detected while resolving {owner_kind} '{owner_name}': {cycle}"
+            raise MacroResolutionError(
+                msg,
+                failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                variable_name=owner_name,
+            )
+        self.in_progress.add(token)
+        try:
+            parsed = ParsedMacro(raw_value)
+            bag: MacroVariables = {}
+            for var_info in parsed.get_variables():
+                ref = var_info.name
+                if ref in BUILTIN_VARIABLES:
+                    try:
+                        bag[ref] = self._get_builtin(ref)
+                    except (RuntimeError, NotImplementedError) as e:
+                        msg = (
+                            f"Cannot resolve {owner_kind} '{owner_name}': "
+                            f"builtin '{ref}' unavailable in current context ({e})"
+                        )
+                        raise MacroResolutionError(
+                            msg,
+                            failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                            variable_name=ref,
+                        ) from e
+                elif ref in self.template.directories:
+                    bag[ref] = self.resolve_directory(ref)
+                elif ref in self.template.environment:
+                    bag[ref] = self.resolve_env(ref)
+                else:
+                    shell_value = os.environ.get(ref)
+                    if shell_value is not None:
+                        bag[ref] = shell_value
+                    # else: leave unresolved; parsed.resolve() will raise MISSING_REQUIRED_VARIABLES
+            resolved = parsed.resolve(bag, self.secrets_manager)
+        finally:
+            self.in_progress.discard(token)
+        return resolved
+
+
+@dataclass
 class ProjectInfo:
     """Consolidated information about a loaded project.
 
@@ -164,9 +267,9 @@ class ProjectManager:
 
     def __init__(
         self,
-        event_manager: EventManager | None = None,
-        config_manager: ConfigManager | None = None,
-        secrets_manager: SecretsManager | None = None,
+        event_manager: EventManager,
+        config_manager: ConfigManager,
+        secrets_manager: SecretsManager,
     ) -> None:
         """Initialize the ProjectManager.
 
@@ -181,47 +284,60 @@ class ProjectManager:
         # Consolidated project information storage
         self._successfully_loaded_project_templates: dict[ProjectID, ProjectInfo] = {}
         self._current_project_id: ProjectID | None = None
+        # Set to True at end of on_app_initialization_complete. Guards workspace switch
+        # logic so expensive reloads don't fire during startup.
+        self._initialization_complete: bool = False
 
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
         # This allows UI to query why a project failed to load
         self._registered_template_status: dict[Path, ProjectValidationInfo] = {}
 
+        # Snapshot of os.environ entries mutated by the currently-active project.
+        # Maps env var name -> original value (or None if the var was not set before).
+        # Restored on project switch so each project's env is isolated.
+        self._applied_env_snapshot: dict[str, str | None] = {}
+
         # Register event handlers
-        if event_manager is not None:
-            event_manager.assign_manager_to_request_type(
-                LoadProjectTemplateRequest, self.on_load_project_template_request
-            )
-            event_manager.assign_manager_to_request_type(
-                GetProjectTemplateRequest, self.on_get_project_template_request
-            )
-            event_manager.assign_manager_to_request_type(
-                ListProjectTemplatesRequest, self.on_list_project_templates_request
-            )
-            event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
-            event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
-            event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
-            event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
-            event_manager.assign_manager_to_request_type(
-                SaveProjectTemplateRequest, self.on_save_project_template_request
-            )
-            event_manager.assign_manager_to_request_type(
-                AttemptMatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
-            )
-            event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
-            event_manager.assign_manager_to_request_type(
-                GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
-            )
-            event_manager.assign_manager_to_request_type(
-                AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
-            )
+        event_manager.assign_manager_to_request_type(LoadProjectTemplateRequest, self.on_load_project_template_request)
+        event_manager.assign_manager_to_request_type(GetProjectTemplateRequest, self.on_get_project_template_request)
+        event_manager.assign_manager_to_request_type(
+            ListProjectTemplatesRequest, self.on_list_project_templates_request
+        )
+        event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
+        event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
+        event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
+        event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
+        event_manager.assign_manager_to_request_type(SaveProjectTemplateRequest, self.on_save_project_template_request)
+        event_manager.assign_manager_to_request_type(
+            AttemptMatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
+        )
+        event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
+        event_manager.assign_manager_to_request_type(
+            GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
+        )
+        event_manager.assign_manager_to_request_type(
+            AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
+        )
+        event_manager.assign_manager_to_request_type(
+            UnregisterProjectTemplateRequest, self.on_unregister_project_template_request
+        )
+        event_manager.assign_manager_to_request_type(
+            ValidateProjectTemplateRequest, self.on_validate_project_template_request
+        )
 
-            # Register app initialization listener
-            event_manager.add_listener_to_app_event(
-                AppInitializationComplete,
-                self.on_app_initialization_complete,
-            )
+        # Register app initialization listener
+        event_manager.add_listener_to_app_event(
+            AppInitializationComplete,
+            self.on_app_initialization_complete,
+        )
 
-    def on_load_project_template_request(
+        # Load system defaults eagerly so project-aware requests work before
+        # AppInitializationComplete fires. Workflow scripts run in CLI mode
+        # construct nodes at module import time, before the event is broadcast.
+        self._load_system_defaults()
+        self._current_project_id = SYSTEM_DEFAULTS_KEY
+
+    async def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
     ) -> LoadProjectTemplateResultSuccess | LoadProjectTemplateResultFailure:
         """Load user's project.yml and merge with system defaults.
@@ -234,53 +350,61 @@ class ProjectManager:
         5. If usable, cache template in successful_templates
         6. Return LoadProjectTemplateResultSuccess or LoadProjectTemplateResultFailure
         """
+        # Expand ~/env vars and resolve to absolute so the same file always
+        # produces the same project_id regardless of how the caller spelled
+        # the path (relative vs absolute, ~/ prefix, symlinks, etc.). Both
+        # _registered_template_status (keyed by Path) and
+        # _successfully_loaded_project_templates (keyed by str project_id) must
+        # use the canonical form so dedupe checks line up.
+        project_file_path = canonicalize_for_identity(request.project_path)
+
         read_request = ReadFileRequest(
-            file_path=str(request.project_path),
+            file_path=str(project_file_path),
             encoding="utf-8",
             workspace_only=False,
         )
-        read_result = GriptapeNodes.handle_request(read_request)
+        read_result = await GriptapeNodes.ahandle_request(read_request)
 
         if read_result.failed():
             validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
-            self._registered_template_status[request.project_path] = validation
+            self._registered_template_status[project_file_path] = validation
 
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because file not found",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because file not found",
             )
 
         if not isinstance(read_result, ReadFileResultSuccess):
             validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
-            self._registered_template_status[request.project_path] = validation
+            self._registered_template_status[project_file_path] = validation
 
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because file read returned unexpected result type",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because file read returned unexpected result type",
             )
 
         yaml_text = read_result.content
         if not isinstance(yaml_text, str):
             validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
-            self._registered_template_status[request.project_path] = validation
+            self._registered_template_status[project_file_path] = validation
 
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because template must be text, got binary content",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because template must be text, got binary content",
             )
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        template = load_project_template_from_yaml(yaml_text, validation)
+        overlay = load_partial_project_template(yaml_text, validation)
 
-        if template is None:
-            self._registered_template_status[request.project_path] = validation
+        if overlay is None:
+            self._registered_template_status[project_file_path] = validation
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because YAML could not be parsed",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because YAML could not be parsed",
             )
 
-        # Generate project_id from file path
-        project_file_path = Path(request.project_path)
+        template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
+
         project_id = str(project_file_path)
         project_base_dir = project_file_path.parent
 
@@ -290,10 +414,10 @@ class ProjectManager:
 
         # Now check if validation is usable after collecting all errors
         if not validation.is_usable():
-            self._registered_template_status[request.project_path] = validation
+            self._registered_template_status[project_file_path] = validation
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because template is not usable (status: {validation.status})",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because template is not usable (status: {validation.status})",
             )
 
         # Create consolidated ProjectInfo with fully populated macro caches
@@ -311,7 +435,10 @@ class ProjectManager:
         self._successfully_loaded_project_templates[project_id] = project_info
 
         # Track validation status for all load attempts (for UI display)
-        self._registered_template_status[request.project_path] = validation
+        self._registered_template_status[project_file_path] = validation
+
+        # Persist path so the project survives engine restarts
+        self._register_project_path(project_id)
 
         return LoadProjectTemplateResultSuccess(
             project_id=project_id,
@@ -353,7 +480,11 @@ class ProjectManager:
             if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
                 continue
 
-            successfully_loaded.append(ProjectTemplateInfo(project_id=project_id, validation=project_info.validation))
+            successfully_loaded.append(
+                ProjectTemplateInfo(
+                    project_id=project_id, validation=project_info.validation, name=project_info.template.name
+                )
+            )
 
         # Gather failed templates from _registered_template_status
         # These are tracked by Path, not ProjectID
@@ -419,15 +550,16 @@ class ProjectManager:
 
         Flow:
         1. Get current project
-        2. Get variables from ParsedMacro.get_variables()
-        3. For each variable:
+        2. Apply derivation rules to inject derived variables (e.g. file_extension_directory)
+        3. Get variables from ParsedMacro.get_variables()
+        4. For each variable:
            - If in directories dict → resolve directory, add to resolution bag
            - Else if in user_supplied_vars → use user value
-           - If in BOTH → ERROR: DIRECTORY_OVERRIDE_ATTEMPTED
+           - If in BOTH → ERROR: RESERVED_NAME_COLLISION
            - Else → collect as missing
-        4. If any missing → ERROR: MISSING_REQUIRED_VARIABLES
-        5. Resolve macro with complete variable bag
-        6. Return resolved Path
+        5. If any missing → ERROR: MISSING_REQUIRED_VARIABLES
+        6. Resolve macro with complete variable bag
+        7. Return resolved Path
         """
         current_project_request = GetCurrentProjectRequest()
         current_project_result = self.on_get_current_project_request(current_project_request)
@@ -441,30 +573,50 @@ class ProjectManager:
         project_info = current_project_result.project_info
         template = project_info.template
 
+        # Apply derivation rules centrally so every caller of GetPathForMacroRequest
+        # gets derived variables (e.g. file_extension_directory) without duplicating
+        # the pre-pass at each call site. Rules that can't fire (missing inputs,
+        # unreferenced output) abstain silently, so plain macros pass through unchanged.
+        resolved_macro_path = apply_derivation_rules(
+            MacroPath(request.parsed_macro, request.variables), DERIVATION_RULES
+        )
+        effective_variables: MacroVariables = resolved_macro_path.variables
+
         variable_infos = request.parsed_macro.get_variables()
         directory_names = set(template.directories.keys())
-        user_provided_names = set(request.variables.keys())
+        user_provided_names = set(effective_variables.keys())
 
         # Check for directory/user variable name conflicts
         conflicting = directory_names & user_provided_names
         if conflicting:
             return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
                 conflicting_variables=conflicting,
                 result_details=f"Attempted to resolve macro path. Failed because variables conflict with directory names: {', '.join(sorted(conflicting))}",
             )
 
         resolution_bag: MacroVariables = {}
         disallowed_overrides: set[str] = set()
+        # Directories and project env vars may reference each other, builtins, or shell
+        # env vars via inner macros (e.g. `watch_output: "{watch_folder}/outputs"`).
+        # A shared resolver caches results across both sources so nested references
+        # don't re-parse or re-evaluate the same path_macro twice per request.
+        resolver = self._build_variable_resolver(template, project_info)
 
         for var_info in variable_infos:
             var_name = var_info.name
 
             if var_name in directory_names:
-                directory_def = template.directories[var_name]
-                resolution_bag[var_name] = directory_def.path_macro
+                try:
+                    resolution_bag[var_name] = resolver.resolve_directory(var_name)
+                except MacroResolutionError as e:
+                    return GetPathForMacroResultFailure(
+                        failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                        missing_variables=e.missing_variables,
+                        result_details=f"Attempted to resolve macro path. Failed to resolve directory '{var_name}': {e}",
+                    )
             elif var_name in user_provided_names:
-                resolution_bag[var_name] = request.variables[var_name]
+                resolution_bag[var_name] = effective_variables[var_name]
 
             if var_name in BUILTIN_VARIABLES:
                 try:
@@ -482,9 +634,8 @@ class ProjectManager:
                     # For directory builtin variables, compare as resolved paths
                     builtin_info = _BUILTIN_VARIABLE_INFO.get(var_name)
                     if builtin_info and builtin_info.is_directory:
-                        os_manager = GriptapeNodes.OSManager()
-                        resolved_existing = os_manager.resolve_path_safely(Path(str(existing)))
-                        resolved_builtin = os_manager.resolve_path_safely(Path(builtin_value))
+                        resolved_existing = resolve_path_safely(Path(str(existing)))
+                        resolved_builtin = resolve_path_safely(Path(builtin_value))
                         if resolved_existing != resolved_builtin:
                             disallowed_overrides.add(var_name)
                     elif str(existing) != builtin_value:
@@ -495,10 +646,49 @@ class ProjectManager:
         # Check if user tried to override builtins with different values
         if disallowed_overrides:
             return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
                 conflicting_variables=disallowed_overrides,
                 result_details=f"Attempted to resolve macro path. Failed because cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
             )
+
+        # Project env vars fill any remaining referenced variable names. Precedence (high to
+        # low): builtins > directories > caller-supplied > project env > shell env. Project
+        # env values are recursively resolved (may reference builtins, directories, other
+        # project env vars, or shell env vars) before being placed into the resolution bag.
+        # Env keys that collide with a directory name or builtin AND are referenced by this
+        # macro are rejected as RESERVED_NAME_COLLISION so users don't silently shadow core
+        # resolution state.
+        referenced_var_names = {v.name for v in variable_infos}
+        project_env = template.environment
+        env_collisions = set(project_env) & (directory_names | BUILTIN_VARIABLES) & referenced_var_names
+        if env_collisions:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.RESERVED_NAME_COLLISION,
+                conflicting_variables=env_collisions,
+                result_details=f"Attempted to resolve macro path. Failed because project environment variables collide with directory or builtin names: {', '.join(sorted(env_collisions))}",
+            )
+        env_needed = {v.name for v in variable_infos if v.name not in resolution_bag and v.name in project_env}
+        for var_name in env_needed:
+            try:
+                resolution_bag[var_name] = resolver.resolve_env(var_name)
+            except MacroResolutionError as e:
+                return GetPathForMacroResultFailure(
+                    failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                    missing_variables=e.missing_variables,
+                    result_details=f"Attempted to resolve macro path. Failed to resolve project environment variable '{var_name}': {e}",
+                )
+
+        # Shell environment is the final fallback, below project env. Lets authors reference
+        # any var set in their shell ({HOME}, {USER}, etc.) without declaring it in project.yml.
+        # Reserved names (builtins/directories) silently win: shells have hundreds of vars and
+        # we can't police accidental shadowing.
+        for var_info in variable_infos:
+            var_name = var_info.name
+            if var_name in resolution_bag:
+                continue
+            shell_value = os.environ.get(var_name)
+            if shell_value is not None:
+                resolution_bag[var_name] = shell_value
 
         required_vars = {v.name for v in variable_infos if v.is_required}
         provided_vars = set(resolution_bag.keys())
@@ -509,12 +699,6 @@ class ProjectManager:
                 failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
                 missing_variables=missing,
                 result_details=f"Attempted to resolve macro path. Failed because missing required variables: {', '.join(sorted(missing))}",
-            )
-
-        if self._secrets_manager is None:
-            return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                result_details="Attempted to resolve macro path. Failed because SecretsManager is not available",
             )
 
         try:
@@ -535,7 +719,7 @@ class ProjectManager:
 
         # Make absolute path by resolving against the workspace directory.
         # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        workspace_path = self._config_manager.workspace_path
         absolute_path = resolve_file_path(resolved_string, workspace_path)
 
         return GetPathForMacroResultSuccess(
@@ -544,11 +728,109 @@ class ProjectManager:
             result_details=f"Successfully resolved macro path. Result: {resolved_path}",
         )
 
-    def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> SetCurrentProjectResultSuccess:
-        """Set which project user has selected."""
+    # Keys we refuse to silently clobber. Users can still set them from their
+    # project.yml, but we emit a warning so overrides are visible in logs.
+    _DANGEROUS_ENV_KEYS: frozenset[str] = frozenset({"PATH", "HOME", "PYTHONPATH", "LD_LIBRARY_PATH"})
+
+    def _restore_project_env(self) -> None:
+        """Revert any os.environ entries mutated by the currently-active project."""
+        for key, original in self._applied_env_snapshot.items():
+            if original is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = original
+        self._applied_env_snapshot = {}
+
+    def _apply_project_env(self, project_info: ProjectInfo) -> None:
+        """Apply template.environment to os.environ, snapshotting originals for later restore.
+
+        Env values are recursively resolved before being written to os.environ. Values that
+        fail to resolve (e.g. reference a workflow-context builtin when no workflow is active,
+        or form a cycle) are skipped with a warning so one bad entry doesn't poison the rest.
+        """
+        template = project_info.template
+        try:
+            resolved_env = self._resolve_project_env_values(template, project_info)
+        except MacroResolutionError as e:
+            logger.warning("Failed to resolve project environment variables; skipping os.environ application: %s", e)
+            return
+        for key, value in resolved_env.items():
+            if key in self._DANGEROUS_ENV_KEYS:
+                logger.warning("Project template is overriding sensitive environment variable '%s'", key)
+            self._applied_env_snapshot[key] = os.environ.get(key)
+            os.environ[key] = value
+
+    def _resolve_project_env_values(self, template: ProjectTemplate, project_info: ProjectInfo) -> dict[str, str]:
+        """Recursively resolve every entry in template.environment to a final string.
+
+        Returns the full env-resolution map. See `_ProjectVariableResolver` for the
+        recursion and reference-lookup rules.
+        """
+        resolver = self._build_variable_resolver(template, project_info)
+        for key in template.environment:
+            resolver.resolve_env(key)
+        return dict(resolver.env_resolved)
+
+    def _build_variable_resolver(
+        self, template: ProjectTemplate, project_info: ProjectInfo
+    ) -> _ProjectVariableResolver:
+        """Build a resolver that recursively resolves directories and env vars for this project."""
+        return _ProjectVariableResolver(
+            template=template,
+            get_builtin=lambda name: self._get_builtin_variable_value(name, project_info),
+            secrets_manager=self._secrets_manager,
+        )
+
+    def _find_workspace_override(self, project_file_path: Path, project_workspaces: dict[str, str]) -> str | None:
+        """Return the user-configured workspace override for a project file, or None if not mapped."""
+        resolved_project_path = str(canonicalize_for_identity(project_file_path))
+        return next(
+            (v for k, v in project_workspaces.items() if str(canonicalize_for_identity(k)) == resolved_project_path),
+            None,
+        )
+
+    async def _reload_after_project_switch(
+        self, project_id: str | None, *, workspace_changed: bool
+    ) -> SetCurrentProjectResultFailure | None:
+        """Reload libraries and optionally re-register workflows after a project switch.
+
+        Always reloads libraries (project config can affect env vars and library behavior).
+        Only re-registers workflows when the workspace directory actually changed.
+
+        Returns a failure result if library reload fails, otherwise None.
+        """
+        reload_result = await GriptapeNodes.ahandle_request(ReloadAllLibrariesRequest())
+        if isinstance(reload_result, ReloadAllLibrariesResultFailure):
+            return SetCurrentProjectResultFailure(
+                result_details=f"Attempted to set project '{project_id}'. "
+                f"Config updated but library reload failed: {reload_result.result_details}",
+            )
+        if workspace_changed:
+            await GriptapeNodes.WorkflowManager().refresh_workflow_registry()
+        return None
+
+    async def on_set_current_project_request(  # noqa: C901, PLR0912
+        self, request: SetCurrentProjectRequest
+    ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
+        """Set which project user has selected.
+
+        Captures workspace path before and after config layer changes. If the
+        workspace actually changed and startup is complete, performs an expensive
+        workspace switch: reloads all libraries and re-registers workflows.
+        During startup, LibraryManager handles library loading concurrently, so
+        the workspace switch is skipped.
+        """
+        # Restore os.environ entries mutated by the outgoing project before any config
+        # layer changes. Workspace resolution below may consult env vars, so the old
+        # project's values must not leak into the new project's workspace decision.
+        self._restore_project_env()
+
+        # Capture workspace BEFORE config changes for comparison after
+        old_workspace = self._config_manager.workspace_path
+
         self._current_project_id = request.project_id
 
-        if request.project_id is not None and self._config_manager is not None:
+        if request.project_id is not None:
             project_info = self._successfully_loaded_project_templates.get(request.project_id)
             if project_info is not None and project_info.project_file_path is not None:
                 project_file_path = project_info.project_file_path
@@ -565,11 +847,7 @@ class ProjectManager:
                     config_source="user_config",
                     default={},
                 )
-                resolved_project_path = str(project_file_path.resolve())
-                workspace_override = next(
-                    (v for k, v in project_workspaces.items() if str(Path(k).resolve()) == resolved_project_path),
-                    None,
-                )
+                workspace_override = self._find_workspace_override(project_file_path, project_workspaces)
 
                 if workspace_override is not None:
                     self._config_manager.set_workspace_override(Path(workspace_override))
@@ -583,15 +861,54 @@ class ProjectManager:
 
                 # Load workspace config layer from the resolved workspace directory.
                 self._config_manager.load_workspace_config(self._config_manager.workspace_path)
+            elif project_info is not None and project_info.project_file_path is None:
+                # Switching to system defaults: clear any project-specific workspace override
+                # and reload configs so workspace_path resolves from default config layers.
+                self._config_manager.set_workspace_override(None)
+                self._config_manager.load_configs()
+
+        # Apply the new project's environment variables to os.environ. Happens after
+        # workspace resolution (so it doesn't affect workspace lookup -- the outgoing
+        # project's entries were already restored above) and before library reload
+        # (so nodes imported during reload observe the new values).
+        if request.project_id is not None:
+            new_project_info = self._successfully_loaded_project_templates.get(request.project_id)
+            if new_project_info is not None:
+                self._apply_project_env(new_project_info)
+
+        new_workspace = self._config_manager.workspace_path
+        workspace_changed = old_workspace != new_workspace
+
+        if self._initialization_complete:
+            # Persist the active project's file path so the next engine restart
+            # restores it via _resolve_project_file_path(). System defaults has
+            # no file path, so persist None for that case and let startup fall
+            # back to the workspace default.
+            persisted_project_file: str | None = None
+            if request.project_id is not None:
+                persisted_info = self._successfully_loaded_project_templates.get(request.project_id)
+                if persisted_info is not None and persisted_info.project_file_path is not None:
+                    persisted_project_file = str(persisted_info.project_file_path)
+            try:
+                self._config_manager.set_config_value("project_file", persisted_project_file)
+            except Exception:
+                logger.warning("Failed to persist project_file '%s' to config", persisted_project_file)
+
+            failure = await self._reload_after_project_switch(request.project_id, workspace_changed=workspace_changed)
+            if failure is not None:
+                return failure
 
         if request.project_id is None:
             return SetCurrentProjectResultSuccess(
                 result_details="Successfully set current project. No project selected",
             )
 
-        return SetCurrentProjectResultSuccess(
+        result = SetCurrentProjectResultSuccess(
             result_details=f"Successfully set current project. ID: {request.project_id}",
         )
+        if workspace_changed and self._initialization_complete:
+            result.altered_workflow_state = True
+        return result
 
     def on_get_current_project_request(
         self, _request: GetCurrentProjectRequest
@@ -613,19 +930,127 @@ class ProjectManager:
             result_details=f"Successfully retrieved current project. ID: {self._current_project_id}",
         )
 
-    def on_save_project_template_request(self, request: SaveProjectTemplateRequest) -> SaveProjectTemplateResultFailure:
+    def on_save_project_template_request(
+        self, request: SaveProjectTemplateRequest
+    ) -> SaveProjectTemplateResultSuccess | SaveProjectTemplateResultFailure:
         """Save user customizations to project.yml.
 
         Flow:
-        1. Convert template_data to YAML format
-        2. Issue WriteFileRequest to OSManager
-        3. Handle write result
+        1. Validate template_data as a ProjectTemplate model
+        2. Serialize to YAML using ProjectTemplate.to_overlay_yaml()
+        3. Write to disk via File.write_text
         4. Invalidate cache (force reload on next access)
-
-        TODO: Implement saving logic when template system merges
         """
-        return SaveProjectTemplateResultFailure(
-            result_details=f"Attempted to save project template to '{request.project_path}'. Failed because template saving not yet implemented",
+        # Step 1: Validate and parse template_data
+        try:
+            template = ProjectTemplate.model_validate(request.template_data)
+        except ValidationError as e:
+            return SaveProjectTemplateResultFailure(
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because template data is invalid: {e}",
+            )
+
+        # Step 2: Serialize to YAML
+        try:
+            yaml_content = template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+        except Exception as e:
+            return SaveProjectTemplateResultFailure(
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because YAML serialization failed: {e}",
+            )
+
+        # Step 3: Write to disk
+        try:
+            File(str(request.project_path)).write_text(yaml_content)
+        except FileWriteError as e:
+            return SaveProjectTemplateResultFailure(
+                result_details=f"Attempted to save project template to '{request.project_path}'. Failed because file write failed: {e}",
+            )
+
+        # Step 4: Invalidate cache so next LoadProjectTemplateRequest reads from disk
+        project_id: ProjectID = str(request.project_path)
+        self._successfully_loaded_project_templates.pop(project_id, None)
+        self._registered_template_status.pop(request.project_path, None)
+
+        return SaveProjectTemplateResultSuccess(
+            result_details=f"Successfully saved project template to '{request.project_path}'",
+        )
+
+    def on_validate_project_template_request(
+        self, request: ValidateProjectTemplateRequest
+    ) -> ValidateProjectTemplateResultSuccess:
+        """Dry-run validate a template dict.
+
+        Runs the same validation the load path runs (pydantic model validation
+        plus macro parsing for situations and directories), but does not touch
+        disk or the template registry. Always returns Success; callers inspect
+        `validation.status` to decide whether the template is usable.
+        """
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+
+        try:
+            template = ProjectTemplate.model_validate(request.template_data)
+        except ValidationError as e:
+            for error in e.errors():
+                field_path = ".".join(str(loc) for loc in error["loc"])
+                validation.add_error(field_path=field_path, message=error["msg"])
+            return ValidateProjectTemplateResultSuccess(
+                validation=validation,
+                result_details=f"Template validation failed with {len(validation.problems)} problem(s)",
+            )
+
+        self._parse_situation_macros(template.situations, validation)
+        self._parse_directory_macros(template.directories, validation)
+
+        if validation.status == ProjectValidationStatus.GOOD:
+            details = "Template is valid"
+        else:
+            details = f"Template validation found {len(validation.problems)} problem(s) (status: {validation.status})"
+        return ValidateProjectTemplateResultSuccess(validation=validation, result_details=details)
+
+    def on_unregister_project_template_request(
+        self, request: UnregisterProjectTemplateRequest
+    ) -> UnregisterProjectTemplateResultSuccess | UnregisterProjectTemplateResultFailure:
+        """Remove a registered project template from in-memory caches and persisted config.
+
+        Flow:
+        1. Verify the project_id is known
+        2. Remove from _successfully_loaded_project_templates and _registered_template_status
+        3. Remove from PROJECTS_TO_REGISTER_KEY in user config
+        4. If this was the current project, clear the current project
+        """
+        project_id = request.project_id
+
+        if (
+            project_id not in self._successfully_loaded_project_templates
+            and Path(project_id) not in self._registered_template_status
+        ):
+            return UnregisterProjectTemplateResultFailure(
+                result_details=f"Attempted to unregister project template '{project_id}'. Failed because it is not registered.",
+            )
+
+        # Remove from in-memory caches
+        self._successfully_loaded_project_templates.pop(project_id, None)
+        self._registered_template_status.pop(Path(project_id), None)
+
+        # Remove from persisted config so it is not reloaded on restart
+        try:
+            registered: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            updated = [p for p in registered if p != project_id]
+            self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, updated)
+        except Exception:
+            logger.warning("Failed to remove project path '%s' from persisted config", project_id)
+
+        # If this was the active project, clear the current project (in-memory
+        # and persisted) so the next restart doesn't try to restore a project
+        # that is no longer registered.
+        if self._current_project_id == project_id:
+            self._current_project_id = None
+            try:
+                self._config_manager.set_config_value("project_file", None)
+            except Exception:
+                logger.warning("Failed to clear project_file from config after unregister")
+
+        return UnregisterProjectTemplateResultSuccess(
+            result_details=f"Successfully unregistered project template '{project_id}'",
         )
 
     def on_match_path_against_macro_request(
@@ -639,11 +1064,6 @@ class ProjectManager:
         3. If match succeeds, return success with extracted_variables
         4. If match fails, return success with match_failure (not an error)
         """
-        if self._secrets_manager is None:
-            return AttemptMatchPathAgainstMacroResultFailure(
-                result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Failed because SecretsManager not available",
-            )
-
         extracted = request.parsed_macro.extract_variables(
             request.file_path,
             request.known_variables,
@@ -753,13 +1173,24 @@ class ProjectManager:
 
         Called by EventManager after all libraries are loaded.
         Loads system defaults, then checks workspace for a griptape-nodes-project.yml
-        overlay file and sets it as the current project if found.
+        overlay file and sets it as the current project if found. If a project has
+        already been explicitly selected before this event (e.g., by a CLI executor
+        via --project-file-path), preserves that choice and skips workspace discovery.
         """
-        self._load_system_defaults()
+        # If an explicit project was selected before init completed (e.g., by
+        # LocalWorkflowExecutor loading --project-file-path), keep it. Still load
+        # registered projects for visibility and mark init complete.
+        explicit_project_selected = (
+            self._current_project_id is not None and self._current_project_id != SYSTEM_DEFAULTS_KEY
+        )
+        if explicit_project_selected:
+            await self._load_registered_projects()
+            self._initialization_complete = True
+            return
 
         # Set system defaults as current project (using synthetic key for system defaults)
         set_request = SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY)
-        result = self.on_set_current_project_request(set_request)
+        result = await self.on_set_current_project_request(set_request)
 
         if result.failed():
             logger.error("Failed to set default project as current: %s", result.result_details)
@@ -768,7 +1199,14 @@ class ProjectManager:
         logger.debug("Successfully loaded default project template")
 
         # Check workspace for an optional project overlay file
-        self._load_workspace_project()
+        await self._load_workspace_project()
+
+        # Load any additional project templates previously registered by the user
+        await self._load_registered_projects()
+
+        # Mark initialization complete so subsequent project switches trigger
+        # workspace detection and library reload when the workspace actually changes.
+        self._initialization_complete = True
 
     def on_get_all_situations_for_project_request(
         self, _request: GetAllSituationsForProjectRequest
@@ -814,11 +1252,6 @@ class ProjectManager:
         if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
             return AttemptMapAbsolutePathToProjectResultFailure(
                 result_details="Attempted to map absolute path. Failed because no current project is set"
-            )
-
-        if self._secrets_manager is None:
-            return AttemptMapAbsolutePathToProjectResultFailure(
-                result_details="Attempted to map absolute path. Failed because SecretsManager not available"
             )
 
         project_info = current_project_result.project_info
@@ -900,7 +1333,7 @@ class ProjectManager:
 
         return directory_schemas
 
-    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:
+    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:  # noqa: C901
         """Get the value of a single builtin variable.
 
         Args:
@@ -923,7 +1356,7 @@ class ProjectManager:
                 raise NotImplementedError(msg)
 
             case "workspace_dir":
-                return str(GriptapeNodes.ConfigManager().workspace_path)
+                return str(self._config_manager.workspace_path)
 
             case "workflow_name":
                 context_manager = GriptapeNodes.ContextManager()
@@ -943,20 +1376,20 @@ class ProjectManager:
                 except KeyError as e:
                     msg = f"Workflow '{workflow_name}' has not been saved yet"
                     raise RuntimeError(msg) from e
+                if workflow.file_path is None:
+                    msg = f"Workflow '{workflow_name}' has not been saved yet"
+                    raise RuntimeError(msg)
                 workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
                 return str(workflow_file_path.parent)
 
             case "static_files_dir":
-                config_manager = GriptapeNodes.ConfigManager()
-                return config_manager.get_config_value("static_files_directory", default="staticfiles")
+                return self._config_manager.get_config_value("static_files_directory", default="staticfiles")
 
             case _:
                 msg = f"Unknown builtin variable: {var_name}"
                 raise ValueError(msg)
 
-    def _absolute_path_to_macro_path(  # noqa: C901, PLR0912
-        self, absolute_path: Path, project_info: ProjectInfo
-    ) -> str | None:
+    def _absolute_path_to_macro_path(self, absolute_path: Path, project_info: ProjectInfo) -> str | None:
         """Convert an absolute path to macro form using longest prefix matching.
 
         Resolves all project directories at runtime (to support env vars and macros),
@@ -981,31 +1414,17 @@ class ProjectManager:
             /Users/james/Downloads/file.png → None
         """
         # Normalize paths for consistent cross-platform comparison
-        os_manager = GriptapeNodes.OSManager()
-        absolute_path = os_manager.resolve_path_safely(absolute_path)
+        absolute_path = resolve_path_safely(absolute_path)
 
         template = project_info.template
-        workspace_dir = os_manager.resolve_path_safely(GriptapeNodes.ConfigManager().workspace_path)
-        project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
+        workspace_dir = resolve_path_safely(self._config_manager.workspace_path)
+        project_base_dir = resolve_path_safely(project_info.project_base_dir)
 
-        # Secrets manager must be available (checked by caller)
-        if self._secrets_manager is None:
-            msg = "SecretsManager not available"
-            raise RuntimeError(msg)
-        secrets_manager = self._secrets_manager
-
-        # Collect all variables used across ALL directory macros
-        variables_needed: set[str] = set()
-        for parsed_macro in project_info.parsed_directory_schemas.values():
-            variable_infos = parsed_macro.get_variables()
-            variables_needed.update(var_info.name for var_info in variable_infos)
-
-        # Build builtin variables dict - only resolve variables actually needed by the macros
-        # If a required variable fails to resolve, let the error propagate (will be caught by handler)
-        builtin_vars: MacroVariables = {}
-        for var_name in variables_needed:
-            if var_name in BUILTIN_VARIABLES:
-                builtin_vars[var_name] = self._get_builtin_variable_value(var_name, project_info)
+        # Shared recursive resolver so directories referencing other directories
+        # (e.g. watch_output -> watch_folder) flatten through the same machinery
+        # as forward macro resolution. Caches results across the whole inversion
+        # pass below.
+        resolver = self._build_variable_resolver(template, project_info)
 
         # Find all matching directories (where absolute_path is inside the directory)
         class DirectoryMatch(NamedTuple):
@@ -1016,14 +1435,8 @@ class ProjectManager:
         matches: list[DirectoryMatch] = []
 
         for directory_name in template.directories:
-            # Get parsed macro from project info cache
-            parsed_macro = project_info.parsed_directory_schemas.get(directory_name)
-            if parsed_macro is None:
-                msg = f"Directory '{directory_name}' not found in parsed schemas"
-                raise RuntimeError(msg)
-
             try:
-                resolved_path_str = parsed_macro.resolve(builtin_vars, secrets_manager)
+                resolved_path_str = resolver.resolve_directory(directory_name)
             except MacroResolutionError as e:
                 msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
                 raise RuntimeError(msg) from e
@@ -1032,7 +1445,7 @@ class ProjectManager:
             # resolve_file_path handles ~, env vars, and absolute paths in addition to relative paths.
             resolved_dir_path = resolve_file_path(resolved_path_str, workspace_dir)
             # Normalize for consistent cross-platform comparison
-            resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
+            resolved_dir_path = resolve_path_safely(resolved_dir_path)
 
             # Check if absolute_path is inside this directory
             try:
@@ -1097,8 +1510,7 @@ class ProjectManager:
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         # System defaults use workspace directory as the base directory.
-        config_manager = GriptapeNodes.ConfigManager()
-        workspace_dir = config_manager.workspace_path
+        workspace_dir = self._config_manager.workspace_path
 
         # Parse all macros BEFORE creating ProjectInfo (system defaults should always be valid)
         situation_schemas = self._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
@@ -1129,9 +1541,7 @@ class ProjectManager:
 
         Returns None if no project file should be loaded (missing config, file not found).
         """
-        config_manager = GriptapeNodes.ConfigManager()
-
-        project_file_value = config_manager.get_config_value("project_file")
+        project_file_value = self._config_manager.get_config_value("project_file")
         if project_file_value is not None:
             project_path = Path(project_file_value)
             if project_path.exists():
@@ -1141,19 +1551,15 @@ class ProjectManager:
                 project_path,
             )
 
-        workspace_dir_value = config_manager.get_config_value("workspace_directory")
-        if workspace_dir_value is None:
-            logger.debug("Skipping workspace project load: 'workspace_directory' config value is None")
-            return None
-
-        workspace_project_path = Path(workspace_dir_value) / WORKSPACE_PROJECT_FILE
+        workspace_dir = self._config_manager.workspace_path
+        workspace_project_path = workspace_dir / WORKSPACE_PROJECT_FILE
         if not workspace_project_path.exists():
             logger.debug("No workspace project file found at '%s'", workspace_project_path)
             return None
 
         return workspace_project_path
 
-    def _load_workspace_project(self) -> None:
+    async def _load_workspace_project(self) -> None:
         """Load workspace-level project template overlay if present.
 
         Checks for a project file using _resolve_project_file_path. If found, loads
@@ -1164,10 +1570,11 @@ class ProjectManager:
         if workspace_project_path is None:
             return
 
-        logger.info("Found workspace project file at '%s', loading", workspace_project_path)
+        workspace_project_path = workspace_project_path.resolve()
+        logger.debug("Found workspace project file at '%s', loading", workspace_project_path)
 
         try:
-            yaml_text = File(str(workspace_project_path)).read_text()
+            yaml_text = await File(str(workspace_project_path)).aread_text()
         except FileLoadError as e:
             logger.error(
                 "Attempted to read workspace project file at '%s'. Failed with: %s",
@@ -1220,7 +1627,7 @@ class ProjectManager:
         self._registered_template_status[workspace_project_path] = validation
 
         set_request = SetCurrentProjectRequest(project_id=project_id)
-        set_result = self.on_set_current_project_request(set_request)
+        set_result = await self.on_set_current_project_request(set_request)
 
         if set_result.failed():
             logger.error(
@@ -1230,4 +1637,49 @@ class ProjectManager:
             )
             return
 
-        logger.info("Successfully loaded workspace project from '%s'", workspace_project_path)
+        logger.debug("Successfully loaded workspace project from '%s'", workspace_project_path)
+
+    async def _load_registered_projects(self) -> None:
+        """Load project templates from paths persisted in user config.
+
+        Called after workspace project loading so that user-registered paths
+        are available in the template list. Paths already loaded (e.g., the
+        workspace project) are skipped. Missing or invalid files are skipped
+        with a warning rather than raising.
+        """
+        registered_paths: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+        for path_str in registered_paths:
+            # Project IDs are canonicalized absolute paths, so expand ~/env
+            # vars and resolve the persisted string before checking for an
+            # existing load (prevents duplicate entries when the same file
+            # was persisted under different spellings).
+            resolved_id = str(canonicalize_for_identity(path_str))
+            if resolved_id in self._successfully_loaded_project_templates:
+                continue
+            load_request = LoadProjectTemplateRequest(project_path=Path(path_str))
+            result = await self.on_load_project_template_request(load_request)
+            if result.failed():
+                logger.warning(
+                    "Failed to load registered project '%s' on startup: %s",
+                    path_str,
+                    result.result_details,
+                )
+            else:
+                logger.debug("Reloaded registered project from '%s'", path_str)
+
+    def _register_project_path(self, project_id: str) -> None:
+        """Persist a project file path so it is loaded on the next engine restart.
+
+        Appends the path to the projects_to_register config list if not already
+        present. Errors are logged as warnings and do not affect the load result.
+        """
+        try:
+            registered: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            # Compare by canonicalized path (~/env expansion + resolution) so a
+            # previously persisted relative or ~/ spelling of the same file
+            # isn't re-persisted as a duplicate.
+            resolved_existing = {str(canonicalize_for_identity(p)) for p in registered}
+            if project_id not in resolved_existing:
+                self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
+        except Exception:
+            logger.warning("Failed to persist project path '%s' to config", project_id)

@@ -115,12 +115,24 @@ class AppInitializationComplete(AppPayload):
     workflows_to_register: list[str] = field(default_factory=list)
     models_to_download: list[str] = field(default_factory=list)
     skip_library_loading: bool = False
+    # When True, this process is a dedicated library worker. The library to load is
+    # taken from the first entry in libraries_to_register. Multiple workers can run
+    # simultaneously for different libraries.
+    is_worker: bool = False
 
 
 @dataclass
 @PayloadRegistry.register
 class AppConnectionEstablished(AppPayload):
     """Notification that a connection to the API has been established."""
+
+
+@dataclass
+@PayloadRegistry.register
+class AppSessionStartedEvent(AppPayload):
+    """Notification that a session has started and workers can be spawned."""
+
+    session_id: str
 
 
 @dataclass
@@ -143,6 +155,64 @@ class EngineInitializationProgress(AppPayload):
     current: int
     total: int
     error: str | None = None
+    is_worker: bool = False
+
+
+@dataclass
+class WorkerParameterSchema:
+    """Serialized parameter from a worker-loaded node.
+
+    Contains the fields needed to reconstruct a Parameter on the orchestrator
+    without importing the worker library's Python modules.
+    """
+
+    name: str
+    type: str
+    input_types: list[str]
+    output_type: str
+    default_value: Any
+    tooltip: Any
+    tooltip_as_input: Any
+    tooltip_as_property: Any
+    tooltip_as_output: Any
+    mode_allowed_input: bool
+    mode_allowed_property: bool
+    mode_allowed_output: bool
+    user_defined: bool
+    settable: bool
+    serializable: bool
+    private: bool
+    ui_options: dict | None
+
+
+@dataclass
+class WorkerNodeSchema:
+    """Serialized node from a worker-loaded library."""
+
+    class_name: str
+    parameters: list[WorkerParameterSchema]
+
+
+@dataclass
+@PayloadRegistry.register
+class LibraryLoadedNotification(AppPayload):
+    """Notification that a library has finished loading, including its fitness outcome.
+
+    Emitted after a library reaches LOADED state. The orchestrator re-broadcasts it so
+    all listeners (including the GUI) can update their view of library health.
+
+    Args:
+        library_name: Name of the library that was loaded.
+        fitness: Final fitness value (LibraryManager.LibraryFitness string).
+        problem_details: Human-readable summary of problems, or None if there are none.
+        node_schemas: Serialized node/parameter schemas from the worker process, or None
+            if this notification was not produced by a worker.
+    """
+
+    library_name: str
+    fitness: str
+    problem_details: str | None = None
+    node_schemas: list[WorkerNodeSchema] | None = None
 
 
 @dataclass

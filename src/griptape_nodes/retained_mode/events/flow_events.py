@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from griptape_nodes.retained_mode.events.variable_events import CreateVariableRequest
 
 if TYPE_CHECKING:
     # Circular import: flow_events <-> workflow_events
@@ -164,6 +165,73 @@ class ListFlowsInCurrentContextResultFailure(WorkflowNotAlteredMixin, ResultPayl
     pass
 
 
+@dataclass
+class NodePosition:
+    """Resulting editor position for a node in AutoLayoutFlowResultSuccess."""
+
+    node_name: str
+    x: float
+    y: float
+
+
+@dataclass
+@PayloadRegistry.register
+class AutoLayoutFlowRequest(RequestPayload):
+    """Auto-place every node in a flow on a topological column-and-row grid.
+
+    Use when: an MCP client has just finished building a graph (nodes + connections) and
+    wants the editor to render it in a readable layout without having to compute pixel
+    positions by hand. Runs a topological sort over the flow's data/control edges, assigns
+    each node a layer (longest path from any source), and places layers as columns and
+    siblings within a layer as rows.
+
+    Writes the computed position into each node's `metadata["position"] = {"x", "y"}`,
+    matching the convention the editor and other engine code already use. Existing metadata
+    keys other than `position` are preserved.
+
+    Nodes that participate in a cycle (should not happen in a well-formed flow) are placed
+    at layer 0; a warning is logged.
+
+    Args:
+        flow_name: Flow to lay out. Defaults to the current-context flow, matching the
+            convention used by other flow-scoped requests.
+        origin_x: X coordinate of the first column. Defaults to 0.
+        origin_y: Y coordinate of the first row. Defaults to 0.
+        layer_spacing: Horizontal spacing between columns in editor pixels. 650 is a
+            readable default that matches the pair-node spacing used elsewhere in the engine.
+        row_spacing: Vertical spacing between sibling nodes within a layer.
+
+    Results: AutoLayoutFlowResultSuccess (with per-node final positions) | AutoLayoutFlowResultFailure
+    """
+
+    flow_name: str | None = None
+    origin_x: float = 0.0
+    origin_y: float = 0.0
+    layer_spacing: float = 650.0
+    row_spacing: float = 300.0
+
+
+@dataclass
+@PayloadRegistry.register
+class AutoLayoutFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Auto-layout applied.
+
+    Args:
+        flow_name: Flow that was laid out.
+        positioned_nodes: Final (node_name, x, y) for every node in the flow. Ordered by
+            layer then by row within a layer so callers can reason about the visual shape.
+    """
+
+    flow_name: str
+    positioned_nodes: list[NodePosition] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class AutoLayoutFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Auto-layout failed. Common causes: no flow in current context, named flow not found."""
+
+
 # Gives a list of the flows directly parented by the node specified.
 @dataclass
 @PayloadRegistry.register
@@ -241,6 +309,21 @@ class SerializedFlowCommands:
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
 
+    @dataclass
+    class SerializedVariableCommand:
+        """Companion class to recreate a Variable during deserialization, pulling its value from the unique-values pool.
+
+        Attributes:
+            create_variable_command (CreateVariableRequest): The base create-variable command.
+                The ``value`` field on this command is ignored during AST generation — the generated script
+                substitutes the value from ``top_level_unique_values_dict[<unique_value_uuid>]`` instead.
+            unique_value_uuid (SerializedNodeCommands.UniqueParameterValueUUID): The UUID into the
+                unique values dictionary for this variable's value. Shares the pool with parameter values.
+        """
+
+        create_variable_command: CreateVariableRequest
+        unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
+
     flow_initialization_command: CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None
     serialized_node_commands: list[SerializedNodeCommands]
     serialized_connections: list[IndirectConnectionSerialization]
@@ -253,6 +336,7 @@ class SerializedFlowCommands:
     node_dependencies: NodeDependencies
     node_types_used: set[LibraryNameAndNodeType]
     flow_name: str | None = None
+    serialized_variable_commands: list[SerializedVariableCommand] = field(default_factory=list)
 
 
 @dataclass
@@ -337,13 +421,17 @@ class ExtractFlowCommandsFromImageMetadataRequest(RequestPayload):
 class ExtractFlowCommandsFromImageMetadataResultSuccess(ResultPayloadSuccess):
     """Flow commands extracted successfully from image metadata.
 
+    An image without embedded flow commands is still a success: the image simply
+    carries no workflow payload, which is a valid state. In that case
+    serialized_flow_commands is None.
+
     Args:
-        serialized_flow_commands: The extracted and decoded SerializedFlowCommands object
+        serialized_flow_commands: The extracted and decoded SerializedFlowCommands object, or None if the image has no embedded flow commands
         flow_name: Name of the deserialized flow (only present if deserialize=True)
         node_name_mappings: Mapping from original to deserialized node names (only present if deserialize=True)
     """
 
-    serialized_flow_commands: SerializedFlowCommands
+    serialized_flow_commands: SerializedFlowCommands | None = None
     flow_name: str | None = None
     node_name_mappings: dict[str, str] = field(default_factory=dict)
 

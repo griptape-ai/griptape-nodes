@@ -141,6 +141,31 @@ def _convert_sequence_to_dict(sequence: list | tuple) -> dict:
     return result
 
 
+def dict_diff(current: dict, base: dict) -> dict:
+    """Return only entries from current that differ from base (recursively).
+
+    Skips keys whose value is None in current (deletions are not tracked).
+    For nested dicts, recurses and only includes the changed sub-keys.
+
+    Args:
+        current: The dict representing the current state.
+        base: The dict representing the baseline to diff against.
+
+    Returns:
+        A dict containing only the entries that differ from base.
+    """
+    result = {}
+    for k, v in current.items():
+        b = base.get(k)
+        if isinstance(v, dict) and isinstance(b, dict):
+            sub = dict_diff(v, b)
+            if sub:
+                result[k] = sub
+        elif v != b and v is not None:
+            result[k] = v
+    return result
+
+
 def merge_dicts(dct: dict | None, merge_dct: dict | None, *, add_keys: bool = True, merge_lists: bool = False) -> dict:
     """Recursive dict merge.
 

@@ -242,7 +242,7 @@ class VersionCompatibilityManager:
 
         return version_issues
 
-    def check_workflow_version_compatibility(
+    async def check_workflow_version_compatibility(
         self, workflow_metadata: WorkflowMetadata
     ) -> list[WorkflowVersionCompatibilityIssue]:
         """Check a workflow for version compatibility issues."""
@@ -255,11 +255,11 @@ class VersionCompatibilityManager:
                 version_issues.extend(issues)
 
         # Check for deprecated nodes in the workflow
-        version_issues.extend(self._check_workflow_for_deprecated_nodes(workflow_metadata))
+        version_issues.extend(await self._check_workflow_for_deprecated_nodes(workflow_metadata))
 
         return version_issues
 
-    def _check_workflow_for_deprecated_nodes(  # noqa: C901
+    async def _check_workflow_for_deprecated_nodes(  # noqa: C901
         self, workflow_metadata: WorkflowMetadata
     ) -> list[WorkflowVersionCompatibilityIssue]:
         """Check a workflow for deprecated nodes.
@@ -269,11 +269,9 @@ class VersionCompatibilityManager:
         """
         issues: list[WorkflowVersionCompatibilityIssue] = []
 
-        # Get list of registered libraries once (silent check - no error logging)
-        list_result = GriptapeNodes.handle_request(ListRegisteredLibrariesRequest())
+        list_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
 
         if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
-            # Should not happen, but handle gracefully - return empty issues
             return issues
 
         registered_libraries = list_result.libraries

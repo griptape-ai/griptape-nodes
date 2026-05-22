@@ -8,7 +8,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import anyio
 
@@ -53,9 +53,12 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
+    ExecuteNodeRequest,
+    ExecuteNodeResultSuccess,
     GriptapeEvent,
     InvolvedNodesEvent,
     NodeFinishProcessEvent,
+    NodeMetadata,
     NodeResolvedEvent,
     NodeStartProcessEvent,
     NodeUnresolvedEvent,
@@ -259,8 +262,31 @@ class NodeExecutor:
                 await self.handle_loop_execution(node)
                 return
 
-            # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
-            await node.aprocess()
+            # Single entry point for both local and worker execution. The
+            # ExecuteNodeRequest handler routes to a worker subprocess when the
+            # node's library requires it, otherwise runs aprocess in-process.
+            result = await GriptapeNodes.ahandle_request(
+                ExecuteNodeRequest(
+                    node_name=node.name,
+                    parameter_values=dict(node.parameter_values),
+                    node_metadata=cast("NodeMetadata", dict(node.metadata)),
+                )
+            )
+            if not isinstance(result, ExecuteNodeResultSuccess):
+                msg = f"Node '{node.name}' execution failed: {getattr(result, 'result_details', result)}"
+                raise RuntimeError(msg)  # noqa: TRY004
+            # Copy outputs back onto the in-memory node. Write directly into
+            # parameter_output_values (not through set_parameter_value, which
+            # targets parameter_values and re-fires before/after_value_set and
+            # lifecycle events). TrackedParameterOutputValues.__setitem__
+            # guards with old_value != value, so on the local/in-process path
+            # -- where aprocess already wrote these entries in place -- the
+            # write is idempotent and emits no duplicate AlterElementEvent.
+            # Downstream delivery is handled later by
+            # parallel_resolution.collect_values_from_upstream_nodes, which
+            # reads from parameter_output_values.
+            for name, value in result.parameter_output_values.items():
+                node.parameter_output_values[name] = value
         finally:
             current_executing_node_name.reset(token)
 
@@ -3745,9 +3771,11 @@ class NodeExecutor:
             # Register the workflow so DeleteWorkflowRequest can find and remove it.
             # A subprocess may have registered it in its own process but not in the main process.
             load_workflow_metadata_request = LoadWorkflowMetadata(file_name=workflow_path.name)
-            result = GriptapeNodes.handle_request(load_workflow_metadata_request)
+            result = await GriptapeNodes.ahandle_request(load_workflow_metadata_request)
             if isinstance(result, LoadWorkflowMetadataResultSuccess):
-                WorkflowRegistry.generate_new_workflow(path_for_key, result.metadata)
+                WorkflowRegistry.generate_new_workflow(
+                    registry_key=workflow_name, metadata=result.metadata, file_path=path_for_key
+                )
 
         delete_request = DeleteWorkflowRequest(name=workflow_name)
         delete_result = await GriptapeNodes.ahandle_request(delete_request)

@@ -53,6 +53,16 @@ Instance methods come first because they can call anything. Class methods come n
 
 **Include context in error messages** - Use the format: "Attempted to do X. Failed with data Y because of Z." Include `{self.name}` when available. Include relevant parameter names and operation context.
 
+## Path Handling
+
+**Canonicalize at the boundary, not in the middle** - The OS boundary (`OSManager.on_write_file_request`, `LocalFileDriver._resolve_path`) already canonicalizes incoming paths. Do not wrap a path with `canonicalize_for_io` before passing it to `ReadFileRequest` / `WriteFileRequest` or to a `FileDriver` method, it is redundant.
+
+**Use `canonicalize_for_identity` for keys** - When a path is about to become a dict key, cache key, dedupe-set member, or workspace-containment input, call `canonicalize_for_identity(path)` from `griptape_nodes.files.path_utils`. It sanitizes + expands `~`/env vars + absolutizes + follows symlinks, so two spellings of the same file collide. Prefer it over ad-hoc `Path(x).resolve()`, which skips `expanduser` and causes identity drift.
+
+**Use `canonicalize_for_io` for OS-level I/O** - Reach for `canonicalize_for_io(path)` only when handing a path directly to the OS (inside a handler or driver, or calling `open()`/`os.*` yourself). It does the same work as the identity variant without following symlinks and adds the Windows long-path prefix when needed.
+
+**Prefer the named helpers over composing primitives** - `sanitize_path_string`, `expand_path`, `resolve_path_safely`, and `normalize_path_for_platform` are building blocks. If you find yourself chaining them, use one of the two canonicalize helpers instead so behavior stays consistent across call sites.
+
 ## Architecture
 
 **Singleton managers** - `GriptapeNodes` is a singleton holding 25+ managers (e.g., `FlowManager`, `NodeManager`), each accessed via `GriptapeNodes.ManagerName()` classmethods.
