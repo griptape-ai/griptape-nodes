@@ -37,7 +37,7 @@ class TestArbitraryCodeExecManager:
         """When capturing a variable, stdout must be ignored in favour of the captured value."""
         request = RunArbitraryPythonStringRequest(
             python_string="print('ignored')\nresult = 'captured'",
-            variable_names_to_capture="result",
+            variable_names_to_capture=["result"],
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -48,7 +48,7 @@ class TestArbitraryCodeExecManager:
         """Requesting a variable that was never set must return a failure naming the variable."""
         request = RunArbitraryPythonStringRequest(
             python_string="x = 1",
-            variable_names_to_capture="nonexistent",
+            variable_names_to_capture=["nonexistent"],
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -89,7 +89,7 @@ class TestArbitraryCodeExecManager:
         code = "def fact(n): return 1 if n <= 1 else n * fact(n - 1)\nresult = fact(5)"
         request = RunArbitraryPythonStringRequest(
             python_string=code,
-            variable_names_to_capture="result",
+            variable_names_to_capture=["result"],
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -100,7 +100,7 @@ class TestArbitraryCodeExecManager:
         """Exec'd code must not be able to access variables from the calling scope."""
         request = RunArbitraryPythonStringRequest(
             python_string=("try:\n    _ = string_buffer\n    result = False\nexcept NameError:\n    result = True"),
-            variable_names_to_capture="result",
+            variable_names_to_capture=["result"],
         )
         result = GriptapeNodes.handle_request(request)
 

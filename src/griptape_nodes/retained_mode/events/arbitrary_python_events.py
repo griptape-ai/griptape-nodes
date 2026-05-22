@@ -25,17 +25,13 @@ class RunArbitraryPythonStringRequest(RequestPayload):
 
     Args:
         python_string: Python code string to execute
-        variable_names_to_capture: Optional name(s) of local variables in the executed code to capture and return as output instead of stdout.
+        variable_names_to_capture: Optional names of local variables in the executed code to capture and return as output instead of stdout.
 
     Results: RunArbitraryPythonStringResultSuccess (with output) | RunArbitraryPythonStringResultFailure (execution error)
     """
 
     python_string: str
-    variable_names_to_capture: str | list[str] | None = None
-
-    def __post_init__(self) -> None:
-        if isinstance(self.variable_names_to_capture, str):
-            self.variable_names_to_capture = [self.variable_names_to_capture]
+    variable_names_to_capture: list[str] | None = None
 
 
 @dataclass
