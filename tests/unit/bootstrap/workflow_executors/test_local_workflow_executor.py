@@ -189,3 +189,23 @@ class TestLocalWorkflowExecutorCli:
         kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
 
         assert kwargs["project_file_path"] == Path("/some/project.yaml")
+
+    def test_cli_constructor_kwargs_pickle_inherits_argparse_default(self) -> None:
+        # When `add_cli_arguments` was seeded with the save-time default, that
+        # value flows through `_cli_constructor_kwargs` into the constructor.
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=True)
+        args = parser.parse_args([])
+
+        kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
+
+        assert kwargs["pickle_control_flow_result"] is True
+
+    def test_cli_constructor_kwargs_pickle_flag_overrides_seeded_default(self) -> None:
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=False)
+        args = parser.parse_args(["--pickle-control-flow-result"])
+
+        kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
+
+        assert kwargs["pickle_control_flow_result"] is True

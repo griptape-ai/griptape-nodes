@@ -2888,31 +2888,26 @@ class WorkflowManager:
         # Generate the ensure flow context function call
         ensure_context_call = self._generate_ensure_flow_context_call()
 
-        # Pop `pickle_control_flow_result` out of `**kwargs` so it doesn't get splatted
-        # into the executor constructor (which doesn't accept it). It's an `arun`-only
-        # kwarg. Default value falls back to the save-time `_PICKLE_CONTROL_FLOW_RESULT`
-        # module-level constant.
-        pickle_pop_stmt = ast.Assign(
-            targets=[ast.Name(id="pickle_control_flow_result", ctx=ast.Store())],
+        # Construct a default LocalWorkflowExecutor only when the caller did not supply one.
+        # Inside the `if`, seed `kwargs["pickle_control_flow_result"]` with the save-time
+        # default via `setdefault` so direct importers who don't pass it explicitly inherit
+        # the publisher's choice. `**kwargs` is then splatted into the constructor; a typo'd
+        # kwarg surfaces as a TypeError from LocalWorkflowExecutor.__init__.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3771 Update for workflows that call other workflows - need to include referenced workflows in the list
+        pickle_setdefault_stmt = ast.Expr(
             value=ast.Call(
                 func=ast.Attribute(
                     value=ast.Name(id="kwargs", ctx=ast.Load()),
-                    attr="pop",
+                    attr="setdefault",
                     ctx=ast.Load(),
                 ),
                 args=[
                     ast.Constant(value="pickle_control_flow_result"),
-                    ast.Name(id="_PICKLE_CONTROL_FLOW_RESULT", ctx=ast.Load()),
+                    ast.Constant(value=pickle_control_flow_result),
                 ],
                 keywords=[],
-            ),
+            )
         )
-
-        # Construct a default LocalWorkflowExecutor only when the caller did not supply one.
-        # `**kwargs` is passed straight through to the constructor; if the caller passed a
-        # typo'd executor kwarg, LocalWorkflowExecutor.__init__ will raise TypeError, which
-        # is the loud failure we want for direct importers.
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3771 Update for workflows that call other workflows - need to include referenced workflows in the list
         executor_assign = ast.If(
             test=ast.Compare(
                 left=ast.Name(id="workflow_executor", ctx=ast.Load()),
@@ -2920,6 +2915,7 @@ class WorkflowManager:
                 comparators=[ast.Constant(value=None)],
             ),
             body=[
+                pickle_setdefault_stmt,
                 ast.Assign(
                     targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
                     value=ast.Call(
@@ -2934,13 +2930,13 @@ class WorkflowManager:
                             ast.keyword(arg=None, value=ast.Name(id="kwargs", ctx=ast.Load())),
                         ],
                     ),
-                )
+                ),
             ],
             orelse=[],
         )
-        # Use async context manager for workflow execution. `pickle_control_flow_result` was
-        # popped out of `**kwargs` above; pass it explicitly. Any remaining `**kwargs` flow
-        # through to `arun` so additional executor-specific options aren't dropped.
+        # Use async context manager for workflow execution. Any leftover `**kwargs` flow
+        # through to `arun` (e.g. `pickle_control_flow_result` if the caller wants to
+        # override the executor's instance default for this run only).
         with_stmt = ast.AsyncWith(
             items=[
                 ast.withitem(
@@ -2960,10 +2956,6 @@ class WorkflowManager:
                             args=[],
                             keywords=[
                                 ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
-                                ast.keyword(
-                                    arg="pickle_control_flow_result",
-                                    value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load()),
-                                ),
                                 ast.keyword(arg=None, value=ast.Name(id="kwargs", ctx=ast.Load())),
                             ],
                         )
@@ -2999,7 +2991,6 @@ class WorkflowManager:
             body=[
                 await_main_call,
                 ensure_context_call,
-                pickle_pop_stmt,
                 executor_assign,
                 with_stmt,
                 return_stmt,
@@ -3046,23 +3037,14 @@ class WorkflowManager:
         ast.fix_missing_locations(sync_func_def)
 
         # === 2) build the `if __name__ == "__main__":` block ===
-        if_node = self._generate_main_block(workflow_shape)
+        if_node = self._generate_main_block(workflow_shape, pickle_control_flow_result=pickle_control_flow_result)
 
         # Generate the ensure flow context function
         ensure_context_func = self._generate_ensure_flow_context_function(import_recorder)
 
-        # Module-level constant for the save-time `pickle_control_flow_result` value.
-        # Emitted as `_PICKLE_CONTROL_FLOW_RESULT = <bool>` near the top of the execution
-        # block so both `aexecute_workflow` and `__main__` can reference it.
-        pickle_constant = ast.Assign(
-            targets=[ast.Name(id="_PICKLE_CONTROL_FLOW_RESULT", ctx=ast.Store())],
-            value=ast.Constant(value=pickle_control_flow_result),
-        )
-        ast.fix_missing_locations(pickle_constant)
+        return [ensure_context_func, sync_func_def, async_func_def, if_node]
 
-        return [pickle_constant, ensure_context_func, sync_func_def, async_func_def, if_node]
-
-    def _generate_main_block(self, workflow_shape: dict) -> ast.If:
+    def _generate_main_block(self, workflow_shape: dict, *, pickle_control_flow_result: bool = False) -> ast.If:
         """Generates the `if __name__ == '__main__':` block for the serialized workflow file."""
         main_test = ast.Compare(
             left=ast.Name(id="__name__", ctx=ast.Load()),
@@ -3099,7 +3081,12 @@ class WorkflowManager:
                         ctx=ast.Load(),
                     ),
                     args=[ast.Name(id="parser", ctx=ast.Load())],
-                    keywords=[],
+                    keywords=[
+                        ast.keyword(
+                            arg="pickle_control_flow_result_default",
+                            value=ast.Constant(value=pickle_control_flow_result),
+                        ),
+                    ],
                 )
             )
         )
@@ -3334,10 +3321,6 @@ class WorkflowManager:
                 keywords=[
                     ast.keyword(arg="input", value=ast.Name(id="flow_input", ctx=ast.Load())),
                     ast.keyword(arg="workflow_executor", value=ast.Name(id="executor", ctx=ast.Load())),
-                    ast.keyword(
-                        arg="pickle_control_flow_result",
-                        value=ast.Name(id="_PICKLE_CONTROL_FLOW_RESULT", ctx=ast.Load()),
-                    ),
                 ],
             ),
         )

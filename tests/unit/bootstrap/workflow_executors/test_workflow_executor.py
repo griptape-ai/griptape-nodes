@@ -189,9 +189,10 @@ class _CliOnlyExecutor(WorkflowExecutor):
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         *,
         project_file_path: Path | None = None,
+        pickle_control_flow_result: bool = False,
         marker: str | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(pickle_control_flow_result=pickle_control_flow_result)
         self.storage_backend = storage_backend
         self.project_file_path = project_file_path
         self.marker = marker
@@ -304,3 +305,39 @@ class TestWorkflowExecutorCli:
 
         with pytest.raises(TypeError):
             _CliOnlyExecutor.from_cli_args(args, not_a_real_kwarg=True)
+
+    def test_add_cli_arguments_pickle_default_is_false_when_unspecified(self) -> None:
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args([])
+
+        assert args.pickle_control_flow_result is False
+
+    def test_add_cli_arguments_pickle_default_can_be_overridden(self) -> None:
+        # Generated workflow files pass the save-time choice via this kwarg so
+        # `python my_workflow.py` (with no flag) inherits the publisher's setting.
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=True)
+
+        args = parser.parse_args([])
+
+        assert args.pickle_control_flow_result is True
+
+    def test_add_cli_arguments_pickle_flag_flips_to_true(self) -> None:
+        # `--pickle-control-flow-result` always wins over the seeded default.
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=False)
+
+        args = parser.parse_args(["--pickle-control-flow-result"])
+
+        assert args.pickle_control_flow_result is True
+
+    def test_from_cli_args_passes_pickle_to_constructor(self) -> None:
+        parser = ArgumentParser()
+        _CliOnlyExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=True)
+        args = parser.parse_args([])
+
+        executor = _CliOnlyExecutor.from_cli_args(args)
+
+        assert executor._pickle_control_flow_result is True

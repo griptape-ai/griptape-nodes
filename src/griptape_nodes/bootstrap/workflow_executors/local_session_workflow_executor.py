@@ -31,6 +31,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 if TYPE_CHECKING:
     from argparse import ArgumentParser, Namespace
     from collections.abc import Callable
+    from pathlib import Path
     from types import TracebackType
 
 logger = logging.getLogger(__name__)
@@ -43,8 +44,14 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         on_start_flow_result: Callable[[ResultPayload], None] | None = None,
         save_on_failure_path: str | None = None,
+        *,
+        project_file_path: Path | None = None,
     ):
-        super().__init__(storage_backend=storage_backend, save_on_failure_path=save_on_failure_path)
+        super().__init__(
+            storage_backend=storage_backend,
+            project_file_path=project_file_path,
+            save_on_failure_path=save_on_failure_path,
+        )
         self._init_websocket_sender(session_id)
         self._on_start_flow_result = on_start_flow_result
 
@@ -82,6 +89,8 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         self,
         flow_input: Any,
         storage_backend: StorageBackend | None = None,
+        *,
+        pickle_control_flow_result: bool | None = None,
         **kwargs: Any,
     ) -> None:
         """Executes a local workflow.
@@ -92,6 +101,8 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         Parameters:
             flow_input: Input data for the flow, typically a dictionary.
             storage_backend: The storage backend to use for the workflow execution.
+            pickle_control_flow_result: Per-call override for the executor's
+                save-time default. None means "use the instance default".
 
         Returns:
             None
@@ -100,6 +111,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
             await self._arun(
                 flow_input=flow_input,
                 storage_backend=storage_backend,
+                pickle_control_flow_result=pickle_control_flow_result,
                 **kwargs,
             )
         except Exception as e:
@@ -121,6 +133,8 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         self,
         flow_input: Any,
         storage_backend: StorageBackend | None = None,
+        *,
+        pickle_control_flow_result: bool | None = None,
         **kwargs: Any,
     ) -> None:
         """Internal async run method with detailed event handling and websocket integration."""
@@ -131,10 +145,10 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         )
 
         # Send the run command to actually execute it (fire and forget)
-        pickle_control_flow_result = kwargs.get("pickle_control_flow_result", False)
-        start_flow_request = StartFlowRequest(
-            flow_name=flow_name, pickle_control_flow_result=pickle_control_flow_result
+        effective_pickle = (
+            pickle_control_flow_result if pickle_control_flow_result is not None else self._pickle_control_flow_result
         )
+        start_flow_request = StartFlowRequest(flow_name=flow_name, pickle_control_flow_result=effective_pickle)
         start_flow_task = asyncio.create_task(GriptapeNodes.ahandle_request(start_flow_request))
 
         is_flow_finished = False
@@ -234,11 +248,13 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
             raise error
 
     @classmethod
-    def add_cli_arguments(cls, parser: ArgumentParser) -> None:
-        # Compose the smaller helpers directly: this executor's constructor does
-        # not accept project_file_path, so we skip --project-file-path.
-        cls._add_storage_backend_argument(parser)
-        cls._add_save_on_failure_argument(parser)
+    def add_cli_arguments(
+        cls,
+        parser: ArgumentParser,
+        *,
+        pickle_control_flow_result_default: bool = False,
+    ) -> None:
+        super().add_cli_arguments(parser, pickle_control_flow_result_default=pickle_control_flow_result_default)
         parser.add_argument(
             "--session-id",
             default=None,
@@ -248,7 +264,5 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
     @classmethod
     def _cli_constructor_kwargs(cls, args: Namespace) -> dict[str, Any]:
         kwargs = super()._cli_constructor_kwargs(args)
-        # LocalSessionWorkflowExecutor.__init__ does not accept project_file_path; drop it.
-        kwargs.pop("project_file_path", None)
         kwargs["session_id"] = args.session_id
         return kwargs

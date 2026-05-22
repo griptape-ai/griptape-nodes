@@ -1,8 +1,7 @@
 """Unit tests for LocalSessionWorkflowExecutor's CLI surface (issue #4599)."""
 
 from argparse import ArgumentParser
-
-import pytest  # type: ignore[reportMissingImports]
+from pathlib import Path
 
 from griptape_nodes.bootstrap.workflow_executors.local_session_workflow_executor import (
     LocalSessionWorkflowExecutor,
@@ -45,16 +44,13 @@ class TestLocalSessionWorkflowExecutorCli:
 
         assert args.session_id is None
 
-    def test_add_cli_arguments_omits_project_file_path(self) -> None:
-        # LocalSessionWorkflowExecutor.__init__ does not accept project_file_path,
-        # so the CLI surface must not expose it (otherwise from_cli_args would have
-        # to special-case dropping it). The override deliberately composes the
-        # smaller `_add_*_argument` helpers instead of calling super().
+    def test_add_cli_arguments_includes_project_file_path(self) -> None:
         parser = ArgumentParser()
         LocalSessionWorkflowExecutor.add_cli_arguments(parser)
 
-        with pytest.raises(SystemExit):
-            parser.parse_args(["--project-file-path", "/some/project.yaml"])
+        args = parser.parse_args(["--project-file-path", "/some/project.yaml"])
+
+        assert args.project_file_path == "/some/project.yaml"
 
     def test_cli_constructor_kwargs_includes_session_id(self) -> None:
         parser = ArgumentParser()
@@ -65,16 +61,14 @@ class TestLocalSessionWorkflowExecutorCli:
 
         assert kwargs["session_id"] == "abc-123"
 
-    def test_cli_constructor_kwargs_drops_project_file_path(self) -> None:
-        # Even though super()._cli_constructor_kwargs sets project_file_path,
-        # the override pops it because __init__ would TypeError on it.
+    def test_cli_constructor_kwargs_project_file_path_converted_to_path(self) -> None:
         parser = ArgumentParser()
         LocalSessionWorkflowExecutor.add_cli_arguments(parser)
-        args = parser.parse_args([])
+        args = parser.parse_args(["--project-file-path", "/some/project.yaml"])
 
         kwargs = LocalSessionWorkflowExecutor._cli_constructor_kwargs(args)
 
-        assert "project_file_path" not in kwargs
+        assert kwargs["project_file_path"] == Path("/some/project.yaml")
 
     def test_cli_constructor_kwargs_storage_backend_converted_to_enum(self) -> None:
         parser = ArgumentParser()
