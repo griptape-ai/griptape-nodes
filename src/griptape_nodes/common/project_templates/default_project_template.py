@@ -184,5 +184,15 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             ),
             fallback="save_static_file",
         ),
+        "save_failed_workflow": SituationTemplate(
+            name="save_failed_workflow",
+            description="Save a failed workflow snapshot for post-mortem debugging",
+            macro="{workspace_dir}/failures/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.CREATE_NEW,
+                create_dirs=True,
+            ),
+            fallback="save_workflow",
+        ),
     },
 )
