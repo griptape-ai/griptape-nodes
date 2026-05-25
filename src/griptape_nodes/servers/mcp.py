@@ -5,6 +5,7 @@ import logging
 import os
 import socket
 from collections.abc import AsyncIterator
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI
@@ -15,7 +16,6 @@ from mcp.types import (
     Tool,
 )
 from pydantic import TypeAdapter
-from rich.logging import RichHandler
 from starlette.types import Receive, Scope, Send
 
 from griptape_nodes.api_client import Client, RequestClient
@@ -37,6 +37,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowRequest,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    AutoLayoutFlowRequest,
     CreateFlowRequest,
     DeleteFlowRequest,
     ListFlowsInCurrentContextRequest,
@@ -103,6 +104,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "CreateNodeRequest": CreateNodeRequest,
     "DeleteNodeRequest": DeleteNodeRequest,
     "ListNodesInFlowRequest": ListNodesInFlowRequest,
+    "AutoLayoutFlowRequest": AutoLayoutFlowRequest,
     "GetNodeResolutionStateRequest": GetNodeResolutionStateRequest,
     "GetNodeMetadataRequest": GetNodeMetadataRequest,
     "SetNodeMetadataRequest": SetNodeMetadataRequest,
@@ -123,16 +125,44 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "GetConnectionsForParameterRequest": GetConnectionsForParameterRequest,
 }
 
+# Synthetic MCP tool name for the batch envelope. Not a request payload (and so not a member of
+# SUPPORTED_REQUEST_EVENTS); the call_tool dispatch special-cases it onto manager.request_batch.
+EVENT_REQUEST_BATCH_TOOL_NAME = "EventRequestBatch"
+EVENT_REQUEST_BATCH_DESCRIPTION = (
+    "Send N requests in a single round trip and gather their responses.\n\n"
+    "Each inner request is validated and dispatched as if it were its own MCP tool call, but\n"
+    "they all travel as a single transport frame to the engine, so this collapses an N-call\n"
+    "build phase down to one round trip. Use it whenever you already know the shape of what\n"
+    "you want to build (e.g. several CreateNodeRequest + SetParameterValueRequest +\n"
+    "CreateConnectionRequest calls in a row).\n\n"
+    "Args:\n"
+    "    requests: ordered list of inner calls. Each entry is\n"
+    "        {request_type: <name of a supported tool>, request: <that tool's argument object>}.\n"
+    "    timeout_ms: overall timeout for the whole batch in milliseconds. Defaults to\n"
+    "        30000 ms per inner request, capped at 300000 ms.\n\n"
+    "Returns:\n"
+    "    list of trimmed responses in submission order. Each entry has the same shape as a\n"
+    "    single tool call ({ok, details, ...payload fields}). Failures appear as\n"
+    "    {ok: false, details: ...} in their slot rather than aborting the rest of the batch.\n"
+)
+# Per-inner-request timeout used when the caller does not pass timeout_ms. Mirrors the timeout the
+# single-request path applies (see call_tool below) so a batch of one behaves identically.
+_BATCH_PER_REQUEST_TIMEOUT_MS = 30000
+# Hard ceiling for an auto-computed batch timeout. Long enough to accommodate a large build phase
+# without letting a runaway batch hold the connection open indefinitely.
+_BATCH_MAX_AUTO_TIMEOUT_MS = 300000
+
 GTN_MCP_SERVER_HOST = os.getenv("GTN_MCP_SERVER_HOST", "localhost")
-# Port of the MCP server (where uvicorn binds). 0 means the OS assigns a free port automatically.
-GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "0"))
+# Port of the MCP server (where uvicorn binds). Stable by default so external MCP clients
+# (Claude Desktop, Cursor, VS Code, ...) can hard-code the URL in their config files.
+# Set to 0 to let the OS assign a free port; set to any other value to pin the port.
+GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "8125"))
 GTN_MCP_SERVER_LOG_LEVEL = os.getenv("GTN_MCP_SERVER_LOG_LEVEL", "ERROR").lower()
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
 mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
-mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 mcp_server_logger.setLevel(logging.INFO)
 
 
@@ -178,6 +208,130 @@ def _trim_response(result: dict) -> dict:
     return trimmed
 
 
+def _event_request_batch_input_schema() -> dict[str, Any]:
+    """JSON schema for the synthetic EventRequestBatch tool.
+
+    The `request` payload of each inner entry is left as a free-form object because JSON Schema
+    cannot easily express "validate this against the dataclass selected by request_type"; the
+    server-side handler validates each payload by instantiating the matching RequestPayload
+    class, mirroring the single-request dispatch path.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "requests": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "request_type": {
+                            "type": "string",
+                            "enum": sorted(SUPPORTED_REQUEST_EVENTS),
+                            "description": "Name of one of the supported single-request tools (e.g. CreateNodeRequest).",
+                        },
+                        "request": {
+                            "type": "object",
+                            "description": "Argument object that tool would accept individually.",
+                        },
+                    },
+                    "required": ["request_type", "request"],
+                },
+            },
+            "timeout_ms": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Overall timeout for the batch in milliseconds.",
+            },
+        },
+        "required": ["requests"],
+    }
+
+
+def _build_batch_pairs(raw_requests: object) -> list[tuple[str, dict[str, Any]]]:
+    """Validate the inner requests array and return (request_type, payload_dict) pairs.
+
+    Mirrors the single-request dispatch: each inner request is validated by instantiating the
+    matching RequestPayload class so missing required fields and unknown kwargs fail fast,
+    before anything reaches the wire.
+    """
+    if not isinstance(raw_requests, list):
+        msg = "Attempted to dispatch EventRequestBatch. Failed because 'requests' must be a list."
+        raise TypeError(msg)
+    if not raw_requests:
+        msg = "Attempted to dispatch EventRequestBatch. Failed because 'requests' was empty."
+        raise ValueError(msg)
+
+    pairs: list[tuple[str, dict[str, Any]]] = []
+    for index, entry in enumerate(raw_requests):
+        if not isinstance(entry, dict):
+            msg = f"Attempted to dispatch EventRequestBatch entry {index}. Failed because the entry was not an object."
+            raise TypeError(msg)
+        request_type = entry.get("request_type")
+        if not isinstance(request_type, str) or request_type not in SUPPORTED_REQUEST_EVENTS:
+            msg = (
+                f"Attempted to dispatch EventRequestBatch entry {index}. "
+                f"Failed because request_type {request_type!r} is not a supported tool."
+            )
+            raise ValueError(msg)
+        inner = entry.get("request", {})
+        if not isinstance(inner, dict):
+            msg = (
+                f"Attempted to dispatch EventRequestBatch entry {index} ({request_type}). "
+                f"Failed because 'request' must be an object."
+            )
+            raise TypeError(msg)
+
+        payload_cls = SUPPORTED_REQUEST_EVENTS[request_type]
+        try:
+            payload_obj = payload_cls(**inner)
+        except TypeError as exc:
+            msg = (
+                f"Attempted to construct {request_type} for EventRequestBatch entry {index}. "
+                f"Failed with arguments {inner!r} because of {exc}."
+            )
+            raise ValueError(msg) from exc
+
+        pairs.append((request_type, dict(payload_obj.__dict__)))
+
+    return pairs
+
+
+def _resolve_batch_timeout_ms(override: object, num_requests: int) -> int:
+    """Return the timeout_ms to apply to a batch, validating any caller override.
+
+    Without an override, scales the per-request timeout linearly with batch size and clamps to a
+    ceiling so a malformed call cannot hold the connection open indefinitely.
+    """
+    if override is None:
+        return min(_BATCH_PER_REQUEST_TIMEOUT_MS * num_requests, _BATCH_MAX_AUTO_TIMEOUT_MS)
+    # bool is a subclass of int; reject explicitly so True does not get treated as 1ms.
+    if not isinstance(override, int) or isinstance(override, bool):
+        msg = (
+            "Attempted to dispatch EventRequestBatch. "
+            f"Failed because timeout_ms must be a positive integer, got {override!r}."
+        )
+        raise TypeError(msg)
+    if override <= 0:
+        msg = (
+            "Attempted to dispatch EventRequestBatch. "
+            f"Failed because timeout_ms must be a positive integer, got {override!r}."
+        )
+        raise ValueError(msg)
+    return override
+
+
+def _trim_batch_results(raw_results: list[Any]) -> list[dict[str, Any]]:
+    """Trim each inner response, mapping exceptions returned by request_batch to ok=false slots."""
+    trimmed: list[dict[str, Any]] = []
+    for raw in raw_results:
+        if isinstance(raw, BaseException):
+            trimmed.append({"ok": False, "details": str(raw)})
+        else:
+            trimmed.append(_trim_response(raw))
+    return trimmed
+
+
 def start_mcp_server(api_key: str, sock: socket.socket) -> None:
     """Synchronous version of main entry point for the Griptape Nodes MCP server.
 
@@ -185,7 +339,8 @@ def start_mcp_server(api_key: str, sock: socket.socket) -> None:
     this function. Using a pre-bound socket avoids race conditions when discovering
     the actual port assigned by the OS.
     """
-    mcp_server_logger.debug("Starting MCP GTN server...")
+    bound_host, bound_port = sock.getsockname()[:2]
+    mcp_server_logger.info("MCP server listening at http://%s:%d/mcp/", bound_host, bound_port)
 
     app = Server("mcp-gtn")
 
@@ -194,16 +349,29 @@ def start_mcp_server(api_key: str, sock: socket.socket) -> None:
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:
-        return [
+        single_tools = [
             Tool(name=event.__name__, description=event.__doc__, inputSchema=TypeAdapter(event).json_schema())
             for (name, event) in SUPPORTED_REQUEST_EVENTS.items()
         ]
+        batch_tool = Tool(
+            name=EVENT_REQUEST_BATCH_TOOL_NAME,
+            description=EVENT_REQUEST_BATCH_DESCRIPTION,
+            inputSchema=_event_request_batch_input_schema(),
+        )
+        return [*single_tools, batch_tool]
 
     @app.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if manager is None:
             msg = "Request manager not initialized"
             raise RuntimeError(msg)
+
+        if name == EVENT_REQUEST_BATCH_TOOL_NAME:
+            pairs = _build_batch_pairs(arguments.get("requests"))
+            timeout_ms = _resolve_batch_timeout_ms(arguments.get("timeout_ms"), len(pairs))
+            raw_results = await manager.request_batch(pairs, timeout_ms=timeout_ms, return_exceptions=True)
+            mcp_server_logger.debug("Got %d batch results", len(raw_results))
+            return [TextContent(type="text", text=json.dumps(_trim_batch_results(raw_results)))]
 
         if name not in SUPPORTED_REQUEST_EVENTS:
             msg = f"Unsupported tool: {name}"

@@ -33,10 +33,13 @@ class DiscoveredLibrary(NamedTuple):
     Attributes:
         path: Absolute path to the library JSON file or sandbox directory
         is_sandbox: True if this is a sandbox library (user-created nodes in workspace), False for regular libraries
+        enabled: False when the entry is present in libraries_to_register but explicitly disabled.
+            Disabled libraries are still discovered (so they appear in status output) but are not loaded.
     """
 
     path: Path
     is_sandbox: bool
+    enabled: bool = True
 
 
 @dataclass
@@ -993,9 +996,14 @@ class UpdateLibraryResultFailure(ResultPayloadFailure):
 
     Args:
         retryable: If True, the operation can be retried with overwrite_existing=True
+        existing_path: When the failure is caused by uncommitted changes in the library directory,
+            the absolute path of that directory. Provided as a structured field so clients do not
+            have to parse it out of the human-readable error message (which is unreliable for paths
+            containing ``:``, e.g. Windows drive letters).
     """
 
     retryable: bool = False
+    existing_path: str | None = None
 
 
 @dataclass
@@ -1094,9 +1102,13 @@ class DownloadLibraryResultFailure(ResultPayloadFailure):
 
     Args:
         retryable: If True, the operation can be retried with overwrite_existing=True
+        existing_path: When the failure is caused by an existing target directory, the absolute
+            path of that directory. Provided as a structured field so clients do not have to
+            parse it out of the human-readable error message.
     """
 
     retryable: bool = False
+    existing_path: str | None = None
 
 
 @dataclass

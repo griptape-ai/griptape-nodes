@@ -45,6 +45,7 @@ class ParameterJson(Parameter):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         ui_options: dict | None = None,
+        placeholder_text: str | None = '{"key": "value", "nested": {"key": "value"}}',
         accept_any: bool = True,
         button: bool = False,
         button_label: str | None = "Edit",
@@ -82,6 +83,7 @@ class ParameterJson(Parameter):
             converters: Parameter converters
             validators: Parameter validators
             ui_options: Dictionary of UI options
+            placeholder_text: Placeholder text shown in the input field when empty
             accept_any: Whether to accept any input type and convert to JSON (default: True)
             button: Whether to show a button in the UI (default: False)
             button_label: Label text for the button (default: "Edit")
@@ -109,6 +111,8 @@ class ParameterJson(Parameter):
             ui_options = ui_options.copy()
 
         # Add JSON-specific UI options if they have values
+        if placeholder_text is not None:
+            ui_options["placeholder_text"] = placeholder_text
         if button:
             ui_options["button"] = button
         if button_label is not None:
@@ -203,6 +207,19 @@ class ParameterJson(Parameter):
         except Exception as e:
             msg = f"ParameterJson: Failed to convert input to JSON: {e}. Input type: {type(value)}, value: {value!r}"
             raise ValueError(msg) from e
+
+    @property
+    def placeholder_text(self) -> str | None:
+        return self.ui_options.get("placeholder_text")
+
+    @placeholder_text.setter
+    def placeholder_text(self, value: str | None) -> None:
+        if value is None:
+            ui_options = self.ui_options.copy()
+            ui_options.pop("placeholder_text", None)
+            self.ui_options = ui_options
+        else:
+            self.update_ui_options_key("placeholder_text", value)
 
     @property
     def button(self) -> bool:
