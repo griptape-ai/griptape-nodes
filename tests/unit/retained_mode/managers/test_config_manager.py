@@ -520,6 +520,44 @@ class TestConfigManagerEventEmission:
         assert event.key == "app_events.on_app_initialization_complete.libraries_to_register"
         assert event.new_value == ["/path/to/lib"]
 
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="xdg_base_dirs cannot find XDG_CONFIG_HOME on Windows on GitHub Actions"
+)
+class TestWorkerReloadConfigHandler:
+    """Handler a worker uses to pick up orchestrator-side config mutations from the shared file."""
+
+    def test_reload_after_disk_change_updates_merged_config(self) -> None:
+        """Rebuilds merged_config from disk so get_config_value reflects the orchestrator's write.
+
+        Simulates the same-machine case: the shared config file changes on disk
+        (the orchestrator wrote to it), but the worker still holds the pre-write
+        merged_config in memory. The handler must rebuild merged_config from disk.
+        """
+        from griptape_nodes.retained_mode.events.worker_events import (
+            WorkerReloadConfigRequest,
+            WorkerReloadConfigResultSuccess,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_path = Path(temp_dir)
+            user_config = workspace_path / "griptape_nodes_config.json"
+            user_config.write_text('{"custom_key": "boot_value"}')
+
+            with patch("griptape_nodes.retained_mode.managers.config_manager.USER_CONFIG_PATH", user_config):
+                config_manager = ConfigManager()
+                assert config_manager.get_config_value("custom_key") == "boot_value"
+
+                # Simulate orchestrator rewriting the shared file while the worker is running.
+                user_config.write_text('{"custom_key": "post_mutation_value"}')
+                # Without the reload, the worker still sees the boot value.
+                assert config_manager.get_config_value("custom_key") == "boot_value"
+
+                result = config_manager.on_handle_worker_reload_config_request(WorkerReloadConfigRequest())
+
+                assert isinstance(result, WorkerReloadConfigResultSuccess)
+                assert config_manager.get_config_value("custom_key") == "post_mutation_value"
+
     def test_libraries_to_register_accepts_mixed_str_and_object_entries(self) -> None:
         """Settings validation accepts a mix of bare path strings and objects with `enabled`."""
         from griptape_nodes.retained_mode.managers.settings import LibraryRegistration, Settings
