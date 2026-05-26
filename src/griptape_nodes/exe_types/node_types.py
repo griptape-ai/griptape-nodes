@@ -4,11 +4,15 @@ import logging
 import threading
 import warnings
 from abc import ABC
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable, Generator, Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
+from griptape_nodes.common.strict_mode import STRICT_MODE, StrictModeScopeKind
+from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
@@ -90,6 +94,31 @@ AsyncResult = Generator[Callable[[], T], T]
 LOCAL_EXECUTION = "Local Execution"
 PRIVATE_EXECUTION = "Private Execution"
 CONTROL_INPUT_PARAMETER = "Control Input Selection"
+
+
+# Per-task flag: when set, parameter mutations on a node are explicitly
+# sanctioned by a request handler (AddParameterToNodeRequest /
+# RemoveParameterFromNodeRequest) and the parameter-mutation-during-aprocess
+# detector should not fire. The handler-side path is the legitimate way to
+# mutate parameters because it propagates the change back to the orchestrator
+# via the request bus; direct add_parameter / remove_parameter_element calls
+# from inside aprocess do not, and that is what the rule catches.
+_sanctioned_mutation: ContextVar[bool] = ContextVar("_node_types_sanctioned_mutation", default=False)
+
+
+@contextmanager
+def sanctioned_parameter_mutation() -> Iterator[None]:
+    """Mark the enclosed block as a request-driven parameter mutation.
+
+    Wraps add_parameter / remove_parameter_element calls inside
+    AddParameterToNodeRequest and RemoveParameterFromNodeRequest handlers
+    so the parameter-mutation-during-aprocess detector skips them.
+    """
+    token = _sanctioned_mutation.set(True)
+    try:
+        yield
+    finally:
+        _sanctioned_mutation.reset(token)
 
 
 class ImportDependency(NamedTuple):
@@ -588,6 +617,7 @@ class BaseNode(ABC):
 
     def add_parameter(self, param: Parameter) -> None:
         """Adds a Parameter to the Node. Control and Data Parameters are all treated equally."""
+        self._report_parameter_mutation_if_in_aprocess(parameter_name=param.name, mutation="add_parameter")
         if any(char.isspace() for char in param.name):
             msg = f"Failed to add Parameter `{param.name}`. Parameter names cannot currently any whitespace characters. Please see https://github.com/griptape-ai/griptape-nodes/issues/714 to check the status on a remedy for this issue."
             raise ValueError(msg)
@@ -609,6 +639,7 @@ class BaseNode(ABC):
             self.remove_parameter_element(element)
 
     def remove_parameter_element(self, param: BaseNodeElement) -> None:
+        self._report_parameter_mutation_if_in_aprocess(parameter_name=param.name, mutation="remove_parameter_element")
         # Emit event before removal if it's a Parameter
         if isinstance(param, Parameter):
             self._emit_parameter_lifecycle_event(param)
@@ -1344,6 +1375,39 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
+
+    def _report_parameter_mutation_if_in_aprocess(self, *, parameter_name: str, mutation: str) -> None:
+        """Report parameter-mutation-during-aprocess when a node mutates its own params directly.
+
+        Request handlers reach ``add_parameter`` / ``remove_parameter_element``
+        via ``AddParameterToNodeRequest`` / ``RemoveParameterFromNodeRequest``
+        and wrap the call in ``sanctioned_parameter_mutation()``. Any call
+        that arrives here from aprocess without that wrapper is a direct
+        mutation, which does not sync back to the orchestrator when the
+        node runs in a worker subprocess.
+
+        ``LibraryManager._serialize_library_node_schemas`` instantiates every
+        node class inside a ``LOAD_PROBE`` scope to extract its schema. Nodes
+        routinely call ``self.add_parameter(...)`` from ``__init__``, which
+        is the intended way to declare parameters, so calls made from inside
+        a constructor are not a violation of this rule.
+        """
+        # Lazy import: library_registry imports BaseNode from this module,
+        # so importing at module load creates a cycle.
+        from griptape_nodes.node_library.library_registry import LibraryRegistry
+
+        if _sanctioned_mutation.get():
+            return
+        if LibraryRegistry.is_constructing_node():
+            return
+        scope = STRICT_MODE.current_scope()
+        if scope is None or scope.kind is not StrictModeScopeKind.RUNTIME_EXECUTE:
+            return
+        rule = RULES["parameter-mutation-during-aprocess"]
+        STRICT_MODE.report(
+            rule_id=rule.rule_id,
+            message=rule.render(parameter_name=parameter_name, mutation=mutation),
+        )
 
     def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, *, remove: bool = False) -> None:
         """Emit an AlterElementEvent for parameter add/remove operations."""

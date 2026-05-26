@@ -81,4 +81,20 @@ RULES: dict[str, StrictModeRule] = {
         # for an ergonomics warning.
         worker_escalation=False,
     ),
+    "parameter-mutation-during-aprocess": StrictModeRule(
+        rule_id="parameter-mutation-during-aprocess",
+        default_severity=StrictModeSeverity.WARNING,
+        correctness=False,
+        description=(
+            "A node called add_parameter or remove_parameter during "
+            "aprocess. On the worker these changes are local to the "
+            "transient node and do not sync back to the orchestrator."
+        ),
+        remediation_template=(
+            "Node mutated parameter '{parameter_name}' during aprocess via "
+            "{mutation}. Emit AddParameterRequest or "
+            "RemoveParameterFromNodeRequest (both ForwardFromWorkerMixin) "
+            "to propagate the change to the orchestrator."
+        ),
+    ),
 }
