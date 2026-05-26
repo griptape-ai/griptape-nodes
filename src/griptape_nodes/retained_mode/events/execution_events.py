@@ -392,7 +392,7 @@ class ControlFlowResolvedEvent(ExecutionPayload):
     end_node_name: str
     parameter_output_values: dict
     # Optional field for pickled parameter values - when present, parameter_output_values contains UUID references
-    unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None = field(
+    unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, bytes] | None = field(
         default=None
     )
 
