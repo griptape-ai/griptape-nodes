@@ -21,17 +21,21 @@ from __future__ import annotations
 import logging
 from io import BytesIO
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image
 
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
-from griptape_nodes.files.file import File, FileDestination, FileDestinationProvider
+from griptape_nodes.files.file import FileDestinationProvider
 from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
+    from griptape_nodes.files.file import File, FileDestination
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -76,6 +80,18 @@ AUDIO_FORMAT_TO_EXTENSION: dict[str, str] = {
 }
 
 
+# Magic-byte sniffing constants
+_MIN_HEADER_BYTES = 12
+_BYTE_FF = 0xFF
+_MPEG_FRAME_SYNC_MASK = 0xE0
+_MPEG_FRAME_SYNC_VALUE = 0xE0
+_ADTS_SYNC_MASK = 0xF0
+_ADTS_SYNC_VALUE = 0xF0
+_MP3_LAYER_FB = 0xFB
+_MP3_LAYER_F3 = 0xF3
+_MP3_LAYER_F2 = 0xF2
+
+
 # ---------------------------------------------------------------------------
 # Format normalization
 # ---------------------------------------------------------------------------
@@ -97,6 +113,7 @@ def _normalize_image_format(fmt: str) -> str:
 
 
 def _normalize_video_format(fmt: str) -> str:
+    """Canonicalize ``'.MP4' -> 'mp4'``; raise on unsupported."""
     canon = fmt.lower().lstrip(".")
     if canon not in VIDEO_FORMAT_TO_EXTENSION:
         msg = f"Unsupported video format: '{fmt}'. Supported: {', '.join(sorted(VIDEO_FORMAT_TO_EXTENSION))}"
@@ -105,6 +122,7 @@ def _normalize_video_format(fmt: str) -> str:
 
 
 def _normalize_audio_format(fmt: str) -> str:
+    """Canonicalize ``'.MP3' -> 'mp3'``; raise on unsupported."""
     canon = fmt.lower().lstrip(".")
     if canon not in AUDIO_FORMAT_TO_EXTENSION:
         msg = f"Unsupported audio format: '{fmt}'. Supported: {', '.join(sorted(AUDIO_FORMAT_TO_EXTENSION))}"
@@ -128,15 +146,15 @@ def _sniff_image_format(image_bytes: bytes) -> str | None:
     return None
 
 
-def _sniff_video_format(video_bytes: bytes) -> str | None:
+def _sniff_video_format(video_bytes: bytes) -> str | None:  # noqa: PLR0911
     """Magic-byte sniff for common video container formats."""
-    if len(video_bytes) < 12:
+    if len(video_bytes) < _MIN_HEADER_BYTES:
         return None
-    head = video_bytes[:12]
+    head = video_bytes[:_MIN_HEADER_BYTES]
     # ISO BMFF (mp4/mov/m4v): bytes 4-8 are "ftyp"
     if head[4:8] == b"ftyp":
         major_brand = head[8:12]
-        if major_brand in (b"qt  ",):
+        if major_brand == b"qt  ":
             return "mov"
         if major_brand in (b"M4V ", b"M4VH", b"M4VP"):
             return "m4v"
@@ -144,31 +162,28 @@ def _sniff_video_format(video_bytes: bytes) -> str | None:
         return "mp4"
     # Matroska/WebM: 1A 45 DF A3 (EBML header)
     if head[:4] == b"\x1aE\xdf\xa3":
-        # Could be mkv or webm; default to mp4-flavored guess fails. Use webm
-        # as the more common web-delivered output, falling back to mkv if the
-        # bytes contain "matroska" later. Cheap heuristic:
+        # Could be mkv or webm; default to mkv unless 'webm' doctype is found.
         if b"webm" in video_bytes[:256]:
             return "webm"
         return "mkv"
     # AVI: "RIFF" .... "AVI "
     if head[:4] == b"RIFF" and head[8:12] == b"AVI ":
         return "avi"
-    # GIF: "GIF87a" / "GIF89a"
     if head[:6] in (b"GIF87a", b"GIF89a"):
         return "gif"
     return None
 
 
-def _sniff_audio_format(audio_bytes: bytes) -> str | None:
+def _sniff_audio_format(audio_bytes: bytes) -> str | None:  # noqa: C901, PLR0911
     """Magic-byte sniff for common audio container/codec formats."""
-    if len(audio_bytes) < 12:
+    if len(audio_bytes) < _MIN_HEADER_BYTES:
         return None
-    head = audio_bytes[:12]
+    head = audio_bytes[:_MIN_HEADER_BYTES]
     # ID3v2-tagged MP3
     if head[:3] == b"ID3":
         return "mp3"
     # MPEG audio frame sync (0xFFE0+ pattern; common MP3 starts FF FB / FF F3 / FF F2)
-    if head[0] == 0xFF and (head[1] & 0xE0) == 0xE0:
+    if head[0] == _BYTE_FF and (head[1] & _MPEG_FRAME_SYNC_MASK) == _MPEG_FRAME_SYNC_VALUE:
         return "mp3"
     # WAV: "RIFF" .... "WAVE"
     if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
@@ -185,15 +200,16 @@ def _sniff_audio_format(audio_bytes: bytes) -> str | None:
         return "ogg"
     # ISO BMFF (m4a/aac in mp4 container)
     if head[4:8] == b"ftyp":
-        major_brand = head[8:12]
-        if major_brand in (b"M4A ", b"M4B ", b"mp42", b"isom"):
-            return "m4a"
         return "m4a"
     # Matroska/WebM audio
     if head[:4] == b"\x1aE\xdf\xa3":
         return "webm"
     # ADTS AAC: 0xFFF0 / 0xFFF1 / 0xFFF8 / 0xFFF9
-    if head[0] == 0xFF and (head[1] & 0xF0) == 0xF0 and head[1] != 0xFB and head[1] != 0xF3 and head[1] != 0xF2:
+    if (
+        head[0] == _BYTE_FF
+        and (head[1] & _ADTS_SYNC_MASK) == _ADTS_SYNC_VALUE
+        and head[1] not in (_MP3_LAYER_FB, _MP3_LAYER_F3, _MP3_LAYER_F2)
+    ):
         return "aac"
     return None
 
@@ -231,8 +247,8 @@ def _upstream_provider_destination(output_file_param: ProjectFileParameter) -> F
 
     Mirrors the upstream-provider lookup in ``ProjectFileParameter.build_file``.
     """
-    node = output_file_param._node  # noqa: SLF001
-    name = output_file_param._name  # noqa: SLF001
+    node = output_file_param._node
+    name = output_file_param._name
     result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=node.name))
     if not isinstance(result, ListConnectionsForNodeResultSuccess):
         return None
@@ -273,10 +289,10 @@ def _build_corrected_destination(
         # provider's filename is not ours to override; we just write through.
         return upstream
 
-    node = output_file_param._node  # noqa: SLF001
-    name = output_file_param._name  # noqa: SLF001
-    default_filename = output_file_param._default_filename  # noqa: SLF001
-    situation_name = output_file_param._situation_name  # noqa: SLF001
+    node = output_file_param._node
+    name = output_file_param._name
+    default_filename = output_file_param._default_filename
+    situation_name = output_file_param._situation_name
 
     value = node.get_parameter_value(name)
     user_filename = value if isinstance(value, str) and value else default_filename
@@ -328,7 +344,7 @@ def write_image_bytes(
     any sniffed format. Otherwise the format is detected from the bytes via PIL.
     """
     target_extension = _resolve_image_extension(image_bytes, requested_format)
-    label = log_label or output_file_param._node.name  # noqa: SLF001
+    label = log_label or output_file_param._node.name
     dest = _build_corrected_destination(output_file_param, target_extension, log_label=label, extra_vars=extra_vars)
     return dest.write_bytes(image_bytes)
 
@@ -343,7 +359,7 @@ async def awrite_image_bytes(
 ) -> File:
     """Async sibling of ``write_image_bytes``."""
     target_extension = _resolve_image_extension(image_bytes, requested_format)
-    label = log_label or output_file_param._node.name  # noqa: SLF001
+    label = log_label or output_file_param._node.name
     dest = _build_corrected_destination(output_file_param, target_extension, log_label=label, extra_vars=extra_vars)
     return await dest.awrite_bytes(image_bytes)
 
@@ -373,8 +389,9 @@ def write_video_bytes(
     log_label: str | None = None,
     **extra_vars: str | int,
 ) -> File:
+    """Write ``video_bytes`` to disk; force filename suffix to match the format."""
     target_extension = _resolve_video_extension(video_bytes, requested_format)
-    label = log_label or output_file_param._node.name  # noqa: SLF001
+    label = log_label or output_file_param._node.name
     dest = _build_corrected_destination(output_file_param, target_extension, log_label=label, extra_vars=extra_vars)
     return dest.write_bytes(video_bytes)
 
@@ -387,8 +404,9 @@ async def awrite_video_bytes(
     log_label: str | None = None,
     **extra_vars: str | int,
 ) -> File:
+    """Async sibling of ``write_video_bytes``."""
     target_extension = _resolve_video_extension(video_bytes, requested_format)
-    label = log_label or output_file_param._node.name  # noqa: SLF001
+    label = log_label or output_file_param._node.name
     dest = _build_corrected_destination(output_file_param, target_extension, log_label=label, extra_vars=extra_vars)
     return await dest.awrite_bytes(video_bytes)
 
@@ -418,8 +436,9 @@ def write_audio_bytes(
     log_label: str | None = None,
     **extra_vars: str | int,
 ) -> File:
+    """Write ``audio_bytes`` to disk; force filename suffix to match the format."""
     target_extension = _resolve_audio_extension(audio_bytes, requested_format)
-    label = log_label or output_file_param._node.name  # noqa: SLF001
+    label = log_label or output_file_param._node.name
     dest = _build_corrected_destination(output_file_param, target_extension, log_label=label, extra_vars=extra_vars)
     return dest.write_bytes(audio_bytes)
 
@@ -432,7 +451,8 @@ async def awrite_audio_bytes(
     log_label: str | None = None,
     **extra_vars: str | int,
 ) -> File:
+    """Async sibling of ``write_audio_bytes``."""
     target_extension = _resolve_audio_extension(audio_bytes, requested_format)
-    label = log_label or output_file_param._node.name  # noqa: SLF001
+    label = log_label or output_file_param._node.name
     dest = _build_corrected_destination(output_file_param, target_extension, log_label=label, extra_vars=extra_vars)
     return await dest.awrite_bytes(audio_bytes)
