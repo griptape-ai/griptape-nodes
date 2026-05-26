@@ -9,6 +9,12 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
 
 from griptape_nodes.common.parameter_hydration import hydrate_parameter_values
+from griptape_nodes.common.strict_mode import (
+    StrictModeScopeKind,
+    StrictModeSeverity,
+    attach_violations_to_result,
+    strict_mode_scope,
+)
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -2744,31 +2750,48 @@ class NodeManager:
         a worker, the request is forwarded over the wire to that worker.
         """
         library_manager = GriptapeNodes.LibraryManager()
+        is_worker = library_manager._is_worker
 
-        if library_manager._is_worker:
+        if is_worker:
             worker_node = self._materialize_transient_node_from_metadata(request)
             if isinstance(worker_node, ExecuteNodeResultFailure):
                 return worker_node
-            return await self._hydrate_and_run_node(worker_node, request)
-
-        obj_mgr = GriptapeNodes.ObjectManager()
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
-        if node is None:
-            return ExecuteNodeResultFailure(
-                result_details=(
-                    f"Node '{request.node_name}' not found in ObjectManager on orchestrator. "
-                    "Refusing to fabricate a fresh node from metadata; the node was dropped "
-                    "from the live map and must be re-created via CreateNodeRequest."
-                ),
-            )
+            node = worker_node
+        else:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            orchestrator_node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+            if orchestrator_node is None:
+                return ExecuteNodeResultFailure(
+                    result_details=(
+                        f"Node '{request.node_name}' not found in ObjectManager on orchestrator. "
+                        "Refusing to fabricate a fresh node from metadata; the node was dropped "
+                        "from the live map and must be re-created via CreateNodeRequest."
+                    ),
+                )
+            node = orchestrator_node
 
         library_name = node.metadata.get("library")
-        worker = library_manager.get_worker_for_library(library_name) if library_name else None
-        wm = GriptapeNodes.WorkerManager()
-        if wm is not None and worker is not None:
-            return await self._execute_node_via_worker(request, wm, worker)
 
-        return await self._hydrate_and_run_node(node, request)
+        with strict_mode_scope(
+            kind=StrictModeScopeKind.RUNTIME_EXECUTE,
+            subject=request.node_name,
+            library_name=library_name,
+            is_worker=is_worker,
+        ) as scope:
+            if not is_worker:
+                worker = library_manager.get_worker_for_library(library_name) if library_name else None
+                wm = GriptapeNodes.WorkerManager()
+                if wm is not None and worker is not None:
+                    return await self._execute_node_via_worker(request, wm, worker)
+            result = await self._hydrate_and_run_node(node, request)
+
+        errors = [v for v in scope.violations if v.severity is StrictModeSeverity.ERROR]
+        if is_worker and errors and isinstance(result, ExecuteNodeResultSuccess):
+            rules = ", ".join(sorted({v.rule_id for v in errors}))
+            result = ExecuteNodeResultFailure(
+                result_details=f"Node '{request.node_name}' violated strict-mode rule(s) [{rules}].",
+            )
+        return attach_violations_to_result(result, scope)
 
     def _materialize_transient_node_from_metadata(
         self, request: ExecuteNodeRequest
