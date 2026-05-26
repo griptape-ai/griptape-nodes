@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
 
-from griptape_nodes.common.parameter_hydration import hydrate_parameter_values
+from griptape_nodes.common.node_execution_prologue import (
+    ParameterHydrationError,
+    prepare_node_for_aprocess,
+)
 from griptape_nodes.common.strict_mode import (
     STRICT_MODE,
     StrictModeScopeKind,
@@ -212,10 +215,6 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 
 logger = logging.getLogger("griptape_nodes")
-
-# Sentinel for "key not present in node.parameter_values". Distinct from None
-# so a legitimately-stored None does not collide with "missing".
-_PARAM_MISSING = object()
 
 
 class SerializedParameterValues(NamedTuple):
@@ -2956,37 +2955,12 @@ class NodeManager:
     async def _hydrate_and_run_node_inner(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         node_name = request.node_name
         with GriptapeNodes.EventManager().worker_node_execution_scope():
-            # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.
-            parameter_values = hydrate_parameter_values(request.parameter_values)
-            for param_name, value in parameter_values.items():
-                # Skip when the node already holds this value. The local path
-                # calls ExecuteNodeRequest with dict(node.parameter_values) on
-                # the same in-memory instance, so every iteration would be a
-                # no-op mutation that still ran before/after_value_set hooks
-                # and emitted a lifecycle event -- observably breaking nodes
-                # like LoadImage. On the worker the node is fresh, so current
-                # is _PARAM_MISSING and the normal set path runs.
-                current = node.parameter_values.get(param_name, _PARAM_MISSING)
-                if current is value or current == value:
-                    continue
-                try:
-                    node.set_parameter_value(param_name, value)
-                except Exception as e:
-                    return ExecuteNodeResultFailure(
-                        result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
-                    )
-            # Materialize parameter defaults into parameter_values so that user
-            # process() code reading self.parameter_values[name] directly (rather
-            # than via get_parameter_value) sees the default. Newly-dropped nodes
-            # never receive a SetParameterValueRequest for still-default values,
-            # so without this pass those params are absent from the dict on the
-            # worker-side fresh node.
-            for param in node.parameters:
-                if param.name in node.parameter_values:
-                    continue
-                if param.default_value is None:
-                    continue
-                node.parameter_values[param.name] = param.default_value
+            try:
+                await prepare_node_for_aprocess(node, request)
+            except ParameterHydrationError as e:
+                return ExecuteNodeResultFailure(
+                    result_details=f"Attempted to set parameter '{e.parameter_name}' on node '{node_name}'. Failed with error: {e.original}",
+                )
             try:
                 await node.aprocess()
             except Exception as e:
