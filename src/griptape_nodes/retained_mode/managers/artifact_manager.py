@@ -384,7 +384,11 @@ class ArtifactManager:
         )
         label = options.log_label or output_file._node.name
         dest = self._build_corrected_destination(
-            output_file, target_extension, log_label=label, extra_vars=options.extra_vars
+            output_file,
+            target_extension,
+            log_label=label,
+            extra_vars=options.extra_vars,
+            strict_match=options.requested_format is None,
         )
         return dest.write_bytes(data)
 
@@ -401,7 +405,11 @@ class ArtifactManager:
         )
         label = options.log_label or output_file._node.name
         dest = self._build_corrected_destination(
-            output_file, target_extension, log_label=label, extra_vars=options.extra_vars
+            output_file,
+            target_extension,
+            log_label=label,
+            extra_vars=options.extra_vars,
+            strict_match=options.requested_format is None,
         )
         return await dest.awrite_bytes(data)
 
@@ -441,6 +449,7 @@ class ArtifactManager:
         *,
         log_label: str,
         extra_vars: dict[str, str | int],
+        strict_match: bool,
     ) -> FileDestination:
         """Build a FileDestination with the on-disk suffix forced to ``target_extension``.
 
@@ -448,6 +457,11 @@ class ArtifactManager:
         that destination is used as-is (the user's wiring wins). Otherwise, build a
         ``ProjectFileDestination`` from a (possibly suffix-corrected) filename string,
         mirroring ``ProjectFileParameter.build_file``.
+
+        When ``strict_match`` is True (byte-sniff path), a mismatch between the
+        user's filename suffix and the sniffed format raises ``ValueError`` instead
+        of silently renaming. When False (caller passed ``requested_format``), the
+        caller is the source of truth, so the suffix is corrected with a warning.
         """
         upstream = self._upstream_provider_destination(output_file)
         if upstream is not None:
@@ -462,6 +476,13 @@ class ArtifactManager:
         user_filename = value if isinstance(value, str) and value else default_filename
 
         corrected_filename, changed = _force_suffix(user_filename, target_extension)
+        if changed and strict_match:
+            msg = (
+                f"{log_label}: '{user_filename}' has an extension that does not match the "
+                f"sniffed file format ('{target_extension}'). Rename the file or pass "
+                f"requested_format explicitly to override."
+            )
+            raise ValueError(msg)
         if changed:
             logger.warning(
                 "%s: '%s' renamed to '%s' so the on-disk extension matches the actual file format.",
