@@ -15,10 +15,9 @@ is a static catalog.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from griptape_nodes.common.strict_mode import StrictModeSeverity
+from griptape_nodes.common.strict_mode import StrictModeSeverity
 
 
 @dataclass(frozen=True)
@@ -46,4 +45,20 @@ class StrictModeRule:
         return self.remediation_template.format(**context)
 
 
-RULES: dict[str, StrictModeRule] = {}
+RULES: dict[str, StrictModeRule] = {
+    "reentrant-bus-in-init": StrictModeRule(
+        rule_id="reentrant-bus-in-init",
+        default_severity=StrictModeSeverity.ERROR,
+        correctness=True,
+        description=(
+            "A node issued an event-bus request from inside its __init__. "
+            "The worker library probe runs __init__ to extract a schema; "
+            "re-entering the bus there deadlocks the worker."
+        ),
+        remediation_template=(
+            "Node class '{node_class}' issued '{request_type}' during __init__. "
+            "Move the call into aprocess (or a lifecycle hook that runs after "
+            "construction)."
+        ),
+    ),
+}

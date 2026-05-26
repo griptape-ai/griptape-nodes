@@ -13,7 +13,10 @@ from typing import TYPE_CHECKING, Any, cast
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
+from griptape_nodes.common.strict_mode import STRICT_MODE
+from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
@@ -299,6 +302,27 @@ class EventManager:
         with self._node_execution_lock:
             return self._node_execution_depth > 0
 
+    def _report_reentrant_bus_in_init(self, request: RequestPayload) -> None:
+        """Detect the reentrant-bus-in-init rule.
+
+        A node class that issues an event-bus request from its __init__
+        deadlocks the worker's schema probe, which calls __init__ on
+        the worker thread during library load. LibraryRegistry sets a
+        ContextVar around create_node so every __init__ body in the
+        hierarchy is covered.
+        """
+        if not LibraryRegistry.is_constructing_node():
+            return
+        rule = RULES["reentrant-bus-in-init"]
+        # node_class is not available from the request, but "unknown"
+        # is fine -- the subject attribution comes from the LOAD_PROBE
+        # scope opened by the library manager around the probe, which
+        # already carries the class name.
+        STRICT_MODE.report(
+            rule_id=rule.rule_id,
+            message=rule.render(node_class="<in __init__>", request_type=type(request).__name__),
+        )
+
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
         """Return the currently-registered handler callback for a request type, or None."""
         return self._request_type_to_manager.get(request_type)
@@ -471,6 +495,8 @@ class EventManager:
         if result_context is None:
             result_context = ResultContext()
 
+        self._report_reentrant_bus_in_init(request)
+
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -515,6 +541,8 @@ class EventManager:
         if result_context is None:
             result_context = ResultContext()
 
+        self._report_reentrant_bus_in_init(request)
+
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -531,6 +559,10 @@ class EventManager:
             # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
             # Hop the callback onto the WS loop here and block the caller's thread on the
             # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
+            #
+            # Lazy import: worker_routing imports ResultContext from this module at
+            # runtime, so a top-level import here would cycle through event_manager
+            # -> worker_routing -> event_manager during module load.
             from griptape_nodes.app.worker_routing import RemoteHandler
 
             if isinstance(callback, RemoteHandler):
