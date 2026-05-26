@@ -1,13 +1,26 @@
 import asyncio
+import logging
 import sys
+from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.node_library.library_registry import (
+    LibraryMetadata,
+    LibraryRegistry,
+    LibrarySchema,
+    NodeMetadata,
+)
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
+    DescribeNodeTypeRequest,
+    DescribeNodeTypeResultFailure,
+    DescribeNodeTypeResultSuccess,
     GetAllInfoForAllLibrariesRequest,
     GetAllInfoForAllLibrariesResultFailure,
     GetAllInfoForAllLibrariesResultSuccess,
@@ -23,6 +36,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import LibraryRegistration
 
 
 class TestLibraryManagerLoadLibraries:
@@ -53,7 +67,9 @@ class TestLibraryManagerLoadLibraries:
         mock_library.name = "SomeLib"
         with (
             patch.object(library_manager, "_library_file_path_to_info", {"some_lib": mock_lib_info}),
-            patch.object(library_manager, "_discover_library_files", return_value=[Path("some_lib")]),
+            patch.object(
+                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="some_lib")]
+            ),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
             patch.object(LibraryRegistry, "get_library", return_value=mock_library),
         ):
@@ -76,7 +92,9 @@ class TestLibraryManagerLoadLibraries:
         mock_load_config = AsyncMock()
         with (
             patch.object(library_manager, "_library_file_path_to_info", {}),
-            patch.object(library_manager, "_discover_library_files", return_value=[Path("new_lib")]),
+            patch.object(
+                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="new_lib")]
+            ),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
             request = LoadLibrariesRequest()
@@ -101,7 +119,9 @@ class TestLibraryManagerLoadLibraries:
         mock_load_config = AsyncMock(side_effect=Exception("Config error"))
         with (
             patch.object(library_manager, "_library_file_path_to_info", {}),
-            patch.object(library_manager, "_discover_library_files", return_value=[Path("new_lib")]),
+            patch.object(
+                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="new_lib")]
+            ),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
             request = LoadLibrariesRequest()
@@ -113,6 +133,142 @@ class TestLibraryManagerLoadLibraries:
             assert isinstance(result.result_details, ResultDetails)
             # Test that failure was indicated in the result message
             assert "failed" in result.result_details.result_details[0].message.lower()
+
+
+class TestLibraryManagerDisabledEntries:
+    """Behavior when libraries_to_register entries have enabled=False."""
+
+    @pytest.fixture
+    def lib_files(self, tmp_path: Path) -> tuple[Path, Path]:
+        """Two empty library JSON files in distinct directories."""
+        enabled_dir = tmp_path / "enabled"
+        disabled_dir = tmp_path / "disabled"
+        enabled_dir.mkdir()
+        disabled_dir.mkdir()
+        enabled_lib = enabled_dir / "griptape_nodes_library.json"
+        disabled_lib = disabled_dir / "griptape_nodes_library.json"
+        enabled_lib.write_text("{}")
+        disabled_lib.write_text("{}")
+        return enabled_lib, disabled_lib
+
+    def test_discover_library_files_marks_disabled_entries(
+        self, griptape_nodes: GriptapeNodes, lib_files: tuple[Path, Path]
+    ) -> None:
+        """Object-shaped entries with enabled=False produce disabled register entries."""
+        library_manager = griptape_nodes.LibraryManager()
+        enabled_lib, disabled_lib = lib_files
+
+        config = [
+            str(enabled_lib),
+            {"path": str(disabled_lib), "enabled": False},
+        ]
+
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=config):
+            result = library_manager._discover_library_files()
+
+        by_path = {Path(entry.path): entry.enabled for entry in result}
+        assert by_path[enabled_lib] is True
+        assert by_path[disabled_lib] is False
+
+    def test_discover_library_files_bare_string_defaults_to_enabled(
+        self, griptape_nodes: GriptapeNodes, lib_files: tuple[Path, Path]
+    ) -> None:
+        """Bare path strings continue to be treated as enabled."""
+        library_manager = griptape_nodes.LibraryManager()
+        enabled_lib, _ = lib_files
+
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=[str(enabled_lib)]):
+            result = library_manager._discover_library_files()
+
+        assert len(result) == 1
+        assert result[0].enabled is True
+
+    def test_discover_libraries_request_marks_disabled_lifecycle(
+        self, griptape_nodes: GriptapeNodes, lib_files: tuple[Path, Path]
+    ) -> None:
+        """discover_libraries_request creates LibraryInfo with DISABLED lifecycle for disabled entries."""
+        from griptape_nodes.retained_mode.events.library_events import DiscoverLibrariesRequest
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+        library_manager = griptape_nodes.LibraryManager()
+        enabled_lib, disabled_lib = lib_files
+
+        config = [str(enabled_lib), {"path": str(disabled_lib), "enabled": False}]
+        # Reset tracking so this test does not depend on prior state.
+        library_manager._library_file_path_to_info = {}
+
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=config):
+            result = library_manager.discover_libraries_request(DiscoverLibrariesRequest(include_sandbox=False))
+
+        from griptape_nodes.retained_mode.events.library_events import DiscoverLibrariesResultSuccess
+
+        assert isinstance(result, DiscoverLibrariesResultSuccess)
+        states = {
+            entry.path: library_manager._library_file_path_to_info[str(entry.path)].lifecycle_state
+            for entry in result.libraries_discovered
+        }
+        assert states[enabled_lib] != LibraryManager.LibraryLifecycleState.DISABLED
+        assert states[disabled_lib] == LibraryManager.LibraryLifecycleState.DISABLED
+        # The discovery result also surfaces the enabled flag.
+        flags = {entry.path: entry.enabled for entry in result.libraries_discovered}
+        assert flags[enabled_lib] is True
+        assert flags[disabled_lib] is False
+
+    def test_invalid_entry_is_skipped_with_warning(
+        self, griptape_nodes: GriptapeNodes, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Entries that are neither strings nor dicts with a path are skipped."""
+        library_manager = griptape_nodes.LibraryManager()
+
+        config = [42, {"enabled": True}]  # missing 'path', and a bare int
+
+        with (
+            patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=config),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            result = library_manager._discover_library_files()
+
+        assert result == []
+        warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("libraries_to_register" in m for m in warnings)
+
+    def test_rediscovery_reconciles_toggled_enabled_flag(
+        self, griptape_nodes: GriptapeNodes, lib_files: tuple[Path, Path]
+    ) -> None:
+        """Re-running discovery after a refresh updates lifecycle when the user toggles enabled.
+
+        Refreshing libraries (ReloadAllLibrariesRequest) does not unload entries that were
+        never registered with LibraryRegistry, such as DISABLED entries. The follow-up
+        discovery must therefore reconcile the lifecycle state itself; otherwise a library
+        flipped from disabled to enabled (or back) would never get picked up.
+        """
+        from griptape_nodes.retained_mode.events.library_events import DiscoverLibrariesRequest
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+        library_manager = griptape_nodes.LibraryManager()
+        first_lib, second_lib = lib_files
+        # Reset tracking so this test does not depend on prior state.
+        library_manager._library_file_path_to_info = {}
+
+        # Initial discovery: first_lib enabled, second_lib disabled.
+        initial_config = [str(first_lib), {"path": str(second_lib), "enabled": False}]
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=initial_config):
+            library_manager.discover_libraries_request(DiscoverLibrariesRequest(include_sandbox=False))
+
+        first_state = library_manager._library_file_path_to_info[str(first_lib)].lifecycle_state
+        second_state = library_manager._library_file_path_to_info[str(second_lib)].lifecycle_state
+        assert first_state != LibraryManager.LibraryLifecycleState.DISABLED
+        assert second_state == LibraryManager.LibraryLifecycleState.DISABLED
+
+        # User flips the config: first_lib disabled, second_lib enabled, then triggers refresh.
+        toggled_config = [{"path": str(first_lib), "enabled": False}, str(second_lib)]
+        with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=toggled_config):
+            library_manager.discover_libraries_request(DiscoverLibrariesRequest(include_sandbox=False))
+
+        first_state_after = library_manager._library_file_path_to_info[str(first_lib)].lifecycle_state
+        second_state_after = library_manager._library_file_path_to_info[str(second_lib)].lifecycle_state
+        assert first_state_after == LibraryManager.LibraryLifecycleState.DISABLED
+        assert second_state_after != LibraryManager.LibraryLifecycleState.DISABLED
 
 
 class TestLibraryManagerMigrateOldXdgPaths:
@@ -696,6 +852,124 @@ class TestLibraryManagerInstallLibraryDependencies:
         assert isinstance(result, InstallLibraryDependenciesResultFailure)
 
 
+def _fake_config_value(key: str, **_: object) -> object:
+    """Return realistic values for config keys touched by venv initialization."""
+    if key == "log_level":
+        return "INFO"
+    if key == "minimum_disk_space_gb_libraries":
+        return 5.0
+    return None
+
+
+class TestLibraryManagerVenvHealth:
+    """Tests for broken-venv recovery in _init_library_venv."""
+
+    @staticmethod
+    def _make_functional_venv(venv_path: Path) -> Path:
+        """Create a directory layout that mimics a working venv on the current platform."""
+        venv_path.mkdir(parents=True, exist_ok=True)
+        (venv_path / "pyvenv.cfg").write_text("home = /fake\n")
+        if sys.platform == "win32":
+            python_dir = venv_path / "Scripts"
+            python_path = python_dir / "python.exe"
+        else:
+            python_dir = venv_path / "bin"
+            python_path = python_dir / "python"
+        python_dir.mkdir(parents=True, exist_ok=True)
+        python_path.write_text("")
+        return python_path
+
+    @pytest.mark.asyncio
+    async def test_init_reuses_functional_venv_without_running_uv(
+        self, griptape_nodes: GriptapeNodes, tmp_path: Path
+    ) -> None:
+        mgr = griptape_nodes.LibraryManager()
+        venv_path = tmp_path / ".venv"
+        expected_python = self._make_functional_venv(venv_path)
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.subprocess_run",
+                new_callable=AsyncMock,
+            ) as mock_subprocess,
+            patch("griptape_nodes.retained_mode.managers.library_manager.find_uv_bin") as mock_find_uv,
+        ):
+            python_path = await mgr._init_library_venv(venv_path)
+
+        assert python_path == expected_python
+        mock_subprocess.assert_not_called()
+        mock_find_uv.assert_not_called()
+        assert (venv_path / "pyvenv.cfg").exists()
+
+    @pytest.mark.asyncio
+    async def test_init_recreates_broken_venv(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+        """A directory at the venv path that is missing the python executable must be recreated."""
+        mgr = griptape_nodes.LibraryManager()
+        venv_path = tmp_path / ".venv"
+        venv_path.mkdir()
+        (venv_path / "pyvenv.cfg").write_text("home = /fake\n")
+        # Leave a stray file behind to prove the directory was wiped
+        (venv_path / "stray.txt").write_text("old")
+
+        recreated_python_path: dict[str, Path] = {}
+
+        async def fake_subprocess_run(args: list[str], **_: object) -> MagicMock:
+            recreated_venv = Path(args[2])
+            recreated_python_path["path"] = self._make_functional_venv(recreated_venv)
+            return MagicMock()
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.subprocess_run",
+                side_effect=fake_subprocess_run,
+            ) as mock_subprocess,
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.find_uv_bin",
+                return_value="/fake/uv",
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.OSManager.check_available_disk_space",
+                return_value=True,
+            ),
+            patch.object(griptape_nodes.ConfigManager(), "get_config_value", side_effect=_fake_config_value),
+        ):
+            python_path = await mgr._init_library_venv(venv_path)
+
+        mock_subprocess.assert_called_once()
+        assert python_path == recreated_python_path["path"]
+        assert not (venv_path / "stray.txt").exists()
+
+    @pytest.mark.asyncio
+    async def test_init_creates_venv_when_directory_absent(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+        mgr = griptape_nodes.LibraryManager()
+        venv_path = tmp_path / ".venv"
+
+        async def fake_subprocess_run(args: list[str], **_: object) -> MagicMock:
+            self._make_functional_venv(Path(args[2]))
+            return MagicMock()
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.subprocess_run",
+                side_effect=fake_subprocess_run,
+            ) as mock_subprocess,
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.find_uv_bin",
+                return_value="/fake/uv",
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.OSManager.check_available_disk_space",
+                return_value=True,
+            ),
+            patch.object(griptape_nodes.ConfigManager(), "get_config_value", side_effect=_fake_config_value),
+        ):
+            python_path = await mgr._init_library_venv(venv_path)
+
+        mock_subprocess.assert_called_once()
+        assert python_path.exists()
+        assert (venv_path / "pyvenv.cfg").exists()
+
+
 class TestListRegisteredLibraries:
     """Test the on_list_registered_libraries_request functionality in LibraryManager."""
 
@@ -960,3 +1234,459 @@ class TestEvaluateLibraryFitnessSurfacesDeclarationWarnings:
 
         assert isinstance(result, EvaluateLibraryFitnessResultSuccess)
         assert [p for p in result.problems if isinstance(p, UnreferencedCatalogPermissionProblem)] == []
+
+
+class TestRegisterSandboxNodeFromSourceRequest:
+    """Tests for LibraryManager.register_sandbox_node_from_source_request."""
+
+    _LIBRARY_NAME = "Sandbox Library"
+    _FILE_NAME = "probe_sandbox_node.py"
+    _SOURCE_OK = (
+        "from griptape_nodes.exe_types.node_types import BaseNode\n"
+        "\n"
+        "class ProbeSandboxNode(BaseNode):\n"
+        "    def process(self) -> None:  # noqa: D401\n"
+        '        """Probe."""\n'
+        "        return None\n"
+    )
+
+    @pytest.fixture(autouse=True)
+    def _isolate_registry_and_config(
+        self,
+        griptape_nodes: GriptapeNodes,
+        tmp_path: Path,
+    ) -> Generator[Path, None, None]:
+        """Configure a temp sandbox directory + register the Sandbox Library for this test.
+
+        The Sandbox Library is normally created during engine startup. Our tests start from a
+        bare engine, so we recreate the minimal state the handler expects.
+
+        We stub `_get_sandbox_directory` rather than round-tripping `set_config_value`, which
+        calls `load_configs` and reads the on-disk USER_CONFIG_PATH. The conftest patches
+        USER_CONFIG_PATH to an empty file, so config-layer writes get clobbered between the
+        fixture and the handler call. Stubbing the resolver keeps the test focused on handler
+        behaviour, not config serialisation.
+        """
+        from unittest.mock import patch
+
+        from griptape_nodes.node_library.library_registry import (
+            CategoryDefinition,
+        )
+        from griptape_nodes.node_library.library_registry import (
+            LibraryMetadata as _LibraryMetadata,
+        )
+        from griptape_nodes.node_library.library_registry import (
+            LibrarySchema as _LibrarySchema,
+        )
+        from griptape_nodes.retained_mode.managers.library_manager import (
+            LibraryManager as _LibraryManager,
+        )
+
+        LibraryRegistry._libraries.clear()
+        LibraryRegistry._node_aliases.clear()
+        LibraryRegistry._collision_node_names_to_library_names.clear()
+        LibraryRegistry._registered_widgets.clear()
+
+        sandbox_dir = tmp_path / "sandbox"
+        sandbox_dir.mkdir()
+
+        # Stand up a minimal Sandbox Library so the handler has somewhere to register into.
+        sandbox_schema = _LibrarySchema(
+            name=_LibraryManager.SANDBOX_LIBRARY_NAME,
+            library_schema_version=_LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=_LibraryMetadata(
+                author="test",
+                description="test sandbox",
+                library_version="1.0.0",
+                engine_version="1.0.0",
+                tags=[],
+            ),
+            categories=[
+                {
+                    _LibraryManager.SANDBOX_CATEGORY_NAME: CategoryDefinition(
+                        title="Sandbox",
+                        description="test",
+                        color="#000",
+                        icon="Folder",
+                    )
+                }
+            ],
+            nodes=[],
+        )
+        LibraryRegistry.generate_new_library(library_data=sandbox_schema)
+
+        library_manager = griptape_nodes.LibraryManager()
+        # Default: return the tmp sandbox. Individual tests that need the "not configured"
+        # branch override via their own patch.
+        with patch.object(library_manager, "_get_sandbox_directory", return_value=sandbox_dir):
+            try:
+                yield sandbox_dir
+            finally:
+                LibraryRegistry._libraries.clear()
+                LibraryRegistry._node_aliases.clear()
+                LibraryRegistry._collision_node_names_to_library_names.clear()
+                LibraryRegistry._registered_widgets.clear()
+
+    def test_imports_existing_file_and_registers_node_type(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to locate the source file
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultSuccess,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+        source_file = sandbox_dir / self._FILE_NAME
+        source_file.write_text(self._SOURCE_OK)
+
+        result = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=str(source_file))
+        )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultSuccess)
+        assert result.registered_class_names == ["ProbeSandboxNode"]
+        assert result.replaced_class_names == []
+        assert result.library_name == self._LIBRARY_NAME
+        # Class is now registered and retrievable via the registry.
+        assert LibraryRegistry.get_library(self._LIBRARY_NAME).has_node_type("ProbeSandboxNode")
+
+    def test_accepts_path_relative_to_sandbox_directory(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to locate the source file
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultSuccess,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+        (sandbox_dir / self._FILE_NAME).write_text(self._SOURCE_OK)
+
+        # Bare filename, no directory component: must resolve under the sandbox dir.
+        result = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=self._FILE_NAME)
+        )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultSuccess)
+        assert result.registered_class_names == ["ProbeSandboxNode"]
+
+    def test_replace_if_exists_swaps_the_old_class(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to locate the source file
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultSuccess,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+        source_file = sandbox_dir / self._FILE_NAME
+        source_file.write_text(self._SOURCE_OK)
+
+        # First registration: baseline.
+        first = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=str(source_file), replace_if_exists=True)
+        )
+        assert isinstance(first, RegisterSandboxNodeFromSourceResultSuccess)
+        assert first.replaced_class_names == []
+
+        # Second registration of the same class name should report the prior was replaced.
+        second = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=str(source_file), replace_if_exists=True)
+        )
+        assert isinstance(second, RegisterSandboxNodeFromSourceResultSuccess)
+        assert second.replaced_class_names == ["ProbeSandboxNode"]
+
+    def test_fails_when_sandbox_directory_is_not_configured(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - fixture installs the default sandbox stub we override here
+    ) -> None:
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultFailure,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        # Override the fixture's default stub so the resolver returns None, simulating the
+        # "no sandbox configured" case.
+        with patch.object(library_manager, "_get_sandbox_directory", return_value=None):
+            result = library_manager.register_sandbox_node_from_source_request(
+                RegisterSandboxNodeFromSourceRequest(file_path=self._FILE_NAME)
+            )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultFailure)
+        assert "sandbox_library_directory" in str(result.result_details)
+
+    def test_rejects_paths_outside_sandbox_or_with_wrong_extension(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to seed source files
+        tmp_path: Path,
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultFailure,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+
+        # Create a real file outside the sandbox so the failure is about containment, not
+        # about the file being missing.
+        outside = tmp_path / "outside.py"
+        outside.write_text(self._SOURCE_OK)
+
+        # Wrong extension: write a real file inside the sandbox so the failure is purely
+        # about the suffix check, not about existence.
+        wrong_ext = sandbox_dir / "probe.txt"
+        wrong_ext.write_text(self._SOURCE_OK)
+
+        # Escape attempt: a relative path with `..` resolves outside the sandbox dir.
+        escape_target = tmp_path / "escape.py"
+        escape_target.write_text(self._SOURCE_OK)
+
+        bad_paths = [str(outside), str(wrong_ext), "../escape.py"]
+        for bad_path in bad_paths:
+            result = library_manager.register_sandbox_node_from_source_request(
+                RegisterSandboxNodeFromSourceRequest(file_path=bad_path)
+            )
+            assert isinstance(result, RegisterSandboxNodeFromSourceResultFailure), bad_path
+
+    def test_fails_when_file_does_not_exist(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - fixture installs the sandbox stub
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultFailure,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+
+        result = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path="never_written.py")
+        )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultFailure)
+        assert "never_written.py" in str(result.result_details)
+
+    def test_fails_when_source_has_no_base_node_subclass(
+        self,
+        griptape_nodes: GriptapeNodes,
+        _isolate_registry_and_config: Path,  # noqa: PT019 - value is used to locate the source file
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterSandboxNodeFromSourceRequest,
+            RegisterSandboxNodeFromSourceResultFailure,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        sandbox_dir = _isolate_registry_and_config
+        no_node_file = sandbox_dir / "no_node.py"
+        no_node_file.write_text("x = 1\n")
+
+        result = library_manager.register_sandbox_node_from_source_request(
+            RegisterSandboxNodeFromSourceRequest(file_path=str(no_node_file))
+        )
+
+        assert isinstance(result, RegisterSandboxNodeFromSourceResultFailure)
+        assert "BaseNode" in str(result.result_details)
+
+
+class _DescribeNodeTypeProbe(BaseNode):
+    """Concrete BaseNode used to exercise describe_node_type_request."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name=name, metadata=metadata)
+
+        prompt = Parameter(
+            name="prompt",
+            type="str",
+            input_types=["str"],
+            output_type="str",
+            default_value="hello",
+            tooltip="Prompt text",
+            ui_options={"display_name": "Prompt"},
+        )
+        self.add_parameter(prompt)
+
+        temperature = Parameter(
+            name="temperature",
+            type="float",
+            input_types=["float"],
+            output_type="float",
+            default_value=0.5,
+            tooltip="Sampling temperature",
+            allowed_modes={ParameterMode.PROPERTY},
+        )
+        self.add_parameter(temperature)
+
+
+class _RaisingProbe(BaseNode):
+    """Stand-in for node types whose __init__ performs failing I/O (auth, network, disk)."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name=name, metadata=metadata)
+        msg = "simulated I/O failure"
+        raise RuntimeError(msg)
+
+
+class TestDescribeNodeTypeRequest:
+    """Exercise LibraryManager.describe_node_type_request."""
+
+    _LIBRARY_NAME = "describe-node-type-test-library"
+
+    @pytest.fixture(autouse=True)
+    def _clean_registry(self) -> Generator[None, None, None]:
+        """LibraryRegistry holds class-level state that survives the singleton reset fixture."""
+        LibraryRegistry._libraries.clear()
+        LibraryRegistry._node_aliases.clear()
+        LibraryRegistry._collision_node_names_to_library_names.clear()
+        LibraryRegistry._registered_widgets.clear()
+        yield
+        LibraryRegistry._libraries.clear()
+        LibraryRegistry._node_aliases.clear()
+        LibraryRegistry._collision_node_names_to_library_names.clear()
+        LibraryRegistry._registered_widgets.clear()
+
+    def _register_probe_library(self) -> None:
+        schema = LibrarySchema(
+            name=self._LIBRARY_NAME,
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=LibraryMetadata(
+                author="test",
+                description="probe library",
+                library_version="1.0.0",
+                engine_version="1.0.0",
+                tags=[],
+            ),
+            categories=[],
+            nodes=[],
+        )
+        library = LibraryRegistry.generate_new_library(library_data=schema)
+        library.register_new_node_type(
+            _DescribeNodeTypeProbe,
+            NodeMetadata(
+                category="test",
+                description="Probe node used by DescribeNodeType tests",
+                display_name="Probe",
+            ),
+        )
+
+    def test_returns_parameter_schema_without_touching_object_manager(self, griptape_nodes: GriptapeNodes) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        self._register_probe_library()
+
+        request = DescribeNodeTypeRequest(
+            node_type=_DescribeNodeTypeProbe.__name__,
+            library=self._LIBRARY_NAME,
+        )
+
+        result = library_manager.describe_node_type_request(request)
+
+        assert isinstance(result, DescribeNodeTypeResultSuccess)
+        assert result.library == self._LIBRARY_NAME
+        assert result.node_type == _DescribeNodeTypeProbe.__name__
+        assert result.metadata.display_name == "Probe"
+
+        by_name = {param.name: param for param in result.parameters}
+        assert "prompt" in by_name
+        assert "temperature" in by_name
+
+        prompt = by_name["prompt"]
+        assert prompt.type == "str"
+        assert prompt.default_value == "hello"
+        assert prompt.mode_allowed_input is True
+        assert prompt.mode_allowed_output is True
+        assert prompt.mode_allowed_property is True
+        assert prompt.ui_options == {"display_name": "Prompt"}
+        assert prompt.parent_container_name is None
+
+        temperature = by_name["temperature"]
+        assert temperature.default_value == pytest.approx(0.5)
+        assert temperature.mode_allowed_input is False
+        assert temperature.mode_allowed_output is False
+        assert temperature.mode_allowed_property is True
+        assert temperature.parent_container_name is None
+
+        # Probe node must not leak into the ObjectManager.
+        assert (
+            griptape_nodes.ObjectManager().attempt_get_object_by_name(
+                f"__describe_node_type_probe__{_DescribeNodeTypeProbe.__name__}"
+            )
+            is None
+        )
+
+    def test_resolves_library_when_node_type_is_unambiguous(self, griptape_nodes: GriptapeNodes) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        self._register_probe_library()
+
+        request = DescribeNodeTypeRequest(node_type=_DescribeNodeTypeProbe.__name__)
+
+        result = library_manager.describe_node_type_request(request)
+
+        assert isinstance(result, DescribeNodeTypeResultSuccess)
+        assert result.library == self._LIBRARY_NAME
+
+    def test_returns_failure_when_node_type_missing(self, griptape_nodes: GriptapeNodes) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        self._register_probe_library()
+
+        request = DescribeNodeTypeRequest(node_type="NotARealNode", library=self._LIBRARY_NAME)
+
+        result = library_manager.describe_node_type_request(request)
+
+        assert isinstance(result, DescribeNodeTypeResultFailure)
+
+    def test_returns_success_with_warning_detail_when_init_raises(self, griptape_nodes: GriptapeNodes) -> None:
+        """Nodes whose __init__ performs I/O can raise (e.g. auth). We still want the node-level metadata."""
+        library_manager = griptape_nodes.LibraryManager()
+
+        schema = LibrarySchema(
+            name=self._LIBRARY_NAME,
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=LibraryMetadata(
+                author="test",
+                description="probe library",
+                library_version="1.0.0",
+                engine_version="1.0.0",
+                tags=[],
+            ),
+            categories=[],
+            nodes=[],
+        )
+        library = LibraryRegistry.generate_new_library(library_data=schema)
+        library.register_new_node_type(
+            _RaisingProbe,
+            NodeMetadata(
+                category="test",
+                description="Node that explodes during __init__",
+                display_name="Raising Probe",
+            ),
+        )
+
+        request = DescribeNodeTypeRequest(node_type=_RaisingProbe.__name__, library=self._LIBRARY_NAME)
+
+        result = library_manager.describe_node_type_request(request)
+
+        assert isinstance(result, DescribeNodeTypeResultSuccess)
+        # Library-level metadata still surfaces so callers can at least show the node.
+        assert result.metadata.display_name == "Raising Probe"
+        # Parameters are empty because the probe failed before they could be declared.
+        assert result.parameters == []
+        # result_details carries the concrete reason at WARNING level so callers can tell
+        # a probe failure apart from "this node legitimately has no parameters".
+        assert isinstance(result.result_details, ResultDetails)
+        assert any(detail.level == logging.WARNING for detail in result.result_details.result_details)
+        assert "simulated I/O failure" in str(result.result_details)

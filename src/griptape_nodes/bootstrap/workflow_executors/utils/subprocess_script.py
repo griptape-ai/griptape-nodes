@@ -44,17 +44,32 @@ def _main() -> None:
         default=False,
         help="Whether to pickle control flow results",
     )
+    parser.add_argument(
+        "--save-on-failure",
+        nargs="?",
+        const="",
+        default=None,
+        help=(
+            "On failure, save the current workflow state as a .py file. "
+            "With no value: uses the project 'save_failed_workflow' situation. "
+            "With a value: absolute or project-relative path."
+        ),
+    )
     args = parser.parse_args()
     flow_input = json.loads(args.json_input)
 
     local_session_workflow_executor = LocalSessionWorkflowExecutor(
-        session_id=args.session_id, storage_backend=StorageBackend(args.storage_backend)
+        session_id=args.session_id,
+        storage_backend=StorageBackend(args.storage_backend),
+        save_on_failure_path=args.save_on_failure,
     )
 
+    extra_kwargs: dict = {"save_on_failure_path": args.save_on_failure} if args.save_on_failure is not None else {}
     execute_workflow(
         input=flow_input,
         workflow_executor=local_session_workflow_executor,
         pickle_control_flow_result=args.pickle_control_flow_result,
+        **extra_kwargs,
     )
 
 

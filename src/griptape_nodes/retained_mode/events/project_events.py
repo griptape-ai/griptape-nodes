@@ -42,7 +42,7 @@ class PathResolutionFailureReason(StrEnum):
 
     MISSING_REQUIRED_VARIABLES = "MISSING_REQUIRED_VARIABLES"
     MACRO_RESOLUTION_ERROR = "MACRO_RESOLUTION_ERROR"
-    DIRECTORY_OVERRIDE_ATTEMPTED = "DIRECTORY_OVERRIDE_ATTEMPTED"
+    RESERVED_NAME_COLLISION = "RESERVED_NAME_COLLISION"
 
 
 @dataclass
@@ -245,7 +245,7 @@ class GetPathForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
     Args:
         failure_reason: Specific reason for failure
         missing_variables: List of required variable names that were not provided (for MISSING_REQUIRED_VARIABLES)
-        conflicting_variables: List of variables that conflict with directory names (for DIRECTORY_OVERRIDE_ATTEMPTED)
+        conflicting_variables: List of variables that collide with a reserved name (for RESERVED_NAME_COLLISION)
     """
 
     failure_reason: PathResolutionFailureReason

@@ -93,11 +93,15 @@ logger = logging.getLogger("griptpae_nodes_engine")
 
 
 def node_param_split(node_and_param: str) -> tuple[str, str]:
-    """Split a string in format 'node.param' into node and param."""
+    """Split a string in format 'node.param' into node and param.
+
+    Splits on the final '.' so node names containing dots (e.g. "FLUX.2 Image Generation")
+    are preserved intact; parameter names are identifiers and never contain dots.
+    """
     if "." not in node_and_param:
         msg = f"Expected format 'node.param', got '{node_and_param}'"
         raise ValueError(msg)
-    parts = node_and_param.split(".", 1)
+    parts = node_and_param.rsplit(".", 1)
     return parts[0], parts[1]  # Explicitly return two values
 
 

@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from inspect import getmodule, isclass
+from inspect import getmodule, isclass, iscoroutinefunction
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
@@ -66,6 +66,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+    RegisterLibraryFromFileRequest,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.os_events import (
@@ -192,6 +193,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY
+from griptape_nodes.utils.ast_utils import rewrite_string_comments
 from griptape_nodes.utils.string_utils import normalize_display_name
 
 if TYPE_CHECKING:
@@ -316,7 +318,13 @@ class WorkflowManager:
         self._workflow_file_path_to_info = {}
         self._squelch_workflow_altered_count = 0
         self._referenced_workflow_stack = []
+        # Initialize as set: before refresh_workflow_registry has run, the registry
+        # is simply empty. Handlers invoked during library load (e.g. from a node
+        # __init__ that issues a workflow query) should return an empty result
+        # rather than block on an event that's waiting on the same call stack to
+        # unwind. refresh_workflow_registry clears this while it mutates the registry.
         self._workflows_loading_complete = asyncio.Event()
+        self._workflows_loading_complete.set()
 
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
@@ -440,7 +448,7 @@ class WorkflowManager:
         """
         return self._referenced_workflow_stack[-1]
 
-    def refresh_workflow_registry(self, workflows_to_register: list[str] | None = None) -> None:
+    async def refresh_workflow_registry(self, workflows_to_register: list[str] | None = None) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
         # Clear any previously registered user/workspace workflows before re-registering, so that
         # a workspace change (e.g. project switch) takes effect cleanly. Library-provided workflows
@@ -466,7 +474,7 @@ class WorkflowManager:
                 workflows_to_register.extend([str(workspace_path)])
 
             # Register all discovered workflows at once if any were found
-            self._process_workflows_for_registration(workflows_to_register)
+            await self._process_workflows_for_registration(workflows_to_register)
 
             # Now remove any workflows that were missing files.
             paths_to_remove = set()
@@ -686,11 +694,35 @@ class WorkflowManager:
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
         complete_file_path = resolve_workspace_path(Path(relative_file_path), workspace_path)
         try:
-            # Libraries are now loaded only on app initialization and explicit reload requests
-            # Now execute the workflow.
             async with await anyio.open_file(Path(complete_file_path), encoding="utf-8") as file:
                 workflow_content = await file.read()
-            exec(workflow_content)  # noqa: S102
+
+            # Resolve the workflow's declared library dependencies before exec.
+            # The metadata header lists every library the workflow uses; each must
+            # be registered (discovery is triggered if needed) so node construction
+            # inside the script can succeed.
+            library_resolution_error = await self._ensure_libraries_for_workflow(
+                relative_file_path=relative_file_path,
+                complete_file_path=complete_file_path,
+            )
+            if library_resolution_error is not None:
+                return library_resolution_error
+
+            # Execute the workflow module with a dedicated namespace so `__file__` resolves
+            # to the workflow path and the `if __name__ == "__main__"` guard does not fire
+            # (which would try to spin up a second event loop via asyncio.run).
+            namespace: dict[str, Any] = {
+                "__file__": str(complete_file_path),
+                "__name__": "__gtn_workflow__",
+            }
+            exec(workflow_content, namespace)  # noqa: S102
+
+            # New-style workflows wrap graph-building requests in `async def build_workflow()`
+            # so the module is inert at import time. Await it here. Legacy workflows without
+            # build_workflow() have already executed their requests top-to-bottom during exec().
+            workflow_builder = namespace.get("build_workflow")
+            if workflow_builder is not None and iscoroutinefunction(workflow_builder):
+                await workflow_builder()
 
             # After workflow execution, ensure there's always a current context by pushing
             # the top-level flow if the context is empty. This fixes regressions where
@@ -706,6 +738,52 @@ class WorkflowManager:
             execution_successful=True,
             execution_details=f"Succeeded in running workflow on path '{complete_file_path}'.",
         )
+
+    async def _ensure_libraries_for_workflow(
+        self, *, relative_file_path: str, complete_file_path: Path
+    ) -> WorkflowExecutionResult | None:
+        """Ensure every library the workflow declares is registered before exec.
+
+        Reads node_libraries_referenced from the workflow's TOML metadata header
+        and dispatches a RegisterLibraryFromFileRequest for each entry via
+        ahandle_request. Returns a failure WorkflowExecutionResult if a library
+        cannot be resolved; None on success.
+
+        The engine (not the workflow file itself) owns library registration
+        because worker-backed libraries spin up a dedicated subprocess when they
+        register. If the workflow file emitted RegisterLibraryFromFileRequest
+        during exec(), a worker library would need to start its own subprocess
+        while the workflow was mid-execution -- bootstrapping a worker from
+        inside code running on that worker is a circular dependency. Declaring
+        libraries in the metadata header and resolving them here, before exec(),
+        breaks the cycle.
+        """
+        load_metadata_result = await self.on_load_workflow_metadata_request(
+            LoadWorkflowMetadata(file_name=relative_file_path)
+        )
+        if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+            # No usable metadata block (missing, malformed, or schema-invalid).
+            # Fall through to exec without pre-registering libraries; the engine
+            # startup path may have already loaded them. This mirrors prior
+            # behavior where a missing prereq block was survivable.
+            return None
+        for lib_ref in load_metadata_result.metadata.node_libraries_referenced:
+            register_result = await GriptapeNodes.ahandle_request(
+                RegisterLibraryFromFileRequest(
+                    library_name=lib_ref.library_name,
+                    perform_discovery_if_not_found=True,
+                )
+            )
+            if not register_result.succeeded():
+                details = (
+                    f"Failed to ensure library '{lib_ref.library_name}' for workflow "
+                    f"'{complete_file_path}': {getattr(register_result, 'result_details', '')}"
+                )
+                return WorkflowManager.WorkflowExecutionResult(
+                    execution_successful=False,
+                    execution_details=details,
+                )
+        return None
 
     async def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it into a blank slate.
@@ -757,13 +835,22 @@ class WorkflowManager:
             details = f"Failed to get workflow '{request.workflow_name}' from registry."
             return RunWorkflowFromRegistryResultFailure(result_details=details)
 
+        # RunWorkflowFromRegistry is file-based (it re-executes the serialized .py on disk).
+        # Unsaved workflows have no file; callers should use StartFlowRequest against the
+        # live flow for in-memory execution. Keep this reject explicit so the UI can
+        # distinguish "run this unsaved edit" (StartFlow) from "run the last saved version".
+        relative_file_path = workflow.file_path
+        if relative_file_path is None:
+            details = (
+                f"Cannot run unsaved workflow '{request.workflow_name}' from the registry because it has no file on disk. "
+                "Save the workflow first, or use StartFlowRequest to execute the current in-memory flow."
+            )
+            return RunWorkflowFromRegistryResultFailure(result_details=details)
+
         # Update current context for workflow.
         context_warning = None
         if GriptapeNodes.ContextManager().has_current_workflow():
             context_warning = f"Started a new workflow '{request.workflow_name}' but a workflow '{GriptapeNodes.ContextManager().get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
-
-        # get file_path from workflow
-        relative_file_path = workflow.file_path
 
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it.
         with WorkflowManager.WorkflowSquelchContext(self):
@@ -801,16 +888,18 @@ class WorkflowManager:
         return RunWorkflowFromRegistryResultSuccess(result_details=ResultDetails(*result_messages))
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
+        # The registry key is derived from the file path (minus extension), independent of the display name.
+        registry_key = derive_registry_key(request.file_name)
         try:
             if isinstance(request.metadata, dict):
                 request.metadata = WorkflowMetadata(**request.metadata)
 
-            WorkflowRegistry.generate_new_workflow(metadata=request.metadata, file_path=request.file_name)
+            WorkflowRegistry.generate_new_workflow(
+                registry_key=registry_key, metadata=request.metadata, file_path=request.file_name
+            )
         except Exception as e:
             details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
             return RegisterWorkflowResultFailure(result_details=details)
-        # The registry key is derived from the file path (minus extension), independent of the display name.
-        registry_key = derive_registry_key(request.file_name)
         return RegisterWorkflowResultSuccess(
             workflow_name=registry_key,
             result_details=ResultDetails(
@@ -819,10 +908,10 @@ class WorkflowManager:
             ),
         )
 
-    def on_import_workflow_request(self, request: ImportWorkflowRequest) -> ResultPayload:
+    async def on_import_workflow_request(self, request: ImportWorkflowRequest) -> ResultPayload:
         # First, attempt to load metadata from the file
         load_metadata_request = LoadWorkflowMetadata(file_name=request.file_path)
-        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+        load_metadata_result = await self.on_load_workflow_metadata_request(load_metadata_request)
 
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             return ImportWorkflowResultFailure(result_details=load_metadata_result.result_details)
@@ -893,19 +982,36 @@ class WorkflowManager:
         )
 
     async def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
+        # If the deleted workflow is the active one, tear down its flows/nodes and
+        # pop the context stack BEFORE removing the registry entry, so downstream
+        # `DeleteFlowRequest` calls can still push a flow context (they require an
+        # active workflow). Non-active deletes (e.g. published-workflow subprocess
+        # cleanup) skip this and go straight to the registry/file cleanup.
+        context_manager = GriptapeNodes.ContextManager()
+        if context_manager.has_current_workflow() and context_manager.get_current_workflow_name() == request.name:
+            GriptapeNodes.clear_current_workflow_data()
         try:
             workflow = WorkflowRegistry.delete_workflow_by_name(request.name)
         except Exception as e:
             details = f"Failed to remove workflow from registry with name '{request.name}'. Exception: {e}"
             return DeleteWorkflowResultFailure(result_details=details)
+        # Unsaved workflows have no backing file or config entry; dropping the registry
+        # entry is the entire operation.
+        workflow_file_path = workflow.file_path
+        if workflow_file_path is None:
+            return DeleteWorkflowResultSuccess(
+                result_details=ResultDetails(
+                    message=f"Successfully deleted unsaved workflow: {request.name}", level=logging.INFO
+                )
+            )
         config_manager = GriptapeNodes.ConfigManager()
         try:
-            config_manager.delete_user_workflow(workflow.file_path)
+            config_manager.delete_user_workflow(workflow_file_path)
         except Exception as e:
             details = f"Failed to remove workflow from user config with name '{request.name}'. Exception: {e}"
             return DeleteWorkflowResultFailure(result_details=details)
         # delete the actual file
-        full_path = config_manager.workspace_path.joinpath(workflow.file_path)
+        full_path = config_manager.workspace_path.joinpath(workflow_file_path)
 
         delete_request = DeleteFileRequest(
             path=str(full_path),
@@ -914,7 +1020,7 @@ class WorkflowManager:
         )
         delete_result = await GriptapeNodes.ahandle_request(delete_request)
         if isinstance(delete_result, DeleteFileResultFailure):
-            details = f"Failed to delete workflow file with path '{workflow.file_path}'. {delete_result.result_details}"
+            details = f"Failed to delete workflow file with path '{workflow_file_path}'. {delete_result.result_details}"
             return DeleteWorkflowResultFailure(result_details=details)
         return DeleteWorkflowResultSuccess(
             result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level=logging.INFO)
@@ -997,6 +1103,18 @@ class WorkflowManager:
             details = f"Attempted to get workflow info. Failed because workflow '{request.workflow_name}' was not found in the registry."
             return GetWorkflowInfoResultFailure(result_details=details)
 
+        # Unsaved workflows never went through the on-disk metadata load, so
+        # _workflow_file_path_to_info has no entry for them. Report a healthy stub.
+        if workflow.file_path is None:
+            return GetWorkflowInfoResultSuccess(
+                status=WorkflowStatus.GOOD,
+                workflow_name=workflow.metadata.name,
+                workflow_path="",
+                problems=[],
+                workflow_dependencies=[],
+                result_details=f"Workflow '{request.workflow_name}' is unsaved; returning empty info stub.",
+            )
+
         workflow_file_path = self._build_workflow_info_key(workflow.file_path)
 
         if workflow_file_path not in self._workflow_file_path_to_info:
@@ -1029,6 +1147,9 @@ class WorkflowManager:
                 workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
             except KeyError:
                 continue
+            # Unsaved workflows are registry-only (no on-disk metadata to summarize).
+            if workflow.file_path is None:
+                continue
             workflow_file_path = self._build_workflow_info_key(workflow.file_path)
             wf_info = self._workflow_file_path_to_info.get(workflow_file_path)
             if wf_info is None:
@@ -1052,7 +1173,7 @@ class WorkflowManager:
             result_details="Successfully retrieved workflow metadata.",
         )
 
-    def on_get_workflow_run_command_request(self, request: GetWorkflowRunCommandRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    async def on_get_workflow_run_command_request(self, request: GetWorkflowRunCommandRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         workflow_name = request.workflow_name
         file_path = request.file_path
 
@@ -1143,7 +1264,7 @@ class WorkflowManager:
         # Optional: load workflow_shape from file when resolved by file_path only
         if workflow_shape is None:
             load_metadata_request = LoadWorkflowMetadata(file_name=relative_file_path)
-            load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+            load_metadata_result = await self.on_load_workflow_metadata_request(load_metadata_request)
             if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
                 workflow_shape = load_metadata_result.metadata.workflow_shape
 
@@ -1173,12 +1294,23 @@ class WorkflowManager:
         error: str | None
 
     def _get_workflow_and_path(self, workflow_name: str) -> WorkflowPathResolution:
-        """Resolve workflow from registry and return absolute file path."""
+        """Resolve workflow from registry and return absolute file path.
+
+        Returns an error resolution for unsaved workflows since there is no file on disk
+        to read or update.
+        """
         try:
             workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
         except KeyError:
             return WorkflowManager.WorkflowPathResolution(
                 workflow=None, file_path=None, error=f"Failed to set metadata. Workflow '{workflow_name}' not found."
+            )
+
+        if workflow.file_path is None:
+            return WorkflowManager.WorkflowPathResolution(
+                workflow=workflow,
+                file_path=None,
+                error=f"Failed to set metadata. Workflow '{workflow_name}' is unsaved (no file on disk).",
             )
 
         complete_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
@@ -1213,27 +1345,36 @@ class WorkflowManager:
     async def on_set_workflow_metadata_request(self, request: SetWorkflowMetadataRequest) -> ResultPayload:
         await self._workflows_loading_complete.wait()
 
-        # Resolve workflow and file path
+        # Unsaved workflows have no file on disk; update the in-memory registry entry only.
+        # This keeps display-name / description edits in sync with the registry so a refresh
+        # re-hydrates the latest state without needing a save.
+        if WorkflowRegistry.has_workflow_with_name(request.workflow_name):
+            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+            if workflow.file_path is None:
+                try:
+                    merged = self._merge_metadata(workflow.metadata, request.workflow_metadata)
+                except ValueError as e:
+                    return SetWorkflowMetadataResultFailure(result_details=str(e))
+                merged.last_modified_date = datetime.now(tz=UTC)
+                workflow.metadata = merged
+                return SetWorkflowMetadataResultSuccess(
+                    result_details=ResultDetails(
+                        message=(
+                            f"Successfully updated in-memory metadata for unsaved workflow '{request.workflow_name}'."
+                        ),
+                        level=logging.INFO,
+                    )
+                )
+
+        # Resolve workflow and file path for saved workflows
         resolution = self._get_workflow_and_path(request.workflow_name)
         if resolution.error is not None or resolution.workflow is None or resolution.file_path is None:
             return SetWorkflowMetadataResultFailure(result_details=resolution.error or "Failed to resolve workflow.")
 
-        # Use provided metadata object as the new metadata
-        new_metadata = request.workflow_metadata
-        # Allow JSON dicts from frontend by coercing to WorkflowMetadata
-        # Merge with existing metadata to ensure required fields are present
-        if isinstance(new_metadata, dict):
-            # Start with existing metadata as base, then overlay provided fields
-            existing_metadata_dict = resolution.workflow.metadata.model_dump()
-            # Only overlay non-None values from the incoming dict to preserve required fields
-            for key, value in new_metadata.items():
-                if value is not None or key in ("description", "image", "branched_from", "workflow_shape"):
-                    # Allow explicit None for optional fields, but preserve required fields if incoming is None
-                    existing_metadata_dict[key] = value
-            try:
-                new_metadata = WorkflowMetadata.model_validate(existing_metadata_dict)
-            except Exception as e:
-                return SetWorkflowMetadataResultFailure(result_details=f"Invalid workflow_metadata: {e!s}")
+        try:
+            new_metadata = self._merge_metadata(resolution.workflow.metadata, request.workflow_metadata)
+        except ValueError as e:
+            return SetWorkflowMetadataResultFailure(result_details=str(e))
         # Refresh last_modified_date to reflect this change
         new_metadata.last_modified_date = datetime.now(tz=UTC)
 
@@ -1251,7 +1392,30 @@ class WorkflowManager:
             )
         )
 
-    def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    def _merge_metadata(
+        self, existing: WorkflowMetadata, incoming: WorkflowMetadata | dict[str, Any]
+    ) -> WorkflowMetadata:
+        """Coerce incoming metadata (dict or WorkflowMetadata) into a merged WorkflowMetadata.
+
+        Dicts from the frontend may omit required fields; merge on top of existing
+        metadata so required fields are preserved. Raises ValueError on invalid input.
+        """
+        if not isinstance(incoming, dict):
+            return incoming
+        existing_metadata_dict = existing.model_dump()
+        # Only overlay non-None values from the incoming dict to preserve required fields.
+        # Allow explicit None for these optional fields.
+        optional_none_allowed = ("description", "image", "branched_from", "workflow_shape")
+        for key, value in incoming.items():
+            if value is not None or key in optional_none_allowed:
+                existing_metadata_dict[key] = value
+        try:
+            return WorkflowMetadata.model_validate(existing_metadata_dict)
+        except Exception as e:
+            msg = f"Invalid workflow_metadata: {e!s}"
+            raise ValueError(msg) from e
+
+    def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         try:
             # Validate source workflow exists
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
@@ -1259,10 +1423,19 @@ class WorkflowManager:
             details = f"Failed to move workflow '{request.workflow_name}' because it does not exist."
             return MoveWorkflowResultFailure(result_details=details)
 
+        # Move is a disk-level operation; unsaved workflows have nothing to move.
+        if workflow.file_path is None:
+            details = (
+                f"Cannot move unsaved workflow '{request.workflow_name}' because it has no file on disk. "
+                "Save the workflow before moving it."
+            )
+            return MoveWorkflowResultFailure(result_details=details)
+        old_relative_path = workflow.file_path
+
         config_manager = GriptapeNodes.ConfigManager()
 
         # Get current file path
-        current_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
+        current_file_path = WorkflowRegistry.get_complete_file_path(old_relative_path)
         if not Path(current_file_path).exists():
             details = (
                 f"Failed to move workflow '{request.workflow_name}': File path '{current_file_path}' does not exist."
@@ -1284,7 +1457,7 @@ class WorkflowManager:
             return MoveWorkflowResultFailure(result_details=details)
 
         # Create new file path
-        workflow_filename = Path(workflow.file_path).name
+        workflow_filename = Path(old_relative_path).name
         new_relative_path = (Path(target_directory) / workflow_filename).as_posix()
         new_absolute_path = config_manager.workspace_path / new_relative_path
 
@@ -1295,7 +1468,6 @@ class WorkflowManager:
             )
             return MoveWorkflowResultFailure(result_details=details)
 
-        old_relative_path = workflow.file_path
         old_registry_key = derive_registry_key(old_relative_path)
         new_registry_key = derive_registry_key(new_relative_path)
 
@@ -1346,13 +1518,18 @@ class WorkflowManager:
                 result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
-    def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
+    async def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
         self, request: LoadWorkflowMetadata
     ) -> ResultPayload:
+        # The editor can send LoadWorkflowMetadata before library registration finishes
+        # (observed on Windows, engine cold start). Without this gate, the dependency
+        # check below would race LibraryRegistry and return LibraryNotRegisteredProblem
+        # for libraries that are milliseconds from being registered.
+        await GriptapeNodes.LibraryManager()._libraries_loading_complete.wait()
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
         str_path = str(complete_file_path)
-        if not Path(complete_file_path).is_file():
+        if not await anyio.Path(complete_file_path).is_file():
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
                 status=WorkflowManager.WorkflowStatus.MISSING,
                 workflow_path=str_path,
@@ -1445,11 +1622,9 @@ class WorkflowManager:
             workflow_metadata.last_modified_date = WorkflowManager.EPOCH_START
             problems.append(MissingLastModifiedDateProblem(default_date=str(WorkflowManager.EPOCH_START)))
 
-        # Get list of registered libraries once (silent check - no error logging)
-        list_libraries_result = GriptapeNodes.handle_request(ListRegisteredLibrariesRequest())
+        list_libraries_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
 
         if not isinstance(list_libraries_result, ListRegisteredLibrariesResultSuccess):
-            # Should not happen, but handle gracefully - treat as no libraries registered
             registered_libraries = []
         else:
             registered_libraries = list_libraries_result.libraries
@@ -1595,8 +1770,8 @@ class WorkflowManager:
             )
 
         # Check for workflow version-based compatibility issues and add to problems
-        workflow_version_issues = GriptapeNodes.VersionCompatibilityManager().check_workflow_version_compatibility(
-            workflow_metadata
+        workflow_version_issues = (
+            await GriptapeNodes.VersionCompatibilityManager().check_workflow_version_compatibility(workflow_metadata)
         )
         for issue in workflow_version_issues:
             problems.append(issue.problem)
@@ -1622,15 +1797,15 @@ class WorkflowManager:
             metadata=workflow_metadata, result_details="Workflow metadata loaded successfully."
         )
 
-    def register_workflows_from_config(self, config_section: str) -> None:
+    async def register_workflows_from_config(self, config_section: str) -> None:
         workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(config_section)
         if workflows_to_register:
-            self.register_list_of_workflows(workflows_to_register)
+            await self.register_list_of_workflows(workflows_to_register)
 
-    def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:
-        self._process_workflows_for_registration(workflows_to_register)
+    async def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:
+        await self._process_workflows_for_registration(workflows_to_register)
 
-    def _register_workflow(self, workflow_to_register: str) -> bool:
+    async def _register_workflow(self, workflow_to_register: str) -> bool:
         """Registers a workflow from a file.
 
         Args:
@@ -1648,7 +1823,7 @@ class WorkflowManager:
 
         # Attempt to extract the metadata out of the workflow.
         load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_to_register))
-        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+        load_metadata_result = await self.on_load_workflow_metadata_request(load_metadata_request)
         if not load_metadata_result.succeeded():
             # SKIP IT
             return False
@@ -1794,7 +1969,7 @@ class WorkflowManager:
 
         return self.WriteWorkflowFileResult(success=True, error_details="")
 
-    async def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:
+    async def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Determine save target (file path, name, metadata)
         context_manager = GriptapeNodes.ContextManager()
         current_workflow_name = (
@@ -1882,12 +2057,47 @@ class WorkflowManager:
 
         workflow_metadata = save_file_result.workflow_metadata
 
+        # Handle the unsaved -> saved transition: if the current-context workflow is an
+        # unsaved entry, swap its registry key to the path-derived key and update its
+        # file_path. This preserves the workflow instance (so any external references
+        # remain valid) while transitioning it to the "saved" state. Also walks the
+        # ContextManager's workflow stack in-place so any active context referencing
+        # the old unsaved key is updated to the new registry key.
+        unsaved_source_key: str | None = None
+        if (
+            current_workflow_name is not None
+            and current_workflow_name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX)
+            and WorkflowRegistry.has_workflow_with_name(current_workflow_name)
+        ):
+            unsaved_source_key = current_workflow_name
+
         registered_workflows = WorkflowRegistry.list_workflows()
+        if unsaved_source_key is not None and unsaved_source_key != registry_key:
+            # Rekey the unsaved entry to the path-derived key if the new key is not already
+            # occupied by a separate entry. If the new key already exists (e.g. a saved
+            # workflow with the same target path is already registered), fall back to
+            # dropping the unsaved entry and updating the existing saved entry below.
+            if registry_key in registered_workflows:
+                WorkflowRegistry.delete_workflow_by_name(unsaved_source_key)
+            else:
+                WorkflowRegistry.rekey_workflow(old_key=unsaved_source_key, new_key=registry_key)
+                rekeyed_workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
+                rekeyed_workflow.file_path = relative_file_path
+            for workflow_context_state in GriptapeNodes.ContextManager()._workflow_stack:
+                if workflow_context_state._name == unsaved_source_key:
+                    workflow_context_state._name = registry_key
+            registered_workflows = WorkflowRegistry.list_workflows()
+
         if registry_key not in registered_workflows:
-            WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
+            WorkflowRegistry.generate_new_workflow(
+                registry_key=registry_key, metadata=workflow_metadata, file_path=relative_file_path
+            )
 
         existing_workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
         existing_workflow.metadata = workflow_metadata
+        # Ensure file_path is populated even for pre-existing entries (defensive).
+        if existing_workflow.file_path is None:
+            existing_workflow.file_path = relative_file_path
         details = f"Successfully saved workflow to: {save_file_result.file_path}"
         return SaveWorkflowResultSuccess(
             file_path=save_file_result.file_path,
@@ -1953,7 +2163,7 @@ class WorkflowManager:
                 return candidate_name
             curr_idx += 1
 
-    def _determine_save_target(
+    def _determine_save_target(  # noqa: PLR0915
         self, requested_file_name: str | None, current_workflow_name: str | None
     ) -> SaveWorkflowTargetInfo:
         """Determine the target file path, name, and metadata for saving a workflow.
@@ -1968,6 +2178,12 @@ class WorkflowManager:
         Raises:
             ValueError: If workflow registry lookups fail or produce inconsistent state
         """
+        # An unsaved synthetic key ("unsaved:<uuid>") is a registry lookup key, not a
+        # usable filename stem. Treat it as "no requested name" so the FIRST_SAVE path
+        # derives the filename from the workflow's display-name metadata below.
+        if requested_file_name and requested_file_name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX):
+            requested_file_name = None
+
         # Look up workflows in registry
         target_workflow = None
         if requested_file_name and WorkflowRegistry.has_workflow_with_name(requested_file_name):
@@ -1989,11 +2205,12 @@ class WorkflowManager:
             and current_workflow.metadata.is_griptape_provided
         )
         if target_is_griptape_template or current_is_griptape_template:
-            # Griptape-provided template workflows always create new copies with unique names
+            # Griptape-provided template workflows always create new copies with unique names.
+            # Griptape-provided templates are always disk-backed, so file_path is guaranteed.
             scenario = WorkflowManager.SaveWorkflowScenario.SAVE_FROM_TEMPLATE
             template_workflow = target_workflow or current_workflow
-            if template_workflow is None:
-                msg = "Save From Template scenario requires either target_workflow or current_workflow to be present"
+            if template_workflow is None or template_workflow.file_path is None:
+                msg = "Save From Template scenario requires a disk-backed template workflow."
                 raise ValueError(msg)
             # Use the registry key as base name, independent of the display name in metadata.
             base_name = requested_file_name or derive_registry_key(template_workflow.file_path)
@@ -2002,8 +2219,10 @@ class WorkflowManager:
             branched_from = None
             file_path, relative_file_path = self._build_workflow_save_path(f"{file_name}.py")
 
-        elif target_workflow:
-            # Requested name exists in registry → overwrite it
+        elif target_workflow and target_workflow.file_path is not None:
+            # Requested name exists in registry as a saved workflow → overwrite it.
+            # (If it were unsaved, we would instead treat this as first-save of the current
+            # workflow; handled by the `elif requested_file_name and current_workflow` branch.)
             scenario = WorkflowManager.SaveWorkflowScenario.OVERWRITE_EXISTING
             # Use the registry key as the file name, independent of the display name in metadata.
             file_name = derive_registry_key(target_workflow.file_path)
@@ -2027,9 +2246,17 @@ class WorkflowManager:
         else:
             # No requested name or no current workflow → first save.
             # A user-typed name like "episode/my_wf" splits into sub-directory + stem;
-            # auto-generated timestamp names have no directory component.
+            # auto-generated timestamp names have no directory component. When the caller
+            # has no name in mind, prefer the current workflow's display-name metadata
+            # (e.g. the auto-generated "workflow_25" for a freshly-created unsaved flow)
+            # over a timestamp so the on-disk filename matches what the user sees.
             scenario = WorkflowManager.SaveWorkflowScenario.FIRST_SAVE
-            raw_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            if not requested_file_name and current_workflow is not None:
+                candidate_name = (current_workflow.metadata.name or "").strip()
+                sanitized = re.sub(r"[^A-Za-z0-9._/-]+", "_", candidate_name).strip("_/")
+                raw_name = sanitized or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            else:
+                raw_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
             parts = FilenameParts.from_filename(f"{raw_name}.py")
             sub_dirs = str(parts.directory) if str(parts.directory) != "." else None
             file_name = parts.stem
@@ -2123,6 +2350,15 @@ class WorkflowManager:
             return SaveSubflowToWorkflowResultFailure(result_details=details)
 
         workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
+        if workflow.file_path is None:
+            # Saving a subflow back into its parent requires that parent to have a file.
+            # Unsaved workflows have no destination to write into.
+            details = (
+                f"Attempted to save subflow '{request.flow_name}' into workflow '{registry_key}'. "
+                "Failed because the parent workflow is unsaved (no file on disk). "
+                "Save the parent workflow before saving a subflow into it."
+            )
+            return SaveSubflowToWorkflowResultFailure(result_details=details)
         file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
         file_name = Path(file_path).stem
 
@@ -2269,14 +2505,21 @@ class WorkflowManager:
 
         ast_container = ASTContainer()
 
-        # Extract library names from workflow metadata
+        # Graph-building statements accumulate into the body of `async def build_workflow()`,
+        # so the emitted workflow file only mutates engine state when build_workflow() is awaited.
+        # build_workflow() also registers every library named in the workflow metadata header so
+        # the file is self-sufficient: it works whether it is loaded by WorkflowManager.run_workflow
+        # (which also calls _ensure_libraries_for_workflow before exec) or executed directly as a
+        # standalone script via LocalWorkflowExecutor (which has no equivalent pre-exec hook).
+        # RegisterLibraryFromFileRequest is idempotent, so the redundant engine-side call is safe.
         library_names = [lib.library_name for lib in workflow_metadata.node_libraries_referenced]
+
+        main_body: list[ast.stmt] = []
 
         prereq_code = self._generate_workflow_run_prerequisite_code(
             import_recorder=import_recorder, library_names=library_names
         )
-        for node in prereq_code:
-            ast_container.add_node(node)
+        main_body.extend(cast("ast.stmt", node) for node in prereq_code)
 
         # Generate unique values code AST node
         unique_values_node = self._generate_unique_values_code(
@@ -2284,7 +2527,8 @@ class WorkflowManager:
             prefix="top_level",
             import_recorder=import_recorder,
         )
-        ast_container.add_node(unique_values_node)
+        # Helper returns an ast.Module; unpack its body into statements.
+        main_body.extend(cast("ast.stmt", stmt) for stmt in unique_values_node.body)
 
         # Keep track of each flow and node index we've created
         flow_creation_index = 0
@@ -2298,15 +2542,13 @@ class WorkflowManager:
                 create_flow_context_module = self._generate_create_flow(
                     flow_initialization_command, import_recorder, flow_creation_index
                 )
-                for node in create_flow_context_module.body:
-                    ast_container.add_node(node)
+                main_body.extend(cast("ast.stmt", node) for node in create_flow_context_module.body)
             case ImportWorkflowAsReferencedSubFlowRequest():
                 # Generate import workflow context AST module
                 import_workflow_context_module = self._generate_import_workflow(
                     flow_initialization_command, import_recorder, flow_creation_index
                 )
-                for node in import_workflow_context_module.body:
-                    ast_container.add_node(node)
+                main_body.extend(cast("ast.stmt", node) for node in import_workflow_context_module.body)
             case None:
                 # No initialization command, deserialize into current context
                 pass
@@ -2476,9 +2718,38 @@ class WorkflowManager:
             )
             assign_flow_context_node.body.extend(set_parameter_value_asts)
 
-            ast_container.add_node(assign_flow_context_node)
+            main_body.append(cast("ast.stmt", assign_flow_context_node))
 
-        # Generate workflow execution code
+        # Wrap all graph-building statements in `async def build_workflow()` so the file is
+        # inert until build_workflow() is awaited (by the engine loader or the CLI entrypoint).
+        # The name pairs with the executor entrypoints (execute_workflow / aexecute_workflow)
+        # to make the two phases — graph construction vs execution — visually distinct.
+        main_func_def = ast.AsyncFunctionDef(
+            name="build_workflow",
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=main_body or [ast.Pass()],
+            decorator_list=[],
+            returns=ast.Constant(value=None),
+            type_params=[],
+        )
+        ast.fix_missing_locations(main_func_def)
+        ast_container.add_node(main_func_def)
+
+        # Generate workflow execution code. Only emitted when the workflow has a Start/End
+        # shape — that's what makes the file runnable as a CLI program. Shapeless workflows
+        # have no input/output surface and are loaded by the engine via `await build_workflow()`
+        # (see WorkflowManager.run_workflow), so they don't need a `__main__` guard.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4205 — decide how shapeless
+        # workflows should behave when invoked directly (build-only vs build + StartFlowRequest)
+        # and emit an appropriate `__main__` guard.
         workflow_execution_code = self._generate_workflow_execution(
             import_recorder=import_recorder,
             workflow_metadata=workflow_metadata,
@@ -2488,8 +2759,12 @@ class WorkflowManager:
             for node in workflow_execution_code:
                 ast_container.add_node(node)
 
-        # Generate final code from ASTContainer
+        # Generate final code from ASTContainer.
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
+        # Rewrite string-literal lines of the form `'# foo'` or `"# foo"` into real `# foo`
+        # comments. `ast.unparse` cannot emit comments directly, so the generators above
+        # smuggle them in as bare-string statements and we unwrap them here.
+        ast_output = rewrite_string_comments(ast_output)
         import_output = import_recorder.generate_imports()
         return f"{metadata_block}\n\n{import_output}\n\n{ast_output}\n"
 
@@ -2593,6 +2868,14 @@ class WorkflowManager:
                 right=ast.Constant(value=None),
             ),
         )
+        arg_save_on_failure_path = ast.arg(
+            arg="save_on_failure_path",
+            annotation=ast.BinOp(
+                left=ast.Name(id="str", ctx=ast.Load()),
+                op=ast.BitOr(),
+                right=ast.Constant(value=None),
+            ),
+        )
         arg_workflow_executor = ast.arg(
             arg="workflow_executor",
             annotation=ast.BinOp(
@@ -2610,6 +2893,7 @@ class WorkflowManager:
                 arg_input,
                 arg_storage_backend,
                 arg_project_file_path,
+                arg_save_on_failure_path,
                 arg_workflow_executor,
                 arg_pickle_control_flow_result,
             ],
@@ -2619,6 +2903,7 @@ class WorkflowManager:
             kwarg=None,
             defaults=[
                 ast.Constant(StorageBackend.LOCAL.value),
+                ast.Constant(value=None),
                 ast.Constant(value=None),
                 ast.Constant(value=None),
                 ast.Constant(value=pickle_control_flow_result),
@@ -2681,6 +2966,10 @@ class WorkflowManager:
                                 arg="project_file_path",
                                 value=ast.Name(id="project_file_path_resolved", ctx=ast.Load()),
                             ),
+                            ast.keyword(
+                                arg="save_on_failure_path",
+                                value=ast.Name(id="save_on_failure_path", ctx=ast.Load()),
+                            ),
                             ast.keyword(arg="skip_library_loading", value=ast.Constant(value=True)),
                             ast.keyword(
                                 arg="workflows_to_register",
@@ -2729,11 +3018,25 @@ class WorkflowManager:
             )
         )
 
+        # `await build_workflow()` constructs the graph before the executor runs;
+        # build_workflow() is the async function emitted by _generate_workflow_file_content
+        # that contains all graph-building requests.
+        await_main_call = ast.Expr(
+            value=ast.Await(
+                value=ast.Call(
+                    func=ast.Name(id="build_workflow", ctx=ast.Load()),
+                    args=[],
+                    keywords=[],
+                )
+            )
+        )
+
         # === Generate async aexecute_workflow function ===
         async_func_def = ast.AsyncFunctionDef(
             name="aexecute_workflow",
             args=args,
             body=[
+                await_main_call,
                 ensure_context_call,
                 storage_backend_convert,
                 project_file_path_resolve,
@@ -2771,6 +3074,10 @@ class WorkflowManager:
                                     ast.keyword(
                                         arg="project_file_path",
                                         value=ast.Name(id="project_file_path", ctx=ast.Load()),
+                                    ),
+                                    ast.keyword(
+                                        arg="save_on_failure_path",
+                                        value=ast.Name(id="save_on_failure_path", ctx=ast.Load()),
                                     ),
                                     ast.keyword(
                                         arg="workflow_executor", value=ast.Name(id="workflow_executor", ctx=ast.Load())
@@ -2891,6 +3198,33 @@ class WorkflowManager:
                             arg="help",
                             value=ast.Constant(
                                 "JSON string containing parameter values. Takes precedence over individual parameter arguments if provided."
+                            ),
+                        ),
+                    ],
+                )
+            )
+        )
+
+        # Add save-on-failure argument
+        add_arg_calls.append(
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="parser", ctx=ast.Load()),
+                        attr="add_argument",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Constant("--save-on-failure")],
+                    keywords=[
+                        ast.keyword(arg="nargs", value=ast.Constant("?")),
+                        ast.keyword(arg="const", value=ast.Constant("")),
+                        ast.keyword(arg="default", value=ast.Constant(None)),
+                        ast.keyword(
+                            arg="help",
+                            value=ast.Constant(
+                                "On failure, save the current workflow state as a .py file. "
+                                "With no value: uses the project 'save_failed_workflow' situation. "
+                                "With a value: absolute or project-relative path."
                             ),
                         ),
                     ],
@@ -3099,6 +3433,14 @@ class WorkflowManager:
                             ctx=ast.Load(),
                         ),
                     ),
+                    ast.keyword(
+                        arg="save_on_failure_path",
+                        value=ast.Attribute(
+                            value=ast.Name(id="args", ctx=ast.Load()),
+                            attr="save_on_failure",
+                            ctx=ast.Load(),
+                        ),
+                    ),
                 ],
             ),
         )
@@ -3156,15 +3498,15 @@ class WorkflowManager:
     def _generate_ensure_flow_context_function(
         self,
         import_recorder: ImportRecorder,
-    ) -> ast.FunctionDef:
-        """Generates the _ensure_workflow_context function for the serialized workflow file."""
+    ) -> ast.AsyncFunctionDef:
+        """Generates the async _ensure_workflow_context function for the serialized workflow file."""
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "GetTopLevelFlowRequest")
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.flow_events", "GetTopLevelFlowResultSuccess"
         )
 
-        # Function signature: def _ensure_workflow_context():
-        func_def = ast.FunctionDef(
+        # Function signature: async def _ensure_workflow_context():
+        func_def = ast.AsyncFunctionDef(
             name="_ensure_workflow_context",
             args=ast.arguments(
                 posonlyargs=[],
@@ -3218,17 +3560,19 @@ class WorkflowManager:
             ),
         )
 
-        # top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)  # noqa: ERA001
+        # top_level_flow_result = await GriptapeNodes.ahandle_request(top_level_flow_request)  # noqa: ERA001
         flow_result_assign = ast.Assign(
             targets=[ast.Name(id="top_level_flow_result", ctx=ast.Store())],
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                    attr="handle_request",
-                    ctx=ast.Load(),
+            value=ast.Await(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                        attr="ahandle_request",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Name(id="top_level_flow_request", ctx=ast.Load())],
+                    keywords=[],
                 ),
-                args=[ast.Name(id="top_level_flow_request", ctx=ast.Load())],
-                keywords=[],
             ),
         )
 
@@ -3335,12 +3679,14 @@ class WorkflowManager:
     def _generate_ensure_flow_context_call(
         self,
     ) -> ast.Expr:
-        """Generates the call to _ensure_workflow_context() function."""
+        """Generates the call to await _ensure_workflow_context() function."""
         return ast.Expr(
-            value=ast.Call(
-                func=ast.Name(id="_ensure_workflow_context", ctx=ast.Load()),
-                args=[],
-                keywords=[],
+            value=ast.Await(
+                value=ast.Call(
+                    func=ast.Name(id="_ensure_workflow_context", ctx=ast.Load()),
+                    args=[],
+                    keywords=[],
+                )
             )
         )
 
@@ -3349,38 +3695,40 @@ class WorkflowManager:
         import_recorder: ImportRecorder,
         library_names: list[str],
     ) -> list[ast.AST]:
-        import_recorder.add_from_import(
-            "griptape_nodes.retained_mode.events.library_events", "RegisterLibraryFromFileRequest"
-        )
-
         code_blocks: list[ast.AST] = []
 
-        # Generate one RegisterLibraryFromFileRequest call per library
+        # Emit `await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(...))` once
+        # per declared library so build_workflow() registers its own dependencies before any
+        # CreateNodeRequest runs. Without this, running the workflow file as a standalone script
+        # (uv run workflow.py) would have no libraries registered when nodes are created, since
+        # LocalWorkflowExecutor's __aenter__ runs after build_workflow() and is gated by
+        # skip_library_loading=True. perform_discovery_if_not_found=True lets the registration
+        # find the library JSON via the engine's normal config-driven discovery path.
+        if library_names:
+            import_recorder.add_from_import(
+                "griptape_nodes.retained_mode.events.library_events", "RegisterLibraryFromFileRequest"
+            )
         for library_name in library_names:
             register_call = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                        attr="handle_request",
-                        ctx=ast.Load(),
-                    ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="RegisterLibraryFromFileRequest", ctx=ast.Load()),
-                            args=[],
-                            keywords=[
-                                ast.keyword(
-                                    arg="library_name",
-                                    value=ast.Constant(value=library_name),
-                                ),
-                                ast.keyword(
-                                    arg="perform_discovery_if_not_found",
-                                    value=ast.Constant(value=True),
-                                ),
-                            ],
-                        )
-                    ],
-                    keywords=[],
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="RegisterLibraryFromFileRequest", ctx=ast.Load()),
+                                args=[],
+                                keywords=[
+                                    ast.keyword(arg="library_name", value=ast.Constant(value=library_name)),
+                                    ast.keyword(arg="perform_discovery_if_not_found", value=ast.Constant(value=True)),
+                                ],
+                            )
+                        ],
+                        keywords=[],
+                    )
                 )
             )
             ast.fix_missing_locations(register_call)
@@ -3440,7 +3788,7 @@ class WorkflowManager:
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         prefix: str,
         import_recorder: ImportRecorder,
-    ) -> ast.AST:
+    ) -> ast.Module:
         if len(unique_parameter_uuid_to_values) == 0:
             return ast.Module(body=[], type_ignores=[])
 
@@ -3480,16 +3828,18 @@ class WorkflowManager:
             # Collect import statements for all classes in the object tree
             self._collect_object_imports(unique_parameter_value, import_recorder, global_modules_set)
 
-        # Generate a comment explaining what we're doing:
-        comment_text = (
-            "\n"
-            "1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.\n"
-            "   This minimizes the size of the code, especially for large objects like serialized image files.\n"
-            "2. We're using a prefix so that it's clear which Flow these values are associated with.\n"
-            "3. The values are serialized using pickle, which is a binary format. This makes them harder to read, but makes\n"
-            "   them consistently save and load. It allows us to serialize complex objects like custom classes, which otherwise\n"
-            "   would be difficult to serialize.\n"
-        )
+        # Comment lines explaining what we're doing. Each line is emitted as its own bare-string
+        # statement so that it unparses onto a single source line. A post-process pass in
+        # _generate_workflow_file_content (via rewrite_string_comments) then strips the surrounding
+        # quotes to turn each line into a real Python `#` comment.
+        comment_lines = [
+            "# 1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.",
+            "#    This minimizes the size of the code, especially for large objects like serialized image files.",
+            "# 2. We're using a prefix so that it's clear which Flow these values are associated with.",
+            "# 3. The values are serialized using pickle, which is a binary format. This makes them harder to read, but makes",
+            "#    them consistently save and load. It allows us to serialize complex objects like custom classes, which otherwise",
+            "#    would be difficult to serialize.",
+        ]
 
         # Generate the dictionary of unique values
         unique_values_dict_name = f"{prefix}_unique_values_dict"
@@ -3520,11 +3870,12 @@ class WorkflowManager:
             col_offset=0,
         )
 
-        # Create the final AST with comments
-        module_body = [
-            ast.Expr(value=ast.Constant(value=comment_text, lineno=1, col_offset=0), lineno=1, col_offset=0),
-            unique_values_ast,
+        # Create the final AST with comment lines followed by the dict assignment.
+        comment_exprs = [
+            ast.Expr(value=ast.Constant(value=line, lineno=1, col_offset=0), lineno=1, col_offset=0)
+            for line in comment_lines
         ]
+        module_body: list[ast.stmt] = [*comment_exprs, unique_values_ast]
         full_ast = ast.Module(body=module_body, type_ignores=[])
         return full_ast
 
@@ -3575,24 +3926,28 @@ class WorkflowManager:
         create_flow_result = ast.Assign(
             targets=[ast.Name(id=flow_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
             value=ast.Attribute(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                                args=[],
+                                keywords=create_flow_request_args,
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
-                            args=[],
-                            keywords=create_flow_request_args,
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
@@ -3628,9 +3983,9 @@ class WorkflowManager:
             AST assignment node representing the import workflow command
 
         Example output:
-            flow1_name = GriptapeNodes.handle_request(ImportWorkflowAsReferencedSubFlowRequest(
+            flow1_name = (await GriptapeNodes.ahandle_request(ImportWorkflowAsReferencedSubFlowRequest(
                 file_path='/path/to/workflow.py'
-            )).created_flow_name
+            ))).created_flow_name
         """
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.workflow_events", "ImportWorkflowAsReferencedSubFlowRequest"
@@ -3653,26 +4008,33 @@ class WorkflowManager:
         import_workflow_result = ast.Assign(
             targets=[ast.Name(id=flow_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
             value=ast.Attribute(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(
+                                    id="ImportWorkflowAsReferencedSubFlowRequest",
+                                    ctx=ast.Load(),
+                                    lineno=1,
+                                    col_offset=0,
+                                ),
+                                args=[],
+                                keywords=import_workflow_request_args,
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(
-                                id="ImportWorkflowAsReferencedSubFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0
-                            ),
-                            args=[],
-                            keywords=import_workflow_request_args,
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
@@ -3883,24 +4245,28 @@ class WorkflowManager:
         create_node_call_ast = ast.Assign(
             targets=[ast.Name(id=node_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
             value=ast.Attribute(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id=request_class_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                                args=[],
+                                keywords=create_node_request_args,
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id=request_class_name, ctx=ast.Load(), lineno=1, col_offset=0),
-                            args=[],
-                            keywords=create_node_request_args,
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
@@ -3974,28 +4340,32 @@ class WorkflowManager:
                                 )
                             )
 
-                # Create the handle_request call
+                # Create the await ahandle_request call
                 handle_request_call = ast.Expr(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                            attr="handle_request",
-                            ctx=ast.Load(),
+                    value=ast.Await(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                                attr="ahandle_request",
+                                ctx=ast.Load(),
+                                lineno=1,
+                                col_offset=0,
+                            ),
+                            args=[
+                                ast.Call(
+                                    func=ast.Name(
+                                        id=element_command.__class__.__name__, ctx=ast.Load(), lineno=1, col_offset=0
+                                    ),
+                                    args=[],
+                                    keywords=element_command_args,
+                                    lineno=1,
+                                    col_offset=0,
+                                )
+                            ],
+                            keywords=[],
                             lineno=1,
                             col_offset=0,
                         ),
-                        args=[
-                            ast.Call(
-                                func=ast.Name(
-                                    id=element_command.__class__.__name__, ctx=ast.Load(), lineno=1, col_offset=0
-                                ),
-                                args=[],
-                                keywords=element_command_args,
-                                lineno=1,
-                                col_offset=0,
-                            )
-                        ],
-                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
@@ -4044,18 +4414,22 @@ class WorkflowManager:
             ]
 
             create_connection_call = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()), attr="handle_request", ctx=ast.Load()
-                    ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="CreateConnectionRequest", ctx=ast.Load()),
-                            args=[],
-                            keywords=create_connection_request_args,
-                        )
-                    ],
-                    keywords=[],
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="CreateConnectionRequest", ctx=ast.Load()),
+                                args=[],
+                                keywords=create_connection_request_args,
+                            )
+                        ],
+                        keywords=[],
+                    )
                 )
             )
 
@@ -4218,45 +4592,53 @@ class WorkflowManager:
             )
 
             set_parameter_value_request_call = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="SetParameterValueRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                                args=[],
+                                keywords=[
+                                    ast.keyword(
+                                        arg="parameter_name",
+                                        value=ast.Constant(
+                                            value=command.set_parameter_value_command.parameter_name,
+                                            lineno=1,
+                                            col_offset=0,
+                                        ),
+                                    ),
+                                    ast.keyword(
+                                        arg="node_name",
+                                        value=ast.Name(id=node_variable_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                                    ),
+                                    ast.keyword(arg="value", value=value_lookup, lineno=1, col_offset=0),
+                                    ast.keyword(
+                                        arg="initial_setup", value=ast.Constant(value=True, lineno=1, col_offset=0)
+                                    ),
+                                    ast.keyword(
+                                        arg="is_output",
+                                        value=ast.Constant(
+                                            value=command.set_parameter_value_command.is_output,
+                                            lineno=1,
+                                            col_offset=0,
+                                        ),
+                                    ),
+                                ],
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="SetParameterValueRequest", ctx=ast.Load(), lineno=1, col_offset=0),
-                            args=[],
-                            keywords=[
-                                ast.keyword(
-                                    arg="parameter_name",
-                                    value=ast.Constant(
-                                        value=command.set_parameter_value_command.parameter_name, lineno=1, col_offset=0
-                                    ),
-                                ),
-                                ast.keyword(
-                                    arg="node_name",
-                                    value=ast.Name(id=node_variable_name, ctx=ast.Load(), lineno=1, col_offset=0),
-                                ),
-                                ast.keyword(arg="value", value=value_lookup, lineno=1, col_offset=0),
-                                ast.keyword(
-                                    arg="initial_setup", value=ast.Constant(value=True, lineno=1, col_offset=0)
-                                ),
-                                ast.keyword(
-                                    arg="is_output",
-                                    value=ast.Constant(
-                                        value=command.set_parameter_value_command.is_output, lineno=1, col_offset=0
-                                    ),
-                                ),
-                            ],
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
@@ -4272,29 +4654,36 @@ class WorkflowManager:
             )
 
             lock_node_call_ast = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
+                value=ast.Await(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ahandle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="SetLockNodeStateRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                                args=[],
+                                keywords=[
+                                    ast.keyword(
+                                        arg="node_name", value=ast.Constant(value=None, lineno=1, col_offset=0)
+                                    ),
+                                    ast.keyword(
+                                        arg="lock",
+                                        value=ast.Constant(value=lock_node_command.lock, lineno=1, col_offset=0),
+                                    ),
+                                ],
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="SetLockNodeStateRequest", ctx=ast.Load(), lineno=1, col_offset=0),
-                            args=[],
-                            keywords=[
-                                ast.keyword(arg="node_name", value=ast.Constant(value=None, lineno=1, col_offset=0)),
-                                ast.keyword(
-                                    arg="lock", value=ast.Constant(value=lock_node_command.lock, lineno=1, col_offset=0)
-                                ),
-                            ],
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
@@ -4320,7 +4709,9 @@ class WorkflowManager:
             "tooltip_as_input",
             "tooltip_as_property",
             "tooltip_as_output",
-            "allowed_modes",
+            "mode_allowed_input",
+            "mode_allowed_property",
+            "mode_allowed_output",
             "converters",
             "validators",
             "traits",
@@ -4481,10 +4872,18 @@ class WorkflowManager:
                 msg = f"No publishing handler found for '{publisher_name}' in request type '{type(request).__name__}'."
                 raise ValueError(msg)  # noqa: TRY301
 
-            # Save the workflow before publishing to ensure the latest changes in memory are included
+            # Save the workflow before publishing to ensure the latest changes in memory are included.
+            # Unsaved (registry-only) workflows cannot be published because publish emits a file
+            # reference to the engine-registered workflow; the user must choose a save name first.
             workflow_file_name = request.workflow_name
             try:
                 workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+                if workflow.file_path is None:
+                    msg = (
+                        f"Cannot publish unsaved workflow '{request.workflow_name}'. "
+                        "Save the workflow before publishing."
+                    )
+                    raise ValueError(msg)
                 workflow_file_name = derive_registry_key(workflow.file_path)
             except KeyError:
                 details = (
@@ -4497,7 +4896,7 @@ class WorkflowManager:
             result = await asyncio.to_thread(publishing_handler.handler, request)
             if isinstance(result, PublishWorkflowResultSuccess) and not result.skip_published_workflow_registration:
                 workflow_file = Path(result.published_workflow_file_path)
-                result = self._register_published_workflow_file(workflow_file, result)
+                result = await self._register_published_workflow_file(workflow_file, result)
 
             return result  # noqa: TRY300
         except Exception as e:
@@ -4505,7 +4904,7 @@ class WorkflowManager:
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e, result_details=details)
 
-    def _register_published_workflow_file(
+    async def _register_published_workflow_file(
         self, workflow_file: Path, result: PublishWorkflowResultSuccess
     ) -> ResultPayload:
         """Register a published workflow file in the workflow registry."""
@@ -4517,11 +4916,11 @@ class WorkflowManager:
         else:
             result_messages.append(ResultDetail(message=result.result_details, level=logging.INFO))
 
-        if workflow_file.exists() and workflow_file.is_file():
+        if workflow_file.exists() and workflow_file.is_file():  # noqa: ASYNC240
             load_workflow_metadata_request = LoadWorkflowMetadata(
                 file_name=workflow_file.name,
             )
-            load_metadata_result = self.on_load_workflow_metadata_request(load_workflow_metadata_request)
+            load_metadata_result = await self.on_load_workflow_metadata_request(load_workflow_metadata_request)
             if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
                 workflow_registry_key = derive_registry_key(workflow_file.name)
                 try:
@@ -4584,13 +4983,22 @@ class WorkflowManager:
         # Execute the import
         return await self._execute_workflow_import(request, workflow, flow_name)
 
-    def _validate_import_prerequisites(self, request: ImportWorkflowAsReferencedSubFlowRequest) -> ResultPayload | None:
+    def _validate_import_prerequisites(self, request: ImportWorkflowAsReferencedSubFlowRequest) -> ResultPayload | None:  # noqa: PLR0911
         """Validate all prerequisites for import. Returns error result or None if valid."""
         # Check workflow exists and get it
         try:
             workflow = self._get_workflow_by_name(request.workflow_name)
         except KeyError:
             details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow is not registered"
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
+
+        # Import-as-referenced runs the workflow file as a subflow. Unsaved workflows
+        # have no file to execute; callers must save first.
+        if workflow.file_path is None:
+            details = (
+                f"Attempted to import unsaved workflow '{request.workflow_name}' as a referenced sub flow. "
+                "Save the workflow before importing it as a sub-flow."
+            )
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         # Check workflow version - Schema version 0.6.0+ required for referenced workflow imports
@@ -4629,7 +5037,15 @@ class WorkflowManager:
     async def _execute_workflow_import(
         self, request: ImportWorkflowAsReferencedSubFlowRequest, workflow: Workflow, flow_name: str
     ) -> ResultPayload:
-        """Execute the actual workflow import."""
+        """Execute the actual workflow import.
+
+        Precondition: `workflow.file_path is not None` (enforced by `_validate_import_prerequisites`).
+        """
+        workflow_file_path = workflow.file_path
+        if workflow_file_path is None:
+            details = f"Attempted to import unsaved workflow '{request.workflow_name}' as a referenced sub flow."
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
+
         # Get current flows before importing
         obj_manager = GriptapeNodes.ObjectManager()
         flows_before = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
@@ -4640,9 +5056,9 @@ class WorkflowManager:
         with GriptapeNodes.ContextManager().flow(flow_name):
             if request.track_as_referenced:
                 with self.ReferencedWorkflowContext(self, request.workflow_name):
-                    workflow_result = await self.run_workflow(workflow.file_path)
+                    workflow_result = await self.run_workflow(workflow_file_path)
             else:
-                workflow_result = await self.run_workflow(workflow.file_path)
+                workflow_result = await self.run_workflow(workflow_file_path)
 
         if not workflow_result.execution_successful:
             details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow execution failed: {workflow_result.execution_details}"
@@ -4690,13 +5106,24 @@ class WorkflowManager:
             created_flow_name=created_flow_name, result_details=details
         )
 
-    def on_branch_workflow_request(self, request: BranchWorkflowRequest) -> ResultPayload:
+    def on_branch_workflow_request(self, request: BranchWorkflowRequest) -> ResultPayload:  # noqa: PLR0911
         """Create a branch (copy) of an existing workflow with branch tracking."""
         try:
             # Validate source workflow exists
             source_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError:
             details = f"Failed to branch workflow '{request.workflow_name}' because it does not exist"
+            return BranchWorkflowResultFailure(result_details=details)
+
+        # Branch copies the source workflow file and produces a new file on disk.
+        # Unsaved workflows have no source file to copy from; the user must save first
+        # so the branch has a concrete starting point.
+        source_file_path_rel = source_workflow.file_path
+        if source_file_path_rel is None:
+            details = (
+                f"Cannot branch unsaved workflow '{request.workflow_name}' because it has no file on disk. "
+                "Save the workflow before branching it."
+            )
             return BranchWorkflowResultFailure(result_details=details)
 
         # Generate branch name if not provided
@@ -4738,7 +5165,7 @@ class WorkflowManager:
             branch_file_path = f"{branch_name}.py"
 
             # Read source workflow content and replace metadata header
-            source_file_path = WorkflowRegistry.get_complete_file_path(source_workflow.file_path)
+            source_file_path = WorkflowRegistry.get_complete_file_path(source_file_path_rel)
             if not Path(source_file_path).exists():
                 details = f"Failed to branch workflow '{request.workflow_name}': File path '{source_file_path}' does not exist. The workflow may have been moved or the workspace configuration may have changed."
                 return BranchWorkflowResultFailure(result_details=details)
@@ -4756,7 +5183,11 @@ class WorkflowManager:
             Path(branch_full_path).write_text(branch_content, encoding="utf-8")
 
             # Now create the branch workflow in registry (file must exist on disk first)
-            WorkflowRegistry.generate_new_workflow(metadata=branch_metadata, file_path=branch_file_path)
+            WorkflowRegistry.generate_new_workflow(
+                registry_key=derive_registry_key(branch_file_path),
+                metadata=branch_metadata,
+                file_path=branch_file_path,
+            )
 
             details = f"Successfully branched workflow '{request.workflow_name}' as '{branch_name}'"
             return BranchWorkflowResultSuccess(
@@ -4790,7 +5221,15 @@ class WorkflowManager:
             )
             return CreateWorkflowFromTemplateResultFailure(result_details=details)
 
-        source_file_path = WorkflowRegistry.get_complete_file_path(template_workflow.file_path)
+        template_file_path_rel = template_workflow.file_path
+        if template_file_path_rel is None:
+            details = (
+                f"Attempted to create workflow from template '{request.template_name}'. "
+                "Failed because the template is unsaved (has no file on disk)."
+            )
+            return CreateWorkflowFromTemplateResultFailure(result_details=details)
+
+        source_file_path = WorkflowRegistry.get_complete_file_path(template_file_path_rel)
         if not Path(source_file_path).is_file():
             details = (
                 f"Attempted to create workflow from template '{request.template_name}'. "
@@ -4798,7 +5237,7 @@ class WorkflowManager:
             )
             return CreateWorkflowFromTemplateResultFailure(result_details=details)
 
-        base_name = request.file_name or Path(template_workflow.file_path).stem
+        base_name = request.file_name or Path(template_file_path_rel).stem
         new_file_name = self._generate_unique_filename(base_name)
         relative_file_path = f"{new_file_name}.py"
 
@@ -4831,7 +5270,11 @@ class WorkflowManager:
 
         new_full_path = WorkflowRegistry.get_complete_file_path(relative_file_path)
         Path(new_full_path).write_text(new_content, encoding="utf-8")
-        WorkflowRegistry.generate_new_workflow(metadata=new_metadata, file_path=relative_file_path)
+        WorkflowRegistry.generate_new_workflow(
+            registry_key=derive_registry_key(relative_file_path),
+            metadata=new_metadata,
+            file_path=relative_file_path,
+        )
 
         details = f"Successfully created workflow '{new_file_name}' from template '{request.template_name}'"
         return CreateWorkflowFromTemplateResultSuccess(
@@ -4840,7 +5283,7 @@ class WorkflowManager:
             result_details=ResultDetails(message=details, level=logging.INFO),
         )
 
-    def on_merge_workflow_branch_request(self, request: MergeWorkflowBranchRequest) -> ResultPayload:
+    def on_merge_workflow_branch_request(self, request: MergeWorkflowBranchRequest) -> ResultPayload:  # noqa: PLR0911
         """Merge a branch back into its source workflow, removing the branch when complete."""
         try:
             # Validate branch workflow exists
@@ -4860,6 +5303,17 @@ class WorkflowManager:
             source_workflow = WorkflowRegistry.get_workflow_by_name(source_workflow_name)
         except KeyError:
             details = f"Failed to merge workflow branch '{request.workflow_name}' because source workflow '{source_workflow_name}' does not exist"
+            return MergeWorkflowBranchResultFailure(result_details=details)
+
+        # Merge rewrites both files on disk; both sides must be saved. The branch relation
+        # is only ever established between saved workflows today, but narrow defensively.
+        branch_file_path_rel = branch_workflow.file_path
+        source_file_path_rel = source_workflow.file_path
+        if branch_file_path_rel is None or source_file_path_rel is None:
+            details = (
+                f"Failed to merge workflow branch '{request.workflow_name}' because "
+                "either the branch or its source is unsaved (no file on disk)."
+            )
             return MergeWorkflowBranchResultFailure(result_details=details)
 
         try:
@@ -4883,7 +5337,7 @@ class WorkflowManager:
             )
 
             # Read branch content and replace metadata header with merged metadata
-            branch_content_file_path = WorkflowRegistry.get_complete_file_path(branch_workflow.file_path)
+            branch_content_file_path = WorkflowRegistry.get_complete_file_path(branch_file_path_rel)
             branch_content = Path(branch_content_file_path).read_text(encoding="utf-8")
 
             # Replace the metadata header with merged metadata
@@ -4893,7 +5347,7 @@ class WorkflowManager:
                 return MergeWorkflowBranchResultFailure(result_details=details)
 
             # Write the updated content to the source workflow file
-            source_file_path = WorkflowRegistry.get_complete_file_path(source_workflow.file_path)
+            source_file_path = WorkflowRegistry.get_complete_file_path(source_file_path_rel)
             Path(source_file_path).write_text(merged_content, encoding="utf-8")
 
             # Update the registry with new metadata for the source workflow
@@ -4925,7 +5379,7 @@ class WorkflowManager:
             details = f"Failed to merge branch workflow '{request.workflow_name}' into source workflow '{source_workflow_name}': {e!s}"
             return MergeWorkflowBranchResultFailure(result_details=details)
 
-    def on_reset_workflow_branch_request(self, request: ResetWorkflowBranchRequest) -> ResultPayload:
+    def on_reset_workflow_branch_request(self, request: ResetWorkflowBranchRequest) -> ResultPayload:  # noqa: PLR0911
         """Reset a branch to match its source workflow, discarding branch changes."""
         try:
             # Validate branch workflow exists
@@ -4947,9 +5401,19 @@ class WorkflowManager:
             details = f"Failed to reset workflow branch '{request.workflow_name}' because source workflow '{source_workflow_name}' does not exist"
             return ResetWorkflowBranchResultFailure(result_details=details)
 
+        # Reset rewrites the branch file from the source file; both sides must be saved.
+        branch_file_path_rel = branch_workflow.file_path
+        source_file_path_rel = source_workflow.file_path
+        if branch_file_path_rel is None or source_file_path_rel is None:
+            details = (
+                f"Failed to reset workflow branch '{request.workflow_name}' because "
+                "either the branch or its source is unsaved (no file on disk)."
+            )
+            return ResetWorkflowBranchResultFailure(result_details=details)
+
         try:
             # Read content from the source workflow (what we're resetting the branch to)
-            source_content_file_path = WorkflowRegistry.get_complete_file_path(source_workflow.file_path)
+            source_content_file_path = WorkflowRegistry.get_complete_file_path(source_file_path_rel)
             source_content = Path(source_content_file_path).read_text(encoding="utf-8")
 
             # Create updated metadata for branch workflow - preserve branch relationship and source timestamp
@@ -4978,7 +5442,7 @@ class WorkflowManager:
                 return ResetWorkflowBranchResultFailure(result_details=details)
 
             # Write the updated content to the branch workflow file
-            branch_content_file_path = WorkflowRegistry.get_complete_file_path(branch_workflow.file_path)
+            branch_content_file_path = WorkflowRegistry.get_complete_file_path(branch_file_path_rel)
             Path(branch_content_file_path).write_text(reset_content, encoding="utf-8")
 
             # Update the registry with new metadata for the branch workflow
@@ -5217,7 +5681,9 @@ class WorkflowManager:
 
         self._walk_object_tree(obj, collect_class_import)
 
-    def on_register_workflows_from_config_request(self, request: RegisterWorkflowsFromConfigRequest) -> ResultPayload:
+    async def on_register_workflows_from_config_request(
+        self, request: RegisterWorkflowsFromConfigRequest
+    ) -> ResultPayload:
         """Register workflows from a configuration section."""
         try:
             workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(request.config_section)
@@ -5228,7 +5694,7 @@ class WorkflowManager:
                 )
 
             # Process all workflows and track results
-            succeeded, failed = self._process_workflows_for_registration(workflows_to_register)
+            succeeded, failed = await self._process_workflows_for_registration(workflows_to_register)
 
         except Exception as e:
             details = f"Failed to register workflows from configuration section '{request.config_section}': {e!s}"
@@ -5243,7 +5709,9 @@ class WorkflowManager:
                 ),
             )
 
-    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:  # noqa: C901
+    async def _process_workflows_for_registration(  # noqa: C901
+        self, workflows_to_register: list[str]
+    ) -> WorkflowRegistrationResult:
         """Process a list of workflow paths for registration.
 
         Returns:
@@ -5254,10 +5722,21 @@ class WorkflowManager:
         succeeded = []
         failed = []
 
+        # Build the set of registered-library roots (excluding sandbox) so their bundled
+        # workflow files are skipped during the workspace scan. Library-declared workflows
+        # (listed in griptape_nodes_library.json) are registered separately via
+        # LibraryManager._collect_library_workflow_files before this scan runs. Sandbox
+        # libraries are intentionally left scannable so in-development workflows appear.
+        library_exclusion_roots: list[Path] = []
+        for library_info in GriptapeNodes.LibraryManager()._library_file_path_to_info.values():
+            if library_info.is_sandbox:
+                continue
+            library_exclusion_roots.append(Path(library_info.library_path).parent.resolve())
+
         # First pass: collect all workflow files to determine total count
         all_workflow_files: set[Path] = set()
 
-        def collect_workflow_files(path: Path) -> None:
+        def collect_workflow_files(path: Path) -> None:  # noqa: C901
             """Collect workflow files from a path."""
             if not path.exists():
                 return
@@ -5265,6 +5744,15 @@ class WorkflowManager:
                 for workflow_file in path.rglob("*.py"):
                     if ".venv" in workflow_file.parts:
                         continue
+                    # Unsaved workflows are ephemeral; any file with this prefix is a
+                    # leak from a pre-fix save and cannot be registered (the registry
+                    # rejects unsaved keys paired with a file path).
+                    if workflow_file.name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX):
+                        continue
+                    if library_exclusion_roots:
+                        resolved_workflow_file = workflow_file.resolve()
+                        if any(resolved_workflow_file.is_relative_to(root) for root in library_exclusion_roots):
+                            continue
                     # Check if file has workflow metadata
                     try:
                         metadata_blocks = self.get_workflow_metadata(
@@ -5311,7 +5799,7 @@ class WorkflowManager:
             )
 
             # Process the workflow
-            result_name = self._process_single_workflow_file(workflow_file)
+            result_name = await self._process_single_workflow_file(workflow_file)
             if result_name:
                 succeeded.append(result_name)
                 # Emit success event
@@ -5344,7 +5832,7 @@ class WorkflowManager:
 
         return WorkflowRegistrationResult(succeeded=succeeded, failed=failed)
 
-    def _process_single_workflow_file(self, workflow_file: Path) -> str | None:
+    async def _process_single_workflow_file(self, workflow_file: Path) -> str | None:
         """Process a single workflow file for registration.
 
         Returns:
@@ -5354,7 +5842,7 @@ class WorkflowManager:
 
         # Parse metadata once and use it for both registration check and actual registration
         load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_file))
-        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+        load_metadata_result = await self.on_load_workflow_metadata_request(load_metadata_request)
 
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             logger.debug("Skipping workflow with invalid metadata: %s", workflow_file)
@@ -5380,7 +5868,7 @@ class WorkflowManager:
         # Register workflow using existing method with parsed metadata available
         # The _register_workflow method will re-parse metadata, but this is acceptable
         # since we've already validated it's parseable and the duplicate work is minimal
-        if self._register_workflow(file_path_to_register):
+        if await self._register_workflow(file_path_to_register):
             return registry_key
         return None
 
