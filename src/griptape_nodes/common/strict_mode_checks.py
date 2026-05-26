@@ -61,4 +61,24 @@ RULES: dict[str, StrictModeRule] = {
             "construction)."
         ),
     ),
+    "parameter-behaviors-dropped-in-schema": StrictModeRule(
+        rule_id="parameter-behaviors-dropped-in-schema",
+        default_severity=StrictModeSeverity.WARNING,
+        correctness=False,
+        description=(
+            "A Parameter attached converters, validators, or traits that "
+            "are not captured in the worker schema. Orchestrator-side UI "
+            "behavior and worker-side execution diverge."
+        ),
+        remediation_template=(
+            "Parameter '{parameter_name}' carries {dropped_attributes} that "
+            "are not serialized into the worker schema. These will not "
+            "execute on the orchestrator stub; behavior may differ from "
+            "a local-library node."
+        ),
+        # Reported during library load on the worker; escalating to ERROR
+        # would cause the class to be skipped entirely, which is too harsh
+        # for an ergonomics warning.
+        worker_escalation=False,
+    ),
 }
