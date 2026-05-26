@@ -4,13 +4,19 @@ This module is the single source of truth for every consumer that offers a
 Griptape Cloud model dropdown: nodes in `griptape-nodes-library-standard`
 (Agent, GriptapeCloudPrompt, GriptapeCloudImage, etc.) re-export these
 constants, and the engine's `agent_manager` serves them to the chat sidebar
-via `ListChatModelsRequest`.
+via `ListModelsForProviderRequest(provider="griptape_cloud")`.
 
 It mirrors the active `model_type=chat` / `model_type=image` rows in
 Griptape Cloud's ServiceModelConfig table. When Cloud's catalog changes
 (new model added, deprecated model deactivated), update this file and
 every consumer picks up the change.
 """
+
+from griptape_nodes.drivers.model_provider_registry import (
+    ModelProviderRegistry,
+    ProviderModelInfo,
+    StaticModelProvider,
+)
 
 # --- Per-family arg presets ---
 
@@ -103,3 +109,30 @@ IMAGE_DEPRECATED_MODELS = {
 # Model IDs whose backend does not accept top_p (the OpenAI o-series).
 # Kept in sync with the o-entries in MODEL_CHOICES_ARGS.
 O_SERIES_MODELS = {"o1", "o3", "o3-mini", "o4-mini"}
+
+
+# Register Griptape Cloud as a model provider on the canonical registry.
+# The chat sidebar (and any future "pick a model" UI) reaches this catalog
+# through `ListModelsForProviderRequest(provider="griptape_cloud")`.
+_GTC_PROMPT_MODELS = [
+    ProviderModelInfo(name=str(entry["name"]), metadata={k: v for k, v in entry.items() if k != "name"})
+    for entry in MODEL_CHOICES_ARGS
+]
+_GTC_IMAGE_MODELS = [
+    ProviderModelInfo(name=str(entry["name"]), metadata={k: v for k, v in entry.items() if k != "name"})
+    for entry in IMAGE_MODEL_CHOICES_ARGS
+]
+
+# The prompt and image deprecation maps share a single namespace per provider.
+# Today there are no key collisions; if one ever appears it will surface as a
+# duplicate-key conflict at construction.
+_GTC_DEPRECATED = {**DEPRECATED_MODELS, **IMAGE_DEPRECATED_MODELS}
+
+ModelProviderRegistry.register(
+    StaticModelProvider(
+        name="griptape_cloud",
+        prompt=_GTC_PROMPT_MODELS,
+        image=_GTC_IMAGE_MODELS,
+        deprecated=_GTC_DEPRECATED,
+    )
+)

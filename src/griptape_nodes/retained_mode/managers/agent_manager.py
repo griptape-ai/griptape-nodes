@@ -24,7 +24,8 @@ from pydantic import create_model
 from schema import Literal, Schema
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.drivers.cloud_models import IMAGE_MODEL_CHOICES, MODEL_CHOICES
+import griptape_nodes.drivers.cloud_models  # noqa: F401  -- ensure GTC provider is registered at import
+from griptape_nodes.drivers.model_provider_registry import ModelProviderRegistry
 from griptape_nodes.drivers.thread_storage import (
     GriptapeCloudThreadStorageDriver,
     LocalThreadStorageDriver,
@@ -61,13 +62,14 @@ from griptape_nodes.retained_mode.events.agent_events import (
 )
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
-from griptape_nodes.retained_mode.events.griptape_cloud_model_events import (
-    ListGriptapeCloudModelsRequest,
-    ListGriptapeCloudModelsResultSuccess,
-)
 from griptape_nodes.retained_mode.events.mcp_events import (
     GetEnabledMCPServersRequest,
     GetEnabledMCPServersResultSuccess,
+)
+from griptape_nodes.retained_mode.events.model_provider_events import (
+    ListModelsForProviderRequest,
+    ListModelsForProviderResultFailure,
+    ListModelsForProviderResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -161,7 +163,7 @@ class AgentManager:
             )
 
             event_manager.assign_manager_to_request_type(
-                ListGriptapeCloudModelsRequest, self.on_handle_list_griptape_cloud_models_request
+                ListModelsForProviderRequest, self.on_handle_list_models_for_provider_request
             )
 
             event_manager.add_listener_to_app_event(
@@ -200,11 +202,23 @@ class AgentManager:
             return ConfigureAgentResultFailure(result_details=details)
         return ConfigureAgentResultSuccess(result_details="Agent configured successfully.")
 
-    def on_handle_list_griptape_cloud_models_request(self, _request: ListGriptapeCloudModelsRequest) -> ResultPayload:
-        return ListGriptapeCloudModelsResultSuccess(
-            prompt_models=list(MODEL_CHOICES),
-            image_models=list(IMAGE_MODEL_CHOICES),
-            result_details="Griptape Cloud model lists retrieved successfully.",
+    def on_handle_list_models_for_provider_request(self, request: ListModelsForProviderRequest) -> ResultPayload:
+        provider = ModelProviderRegistry.get(request.provider)
+        if provider is None:
+            available = ModelProviderRegistry.list_provider_names()
+            return ListModelsForProviderResultFailure(
+                provider=request.provider,
+                available_providers=available,
+                result_details=(
+                    f"Model provider '{request.provider}' is not registered. Available providers: {available}."
+                ),
+            )
+        return ListModelsForProviderResultSuccess(
+            provider=provider.name,
+            prompt_models=provider.list_prompt_models(),
+            image_models=provider.list_image_models(),
+            deprecated_models=provider.deprecated_models(),
+            result_details=f"Model lists for provider '{provider.name}' retrieved successfully.",
         )
 
     def on_handle_get_conversation_memory_request(self, request: GetConversationMemoryRequest) -> ResultPayload:
