@@ -557,6 +557,7 @@ class TestWorkerReloadConfigHandler:
 
                 assert isinstance(result, WorkerReloadConfigResultSuccess)
                 assert config_manager.get_config_value("custom_key") == "post_mutation_value"
+
     def test_libraries_to_register_accepts_mixed_str_and_object_entries(self) -> None:
         """Settings validation accepts a mix of bare path strings and objects with `enabled`."""
         from griptape_nodes.retained_mode.managers.settings import LibraryRegistration, Settings
