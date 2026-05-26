@@ -23,6 +23,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from griptape_nodes.retained_mode.events.config_events import (
+    ResetConfigRequest,
+    SetConfigCategoryRequest,
+    SetConfigValueRequest,
+)
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     DeleteConnectionRequest,
@@ -49,6 +54,10 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     RemoveParameterFromNodeRequest,
     SetParameterValueRequest,
+)
+from griptape_nodes.retained_mode.events.secrets_events import (
+    DeleteSecretValueRequest,
+    SetSecretValueRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
 from griptape_nodes.utils.async_utils import call_function
@@ -89,6 +98,13 @@ FORWARDED_REQUEST_TYPES: frozenset[type[RequestPayload]] = frozenset(
         ListNodesInFlowRequest,
         ListFlowsInCurrentContextRequest,
         ListFlowsInFlowRequest,
+        # config_events
+        SetConfigValueRequest,
+        SetConfigCategoryRequest,
+        ResetConfigRequest,
+        # secrets_events
+        SetSecretValueRequest,
+        DeleteSecretValueRequest,
     }
 )
 
