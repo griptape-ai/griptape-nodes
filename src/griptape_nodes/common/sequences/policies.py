@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.sequences.models import (
+    MissingItemError,
     MissingItemPolicy,
     Sequence,
     SequenceEntry,
@@ -87,7 +88,7 @@ def _build_split_sequence(run: list[int], context: PolicyContext) -> Sequence:
 
 
 def _apply_single(context: PolicyContext) -> Sequence:
-    """ERROR / NEAREST: emit one Sequence over [first, last]."""
+    """ABORT / SKIP / FILL_NEAREST: emit one Sequence over [first, last] (or raise on ABORT)."""
     in_range_present = {n: p for n, p in context.present_numbers.items() if context.first <= n <= context.last}
     entries: list[SequenceEntry] = []
     for number in range(context.first, context.last + 1):
@@ -126,9 +127,11 @@ def _gap_entry(
     set).
     """
     match policy:
-        case MissingItemPolicy.ERROR:
+        case MissingItemPolicy.ABORT:
+            raise MissingItemError(number)
+        case MissingItemPolicy.SKIP:
             return None
-        case MissingItemPolicy.NEAREST:
+        case MissingItemPolicy.FILL_NEAREST:
             neighbor_path = _nearest_path(number, in_range_present)
             if neighbor_path is None:
                 return None

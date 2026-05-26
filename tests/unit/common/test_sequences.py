@@ -16,6 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.common.sequences import (
+    MissingItemError,
     MissingItemPolicy,
     scan_sequences,
 )
@@ -130,25 +131,25 @@ class TestSplitPolicy:
             assert s.discovered_last == 7
 
 
-class TestErrorPolicy:
-    def test_error_omits_gaps(self) -> None:
-        """ERROR yields one sequence with only present numbers; gaps absent from entries."""
+class TestSkipPolicy:
+    def test_skip_omits_gaps(self) -> None:
+        """SKIP yields one sequence with only present numbers; gaps absent from entries."""
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 4, 6, 7]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.ERROR)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.SKIP)
         assert len(seqs) == 1
         assert [e.number for e in seqs[0].entries] == [1, 2, 4, 6, 7]
         assert seqs[0].missing_numbers == {3, 5}
 
 
-class TestNearestPolicy:
-    def test_nearest_backward_first(self) -> None:
-        """NEAREST fills gaps with the backward-first present number."""
+class TestFillNearestPolicy:
+    def test_fill_nearest_backward_first(self) -> None:
+        """FILL_NEAREST fills gaps with the backward-first present number."""
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 4, 6, 7]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
-            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.NEAREST)
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.FILL_NEAREST)
         s = seqs[0]
         # Gap at 3 -> backward to 2
         entry_3 = next(e for e in s.entries if e.number == 3)
@@ -162,6 +163,28 @@ class TestNearestPolicy:
     # so there's always at least one earlier present number for any in-range
     # gap. Forward-fall remains in the policy code as a defensive fallback
     # for direct callers of `apply_policy`, but isn't exercised here.
+
+
+class TestAbortPolicy:
+    def test_abort_raises_at_first_gap(self) -> None:
+        """ABORT raises MissingItemError on the first missing slot."""
+        directory = "/work/in"
+        filenames = [f"render.{n:04d}.png" for n in [1, 2, 4, 5]]
+        with (
+            patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)),
+            pytest.raises(MissingItemError) as exc_info,
+        ):
+            scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.ABORT)
+        assert exc_info.value.number == 3
+
+    def test_abort_succeeds_when_dense(self) -> None:
+        """ABORT returns one Sequence with all entries when there are no gaps."""
+        directory = "/work/in"
+        filenames = [f"render.{n:04d}.png" for n in [1, 2, 3]]
+        with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
+            seqs = scan_sequences(directory, "render.####.png", policy=MissingItemPolicy.ABORT)
+        assert len(seqs) == 1
+        assert [e.number for e in seqs[0].entries] == [1, 2, 3]
 
 
 # --- Negative numbers ---------------------------------------------------

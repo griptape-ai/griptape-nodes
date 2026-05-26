@@ -51,13 +51,14 @@ Real sequences often have gaps — a render that crashed on frame 47, a sparse e
 
 | Policy              | What you get                                                                                                                                                                                      |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ABORT`             | Fail fast. Raises `MissingItemError` (with the offending item number) on the first gap inside `[first, last]`. No Sequence is returned.                                                           |
 | `SPLIT` *(default)* | One sequence per **contiguous run** of present items. A sequence with items 1–5, 8–12, 15 produces three separate sequences.                                                                      |
-| `ERROR`             | One sequence containing only the present items. Gaps are absent from the output (but visible via the sequence's `missing_numbers` set).                                                           |
-| `NEAREST`           | One sequence covering the full `[first, last]` range. Each missing item is filled with the path of the nearest **earlier** present item (or the nearest later one if no earlier neighbor exists). |
+| `SKIP`              | One sequence containing only the present items. Gaps are absent from the output (but visible via the sequence's `missing_numbers` set).                                                           |
+| `FILL_NEAREST`      | One sequence covering the full `[first, last]` range. Each missing item is filled with the path of the nearest **earlier** present item (or the nearest later one if no earlier neighbor exists). |
 
-Pick `SPLIT` when you want to *preserve* the gap structure (each contiguous run is meaningful on its own). Pick `ERROR` when you want a single sparse sequence, or `NEAREST` for a single dense sequence, regardless of what's actually on disk.
+Pick `ABORT` when a gap should fail the workflow loudly (e.g. a render that crashed must not silently advance). Pick `SPLIT` when you want to *preserve* the gap structure (each contiguous run is meaningful on its own). Pick `SKIP` when you want a single sparse sequence, or `FILL_NEAREST` for a single dense sequence, regardless of what's actually on disk.
 
-**Domain-specific gap rendering belongs to nodes, not the engine.** If you want a black-frame placeholder, a magenta/yellow checkerboard, a silent audio chunk, an empty text chunk, or anything else synthesized in place of a missing item, scan with `ERROR` and walk `missing_numbers` in your node — render whatever your domain calls for. The engine deliberately stops at "this number isn't on disk"; the node owns the rest.
+**Domain-specific gap rendering belongs to nodes, not the engine.** If you want a black-frame placeholder, a magenta/yellow checkerboard, a silent audio chunk, an empty text chunk, or anything else synthesized in place of a missing item, scan with `SKIP` and walk `missing_numbers` in your node — render whatever your domain calls for. The engine deliberately stops at "this number isn't on disk"; the node owns the rest.
 
 ## Subset clipping
 
@@ -67,11 +68,11 @@ Sequence-aware nodes accept optional `start` and `end` bounds. When supplied, th
 - The original disk range is still reported via `discovered_first` / `discovered_last`, so you can see what existed before the clip.
 - Subset bounds outside the discovered range yield an empty result (Failure).
 
-`ListSequenceNode` exposes the bounds through a dropdown-driven UI: each side can be the discovered first/last, an absolute number, or an offset relative to the discovered first/last. Negative values are rejected at the node boundary.
+`ParseSequenceNode` exposes the bounds through a dropdown-driven UI: each side can be the discovered first/last, an absolute number, or an offset relative to the discovered first/last. Negative values are rejected at the node boundary.
 
 ## What you get back
 
-`Sequence` is a Pydantic model — read fields by attribute (`seq.first`, `seq.entries[0].number`). Nodes that operate on sequences should declare their input as `type="Sequence"`; the engine validates the connection by name, so `ListSequenceNode`'s `sequences` and `entries_by_sequence` outputs route into any `Sequence`-typed input cleanly.
+`Sequence` is a Pydantic model — read fields by attribute (`seq.first`, `seq.entries[0].number`). Nodes that operate on sequences should declare their input as `type="Sequence"`; the engine validates the connection by name, so `ParseSequenceNode`'s outputs route into any `Sequence`-typed input cleanly. `ParseSequenceNode` exposes two outputs whose visibility tracks the missing-item policy: `sequences: list[Sequence]` under `SPLIT`, `sequence: Sequence` under `SKIP` / `FILL_NEAREST` (and the node fails outright under `ABORT`). `DisplaySequenceNode` accepts a `Sequence` and emits its `entries` as a list — useful as a terminal display node or as an adapter where downstream wants the entry list directly.
 
 Each `Sequence` carries:
 
@@ -84,7 +85,7 @@ Each `Sequence` carries:
 - **`entries`** — one `SequenceEntry` per item in the active range. Each has:
     - `number` — the integer key (e.g. 5).
     - `padded_number` — the zero-padded form (e.g. `0005`).
-    - `path` — the on-disk file path as a plain string. Under NEAREST, gap entries carry the nearest present neighbor's path; cross-check `entry.number in seq.present_numbers` to tell present from filled.
+    - `path` — the on-disk file path as a plain string. Under `FILL_NEAREST`, gap entries carry the nearest present neighbor's path; cross-check `entry.number in seq.present_numbers` to tell present from filled.
 - **`present_numbers`** — the set of numbers actually on disk inside `[first, last]`.
 - **`missing_numbers`** — derived from `present_numbers`: the numbers in the active range that aren't on disk (useful for diagnostics under any policy).
 

@@ -6,7 +6,7 @@ This module provides a thin wrapper over `fileseq.FileSequence` that:
 - Drops negative numbers at scan time (intentional — they're a footgun in
   downstream tools).
 - Adds explicit user-facing policy options for handling gaps within a number
-  range (`SPLIT`, `ERROR`, `NEAREST`).
+  range (`ABORT`, `SPLIT`, `SKIP`, `FILL_NEAREST`).
 - Exposes both the integer key and the zero-padded string form per Sequence
   entry, so downstream nodes can present either form.
 
@@ -20,6 +20,7 @@ case here.
 """
 
 from griptape_nodes.common.sequences.models import (
+    MissingItemError,
     MissingItemPolicy,
     Sequence,
     SequenceEntry,
@@ -27,6 +28,7 @@ from griptape_nodes.common.sequences.models import (
 from griptape_nodes.common.sequences.scan import scan_sequences
 
 __all__ = [
+    "MissingItemError",
     "MissingItemPolicy",
     "Sequence",
     "SequenceEntry",

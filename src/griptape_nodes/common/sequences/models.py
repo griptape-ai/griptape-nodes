@@ -16,17 +16,31 @@ from pydantic import BaseModel, Field, computed_field
 class MissingItemPolicy(StrEnum):
     """How to handle gaps inside a sequence's number range.
 
-    The choice changes the *shape* of `scan_sequences` output:
+    The choice changes the *shape* (or even the success) of `scan_sequences` output:
 
+    - `ABORT`: raise `MissingItemError` on the first missing slot in `[first..last]`.
     - `SPLIT`: returns multiple Sequences, each contiguous (no gaps inside any).
-    - `ERROR`: one Sequence with only the present items; gaps absent from `entries`.
-    - `NEAREST`: one Sequence whose entries span the full [first, last] range,
+    - `SKIP`: one Sequence with only the present items; gaps absent from `entries`.
+    - `FILL_NEAREST`: one Sequence whose entries span the full [first, last] range,
       with each missing slot's path pointing at the nearest present neighbor.
     """
 
+    ABORT = "abort"  # Raise MissingItemError on the first gap.
     SPLIT = "split"  # Sparse sequence becomes N contiguous sub-sequences.
-    ERROR = "error"  # Single sequence with only the present items; gaps absent.
-    NEAREST = "nearest"  # Dense sequence; gaps point at the backward-first neighbor.
+    SKIP = "skip"  # Single sequence with only the present items; gaps absent.
+    FILL_NEAREST = "fill_nearest"  # Dense sequence; gaps point at the backward-first neighbor.
+
+
+class MissingItemError(Exception):
+    """Raised by `MissingItemPolicy.ABORT` on the first missing slot inside the active range.
+
+    Attributes:
+        number: The slot number that triggered the abort.
+    """
+
+    def __init__(self, number: int) -> None:
+        super().__init__(f"Sequence has a gap at item {number}.")
+        self.number = number
 
 
 class SequenceEntry(BaseModel):
@@ -57,9 +71,10 @@ class Sequence(BaseModel):
             active range (after subset clipping). The exact contents depend
             on policy:
                 - SPLIT: contiguous range; no gaps inside this Sequence.
-                - ERROR: only items that exist on disk.
-                - NEAREST: dense; missing items carry the nearest existing
+                - SKIP: only items that exist on disk.
+                - FILL_NEAREST: dense; missing items carry the nearest existing
                   item's path.
+            (ABORT never returns a Sequence — it raises on the first gap.)
         first: Lowest number in the active range (post-subset).
         last: Highest number in the active range (post-subset).
         discovered_first: Lowest number actually found on disk before
