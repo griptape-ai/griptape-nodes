@@ -118,9 +118,14 @@ def register_griptape_cloud_provider() -> None:
     """Register the Griptape Cloud provider on `ModelProviderRegistry`.
 
     The chat sidebar (and any future "pick a model" UI) reaches this catalog
-    through `ListModelsForProviderRequest(provider="griptape_cloud")`. Call
-    this once at engine startup (see `AgentManager.__init__`).
+    through `ListModelsForProviderRequest(provider="griptape_cloud")`. Called
+    from `AgentManager.__init__`; idempotent so test fixtures that reset
+    `SingletonMeta._instances` (which re-runs `AgentManager.__init__` while
+    the registry's `ClassVar` provider dict persists) do not raise.
     """
+    if ModelProviderRegistry.get(GRIPTAPE_CLOUD_PROVIDER_NAME) is not None:
+        return
+
     prompt_models = [
         ProviderModelInfo(name=str(entry["name"]), metadata={k: v for k, v in entry.items() if k != "name"})
         for entry in MODEL_CHOICES_ARGS
