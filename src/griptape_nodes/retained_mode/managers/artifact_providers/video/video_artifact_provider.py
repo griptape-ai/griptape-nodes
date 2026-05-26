@@ -6,7 +6,7 @@ import json
 import logging
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from static_ffmpeg import run as static_ffmpeg_run
 
@@ -14,6 +14,9 @@ from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_prov
     BaseArtifactMetadata,
     BaseArtifactProvider,
 )
+
+# Magic-byte sniffing constants
+_MIN_HEADER_BYTES = 12
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
@@ -50,6 +53,17 @@ class VideoArtifactProvider(BaseArtifactProvider):
         """
         super().__init__(registry)
 
+    # Maps canonical video format -> on-disk file extension (no leading dot)
+    _FORMAT_TO_EXTENSION: ClassVar[dict[str, str]] = {
+        "mp4": "mp4",
+        "webm": "webm",
+        "mov": "mov",
+        "mkv": "mkv",
+        "avi": "avi",
+        "m4v": "m4v",
+        "gif": "gif",
+    }
+
     @classmethod
     def get_friendly_name(cls) -> str:
         return "Video"
@@ -57,6 +71,35 @@ class VideoArtifactProvider(BaseArtifactProvider):
     @classmethod
     def get_supported_formats(cls) -> set[str]:
         return {"mov", "mp4", "avi", "mkv", "webm", "m4v", "flv", "wmv"}
+
+    @classmethod
+    def get_format_to_extension(cls) -> dict[str, str]:
+        return cls._FORMAT_TO_EXTENSION
+
+    def detect_format(self, data: bytes) -> str | None:  # noqa: PLR0911
+        """Magic-byte sniff for common video container formats."""
+        if len(data) < _MIN_HEADER_BYTES:
+            return None
+        head = data[:_MIN_HEADER_BYTES]
+        # ISO BMFF (mp4/mov/m4v): bytes 4-8 are "ftyp"
+        if head[4:8] == b"ftyp":
+            major_brand = head[8:12]
+            if major_brand == b"qt  ":
+                return "mov"
+            if major_brand in (b"M4V ", b"M4VH", b"M4VP"):
+                return "m4v"
+            return "mp4"
+        # Matroska/WebM: 1A 45 DF A3 (EBML header)
+        if head[:4] == b"\x1aE\xdf\xa3":
+            if b"webm" in data[:256]:
+                return "webm"
+            return "mkv"
+        # AVI: "RIFF" .... "AVI "
+        if head[:4] == b"RIFF" and head[8:12] == b"AVI ":
+            return "avi"
+        if head[:6] in (b"GIF87a", b"GIF89a"):
+            return "gif"
+        return None
 
     @classmethod
     def get_preview_formats(cls) -> set[str]:

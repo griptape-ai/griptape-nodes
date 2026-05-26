@@ -57,6 +57,17 @@ class ImageArtifactProvider(BaseArtifactProvider):
     def get_friendly_name(cls) -> str:
         return "Image"
 
+    # Maps canonical PIL format (uppercase) -> on-disk file extension (no leading dot)
+    _FORMAT_TO_EXTENSION: ClassVar[dict[str, str]] = {
+        "JPEG": "jpg",
+        "PNG": "png",
+        "WEBP": "webp",
+        "GIF": "gif",
+        "BMP": "bmp",
+        "TIFF": "tiff",
+        "ICO": "ico",
+    }
+
     # Maps PIL image mode to (channels, color_space) for metadata reporting
     _PIL_MODE_INFO: ClassVar[dict[str, tuple[int, str]]] = {
         "L": (1, "Grayscale"),
@@ -77,6 +88,38 @@ class ImageArtifactProvider(BaseArtifactProvider):
     @classmethod
     def get_supported_formats(cls) -> set[str]:
         return {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif", "tga"}
+
+    @classmethod
+    def get_format_to_extension(cls) -> dict[str, str]:
+        return cls._FORMAT_TO_EXTENSION
+
+    @classmethod
+    def normalize_format(cls, fmt: str) -> str:
+        """Canonicalize an image format string.
+
+        Uppercases (matching PIL's convention), strips a leading dot, and aliases
+        ``JPG`` -> ``JPEG`` so ``.jpg`` and ``jpeg`` both resolve to the same key.
+
+        Raises:
+            ValueError: If the format has no on-disk extension mapping.
+        """
+        canon = fmt.upper().lstrip(".")
+        if canon == "JPG":
+            canon = "JPEG"
+        if canon not in cls._FORMAT_TO_EXTENSION:
+            msg = f"Unsupported image format: '{fmt}'. Supported: {', '.join(sorted(cls._FORMAT_TO_EXTENSION))}"
+            raise ValueError(msg)
+        return canon
+
+    def detect_format(self, data: bytes) -> str | None:
+        """Sniff the canonical PIL format string from image bytes."""
+        try:
+            with Image.open(BytesIO(data)) as img:
+                if img.format:
+                    return img.format.upper()
+        except Exception:
+            logger.debug("PIL could not identify image format from bytes", exc_info=True)
+        return None
 
     @classmethod
     def supports_file_extension(cls, file_extension: str) -> bool:
