@@ -7,8 +7,8 @@ round-trip intact.
 
 This guards the serialization/deserialization path exercised by
 NodeExecutor._extract_parameter_output_values and
-NodeExecutor._apply_parameter_values_to_node — the code fixed in
-fix/subprocess-cattrs-bytes-deserialization — without requiring the cloud
+NodeExecutor._apply_parameter_values_to_node - the code fixed in
+fix/subprocess-cattrs-bytes-deserialization - without requiring the cloud
 WebSocket relay that the Private Execution (SubprocessWorkflowExecutor) path needs.
 """
 
@@ -186,7 +186,7 @@ async def _e2e_run() -> None:
     text_value = echo_node.parameter_output_values.get("text")
     if text_value != _EXPECTED_TEXT:
         raise RuntimeError(
-            f"E2E_FAIL: expected {{_EXPECTED_TEXT!r}}, got {{text_value!r}} — "
+            f"E2E_FAIL: expected {{_EXPECTED_TEXT!r}}, got {{text_value!r}} - "
             "text was corrupted across the subflow boundary"
         )
     print(f"SUBFLOW_TEXT_OK text={{text_value!r}}", flush=True)
