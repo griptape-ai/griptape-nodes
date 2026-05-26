@@ -111,28 +111,34 @@ IMAGE_DEPRECATED_MODELS = {
 O_SERIES_MODELS = {"o1", "o3", "o3-mini", "o4-mini"}
 
 
-# Register Griptape Cloud as a model provider on the canonical registry.
-# The chat sidebar (and any future "pick a model" UI) reaches this catalog
-# through `ListModelsForProviderRequest(provider="griptape_cloud")`.
-_GTC_PROMPT_MODELS = [
-    ProviderModelInfo(name=str(entry["name"]), metadata={k: v for k, v in entry.items() if k != "name"})
-    for entry in MODEL_CHOICES_ARGS
-]
-_GTC_IMAGE_MODELS = [
-    ProviderModelInfo(name=str(entry["name"]), metadata={k: v for k, v in entry.items() if k != "name"})
-    for entry in IMAGE_MODEL_CHOICES_ARGS
-]
+GRIPTAPE_CLOUD_PROVIDER_NAME = "griptape_cloud"
 
-# The prompt and image deprecation maps share a single namespace per provider.
-# Today there are no key collisions; if one ever appears it will surface as a
-# duplicate-key conflict at construction.
-_GTC_DEPRECATED = {**DEPRECATED_MODELS, **IMAGE_DEPRECATED_MODELS}
 
-ModelProviderRegistry.register(
-    StaticModelProvider(
-        name="griptape_cloud",
-        prompt=_GTC_PROMPT_MODELS,
-        image=_GTC_IMAGE_MODELS,
-        deprecated=_GTC_DEPRECATED,
+def register_griptape_cloud_provider() -> None:
+    """Register the Griptape Cloud provider on `ModelProviderRegistry`.
+
+    The chat sidebar (and any future "pick a model" UI) reaches this catalog
+    through `ListModelsForProviderRequest(provider="griptape_cloud")`. Call
+    this once at engine startup (see `AgentManager.__init__`).
+    """
+    prompt_models = [
+        ProviderModelInfo(name=str(entry["name"]), metadata={k: v for k, v in entry.items() if k != "name"})
+        for entry in MODEL_CHOICES_ARGS
+    ]
+    image_models = [
+        ProviderModelInfo(name=str(entry["name"]), metadata={k: v for k, v in entry.items() if k != "name"})
+        for entry in IMAGE_MODEL_CHOICES_ARGS
+    ]
+    # The prompt and image deprecation maps share a single namespace per
+    # provider. Today there are no key collisions; if one ever appears it
+    # will surface as a duplicate-key conflict at construction.
+    deprecated = {**DEPRECATED_MODELS, **IMAGE_DEPRECATED_MODELS}
+
+    ModelProviderRegistry.register(
+        StaticModelProvider(
+            name=GRIPTAPE_CLOUD_PROVIDER_NAME,
+            prompt=prompt_models,
+            image=image_models,
+            deprecated=deprecated,
+        )
     )
-)

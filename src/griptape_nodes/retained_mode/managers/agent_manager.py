@@ -24,7 +24,7 @@ from pydantic import create_model
 from schema import Literal, Schema
 from xdg_base_dirs import xdg_data_home
 
-import griptape_nodes.drivers.cloud_models  # noqa: F401  -- ensure GTC provider is registered at import
+from griptape_nodes.drivers.cloud_models import register_griptape_cloud_provider
 from griptape_nodes.drivers.model_provider_registry import ModelProviderRegistry
 from griptape_nodes.drivers.thread_storage import (
     GriptapeCloudThreadStorageDriver,
@@ -143,6 +143,10 @@ class AgentManager:
 
         # Initialize thread storage driver based on config
         self.thread_storage_driver = self._initialize_thread_storage_driver()
+
+        # Register the Griptape Cloud model provider so the chat sidebar's
+        # `ListModelsForProviderRequest(provider="griptape_cloud")` resolves.
+        register_griptape_cloud_provider()
 
         if event_manager is not None:
             # Existing handlers
