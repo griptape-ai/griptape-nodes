@@ -7,6 +7,7 @@ are covered by integration tests / manual workflow runs instead.
 """
 
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -170,7 +171,9 @@ class TestForceSuffix:
         assert _force_suffix("foo.jpeg", "jpg") == ("foo.jpeg", False)
 
     def test_preserves_directory(self) -> None:
-        assert _force_suffix("renders/foo.png", "jpg") == ("renders/foo.jpg", True)
+        new_filename, changed = _force_suffix("renders/foo.png", "jpg")
+        assert changed is True
+        assert Path(new_filename) == Path("renders/foo.jpg")
 
     def test_case_insensitive_match(self) -> None:
         assert _force_suffix("foo.PNG", "png") == ("foo.PNG", False)
