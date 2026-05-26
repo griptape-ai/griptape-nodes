@@ -233,6 +233,74 @@ class BaseArtifactProvider(ABC):
         return data
 
     @classmethod
+    def get_format_to_extension(cls) -> dict[str, str]:
+        """Map canonical format names to on-disk file extensions (no leading dot).
+
+        Override in subclasses that participate in the artifact-write API.
+        For example, an image provider returns ``{'JPEG': 'jpg', 'PNG': 'png', ...}``.
+
+        Returns:
+            Dict mapping canonical format -> extension. Default is empty.
+        """
+        return {}
+
+    @classmethod
+    def normalize_format(cls, fmt: str) -> str:
+        """Normalize a user-supplied format string to the provider's canonical form.
+
+        Default implementation lowercases and strips a leading dot, then verifies
+        the result is a known format. Subclasses may override (e.g., the image
+        provider uppercases to match PIL's convention and aliases ``jpg`` -> ``JPEG``).
+
+        Args:
+            fmt: User-supplied format string (e.g. ``'.MP4'``, ``'jpg'``).
+
+        Returns:
+            Canonical format string (e.g. ``'mp4'``, ``'JPEG'``).
+
+        Raises:
+            ValueError: If the format is not in ``get_format_to_extension``.
+        """
+        canon = fmt.lower().lstrip(".")
+        mapping = cls.get_format_to_extension()
+        if canon not in mapping:
+            msg = (
+                f"Unsupported {cls.get_friendly_name().lower()} format: '{fmt}'. "
+                f"Supported: {', '.join(sorted(mapping))}"
+            )
+            raise ValueError(msg)
+        return canon
+
+    @classmethod
+    def extension_for_format(cls, fmt: str) -> str:
+        """Return the on-disk extension for a (possibly user-supplied) format string.
+
+        Args:
+            fmt: User-supplied format string.
+
+        Returns:
+            Extension without leading dot.
+
+        Raises:
+            ValueError: If the format is unsupported.
+        """
+        return cls.get_format_to_extension()[cls.normalize_format(fmt)]
+
+    def detect_format(self, data: bytes) -> str | None:  # noqa: ARG002
+        """Sniff the canonical format from raw bytes.
+
+        Override in subclasses to enable byte-sniffing fallback for the
+        artifact-write API. Default implementation returns None (no detection).
+
+        Args:
+            data: Raw file bytes.
+
+        Returns:
+            Canonical format string if detected, otherwise None.
+        """
+        return None
+
+    @classmethod
     @abstractmethod
     def get_artifact_metadata(cls, source_path: str) -> BaseArtifactMetadata | None:
         """Extract metadata from the source file to store alongside the preview.
