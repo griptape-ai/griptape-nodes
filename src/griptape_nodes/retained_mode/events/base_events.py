@@ -222,10 +222,36 @@ class ResultPayloadSuccess(ResultPayload, ABC):
         return True
 
 
+class ForwardedException(Exception):  # noqa: N818
+    """Placeholder for an exception that crossed the worker boundary.
+
+    The converter's Exception hook emits worker-side exceptions as a
+    ``{type, module, message, traceback}`` dict, then rebuilds them
+    into a ``ForwardedException`` on the receiving side. The
+    placeholder is still an ``Exception`` (so ``raise ... from result.exception``
+    still chains) but carries ``original_type`` / ``original_traceback``
+    attributes so callers can see the worker-side class name and
+    frames without any structured-field duplication on
+    ``ResultPayloadFailure``.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.original_type: str | None = None
+        self.original_traceback: str | None = None
+
+
 # Failure result payload abstract base class
 @dataclass(kw_only=True)
 class ResultPayloadFailure(ResultPayload, ABC):
-    """Abstract base class for failure result payloads."""
+    """Abstract base class for failure result payloads.
+
+    ``exception`` is the single source of truth. On the local path it
+    is the live ``Exception``. Across the worker -> orchestrator wire
+    the converter emits it as a structured dict and rebuilds it as a
+    ``ForwardedException`` carrying the original type name and
+    traceback as attributes, so callers can read both paths uniformly.
+    """
 
     result_details: ResultDetails | str
     exception: Exception | None = None

@@ -61,4 +61,20 @@ RULES: dict[str, StrictModeRule] = {
             "construction)."
         ),
     ),
+    "exception-fidelity-lost": StrictModeRule(
+        rule_id="exception-fidelity-lost",
+        default_severity=StrictModeSeverity.ERROR,
+        correctness=True,
+        description=(
+            "A worker-side exception could not be serialized with full "
+            "fidelity (type, message, traceback) when forwarded to the "
+            "orchestrator. The caller sees only a stringified summary."
+        ),
+        remediation_template=(
+            "Exception of type '{exception_class}' lost '{missing_field}' "
+            "when crossing the wire. Ensure the exception class is "
+            "picklable or expose the failing field as a serializable "
+            "attribute."
+        ),
+    ),
 }

@@ -39,10 +39,43 @@ converter.register_unstructure_hook_func(
     lambda obj: obj.isoformat(),
 )
 
-# Exception -> string representation
+
+# Exception -> structured dict.
+#
+# The old hook stringified exceptions, dropping type identity and the
+# traceback. That made worker -> orchestrator ``ResultPayloadFailure``
+# hops lossy (authors saw ``RuntimeError: <message>`` with no frames).
+# The dict form preserves enough context that the structure hook can
+# rebuild a ``ForwardedException`` on the receiving side.
+def _unstructure_exception(obj: BaseException) -> dict[str, Any]:
+    # Lazy imports: strict_mode depends on base_events, which registers
+    # this converter. Importing at module load creates a cycle; inside
+    # the hook we are long past bootstrap.
+    import traceback as _traceback
+
+    from griptape_nodes.common.strict_mode import STRICT_MODE
+    from griptape_nodes.common.strict_mode_checks import RULES
+
+    rule = RULES["exception-fidelity-lost"]
+    try:
+        tb = "".join(_traceback.format_exception(type(obj), obj, obj.__traceback__))
+    except Exception:
+        tb = None
+        STRICT_MODE.report(
+            rule_id=rule.rule_id,
+            message=rule.render(exception_class=type(obj).__name__, missing_field="traceback"),
+        )
+    return {
+        "type": type(obj).__qualname__,
+        "module": type(obj).__module__,
+        "message": str(obj),
+        "traceback": tb,
+    }
+
+
 converter.register_unstructure_hook_func(
     lambda cls: isinstance(cls, type) and issubclass(cls, Exception),
-    str,
+    _unstructure_exception,
 )
 
 # Bare `type` references (e.g. provider_class: type)
@@ -80,10 +113,41 @@ converter.register_structure_hook_func(
     lambda obj, cls: cls.model_validate(obj),
 )
 
-# Exception <- string or dict
+
+# Exception <- string or structured dict.
+#
+# The receiving side never has the worker-side class imported, so we
+# rebuild a ``ForwardedException`` that carries the original type
+# name and traceback as attributes. Callers reading
+# ``result.exception`` get a live ``Exception`` that chains correctly
+# with ``raise ... from`` and still surfaces worker-side context.
+#
+# String payloads come from pre-migration serialized events that may
+# still be cached locally; fall back to wrapping them in a
+# ``ForwardedException`` with no attributes set.
+def _structure_exception(obj: Any, _cls: type) -> Exception:
+    # Lazy import to avoid a circular dependency: base_events imports
+    # from this module (event_converter is registered at import time
+    # from base_events), so ForwardedException cannot be imported at
+    # module load.
+    from griptape_nodes.retained_mode.events.base_events import ForwardedException
+
+    if isinstance(obj, str):
+        return ForwardedException(obj)
+    if isinstance(obj, dict):
+        message = str(obj.get("message", ""))
+        forwarded = ForwardedException(message)
+        module = obj.get("module")
+        type_name = obj.get("type")
+        forwarded.original_type = f"{module}.{type_name}" if module and type_name else type_name
+        forwarded.original_traceback = obj.get("traceback")
+        return forwarded
+    return ForwardedException(str(obj))
+
+
 converter.register_structure_hook_func(
     lambda cls: isinstance(cls, type) and issubclass(cls, Exception),
-    lambda obj, cls: cls(obj) if isinstance(obj, str) else cls(str(obj)),
+    _structure_exception,
 )
 
 

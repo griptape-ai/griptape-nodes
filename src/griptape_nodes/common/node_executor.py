@@ -272,7 +272,16 @@ class NodeExecutor:
                 )
             )
             if not isinstance(result, ExecuteNodeResultSuccess):
-                msg = f"Node '{node.name}' execution failed: {getattr(result, 'result_details', result)}"
+                # Surface the worker-side type + traceback that the converter
+                # attached to the rebuilt ForwardedException. Without this the
+                # orchestrator only sees the message string; the real frames
+                # live on the forwarded exception's attrs.
+                exc = getattr(result, "exception", None)
+                exception_type = getattr(exc, "original_type", None) if exc is not None else None
+                traceback_str = getattr(exc, "original_traceback", None) if exc is not None else None
+                suffix = f"\n{traceback_str}" if traceback_str else ""
+                type_prefix = f"[{exception_type}] " if exception_type else ""
+                msg = f"Node '{node.name}' execution failed: {type_prefix}{getattr(result, 'result_details', result)}{suffix}"
                 raise RuntimeError(msg)  # noqa: TRY004
             # Copy outputs back onto the in-memory node. Write directly into
             # parameter_output_values (not through set_parameter_value, which
