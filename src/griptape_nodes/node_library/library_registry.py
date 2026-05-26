@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_validator
 
-from griptape_nodes.node_library.library_properties import LibraryProperty, NodeProperty
+from griptape_nodes.node_library.library_declarations import LibraryDeclaration, NodeDeclaration
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
 )
@@ -105,9 +105,9 @@ class LibraryMetadata(BaseModel):
     resources: ResourceRequirements | None = None
     # Worker process configuration. If None or disabled, nodes execute in the orchestrator process.
     worker: WorkerConfig | None = None
-    # Declarative capabilities / compliance flags for this library. Applies to all nodes in the library.
-    # See griptape_nodes.node_library.library_properties for the supported types.
-    properties: list[LibraryProperty] = Field(default_factory=list)
+    # Declarative properties / capabilities for this library. Applies to all nodes in the library.
+    # See griptape_nodes.node_library.library_declarations for the supported types.
+    declarations: list[LibraryDeclaration] = Field(default_factory=list)
 
 
 class IconVariant(BaseModel):
@@ -136,9 +136,9 @@ class NodeMetadata(BaseModel):
     group: str | None = None
     deprecation: NodeDeprecationMetadata | None = None
     is_node_group: bool | None = None
-    # Declarative capabilities / compliance flags for this node.
-    # See griptape_nodes.node_library.library_properties for the supported types.
-    properties: list[NodeProperty] = Field(default_factory=list)
+    # Declarative properties / capabilities for this node.
+    # See griptape_nodes.node_library.library_declarations for the supported types.
+    declarations: list[NodeDeclaration] = Field(default_factory=list)
 
 
 class CategoryDefinition(BaseModel):
@@ -190,6 +190,9 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
+    # 0.8.0 contract reshaped pre-release: declaration vocabulary moved from
+    # `properties` to `declarations`, capabilities replaced marker-property classes,
+    # and library-author-defined permissions were removed.
     LATEST_SCHEMA_VERSION: ClassVar[str] = "0.8.0"
 
     name: str
