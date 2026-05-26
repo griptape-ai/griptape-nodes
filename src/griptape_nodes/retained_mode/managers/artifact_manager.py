@@ -470,6 +470,9 @@ class ArtifactManager:
                 corrected_filename,
             )
 
+        # Most situation templates reference {node_name}; supply it from the owning
+        # node so callers don't have to pass it explicitly. Caller-provided values
+        # win, so a node can override its own name in the destination path.
         vars_for_macro: dict[str, str | int] = {**extra_vars}
         if "node_name" not in vars_for_macro:
             vars_for_macro["node_name"] = node.name
