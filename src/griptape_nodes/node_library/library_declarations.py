@@ -36,6 +36,7 @@ class ProductionStatus(StrEnum):
     BETA = "BETA"
     ALPHA = "ALPHA"
     EXPERIMENTAL = "EXPERIMENTAL"
+    DEPRECATED = "DEPRECATED"
 
 
 class KeySupport(StrEnum):
