@@ -44,31 +44,40 @@ registered libraries and the node types they expose is the catalog every later s
 draws from, so spend the round trips up front instead of guessing names that may not
 exist (or that exist in a different library than you expect).
 
-### Find the workspace directory on disk
+### Find the workspace directory
 
-The MCP surface does not expose `GetConfigValueRequest`, so resolve the workspace
-path by reading the user config file directly. On macOS / Linux it lives at:
+Ask the running engine, do not read config files on disk. The engine is the only
+authority on its own workspace, and the config file's location varies by packaging
+(the CLI uses `~/.config/griptape_nodes/...`, the macOS desktop app uses an XDG
+override under `~/Library/Application Support/Griptape Nodes/xdg_config_home/...`,
+future variants may differ again).
 
 ```
-~/.config/griptape_nodes/griptape_nodes_config.json
+A. griptape_nodes_GetWorkspaceRequest()
+   → returns `workspace_path`: the absolute workspace root with `~` expanded and
+     symlinks resolved. Safe to feed straight into `Path` / `os.path` operations.
+
+B. griptape_nodes_GetConfigValueRequest(category_and_key="sandbox_library_directory")
+   → returns the FILE_SYSTEM-category subdir as the engine has it. Subdirectory
+     keys (`sandbox_library_directory`, `static_files_directory`,
+     `libraries_directory`) come back **relative to the workspace** (e.g.
+     `"sandbox_library"`). Defaults are merged in, so a key that isn't in the user
+     config still returns its Pydantic default rather than null.
+
+C. (optional) griptape_nodes_GetConfigValueRequest(
+       category_and_key="app_events.on_app_initialization_complete.libraries_to_register")
+   → list of locally registered `griptape_nodes_library.json` paths. Entries can
+     be either a string or `{"path": "...", "enabled": true}`. Useful when you
+     want to look at an existing node's Python module before writing a similar
+     sandbox node.
 ```
 
-The keys you care about are:
-
-- `workspace_directory`: absolute (or `~`-prefixed) workspace root. The sandbox
-    library lives inside this directory.
-- `app_events.on_app_initialization_complete.libraries_to_register`: list of locally
-    registered `griptape_nodes_library.json` paths. Entries can be either a string or
-    an object `{"path": "...", "enabled": true}`. Reading these tells you where each
-    library's source lives if you need to look at an existing node's Python module
-    before writing a similar sandbox node.
-
-The sandbox subdirectory key (`sandbox_library_directory`) is optional and defaults
-to `sandbox_library`. The absolute sandbox path is therefore
-`<workspace_directory>/<sandbox_library_directory>` (e.g.
-`~/Projects/.../GriptapeNodes/sandbox_library`).
-
-Do this once per session and remember the paths; they don't change mid-run.
+The absolute sandbox library path is therefore
+`Path(workspace_path) / sandbox_library_directory` (`Path` correctly drops the
+workspace half if the subdir setting is itself absolute, which is allowed). Do the
+join agent-side rather than asking the engine to resolve every path for you, but
+re-fetch `GetWorkspaceRequest` at the top of any build phase that touches the
+filesystem because workspace switching at runtime is supported.
 
 ### Survey the registered libraries via MCP
 
@@ -377,10 +386,47 @@ bound the wait; if the timeout fires, `StartFlowRequest` returns a failure but t
 flow keeps running in the engine until it finishes or errors. A subsequent
 `StartFlowRequest` will fail with "Flow is already running" until it does.
 
+### Sandbox library is scanned once, at engine startup
+
+`RegisterSandboxNodeFromSourceRequest` has two preconditions, not one:
+
+1. The sandbox **directory** must exist on disk (`<workspace>/<sandbox_library_directory>`).
+2. The Sandbox Library must already be registered in the engine, which only happens
+    if step 1 was true at engine startup.
+
+If the directory was empty (or absent) at launch, no Sandbox Library exists in the
+registry at all, and `RegisterSandboxNodeFromSourceRequest` fails with `Sandbox
+Library is not registered in the engine. ... it is scanned once at engine startup`.
+The engine has a `ScanSandboxDirectoryRequest` for this case, but it is **not exposed
+via MCP**, so there is no in-session bootstrap. Practical workflow for the very first
+sandbox node ever:
+
+1. Confirm the workspace via `GetWorkspaceRequest` and the sandbox subdir via
+    `GetConfigValueRequest("sandbox_library_directory")`.
+2. Create the sandbox dir if missing and write the `.py` file into it.
+3. Ask the user to quit and relaunch the engine.
+4. After relaunch, `ListRegisteredLibrariesRequest` should show `"Sandbox Library"`
+    and `RegisterSandboxNodeFromSourceRequest` will work in-session.
+
+For every subsequent sandbox node (or hot-reloads of an existing one), no restart is
+needed.
+
+### Newly-exposed request types may not be batch-eligible immediately
+
+`EventRequestBatch` validates each inner `request_type` against an enum that some
+MCP gateways snapshot at handshake time. After a request type is added to the
+server, existing gateway sessions may reject it inside a batch even though it works
+fine as a single tool call. Workaround: send those requests as N individual
+tool calls, or trigger a gateway reconnect. This is rarely an issue for skills that
+run against a fresh gateway, but it surfaces during the same session in which the
+request was added (e.g. testing a freshly-merged PR).
+
 ## Tool Cheat Sheet
 
 | Goal                                                            | Tool                                                                                                                                                      |
 | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Get the absolute workspace directory                            | `GetWorkspaceRequest` (returns the resolved workspace root; FILE_SYSTEM-category subdir keys are workspace-relative) |
+| Read a configuration value                                      | `GetConfigValueRequest` (e.g. `sandbox_library_directory`, nested keys via dot syntax)                                                                    |
 | Bootstrap a workflow + flow from cold                           | `EnsureWorkflowAndFlowRequest`                                                                                                                            |
 | Fan N requests out in one round trip                            | `EventRequestBatch` (synthetic; pre-name nodes that later slots reference)                                                                                |
 | Discover libraries / node types                                 | `ListRegisteredLibrariesRequest`, `ListNodeTypesInLibraryRequest`, `ListCategoriesInLibraryRequest`                                                       |

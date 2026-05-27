@@ -1,6 +1,8 @@
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigValueRequest,
     GetConfigValueResultSuccess,
+    GetWorkspaceRequest,
+    GetWorkspaceResultSuccess,
     SetConfigValueRequest,
 )
 from griptape_nodes.retained_mode.events.secrets_events import (
@@ -18,3 +20,12 @@ class TestConfigEvents:
         assert isinstance(result, GetConfigValueResultSuccess)
 
         assert result.value == "secret foo"
+
+    def test_get_workspace_returns_absolute_path(self) -> None:
+        result = GriptapeNodes.handle_request(GetWorkspaceRequest())
+
+        assert isinstance(result, GetWorkspaceResultSuccess)
+        assert result.workspace_path
+        # Path is absolute, with `~` expanded and symlinks resolved (Path.resolve()).
+        assert result.workspace_path.startswith("/")
+        assert "~" not in result.workspace_path
