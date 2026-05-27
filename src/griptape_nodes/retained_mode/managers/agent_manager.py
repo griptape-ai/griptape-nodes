@@ -24,6 +24,12 @@ from pydantic import create_model
 from schema import Literal, Schema
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.drivers.cloud_models import (
+    DEPRECATED_MODELS,
+    IMAGE_DEPRECATED_MODELS,
+    IMAGE_MODEL_CHOICES,
+    MODEL_CHOICES,
+)
 from griptape_nodes.drivers.thread_storage import (
     GriptapeCloudThreadStorageDriver,
     LocalThreadStorageDriver,
@@ -45,6 +51,8 @@ from griptape_nodes.retained_mode.events.agent_events import (
     GetConversationMemoryRequest,
     GetConversationMemoryResultFailure,
     GetConversationMemoryResultSuccess,
+    ListAgentModelsRequest,
+    ListAgentModelsResultSuccess,
     ListThreadsRequest,
     ListThreadsResultFailure,
     ListThreadsResultSuccess,
@@ -155,6 +163,10 @@ class AgentManager:
                 UnarchiveThreadRequest, self.on_handle_unarchive_thread_request
             )
 
+            event_manager.assign_manager_to_request_type(
+                ListAgentModelsRequest, self.on_handle_list_agent_models_request
+            )
+
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
@@ -190,6 +202,14 @@ class AgentManager:
             logger.error(details)
             return ConfigureAgentResultFailure(result_details=details)
         return ConfigureAgentResultSuccess(result_details="Agent configured successfully.")
+
+    def on_handle_list_agent_models_request(self, request: ListAgentModelsRequest) -> ResultPayload:  # noqa: ARG002
+        return ListAgentModelsResultSuccess(
+            prompt_models=list(MODEL_CHOICES),
+            image_models=list(IMAGE_MODEL_CHOICES),
+            deprecated_models={**DEPRECATED_MODELS, **IMAGE_DEPRECATED_MODELS},
+            result_details="Agent model lists retrieved successfully.",
+        )
 
     def on_handle_get_conversation_memory_request(self, request: GetConversationMemoryRequest) -> ResultPayload:
         try:

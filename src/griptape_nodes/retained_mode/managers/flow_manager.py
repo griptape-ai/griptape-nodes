@@ -758,7 +758,11 @@ class FlowManager:
             result = ListNodesInFlowResultFailure(result_details=details)
             return result
 
-        ret_list = list(flow.nodes.keys())
+        if request.node_types is not None:
+            node_type_set = set(request.node_types)
+            ret_list = [name for name, node in flow.nodes.items() if type(node).__name__ in node_type_set]
+        else:
+            ret_list = list(flow.nodes.keys())
         details = f"Successfully got the list of Nodes within Flow '{flow_name}'."
 
         result = ListNodesInFlowResultSuccess(node_names=ret_list, result_details=details)
