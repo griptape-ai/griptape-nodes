@@ -3499,6 +3499,9 @@ class LibraryManager:
     # await init-time events (e.g. WorkflowManager._workflows_loading_complete),
     # so each probe runs in a worker thread with this ceiling.
     _SCHEMA_PROBE_TIMEOUT_S: float = 10.0
+    # Sentinel name passed to the throwaway node instance built for schema
+    # discovery. The instance is discarded after its parameters are read.
+    _SCHEMA_PROBE_NODE_NAME: str = "__schema_probe__"
 
     async def _serialize_library_node_schemas(self, library_name: str) -> list[WorkerNodeSchema]:
         """Serialize node parameter schemas for a loaded library.
@@ -3522,7 +3525,7 @@ class LibraryManager:
                     asyncio.to_thread(
                         LibraryRegistry.create_node,
                         node_type=class_name,
-                        name="__schema_probe__",
+                        name=self._SCHEMA_PROBE_NODE_NAME,
                         specific_library_name=library_name,
                     ),
                     timeout=self._SCHEMA_PROBE_TIMEOUT_S,
