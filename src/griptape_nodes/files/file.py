@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import base64
 import logging
-from io import BytesIO
 from pathlib import Path
 from typing import NamedTuple, Protocol, cast, runtime_checkable
-
-from PIL import Image, UnidentifiedImageError
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.retained_mode.events.os_events import (
@@ -188,26 +185,37 @@ def _canonical_extension(ext: str) -> str:
     return _EXTENSION_ALIASES.get(lowered, lowered)
 
 
-def _sniff_image_extension(data: bytes) -> str | None:
-    """Sniff a canonical image extension via PIL. Returns None if PIL can't identify."""
-    try:
-        with Image.open(BytesIO(data)) as img:
-            fmt = img.format
-    except (UnidentifiedImageError, OSError, ValueError):
+def _sniff_image_extension(data: bytes) -> str | None:  # noqa: C901, PLR0911
+    """Magic-byte sniff for common image formats.
+
+    Pure prefix checks; no PIL parsing or decompression-bomb scans, so this is
+    safe to run on every ``write_bytes`` call regardless of payload type. HEIC
+    is recognized directly via its ISO BMFF brand so HEIC writes don't depend
+    on optional Pillow plugins (e.g. ``pillow-heif``).
+    """
+    if len(data) < _SNIFF_MIN_HEADER_BYTES:
         return None
-    if fmt is None:
-        return None
-    pil_to_extension: dict[str, str] = {
-        "JPEG": "jpg",
-        "PNG": "png",
-        "WEBP": "webp",
-        "GIF": "gif",
-        "BMP": "bmp",
-        "TIFF": "tiff",
-        "ICO": "ico",
-        "HEIF": "heic",
-    }
-    return pil_to_extension.get(fmt.upper())
+    head = data[:_SNIFF_MIN_HEADER_BYTES]
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if head[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if head[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP":  # noqa: PLR2004
+        return "webp"
+    if head[:2] == b"BM":
+        return "bmp"
+    if head[:4] in (b"II*\x00", b"MM\x00*"):
+        return "tiff"
+    if head[:4] == b"\x00\x00\x01\x00":
+        return "ico"
+    # ISO BMFF image brands (HEIC / HEIF / AVIF).
+    if head[4:8] == b"ftyp" and head[8:12] in (b"heic", b"heix", b"heim", b"heis", b"mif1", b"msf1"):
+        return "heic"
+    if head[4:8] == b"ftyp" and head[8:12] in (b"avif", b"avis"):
+        return "avif"
+    return None
 
 
 def _sniff_video_extension(data: bytes) -> str | None:  # noqa: C901, PLR0911
@@ -225,8 +233,8 @@ def _sniff_video_extension(data: bytes) -> str | None:  # noqa: C901, PLR0911
             return "mov"
         if brand in (b"M4V ", b"M4VH", b"M4VP"):
             return "m4v"
-        # HEIC/HEIF are technically images; let the image sniffer claim them.
-        if brand in (b"heic", b"heix", b"mif1", b"heim", b"heis"):
+        # HEIC/HEIF/AVIF are images, not video; the image sniffer claims them.
+        if brand in (b"heic", b"heix", b"mif1", b"heim", b"heis", b"msf1", b"avif", b"avis"):
             return None
         return "mp4"
     # Matroska / WebM EBML header.
