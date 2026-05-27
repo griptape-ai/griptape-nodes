@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigValueRequest,
     GetConfigValueResultSuccess,
@@ -12,14 +14,15 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class TestConfigEvents:
-    def test_get_config_value(self) -> None:
+    def test_get_config_value_returns_secret_placeholder_literally(self) -> None:
+        # The request/event path never dereferences `$SECRET` placeholders; callers that need the
+        # resolved secret must go through GetSecretValueRequest, which is gated separately.
         GriptapeNodes.handle_request(SetSecretValueRequest(key="SECRET_KEY", value="secret foo"))
         GriptapeNodes.handle_request(SetConfigValueRequest(category_and_key="nodes.foo.bar", value="$SECRET_KEY"))
         result = GriptapeNodes.handle_request(GetConfigValueRequest(category_and_key="nodes.foo.bar"))
 
         assert isinstance(result, GetConfigValueResultSuccess)
-
-        assert result.value == "secret foo"
+        assert result.value == "$SECRET_KEY"
 
     def test_get_workspace_returns_absolute_path(self) -> None:
         result = GriptapeNodes.handle_request(GetWorkspaceRequest())
@@ -27,5 +30,5 @@ class TestConfigEvents:
         assert isinstance(result, GetWorkspaceResultSuccess)
         assert result.workspace_path
         # Path is absolute, with `~` expanded and symlinks resolved (Path.resolve()).
-        assert result.workspace_path.startswith("/")
+        assert Path(result.workspace_path).is_absolute()
         assert "~" not in result.workspace_path

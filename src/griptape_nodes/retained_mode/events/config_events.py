@@ -18,6 +18,10 @@ class GetConfigValueRequest(RequestPayload):
     Use when: Reading application settings, checking node configurations, retrieving user preferences,
     accessing environment-specific values. Key format: "category.key" or "category.subcategory.key".
 
+    Values stored as `$SECRET_NAME` are returned as the literal placeholder string; this request never
+    dereferences secrets. Use `GetSecretValueRequest` (subject to its own gating) when the resolved
+    secret value is required.
+
     Args:
         category_and_key: Configuration key in format "category.key" or "category.subcategory.key"
 
@@ -151,10 +155,10 @@ class GetWorkspaceRequest(RequestPayload):
     `static_files_directory`, `libraries_directory`) into absolute paths, deciding where to write
     files the engine is supposed to see, displaying workspace info to users.
 
-    The returned path has `~` and environment variables expanded and symlinks resolved, so it is
-    safe to use directly with `Path` / `os.path` operations.
+    The returned path has `~` expanded and symlinks resolved, so it is safe to use directly with
+    `Path` / `os.path` operations.
 
-    Results: GetWorkspaceResultSuccess (with absolute workspace path) | GetWorkspaceResultFailure
+    Results: GetWorkspaceResultSuccess (with absolute workspace path)
     """
 
 
@@ -168,12 +172,6 @@ class GetWorkspaceResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """
 
     workspace_path: str
-
-
-@dataclass
-@PayloadRegistry.register
-class GetWorkspaceResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Workspace path retrieval failed. Common causes: workspace not initialized, filesystem errors."""
 
 
 @dataclass

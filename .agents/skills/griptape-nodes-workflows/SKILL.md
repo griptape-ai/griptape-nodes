@@ -62,7 +62,9 @@ B. griptape_nodes_GetConfigValueRequest(category_and_key="sandbox_library_direct
      keys (`sandbox_library_directory`, `static_files_directory`,
      `libraries_directory`) come back **relative to the workspace** (e.g.
      `"sandbox_library"`). Defaults are merged in, so a key that isn't in the user
-     config still returns its Pydantic default rather than null.
+     config still returns its Pydantic default rather than null. Top-level keys
+     (no dot) are accepted alongside the more common `category.key` form; both go
+     through the same dot-path resolver.
 
 C. (optional) griptape_nodes_GetConfigValueRequest(
        category_and_key="app_events.on_app_initialization_complete.libraries_to_register")
@@ -391,7 +393,7 @@ flow keeps running in the engine until it finishes or errors. A subsequent
 | Goal                                                            | Tool                                                                                                                                                      |
 | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Get the absolute workspace directory                            | `GetWorkspaceRequest` (returns the resolved workspace root; FILE_SYSTEM-category subdir keys are workspace-relative) |
-| Read a configuration value                                      | `GetConfigValueRequest` (e.g. `sandbox_library_directory`, nested keys via dot syntax)                                                                    |
+| Read a configuration value                                      | `GetConfigValueRequest` (e.g. `sandbox_library_directory`, nested keys via dot syntax). Values stored as `$SECRET_NAME` come back as that literal placeholder; the request never dereferences secrets. |
 | Bootstrap a workflow + flow from cold                           | `EnsureWorkflowAndFlowRequest`                                                                                                                            |
 | Fan N requests out in one round trip                            | `EventRequestBatch` (synthetic; pre-name nodes that later slots reference)                                                                                |
 | Discover libraries / node types                                 | `ListRegisteredLibrariesRequest`, `ListNodeTypesInLibraryRequest`, `ListCategoriesInLibraryRequest`                                                       |
