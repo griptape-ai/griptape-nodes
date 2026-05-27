@@ -190,9 +190,6 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    # 0.8.0 contract reshaped pre-release: declaration vocabulary moved from
-    # `properties` to `declarations`, capabilities replaced marker-property classes,
-    # and library-author-defined permissions were removed.
     LATEST_SCHEMA_VERSION: ClassVar[str] = "0.8.0"
 
     name: str
