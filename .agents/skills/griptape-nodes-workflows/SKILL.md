@@ -388,6 +388,41 @@ bound the wait; if the timeout fires, `StartFlowRequest` returns a failure but t
 flow keeps running in the engine until it finishes or errors. A subsequent
 `StartFlowRequest` will fail with "Flow is already running" until it does.
 
+### Sandbox library is scanned once, at engine startup
+
+`RegisterSandboxNodeFromSourceRequest` has two preconditions, not one:
+
+1. The sandbox **directory** must exist on disk (`<workspace>/<sandbox_library_directory>`).
+2. The Sandbox Library must already be registered in the engine, which only happens
+    if step 1 was true at engine startup.
+
+If the directory was empty (or absent) at launch, no Sandbox Library exists in the
+registry at all, and `RegisterSandboxNodeFromSourceRequest` fails with `Sandbox
+Library is not registered in the engine. ... it is scanned once at engine startup`.
+The engine has a `ScanSandboxDirectoryRequest` for this case, but it is **not exposed
+via MCP**, so there is no in-session bootstrap. Practical workflow for the very first
+sandbox node ever:
+
+1. Confirm the workspace via `GetWorkspaceRequest` and the sandbox subdir via
+    `GetConfigValueRequest("sandbox_library_directory")`.
+2. Create the sandbox dir if missing and write the `.py` file into it.
+3. Ask the user to quit and relaunch the engine.
+4. After relaunch, `ListRegisteredLibrariesRequest` should show `"Sandbox Library"`
+    and `RegisterSandboxNodeFromSourceRequest` will work in-session.
+
+For every subsequent sandbox node (or hot-reloads of an existing one), no restart is
+needed.
+
+### Newly-exposed request types may not be batch-eligible immediately
+
+`EventRequestBatch` validates each inner `request_type` against an enum that some
+MCP gateways snapshot at handshake time. After a request type is added to the
+server, existing gateway sessions may reject it inside a batch even though it works
+fine as a single tool call. Workaround: send those requests as N individual
+tool calls, or trigger a gateway reconnect. This is rarely an issue for skills that
+run against a fresh gateway, but it surfaces during the same session in which the
+request was added (e.g. testing a freshly-merged PR).
+
 ## Tool Cheat Sheet
 
 | Goal                                                            | Tool                                                                                                                                                      |
