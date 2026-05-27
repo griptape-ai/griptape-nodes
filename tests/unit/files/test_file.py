@@ -1138,22 +1138,32 @@ class TestFileResolve:
         assert exc_info.value.failure_reason == FileIOFailureReason.MISSING_MACRO_VARIABLES
 
 
-def _png_bytes() -> bytes:
+def _pil_bytes(fmt: str, mode: str = "RGB") -> bytes:
     buf = BytesIO()
-    Image.new("RGB", (1, 1), color="white").save(buf, format="PNG")
+    Image.new(mode, (1, 1), color=0 if mode == "P" else "white").save(buf, format=fmt)
     return buf.getvalue()
+
+
+def _png_bytes() -> bytes:
+    return _pil_bytes("PNG")
 
 
 def _jpeg_bytes() -> bytes:
-    buf = BytesIO()
-    Image.new("RGB", (1, 1), color="white").save(buf, format="JPEG")
-    return buf.getvalue()
+    return _pil_bytes("JPEG")
 
 
 def _gif_bytes() -> bytes:
-    buf = BytesIO()
-    Image.new("P", (1, 1), color=0).save(buf, format="GIF")
-    return buf.getvalue()
+    return _pil_bytes("GIF", mode="P")
+
+
+def _heic_bytes() -> bytes:
+    """Minimal HEIC ftyp box; Pillow can't generate HEIC without pillow-heif."""
+    return b"\x00\x00\x00\x18ftypheic" + b"\x00" * 16
+
+
+def _avif_bytes() -> bytes:
+    """Minimal AVIF ftyp box; Pillow can't generate AVIF natively."""
+    return b"\x00\x00\x00\x18ftypavif" + b"\x00" * 16
 
 
 def _webm_bytes() -> bytes:
@@ -1215,6 +1225,34 @@ class TestSniffImageExtension:
 
     def test_gif(self) -> None:
         assert _sniff_image_extension(_gif_bytes()) == "gif"
+
+    def test_webp(self) -> None:
+        assert _sniff_image_extension(_pil_bytes("WEBP")) == "webp"
+
+    def test_bmp(self) -> None:
+        assert _sniff_image_extension(_pil_bytes("BMP")) == "bmp"
+
+    def test_tiff(self) -> None:
+        assert _sniff_image_extension(_pil_bytes("TIFF")) == "tiff"
+
+    def test_ico(self) -> None:
+        buf = BytesIO()
+        Image.new("RGBA", (16, 16)).save(buf, format="ICO")
+        assert _sniff_image_extension(buf.getvalue()) == "ico"
+
+    def test_heic_via_iso_bmff_brand(self) -> None:
+        """HEIC is claimed via the ISO BMFF brand without depending on pillow-heif."""
+        assert _sniff_image_extension(_heic_bytes()) == "heic"
+
+    def test_heif_mif1_brand_returns_heic(self) -> None:
+        assert _sniff_image_extension(b"\x00\x00\x00\x18ftypmif1" + b"\x00" * 16) == "heic"
+
+    def test_avif_via_iso_bmff_brand(self) -> None:
+        assert _sniff_image_extension(_avif_bytes()) == "avif"
+
+    def test_riff_without_webp_marker_returns_none(self) -> None:
+        """A RIFF header alone (e.g. WAV / AVI) must not be claimed as WebP."""
+        assert _sniff_image_extension(b"RIFF\x00\x00\x00\x00WAVE" + b"\x00" * 16) is None
 
     def test_unidentifiable_returns_none(self) -> None:
         assert _sniff_image_extension(b"not an image") is None
