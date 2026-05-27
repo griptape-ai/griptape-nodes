@@ -390,6 +390,108 @@ class TestStartFlowCancelsOnWaitTimeout:
         cancel_mock.assert_not_called()
 
 
+class TestListNodesInFlowRequest:
+    """Tests for FlowManager.on_list_nodes_in_flow_request node_types filter."""
+
+    def _make_flow(self, nodes: dict) -> object:
+        from unittest.mock import MagicMock
+
+        fake_flow = MagicMock()
+        fake_flow.name = "test_flow"
+        fake_flow.nodes = nodes
+        return fake_flow
+
+    def _run_request(self, griptape_nodes: GriptapeNodes, flow: object, request: object) -> object:
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.managers.flow_manager import ControlFlow
+
+        flow_manager = griptape_nodes.FlowManager()
+        with patch.object(
+            griptape_nodes.ObjectManager(),
+            "attempt_get_object_by_name_as_type",
+            side_effect=lambda _name, typ: flow if typ is ControlFlow else None,
+        ):
+            return flow_manager.on_list_nodes_in_flow_request(request)  # type: ignore[arg-type]
+
+    def test_no_filter_returns_all_nodes(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest, ListNodesInFlowResultSuccess
+
+        class NoteNode:
+            pass
+
+        flow = self._make_flow({"Note_1": NoteNode(), "Note_2": NoteNode()})
+        result = self._run_request(griptape_nodes, flow, ListNodesInFlowRequest(flow_name="test_flow"))
+
+        assert isinstance(result, ListNodesInFlowResultSuccess)
+        assert set(result.node_names) == {"Note_1", "Note_2"}
+
+    def test_filter_by_matching_class_name_returns_subset(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest, ListNodesInFlowResultSuccess
+
+        class NoteNode:
+            pass
+
+        class AgentNode:
+            pass
+
+        flow = self._make_flow({"note_1": NoteNode(), "agent_1": AgentNode(), "note_2": NoteNode()})
+        result = self._run_request(
+            griptape_nodes, flow, ListNodesInFlowRequest(flow_name="test_flow", node_types=["NoteNode"])
+        )
+
+        assert isinstance(result, ListNodesInFlowResultSuccess)
+        assert set(result.node_names) == {"note_1", "note_2"}
+
+    def test_filter_by_nonexistent_class_name_returns_empty(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest, ListNodesInFlowResultSuccess
+
+        class NoteNode:
+            pass
+
+        flow = self._make_flow({"note_1": NoteNode()})
+        result = self._run_request(
+            griptape_nodes, flow, ListNodesInFlowRequest(flow_name="test_flow", node_types=["NonExistentClass"])
+        )
+
+        assert isinstance(result, ListNodesInFlowResultSuccess)
+        assert result.node_names == []
+
+    def test_filter_with_empty_list_returns_empty(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest, ListNodesInFlowResultSuccess
+
+        class NoteNode:
+            pass
+
+        flow = self._make_flow({"note_1": NoteNode()})
+        result = self._run_request(griptape_nodes, flow, ListNodesInFlowRequest(flow_name="test_flow", node_types=[]))
+
+        assert isinstance(result, ListNodesInFlowResultSuccess)
+        assert result.node_names == []
+
+    def test_filter_with_multiple_types_returns_union(self, griptape_nodes: GriptapeNodes) -> None:
+        from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest, ListNodesInFlowResultSuccess
+
+        class NoteNode:
+            pass
+
+        class AgentNode:
+            pass
+
+        class OtherNode:
+            pass
+
+        flow = self._make_flow({"note_1": NoteNode(), "agent_1": AgentNode(), "other_1": OtherNode()})
+        result = self._run_request(
+            griptape_nodes,
+            flow,
+            ListNodesInFlowRequest(flow_name="test_flow", node_types=["NoteNode", "AgentNode"]),
+        )
+
+        assert isinstance(result, ListNodesInFlowResultSuccess)
+        assert set(result.node_names) == {"note_1", "agent_1"}
+
+
 class TestAutoLayoutFlowRequest:
     """Tests for FlowManager.on_auto_layout_flow_request."""
 

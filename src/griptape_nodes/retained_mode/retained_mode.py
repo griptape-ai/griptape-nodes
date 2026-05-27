@@ -229,11 +229,13 @@ class RetainedMode:
         return result
 
     @classmethod
-    def get_nodes_in_flow(cls, flow_name: str) -> ResultPayload:
+    def get_nodes_in_flow(cls, flow_name: str, node_types: list[str] | None = None) -> ResultPayload:
         """Lists all nodes contained within a specific flow.
 
         Args:
             flow_name (str): Name of the flow to inspect.
+            node_types (list[str] | None): Optional list of Python class names to filter by
+                (e.g. ["StartFlow", "Agent"]). None returns all nodes.
 
         Returns:
             ResultPayload: Contains a list of node names in the flow.
@@ -241,8 +243,11 @@ class RetainedMode:
         Example:
             # Get all nodes in a flow
             result = cmd.get_nodes_in_flow("my_flow")
+
+            # Get only Agent nodes
+            result = cmd.get_nodes_in_flow("my_flow", node_types=["Agent"])
         """
-        request = ListNodesInFlowRequest(flow_name=flow_name)
+        request = ListNodesInFlowRequest(flow_name=flow_name, node_types=node_types)
         result = GriptapeNodes().handle_request(request)
         return result
 
