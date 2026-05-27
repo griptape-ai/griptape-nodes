@@ -501,8 +501,11 @@ class ConfigManager:
             result_details = "Attempted to get config value but no category or key was specified."
             return GetConfigValueResultFailure(result_details=result_details)
 
-        # See if we got something valid.
-        find_results = self.get_config_value(request.category_and_key)
+        # Never dereference `$SECRET` placeholders on the request/event path. Resolved secret
+        # values are reachable only via `GetSecretValueRequest`, which is intentionally not
+        # exposed over MCP. Callers that need the literal config string (e.g. an MCP client
+        # surveying the workspace) get back `"$SECRET_NAME"` and can decide what to do next.
+        find_results = self.get_config_value(request.category_and_key, should_load_env_var_if_detected=False)
         if find_results is None:
             result_details = f"Attempted to get config value for category.key '{request.category_and_key}'. Failed because no such category.key could be found."
             return GetConfigValueResultFailure(result_details=result_details)
