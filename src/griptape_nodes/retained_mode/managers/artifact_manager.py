@@ -1,20 +1,16 @@
 """Manager for artifact operations."""
 
-from __future__ import annotations
-
 import json
 import logging
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 
 import semver
 from pydantic import BaseModel, ValidationError
 
 from griptape_nodes.common.macro_parser import MacroVariables, ParsedMacro
-from griptape_nodes.files.file import FileDestinationProvider
 from griptape_nodes.files.path_utils import decompose_source_path
-from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.artifact_events import (
     GeneratePreviewFromDefaultsRequest,
@@ -55,10 +51,6 @@ from griptape_nodes.retained_mode.events.config_events import (
     GetConfigValueRequest,
     GetConfigValueResultSuccess,
     SetConfigCategoryRequest,
-)
-from griptape_nodes.retained_mode.events.connection_events import (
-    ListConnectionsForNodeRequest,
-    ListConnectionsForNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
@@ -104,51 +96,13 @@ from griptape_nodes.retained_mode.managers.artifact_providers.artifact_schema_mo
     PreviewGeneratorSchema,
     ProviderSchema,
 )
-from griptape_nodes.retained_mode.managers.artifact_providers.audio.audio_artifact_provider import (
-    AudioArtifactProvider,
-)
 from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
     normalize_friendly_name_to_key,
 )
+from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.utils.async_utils import to_thread
 
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
-    from griptape_nodes.files.file import File, FileDestination
-    from griptape_nodes.retained_mode.managers.event_manager import EventManager
-
 logger = logging.getLogger("griptape_nodes")
-
-
-def _force_suffix(filename: str, target_extension: str) -> tuple[str, bool]:
-    """Return ``(new_filename, suffix_was_changed)``.
-
-    Preserves stem and parent directories; only the extension is adjusted.
-    Treats ``.jpg`` and ``.jpeg`` as equivalent for the change detection.
-    """
-    path = Path(filename)
-    current = path.suffix.lstrip(".").lower()
-    target = target_extension.lower()
-    if {current, target} == {"jpg", "jpeg"}:
-        return filename, False
-    if current == target:
-        return filename, False
-    new_path = path.with_suffix(f".{target_extension}")
-    return str(new_path), True
-
-
-class _WriteOptions(NamedTuple):
-    """Shared write options for the ``write_*_bytes`` / ``awrite_*_bytes`` API.
-
-    Attributes:
-        requested_format: Caller-asserted format (overrides byte sniffing) or None.
-        log_label: Label for suffix-rename warnings; defaults to the node name.
-        extra_vars: Macro variables forwarded to ``ProjectFileDestination.from_situation``.
-    """
-
-    requested_format: str | None
-    log_label: str | None
-    extra_vars: dict[str, str | int]
 
 
 class ResolvedPreviewPath(NamedTuple):
@@ -282,250 +236,6 @@ class ArtifactManager:
         provider = self._registry.get_or_create_provider_instance(provider_classes[0])
         return provider.prepare_content_for_write(data, file_name)
 
-    def write_image_bytes(
-        self,
-        output_file: ProjectFileParameter,
-        image_bytes: bytes,
-        *,
-        requested_format: str | None = None,
-        log_label: str | None = None,
-        **extra_vars: str | int,
-    ) -> File:
-        """Write image bytes to disk; force the on-disk extension to match the format.
-
-        If ``requested_format`` is given (e.g. ``'jpeg'``, ``'png'``), it overrides
-        any sniffed format. Otherwise the format is detected from the bytes.
-
-        Args:
-            output_file: The node's project-file parameter describing the destination.
-            image_bytes: Raw image bytes to write.
-            requested_format: Caller-asserted format, if known. Wins over byte sniffing.
-            log_label: Label to use in suffix-rename warnings; defaults to the node name.
-            **extra_vars: Additional macro variables for the destination template.
-        """
-        options = _WriteOptions(requested_format=requested_format, log_label=log_label, extra_vars=extra_vars)
-        return self._write_bytes_for_friendly_name("Image", output_file, image_bytes, options)
-
-    async def awrite_image_bytes(
-        self,
-        output_file: ProjectFileParameter,
-        image_bytes: bytes,
-        *,
-        requested_format: str | None = None,
-        log_label: str | None = None,
-        **extra_vars: str | int,
-    ) -> File:
-        """Async sibling of :meth:`write_image_bytes`."""
-        options = _WriteOptions(requested_format=requested_format, log_label=log_label, extra_vars=extra_vars)
-        return await self._awrite_bytes_for_friendly_name("Image", output_file, image_bytes, options)
-
-    def write_video_bytes(
-        self,
-        output_file: ProjectFileParameter,
-        video_bytes: bytes,
-        *,
-        requested_format: str | None = None,
-        log_label: str | None = None,
-        **extra_vars: str | int,
-    ) -> File:
-        """Write video bytes to disk; force the on-disk extension to match the format."""
-        options = _WriteOptions(requested_format=requested_format, log_label=log_label, extra_vars=extra_vars)
-        return self._write_bytes_for_friendly_name("Video", output_file, video_bytes, options)
-
-    async def awrite_video_bytes(
-        self,
-        output_file: ProjectFileParameter,
-        video_bytes: bytes,
-        *,
-        requested_format: str | None = None,
-        log_label: str | None = None,
-        **extra_vars: str | int,
-    ) -> File:
-        """Async sibling of :meth:`write_video_bytes`."""
-        options = _WriteOptions(requested_format=requested_format, log_label=log_label, extra_vars=extra_vars)
-        return await self._awrite_bytes_for_friendly_name("Video", output_file, video_bytes, options)
-
-    def write_audio_bytes(
-        self,
-        output_file: ProjectFileParameter,
-        audio_bytes: bytes,
-        *,
-        requested_format: str | None = None,
-        log_label: str | None = None,
-        **extra_vars: str | int,
-    ) -> File:
-        """Write audio bytes to disk; force the on-disk extension to match the format."""
-        options = _WriteOptions(requested_format=requested_format, log_label=log_label, extra_vars=extra_vars)
-        return self._write_bytes_for_friendly_name("Audio", output_file, audio_bytes, options)
-
-    async def awrite_audio_bytes(
-        self,
-        output_file: ProjectFileParameter,
-        audio_bytes: bytes,
-        *,
-        requested_format: str | None = None,
-        log_label: str | None = None,
-        **extra_vars: str | int,
-    ) -> File:
-        """Async sibling of :meth:`write_audio_bytes`."""
-        options = _WriteOptions(requested_format=requested_format, log_label=log_label, extra_vars=extra_vars)
-        return await self._awrite_bytes_for_friendly_name("Audio", output_file, audio_bytes, options)
-
-    def _write_bytes_for_friendly_name(
-        self,
-        provider_friendly_name: str,
-        output_file: ProjectFileParameter,
-        data: bytes,
-        options: _WriteOptions,
-    ) -> File:
-        """Sync write path shared by ``write_image_bytes`` / ``write_video_bytes`` / ``write_audio_bytes``."""
-        target_extension = self._resolve_target_extension(
-            provider_friendly_name, data, requested_format=options.requested_format
-        )
-        label = options.log_label or output_file._node.name
-        dest = self._build_corrected_destination(
-            output_file,
-            target_extension,
-            log_label=label,
-            extra_vars=options.extra_vars,
-            strict_match=options.requested_format is None,
-        )
-        return dest.write_bytes(data)
-
-    async def _awrite_bytes_for_friendly_name(
-        self,
-        provider_friendly_name: str,
-        output_file: ProjectFileParameter,
-        data: bytes,
-        options: _WriteOptions,
-    ) -> File:
-        """Async write path shared by ``awrite_image_bytes`` / ``awrite_video_bytes`` / ``awrite_audio_bytes``."""
-        target_extension = self._resolve_target_extension(
-            provider_friendly_name, data, requested_format=options.requested_format
-        )
-        label = options.log_label or output_file._node.name
-        dest = self._build_corrected_destination(
-            output_file,
-            target_extension,
-            log_label=label,
-            extra_vars=options.extra_vars,
-            strict_match=options.requested_format is None,
-        )
-        return await dest.awrite_bytes(data)
-
-    def _resolve_target_extension(
-        self,
-        provider_friendly_name: str,
-        data: bytes,
-        *,
-        requested_format: str | None,
-    ) -> str:
-        """Resolve the on-disk extension for ``data`` via the named provider.
-
-        If ``requested_format`` is supplied, it is canonicalized through the provider's
-        ``extension_for_format``. Otherwise the provider's ``detect_format`` byte sniffer
-        is used. Raises ``ValueError`` if neither yields a recognized format.
-        """
-        provider_class = self._registry.get_provider_class_by_friendly_name(provider_friendly_name)
-        if provider_class is None:
-            msg = f"No artifact provider registered with friendly name '{provider_friendly_name}'."
-            raise ValueError(msg)
-
-        if requested_format:
-            return provider_class.extension_for_format(requested_format)
-
-        provider = self._registry.get_or_create_provider_instance(provider_class)
-        sniffed = provider.detect_format(data)
-        if sniffed is None:
-            media = provider_friendly_name.lower()
-            msg = f"Could not determine {media} format from bytes; pass requested_format explicitly."
-            raise ValueError(msg)
-        return provider_class.extension_for_format(sniffed)
-
-    def _build_corrected_destination(
-        self,
-        output_file: ProjectFileParameter,
-        target_extension: str,
-        *,
-        log_label: str,
-        extra_vars: dict[str, str | int],
-        strict_match: bool,
-    ) -> FileDestination:
-        """Build a FileDestination with the on-disk suffix forced to ``target_extension``.
-
-        If an upstream ``FileDestinationProvider`` is connected to ``output_file``,
-        that destination is used as-is (the user's wiring wins). Otherwise, build a
-        ``ProjectFileDestination`` from a (possibly suffix-corrected) filename string,
-        mirroring ``ProjectFileParameter.build_file``.
-
-        When ``strict_match`` is True (byte-sniff path), a mismatch between the
-        user's filename suffix and the sniffed format raises ``ValueError`` instead
-        of silently renaming. When False (caller passed ``requested_format``), the
-        caller is the source of truth, so the suffix is corrected with a warning.
-        """
-        upstream = self._upstream_provider_destination(output_file)
-        if upstream is not None:
-            return upstream
-
-        node = output_file._node
-        name = output_file._name
-        default_filename = output_file._default_filename
-        situation_name = output_file._situation_name
-
-        value = node.get_parameter_value(name)
-        user_filename = value if isinstance(value, str) and value else default_filename
-
-        corrected_filename, changed = _force_suffix(user_filename, target_extension)
-        if changed and strict_match:
-            msg = (
-                f"{log_label}: '{user_filename}' has an extension that does not match the "
-                f"sniffed file format ('{target_extension}'). Rename the file or pass "
-                f"requested_format explicitly to override."
-            )
-            raise ValueError(msg)
-        if changed:
-            logger.warning(
-                "%s: '%s' renamed to '%s' so the on-disk extension matches the actual file format.",
-                log_label,
-                user_filename,
-                corrected_filename,
-            )
-
-        # Most situation templates reference {node_name}; supply it from the owning
-        # node so callers don't have to pass it explicitly. Caller-provided values
-        # win, so a node can override its own name in the destination path.
-        vars_for_macro: dict[str, str | int] = {**extra_vars}
-        if "node_name" not in vars_for_macro:
-            vars_for_macro["node_name"] = node.name
-
-        return ProjectFileDestination.from_situation(corrected_filename, situation_name, **vars_for_macro)
-
-    def _upstream_provider_destination(self, output_file: ProjectFileParameter) -> FileDestination | None:
-        """Return the upstream ``FileDestinationProvider``'s destination, if any.
-
-        Mirrors the upstream-provider lookup in ``ProjectFileParameter.build_file``.
-        """
-        node = output_file._node
-        name = output_file._name
-        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=node.name))
-        if not isinstance(result, ListConnectionsForNodeResultSuccess):
-            return None
-        for conn in result.incoming_connections:
-            if conn.target_parameter_name != name:
-                continue
-            source_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(conn.source_node_name)
-            if isinstance(source_node, FileDestinationProvider):
-                file_dest = source_node.file_destination
-                if file_dest is None:
-                    msg = (
-                        f"Attempted to build file destination for {node.name}.{name}. "
-                        f"Failed because upstream node '{conn.source_node_name}' provides a "
-                        f"FileDestination but returned None (likely missing a filename)."
-                    )
-                    raise ValueError(msg)
-                return file_dest
-        return None
-
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Handle app initialization complete event.
 
@@ -537,7 +247,7 @@ class ArtifactManager:
         # Register default providers (order matters: Image, Video, Audio)
         # Generator settings are now registered automatically via _register_provider_settings()
         failures = []
-        for provider_class in [ImageArtifactProvider, VideoArtifactProvider, AudioArtifactProvider]:
+        for provider_class in [ImageArtifactProvider, VideoArtifactProvider]:
             request = RegisterArtifactProviderRequest(provider_class=provider_class)
             result = self.on_handle_register_artifact_provider_request(request)
             if isinstance(result, RegisterArtifactProviderResultFailure):

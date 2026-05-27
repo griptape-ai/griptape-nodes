@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import base64
+import logging
+from io import BytesIO
 from pathlib import Path
 from typing import NamedTuple, Protocol, cast, runtime_checkable
+
+from PIL import Image, UnidentifiedImageError
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.retained_mode.events.os_events import (
@@ -28,6 +32,8 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SituationMetadata,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class FileLoadError(Exception):
@@ -152,6 +158,171 @@ async def _aresolve_file_path(file_path: str | MacroPath) -> str:
     return str(resolve_result.absolute_path)  # type: ignore[union-attr]
 
 
+# Minimum bytes needed by the magic-byte sniffers below (ISO BMFF brand sits at offset 8-12).
+_SNIFF_MIN_HEADER_BYTES = 12
+
+# MPEG audio frame-sync markers used by _sniff_audio_extension.
+_MPEG_FRAME_SYNC_BYTE = 0xFF
+_MPEG_FRAME_SYNC_MASK = 0xE0
+_MPEG_FRAME_SYNC_VALUE = 0xE0
+_ADTS_SYNC_MASK = 0xF0
+_ADTS_SYNC_VALUE = 0xF0
+_MP3_LAYER_BYTES = (0xFB, 0xF3, 0xF2)
+
+# Pairs of suffixes that should be treated as equivalent when comparing a
+# user-supplied filename extension against the canonical extension reported by
+# the sniffers. Keys and values are lowercase, no leading dot.
+_EXTENSION_ALIASES: dict[str, str] = {
+    "jpg": "jpeg",
+    "jpeg": "jpeg",
+    "tif": "tiff",
+    "tiff": "tiff",
+    "m4v": "mp4",
+    "mp4": "mp4",
+}
+
+
+def _canonical_extension(ext: str) -> str:
+    """Return the canonical form of an on-disk extension for equivalence checks."""
+    lowered = ext.lstrip(".").lower()
+    return _EXTENSION_ALIASES.get(lowered, lowered)
+
+
+def _sniff_image_extension(data: bytes) -> str | None:
+    """Sniff a canonical image extension via PIL. Returns None if PIL can't identify."""
+    try:
+        with Image.open(BytesIO(data)) as img:
+            fmt = img.format
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None
+    if fmt is None:
+        return None
+    pil_to_extension: dict[str, str] = {
+        "JPEG": "jpg",
+        "PNG": "png",
+        "WEBP": "webp",
+        "GIF": "gif",
+        "BMP": "bmp",
+        "TIFF": "tiff",
+        "ICO": "ico",
+        "HEIF": "heic",
+    }
+    return pil_to_extension.get(fmt.upper())
+
+
+def _sniff_video_extension(data: bytes) -> str | None:  # noqa: C901, PLR0911
+    """Magic-byte sniff for common video container formats."""
+    if len(data) < _SNIFF_MIN_HEADER_BYTES:
+        return None
+    head = data[:_SNIFF_MIN_HEADER_BYTES]
+    # ISO BMFF: 'ftyp' at bytes 4-8, brand at bytes 8-12.
+    if head[4:8] == b"ftyp":
+        brand = head[8:12]
+        # Audio-only ISO BMFF brands are handled by the audio sniffer; skip here.
+        if brand in (b"M4A ", b"M4B "):
+            return None
+        if brand == b"qt  ":
+            return "mov"
+        if brand in (b"M4V ", b"M4VH", b"M4VP"):
+            return "m4v"
+        # HEIC/HEIF are technically images; let the image sniffer claim them.
+        if brand in (b"heic", b"heix", b"mif1", b"heim", b"heis"):
+            return None
+        return "mp4"
+    # Matroska / WebM EBML header.
+    if head[:4] == b"\x1aE\xdf\xa3":
+        if b"webm" in data[:256]:
+            return "webm"
+        return "mkv"
+    # AVI: RIFF....AVI .
+    if head[:4] == b"RIFF" and head[8:12] == b"AVI ":
+        return "avi"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    return None
+
+
+def _sniff_audio_extension(data: bytes) -> str | None:  # noqa: C901, PLR0911
+    """Magic-byte sniff for common audio container/codec formats."""
+    if len(data) < _SNIFF_MIN_HEADER_BYTES:
+        return None
+    head = data[:_SNIFF_MIN_HEADER_BYTES]
+    if head[:3] == b"ID3":
+        return "mp3"
+    if head[0] == _MPEG_FRAME_SYNC_BYTE and (head[1] & _MPEG_FRAME_SYNC_MASK) == _MPEG_FRAME_SYNC_VALUE:
+        return "mp3"
+    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+        return "wav"
+    if head[:4] == b"fLaC":
+        return "flac"
+    if head[:4] == b"OggS":
+        if b"OpusHead" in data[:128]:
+            return "opus"
+        return "ogg"
+    if head[4:8] == b"ftyp" and head[8:12] in (b"M4A ", b"M4B "):
+        return "m4a"
+    if head[:4] == b"\x1aE\xdf\xa3" and b"webm" in data[:256]:
+        # WebM with audio-only stream is sniffable as webm; defer to video sniffer.
+        return None
+    if (
+        head[0] == _MPEG_FRAME_SYNC_BYTE
+        and (head[1] & _ADTS_SYNC_MASK) == _ADTS_SYNC_VALUE
+        and head[1] not in _MP3_LAYER_BYTES
+    ):
+        return "aac"
+    return None
+
+
+def _sniff_extension(data: bytes) -> str | None:
+    """Sniff a canonical on-disk extension from raw bytes.
+
+    Tries image, video, and audio sniffers in turn. Returns None if none of
+    them identifies the data; callers should treat that as "unknown bytes,
+    write through" rather than an error.
+    """
+    return _sniff_image_extension(data) or _sniff_video_extension(data) or _sniff_audio_extension(data)
+
+
+def _validate_extension_matches_bytes(file_path: str, content: str | bytes) -> None:
+    """Raise ValueError if `content`'s sniffed extension disagrees with the path suffix.
+
+    Validation is skipped when:
+    - `content` is text (not bytes),
+    - the path has no extension,
+    - the bytes can't be identified by any sniffer (a warning is logged).
+
+    Args:
+        file_path: The resolved on-disk path the bytes will be written to.
+        content: The bytes (or text) being written.
+
+    Raises:
+        ValueError: If the sniffed canonical extension disagrees with the
+            extension on `file_path`.
+    """
+    if not isinstance(content, bytes):
+        return
+
+    suffix = Path(file_path).suffix.lstrip(".").lower()
+    if not suffix:
+        return
+
+    sniffed = _sniff_extension(content)
+    if sniffed is None:
+        logger.warning(
+            "Could not identify byte content for '%s'; writing through without extension validation.",
+            file_path,
+        )
+        return
+
+    if _canonical_extension(suffix) != _canonical_extension(sniffed):
+        msg = (
+            f"Refusing to write {sniffed.upper()} bytes to '{file_path}' "
+            f"(extension '.{suffix}'). The file extension must match the byte content; "
+            f"either rename the destination to '.{sniffed}' or supply bytes that match '.{suffix}'."
+        )
+        raise ValueError(msg)
+
+
 class File:
     """Path-like object for reading and writing files via the retained mode API.
 
@@ -243,6 +414,11 @@ class File:
     ) -> Path:
         """Write bytes to the file.
 
+        The bytes are sniffed for a known media format. If the sniffed format
+        disagrees with the file's extension, ``ValueError`` is raised before
+        any I/O happens. If the bytes can't be identified, a warning is
+        logged and the write proceeds unchanged.
+
         Args:
             content: The bytes to write.
             existing_file_policy: How to handle an existing file. Ignored when
@@ -256,6 +432,8 @@ class File:
 
         Raises:
             FileWriteError: If the file cannot be written.
+            ValueError: If the bytes' sniffed format does not match the file
+                extension.
         """
         return self._write_content(
             content,
@@ -287,6 +465,8 @@ class File:
 
         Raises:
             FileWriteError: If the file cannot be written.
+            ValueError: If the bytes' sniffed format does not match the file
+                extension.
         """
         return await self._awrite_content(
             content,
@@ -564,9 +744,13 @@ class File:
 
         Raises:
             FileWriteError: If the file cannot be written.
+            ValueError: If `content` is bytes whose sniffed format does not
+                match the file extension.
         """
+        resolved_path = _resolve_file_path(self._file_path)
+        _validate_extension_matches_bytes(resolved_path, content)
         request = WriteFileRequest(
-            file_path=_resolve_file_path(self._file_path),
+            file_path=resolved_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,
@@ -609,9 +793,13 @@ class File:
 
         Raises:
             FileWriteError: If the file cannot be written.
+            ValueError: If `content` is bytes whose sniffed format does not
+                match the file extension.
         """
+        resolved_path = await _aresolve_file_path(self._file_path)
+        _validate_extension_matches_bytes(resolved_path, content)
         request = WriteFileRequest(
-            file_path=await _aresolve_file_path(self._file_path),
+            file_path=resolved_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,

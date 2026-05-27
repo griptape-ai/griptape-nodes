@@ -1,13 +1,26 @@
 """Unit tests for File and FileDestination."""
 
 import base64
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from PIL import Image
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
-from griptape_nodes.files.file import File, FileContent, FileDestination, FileLoadError, FileWriteError
+from griptape_nodes.files.file import (
+    File,
+    FileContent,
+    FileDestination,
+    FileLoadError,
+    FileWriteError,
+    _sniff_audio_extension,
+    _sniff_extension,
+    _sniff_image_extension,
+    _sniff_video_extension,
+    _validate_extension_matches_bytes,
+)
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     FileIOFailureReason,
@@ -1123,3 +1136,247 @@ class TestFileResolve:
             File("{outputs}/image.png").resolve()
 
         assert exc_info.value.failure_reason == FileIOFailureReason.MISSING_MACRO_VARIABLES
+
+
+def _png_bytes() -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _jpeg_bytes() -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def _gif_bytes() -> bytes:
+    buf = BytesIO()
+    Image.new("P", (1, 1), color=0).save(buf, format="GIF")
+    return buf.getvalue()
+
+
+def _webm_bytes() -> bytes:
+    return b"\x1aE\xdf\xa3" + b"\x00" * 16 + b"webm" + b"\x00" * 240
+
+
+def _mkv_bytes() -> bytes:
+    return b"\x1aE\xdf\xa3" + b"\x00" * 256
+
+
+def _mp4_bytes() -> bytes:
+    return b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
+
+
+def _mov_bytes() -> bytes:
+    return b"\x00\x00\x00\x18ftypqt  " + b"\x00" * 16
+
+
+def _m4v_bytes() -> bytes:
+    return b"\x00\x00\x00\x18ftypM4V " + b"\x00" * 16
+
+
+def _m4a_bytes() -> bytes:
+    return b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 16
+
+
+def _avi_bytes() -> bytes:
+    return b"RIFF\x00\x00\x00\x00AVI " + b"\x00" * 16
+
+
+def _mp3_bytes() -> bytes:
+    return b"ID3" + b"\x00" * 16
+
+
+def _wav_bytes() -> bytes:
+    return b"RIFF\x00\x00\x00\x00WAVE" + b"\x00" * 16
+
+
+def _flac_bytes() -> bytes:
+    return b"fLaC" + b"\x00" * 32
+
+
+def _ogg_bytes() -> bytes:
+    return b"OggS" + b"\x00" * 124
+
+
+def _opus_bytes() -> bytes:
+    return b"OggS" + b"\x00" * 24 + b"OpusHead" + b"\x00" * 88
+
+
+class TestSniffImageExtension:
+    """Tests for _sniff_image_extension."""
+
+    def test_png(self) -> None:
+        assert _sniff_image_extension(_png_bytes()) == "png"
+
+    def test_jpeg(self) -> None:
+        assert _sniff_image_extension(_jpeg_bytes()) == "jpg"
+
+    def test_gif(self) -> None:
+        assert _sniff_image_extension(_gif_bytes()) == "gif"
+
+    def test_unidentifiable_returns_none(self) -> None:
+        assert _sniff_image_extension(b"not an image") is None
+
+
+class TestSniffVideoExtension:
+    """Tests for _sniff_video_extension."""
+
+    def test_mp4_ftyp(self) -> None:
+        assert _sniff_video_extension(_mp4_bytes()) == "mp4"
+
+    def test_mov_qt_brand(self) -> None:
+        assert _sniff_video_extension(_mov_bytes()) == "mov"
+
+    def test_m4v_brand(self) -> None:
+        assert _sniff_video_extension(_m4v_bytes()) == "m4v"
+
+    def test_m4a_audio_brand_returns_none(self) -> None:
+        """Audio-only ISO BMFF brand should not be claimed by the video sniffer."""
+        assert _sniff_video_extension(_m4a_bytes()) is None
+
+    def test_webm_ebml_with_doctype(self) -> None:
+        assert _sniff_video_extension(_webm_bytes()) == "webm"
+
+    def test_mkv_ebml_without_webm_doctype(self) -> None:
+        assert _sniff_video_extension(_mkv_bytes()) == "mkv"
+
+    def test_avi_riff(self) -> None:
+        assert _sniff_video_extension(_avi_bytes()) == "avi"
+
+    def test_gif_returns_gif(self) -> None:
+        assert _sniff_video_extension(_gif_bytes()) == "gif"
+
+    def test_short_data_returns_none(self) -> None:
+        assert _sniff_video_extension(b"\x00\x01") is None
+
+
+class TestSniffAudioExtension:
+    """Tests for _sniff_audio_extension."""
+
+    def test_mp3_id3(self) -> None:
+        assert _sniff_audio_extension(_mp3_bytes()) == "mp3"
+
+    def test_mp3_mpeg_frame_sync(self) -> None:
+        assert _sniff_audio_extension(b"\xff\xfb" + b"\x00" * 32) == "mp3"
+
+    def test_wav_riff_wave(self) -> None:
+        assert _sniff_audio_extension(_wav_bytes()) == "wav"
+
+    def test_flac(self) -> None:
+        assert _sniff_audio_extension(_flac_bytes()) == "flac"
+
+    def test_ogg(self) -> None:
+        assert _sniff_audio_extension(_ogg_bytes()) == "ogg"
+
+    def test_ogg_with_opus_codec_returns_opus(self) -> None:
+        assert _sniff_audio_extension(_opus_bytes()) == "opus"
+
+    def test_m4a_iso_bmff(self) -> None:
+        assert _sniff_audio_extension(_m4a_bytes()) == "m4a"
+
+    def test_short_data_returns_none(self) -> None:
+        assert _sniff_audio_extension(b"\x00\x01") is None
+
+
+class TestSniffExtension:
+    """Tests for the top-level _sniff_extension dispatcher."""
+
+    def test_dispatches_to_image(self) -> None:
+        assert _sniff_extension(_png_bytes()) == "png"
+
+    def test_dispatches_to_video(self) -> None:
+        assert _sniff_extension(_mp4_bytes()) == "mp4"
+
+    def test_dispatches_to_audio(self) -> None:
+        assert _sniff_extension(_mp3_bytes()) == "mp3"
+
+    def test_unknown_returns_none(self) -> None:
+        assert _sniff_extension(b"random bytes that match nothing") is None
+
+
+class TestValidateExtensionMatchesBytes:
+    """Tests for _validate_extension_matches_bytes (the function wired into write_bytes)."""
+
+    def test_matching_extension_passes(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.png", _png_bytes())
+
+    def test_jpg_jpeg_alias_passes(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.jpeg", _jpeg_bytes())
+
+    def test_mismatch_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match=r"\.png"):
+            _validate_extension_matches_bytes("/workspace/out.png", _jpeg_bytes())
+
+    def test_mismatch_message_names_both_extensions(self) -> None:
+        with pytest.raises(ValueError, match=r"\.png") as exc_info:
+            _validate_extension_matches_bytes("/workspace/out.png", _jpeg_bytes())
+        assert ".png" in str(exc_info.value)
+        assert "JPG" in str(exc_info.value)
+
+    def test_unknown_bytes_logs_warning_and_passes(self, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level("WARNING", logger="griptape_nodes"):
+            _validate_extension_matches_bytes("/workspace/out.bin", b"some opaque blob nobody knows")
+        assert any("Could not identify byte content" in r.message for r in caplog.records)
+
+    def test_no_extension_skips_validation(self) -> None:
+        _validate_extension_matches_bytes("/workspace/output", _jpeg_bytes())
+
+    def test_text_content_skipped(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.png", "hello world")
+
+    def test_mp4_to_m4v_alias_passes(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.mp4", _m4v_bytes())
+
+    def test_uppercase_extension_canonicalizes(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.PNG", _png_bytes())
+
+
+class TestFileWriteValidationIntegration:
+    """End-to-end: File.write_bytes should run validation before issuing the request."""
+
+    def test_write_bytes_raises_on_extension_mismatch(self) -> None:
+        with patch(HANDLE_REQUEST_PATH) as mock_handle, pytest.raises(ValueError, match=r"\.png"):
+            File("/workspace/output.png").write_bytes(_jpeg_bytes())
+        mock_handle.assert_not_called()
+
+    def test_write_bytes_passes_on_match(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.png",
+            bytes_written=10,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result):
+            path = File("/workspace/output.png").write_bytes(_png_bytes())
+        assert path == Path("/workspace/output.png")
+
+    def test_write_bytes_warns_on_unknown_bytes_and_proceeds(self, caplog: pytest.LogCaptureFixture) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.bin",
+            bytes_written=5,
+        )
+        with (
+            patch(HANDLE_REQUEST_PATH, return_value=success_result),
+            caplog.at_level("WARNING", logger="griptape_nodes"),
+        ):
+            File("/workspace/output.bin").write_bytes(b"abcde")
+        assert any("Could not identify byte content" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_awrite_bytes_raises_on_extension_mismatch(self) -> None:
+        with patch(AHANDLE_REQUEST_PATH) as mock_handle, pytest.raises(ValueError, match=r"\.png"):
+            await File("/workspace/output.png").awrite_bytes(_jpeg_bytes())
+        mock_handle.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_awrite_bytes_passes_on_match(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.jpg",
+            bytes_written=10,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result):
+            path = await File("/workspace/output.jpg").awrite_bytes(_jpeg_bytes())
+        assert path == Path("/workspace/output.jpg")
