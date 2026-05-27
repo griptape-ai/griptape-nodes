@@ -2765,7 +2765,7 @@ class NodeManager:
         a worker, the request is forwarded over the wire to that worker.
         """
         library_manager = GriptapeNodes.LibraryManager()
-        is_worker = library_manager.is_worker()
+        is_worker = library_manager.is_worker
 
         if is_worker:
             worker_node = self._materialize_transient_node_from_metadata(request)
