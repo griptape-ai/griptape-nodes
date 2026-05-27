@@ -2791,7 +2791,8 @@ class NodeManager:
             result = ExecuteNodeResultFailure(
                 result_details=f"Node '{request.node_name}' violated strict-mode rule(s) [{rules}].",
             )
-        return attach_violations_to_result(result, scope)
+        attach_violations_to_result(result, scope)
+        return result
 
     def _materialize_transient_node_from_metadata(
         self, request: ExecuteNodeRequest

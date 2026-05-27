@@ -46,23 +46,4 @@ class StrictModeRule:
         return self.remediation_template.format(**context)
 
 
-def _rule(  # noqa: PLR0913
-    rule_id: str,
-    *,
-    severity: StrictModeSeverity,
-    correctness: bool,
-    description: str,
-    remediation: str,
-    worker_escalation: bool = True,
-) -> StrictModeRule:
-    return StrictModeRule(
-        rule_id=rule_id,
-        default_severity=severity,
-        correctness=correctness,
-        description=description,
-        remediation_template=remediation,
-        worker_escalation=worker_escalation,
-    )
-
-
 RULES: dict[str, StrictModeRule] = {}

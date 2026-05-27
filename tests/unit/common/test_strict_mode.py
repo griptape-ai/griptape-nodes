@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pytest
@@ -13,12 +13,28 @@ if TYPE_CHECKING:
 from griptape_nodes.common.strict_mode import (
     StrictModeScopeKind,
     StrictModeSeverity,
-    any_scope_active_threadsafe,
+    attach_violations_to_result,
     current_scope,
     report_violation,
     strict_mode_scope,
 )
-from griptape_nodes.common.strict_mode_checks import RULES, _rule
+from griptape_nodes.common.strict_mode_checks import RULES, StrictModeRule
+from griptape_nodes.retained_mode.events.base_events import (
+    ResultDetails,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
+    StrictModeViolationDetail,
+)
+
+
+@dataclass(kw_only=True)
+class _FakeSuccessResult(ResultPayloadSuccess):
+    pass
+
+
+@dataclass(kw_only=True)
+class _FakeFailureResult(ResultPayloadFailure):
+    pass
 
 
 @pytest.fixture
@@ -29,20 +45,20 @@ def fake_rules() -> Iterator[None]:
     later in the stack. Tests at this layer need a registered rule_id to
     exercise severity resolution, so they install one and tear it down.
     """
-    ergonomics = _rule(
-        "fake-ergonomics",
-        severity=StrictModeSeverity.WARNING,
+    ergonomics = StrictModeRule(
+        rule_id="fake-ergonomics",
+        default_severity=StrictModeSeverity.WARNING,
         correctness=False,
         description="synthetic ergonomics rule for tests",
-        remediation="ergonomics: {detail}",
+        remediation_template="ergonomics: {detail}",
         worker_escalation=False,
     )
-    correctness = _rule(
-        "fake-correctness",
-        severity=StrictModeSeverity.ERROR,
+    correctness = StrictModeRule(
+        rule_id="fake-correctness",
+        default_severity=StrictModeSeverity.ERROR,
         correctness=True,
         description="synthetic correctness rule for tests",
-        remediation="correctness: {detail}",
+        remediation_template="correctness: {detail}",
     )
     RULES[ergonomics.rule_id] = ergonomics
     RULES[correctness.rule_id] = correctness
@@ -56,7 +72,6 @@ def fake_rules() -> Iterator[None]:
 class TestStrictModeScope:
     def test_current_scope_is_none_outside_any_scope(self) -> None:
         assert current_scope() is None
-        assert any_scope_active_threadsafe() is False
 
     def test_scope_sets_and_resets_contextvar(self) -> None:
         with strict_mode_scope(
@@ -91,24 +106,25 @@ class TestStrictModeScope:
             assert current_scope() is outer
         assert current_scope() is None
 
-    def test_refcount_tracks_entered_scopes(self) -> None:
-        assert any_scope_active_threadsafe() is False
+    def test_violations_attach_to_correct_scope_when_nested(self, fake_rules: None) -> None:  # noqa: ARG002
         with strict_mode_scope(
             kind=StrictModeScopeKind.RUNTIME_EXECUTE,
-            subject="n",
+            subject="outer",
             library_name=None,
             is_worker=False,
-        ):
-            assert any_scope_active_threadsafe() is True
+        ) as outer:
+            report_violation(rule_id="fake-ergonomics", message="outer-1")
             with strict_mode_scope(
                 kind=StrictModeScopeKind.LOAD_PROBE,
-                subject="c",
+                subject="inner",
                 library_name=None,
                 is_worker=True,
-            ):
-                assert any_scope_active_threadsafe() is True
-            assert any_scope_active_threadsafe() is True
-        assert any_scope_active_threadsafe() is False
+            ) as inner:
+                report_violation(rule_id="fake-correctness", message="inner-1")
+            report_violation(rule_id="fake-ergonomics", message="outer-2")
+
+        assert [v.message for v in outer.violations] == ["outer-1", "outer-2"]
+        assert [v.message for v in inner.violations] == ["inner-1"]
 
 
 class TestReportViolation:
@@ -161,6 +177,68 @@ class TestReportViolation:
         assert len(warnings) == 0
 
 
+class TestAttachViolationsToResult:
+    def _scope_with(self, *violations: tuple[str, str]) -> object:
+        with strict_mode_scope(
+            kind=StrictModeScopeKind.RUNTIME_EXECUTE,
+            subject="n",
+            library_name="libA",
+            is_worker=False,
+        ) as scope:
+            for rule_id, message in violations:
+                report_violation(rule_id=rule_id, message=message)
+        return scope
+
+    def test_no_violations_leaves_details_unchanged(self) -> None:
+        result = _FakeSuccessResult(result_details="ok")
+        original_details = result.result_details
+        scope_obj = self._scope_with()  # zero violations
+        attach_violations_to_result(result, scope_obj)  # type: ignore[arg-type]
+        assert result.result_details is original_details
+        assert isinstance(result.result_details, ResultDetails)
+        assert len(result.result_details.result_details) == 1  # the original "ok" detail only
+
+    def test_appends_violation_detail_to_success_result(self, fake_rules: None) -> None:  # noqa: ARG002
+        result = _FakeSuccessResult(result_details="ok")
+        scope_obj = self._scope_with(("fake-ergonomics", "naughty"))
+        attach_violations_to_result(result, scope_obj)  # type: ignore[arg-type]
+
+        expected_count = 2  # original "ok" + the violation
+        assert isinstance(result.result_details, ResultDetails)
+        details = result.result_details.result_details
+        assert len(details) == expected_count
+        violation_detail = details[-1]
+        assert isinstance(violation_detail, StrictModeViolationDetail)
+        assert violation_detail.rule_id == "fake-ergonomics"
+        assert violation_detail.severity == StrictModeSeverity.WARNING.value
+        assert violation_detail.subject == "n"
+        assert violation_detail.library_name == "libA"
+        assert violation_detail.level == logging.WARNING
+
+    def test_failure_with_string_detail_keeps_error_level(self, fake_rules: None) -> None:  # noqa: ARG002
+        # Regression: previously attach_violations_to_result wrapped a string
+        # result_details as level=DEBUG, silently demoting failure messages.
+        # ResultPayloadFailure.__post_init__ now coerces to level=ERROR; the
+        # attach routine must not touch the existing detail.
+        result = _FakeFailureResult(result_details="boom")
+        scope_obj = self._scope_with(("fake-correctness", "very bad"))
+        attach_violations_to_result(result, scope_obj)  # type: ignore[arg-type]
+
+        assert isinstance(result.result_details, ResultDetails)
+        details = result.result_details.result_details
+        assert details[0].level == logging.ERROR
+        assert details[0].message == "boom"
+        violation_detail = details[1]
+        assert isinstance(violation_detail, StrictModeViolationDetail)
+        assert violation_detail.level == logging.ERROR
+
+    def test_returns_none(self, fake_rules: None) -> None:  # noqa: ARG002
+        result = _FakeSuccessResult(result_details="ok")
+        scope_obj = self._scope_with(("fake-ergonomics", "x"))
+        returned = attach_violations_to_result(result, scope_obj)  # type: ignore[arg-type]
+        assert returned is None
+
+
 class TestParallelTaskIsolation:
     @pytest.mark.asyncio
     async def test_concurrent_tasks_have_independent_scopes(self) -> None:
@@ -185,30 +263,3 @@ class TestParallelTaskIsolation:
         )
 
         assert seen == {"a": ("a", 2), "b": ("b", 2), "c": ("c", 2)}
-
-
-class TestThreadSafeActiveFlag:
-    def test_active_flag_observable_from_other_thread(self) -> None:
-        observed: list[bool] = []
-        entered = threading.Event()
-        can_exit = threading.Event()
-
-        def observer() -> None:
-            entered.wait(timeout=1.0)
-            observed.append(any_scope_active_threadsafe())
-            can_exit.set()
-
-        t = threading.Thread(target=observer)
-        t.start()
-        with strict_mode_scope(
-            kind=StrictModeScopeKind.RUNTIME_EXECUTE,
-            subject="n",
-            library_name=None,
-            is_worker=False,
-        ):
-            entered.set()
-            can_exit.wait(timeout=1.0)
-        t.join(timeout=1.0)
-
-        assert observed == [True]
-        assert any_scope_active_threadsafe() is False

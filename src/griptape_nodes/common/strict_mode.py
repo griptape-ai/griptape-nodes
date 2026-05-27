@@ -39,6 +39,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes.strict_mode")
 
 
+_current_scope_stack: ContextVar[tuple[StrictModeScope, ...]] = ContextVar(
+    "_strict_mode_current_scope_stack", default=()
+)
+
+_node_init_depth = threading.local()
+_sanctioned_param_mutation_depth = threading.local()
+
+
 class StrictModeScopeKind(StrEnum):
     RUNTIME_EXECUTE = "runtime_execute"
     LOAD_PROBE = "load_probe"
@@ -68,12 +76,6 @@ class StrictModeScope:
     violations: list[StrictModeViolation] = field(default_factory=list)
 
 
-_current_scope: ContextVar[StrictModeScope | None] = ContextVar("_strict_mode_current_scope", default=None)
-
-_scope_lock = threading.Lock()
-_scope_refcount = 0
-
-
 @contextmanager
 def strict_mode_scope(
     *,
@@ -84,40 +86,25 @@ def strict_mode_scope(
 ) -> Iterator[StrictModeScope]:
     """Enter a strict-mode scope.
 
-    Sets a per-task ContextVar for attribution and bumps a process-wide
-    refcount so ``any_scope_active_threadsafe`` is observable from threads
-    that escape the ContextVar copy (e.g. threads spawned inside a node's
-    aprocess).
+    Pushes onto a per-task ContextVar stack so nested scopes (e.g. a
+    LOAD_PROBE inside a RUNTIME_EXECUTE) restore the outer scope on
+    exit. ``current_scope()`` always returns the innermost.
     """
-    global _scope_refcount  # noqa: PLW0603
     scope = StrictModeScope(kind=kind, subject=subject, library_name=library_name, is_worker=is_worker)
-    token = _current_scope.set(scope)
-    with _scope_lock:
-        _scope_refcount += 1
+    previous = _current_scope_stack.get()
+    token = _current_scope_stack.set((*previous, scope))
     try:
         yield scope
     finally:
-        with _scope_lock:
-            _scope_refcount -= 1
-        _current_scope.reset(token)
+        _current_scope_stack.reset(token)
 
 
 def current_scope() -> StrictModeScope | None:
-    """Return the strict-mode scope active on the current task, if any."""
-    return _current_scope.get()
-
-
-def any_scope_active_threadsafe() -> bool:
-    """Return True if any strict-mode scope is active anywhere in this process.
-
-    Readable from threads that do not have a ContextVar copy of the
-    enclosing scope.
-    """
-    with _scope_lock:
-        return _scope_refcount > 0
-
-
-_node_init_depth = threading.local()
+    """Return the innermost strict-mode scope active on the current task, if any."""
+    stack = _current_scope_stack.get()
+    if not stack:
+        return None
+    return stack[-1]
 
 
 @contextmanager
@@ -144,9 +131,6 @@ def node_init_scope() -> Iterator[None]:
 def in_node_init() -> bool:
     """Return True when the calling thread is inside ``BaseNode.__init__``."""
     return getattr(_node_init_depth, "depth", 0) > 0
-
-
-_sanctioned_param_mutation_depth = threading.local()
 
 
 @contextmanager
@@ -214,7 +198,7 @@ def report_violation(*, rule_id: str, message: str) -> StrictModeScope | None:
     (with the new violation appended to ``violations``) so callers can
     inspect or pass it along.
     """
-    scope = _current_scope.get()
+    scope = current_scope()
     if scope is None:
         return None
     severity = _resolve_severity(rule_id=rule_id, is_worker=scope.is_worker)
@@ -251,36 +235,40 @@ def report_violation(*, rule_id: str, message: str) -> StrictModeScope | None:
     return scope
 
 
-def attach_violations_to_result(result: ResultPayload, scope: StrictModeScope) -> ResultPayload:
-    """Merge ``scope.violations`` into ``result.result_details``.
+def attach_violations_to_result(result: ResultPayload, scope: StrictModeScope) -> None:
+    """Append ``scope.violations`` onto ``result.result_details`` in place.
 
-    Coerces ``str`` result_details into a ``ResultDetails`` first (matching
-    the ``__post_init__`` behavior of ``ResultPayloadSuccess`` and
-    ``ResultPayloadFailure``). Each violation becomes a
-    ``StrictModeViolationDetail`` appended to the existing list so the
-    editor can render both the original message and the violations.
+    ``ResultPayload.__post_init__`` has already coerced any string
+    ``result_details`` into a ``ResultDetails``, so this function can
+    rely on the list-of-details shape. Each violation becomes a
+    ``StrictModeViolationDetail`` appended to the existing list.
 
-    Returns the same ``result`` object (mutated in place); returned for
-    call-site chaining.
+    Mutates ``result`` and returns ``None``. Callers that want to
+    return ``result`` after attaching should do so explicitly on the
+    next line.
     """
     # Lazy import to avoid circular dependency: base_events imports nothing from this module,
     # but the caller chain (node_manager -> strict_mode) would circle back through base_events.
-    from griptape_nodes.retained_mode.events.base_events import (
-        ResultDetails,
-        StrictModeViolationDetail,
-    )
+    from griptape_nodes.retained_mode.events.base_events import ResultDetails, StrictModeViolationDetail
 
     if not scope.violations:
-        return result
+        return
 
-    existing = result.result_details
-    if isinstance(existing, str):
-        existing = ResultDetails(message=existing, level=logging.DEBUG)
-        result.result_details = existing
-
+    # The Success/Failure base classes' __post_init__ coerce a string
+    # ``result_details`` into a ``ResultDetails`` instance, so by the time
+    # we see the payload the union has been narrowed -- but the type
+    # system can't see that. The runtime check documents the invariant
+    # and satisfies the checker.
+    details = result.result_details
+    if not isinstance(details, ResultDetails):
+        msg = (
+            f"attach_violations_to_result expected result_details to be ResultDetails "
+            f"after __post_init__ coercion, got {type(details).__name__}."
+        )
+        raise TypeError(msg)
     for violation in scope.violations:
         level = logging.ERROR if violation.severity is StrictModeSeverity.ERROR else logging.WARNING
-        existing.result_details.append(
+        details.result_details.append(
             StrictModeViolationDetail(
                 level=level,
                 message=violation.message,
@@ -290,4 +278,3 @@ def attach_violations_to_result(result: ResultPayload, scope: StrictModeScope) -
                 library_name=violation.library_name,
             )
         )
-    return result

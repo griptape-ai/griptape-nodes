@@ -60,10 +60,10 @@ class StrictModeViolationDetail(ResultDetail):
     filter or group violations without parsing ``message``.
     """
 
-    rule_id: str = ""
-    severity: str = ""
-    subject: str = ""
-    library_name: str | None = None
+    rule_id: str
+    severity: str
+    subject: str
+    library_name: str | None
 
 
 @dataclass
