@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -45,7 +45,7 @@ from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, StrictModeViolationDetail
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator, Iterator
 
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
 
@@ -95,6 +95,21 @@ class StrictModeScope:
     library_name: str | None
     is_worker: bool
     violations: list[StrictModeViolation] = field(default_factory=list)
+
+
+@dataclass
+class ScopedResult:
+    """Mutable result slot yielded by ``StrictModeReporter.scoped_execution``.
+
+    The ``async with`` body assigns ``result`` after the wrapped runner
+    returns. The reporter's teardown reads this slot and merges the
+    scope's violations into it. Callers that need to apply a domain-specific
+    escalation policy (e.g. promote a worker success to a failure when
+    correctness violations fired) can inspect the scope and reassign
+    ``result`` from inside the body before the context exits.
+    """
+
+    result: ResultPayload | None = None
 
 
 def _default_severity_resolver(*, rule_id: str, is_worker: bool) -> StrictModeSeverity:
@@ -193,6 +208,49 @@ class StrictModeReporter:
             yield scope
         finally:
             self._scope_stack.reset(token)
+
+    @asynccontextmanager
+    async def scoped_execution(
+        self,
+        *,
+        kind: StrictModeScopeKind,
+        subject: str,
+        library_name: str | None,
+        is_worker: bool,
+    ) -> AsyncIterator[tuple[ScopedResult, StrictModeScope]]:
+        """Open a scope, yield a (result-slot, scope) pair, attach on exit.
+
+        Async wrapper around :meth:`open_scope` that owns the
+        ``attach_violations_to_result`` boilerplate so request handlers
+        do not have to. Usage::
+
+            async with STRICT_MODE.scoped_execution(...) as (ctx, scope):
+                ctx.result = await runner()
+                # optionally inspect scope.violations and reassign ctx.result
+                # to apply a domain-specific escalation policy.
+
+        On exit the helper raises if ``ctx.result`` was never assigned
+        (programmer error), then merges ``scope.violations`` into the
+        final payload via ``attach_violations_to_result``. The escalation
+        policy itself stays with the caller because it is execute-context
+        specific (e.g. only ``ExecuteNodeResultSuccess`` knows how to
+        promote to a failure).
+        """
+        with self.open_scope(
+            kind=kind,
+            subject=subject,
+            library_name=library_name,
+            is_worker=is_worker,
+        ) as scope:
+            ctx = ScopedResult()
+            yield ctx, scope
+            if ctx.result is None:
+                msg = (
+                    f"scoped_execution body for subject '{subject}' did not assign ctx.result; "
+                    "this is a programmer error in the caller."
+                )
+                raise RuntimeError(msg)
+            self.attach_violations_to_result(ctx.result, scope)
 
     def current_scope(self) -> StrictModeScope | None:
         """Return the innermost active scope on the current task, or None."""

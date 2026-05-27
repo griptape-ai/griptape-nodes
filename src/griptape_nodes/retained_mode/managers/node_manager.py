@@ -4,7 +4,6 @@ import asyncio
 import copy
 import logging
 import pickle
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
@@ -17,8 +16,6 @@ from griptape_nodes.common.strict_mode import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
-
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 from griptape_nodes.exe_types.base_iterative_nodes import (
@@ -243,19 +240,6 @@ class CanResetResult(NamedTuple):
 
     can_reset: bool
     editor_tooltip_reason: str | None
-
-
-@dataclass
-class _StrictModeExecutionContext:
-    """Body-supplied result holder for ``NodeManager._strict_mode_execution``.
-
-    The async-context body sets ``result``; the helper's teardown reads it,
-    applies worker-side escalation, and attaches violation details. Kept
-    private to the manager because the escalation policy is execute-node
-    specific and the framework should not know about ExecuteNodeResult*.
-    """
-
-    result: ResultPayload | None = None
 
 
 @dataclass
@@ -2797,48 +2781,26 @@ class NodeManager:
             if wm is not None and worker is not None:
                 return await self._execute_node_via_worker(request, wm, worker)
 
-        async with self._strict_mode_execution(request=request, library_name=library_name, is_worker=is_worker) as ctx:
-            ctx.result = await self._hydrate_and_run_node(node, request)
-        return ctx.result
-
-    @asynccontextmanager
-    async def _strict_mode_execution(
-        self,
-        *,
-        request: ExecuteNodeRequest,
-        library_name: str | None,
-        is_worker: bool,
-    ) -> AsyncIterator[_StrictModeExecutionContext]:
-        """Wrap a single node execution in a strict-mode scope.
-
-        The body assigns ``ctx.result`` with whatever the runner produced;
-        on exit this helper applies the worker-side escalation policy
-        (worker + ERROR-severity violations promote ExecuteNodeResultSuccess
-        to ExecuteNodeResultFailure) and attaches the violation details to
-        the final payload. Centralizing the teardown keeps the strict-mode
-        boilerplate out of the request handler.
-        """
-        with STRICT_MODE.open_scope(
+        async with STRICT_MODE.scoped_execution(
             kind=StrictModeScopeKind.RUNTIME_EXECUTE,
             subject=request.node_name,
             library_name=library_name,
             is_worker=is_worker,
-        ) as scope:
-            ctx = _StrictModeExecutionContext()
-            yield ctx
-            if ctx.result is None:
-                msg = (
-                    f"_strict_mode_execution body for node '{request.node_name}' did not assign ctx.result; "
-                    "this is a programmer error in the caller."
-                )
-                raise RuntimeError(msg)
+        ) as (ctx, scope):
+            ctx.result = await self._hydrate_and_run_node(node, request)
+            # Worker-side correctness policy: an ExecuteNodeResultSuccess that
+            # carries an ERROR-severity violation must be promoted to a
+            # failure. Worker output gets shipped back to the orchestrator,
+            # so a "success" that violated correctness would silently corrupt
+            # downstream state. The orchestrator already has the violation
+            # log; the elevated failure forces the editor to surface it.
             errors = [v for v in scope.violations if v.severity is StrictModeSeverity.ERROR]
             if is_worker and errors and isinstance(ctx.result, ExecuteNodeResultSuccess):
                 rules = ", ".join(sorted({v.rule_id for v in errors}))
                 ctx.result = ExecuteNodeResultFailure(
                     result_details=f"Node '{request.node_name}' violated strict-mode rule(s) [{rules}].",
                 )
-            STRICT_MODE.attach_violations_to_result(ctx.result, scope)
+        return ctx.result
 
     def _materialize_transient_node_from_metadata(
         self, request: ExecuteNodeRequest
