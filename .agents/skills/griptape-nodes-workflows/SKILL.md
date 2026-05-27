@@ -400,6 +400,7 @@ flow keeps running in the engine until it finishes or errors. A subsequent
 | Lock or unlock a node                                           | `SetLockNodeStateRequest`                                                                                                                                 |
 | Reset a node's parameters to defaults                           | `ResetNodeToDefaultsRequest`                                                                                                                              |
 | Inspect state                                                   | `ListNodesInFlowRequest`, `ListConnectionsForNodeRequest`, `GetNodeResolutionStateRequest`, `GetNodeMetadataRequest`, `GetConnectionsForParameterRequest` |
+| Find nodes by Python class (e.g. StartFlow, Agent)              | `ListNodesInFlowRequest(node_types=["StartFlow", "Agent"])` — returns only nodes whose class name matches; omit to get all nodes |
 | Register a sandbox node type from Python source already on disk | `RegisterSandboxNodeFromSourceRequest` (see Custom nodes below)                                                                                           |
 | Reset everything                                                | `ClearAllObjectStateRequest(i_know_what_im_doing=True)`                                                                                                   |
 
