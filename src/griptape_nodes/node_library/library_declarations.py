@@ -19,23 +19,23 @@ from pydantic import BaseModel, Field
 # ---------- Shared enums ----------
 
 
-class ProductionStatus(StrEnum):
-    """Lifecycle status for a library or node. Shared by library- and node-level properties.
+class LifecycleStage(StrEnum):
+    """Lifecycle stage for a library or node. Shared by library- and node-level properties.
 
-    PRODUCTION is an explicit value (not implied by absence) so library authors must
-    make a deliberate choice; this lets consumers flag unstated status as
-    "<No production status provided by library author>" rather than silently assuming
-    PRODUCTION.
+    STABLE is an explicit value (not implied by absence) so library authors must
+    make a deliberate choice; this lets consumers flag unstated stage as
+    "<No lifecycle stage provided by library author>" rather than silently assuming
+    STABLE.
 
     Node-level semantics:
-      - Node with no ProductionStatusNodeProperty -> inherits the library's status.
-      - Node with the property -> overrides the library's status with the declared value.
+      - Node with no LifecycleStageNodeProperty -> inherits the library's stage.
+      - Node with the property -> overrides the library's stage with the declared value.
     """
 
-    PRODUCTION = "PRODUCTION"
+    STABLE = "STABLE"
     BETA = "BETA"
     ALPHA = "ALPHA"
-    EXPERIMENTAL = "EXPERIMENTAL"
+    LABS = "LABS"
     DEPRECATED = "DEPRECATED"
 
 
@@ -50,15 +50,15 @@ class KeySupport(StrEnum):
 # ---------- Library-level declarations ----------
 
 
-class ProductionStatusLibraryProperty(BaseModel):
-    """Production-lifecycle status that applies to every node in the library.
+class LifecycleStageLibraryProperty(BaseModel):
+    """Lifecycle stage that applies to every node in the library.
 
     Absence of this property means "unstated" -- consumers should surface that
-    explicitly rather than defaulting to PRODUCTION.
+    explicitly rather than defaulting to STABLE.
     """
 
-    type: Literal["production_status"] = "production_status"
-    status: ProductionStatus
+    type: Literal["lifecycle_stage"] = "lifecycle_stage"
+    stage: LifecycleStage
 
 
 # `Annotated[X | Y, Field(discriminator="type")]` is Pydantic v2's discriminated-union
@@ -74,7 +74,7 @@ class ProductionStatusLibraryProperty(BaseModel):
 # A single-member union is still wrapped in this idiom because future declaration types
 # (capabilities, requirements) slot in additively without changing the field's shape.
 LibraryDeclaration = Annotated[
-    ProductionStatusLibraryProperty,
+    LifecycleStageLibraryProperty,
     Field(discriminator="type"),
 ]
 
@@ -82,16 +82,16 @@ LibraryDeclaration = Annotated[
 # ---------- Node-level declarations ----------
 
 
-class ProductionStatusNodeProperty(BaseModel):
-    """Production-lifecycle status override for an individual node.
+class LifecycleStageNodeProperty(BaseModel):
+    """Lifecycle stage override for an individual node.
 
     Absence of this property on a node means "inherit from the library." Presence
     overrides with the declared value. Consumers (UI) resolve inheritance at display
     time; the schema layer stores only what the author wrote.
     """
 
-    type: Literal["production_status"] = "production_status"
-    status: ProductionStatus
+    type: Literal["lifecycle_stage"] = "lifecycle_stage"
+    stage: LifecycleStage
 
 
 class KeySupportNodeProperty(BaseModel):
@@ -103,6 +103,6 @@ class KeySupportNodeProperty(BaseModel):
 
 # See the comment above `LibraryDeclaration` for how `Annotated[... discriminator ...]` works.
 NodeDeclaration = Annotated[
-    ProductionStatusNodeProperty | KeySupportNodeProperty,
+    LifecycleStageNodeProperty | KeySupportNodeProperty,
     Field(discriminator="type"),
 ]

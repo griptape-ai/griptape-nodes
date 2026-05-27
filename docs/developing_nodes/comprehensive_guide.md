@@ -2202,7 +2202,7 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
       "pip_install_flags": ["--upgrade"]
     },
     "declarations": [
-      { "type": "production_status", "status": "PRODUCTION" }
+      { "type": "lifecycle_stage", "stage": "STABLE" }
     ]
   },
   "widgets": [
@@ -2250,7 +2250,7 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
     - Category should be `app_events.on_app_initialization_complete`
     - Secrets are accessed via `GriptapeNodes.SecretsManager().get_secret()`
 - **metadata.dependencies**: PIP packages installed on library load
-- **metadata.declarations** / per-node **metadata.declarations**: typed identity properties (lifecycle status, key support). See [Library and Node Declarations](#library-and-node-declarations) below.
+- **metadata.declarations** / per-node **metadata.declarations**: typed identity properties (lifecycle stage, key support). See [Library and Node Declarations](#library-and-node-declarations) below.
 - **widgets**: Register custom JS widget components (see [Custom Widget Components](#custom-widget-components))
 - **categories**: Group nodes in UI with colors and icons
 - **nodes**: List node classes, file paths, and metadata
@@ -2262,26 +2262,26 @@ Use flat directory structures. The engine automatically registers and loads libr
 
 ### Library and Node Declarations
 
-Declarations attach typed metadata to a library or to an individual node. Each entry in a `declarations` array is an object with a `type` discriminator that selects a declaration class. Today's vocabulary covers identity properties (lifecycle status and key support); future engine releases add more declaration types under the same field.
+Declarations attach typed metadata to a library or to an individual node. Each entry in a `declarations` array is an object with a `type` discriminator that selects a declaration class. Today's vocabulary covers identity properties (lifecycle stage and key support); future engine releases add more declaration types under the same field.
 
 Both `metadata.declarations` (library-level) and per-node `metadata.declarations` accept a list. Order in the list does not matter. The field defaults to `[]`, so libraries on older schema versions (`0.6.0`, `0.4.0`, `0.1.0`) load unchanged.
 
-#### `production_status`
+#### `lifecycle_stage`
 
-Lifecycle status for a library or for a specific node. Values:
+Lifecycle stage for a library or for a specific node. Values:
 
-| Value          | Meaning                                                             |
-| -------------- | ------------------------------------------------------------------- |
-| `PRODUCTION`   | Stable; intended for production use.                                |
-| `BETA`         | Feature-complete but still hardening.                               |
-| `ALPHA`        | Early implementation; expect breaking changes.                      |
-| `EXPERIMENTAL` | Exploratory; may be removed.                                        |
-| `DEPRECATED`   | Slated for removal; existing usage should migrate to a replacement. |
+| Value        | Meaning                                                             |
+| ------------ | ------------------------------------------------------------------- |
+| `STABLE`     | Mature; intended for production use.                                |
+| `BETA`       | Feature-complete but still hardening.                               |
+| `ALPHA`      | Early implementation; expect breaking changes.                      |
+| `LABS`       | Exploratory; may be removed.                                        |
+| `DEPRECATED` | Slated for removal; existing usage should migrate to a replacement. |
 
 Semantics:
 
-- **Library-level absence is intentionally distinct from `PRODUCTION`.** A library with no `production_status` declaration is "unstated" — consumers should surface that explicitly (`<No production status provided by library author>`) rather than silently assume `PRODUCTION`.
-- **Node-level absence means "inherit the library's status."** A node-level `production_status` overrides the library's value.
+- **Library-level absence is intentionally distinct from `STABLE`.** A library with no `lifecycle_stage` declaration is "unstated" — consumers should surface that explicitly (`<No lifecycle stage provided by library author>`) rather than silently assume `STABLE`.
+- **Node-level absence means "inherit the library's stage."** A node-level `lifecycle_stage` overrides the library's value.
 
 #### `key_support`
 
@@ -2295,15 +2295,15 @@ How a node consumes API keys. Node-level only. Values:
 
 #### Combining declarations
 
-A node can carry any combination of declarations. For example, an experimental node that requires a Griptape key:
+A node can carry any combination of declarations. For example, a Labs node that requires a Griptape key:
 
 ```jsonc
 "metadata": {
   "category": "labs",
-  "description": "Experimental node demonstrating multiple declarations.",
-  "display_name": "Experimental Node",
+  "description": "Labs node demonstrating multiple declarations.",
+  "display_name": "Labs Node",
   "declarations": [
-    { "type": "production_status", "status": "EXPERIMENTAL" },
+    { "type": "lifecycle_stage", "stage": "LABS" },
     { "type": "key_support", "support": "REQUIRES_GRIPTAPE_KEY" }
   ]
 }
