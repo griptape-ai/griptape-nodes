@@ -363,38 +363,12 @@ class LibraryRegistry(metaclass=SingletonMeta):
             _constructing_node.reset(token)
 
     @classmethod
-    def create_schema_probe(cls, library_name: str, node_type: str) -> BaseNode:
-        """Construct a throwaway probe instance for schema discovery.
-
-        Used by ``LibraryManager._serialize_library_node_schemas`` to
-        instantiate each registered node class so its parameters can be
-        introspected. Differs from :meth:`create_node` in that it skips
-        the library metadata injection -- the probe's metadata is
-        discarded after the schema is read. The construction flag is
-        still set so the reentrant-bus-in-init detector observes the
-        construction.
-
-        The caller is responsible for offloading the call (e.g. via
-        ``asyncio.to_thread``) and applying any timeout, since node
-        ``__init__`` may block.
-        """
-        instance = cls()
-        library = instance.get_library(library_name)
-        node_class = library.get_node_class(node_type)
-        token = _constructing_node.set(True)
-        try:
-            return node_class(name="__schema_probe__")
-        finally:
-            _constructing_node.reset(token)
-
-    @classmethod
     def is_constructing_node(cls) -> bool:
         """Return True if a node ``__init__`` is currently running on the calling task.
 
         The reentrant-bus-in-init strict-mode detector consults this so it
         can fire from ``EventManager.handle_request`` without owning its
-        own depth counter. The flag is set by ``create_node`` and
-        ``create_schema_probe``.
+        own depth counter. The flag is set by ``create_node``.
         """
         return _constructing_node.get()
 
@@ -533,9 +507,8 @@ class Library:
         """Return the BaseNode subclass registered under `node_type`.
 
         For callers that need the class itself, e.g. classmethod checks like
-        `allow_outgoing_connection_by_class` or building a throwaway probe instance,
-        rather than an instance produced by `create_node` (which also injects library
-        metadata into the node).
+        `allow_outgoing_connection_by_class`, rather than an instance produced
+        by `create_node`.
         """
         if node_type not in self._node_types:
             raise KeyError(self._library_data.name, node_type)

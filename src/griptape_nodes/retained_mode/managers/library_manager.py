@@ -3515,11 +3515,16 @@ class LibraryManager:
 
         node_schemas: list[WorkerNodeSchema] = []
         for class_name in library.get_registered_nodes():
-            # The ContextVar set inside create_schema_probe propagates into
+            # The is-constructing flag set inside create_node propagates into
             # the asyncio.to_thread worker via contextvars.copy_context().
             try:
                 probe = await asyncio.wait_for(
-                    asyncio.to_thread(LibraryRegistry.create_schema_probe, library_name, class_name),
+                    asyncio.to_thread(
+                        LibraryRegistry.create_node,
+                        node_type=class_name,
+                        name="__schema_probe__",
+                        specific_library_name=library_name,
+                    ),
                     timeout=self._SCHEMA_PROBE_TIMEOUT_S,
                 )
             except TimeoutError:
