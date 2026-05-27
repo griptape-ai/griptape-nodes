@@ -6,6 +6,7 @@ import logging
 import threading
 from collections import defaultdict
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
@@ -37,6 +38,23 @@ if TYPE_CHECKING:
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
 AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
+
+
+_active_request_type: ContextVar[type[RequestPayload] | None] = ContextVar(
+    "_event_manager_active_request_type", default=None
+)
+
+
+def current_request_type() -> type[RequestPayload] | None:
+    """Return the request type currently being dispatched on this task, or None.
+
+    Detectors that need to know "what request is the active handler servicing?"
+    (e.g. parameter-mutation-during-aprocess, which exempts the sanctioned
+    AddParameterToNodeRequest / RemoveParameterFromNodeRequest paths) read
+    this ContextVar instead of carrying their own depth counter.
+    """
+    return _active_request_type.get()
+
 
 # Result types that should NOT trigger a flush request.
 #
@@ -460,19 +478,24 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
-        # Actually make the handler callback (support both sync and async):
-        result_payload: ResultPayload = await call_function(callback, request)
+        # Expose the dispatching request type to detectors (see current_request_type).
+        token = _active_request_type.set(request_type)
+        try:
+            # Actually make the handler callback (support both sync and async):
+            result_payload: ResultPayload = await call_function(callback, request)
 
-        # Queue flush request for async context (unless result type should skip flush)
-        with operation_depth_mgr:
-            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                self._flush_tracked_parameter_changes()
+            # Queue flush request for async context (unless result type should skip flush)
+            with operation_depth_mgr:
+                if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                    self._flush_tracked_parameter_changes()
 
-        return self._handle_request_core(
-            request,
-            cast("ResultPayload", result_payload),
-            context=result_context,
-        )
+            return self._handle_request_core(
+                request,
+                cast("ResultPayload", result_payload),
+                context=result_context,
+            )
+        finally:
+            _active_request_type.reset(token)
 
     def handle_request(
         self,
@@ -499,53 +522,58 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
-        # Worker-side RemoteHandler callbacks are async but safe to invoke from a
-        # running loop: forward_to_orchestrator dispatches onto the WS loop via
-        # run_coroutine_threadsafe, which runs on a different thread than the caller's
-        # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
-        # Hop the callback onto the WS loop here and block the caller's thread on the
-        # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
-        from griptape_nodes.app.worker_routing import RemoteHandler
+        # Expose the dispatching request type to detectors (see current_request_type).
+        token = _active_request_type.set(request_type)
+        try:
+            # Worker-side RemoteHandler callbacks are async but safe to invoke from a
+            # running loop: forward_to_orchestrator dispatches onto the WS loop via
+            # run_coroutine_threadsafe, which runs on a different thread than the caller's
+            # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
+            # Hop the callback onto the WS loop here and block the caller's thread on the
+            # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
+            from griptape_nodes.app.worker_routing import RemoteHandler
 
-        if isinstance(callback, RemoteHandler):
-            if _running_loop() is not None:
-                if self._websocket_event_loop is None:
-                    msg = (
-                        f"Cannot forward '{type(request).__name__}' from a running event loop: "
-                        "the websocket event loop is not configured. This indicates a bootstrap order bug."
-                    )
-                    raise RuntimeError(msg)
-                future = asyncio.run_coroutine_threadsafe(callback(request), self._websocket_event_loop)
-                result_payload: ResultPayload = future.result()
+            if isinstance(callback, RemoteHandler):
+                if _running_loop() is not None:
+                    if self._websocket_event_loop is None:
+                        msg = (
+                            f"Cannot forward '{type(request).__name__}' from a running event loop: "
+                            "the websocket event loop is not configured. This indicates a bootstrap order bug."
+                        )
+                        raise RuntimeError(msg)
+                    future = asyncio.run_coroutine_threadsafe(callback(request), self._websocket_event_loop)
+                    result_payload: ResultPayload = future.result()
+                else:
+                    result_payload: ResultPayload = asyncio.run(callback(request))
+            # Support async callbacks invoked from sync code. If no loop is running
+            # (bootstrap, worker threads) asyncio.run drives the coroutine directly.
+            # If a loop IS running (pre-#4449 workflow files exec'd from inside the
+            # engine loop), dispatch onto a side loop via ThreadRunner. The #4469
+            # deadlock shape is specific to callbacks whose coroutines share
+            # primitives with the caller's loop; RemoteHandler is the only such case
+            # and is handled above via run_coroutine_threadsafe onto the WS loop.
+            # For all other async handlers the side-loop path is safe.
+            elif inspect.iscoroutinefunction(callback):
+                if _running_loop() is not None:
+                    with ThreadRunner() as runner:
+                        result_payload: ResultPayload = runner.run(callback(request))
+                else:
+                    result_payload = asyncio.run(callback(request))
             else:
-                result_payload: ResultPayload = asyncio.run(callback(request))
-        # Support async callbacks invoked from sync code. If no loop is running
-        # (bootstrap, worker threads) asyncio.run drives the coroutine directly.
-        # If a loop IS running (pre-#4449 workflow files exec'd from inside the
-        # engine loop), dispatch onto a side loop via ThreadRunner. The #4469
-        # deadlock shape is specific to callbacks whose coroutines share
-        # primitives with the caller's loop; RemoteHandler is the only such case
-        # and is handled above via run_coroutine_threadsafe onto the WS loop.
-        # For all other async handlers the side-loop path is safe.
-        elif inspect.iscoroutinefunction(callback):
-            if _running_loop() is not None:
-                with ThreadRunner() as runner:
-                    result_payload: ResultPayload = runner.run(callback(request))
-            else:
-                result_payload = asyncio.run(callback(request))
-        else:
-            result_payload = callback(request)
+                result_payload = callback(request)
 
-        # Queue flush request for sync context (unless result type should skip flush)
-        with operation_depth_mgr:
-            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                self._flush_tracked_parameter_changes()
+            # Queue flush request for sync context (unless result type should skip flush)
+            with operation_depth_mgr:
+                if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                    self._flush_tracked_parameter_changes()
 
-        return self._handle_request_core(
-            request,
-            cast("ResultPayload", result_payload),
-            context=result_context,
-        )
+            return self._handle_request_core(
+                request,
+                cast("ResultPayload", result_payload),
+                context=result_context,
+            )
+        finally:
+            _active_request_type.reset(token)
 
     def add_listener_to_app_event(
         self, app_event_type: type[AP], callback: Callable[[AP], None] | Callable[[AP], Awaitable[None]]

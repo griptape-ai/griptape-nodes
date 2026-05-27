@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
-from griptape_nodes.common.strict_mode import node_init_scope
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
@@ -227,53 +226,28 @@ class BaseNode(ABC):
     def __hash__(self) -> int:
         return hash(self.name)
 
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        # Wrap every subclass __init__ in node_init_scope so the
-        # reentrant-bus-in-init detector catches bus requests made from
-        # any __init__ body, not just BaseNode's. __init_subclass__
-        # runs once per concrete class definition; the wrapper checks
-        # ``__init__ is object.__init__`` to avoid re-wrapping inherited
-        # constructors every time the MRO is walked.
-        super().__init_subclass__(**kwargs)
-        init = cls.__dict__.get("__init__")
-        if init is None:
-            return
-
-        def wrapped(self: BaseNode, *args: Any, _orig: Any = init, **kw: Any) -> None:
-            with node_init_scope():
-                _orig(self, *args, **kw)
-
-        wrapped.__wrapped__ = init  # type: ignore[attr-defined]
-        cls.__init__ = wrapped  # type: ignore[method-assign]
-
     def __init__(
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
         state: NodeResolutionState = NodeResolutionState.UNRESOLVED,
     ) -> None:
-        # node_init_scope sets a thread-local flag that EventManager
-        # checks to detect the reentrant-bus-in-init rule: a node that
-        # issues an event-bus request from __init__ deadlocks the
-        # worker's schema probe. __init_subclass__ wraps subclass
-        # __init__ bodies so the flag also covers post-super() code.
-        with node_init_scope():
-            self.name = name
-            self._state = state
-            if metadata is None:
-                self.metadata = {}
-            else:
-                self.metadata = metadata
-            self.parameter_values = {}
-            self.parameter_output_values = TrackedParameterOutputValues(self)
-            self.root_ui_element = BaseNodeElement()
-            # Set the node context for the root element
-            self.root_ui_element._node_context = self
-            self.process_generator = None
-            self._tracked_parameters = []
-            self._cancellation_requested = threading.Event()
-            self._parent_group = None
-            self.set_entry_control_parameter(None)
+        self.name = name
+        self._state = state
+        if metadata is None:
+            self.metadata = {}
+        else:
+            self.metadata = metadata
+        self.parameter_values = {}
+        self.parameter_output_values = TrackedParameterOutputValues(self)
+        self.root_ui_element = BaseNodeElement()
+        # Set the node context for the root element
+        self.root_ui_element._node_context = self
+        self.process_generator = None
+        self._tracked_parameters = []
+        self._cancellation_requested = threading.Event()
+        self._parent_group = None
+        self.set_entry_control_parameter(None)
 
     @property
     def state(self) -> NodeResolutionState:

@@ -10,10 +10,9 @@ from uuid import uuid4
 
 from griptape_nodes.common.parameter_hydration import hydrate_parameter_values
 from griptape_nodes.common.strict_mode import (
+    STRICT_MODE,
     StrictModeScopeKind,
     StrictModeSeverity,
-    attach_violations_to_result,
-    strict_mode_scope,
 )
 
 if TYPE_CHECKING:
@@ -2772,7 +2771,7 @@ class NodeManager:
 
         library_name = node.metadata.get("library")
 
-        with strict_mode_scope(
+        with STRICT_MODE.open_scope(
             kind=StrictModeScopeKind.RUNTIME_EXECUTE,
             subject=request.node_name,
             library_name=library_name,
@@ -2791,7 +2790,7 @@ class NodeManager:
             result = ExecuteNodeResultFailure(
                 result_details=f"Node '{request.node_name}' violated strict-mode rule(s) [{rules}].",
             )
-        attach_violations_to_result(result, scope)
+        STRICT_MODE.attach_violations_to_result(result, scope)
         return result
 
     def _materialize_transient_node_from_metadata(
