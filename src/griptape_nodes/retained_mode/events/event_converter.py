@@ -10,12 +10,46 @@ from typing import Any, Union, get_args, get_origin
 from cattrs.gen import make_dict_structure_fn, make_dict_unstructure_fn, override
 from cattrs.preconf.json import make_converter
 from cattrs.strategies import use_class_methods
+from griptape.artifacts import UrlArtifact
 from griptape.mixins.serializable_mixin import SerializableMixin
 from pydantic import BaseModel
+
+from griptape_nodes.files import write_tracker
 
 logger = logging.getLogger(__name__)
 
 converter = make_converter()
+
+
+def _unstructure_serializable(obj: Any) -> dict[str, Any]:
+    """Unstructure a SerializableMixin, stamping freshly-written UrlArtifacts.
+
+    The frontend's preview cache invalidates on ``meta.created_at`` (see
+    ``griptape-vsl-gui/src/hooks/useConvertFileUrl.ts``). When a node
+    overwrites a file at the same path the artifact's ``.value`` is byte-
+    identical between writes, so without a fresh stamp the editor never
+    re-fetches the presigned URL and the preview stays frozen on the prior
+    content (issue #4663).
+
+    The write path records the post-write mtime in ``write_tracker`` under
+    every spelling the artifact value may take, so this hook does a single
+    in-memory dict lookup -- no I/O, no macro resolution, no manager calls.
+    """
+    data = obj.to_dict()
+    if not isinstance(obj, UrlArtifact) or not isinstance(obj.value, str):
+        return data
+
+    meta = data.get("meta") or {}
+    if meta.get("created_at"):
+        return data
+
+    token = write_tracker.lookup(obj.value)
+    if token is None:
+        return data
+
+    meta["created_at"] = token
+    data["meta"] = meta
+    return data
 
 
 # --- Unstructure hooks (serialization) ---
@@ -23,7 +57,7 @@ converter = make_converter()
 # SerializableMixin subclasses (BaseArtifact, BaseTool, Structure, etc.)
 converter.register_unstructure_hook_func(
     lambda cls: isinstance(cls, type) and issubclass(cls, SerializableMixin),
-    lambda obj: obj.to_dict(),
+    _unstructure_serializable,
 )
 
 # Pydantic BaseModel subclasses (WorkflowMetadata, WorkflowShape, etc.)

@@ -3,7 +3,9 @@
 from typing import Any
 
 import pytest
+from griptape.artifacts import ImageUrlArtifact, TextArtifact, UrlArtifact
 
+from griptape_nodes.files import write_tracker
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.event_converter import (
     _is_json_primitive_union,
@@ -145,3 +147,60 @@ class TestSetParameterValueRequestStructuring:
         assert event.request.value["type"] == "ImageUrlArtifact"
         expected_width = 3024
         assert event.request.value["width"] == expected_width
+
+
+class TestUrlArtifactMetaStamping:
+    """Tests for the cattrs UrlArtifact ``meta.created_at`` stamping pipeline.
+
+    The engine records each write's mtime into ``write_tracker``; the cattrs
+    unstructure hook reads it to refresh the frontend preview cache when a
+    node overwrites a file at the same path (issue #4663).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_tracker(self) -> None:
+        write_tracker.clear()
+
+    def test_local_path_with_recorded_write_gets_stamp(self) -> None:
+        write_tracker.record("/var/data/foo.png", 1700000000123456789)
+        out = converter.unstructure(ImageUrlArtifact("/var/data/foo.png"))
+        assert (out.get("meta") or {}).get("created_at")
+
+    def test_unwritten_path_not_stamped(self) -> None:
+        out = converter.unstructure(ImageUrlArtifact("/var/data/never-written.png"))
+        assert not (out.get("meta") or {}).get("created_at")
+
+    def test_remote_url_not_stamped(self) -> None:
+        # Remote URLs are never recorded, so even if a tracker entry exists for
+        # something else, a remote artifact must not receive a stamp.
+        write_tracker.record("/var/data/foo.png", 1700000000000000000)
+        out = converter.unstructure(ImageUrlArtifact("https://example.com/x.png"))
+        assert not (out.get("meta") or {}).get("created_at")
+
+    def test_existing_created_at_preserved(self) -> None:
+        write_tracker.record("/var/data/foo.png", 1700000000000000000)
+        existing = "2020-01-01T00:00:00+00:00"
+        out = converter.unstructure(ImageUrlArtifact("/var/data/foo.png", meta={"created_at": existing}))
+        assert out["meta"]["created_at"] == existing
+
+    def test_text_artifact_unaffected(self) -> None:
+        write_tracker.record("hello", 1700000000000000000)
+        out = converter.unstructure(TextArtifact("hello"))
+        assert not (out.get("meta") or {}).get("created_at")
+
+    def test_url_artifact_subclass_stamped(self) -> None:
+        # Surrogate for ThreeDUrlArtifact / GLTFUrlArtifact / SplatUrlArtifact:
+        # any UrlArtifact subclass must participate.
+        class _LocalUrl(UrlArtifact):
+            pass
+
+        write_tracker.record("/var/data/model.glb", 1700000000000000000)
+        out = converter.unstructure(_LocalUrl("/var/data/model.glb"))
+        assert (out.get("meta") or {}).get("created_at")
+
+    def test_overwrite_produces_distinct_token(self) -> None:
+        write_tracker.record("/var/data/foo.png", 1700000000000000000)
+        first = converter.unstructure(ImageUrlArtifact("/var/data/foo.png"))
+        write_tracker.record("/var/data/foo.png", 1700000000999999999)
+        second = converter.unstructure(ImageUrlArtifact("/var/data/foo.png"))
+        assert first["meta"]["created_at"] != second["meta"]["created_at"]

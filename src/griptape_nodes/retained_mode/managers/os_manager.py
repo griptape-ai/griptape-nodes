@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import ctypes
 import logging
 import mimetypes
@@ -23,6 +24,7 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
+from griptape_nodes.files import write_tracker
 from griptape_nodes.files.drivers.base64_file_driver import Base64FileDriver
 from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
 from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
@@ -1973,6 +1975,17 @@ class OSManager:
         # Write sidecar metadata file if caller opted in by providing file_metadata
         if request.file_metadata is not None:
             write_sidecar(final_file_path, request.file_metadata)
+
+        # Record the post-write mtime under the resolved absolute path. The
+        # cattrs UrlArtifact unstructure hook reads this to stamp
+        # ``meta.created_at`` so the frontend preview cache invalidates on
+        # same-path overwrites (issue #4663). Recording at this universal
+        # chokepoint catches every engine-side write; callers that hand
+        # artifacts a different path spelling (macro template, signed URL)
+        # add aliases via ``write_tracker.alias``. ``stat()`` failures here
+        # are non-fatal -- the artifact pipeline simply skips stamping.
+        with contextlib.suppress(OSError):
+            write_tracker.record(str(final_file_path), Path(final_file_path).stat().st_mtime_ns)
 
         if used_indexed_fallback:
             msg = f"File written to indexed path: {final_file_path} (original path '{path_display}' already existed)"

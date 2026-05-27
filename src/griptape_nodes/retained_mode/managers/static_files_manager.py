@@ -12,6 +12,7 @@ from griptape_nodes.common.project_templates.situation import SituationFilePolic
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
+from griptape_nodes.files import write_tracker
 from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.artifact_events import (
@@ -476,7 +477,14 @@ class StaticFilesManager:
             msg = f"Failed to save static file {file_name}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
-        return self.storage_driver.create_signed_download_url(Path(saved_path))
+        signed_url = self.storage_driver.create_signed_download_url(Path(saved_path))
+        # Callers (e.g. agent_manager, artifact_normalization) wrap this URL
+        # in an ImageUrlArtifact, so the artifact's ``.value`` is the URL --
+        # not the absolute path the OSManager recorded under. Alias them so
+        # the cattrs hook can stamp ``meta.created_at`` for same-path
+        # overwrites (issue #4663).
+        write_tracker.alias(signed_url, str(saved_path))
+        return signed_url
 
     def _resolve_static_file_path(
         self, file_name: str, situation_name: str = SAVE_STATIC_FILE_SITUATION

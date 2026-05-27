@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import NamedTuple, Protocol, cast, runtime_checkable
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
+from griptape_nodes.files import write_tracker
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     FileIOFailureReason,
@@ -583,7 +584,9 @@ class File:
                 missing_variables=result.missing_variables,
             )
 
-        return Path(cast("WriteFileResultSuccess", result).final_file_path)
+        success = cast("WriteFileResultSuccess", result)
+        self._alias_macro_spelling(success)
+        return Path(success.final_file_path)
 
     async def _awrite_content(
         self,
@@ -628,7 +631,27 @@ class File:
                 missing_variables=result.missing_variables,
             )
 
-        return Path(cast("WriteFileResultSuccess", result).final_file_path)
+        success = cast("WriteFileResultSuccess", result)
+        self._alias_macro_spelling(success)
+        return Path(success.final_file_path)
+
+    def _alias_macro_spelling(self, success: WriteFileResultSuccess) -> None:
+        """Mirror the absolute-path write tracker entry under the macro spelling.
+
+        ``OSManager.on_write_file_request`` already records the post-write
+        mtime under ``final_file_path`` (the resolved absolute path) for every
+        write that flows through the engine. ``UrlArtifact.value`` may instead
+        carry the macro template the caller originally wrote to
+        (``self.location``, e.g. ``{outputs}/foo.png``); this alias mirrors
+        the same token under that spelling so the cattrs hook resolves either
+        form to the same cache token without I/O at serialize time.
+        ``ProjectFileDestination`` adds a third spelling via
+        ``write_tracker.alias`` after its post-write project mapping. No-op
+        when ``self.location`` already equals the absolute path.
+        """
+        location = self.location
+        if location and location != success.final_file_path:
+            write_tracker.alias(location, success.final_file_path)
 
     def _build_file_metadata(self) -> SidecarContent | None:
         """Build SidecarContent from MacroPath variables and caller-provided metadata.

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+from griptape_nodes.files import write_tracker
 from griptape_nodes.files.file import File, FileDestination
 from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
@@ -71,11 +72,17 @@ class ProjectFileDestination(FileDestination):
         portable reference via ``file.as_macro()``.  Falls back to the original
         File (absolute path) if mapping is not possible.
         """
+        absolute_path = result_file.resolve()
         map_result = GriptapeNodes.handle_request(
-            AttemptMapAbsolutePathToProjectRequest(absolute_path=Path(result_file.resolve()))
+            AttemptMapAbsolutePathToProjectRequest(absolute_path=Path(absolute_path))
         )
         if isinstance(map_result, AttemptMapAbsolutePathToProjectResultSuccess) and map_result.mapped_path is not None:
-            return File(map_result.mapped_path)
+            mapped_file = File(map_result.mapped_path)
+            # Mirror the write tracker entry under the macro spelling so artifacts
+            # holding the portable form (e.g. {outputs}/foo.png) resolve to the
+            # same cache token recorded under the absolute path.
+            write_tracker.alias(mapped_file.location, absolute_path)
+            return mapped_file
         return result_file
 
     @classmethod
