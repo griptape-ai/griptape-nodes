@@ -23,7 +23,6 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
@@ -2847,35 +2846,20 @@ class WorkflowManager:
         import_recorder.add_import("asyncio")
         import_recorder.add_import("json")
         import_recorder.add_import("logging")
-        import_recorder.add_from_import("pathlib", "Path")
+        import_recorder.add_from_import("typing", "Any")
         import_recorder.add_from_import(
             "griptape_nodes.bootstrap.workflow_executors.local_workflow_executor", "LocalWorkflowExecutor"
         )
         import_recorder.add_from_import(
             "griptape_nodes.bootstrap.workflow_executors.workflow_executor", "WorkflowExecutor"
         )
-        import_recorder.add_from_import("griptape_nodes.drivers.storage.storage_backend", "StorageBackend")
 
-        # === 1) build the `def execute_workflow(input: dict, storage_backend: str = StorageBackend.LOCAL, workflow_executor: WorkflowExecutor | None = None, pickle_control_flow_result: bool = False) -> dict | None:` ===
-        #   args
+        # === 1) build the `def execute_workflow(input: dict, *, workflow_executor: WorkflowExecutor | None = None, **kwargs: Any) -> dict | None:` ===
+        # `**kwargs` carries through to `LocalWorkflowExecutor(**kwargs)` on the fallback
+        # construction path (when no `workflow_executor` is supplied) and to `executor.arun(**kwargs)`
+        # in all paths. This keeps the helper signature stable as new executor-level options
+        # are added without requiring a workflow file schema bump (issue #4599).
         arg_input = ast.arg(arg="input", annotation=ast.Name(id="dict", ctx=ast.Load()))
-        arg_storage_backend = ast.arg(arg="storage_backend", annotation=ast.Name(id="str", ctx=ast.Load()))
-        arg_project_file_path = ast.arg(
-            arg="project_file_path",
-            annotation=ast.BinOp(
-                left=ast.Name(id="str", ctx=ast.Load()),
-                op=ast.BitOr(),
-                right=ast.Constant(value=None),
-            ),
-        )
-        arg_save_on_failure_path = ast.arg(
-            arg="save_on_failure_path",
-            annotation=ast.BinOp(
-                left=ast.Name(id="str", ctx=ast.Load()),
-                op=ast.BitOr(),
-                right=ast.Constant(value=None),
-            ),
-        )
         arg_workflow_executor = ast.arg(
             arg="workflow_executor",
             annotation=ast.BinOp(
@@ -2884,30 +2868,15 @@ class WorkflowManager:
                 right=ast.Constant(value=None),
             ),
         )
-        arg_pickle_control_flow_result = ast.arg(
-            arg="pickle_control_flow_result", annotation=ast.Name(id="bool", ctx=ast.Load())
-        )
+        kwargs_arg = ast.arg(arg="kwargs", annotation=ast.Name(id="Any", ctx=ast.Load()))
         args = ast.arguments(
             posonlyargs=[],
-            args=[
-                arg_input,
-                arg_storage_backend,
-                arg_project_file_path,
-                arg_save_on_failure_path,
-                arg_workflow_executor,
-                arg_pickle_control_flow_result,
-            ],
+            args=[arg_input],
             vararg=None,
-            kwonlyargs=[],
-            kw_defaults=[],
-            kwarg=None,
-            defaults=[
-                ast.Constant(StorageBackend.LOCAL.value),
-                ast.Constant(value=None),
-                ast.Constant(value=None),
-                ast.Constant(value=None),
-                ast.Constant(value=pickle_control_flow_result),
-            ],
+            kwonlyargs=[arg_workflow_executor],
+            kw_defaults=[ast.Constant(value=None)],
+            kwarg=kwargs_arg,
+            defaults=[],
         )
         #   return annotation: dict | None
         return_annotation = ast.BinOp(
@@ -2919,68 +2888,55 @@ class WorkflowManager:
         # Generate the ensure flow context function call
         ensure_context_call = self._generate_ensure_flow_context_call()
 
-        # Convert string storage_backend to StorageBackend enum
-        storage_backend_convert = ast.Assign(
-            targets=[ast.Name(id="storage_backend_enum", ctx=ast.Store())],
-            value=ast.Call(
-                func=ast.Name(id="StorageBackend", ctx=ast.Load()),
-                args=[ast.Name(id="storage_backend", ctx=ast.Load())],
-                keywords=[],
-            ),
-        )
-
-        # Resolve project_file_path string to Path: project_file_path_resolved = Path(project_file_path) if project_file_path is not None else None
-        project_file_path_resolve = ast.Assign(
-            targets=[ast.Name(id="project_file_path_resolved", ctx=ast.Store())],
-            value=ast.IfExp(
-                test=ast.Compare(
-                    left=ast.Name(id="project_file_path", ctx=ast.Load()),
-                    ops=[ast.IsNot()],
-                    comparators=[ast.Constant(value=None)],
-                ),
-                body=ast.Call(
-                    func=ast.Name(id="Path", ctx=ast.Load()),
-                    args=[ast.Name(id="project_file_path", ctx=ast.Load())],
-                    keywords=[],
-                ),
-                orelse=ast.Constant(value=None),
-            ),
-        )
-
-        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor(...)
+        # Construct a default LocalWorkflowExecutor only when the caller did not supply one.
+        # Inside the `if`, seed `kwargs["pickle_control_flow_result"]` with the save-time
+        # default via `setdefault` so direct importers who don't pass it explicitly inherit
+        # the publisher's choice. `**kwargs` is then splatted into the constructor; a typo'd
+        # kwarg surfaces as a TypeError from LocalWorkflowExecutor.__init__.
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3771 Update for workflows that call other workflows - need to include referenced workflows in the list
-        executor_assign = ast.Assign(
-            targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
-            value=ast.BoolOp(
-                op=ast.Or(),
-                values=[
-                    ast.Name(id="workflow_executor", ctx=ast.Load()),
-                    ast.Call(
+        pickle_setdefault_stmt = ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="kwargs", ctx=ast.Load()),
+                    attr="setdefault",
+                    ctx=ast.Load(),
+                ),
+                args=[
+                    ast.Constant(value="pickle_control_flow_result"),
+                    ast.Constant(value=pickle_control_flow_result),
+                ],
+                keywords=[],
+            )
+        )
+        executor_assign = ast.If(
+            test=ast.Compare(
+                left=ast.Name(id="workflow_executor", ctx=ast.Load()),
+                ops=[ast.Is()],
+                comparators=[ast.Constant(value=None)],
+            ),
+            body=[
+                pickle_setdefault_stmt,
+                ast.Assign(
+                    targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
+                    value=ast.Call(
                         func=ast.Name(id="LocalWorkflowExecutor", ctx=ast.Load()),
                         args=[],
                         keywords=[
-                            ast.keyword(
-                                arg="storage_backend", value=ast.Name(id="storage_backend_enum", ctx=ast.Load())
-                            ),
-                            ast.keyword(
-                                arg="project_file_path",
-                                value=ast.Name(id="project_file_path_resolved", ctx=ast.Load()),
-                            ),
-                            ast.keyword(
-                                arg="save_on_failure_path",
-                                value=ast.Name(id="save_on_failure_path", ctx=ast.Load()),
-                            ),
                             ast.keyword(arg="skip_library_loading", value=ast.Constant(value=True)),
                             ast.keyword(
                                 arg="workflows_to_register",
                                 value=ast.List(elts=[ast.Name(id="__file__", ctx=ast.Load())], ctx=ast.Load()),
                             ),
+                            ast.keyword(arg=None, value=ast.Name(id="kwargs", ctx=ast.Load())),
                         ],
                     ),
-                ],
-            ),
+                ),
+            ],
+            orelse=[],
         )
-        # Use async context manager for workflow execution
+        # Use async context manager for workflow execution. Any leftover `**kwargs` flow
+        # through to `arun` (e.g. `pickle_control_flow_result` if the caller wants to
+        # override the executor's instance default for this run only).
         with_stmt = ast.AsyncWith(
             items=[
                 ast.withitem(
@@ -3000,10 +2956,7 @@ class WorkflowManager:
                             args=[],
                             keywords=[
                                 ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
-                                ast.keyword(
-                                    arg="pickle_control_flow_result",
-                                    value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load()),
-                                ),
+                                ast.keyword(arg=None, value=ast.Name(id="kwargs", ctx=ast.Load())),
                             ],
                         )
                     )
@@ -3038,8 +2991,6 @@ class WorkflowManager:
             body=[
                 await_main_call,
                 ensure_context_call,
-                storage_backend_convert,
-                project_file_path_resolve,
                 executor_assign,
                 with_stmt,
                 return_stmt,
@@ -3069,23 +3020,9 @@ class WorkflowManager:
                                 keywords=[
                                     ast.keyword(arg="input", value=ast.Name(id="input", ctx=ast.Load())),
                                     ast.keyword(
-                                        arg="storage_backend", value=ast.Name(id="storage_backend", ctx=ast.Load())
-                                    ),
-                                    ast.keyword(
-                                        arg="project_file_path",
-                                        value=ast.Name(id="project_file_path", ctx=ast.Load()),
-                                    ),
-                                    ast.keyword(
-                                        arg="save_on_failure_path",
-                                        value=ast.Name(id="save_on_failure_path", ctx=ast.Load()),
-                                    ),
-                                    ast.keyword(
                                         arg="workflow_executor", value=ast.Name(id="workflow_executor", ctx=ast.Load())
                                     ),
-                                    ast.keyword(
-                                        arg="pickle_control_flow_result",
-                                        value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load()),
-                                    ),
+                                    ast.keyword(arg=None, value=ast.Name(id="kwargs", ctx=ast.Load())),
                                 ],
                             )
                         ],
@@ -3100,14 +3037,14 @@ class WorkflowManager:
         ast.fix_missing_locations(sync_func_def)
 
         # === 2) build the `if __name__ == "__main__":` block ===
-        if_node = self._generate_main_block(workflow_shape)
+        if_node = self._generate_main_block(workflow_shape, pickle_control_flow_result=pickle_control_flow_result)
 
         # Generate the ensure flow context function
         ensure_context_func = self._generate_ensure_flow_context_function(import_recorder)
 
         return [ensure_context_func, sync_func_def, async_func_def, if_node]
 
-    def _generate_main_block(self, workflow_shape: dict) -> ast.If:
+    def _generate_main_block(self, workflow_shape: dict, *, pickle_control_flow_result: bool = False) -> ast.If:
         """Generates the `if __name__ == '__main__':` block for the serialized workflow file."""
         main_test = ast.Compare(
             left=ast.Name(id="__name__", ctx=ast.Load()),
@@ -3131,58 +3068,30 @@ class WorkflowManager:
         # Generate parser.add_argument(...) calls for each parameter in workflow_shape
         add_arg_calls = []
 
-        # Add storage backend argument
+        # Delegate executor-level CLI flags to LocalWorkflowExecutor.add_cli_arguments(parser).
+        # This replaces hand-rolled --storage-backend / --project-file-path / --save-on-failure
+        # add_argument calls so that future executor-level flags can be added without bumping
+        # the workflow file schema. See https://github.com/griptape-ai/griptape-nodes/issues/4599.
         add_arg_calls.append(
             ast.Expr(
                 value=ast.Call(
                     func=ast.Attribute(
-                        value=ast.Name(id="parser", ctx=ast.Load()),
-                        attr="add_argument",
+                        value=ast.Name(id="LocalWorkflowExecutor", ctx=ast.Load()),
+                        attr="add_cli_arguments",
                         ctx=ast.Load(),
                     ),
-                    args=[ast.Constant("--storage-backend")],
+                    args=[ast.Name(id="parser", ctx=ast.Load())],
                     keywords=[
                         ast.keyword(
-                            arg="choices",
-                            value=ast.List(
-                                elts=[ast.Constant(StorageBackend.LOCAL.value), ast.Constant(StorageBackend.GTC.value)],
-                                ctx=ast.Load(),
-                            ),
-                        ),
-                        ast.keyword(arg="default", value=ast.Constant(StorageBackend.LOCAL.value)),
-                        ast.keyword(
-                            arg="help",
-                            value=ast.Constant(
-                                "Storage backend to use: 'local' for local filesystem or 'gtc' for Griptape Cloud"
-                            ),
+                            arg="pickle_control_flow_result_default",
+                            value=ast.Constant(value=pickle_control_flow_result),
                         ),
                     ],
                 )
             )
         )
 
-        # Add project file path argument
-        add_arg_calls.append(
-            ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="parser", ctx=ast.Load()),
-                        attr="add_argument",
-                        ctx=ast.Load(),
-                    ),
-                    args=[ast.Constant("--project-file-path")],
-                    keywords=[
-                        ast.keyword(arg="default", value=ast.Constant(None)),
-                        ast.keyword(
-                            arg="help",
-                            value=ast.Constant("Path to a project file to load for the workflow execution"),
-                        ),
-                    ],
-                )
-            )
-        )
-
-        # Add json input argument
+        # Add json input argument (workflow-file concern, not executor concern)
         add_arg_calls.append(
             ast.Expr(
                 value=ast.Call(
@@ -3198,33 +3107,6 @@ class WorkflowManager:
                             arg="help",
                             value=ast.Constant(
                                 "JSON string containing parameter values. Takes precedence over individual parameter arguments if provided."
-                            ),
-                        ),
-                    ],
-                )
-            )
-        )
-
-        # Add save-on-failure argument
-        add_arg_calls.append(
-            ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="parser", ctx=ast.Load()),
-                        attr="add_argument",
-                        ctx=ast.Load(),
-                    ),
-                    args=[ast.Constant("--save-on-failure")],
-                    keywords=[
-                        ast.keyword(arg="nargs", value=ast.Constant("?")),
-                        ast.keyword(arg="const", value=ast.Constant("")),
-                        ast.keyword(arg="default", value=ast.Constant(None)),
-                        ast.keyword(
-                            arg="help",
-                            value=ast.Constant(
-                                "On failure, save the current workflow state as a .py file. "
-                                "With no value: uses the project 'save_failed_workflow' situation. "
-                                "With a value: absolute or project-relative path."
                             ),
                         ),
                     ],
@@ -3410,6 +3292,27 @@ class WorkflowManager:
             orelse=[],
         )
 
+        # Construct the default executor in __main__ via LocalWorkflowExecutor.from_cli_args,
+        # passing skip_library_loading and workflows_to_register as constructor overrides
+        # since they are not exposed on the CLI surface.
+        executor_assign_main = ast.Assign(
+            targets=[ast.Name(id="executor", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="LocalWorkflowExecutor", ctx=ast.Load()),
+                    attr="from_cli_args",
+                    ctx=ast.Load(),
+                ),
+                args=[ast.Name(id="args", ctx=ast.Load())],
+                keywords=[
+                    ast.keyword(arg="skip_library_loading", value=ast.Constant(value=True)),
+                    ast.keyword(
+                        arg="workflows_to_register",
+                        value=ast.List(elts=[ast.Name(id="__file__", ctx=ast.Load())], ctx=ast.Load()),
+                    ),
+                ],
+            ),
+        )
         workflow_output = ast.Assign(
             targets=[ast.Name(id="workflow_output", ctx=ast.Store())],
             value=ast.Call(
@@ -3417,30 +3320,7 @@ class WorkflowManager:
                 args=[],
                 keywords=[
                     ast.keyword(arg="input", value=ast.Name(id="flow_input", ctx=ast.Load())),
-                    ast.keyword(
-                        arg="storage_backend",
-                        value=ast.Attribute(
-                            value=ast.Name(id="args", ctx=ast.Load()),
-                            attr="storage_backend",
-                            ctx=ast.Load(),
-                        ),
-                    ),
-                    ast.keyword(
-                        arg="project_file_path",
-                        value=ast.Attribute(
-                            value=ast.Name(id="args", ctx=ast.Load()),
-                            attr="project_file_path",
-                            ctx=ast.Load(),
-                        ),
-                    ),
-                    ast.keyword(
-                        arg="save_on_failure_path",
-                        value=ast.Attribute(
-                            value=ast.Name(id="args", ctx=ast.Load()),
-                            attr="save_on_failure",
-                            ctx=ast.Load(),
-                        ),
-                    ),
+                    ast.keyword(arg="workflow_executor", value=ast.Name(id="executor", ctx=ast.Load())),
                 ],
             ),
         )
@@ -3486,6 +3366,7 @@ class WorkflowManager:
                 flow_input_init,
                 json_input_if,
                 individual_args_else,
+                executor_assign_main,
                 workflow_output,
                 print_output,
             ],

@@ -1,5 +1,7 @@
 """Unit tests for WorkflowExecutor class."""
 
+from argparse import ArgumentParser
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -173,3 +175,169 @@ class TestWorkflowExecutorIntegration:
         # Verify execution completed
         assert result is None  # run method returns None
         assert executor.output == {"sync_result": "success"}
+
+
+class _CliOnlyExecutor(WorkflowExecutor):
+    """Concrete executor whose constructor mirrors the base CLI surface.
+
+    Lets us exercise `add_cli_arguments` / `from_cli_args` without pulling in
+    the full LocalWorkflowExecutor machinery.
+    """
+
+    def __init__(
+        self,
+        storage_backend: StorageBackend = StorageBackend.LOCAL,
+        *,
+        project_file_path: Path | None = None,
+        pickle_control_flow_result: bool = False,
+        marker: str | None = None,
+    ) -> None:
+        super().__init__(pickle_control_flow_result=pickle_control_flow_result)
+        self.storage_backend = storage_backend
+        self.project_file_path = project_file_path
+        self.marker = marker
+
+    async def arun(
+        self,
+        flow_input: Any,  # noqa: ARG002
+        storage_backend: StorageBackend = StorageBackend.LOCAL,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
+    ) -> None:
+        return None
+
+
+class TestWorkflowExecutorCli:
+    """Tests for the executor-level CLI surface introduced for issue #4599."""
+
+    def test_add_cli_arguments_registers_storage_backend_with_default_local(self) -> None:
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args([])
+
+        assert args.storage_backend == StorageBackend.LOCAL.value
+
+    def test_add_cli_arguments_storage_backend_accepts_gtc(self) -> None:
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args(["--storage-backend", StorageBackend.GTC.value])
+
+        assert args.storage_backend == StorageBackend.GTC.value
+
+    def test_add_cli_arguments_storage_backend_rejects_unknown_choice(self) -> None:
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser)
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--storage-backend", "not-a-backend"])
+
+    def test_add_cli_arguments_project_file_path_defaults_to_none(self) -> None:
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args([])
+
+        assert args.project_file_path is None
+
+    def test_add_cli_arguments_project_file_path_accepts_value(self) -> None:
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args(["--project-file-path", "/some/project.yaml"])
+
+        assert args.project_file_path == "/some/project.yaml"
+
+    def test_from_cli_args_converts_storage_backend_string_to_enum(self) -> None:
+        parser = ArgumentParser()
+        _CliOnlyExecutor.add_cli_arguments(parser)
+        args = parser.parse_args(["--storage-backend", StorageBackend.GTC.value])
+
+        executor = _CliOnlyExecutor.from_cli_args(args)
+
+        assert executor.storage_backend == StorageBackend.GTC
+
+    def test_from_cli_args_converts_project_file_path_string_to_path(self) -> None:
+        parser = ArgumentParser()
+        _CliOnlyExecutor.add_cli_arguments(parser)
+        args = parser.parse_args(["--project-file-path", "/some/project.yaml"])
+
+        executor = _CliOnlyExecutor.from_cli_args(args)
+
+        assert executor.project_file_path == Path("/some/project.yaml")
+
+    def test_from_cli_args_leaves_project_file_path_as_none_when_omitted(self) -> None:
+        parser = ArgumentParser()
+        _CliOnlyExecutor.add_cli_arguments(parser)
+        args = parser.parse_args([])
+
+        executor = _CliOnlyExecutor.from_cli_args(args)
+
+        assert executor.project_file_path is None
+
+    def test_from_cli_args_applies_overrides_for_non_cli_kwargs(self) -> None:
+        parser = ArgumentParser()
+        _CliOnlyExecutor.add_cli_arguments(parser)
+        args = parser.parse_args([])
+
+        executor = _CliOnlyExecutor.from_cli_args(args, marker="custom")
+
+        assert executor.marker == "custom"
+
+    def test_from_cli_args_overrides_take_precedence_over_cli_values(self) -> None:
+        parser = ArgumentParser()
+        _CliOnlyExecutor.add_cli_arguments(parser)
+        args = parser.parse_args(["--storage-backend", StorageBackend.GTC.value])
+
+        executor = _CliOnlyExecutor.from_cli_args(args, storage_backend=StorageBackend.LOCAL)
+
+        assert executor.storage_backend == StorageBackend.LOCAL
+
+    def test_from_cli_args_raises_type_error_on_unknown_override(self) -> None:
+        """Loud failure for typo'd kwargs is the documented behavior.
+
+        Direct importers get a TypeError rather than a silent no-op when they
+        pass a bogus kwarg.
+        """
+        parser = ArgumentParser()
+        _CliOnlyExecutor.add_cli_arguments(parser)
+        args = parser.parse_args([])
+
+        with pytest.raises(TypeError):
+            _CliOnlyExecutor.from_cli_args(args, not_a_real_kwarg=True)
+
+    def test_add_cli_arguments_pickle_default_is_false_when_unspecified(self) -> None:
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args([])
+
+        assert args.pickle_control_flow_result is False
+
+    def test_add_cli_arguments_pickle_default_can_be_overridden(self) -> None:
+        # Generated workflow files pass the save-time choice via this kwarg so
+        # `python my_workflow.py` (with no flag) inherits the publisher's setting.
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=True)
+
+        args = parser.parse_args([])
+
+        assert args.pickle_control_flow_result is True
+
+    def test_add_cli_arguments_pickle_flag_flips_to_true(self) -> None:
+        # `--pickle-control-flow-result` always wins over the seeded default.
+        parser = ArgumentParser()
+        WorkflowExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=False)
+
+        args = parser.parse_args(["--pickle-control-flow-result"])
+
+        assert args.pickle_control_flow_result is True
+
+    def test_from_cli_args_passes_pickle_to_constructor(self) -> None:
+        parser = ArgumentParser()
+        _CliOnlyExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=True)
+        args = parser.parse_args([])
+
+        executor = _CliOnlyExecutor.from_cli_args(args)
+
+        assert executor._pickle_control_flow_result is True
