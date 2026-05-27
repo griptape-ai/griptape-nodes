@@ -33,39 +33,42 @@ class TestArbitraryCodeExecManager:
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
         assert result.python_output == "red\n"
 
-    def test_local_variable_capture_ignores_stdout(self) -> None:
-        """When capturing a variable, stdout must be ignored in favour of the captured value."""
+    def test_local_variable_capture_returns_both_stdout_and_value(self) -> None:
+        """When capturing a variable, stdout is still surfaced and the captured value lives in found_variable_values."""
         request = RunArbitraryPythonStringRequest(
-            python_string="print('ignored')\nresult = 'captured'",
+            python_string="print('hello')\nresult = 'captured'",
             variable_names_to_capture=["result"],
         )
         result = GriptapeNodes.handle_request(request)
 
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
-        assert result.python_output == {"result": "captured"}
+        assert result.python_output == "hello\n"
+        assert result.found_variable_values == {"result": "captured"}
+        assert result.missing_variables == []
 
-    def test_missing_local_variable_returns_failure(self) -> None:
-        """Requesting a variable that was never set must return a failure naming the variable."""
+    def test_missing_local_variable_reported_in_missing_variables(self) -> None:
+        """Requesting a variable that was never set must succeed with the name listed in missing_variables."""
         request = RunArbitraryPythonStringRequest(
             python_string="x = 1",
             variable_names_to_capture=["nonexistent"],
         )
         result = GriptapeNodes.handle_request(request)
 
-        assert isinstance(result, RunArbitraryPythonStringResultFailure)
-        assert "nonexistent" in result.python_output
+        assert isinstance(result, RunArbitraryPythonStringResultSuccess)
+        assert result.found_variable_values == {}
+        assert result.missing_variables == ["nonexistent"]
 
-    def test_multiple_missing_variables_all_reported(self) -> None:
-        """All missing variable names must appear in the failure message, not just the first one."""
+    def test_partial_capture_splits_found_and_missing(self) -> None:
+        """When some requested names exist and others don't, found and missing must split cleanly."""
         request = RunArbitraryPythonStringRequest(
-            python_string="x = 1",
-            variable_names_to_capture=["missing_a", "missing_b"],
+            python_string="a = 1",
+            variable_names_to_capture=["a", "missing_a", "missing_b"],
         )
         result = GriptapeNodes.handle_request(request)
 
-        assert isinstance(result, RunArbitraryPythonStringResultFailure)
-        assert "missing_a" in result.python_output
-        assert "missing_b" in result.python_output
+        assert isinstance(result, RunArbitraryPythonStringResultSuccess)
+        assert result.found_variable_values == {"a": 1}
+        assert result.missing_variables == ["missing_a", "missing_b"]
 
     def test_exec_exception_returns_failure(self) -> None:
         """An exception raised during exec must return a failure with the error message."""
@@ -94,7 +97,7 @@ class TestArbitraryCodeExecManager:
         result = GriptapeNodes.handle_request(request)
 
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
-        assert result.python_output == {"result": 120}  # 5!
+        assert result.found_variable_values == {"result": 120}  # 5!
 
     def test_outer_scope_isolated(self) -> None:
         """Exec'd code must not be able to access variables from the calling scope."""
@@ -105,7 +108,7 @@ class TestArbitraryCodeExecManager:
         result = GriptapeNodes.handle_request(request)
 
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
-        assert result.python_output == {"result": True}
+        assert result.found_variable_values == {"result": True}
 
     def test_multiple_variables_captured_as_dict(self) -> None:
         """Multiple variable names must return a dict mapping each name to its native value."""
@@ -116,4 +119,5 @@ class TestArbitraryCodeExecManager:
         result = GriptapeNodes.handle_request(request)
 
         assert isinstance(result, RunArbitraryPythonStringResultSuccess)
-        assert result.python_output == {"a": 1, "b": "hello", "c": [1, 2, 3]}
+        assert result.found_variable_values == {"a": 1, "b": "hello", "c": [1, 2, 3]}
+        assert result.missing_variables == []

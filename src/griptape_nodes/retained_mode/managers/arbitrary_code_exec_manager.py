@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import re
 from contextlib import redirect_stdout
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.retained_mode.events.arbitrary_python_events import (
     RunArbitraryPythonStringRequest,
@@ -57,24 +57,27 @@ class ArbitraryCodeExecManager:
                 # For the PR that implements this behavior alongside an Execute Python and List Files node, see https://github.com/griptape-ai/griptape-nodes/pull/2087
 
                 namespace = {"__builtins__": __builtins__}
-                python_output = exec(  # noqa: S102
+                exec(  # noqa: S102
                     request.python_string, namespace, namespace
                 )
 
+            python_output = strip_ansi_codes(string_buffer.getvalue())
+            found_variable_values: dict[str, Any] = {}
+            missing_variables: list[str] = []
             if request.variable_names_to_capture is not None:
-                names = request.variable_names_to_capture
-                missing = [name for name in names if name not in namespace]
-                if missing:
-                    msg = f"Local variables not found after execution: {missing}"
-                    raise NameError(msg)  # noqa: TRY301
-                captured_output = {name: namespace[name] for name in names}
-            else:
-                captured_output = strip_ansi_codes(string_buffer.getvalue())
+                for name in request.variable_names_to_capture:
+                    if name in namespace:
+                        found_variable_values[name] = namespace[name]
+                    else:
+                        missing_variables.append(name)
             result = RunArbitraryPythonStringResultSuccess(
-                python_output=captured_output, result_details="Successfully executed Python string"
+                python_output=python_output,
+                found_variable_values=found_variable_values,
+                missing_variables=missing_variables,
+                result_details="Successfully executed Python string",
             )
         except Exception as e:
-            python_output = f"ERROR: {e}"
-            result = RunArbitraryPythonStringResultFailure(python_output=python_output, result_details=python_output)
+            error_output = f"ERROR: {e}"
+            result = RunArbitraryPythonStringResultFailure(python_output=error_output, result_details=error_output)
 
         return result
