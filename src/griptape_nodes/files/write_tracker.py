@@ -26,7 +26,7 @@ import threading
 from collections import OrderedDict
 from datetime import UTC, datetime
 
-MAX_ENTRIES = 8192
+MAX_ENTRIES = 1024
 
 _cache: OrderedDict[str, str] = OrderedDict()
 _lock = threading.Lock()
