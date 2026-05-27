@@ -51,6 +51,39 @@ jobs:
       - name: uv Publish
         run: uv publish --token ${{ secrets.PYPI_TOKEN }}
 
+  notify-app-release:
+    # Fan out to griptape-nodes-app once the engine wheel is on PyPI so the
+    # app can re-pin and ship a matching release. The downstream receiver
+    # waits on the version becoming visible to `pip index`, but we wait here
+    # too so a same-second app job doesn't race the index update.
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve published version
+        id: ver
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - name: Wait for griptape-nodes-engine ${{ steps.ver.outputs.version }} on PyPI
+        run: |
+          for i in $(seq 1 30); do
+            if pip index versions griptape-nodes-engine 2>/dev/null \
+                | grep -qE "\b${{ steps.ver.outputs.version }}\b"; then
+              echo "Visible on PyPI"; exit 0
+            fi
+            echo "Not visible yet (attempt $i); sleeping 30s"
+            sleep 30
+          done
+          echo "::error::griptape-nodes-engine ${{ steps.ver.outputs.version }} not visible on PyPI after 15 minutes"
+          exit 1
+      - name: Dispatch engine-released to griptape-nodes-app
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.RELEASE_PAT }}
+          repository: griptape-ai/griptape-nodes-app
+          event-type: engine-released
+          client-payload: '{"engine_version": "${{ steps.ver.outputs.version }}"}'
+
   push_cpu_image:
     needs: pre-publish-checks
     name: Push CPU Docker image
