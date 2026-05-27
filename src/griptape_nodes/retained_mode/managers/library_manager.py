@@ -504,6 +504,17 @@ class LibraryManager:
         if library_info.worker_ready is not None:
             library_info.worker_ready.set()
 
+    def is_worker(self) -> bool:
+        """Return True when this process was started as a dedicated worker.
+
+        Set by ``LibrariesInitializeStartRequest`` once the worker bootstrap
+        has identified the process role. Callers outside this manager that
+        need the role (e.g. node-execution strict-mode attribution, request
+        forwarding decisions) should consult this accessor rather than
+        reaching into ``_is_worker``.
+        """
+        return self._is_worker
+
     def get_worker_for_library(self, library_name: str | None) -> tuple[str, str] | None:
         """Return (worker_engine_id, worker_request_topic) for the worker serving library_name, or None.
 

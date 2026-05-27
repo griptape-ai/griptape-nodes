@@ -34,6 +34,7 @@ consult those subsystems directly.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -44,6 +45,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
+
+# Env-var override so operators can disable strict mode wholesale without a code
+# change. Production parity is the default; the kill switch is an escape hatch
+# for performance triage or for environments where the orchestrator/worker split
+# is known to be intentionally violated (e.g. legacy single-process tests).
+_STRICT_MODE_DISABLED_ENV = "GTN_STRICT_MODE_DISABLED"
 
 
 class SeverityResolver(Protocol):
@@ -136,14 +143,27 @@ class StrictModeReporter:
     def __init__(
         self,
         *,
+        enabled: bool | None = None,
         severity_resolver: SeverityResolver | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
+        self._enabled = enabled if enabled is not None else os.environ.get(_STRICT_MODE_DISABLED_ENV) != "1"
         self._severity_resolver: SeverityResolver = severity_resolver or _default_severity_resolver
         self._logger = logger or logging.getLogger("griptape_nodes.strict_mode")
         self._scope_stack: ContextVar[tuple[StrictModeScope, ...]] = ContextVar(
             f"_strict_mode_scope_stack_{id(self)}", default=()
         )
+
+    @property
+    def enabled(self) -> bool:
+        """Whether the reporter is currently active.
+
+        When false, ``open_scope`` yields a sentinel scope that ignores
+        ``report`` calls and ``attach_violations_to_result`` is a no-op.
+        Detectors do not need to branch on this -- the reporter swallows
+        the work itself.
+        """
+        return self._enabled
 
     @contextmanager
     def open_scope(
@@ -157,9 +177,14 @@ class StrictModeReporter:
         """Push a new strict-mode scope onto the per-task stack.
 
         Nested scopes restore the outer on exit. ``current_scope()`` and
-        ``report()`` always operate on the innermost.
+        ``report()`` always operate on the innermost. When the reporter
+        is disabled the yielded scope is detached (not on the stack), so
+        ``report()`` finds no active scope and no-ops.
         """
         scope = StrictModeScope(kind=kind, subject=subject, library_name=library_name, is_worker=is_worker)
+        if not self._enabled:
+            yield scope
+            return
         previous = self._scope_stack.get()
         token = self._scope_stack.set((*previous, scope))
         try:

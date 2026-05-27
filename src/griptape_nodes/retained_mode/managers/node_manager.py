@@ -4,6 +4,7 @@ import asyncio
 import copy
 import logging
 import pickle
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
@@ -16,6 +17,8 @@ from griptape_nodes.common.strict_mode import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 from griptape_nodes.exe_types.base_iterative_nodes import (
@@ -240,6 +243,19 @@ class CanResetResult(NamedTuple):
 
     can_reset: bool
     editor_tooltip_reason: str | None
+
+
+@dataclass
+class _StrictModeExecutionContext:
+    """Body-supplied result holder for ``NodeManager._strict_mode_execution``.
+
+    The async-context body sets ``result``; the helper's teardown reads it,
+    applies worker-side escalation, and attaches violation details. Kept
+    private to the manager because the escalation policy is execute-node
+    specific and the framework should not know about ExecuteNodeResult*.
+    """
+
+    result: ResultPayload | None = None
 
 
 @dataclass
@@ -2739,7 +2755,7 @@ class NodeManager:
         real "node dropped from the live map" bug with a stub that has no
         connections and no flow parentage.
 
-        On the worker (_is_worker=True) the node is constructed from
+        On the worker (is_worker=True) the node is constructed from
         request.node_metadata on every call, hydrated, executed, and discarded.
         Nothing persists between ExecuteNodeRequests on the worker side -- the
         orchestrator is the single source of truth for node identity and
@@ -2749,7 +2765,7 @@ class NodeManager:
         a worker, the request is forwarded over the wire to that worker.
         """
         library_manager = GriptapeNodes.LibraryManager()
-        is_worker = library_manager._is_worker
+        is_worker = library_manager.is_worker()
 
         if is_worker:
             worker_node = self._materialize_transient_node_from_metadata(request)
@@ -2771,27 +2787,58 @@ class NodeManager:
 
         library_name = node.metadata.get("library")
 
+        # Forwarding to a worker exits the orchestrator's local code path before
+        # the node runs, so strict-mode attribution belongs to the worker's
+        # scope, not ours. Decide forwarding first; only open a local scope when
+        # this process is actually going to execute the node.
+        if not is_worker:
+            worker = library_manager.get_worker_for_library(library_name) if library_name else None
+            wm = GriptapeNodes.WorkerManager()
+            if wm is not None and worker is not None:
+                return await self._execute_node_via_worker(request, wm, worker)
+
+        async with self._strict_mode_execution(request=request, library_name=library_name, is_worker=is_worker) as ctx:
+            ctx.result = await self._hydrate_and_run_node(node, request)
+        return ctx.result
+
+    @asynccontextmanager
+    async def _strict_mode_execution(
+        self,
+        *,
+        request: ExecuteNodeRequest,
+        library_name: str | None,
+        is_worker: bool,
+    ) -> AsyncIterator[_StrictModeExecutionContext]:
+        """Wrap a single node execution in a strict-mode scope.
+
+        The body assigns ``ctx.result`` with whatever the runner produced;
+        on exit this helper applies the worker-side escalation policy
+        (worker + ERROR-severity violations promote ExecuteNodeResultSuccess
+        to ExecuteNodeResultFailure) and attaches the violation details to
+        the final payload. Centralizing the teardown keeps the strict-mode
+        boilerplate out of the request handler.
+        """
         with STRICT_MODE.open_scope(
             kind=StrictModeScopeKind.RUNTIME_EXECUTE,
             subject=request.node_name,
             library_name=library_name,
             is_worker=is_worker,
         ) as scope:
-            if not is_worker:
-                worker = library_manager.get_worker_for_library(library_name) if library_name else None
-                wm = GriptapeNodes.WorkerManager()
-                if wm is not None and worker is not None:
-                    return await self._execute_node_via_worker(request, wm, worker)
-            result = await self._hydrate_and_run_node(node, request)
-
-        errors = [v for v in scope.violations if v.severity is StrictModeSeverity.ERROR]
-        if is_worker and errors and isinstance(result, ExecuteNodeResultSuccess):
-            rules = ", ".join(sorted({v.rule_id for v in errors}))
-            result = ExecuteNodeResultFailure(
-                result_details=f"Node '{request.node_name}' violated strict-mode rule(s) [{rules}].",
-            )
-        STRICT_MODE.attach_violations_to_result(result, scope)
-        return result
+            ctx = _StrictModeExecutionContext()
+            yield ctx
+            if ctx.result is None:
+                msg = (
+                    f"_strict_mode_execution body for node '{request.node_name}' did not assign ctx.result; "
+                    "this is a programmer error in the caller."
+                )
+                raise RuntimeError(msg)
+            errors = [v for v in scope.violations if v.severity is StrictModeSeverity.ERROR]
+            if is_worker and errors and isinstance(ctx.result, ExecuteNodeResultSuccess):
+                rules = ", ".join(sorted({v.rule_id for v in errors}))
+                ctx.result = ExecuteNodeResultFailure(
+                    result_details=f"Node '{request.node_name}' violated strict-mode rule(s) [{rules}].",
+                )
+            STRICT_MODE.attach_violations_to_result(ctx.result, scope)
 
     def _materialize_transient_node_from_metadata(
         self, request: ExecuteNodeRequest

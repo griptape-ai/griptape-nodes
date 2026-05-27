@@ -286,6 +286,46 @@ class TestAttachViolationsToResult:
         assert returned is None
 
 
+class TestEnabledToggle:
+    def test_disabled_reporter_skips_open_scope_stack(self) -> None:
+        reporter = StrictModeReporter(enabled=False)
+        with reporter.open_scope(
+            kind=StrictModeScopeKind.RUNTIME_EXECUTE,
+            subject="n",
+            library_name=None,
+            is_worker=False,
+        ) as scope:
+            # Detached scope: report() finds no active scope and no-ops.
+            assert reporter.current_scope() is None
+            assert reporter.report(rule_id="r", message="m") is None
+            assert scope.violations == []
+
+    def test_enabled_reporter_pushes_onto_stack(self) -> None:
+        reporter = StrictModeReporter(enabled=True)
+        with reporter.open_scope(
+            kind=StrictModeScopeKind.RUNTIME_EXECUTE,
+            subject="n",
+            library_name=None,
+            is_worker=False,
+        ) as scope:
+            assert reporter.current_scope() is scope
+
+    def test_env_var_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GTN_STRICT_MODE_DISABLED", "1")
+        reporter = StrictModeReporter()
+        assert reporter.enabled is False
+
+    def test_env_var_unset_enables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("GTN_STRICT_MODE_DISABLED", raising=False)
+        reporter = StrictModeReporter()
+        assert reporter.enabled is True
+
+    def test_explicit_enabled_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GTN_STRICT_MODE_DISABLED", "1")
+        reporter = StrictModeReporter(enabled=True)
+        assert reporter.enabled is True
+
+
 class TestParallelTaskIsolation:
     @pytest.mark.asyncio
     async def test_concurrent_tasks_have_independent_scopes(self, reporter: StrictModeReporter) -> None:
