@@ -51,7 +51,7 @@ def current_request_type() -> type[RequestPayload] | None:
     Detectors that need to know "what request is the active handler servicing?"
     (e.g. parameter-mutation-during-aprocess, which exempts the sanctioned
     AddParameterToNodeRequest / RemoveParameterFromNodeRequest paths) read
-    this ContextVar instead of carrying their own depth counter.
+    this ContextVar.
     """
     return _active_request_type.get()
 

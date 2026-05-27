@@ -504,8 +504,9 @@ class LibraryManager:
         if library_info.worker_ready is not None:
             library_info.worker_ready.set()
 
+    @property
     def is_worker(self) -> bool:
-        """Return True when this process was started as a dedicated worker.
+        """True when this process was started as a dedicated worker.
 
         Set by ``LibrariesInitializeStartRequest`` once the worker bootstrap
         has identified the process role. Callers outside this manager that
