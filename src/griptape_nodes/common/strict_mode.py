@@ -41,6 +41,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 
+from griptape_nodes.common.strict_mode_checks import RULES
+from griptape_nodes.retained_mode.events.base_events import ResultDetails, StrictModeViolationDetail
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -104,10 +107,6 @@ def _default_severity_resolver(*, rule_id: str, is_worker: bool) -> StrictModeSe
     historical worker=ERROR / orchestrator=WARNING split so detectors
     can land before the registry entry is added.
     """
-    # Lazy import to avoid a circular dependency: strict_mode_checks
-    # imports StrictModeSeverity from this module.
-    from griptape_nodes.common.strict_mode_checks import RULES
-
     rule = RULES.get(rule_id)
     if rule is None:
         # A typo'd or unregistered rule_id should not silently produce a
@@ -158,10 +157,13 @@ class StrictModeReporter:
     def enabled(self) -> bool:
         """Whether the reporter is currently active.
 
-        When false, ``open_scope`` yields a sentinel scope that ignores
-        ``report`` calls and ``attach_violations_to_result`` is a no-op.
-        Detectors do not need to branch on this -- the reporter swallows
-        the work itself.
+        When false, ``open_scope`` yields a detached scope that is not on
+        the per-task stack, so ``current_scope()`` returns None and
+        ``report()`` no-ops. ``attach_violations_to_result`` is a no-op
+        in practice only because the detached scope's ``violations`` list
+        stays empty -- a caller that hands in a manually-built scope with
+        violations will still mutate ``result``. Detectors do not need to
+        branch on this; the reporter swallows the work itself.
         """
         return self._enabled
 
@@ -241,10 +243,6 @@ class StrictModeReporter:
         Each violation becomes a ``StrictModeViolationDetail`` appended
         to the existing list. Mutates ``result``; returns ``None``.
         """
-        # Lazy import to avoid circular dependency: base_events imports nothing from this module,
-        # but the caller chain (node_manager -> strict_mode) would circle back through base_events.
-        from griptape_nodes.retained_mode.events.base_events import ResultDetails, StrictModeViolationDetail
-
         if not scope.violations:
             return
 
