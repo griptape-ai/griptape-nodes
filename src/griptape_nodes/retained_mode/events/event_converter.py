@@ -9,7 +9,7 @@ from typing import Any, Union, get_args, get_origin
 
 from cattrs.gen import make_dict_structure_fn, make_dict_unstructure_fn, override
 from cattrs.preconf.json import make_converter
-from cattrs.strategies import use_class_methods
+from cattrs.strategies import include_subclasses, use_class_methods
 from griptape.mixins.serializable_mixin import SerializableMixin
 from pydantic import BaseModel
 
@@ -162,6 +162,21 @@ converter.register_structure_hook_factory(
 # reverse registration order), ensuring _cattrs_structure/_cattrs_unstructure take
 # precedence over the generated dataclass code.
 use_class_methods(converter, structure_method_name="_cattrs_structure", unstructure_method_name="_cattrs_unstructure")
+
+
+def register_polymorphic_dataclass(cls: type) -> None:
+    """Configure the converter to (un)structure ``cls`` as a union of itself and its subclasses.
+
+    Without this, a field typed ``list[BaseClass]`` round-trips every entry
+    as the base class and silently drops subclass-only fields. Call this
+    once per polymorphic root, after every subclass has been declared at
+    import time. Lives here so converter wiring stays in one place rather
+    than each data module reaching into ``cattrs.strategies`` itself.
+
+    Disambiguation is by unique field names; if a future subclass has no
+    unique field, switch to a tagged-union strategy at this seam.
+    """
+    include_subclasses(cls, converter)
 
 
 def safe_unstructure(obj: Any) -> Any:

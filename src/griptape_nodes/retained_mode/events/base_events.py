@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from griptape_nodes.retained_mode.events.event_converter import converter, safe_unstructure
+from griptape_nodes.retained_mode.events.event_converter import (
+    converter,
+    register_polymorphic_dataclass,
+    safe_unstructure,
+)
 
 if TYPE_CHECKING:
     import builtins
@@ -552,3 +556,11 @@ class ProgressEvent:
     value: Any = field()
     node_name: str = field()
     parameter_name: str = field()
+
+
+# Register ResultDetail subclasses (e.g. StrictModeViolationDetail) with the
+# converter so a ``list[ResultDetail]`` round-trip preserves subclass identity
+# and subclass-only fields (rule_id, severity, subject, library_name) instead
+# of degrading every entry to a bare ResultDetail. Must run after every
+# subclass is defined.
+register_polymorphic_dataclass(ResultDetail)
