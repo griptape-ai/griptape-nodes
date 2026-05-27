@@ -3515,19 +3515,13 @@ class LibraryManager:
 
         node_schemas: list[WorkerNodeSchema] = []
         for class_name in library.get_registered_nodes():
-            node_class = library.get_node_class(class_name)
-            # The schema probe constructs a node directly rather than going
-            # through LibraryRegistry.create_node, so wrap the call to expose
-            # the "node is being constructed" flag the reentrant-bus-in-init
-            # detector reads from EventManager.handle_request. The ContextVar
-            # set here propagates into the asyncio.to_thread worker via
-            # contextvars.copy_context().
+            # The ContextVar set inside create_schema_probe propagates into
+            # the asyncio.to_thread worker via contextvars.copy_context().
             try:
-                with LibraryRegistry.construction_scope():
-                    probe = await asyncio.wait_for(
-                        asyncio.to_thread(node_class, name="__schema_probe__"),
-                        timeout=self._SCHEMA_PROBE_TIMEOUT_S,
-                    )
+                probe = await asyncio.wait_for(
+                    asyncio.to_thread(LibraryRegistry.create_schema_probe, library_name, class_name),
+                    timeout=self._SCHEMA_PROBE_TIMEOUT_S,
+                )
             except TimeoutError:
                 logger.warning(
                     "Schema probe for node class '%s' in library '%s' timed out after %.1fs; "

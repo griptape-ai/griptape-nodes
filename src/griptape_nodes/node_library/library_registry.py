@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
@@ -19,8 +18,6 @@ from griptape_nodes.retained_mode.managers.resource_components.resource_instance
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
@@ -357,11 +354,38 @@ class LibraryRegistry(metaclass=SingletonMeta):
             node_type=node_type, specific_library_name=specific_library_name
         )
 
-        # Ask the library to create the node. construction_scope() exposes the
-        # "a node is being constructed right now" signal that the
+        # Expose the "a node is being constructed right now" signal that the
         # reentrant-bus-in-init detector reads from EventManager.handle_request.
-        with cls.construction_scope():
+        token = _constructing_node.set(True)
+        try:
             return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
+        finally:
+            _constructing_node.reset(token)
+
+    @classmethod
+    def create_schema_probe(cls, library_name: str, node_type: str) -> BaseNode:
+        """Construct a throwaway probe instance for schema discovery.
+
+        Used by ``LibraryManager._serialize_library_node_schemas`` to
+        instantiate each registered node class so its parameters can be
+        introspected. Differs from :meth:`create_node` in that it skips
+        the library metadata injection -- the probe's metadata is
+        discarded after the schema is read. The construction flag is
+        still set so the reentrant-bus-in-init detector observes the
+        construction.
+
+        The caller is responsible for offloading the call (e.g. via
+        ``asyncio.to_thread``) and applying any timeout, since node
+        ``__init__`` may block.
+        """
+        instance = cls()
+        library = instance.get_library(library_name)
+        node_class = library.get_node_class(node_type)
+        token = _constructing_node.set(True)
+        try:
+            return node_class(name="__schema_probe__")
+        finally:
+            _constructing_node.reset(token)
 
     @classmethod
     def is_constructing_node(cls) -> bool:
@@ -369,27 +393,10 @@ class LibraryRegistry(metaclass=SingletonMeta):
 
         The reentrant-bus-in-init strict-mode detector consults this so it
         can fire from ``EventManager.handle_request`` without owning its
-        own depth counter. The flag is set by ``create_node`` and by
-        any direct construction site that wraps its call in
-        ``construction_scope`` (e.g. the worker schema probe).
+        own depth counter. The flag is set by ``create_node`` and
+        ``create_schema_probe``.
         """
         return _constructing_node.get()
-
-    @classmethod
-    @contextmanager
-    def construction_scope(cls) -> Iterator[None]:
-        """Mark the current task as constructing a node.
-
-        Used by callers that instantiate a node class directly rather
-        than through :meth:`create_node` -- specifically the schema probe
-        in ``LibraryManager._serialize_library_node_schemas`` -- so the
-        reentrant-bus-in-init detector still sees the construction.
-        """
-        token = _constructing_node.set(True)
-        try:
-            yield
-        finally:
-            _constructing_node.reset(token)
 
     @classmethod
     def get_all_library_schemas(cls) -> dict[str, dict]:
