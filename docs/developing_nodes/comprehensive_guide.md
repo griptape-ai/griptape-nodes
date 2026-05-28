@@ -2181,7 +2181,7 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
 ```json
 {
   "name": "Library Name",
-  "library_schema_version": "0.1.0",
+  "library_schema_version": "0.8.0",
   "settings": [
     {
       "description": "API keys required by nodes in this library",
@@ -2200,7 +2200,10 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
     "dependencies": {
       "pip_dependencies": ["pillow", "requests"],
       "pip_install_flags": ["--upgrade"]
-    }
+    },
+    "declarations": [
+      { "type": "lifecycle_stage", "stage": "STABLE" }
+    ]
   },
   "widgets": [
     {
@@ -2228,7 +2231,10 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
         "description": "Process images with AI",
         "display_name": "AI Image Processor",
         "icon": "image",
-        "group": "processing"
+        "group": "processing",
+        "declarations": [
+          { "type": "key_support", "support": "REQUIRES_CUSTOMER_KEY" }
+        ]
       }
     }
   ],
@@ -2244,6 +2250,7 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
     - Category should be `app_events.on_app_initialization_complete`
     - Secrets are accessed via `GriptapeNodes.SecretsManager().get_secret()`
 - **metadata.dependencies**: PIP packages installed on library load
+- **metadata.declarations** / per-node **metadata.declarations**: typed identity properties (lifecycle stage, key support). See [Library and Node Declarations](#library-and-node-declarations) below.
 - **widgets**: Register custom JS widget components (see [Custom Widget Components](#custom-widget-components))
 - **categories**: Group nodes in UI with colors and icons
 - **nodes**: List node classes, file paths, and metadata
@@ -2252,6 +2259,57 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
 **Important:** The `secrets_to_register` array tells the system which secrets your library needs. Users will be prompted to configure these secrets through the UI or environment variables.
 
 Use flat directory structures. The engine automatically registers and loads libraries.
+
+### Library and Node Declarations
+
+Declarations attach typed metadata to a library or to an individual node. Each entry in a `declarations` array is an object with a `type` discriminator that selects a declaration class. Today's vocabulary covers identity properties (lifecycle stage and key support); future engine releases add more declaration types under the same field.
+
+Both `metadata.declarations` (library-level) and per-node `metadata.declarations` accept a list. Order in the list does not matter. The field defaults to `[]`, so libraries on older schema versions (`0.6.0`, `0.4.0`, `0.1.0`) load unchanged.
+
+#### `lifecycle_stage`
+
+Lifecycle stage for a library or for a specific node. Values:
+
+| Value        | Meaning                                                             |
+| ------------ | ------------------------------------------------------------------- |
+| `STABLE`     | Mature; intended for production use.                                |
+| `BETA`       | Feature-complete but still hardening.                               |
+| `ALPHA`      | Early implementation; expect breaking changes.                      |
+| `LABS`       | Exploratory; may be removed.                                        |
+| `DEPRECATED` | Slated for removal; existing usage should migrate to a replacement. |
+
+Semantics:
+
+- **Library-level absence is intentionally distinct from `STABLE`.** A library with no `lifecycle_stage` declaration is "unstated" — consumers should surface that explicitly (`<No lifecycle stage provided by library author>`) rather than silently assume `STABLE`.
+- **Node-level absence means "inherit the library's stage."** A node-level `lifecycle_stage` overrides the library's value.
+
+#### `key_support`
+
+How a node consumes API keys. Node-level only. Values:
+
+| Value                                   | Meaning                                                        |
+| --------------------------------------- | -------------------------------------------------------------- |
+| `REQUIRES_CUSTOMER_KEY`                 | Node needs a customer-supplied API key.                        |
+| `SUPPORTS_CUSTOMER_KEY_OR_GRIPTAPE_KEY` | Node accepts either a customer key or a Griptape-provided key. |
+| `REQUIRES_GRIPTAPE_KEY`                 | Node only operates with a Griptape-provided key.               |
+
+#### Combining declarations
+
+A node can carry any combination of declarations. For example, a Labs node that requires a Griptape key:
+
+```jsonc
+"metadata": {
+  "category": "labs",
+  "description": "Labs node demonstrating multiple declarations.",
+  "display_name": "Labs Node",
+  "declarations": [
+    { "type": "lifecycle_stage", "stage": "LABS" },
+    { "type": "key_support", "support": "REQUIRES_GRIPTAPE_KEY" }
+  ]
+}
+```
+
+New declaration types added in future engine releases land additively under this same `declarations` field without a schema-version bump.
 
 ## Custom Widget Components
 
