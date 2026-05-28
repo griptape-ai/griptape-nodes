@@ -519,3 +519,33 @@ class TestConfigManagerEventEmission:
         event = received_events[0]
         assert event.key == "app_events.on_app_initialization_complete.libraries_to_register"
         assert event.new_value == ["/path/to/lib"]
+
+    def test_libraries_to_register_accepts_mixed_str_and_object_entries(self) -> None:
+        """Settings validation accepts a mix of bare path strings and objects with `enabled`."""
+        from griptape_nodes.retained_mode.managers.settings import LibraryRegistration, Settings
+
+        validated = Settings.model_validate(
+            {
+                "app_events": {
+                    "on_app_initialization_complete": {
+                        "libraries_to_register": [
+                            "/path/to/enabled.json",
+                            {"path": "/path/to/disabled.json", "enabled": False},
+                        ],
+                    },
+                },
+            },
+        )
+
+        entries = validated.app_events.on_app_initialization_complete.libraries_to_register
+        assert entries[0] == "/path/to/enabled.json"
+        assert isinstance(entries[1], LibraryRegistration)
+        assert entries[1].path == "/path/to/disabled.json"
+        assert entries[1].enabled is False
+
+        # Round-trip: bare strings stay strings, objects stay objects.
+        dumped = validated.app_events.on_app_initialization_complete.model_dump()
+        assert dumped["libraries_to_register"] == [
+            "/path/to/enabled.json",
+            {"path": "/path/to/disabled.json", "enabled": False},
+        ]

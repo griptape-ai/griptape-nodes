@@ -144,6 +144,34 @@ class SetConfigCategoryResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class GetWorkspaceRequest(RequestPayload):
+    """Get the absolute path to the configured workspace directory.
+
+    Use when: Resolving relative FILE_SYSTEM-category settings (e.g. `sandbox_library_directory`,
+    `static_files_directory`, `libraries_directory`) into absolute paths, deciding where to write
+    files the engine is supposed to see, displaying workspace info to users.
+
+    The returned path has `~` expanded and symlinks resolved, so it is safe to use directly with
+    `Path` / `os.path` operations.
+
+    Results: GetWorkspaceResultSuccess (with absolute workspace path)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkspaceResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workspace path retrieved successfully.
+
+    Args:
+        workspace_path: Absolute path to the workspace directory.
+    """
+
+    workspace_path: str
+
+
+@dataclass
+@PayloadRegistry.register
 class GetConfigPathRequest(RequestPayload):
     """Get the path to the configuration file.
 

@@ -116,12 +116,15 @@ class ListNodesInFlowRequest(RequestPayload):
 
     Args:
         flow_name: Name of the flow to list nodes from (None for current context flow)
+        node_types: Optional list of Python class names to filter by (e.g. ["StartFlow", "Agent"]).
+            None returns all nodes.
 
     Results: ListNodesInFlowResultSuccess (with node names) | ListNodesInFlowResultFailure (flow not found)
     """
 
     # If None is passed, assumes we're using the flow in the Current Context.
     flow_name: str | None = None
+    node_types: list[str] | None = None
 
 
 @dataclass
@@ -163,6 +166,73 @@ class ListFlowsInCurrentContextResultSuccess(WorkflowNotAlteredMixin, ResultPayl
 @PayloadRegistry.register
 class ListFlowsInCurrentContextResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
+
+
+@dataclass
+class NodePosition:
+    """Resulting editor position for a node in AutoLayoutFlowResultSuccess."""
+
+    node_name: str
+    x: float
+    y: float
+
+
+@dataclass
+@PayloadRegistry.register
+class AutoLayoutFlowRequest(RequestPayload):
+    """Auto-place every node in a flow on a topological column-and-row grid.
+
+    Use when: an MCP client has just finished building a graph (nodes + connections) and
+    wants the editor to render it in a readable layout without having to compute pixel
+    positions by hand. Runs a topological sort over the flow's data/control edges, assigns
+    each node a layer (longest path from any source), and places layers as columns and
+    siblings within a layer as rows.
+
+    Writes the computed position into each node's `metadata["position"] = {"x", "y"}`,
+    matching the convention the editor and other engine code already use. Existing metadata
+    keys other than `position` are preserved.
+
+    Nodes that participate in a cycle (should not happen in a well-formed flow) are placed
+    at layer 0; a warning is logged.
+
+    Args:
+        flow_name: Flow to lay out. Defaults to the current-context flow, matching the
+            convention used by other flow-scoped requests.
+        origin_x: X coordinate of the first column. Defaults to 0.
+        origin_y: Y coordinate of the first row. Defaults to 0.
+        layer_spacing: Horizontal spacing between columns in editor pixels. 650 is a
+            readable default that matches the pair-node spacing used elsewhere in the engine.
+        row_spacing: Vertical spacing between sibling nodes within a layer.
+
+    Results: AutoLayoutFlowResultSuccess (with per-node final positions) | AutoLayoutFlowResultFailure
+    """
+
+    flow_name: str | None = None
+    origin_x: float = 0.0
+    origin_y: float = 0.0
+    layer_spacing: float = 650.0
+    row_spacing: float = 300.0
+
+
+@dataclass
+@PayloadRegistry.register
+class AutoLayoutFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Auto-layout applied.
+
+    Args:
+        flow_name: Flow that was laid out.
+        positioned_nodes: Final (node_name, x, y) for every node in the flow. Ordered by
+            layer then by row within a layer so callers can reason about the visual shape.
+    """
+
+    flow_name: str
+    positioned_nodes: list[NodePosition] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class AutoLayoutFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Auto-layout failed. Common causes: no flow in current context, named flow not found."""
 
 
 # Gives a list of the flows directly parented by the node specified.

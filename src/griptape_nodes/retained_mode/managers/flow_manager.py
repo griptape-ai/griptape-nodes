@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import copy
 import logging
@@ -90,6 +91,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     UnresolveFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    AutoLayoutFlowRequest,
+    AutoLayoutFlowResultFailure,
+    AutoLayoutFlowResultSuccess,
     CreateFlowRequest,
     CreateFlowResultFailure,
     CreateFlowResultSuccess,
@@ -119,6 +123,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowRequest,
     ListNodesInFlowResultFailure,
     ListNodesInFlowResultSuccess,
+    NodePosition,
     OriginalNodeParameter,
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultFailure,
@@ -142,6 +147,8 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultSuccess,
+    SetNodeMetadataRequest,
+    SetNodeMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -264,6 +271,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             ListFlowsInCurrentContextRequest, self.on_list_flows_in_current_context_request
         )
+        event_manager.assign_manager_to_request_type(AutoLayoutFlowRequest, self.on_auto_layout_flow_request)
         event_manager.assign_manager_to_request_type(CreateConnectionRequest, self.on_create_connection_request)
         event_manager.assign_manager_to_request_type(DeleteConnectionRequest, self.on_delete_connection_request)
         event_manager.assign_manager_to_request_type(StartFlowRequest, self.on_start_flow_request)
@@ -750,7 +758,11 @@ class FlowManager:
             result = ListNodesInFlowResultFailure(result_details=details)
             return result
 
-        ret_list = list(flow.nodes.keys())
+        if request.node_types is not None:
+            node_type_set = set(request.node_types)
+            ret_list = [name for name, node in flow.nodes.items() if type(node).__name__ in node_type_set]
+        else:
+            ret_list = list(flow.nodes.keys())
         details = f"Successfully got the list of Nodes within Flow '{flow_name}'."
 
         result = ListNodesInFlowResultSuccess(node_names=ret_list, result_details=details)
@@ -1973,7 +1985,7 @@ class FlowManager:
                     request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
                     request.end_node_library_name,
                 )
-                end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+                end_node_class = end_library.get_node_class(request.end_node_type)  # type: ignore[arg-type]
 
                 # Validate from package node's perspective (we know source param name, not target)
                 valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
@@ -2047,7 +2059,7 @@ class FlowManager:
                         request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
                         request.end_node_library_name,
                     )
-                    end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+                    end_node_class = end_library.get_node_class(request.end_node_type)  # type: ignore[arg-type]
 
                     # Validate from package node's perspective (we know source param name, not target)
                     valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
@@ -2599,13 +2611,21 @@ class FlowManager:
         sanitized_node_name = node_name.replace(" ", "_").replace(".", "_")
         return f"{prefix}{sanitized_node_name}_{parameter_name}"
 
-    async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # which flow
         flow_name = request.flow_name
         if not flow_name:
-            details = "Must provide flow name to start a flow."
-
-            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+            # Fall back to the current-context flow so callers do not have to echo the name
+            # EnsureWorkflowAndFlowRequest / CreateFlowRequest just returned. If nothing is in
+            # context either, preserve the original "you must provide one" error.
+            if GriptapeNodes.ContextManager().has_current_flow():
+                flow_name = GriptapeNodes.ContextManager().get_current_flow().name
+            else:
+                details = (
+                    "Must provide flow_name, or set a flow in the Current Context "
+                    "(e.g. via EnsureWorkflowAndFlowRequest or CreateFlowRequest) first."
+                )
+                return StartFlowResultFailure(validation_exceptions=[], result_details=details)
         # get the flow by ID
         try:
             flow = self.get_flow_by_name(flow_name)
@@ -2678,17 +2698,58 @@ class FlowManager:
                     validation_exceptions=[exception] if error_message else [], result_details=result_details
                 )
 
-        details = f"Successfully kicked off flow with name {flow_name}"
+        if request.wait_for_completion:
+            wait_error = await self._await_flow_completion(request.completion_timeout_ms)
+            if wait_error is not None:
+                # On timeout the flow is still running, so cancel it before returning
+                # failure. If the wait ended because the flow already errored, there is
+                # nothing left to cancel and check_for_existing_running_flow() returns False.
+                if self.check_for_existing_running_flow():
+                    try:
+                        await self.cancel_flow_run()
+                    except Exception as cancel_err:
+                        # Defensive: cancellation is best-effort cleanup. Surface a warning
+                        # but keep the original wait_error as the user-visible failure.
+                        logger.warning(
+                            "Attempted to cancel flow '%s' after wait_for_completion failure. "
+                            "Cancellation itself failed because of: %s",
+                            flow_name,
+                            cancel_err,
+                        )
+                exception = RuntimeError(wait_error)
+                return StartFlowResultFailure(
+                    validation_exceptions=[exception],
+                    result_details=f"Flow '{flow_name}' did not complete cleanly: {wait_error}",
+                )
+            details = f"Flow '{flow_name}' kicked off and completed successfully."
+        else:
+            details = f"Successfully kicked off flow with name {flow_name}"
 
         return StartFlowResultSuccess(result_details=details)
 
     async def on_start_flow_from_node_request(self, request: StartFlowFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+        # Resolve the node first, falling back to the current-context node when node_name is
+        # omitted. flow_name on this request is deprecated; when not supplied we derive it
+        # from the node's parent flow so callers do not have to keep them in sync.
+        node_name = request.node_name
+        if node_name is None:
+            if GriptapeNodes.ContextManager().has_current_node():
+                node_name = GriptapeNodes.ContextManager().get_current_node().name
+            else:
+                details = "Must provide node_name, or set a node in the Current Context first."
+                return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
+        start_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if not start_node:
+            details = f"Provided node with name {node_name} does not exist"
+            return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
         # which flow
         flow_name = request.flow_name
         if not flow_name:
-            details = "Must provide flow name to start a flow."
-
-            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+            try:
+                flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
+            except KeyError as err:
+                details = f"Could not derive parent flow for node '{node_name}': {err}"
+                return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
         # get the flow by ID
         try:
             flow = self.get_flow_by_name(flow_name)
@@ -2699,14 +2760,6 @@ class FlowManager:
         if self.check_for_existing_running_flow():
             details = "Cannot start flow. Flow is already running."
             return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
-        node_name = request.node_name
-        if node_name is None:
-            details = "Must provide node name to start a flow."
-            return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
-        start_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
-        if not start_node:
-            details = f"Provided node with name {node_name} does not exist"
-            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
         result = await self.on_validate_flow_dependencies_request(
             ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
         )
@@ -3118,6 +3171,113 @@ class FlowManager:
         details = f"Successfully got the list of Flows in the Current Context (Flow '{parent_flow_name}')."
 
         return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list, result_details=details)
+
+    async def on_auto_layout_flow_request(self, request: AutoLayoutFlowRequest) -> ResultPayload:  # noqa: C901, PLR0912
+        """Assign editor positions to every node in a flow by topological column layout.
+
+        Algorithm (Kahn-ish): walk the data+control edges internal to this flow, compute a
+        layer per node as the longest path from any source (node with no incoming edges),
+        then place layers as columns (x = origin_x + layer * layer_spacing) and siblings
+        within a layer as rows (y = origin_y + row_index * row_spacing). Writes
+        `node.metadata['position'] = {'x', 'y'}` for each node, preserving other metadata
+        keys.
+
+        Cycles should not occur in a well-formed flow. If one is detected, nodes that
+        couldn't be topologically ordered are parked at layer 0 and a warning is logged.
+        """
+        flow_name = request.flow_name
+        if not flow_name:
+            if GriptapeNodes.ContextManager().has_current_flow():
+                flow_name = GriptapeNodes.ContextManager().get_current_flow().name
+            else:
+                details = (
+                    "Attempted to auto-layout a flow. Failed because no flow_name was provided "
+                    "and the Current Context has no flow."
+                )
+                return AutoLayoutFlowResultFailure(result_details=details)
+
+        try:
+            flow = self.get_flow_by_name(flow_name)
+        except KeyError as err:
+            details = f"Attempted to auto-layout flow '{flow_name}'. Failed because: {err}"
+            return AutoLayoutFlowResultFailure(result_details=details)
+
+        node_names = list(flow.nodes.keys())
+        if not node_names:
+            return AutoLayoutFlowResultSuccess(
+                flow_name=flow_name,
+                positioned_nodes=[],
+                result_details=f"Flow '{flow_name}' has no nodes; nothing to lay out.",
+            )
+
+        # Build directed edges restricted to this flow so sub-flows and other workflow state
+        # do not contaminate the topological ordering.
+        node_name_set = set(node_names)
+        incoming: dict[str, set[str]] = {name: set() for name in node_names}
+        outgoing: dict[str, set[str]] = {name: set() for name in node_names}
+        for connection in self._connections.connections.values():
+            src = connection.source_node.name
+            tgt = connection.target_node.name
+            if src in node_name_set and tgt in node_name_set and src != tgt:
+                outgoing[src].add(tgt)
+                incoming[tgt].add(src)
+
+        # Kahn's topological sort with layer assignment. `layer[n]` is the longest path from
+        # any source to n, which gives a column that lines up fan-out naturally.
+        layer: dict[str, int] = dict.fromkeys(node_names, 0)
+        in_degree = {name: len(incoming[name]) for name in node_names}
+        ready = [name for name in node_names if in_degree[name] == 0]
+        ready.sort()  # stable layer ordering across runs
+        visited = 0
+        while ready:
+            name = ready.pop(0)
+            visited += 1
+            for child in sorted(outgoing[name]):
+                layer[child] = max(layer[child], layer[name] + 1)
+                in_degree[child] -= 1
+                if in_degree[child] == 0:
+                    ready.append(child)
+
+        if visited < len(node_names):
+            logger.warning(
+                "Auto-layout detected a cycle in flow '%s'; %d node(s) could not be ordered and stay at layer 0.",
+                flow_name,
+                len(node_names) - visited,
+            )
+
+        layers: dict[int, list[str]] = {}
+        for name in node_names:
+            layers.setdefault(layer[name], []).append(name)
+
+        positioned: list[NodePosition] = []
+        for layer_idx in sorted(layers.keys()):
+            for row_idx, name in enumerate(sorted(layers[layer_idx])):
+                x = request.origin_x + layer_idx * request.layer_spacing
+                y = request.origin_y + row_idx * request.row_spacing
+                # Dispatch the position update through GriptapeNodes.ahandle_request so the
+                # per-node SetNodeMetadataResultSuccess event is broadcast to subscribers.
+                # The editor listens on that event to move nodes on the canvas live; mutating
+                # node.metadata directly here would update the engine state but leave the UI
+                # stale until a reload.
+                set_metadata_result = await GriptapeNodes.ahandle_request(
+                    SetNodeMetadataRequest(node_name=name, metadata={"position": {"x": x, "y": y}})
+                )
+                if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
+                    logger.warning(
+                        "Auto-layout failed to update position for node '%s' in flow '%s': %s",
+                        name,
+                        flow_name,
+                        set_metadata_result.result_details,
+                    )
+                    continue
+                positioned.append(NodePosition(node_name=name, x=x, y=y))
+
+        details = f"Laid out {len(positioned)} node(s) in flow '{flow_name}' across {len(layers)} layer(s)."
+        return AutoLayoutFlowResultSuccess(
+            flow_name=flow_name,
+            positioned_nodes=positioned,
+            result_details=details,
+        )
 
     def _aggregate_flow_dependencies(
         self, serialized_node_commands: list[SerializedNodeCommands], sub_flows_commands: list[SerializedFlowCommands]
@@ -4044,6 +4204,28 @@ class FlowManager:
             not self._global_control_flow_machine.context.resolution_machine.is_complete()
             and self._global_control_flow_machine.context.resolution_machine.is_started()
         )
+
+    async def _await_flow_completion(self, timeout_ms: int | None) -> str | None:
+        """Block until the current flow resolves, erroring, or the timeout elapses.
+
+        Polls `check_for_existing_running_flow()` because the control flow machine does not
+        expose a completion future today; this is the same signal the UI uses to decide when
+        the run is idle. Returns None on clean completion, or an error string describing why
+        the wait ended unsuccessfully (timeout, or flow error).
+        """
+        poll_interval_sec = 0.05
+        elapsed_ms = 0
+        while self.check_for_existing_running_flow():
+            if timeout_ms is not None and elapsed_ms >= timeout_ms:
+                return f"Timed out waiting for flow completion after {timeout_ms} ms."
+            await asyncio.sleep(poll_interval_sec)
+            elapsed_ms += int(poll_interval_sec * 1000)
+
+        if self._global_control_flow_machine is not None:
+            resolution_machine = self._global_control_flow_machine.resolution_machine
+            if resolution_machine.is_errored():
+                return resolution_machine.get_error_message() or "Flow errored during execution."
+        return None
 
     async def cancel_flow_run(self) -> None:
         if not self.check_for_existing_running_flow():

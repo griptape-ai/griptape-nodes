@@ -57,6 +57,7 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
         # Get all cached models
         all_choices = self.get_choices()
         if not all_choices:
+            super().refresh_parameters()
             return
 
         # Get current value - use value_being_set if provided (during after_value_set)
@@ -76,6 +77,7 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
 
         # If no choices after filtering, include all (initial state)
         if not filtered_choices:
+            super().refresh_parameters()
             return
 
         # Determine default value
@@ -89,14 +91,47 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
         else:
             parameter.add_trait(Options(choices=filtered_choices))
 
+        # Update badge to reflect current download status
+        badge = self._build_model_badge()
+        if badge is None:
+            parameter.clear_badge()
+        else:
+            parameter.set_badge(
+                variant=badge.variant,
+                title=badge.title,
+                message=badge.message,
+                icon=badge.icon,
+                hide_clear_button=badge.hide_clear_button,
+            )
+
     def add_input_parameters(self) -> None:
         """Override to apply deprecated model filtering after parameter creation."""
         super().add_input_parameters()
         self.refresh_parameters()
 
     def get_download_commands(self) -> list[str]:
-        return [f'huggingface-cli download "{repo}"' for repo in self._repo_ids if not self._is_deprecated(repo)]
+        return [f'huggingface-cli download "{repo}"' for repo in self.get_download_models()]
 
     def get_download_models(self) -> list[str]:
-        """Returns a list of model names that should be downloaded (excluding deprecated models)."""
-        return [repo for repo in self._repo_ids if not self._is_deprecated(repo)]
+        """Returns a list of model names that should be downloaded (excluding deprecated models).
+
+        Strips any `::<subname>` postfix used by providers to encode a sub-model selector within a repo
+        (e.g. `Lightricks/LTX-2::ltx-2-19b-dev`). The postfix is not part of the HuggingFace repo ID,
+        so it must be removed before the name reaches the model manager UI or the download path.
+
+        The `::` convention is produced by the LTX-2 diffusion pipeline in
+        `griptape-nodes-library-advanced-media` — see the LTX-2 `models.py` / `text2vid_parameters.py` /
+        `img2vid_parameters.py` where the postfix is generated and later split to select a variant
+        subfolder within the shared repo.
+        """
+        seen: set[str] = set()
+        downloads: list[str] = []
+        for repo in self._repo_ids:
+            if self._is_deprecated(repo):
+                continue
+            base_repo = repo.split("::", 1)[0]
+            if base_repo in seen:
+                continue
+            seen.add(base_repo)
+            downloads.append(base_repo)
+        return downloads

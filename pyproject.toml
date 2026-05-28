@@ -1,11 +1,11 @@
 [project]
-name = "griptape-nodes"
-version = "0.83.0"
+name = "griptape-nodes-engine"
+version = "0.85.2"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
 dependencies = [
-  "griptape>=1.10.0",
+  "griptape>=1.10.2",
   "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
@@ -60,6 +60,7 @@ docs = [
   "mkdocs>=1.5.2",
   "mkdocstrings[python]>=0.29.1",
   "mkdocs-mermaid2-plugin>=1.2.2",
+  "mkdocs-llmstxt>=0.5.0",
   "pymdown-extensions>=10.17",
 ]
 test = [
@@ -71,13 +72,12 @@ test = [
   "coverage>=7.0.0",
 ]
 
-[project.scripts]
-griptape-nodes = "griptape_nodes:main"
-gtn = "griptape_nodes:main"
-
 [build-system]
 requires = ["uv_build>=0.7.2,<0.12"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "griptape_nodes"
 
 [tool.uv.sources]
 griptape-cloud-client = { git = "https://github.com/griptape-ai/griptape-cloud-python-client", rev = "main" }
