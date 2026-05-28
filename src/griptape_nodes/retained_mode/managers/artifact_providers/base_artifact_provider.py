@@ -64,47 +64,52 @@ class BaseArtifactProvider(ABC):
         ...
 
     @classmethod
-    @abstractmethod
     def get_preview_formats(cls) -> set[str]:
         """Preview formats this provider can generate.
+
+        Override in subclasses that support preview generation. The default
+        empty set indicates this provider does not generate previews; the
+        artifact manager skips preview-settings registration in that case.
 
         Returns:
             Set of lowercase preview format extensions WITHOUT leading dots (e.g., {'webp', 'jpg'})
         """
-        ...
+        return set()
 
     @classmethod
-    @abstractmethod
     def get_default_preview_generator(cls) -> str:
         """Default preview generator for this provider.
 
+        Override in subclasses that support preview generation.
+
         Returns:
-            Friendly name of the default preview generator
+            Friendly name of the default preview generator, or empty string if unsupported.
         """
-        ...
+        return ""
 
     @classmethod
-    @abstractmethod
     def get_default_preview_format(cls) -> str:
         """Default preview format for this provider.
 
+        Override in subclasses that support preview generation.
+
         Returns:
-            Default format extension WITHOUT leading dot (e.g., 'png', 'webp')
+            Default format extension WITHOUT leading dot (e.g., 'png', 'webp'),
+            or empty string if unsupported.
         """
-        ...
+        return ""
 
     @classmethod
-    @abstractmethod
     def get_default_preview_generators(cls) -> list[type[BaseArtifactPreviewGenerator]]:
         """Get default preview generator classes for this provider.
 
-        Returns generator classes without requiring provider instantiation.
-        This allows schema generation and registration without loading heavyweight dependencies.
+        Override in subclasses that support preview generation. The default
+        empty list indicates this provider does not generate previews.
 
         Returns:
             List of default preview generator classes
         """
-        ...
+        return []
 
     @classmethod
     def get_config_key_prefix(cls) -> str:
@@ -231,6 +236,25 @@ class BaseArtifactProvider(ABC):
             Processed bytes (or original bytes if no processing needed)
         """
         return data
+
+    @classmethod
+    def detect_format(cls, data: bytes) -> str | None:  # noqa: ARG003
+        """Sniff the canonical on-disk extension for ``data`` if this provider recognizes it.
+
+        Override in subclasses to inspect magic bytes for the formats this
+        provider handles. The default implementation returns ``None`` (no
+        opinion), which lets ``ArtifactManager.sniff_extension`` defer to the
+        next provider.
+
+        Args:
+            data: Raw file bytes (the head of the buffer is sufficient).
+
+        Returns:
+            A lowercase canonical file extension WITHOUT a leading dot
+            (e.g. ``"png"``, ``"mp4"``) when the bytes are recognized,
+            otherwise ``None``.
+        """
+        return None
 
     @classmethod
     @abstractmethod

@@ -155,20 +155,10 @@ async def _aresolve_file_path(file_path: str | MacroPath) -> str:
     return str(resolve_result.absolute_path)  # type: ignore[union-attr]
 
 
-# Minimum bytes needed by the magic-byte sniffers below (ISO BMFF brand sits at offset 8-12).
-_SNIFF_MIN_HEADER_BYTES = 12
-
-# MPEG audio frame-sync markers used by _sniff_audio_extension.
-_MPEG_FRAME_SYNC_BYTE = 0xFF
-_MPEG_FRAME_SYNC_MASK = 0xE0
-_MPEG_FRAME_SYNC_VALUE = 0xE0
-_ADTS_SYNC_MASK = 0xF0
-_ADTS_SYNC_VALUE = 0xF0
-_MP3_LAYER_BYTES = (0xFB, 0xF3, 0xF2)
-
 # Pairs of suffixes that should be treated as equivalent when comparing a
-# user-supplied filename extension against the canonical extension reported by
-# the sniffers. Keys and values are lowercase, no leading dot.
+# user-supplied filename extension against the canonical extension reported
+# by ArtifactManager.sniff_extension. Keys and values are lowercase, no
+# leading dot.
 _EXTENSION_ALIASES: dict[str, str] = {
     "jpg": "jpeg",
     "jpeg": "jpeg",
@@ -185,119 +175,16 @@ def _canonical_extension(ext: str) -> str:
     return _EXTENSION_ALIASES.get(lowered, lowered)
 
 
-def _sniff_image_extension(data: bytes) -> str | None:  # noqa: C901, PLR0911
-    """Magic-byte sniff for common image formats.
-
-    Pure prefix checks; no PIL parsing or decompression-bomb scans, so this is
-    safe to run on every ``write_bytes`` call regardless of payload type. HEIC
-    is recognized directly via its ISO BMFF brand so HEIC writes don't depend
-    on optional Pillow plugins (e.g. ``pillow-heif``).
-    """
-    if len(data) < _SNIFF_MIN_HEADER_BYTES:
-        return None
-    head = data[:_SNIFF_MIN_HEADER_BYTES]
-    if head[:8] == b"\x89PNG\r\n\x1a\n":
-        return "png"
-    if head[:3] == b"\xff\xd8\xff":
-        return "jpg"
-    if head[:6] in (b"GIF87a", b"GIF89a"):
-        return "gif"
-    if head[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP":  # noqa: PLR2004
-        return "webp"
-    if head[:2] == b"BM":
-        return "bmp"
-    if head[:4] in (b"II*\x00", b"MM\x00*"):
-        return "tiff"
-    if head[:4] == b"\x00\x00\x01\x00":
-        return "ico"
-    # ISO BMFF image brands (HEIC / HEIF / AVIF).
-    if head[4:8] == b"ftyp" and head[8:12] in (b"heic", b"heix", b"heim", b"heis", b"mif1", b"msf1"):
-        return "heic"
-    if head[4:8] == b"ftyp" and head[8:12] in (b"avif", b"avis"):
-        return "avif"
-    return None
-
-
-def _sniff_video_extension(data: bytes) -> str | None:  # noqa: C901, PLR0911
-    """Magic-byte sniff for common video container formats."""
-    if len(data) < _SNIFF_MIN_HEADER_BYTES:
-        return None
-    head = data[:_SNIFF_MIN_HEADER_BYTES]
-    # ISO BMFF: 'ftyp' at bytes 4-8, brand at bytes 8-12.
-    if head[4:8] == b"ftyp":
-        brand = head[8:12]
-        # Audio-only ISO BMFF brands are handled by the audio sniffer; skip here.
-        if brand in (b"M4A ", b"M4B "):
-            return None
-        if brand == b"qt  ":
-            return "mov"
-        if brand in (b"M4V ", b"M4VH", b"M4VP"):
-            return "m4v"
-        # HEIC/HEIF/AVIF are images, not video; the image sniffer claims them.
-        if brand in (b"heic", b"heix", b"mif1", b"heim", b"heis", b"msf1", b"avif", b"avis"):
-            return None
-        return "mp4"
-    # Matroska / WebM EBML header.
-    if head[:4] == b"\x1aE\xdf\xa3":
-        if b"webm" in data[:256]:
-            return "webm"
-        return "mkv"
-    # AVI: RIFF....AVI .
-    if head[:4] == b"RIFF" and head[8:12] == b"AVI ":
-        return "avi"
-    if head[:6] in (b"GIF87a", b"GIF89a"):
-        return "gif"
-    return None
-
-
-def _sniff_audio_extension(data: bytes) -> str | None:  # noqa: C901, PLR0911
-    """Magic-byte sniff for common audio container/codec formats."""
-    if len(data) < _SNIFF_MIN_HEADER_BYTES:
-        return None
-    head = data[:_SNIFF_MIN_HEADER_BYTES]
-    if head[:3] == b"ID3":
-        return "mp3"
-    if head[0] == _MPEG_FRAME_SYNC_BYTE and (head[1] & _MPEG_FRAME_SYNC_MASK) == _MPEG_FRAME_SYNC_VALUE:
-        return "mp3"
-    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
-        return "wav"
-    if head[:4] == b"fLaC":
-        return "flac"
-    if head[:4] == b"OggS":
-        if b"OpusHead" in data[:128]:
-            return "opus"
-        return "ogg"
-    if head[4:8] == b"ftyp" and head[8:12] in (b"M4A ", b"M4B "):
-        return "m4a"
-    if head[:4] == b"\x1aE\xdf\xa3" and b"webm" in data[:256]:
-        # WebM with audio-only stream is sniffable as webm; defer to video sniffer.
-        return None
-    if (
-        head[0] == _MPEG_FRAME_SYNC_BYTE
-        and (head[1] & _ADTS_SYNC_MASK) == _ADTS_SYNC_VALUE
-        and head[1] not in _MP3_LAYER_BYTES
-    ):
-        return "aac"
-    return None
-
-
-def _sniff_extension(data: bytes) -> str | None:
-    """Sniff a canonical on-disk extension from raw bytes.
-
-    Tries image, video, and audio sniffers in turn. Returns None if none of
-    them identifies the data; callers should treat that as "unknown bytes,
-    write through" rather than an error.
-    """
-    return _sniff_image_extension(data) or _sniff_video_extension(data) or _sniff_audio_extension(data)
-
-
 def _validate_extension_matches_bytes(file_path: str, content: str | bytes) -> None:
     """Raise ValueError if `content`'s sniffed extension disagrees with the path suffix.
 
-    Validation is skipped when:
+    The actual sniffing is delegated to
+    ``GriptapeNodes.ArtifactManager().sniff_extension``, which dispatches to
+    each registered artifact provider's ``detect_format``. Validation is
+    skipped when:
     - `content` is text (not bytes),
     - the path has no extension,
-    - the bytes can't be identified by any sniffer (a warning is logged).
+    - the bytes can't be identified by any provider (a warning is logged).
 
     Args:
         file_path: The resolved on-disk path the bytes will be written to.
@@ -314,7 +201,7 @@ def _validate_extension_matches_bytes(file_path: str, content: str | bytes) -> N
     if not suffix:
         return
 
-    sniffed = _sniff_extension(content)
+    sniffed = GriptapeNodes.ArtifactManager().sniff_extension(content)
     if sniffed is None:
         logger.warning(
             "Could not identify byte content for '%s'; writing through without extension validation.",

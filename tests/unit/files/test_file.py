@@ -15,10 +15,6 @@ from griptape_nodes.files.file import (
     FileDestination,
     FileLoadError,
     FileWriteError,
-    _sniff_audio_extension,
-    _sniff_extension,
-    _sniff_image_extension,
-    _sniff_video_extension,
     _validate_extension_matches_bytes,
 )
 from griptape_nodes.retained_mode.events.os_events import (
@@ -1152,188 +1148,35 @@ def _jpeg_bytes() -> bytes:
     return _pil_bytes("JPEG")
 
 
-def _gif_bytes() -> bytes:
-    return _pil_bytes("GIF", mode="P")
-
-
-def _heic_bytes() -> bytes:
-    """Minimal HEIC ftyp box; Pillow can't generate HEIC without pillow-heif."""
-    return b"\x00\x00\x00\x18ftypheic" + b"\x00" * 16
-
-
-def _avif_bytes() -> bytes:
-    """Minimal AVIF ftyp box; Pillow can't generate AVIF natively."""
-    return b"\x00\x00\x00\x18ftypavif" + b"\x00" * 16
-
-
-def _webm_bytes() -> bytes:
-    return b"\x1aE\xdf\xa3" + b"\x00" * 16 + b"webm" + b"\x00" * 240
-
-
-def _mkv_bytes() -> bytes:
-    return b"\x1aE\xdf\xa3" + b"\x00" * 256
-
-
-def _mp4_bytes() -> bytes:
-    return b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
-
-
-def _mov_bytes() -> bytes:
-    return b"\x00\x00\x00\x18ftypqt  " + b"\x00" * 16
-
-
 def _m4v_bytes() -> bytes:
     return b"\x00\x00\x00\x18ftypM4V " + b"\x00" * 16
 
 
-def _m4a_bytes() -> bytes:
-    return b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 16
+@pytest.fixture
+def _registered_providers() -> None:
+    """Ensure default artifact providers are registered with the ArtifactManager.
+
+    Validation goes through ``ArtifactManager.sniff_extension``, which dispatches
+    to each registered provider's ``detect_format``. Registration normally
+    happens on ``AppInitializationComplete``, which doesn't fire in unit tests,
+    so we register the default providers manually here.
+    """
+    from griptape_nodes.retained_mode.events.artifact_events import RegisterArtifactProviderRequest
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+    from griptape_nodes.retained_mode.managers.artifact_providers import (
+        AudioArtifactProvider,
+        ImageArtifactProvider,
+        VideoArtifactProvider,
+    )
+
+    artifact_manager = GriptapeNodes.ArtifactManager()
+    for provider_class in (ImageArtifactProvider, VideoArtifactProvider, AudioArtifactProvider):
+        artifact_manager.on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=provider_class)
+        )
 
 
-def _avi_bytes() -> bytes:
-    return b"RIFF\x00\x00\x00\x00AVI " + b"\x00" * 16
-
-
-def _mp3_bytes() -> bytes:
-    return b"ID3" + b"\x00" * 16
-
-
-def _wav_bytes() -> bytes:
-    return b"RIFF\x00\x00\x00\x00WAVE" + b"\x00" * 16
-
-
-def _flac_bytes() -> bytes:
-    return b"fLaC" + b"\x00" * 32
-
-
-def _ogg_bytes() -> bytes:
-    return b"OggS" + b"\x00" * 124
-
-
-def _opus_bytes() -> bytes:
-    return b"OggS" + b"\x00" * 24 + b"OpusHead" + b"\x00" * 88
-
-
-class TestSniffImageExtension:
-    """Tests for _sniff_image_extension."""
-
-    def test_png(self) -> None:
-        assert _sniff_image_extension(_png_bytes()) == "png"
-
-    def test_jpeg(self) -> None:
-        assert _sniff_image_extension(_jpeg_bytes()) == "jpg"
-
-    def test_gif(self) -> None:
-        assert _sniff_image_extension(_gif_bytes()) == "gif"
-
-    def test_webp(self) -> None:
-        assert _sniff_image_extension(_pil_bytes("WEBP")) == "webp"
-
-    def test_bmp(self) -> None:
-        assert _sniff_image_extension(_pil_bytes("BMP")) == "bmp"
-
-    def test_tiff(self) -> None:
-        assert _sniff_image_extension(_pil_bytes("TIFF")) == "tiff"
-
-    def test_ico(self) -> None:
-        buf = BytesIO()
-        Image.new("RGBA", (16, 16)).save(buf, format="ICO")
-        assert _sniff_image_extension(buf.getvalue()) == "ico"
-
-    def test_heic_via_iso_bmff_brand(self) -> None:
-        """HEIC is claimed via the ISO BMFF brand without depending on pillow-heif."""
-        assert _sniff_image_extension(_heic_bytes()) == "heic"
-
-    def test_heif_mif1_brand_returns_heic(self) -> None:
-        assert _sniff_image_extension(b"\x00\x00\x00\x18ftypmif1" + b"\x00" * 16) == "heic"
-
-    def test_avif_via_iso_bmff_brand(self) -> None:
-        assert _sniff_image_extension(_avif_bytes()) == "avif"
-
-    def test_riff_without_webp_marker_returns_none(self) -> None:
-        """A RIFF header alone (e.g. WAV / AVI) must not be claimed as WebP."""
-        assert _sniff_image_extension(b"RIFF\x00\x00\x00\x00WAVE" + b"\x00" * 16) is None
-
-    def test_unidentifiable_returns_none(self) -> None:
-        assert _sniff_image_extension(b"not an image") is None
-
-
-class TestSniffVideoExtension:
-    """Tests for _sniff_video_extension."""
-
-    def test_mp4_ftyp(self) -> None:
-        assert _sniff_video_extension(_mp4_bytes()) == "mp4"
-
-    def test_mov_qt_brand(self) -> None:
-        assert _sniff_video_extension(_mov_bytes()) == "mov"
-
-    def test_m4v_brand(self) -> None:
-        assert _sniff_video_extension(_m4v_bytes()) == "m4v"
-
-    def test_m4a_audio_brand_returns_none(self) -> None:
-        """Audio-only ISO BMFF brand should not be claimed by the video sniffer."""
-        assert _sniff_video_extension(_m4a_bytes()) is None
-
-    def test_webm_ebml_with_doctype(self) -> None:
-        assert _sniff_video_extension(_webm_bytes()) == "webm"
-
-    def test_mkv_ebml_without_webm_doctype(self) -> None:
-        assert _sniff_video_extension(_mkv_bytes()) == "mkv"
-
-    def test_avi_riff(self) -> None:
-        assert _sniff_video_extension(_avi_bytes()) == "avi"
-
-    def test_gif_returns_gif(self) -> None:
-        assert _sniff_video_extension(_gif_bytes()) == "gif"
-
-    def test_short_data_returns_none(self) -> None:
-        assert _sniff_video_extension(b"\x00\x01") is None
-
-
-class TestSniffAudioExtension:
-    """Tests for _sniff_audio_extension."""
-
-    def test_mp3_id3(self) -> None:
-        assert _sniff_audio_extension(_mp3_bytes()) == "mp3"
-
-    def test_mp3_mpeg_frame_sync(self) -> None:
-        assert _sniff_audio_extension(b"\xff\xfb" + b"\x00" * 32) == "mp3"
-
-    def test_wav_riff_wave(self) -> None:
-        assert _sniff_audio_extension(_wav_bytes()) == "wav"
-
-    def test_flac(self) -> None:
-        assert _sniff_audio_extension(_flac_bytes()) == "flac"
-
-    def test_ogg(self) -> None:
-        assert _sniff_audio_extension(_ogg_bytes()) == "ogg"
-
-    def test_ogg_with_opus_codec_returns_opus(self) -> None:
-        assert _sniff_audio_extension(_opus_bytes()) == "opus"
-
-    def test_m4a_iso_bmff(self) -> None:
-        assert _sniff_audio_extension(_m4a_bytes()) == "m4a"
-
-    def test_short_data_returns_none(self) -> None:
-        assert _sniff_audio_extension(b"\x00\x01") is None
-
-
-class TestSniffExtension:
-    """Tests for the top-level _sniff_extension dispatcher."""
-
-    def test_dispatches_to_image(self) -> None:
-        assert _sniff_extension(_png_bytes()) == "png"
-
-    def test_dispatches_to_video(self) -> None:
-        assert _sniff_extension(_mp4_bytes()) == "mp4"
-
-    def test_dispatches_to_audio(self) -> None:
-        assert _sniff_extension(_mp3_bytes()) == "mp3"
-
-    def test_unknown_returns_none(self) -> None:
-        assert _sniff_extension(b"random bytes that match nothing") is None
-
-
+@pytest.mark.usefixtures("_registered_providers")
 class TestValidateExtensionMatchesBytes:
     """Tests for _validate_extension_matches_bytes (the function wired into write_bytes)."""
 
@@ -1371,6 +1214,7 @@ class TestValidateExtensionMatchesBytes:
         _validate_extension_matches_bytes("/workspace/out.PNG", _png_bytes())
 
 
+@pytest.mark.usefixtures("_registered_providers")
 class TestFileWriteValidationIntegration:
     """End-to-end: File.write_bytes should run validation before issuing the request."""
 
