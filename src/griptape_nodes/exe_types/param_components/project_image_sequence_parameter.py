@@ -3,8 +3,9 @@
 import logging
 
 from griptape_nodes.common.macro_parser import ParsedMacro
-from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_components.project_output_parameter import ProjectOutputParameter
 from griptape_nodes.files.image_sequence import (
     ImageSequenceDestination,
     build_versioned_sequence_destination,
@@ -12,10 +13,6 @@ from griptape_nodes.files.image_sequence import (
 )
 from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.files.project_file import SITUATION_TO_FILE_POLICY
-from griptape_nodes.retained_mode.events.connection_events import (
-    ListConnectionsForNodeRequest,
-    ListConnectionsForNodeResultSuccess,
-)
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
@@ -23,8 +20,6 @@ from griptape_nodes.retained_mode.events.project_events import (
     MacroPath,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.retained_mode import RetainedMode
-from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -40,7 +35,7 @@ class ImageSequenceDestinationProvider:
     def image_sequence_destination(self) -> ImageSequenceDestination | None: ...
 
 
-class ProjectImageSequenceParameter:
+class ProjectImageSequenceParameter(ProjectOutputParameter):
     """Parameter component for project-aware image sequence output.
 
     Adds a filename-pattern parameter to a node that, when processed, returns an
@@ -79,54 +74,30 @@ class ProjectImageSequenceParameter:
         allowed_modes: set[ParameterMode] | None = None,
         ui_options: dict | None = None,
     ) -> None:
-        """Initialize with situation context.
-
-        Args:
-            node: Parent node instance
-            name: Parameter name
-            default_filename: Default filename (e.g., ``"frame.exr"`` or ``"frame_####.exr"``)
-            situation: Situation name (default: "save_image_sequence_frame")
-            allowed_modes: Set of allowed parameter modes (default: INPUT, PROPERTY)
-            ui_options: Optional UI options to pass to the generated parameter
-        """
-        self._node = node
-        self._name = name
-        self._situation_name = situation
-        self._default_filename = default_filename
-        self._allowed_modes = allowed_modes or {ParameterMode.INPUT, ParameterMode.PROPERTY}
-        self._ui_options = ui_options
-
-    def add_parameter(self) -> None:
-        """Create and add the image sequence pattern parameter to the node."""
-        tooltip = f"Output frame filename (uses '{self._situation_name}' situation template)"
-
-        traits: set = set()
-
-        if ParameterMode.INPUT in self._allowed_modes:
-            traits.add(
-                Button(
-                    icon="cog",
-                    size="icon",
-                    variant="secondary",
-                    tooltip="Create and connect an ImageSequenceSettings node",
-                    on_click=self._on_configure_button_clicked,
-                )
-            )
-
-        parameter = Parameter(
-            name=self._name,
-            type="str",
-            default_value=self._default_filename,
-            allowed_modes=self._allowed_modes,
-            tooltip=tooltip,
-            input_types=["str"],
-            output_type="ImageSequence",
-            traits=traits,
-            ui_options=self._ui_options,
+        super().__init__(
+            node,
+            name,
+            default_value=default_filename,
+            situation=situation,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
         )
-        parameter.on_incoming_connection_removed.append(self._reset_to_default)
 
-        self._node.add_parameter(parameter)
+    @property
+    def _settings_node_type(self) -> str:
+        return "ImageSequenceSettings"
+
+    @property
+    def _settings_value_param_name(self) -> str:
+        return "filename"
+
+    @property
+    def _settings_source_param_name(self) -> str:
+        return "sequence_destination"
+
+    @property
+    def _parameter_output_type(self) -> str:
+        return "ImageSequence"
 
     def build_sequence(self, **extra_vars: str | int) -> ImageSequenceDestination:
         """Build an ImageSequenceDestination from the parameter's current value.
@@ -146,108 +117,19 @@ class ProjectImageSequenceParameter:
             ValueError: If an upstream ImageSequenceDestinationProvider returns None.
             ImageSequenceError: If no available version index can be found.
         """
-        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self._node.name))
-        if isinstance(result, ListConnectionsForNodeResultSuccess):
-            for conn in result.incoming_connections:
-                if conn.target_parameter_name == self._name:
-                    source_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(conn.source_node_name)
-                    if isinstance(source_node, ImageSequenceDestinationProvider):
-                        seq_dest = source_node.image_sequence_destination
-                        if seq_dest is None:
-                            msg = (
-                                f"Attempted to build image sequence destination for {self._node.name}.{self._name}. "
-                                f"Failed because upstream node '{conn.source_node_name}' provides an "
-                                f"ImageSequenceDestination but returned None (likely missing a filename)."
-                            )
-                            raise ValueError(msg)
-                        return seq_dest
+        upstream = self._get_upstream_destination(
+            ImageSequenceDestinationProvider, "image_sequence_destination", "ImageSequenceDestination"
+        )
+        if upstream is not None:
+            return upstream  # type: ignore[return-value]
 
         value = self._node.get_parameter_value(self._name)
-        filename = value if isinstance(value, str) and value else self._default_filename
+        filename = value if isinstance(value, str) and value else self._default_value
 
         if "node_name" not in extra_vars:
             extra_vars["node_name"] = self._node.name
 
         return _build_sequence_destination_from_situation(filename, self._situation_name, **extra_vars)
-
-    def _reset_to_default(
-        self,
-        parameter: Parameter,  # noqa: ARG002
-        source_node_name: str,  # noqa: ARG002
-        source_parameter_name: str,  # noqa: ARG002
-    ) -> None:
-        self._node.set_parameter_value(self._name, self._default_filename)
-        self._node.publish_update_to_parameter(self._name, self._default_filename)
-
-    def _on_configure_button_clicked(
-        self,
-        button: Button,  # noqa: ARG002
-        button_details: ButtonDetailsMessagePayload,
-    ) -> NodeMessageResult:
-        """Create and connect an ImageSequenceSettings node to this parameter."""
-        node_name = self._node.name
-
-        has_incoming = False
-        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=node_name))
-        if isinstance(result, ListConnectionsForNodeResultSuccess):
-            has_incoming = any(conn.target_parameter_name == self._name for conn in result.incoming_connections)
-
-        if has_incoming:
-            return NodeMessageResult(
-                success=False,
-                details=f"{node_name}: {self._name} parameter already has an incoming connection",
-                response=button_details,
-                altered_workflow_state=False,
-            )
-
-        create_result = RetainedMode.create_node_relative_to(
-            reference_node_name=node_name,
-            new_node_type="ImageSequenceSettings",
-            offset_side="left",
-            offset_x=-750,
-            offset_y=0,
-            lock=False,
-        )
-
-        if not isinstance(create_result, str):
-            return NodeMessageResult(
-                success=False,
-                details=f"{node_name}: Failed to create ImageSequenceSettings node",
-                response=button_details,
-                altered_workflow_state=False,
-            )
-
-        configure_node_name = create_result
-
-        configure_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(configure_node_name)
-        if configure_node is not None:
-            configure_node.set_parameter_value("situation", self._situation_name)
-            configure_node.publish_update_to_parameter("situation", self._situation_name)
-
-            current_filename = self._node.get_parameter_value(self._name)
-            if isinstance(current_filename, str) and current_filename:
-                configure_node.set_parameter_value("filename", current_filename)
-                configure_node.publish_update_to_parameter("filename", current_filename)
-
-        connection_result = RetainedMode.connect(
-            source=f"{configure_node_name}.sequence_destination",
-            destination=f"{node_name}.{self._name}",
-        )
-
-        if not connection_result.succeeded():
-            return NodeMessageResult(
-                success=False,
-                details=f"{node_name}: Failed to connect {configure_node_name}.sequence_destination to {self._name}",
-                response=button_details,
-                altered_workflow_state=True,
-            )
-
-        return NodeMessageResult(
-            success=True,
-            details=f"{node_name}: Created and connected {configure_node_name}",
-            response=button_details,
-            altered_workflow_state=True,
-        )
 
 
 def _build_sequence_destination_from_situation(
