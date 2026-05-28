@@ -84,6 +84,34 @@ directories:
 
 This makes the `outputs` directory relative to the current workflow's location rather than the project base directory.
 
+## Per-platform paths
+
+A directory's `path_macro` can be a single string (used everywhere) or a per-platform mapping when the right path differs across operating systems. Use this when a workspace is shared between collaborators on Linux, macOS, and Windows and the directory needs a different absolute location on each.
+
+```yaml
+directories:
+  scratch:
+    path_macro:
+      linux: "/mnt/fast-scratch"
+      darwin: "/Volumes/scratch"
+      windows: "D:/scratch"
+      default: "{workspace_dir}/scratch"
+```
+
+At resolution time, the engine picks the entry matching the current platform (`linux`, `darwin`, or `windows`). If the active platform's key is unset, it falls back to `default`. At least one of the four keys must be supplied; otherwise the project fails validation.
+
+```yaml
+directories:
+  models:
+    path_macro:
+      darwin: "~/Library/Caches/models"
+      default: "{workspace_dir}/.models"
+```
+
+Per-platform values support the same syntax as the string form — tilde expansion, environment variables, and macros all work the same way per platform.
+
+The mapping is **atomic** during overlay merges: a child template that supplies a per-platform mapping fully replaces the parent's `path_macro`, rather than merging key-by-key. To keep one platform's value while overriding another, restate every key you want kept.
+
 ## Reserved names
 
 Directory names are reserved across the entire variable namespace. You cannot use a directory name as a user-supplied variable in a macro call — the system will return an error if you try. This protects against accidentally overriding a directory path through a variable name collision.
