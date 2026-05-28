@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import functools
 import json
 import logging
@@ -501,23 +500,22 @@ class WorkerManager:
         """Tell every registered worker to handle ``request_type`` locally.
 
         Wraps ``request_type`` in an EventRequest and fans it out to every
-        registered worker. Safe to call from sync code and from inside a
-        running event loop -- the fan-out is scheduled as a background task;
-        the caller does not wait. On a worker process (no registered workers,
-        or no transport configured) this is a cheap no-op.
+        registered worker as a fire-and-forget background task on the
+        caller's running event loop. On a worker process (no registered
+        workers, or no transport configured) this is a cheap no-op.
+
+        Must be called from inside a running event loop. Every production
+        caller reaches this through EventManager.handle_request /
+        ahandle_request, which itself runs under asyncio.run(astart_app)
+        on the engine side or inside an ``await`` in a CLI subcommand.
         """
         if self._transport is None or not self._workers:
             return
         event = EventRequest(request=request_type())
-        running_loop: asyncio.AbstractEventLoop | None = None
-        with contextlib.suppress(RuntimeError):
-            running_loop = asyncio.get_running_loop()
-        if running_loop is not None:
-            task = running_loop.create_task(self.broadcast_to_workers(event))
-            self._inflight_broadcast_tasks.add(task)
-            task.add_done_callback(self._inflight_broadcast_tasks.discard)
-            return
-        asyncio.run(self.broadcast_to_workers(event))
+        running_loop = asyncio.get_running_loop()
+        task = running_loop.create_task(self.broadcast_to_workers(event))
+        self._inflight_broadcast_tasks.add(task)
+        task.add_done_callback(self._inflight_broadcast_tasks.discard)
 
     async def broadcast_to_workers(self, event: EventRequest) -> None:
         """Fire-and-forget fan out of an EventRequest to every registered worker.
