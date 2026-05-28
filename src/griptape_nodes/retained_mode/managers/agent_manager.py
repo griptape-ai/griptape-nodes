@@ -1,41 +1,55 @@
-import asyncio
-import json
+"""Chat-sidebar agent manager backed by the Pydantic AI harness.
+
+This manager owns:
+
+  * the lifecycle of a per-process :class:`PydanticAgentRunner` that talks to
+    Griptape Cloud through :class:`GriptapeCloudModel`,
+  * the local thread storage backend that persists Pydantic AI message
+    history,
+  * the existing engine-bundled MCP server (started here as a background
+    thread, just like before),
+  * the same request handlers the chat sidebar already calls
+    (``RunAgentRequest``, ``ConfigureAgentRequest``, the thread CRUD set,
+    ``GetConversationMemoryRequest``, ``ListAgentModelsRequest``).
+
+The Griptape ``Agent`` and the JSON-output parsing dance it required are gone.
+Streaming tokens come straight off Pydantic AI's text deltas via the runner's
+``token_sink`` callback and land on the UI as ``AgentStreamEvent`` payloads.
+"""
+
+from __future__ import annotations
+
 import logging
 import threading
-import uuid
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, ClassVar
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from attrs import define, field
-from griptape.artifacts import ErrorArtifact, ImageUrlArtifact
-from griptape.drivers.image_generation import BaseImageGenerationDriver
-from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
-from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.events import TextChunkEvent
-from griptape.loaders import ImageLoader
-from griptape.memory.structure import ConversationMemory
-from griptape.rules import Rule, Ruleset
-from griptape.structures import Agent
-from griptape.tools import BaseImageGenerationTool
-from griptape.tools.mcp.tool import MCPTool
-from griptape.utils.decorators import activity
-from json_repair import repair_json
-from pydantic import create_model
-from schema import Literal, Schema
+from pydantic_ai.messages import ModelMessagesTypeAdapter
+from pydantic_ai.usage import UsageLimits
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.agents.pydantic_ai.mcp_servers import mcp_server_from_config, streamable_http_local
+from griptape_nodes.agents.pydantic_ai.runner import (
+    PydanticAgentRunner,
+    RunEvent,
+    TextDelta,
+    ThinkingDelta,
+    ToolCall,
+    ToolResult,
+)
+from griptape_nodes.agents.pydantic_ai.workspace_tools import WorkspaceToolsetConfig
 from griptape_nodes.drivers.cloud_models import (
     DEPRECATED_MODELS,
     IMAGE_DEPRECATED_MODELS,
     IMAGE_MODEL_CHOICES,
     MODEL_CHOICES,
 )
-from griptape_nodes.drivers.thread_storage import (
-    GriptapeCloudThreadStorageDriver,
-    LocalThreadStorageDriver,
-)
+from griptape_nodes.drivers.thread_storage.local_thread_storage_driver import LocalThreadStorageDriver
 from griptape_nodes.retained_mode.events.agent_events import (
     AgentStreamEvent,
+    AgentThinkingEvent,
+    AgentToolCallEvent,
+    AgentToolResultEvent,
     ArchiveThreadRequest,
     ArchiveThreadResultFailure,
     ArchiveThreadResultSuccess,
@@ -74,86 +88,78 @@ from griptape_nodes.retained_mode.events.mcp_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.retained_mode.managers.static_files_manager import (
-    StaticFilesManager,
-)
 from griptape_nodes.servers import bind_free_socket
 from griptape_nodes.servers.mcp import GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT, start_mcp_server
 
 if TYPE_CHECKING:
-    from griptape.tools.mcp.sessions import StreamableHttpConnection
+    from pydantic_ai.toolsets import AbstractToolset
+
+    from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
+
 
 logger = logging.getLogger("griptape_nodes")
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
-SERVICE = "Griptape"
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
 
-@define
-class NodesPromptImageGenerationTool(BaseImageGenerationTool):
-    image_generation_driver: BaseImageGenerationDriver = field(kw_only=True)
-    static_files_manager: StaticFilesManager = field(kw_only=True)
+DEFAULT_AGENT_INSTRUCTIONS = (
+    "You are a coding assistant embedded in Griptape Nodes. You operate by calling tools.\n\n"
+    "Tools available to you:\n"
+    "  - Workspace file tools: read_file, write_file, edit_file, glob_files, grep_files, shell. "
+    "Use these to read, write, search, and run code inside the user's workspace.\n"
+    "  - GriptapeNodes MCP tools (prefixed `GriptapeNodes_`). Use these to interact with the "
+    "engine: list libraries and node types, create nodes, set parameter values, wire "
+    "connections, save and run workflows.\n\n"
+    "Behavior rules (these are non-negotiable):\n"
+    "  1. NEVER respond with only a plan or a description of what you intend to do. If a "
+    "     task requires tool work, call the relevant tools in the SAME turn as your "
+    "     acknowledgment. A response of the form 'I'll do X' with no tool calls is wrong.\n"
+    "  2. When the user asks you to build, create, modify, inspect, or run something, "
+    "     start with discovery tool calls (e.g. ListRegisteredLibrariesRequest, "
+    "     ListNodeTypesInLibraryRequest, glob_files, read_file) before doing anything that "
+    "     mutates state.\n"
+    "  3. Make multiple tool calls in parallel when they don't depend on each other.\n"
+    "  4. Only after you have actually completed the user's task should you produce a final "
+    "     text response. That final response should be a short summary of what you did, "
+    "     including the names of any nodes/files you created or changed.\n"
+)
 
-    @activity(
-        config={
-            "description": "Generates an image from text prompts. Both prompt and negative_prompt are required.",
-            "schema": Schema(
-                {
-                    Literal("prompt", description=BaseImageGenerationTool.PROMPT_DESCRIPTION): str,
-                    Literal("negative_prompt", description=BaseImageGenerationTool.NEGATIVE_PROMPT_DESCRIPTION): str,
-                }
-            ),
-        },
-    )
-    def generate_image(self, params: dict[str, dict[str, str]]) -> ImageUrlArtifact | ErrorArtifact:
-        prompt = params["values"]["prompt"]
-        negative_prompt = params["values"]["negative_prompt"]
-
-        output_artifact = self.image_generation_driver.run_text_to_image(
-            prompts=[prompt], negative_prompts=[negative_prompt]
-        )
-        filename = f"{uuid.uuid4()}.png"
-        image_url = self.static_files_manager.save_static_file(output_artifact.to_bytes(), filename)
-        return ImageUrlArtifact(image_url)
+# Cap each chat-sidebar turn so a runaway loop can't burn through credits or
+# wedge the conversation. The numbers are deliberately generous: 60 model
+# requests is enough for a complex multi-tool task while still protecting the
+# user from a tool-call loop.
+DEFAULT_AGENT_USAGE_LIMITS = UsageLimits(request_limit=60)
 
 
 class AgentManager:
-    # Field mappings for each transport type
-    TRANSPORT_FIELD_MAPPINGS: ClassVar[dict[str, list[str]]] = {
-        "stdio": ["command", "args", "env", "cwd", "encoding", "encoding_error_handler"],
-        "sse": ["url", "headers", "timeout", "sse_read_timeout"],
-        "streamable_http": ["url", "headers", "timeout", "sse_read_timeout", "terminate_on_close"],
-        "websocket": ["url"],
-    }
+    """Owns the chat-sidebar agent runner and the engine-bundled MCP server."""
 
     def __init__(self, static_files_manager: StaticFilesManager, event_manager: EventManager | None = None) -> None:
-        self.prompt_driver = None
-        self.image_tool = None
-        self.mcp_tool = None
         self.static_files_manager = static_files_manager
         self._mcp_server_port = GTN_MCP_SERVER_PORT
+        self._model_name: str = MODEL_CHOICES[0] if MODEL_CHOICES else "gpt-4o"
+        self._instructions: str = DEFAULT_AGENT_INSTRUCTIONS
 
-        # Thread management
-        self._threads_dir = xdg_data_home() / "griptape_nodes" / "threads"
-        self._threads_dir.mkdir(parents=True, exist_ok=True)
+        self._threads_dir: Path = xdg_data_home() / "griptape_nodes" / "threads"
+        self._thread_storage: LocalThreadStorageDriver = LocalThreadStorageDriver(
+            self._threads_dir, config_manager, secrets_manager
+        )
 
-        # Initialize thread storage driver based on config
-        self.thread_storage_driver = self._initialize_thread_storage_driver()
+        # Cache one runner per (model, mcp-set) tuple; rebuild when either changes.
+        self._runner_cache: dict[tuple[str, tuple[str, ...]], PydanticAgentRunner] = {}
 
         if event_manager is not None:
-            # Existing handlers
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
             event_manager.assign_manager_to_request_type(ConfigureAgentRequest, self.on_handle_configure_agent_request)
             event_manager.assign_manager_to_request_type(
                 GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request
             )
 
-            # New thread management handlers
             event_manager.assign_manager_to_request_type(CreateThreadRequest, self.on_handle_create_thread_request)
             event_manager.assign_manager_to_request_type(ListThreadsRequest, self.on_handle_list_threads_request)
             event_manager.assign_manager_to_request_type(DeleteThreadRequest, self.on_handle_delete_thread_request)
@@ -162,7 +168,6 @@ class AgentManager:
             event_manager.assign_manager_to_request_type(
                 UnarchiveThreadRequest, self.on_handle_unarchive_thread_request
             )
-
             event_manager.assign_manager_to_request_type(
                 ListAgentModelsRequest, self.on_handle_list_agent_models_request
             )
@@ -171,67 +176,62 @@ class AgentManager:
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
             )
-            # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop mcp server
+
+    # --- App lifecycle ----------------------------------------------------
+
+    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
+        sock = bind_free_socket(GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT)
+        self._mcp_server_port = sock.getsockname()[1]
+        threading.Thread(target=start_mcp_server, args=(api_key, sock), daemon=True, name="mcp-server").start()
+
+    # --- Run agent --------------------------------------------------------
 
     async def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
-        if self.prompt_driver is None:
-            self.prompt_driver = self._initialize_prompt_driver()
-        if self.image_tool is None:
-            self.image_tool = self._initialize_image_tool()
-        if self.mcp_tool is None:
-            self.mcp_tool = self._initialize_mcp_tool()
         try:
-            return await asyncio.to_thread(self._on_handle_run_agent_request, request)
+            return await self._run_agent(request)
         except Exception as e:
-            err_msg = f"Error handling run agent request: {e}"
-            return RunAgentResultFailure(error=ErrorArtifact(e).to_dict(), result_details=err_msg)
+            err_msg = f"Error running agent: {e}"
+            logger.exception(err_msg)
+            return RunAgentResultFailure(error={"message": str(e)}, result_details=err_msg)
 
-    def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
-        try:
-            if self.prompt_driver is None:
-                self.prompt_driver = self._initialize_prompt_driver()
-            for key, value in request.prompt_driver.items():
-                setattr(self.prompt_driver, key, value)
+    async def _run_agent(self, request: RunAgentRequest) -> ResultPayload:
+        thread_id = self._validate_thread_for_run(request.thread_id)
+        is_first_run = len(self._thread_storage.load_history(thread_id)) == 0
 
-            if self.image_tool is None:
-                self.image_tool = self._initialize_image_tool()
-            for key, value in request.image_generation_driver.items():
-                setattr(self.image_tool.image_generation_driver, key, value)
-        except Exception as e:
-            details = f"Error configuring agent: {e}"
-            logger.error(details)
-            return ConfigureAgentResultFailure(result_details=details)
-        return ConfigureAgentResultSuccess(result_details="Agent configured successfully.")
+        runner = self._build_runner(request.additional_mcp_servers)
+        prompt = _compose_prompt(request.input, request.url_artifacts)
 
-    def on_handle_list_agent_models_request(self, request: ListAgentModelsRequest) -> ResultPayload:  # noqa: ARG002
-        return ListAgentModelsResultSuccess(
-            prompt_models=list(MODEL_CHOICES),
-            image_models=list(IMAGE_MODEL_CHOICES),
-            deprecated_models={**DEPRECATED_MODELS, **IMAGE_DEPRECATED_MODELS},
-            result_details="Agent model lists retrieved successfully.",
+        event_manager = GriptapeNodes.EventManager()
+
+        def emit(event: RunEvent) -> None:
+            payload = _run_event_to_payload(event)
+            if payload is None:
+                return
+            event_manager.put_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=payload),
+                ),
+            )
+
+        result = await runner.run(prompt, thread_id=thread_id, event_sink=emit)
+
+        if is_first_run:
+            self._thread_storage.update_thread_metadata(
+                result.thread_id, title=_generate_title_from_input(request.input)
+            )
+
+        return RunAgentResultSuccess(
+            output={"text": result.output, "message_count": result.message_count},
+            thread_id=result.thread_id,
+            result_details="Agent execution completed successfully.",
         )
 
-    def on_handle_get_conversation_memory_request(self, request: GetConversationMemoryRequest) -> ResultPayload:
-        try:
-            thread_id = request.thread_id
-
-            driver = self.thread_storage_driver.get_conversation_memory_driver(thread_id)
-            conversation_memory = ConversationMemory(conversation_memory_driver=driver)
-            runs = conversation_memory.runs
-
-        except Exception as e:
-            details = f"Error getting conversation memory: {e}"
-            logger.error(details)
-            return GetConversationMemoryResultFailure(result_details=details)
-
-        return GetConversationMemoryResultSuccess(
-            runs=runs, thread_id=thread_id, result_details="Conversation memory retrieved successfully."
-        )
+    # --- Thread CRUD -----------------------------------------------------
 
     def on_handle_create_thread_request(self, request: CreateThreadRequest) -> ResultPayload:
         try:
-            thread_id, meta = self.thread_storage_driver.create_thread(title=request.title, local_id=request.local_id)
-
+            thread_id, meta = self._thread_storage.create_thread(title=request.title, local_id=request.local_id)
             return CreateThreadResultSuccess(
                 thread_id=thread_id,
                 title=meta.get("title"),
@@ -241,21 +241,21 @@ class AgentManager:
             )
         except Exception as e:
             details = f"Error creating thread: {e}"
-            logger.error(details)
+            logger.exception(details)
             return CreateThreadResultFailure(result_details=details)
 
     def on_handle_list_threads_request(self, _: ListThreadsRequest) -> ResultPayload:
         try:
-            threads = self.thread_storage_driver.list_threads()
+            threads = self._thread_storage.list_threads()
             return ListThreadsResultSuccess(threads=threads, result_details="Threads retrieved successfully.")
         except Exception as e:
             details = f"Error listing threads: {e}"
-            logger.error(details)
+            logger.exception(details)
             return ListThreadsResultFailure(result_details=details)
 
     def on_handle_delete_thread_request(self, request: DeleteThreadRequest) -> ResultPayload:
         try:
-            self.thread_storage_driver.delete_thread(request.thread_id)
+            self._thread_storage.delete_thread(request.thread_id)
             return DeleteThreadResultSuccess(thread_id=request.thread_id, result_details="Thread deleted successfully.")
         except ValueError as e:
             details = str(e)
@@ -263,18 +263,17 @@ class AgentManager:
             return DeleteThreadResultFailure(result_details=details)
         except Exception as e:
             details = f"Error deleting thread: {e}"
-            logger.error(details)
+            logger.exception(details)
             return DeleteThreadResultFailure(result_details=details)
 
     def on_handle_rename_thread_request(self, request: RenameThreadRequest) -> ResultPayload:
         try:
-            if not self.thread_storage_driver.thread_exists(request.thread_id):
+            if not self._thread_storage.thread_exists(request.thread_id):
                 details = f"Thread {request.thread_id} not found"
                 logger.error(details)
                 return RenameThreadResultFailure(result_details=details)
 
-            updated_meta = self.thread_storage_driver.update_thread_metadata(request.thread_id, title=request.new_title)
-
+            updated_meta = self._thread_storage.update_thread_metadata(request.thread_id, title=request.new_title)
             return RenameThreadResultSuccess(
                 thread_id=request.thread_id,
                 title=updated_meta["title"],
@@ -283,24 +282,23 @@ class AgentManager:
             )
         except Exception as e:
             details = f"Error renaming thread: {e}"
-            logger.error(details)
+            logger.exception(details)
             return RenameThreadResultFailure(result_details=details)
 
     def on_handle_archive_thread_request(self, request: ArchiveThreadRequest) -> ResultPayload:
         try:
-            if not self.thread_storage_driver.thread_exists(request.thread_id):
+            if not self._thread_storage.thread_exists(request.thread_id):
                 details = f"Thread {request.thread_id} not found"
                 logger.error(details)
                 return ArchiveThreadResultFailure(result_details=details)
 
-            meta = self.thread_storage_driver.get_thread_metadata(request.thread_id)
+            meta = self._thread_storage.get_thread_metadata(request.thread_id)
             if meta.get("archived", False):
                 details = f"Thread {request.thread_id} is already archived"
                 logger.error(details)
                 return ArchiveThreadResultFailure(result_details=details)
 
-            updated_meta = self.thread_storage_driver.update_thread_metadata(request.thread_id, archived=True)
-
+            updated_meta = self._thread_storage.update_thread_metadata(request.thread_id, archived=True)
             return ArchiveThreadResultSuccess(
                 thread_id=request.thread_id,
                 updated_at=updated_meta["updated_at"],
@@ -308,24 +306,23 @@ class AgentManager:
             )
         except Exception as e:
             details = f"Error archiving thread: {e}"
-            logger.error(details)
+            logger.exception(details)
             return ArchiveThreadResultFailure(result_details=details)
 
     def on_handle_unarchive_thread_request(self, request: UnarchiveThreadRequest) -> ResultPayload:
         try:
-            if not self.thread_storage_driver.thread_exists(request.thread_id):
+            if not self._thread_storage.thread_exists(request.thread_id):
                 details = f"Thread {request.thread_id} not found"
                 logger.error(details)
                 return UnarchiveThreadResultFailure(result_details=details)
 
-            meta = self.thread_storage_driver.get_thread_metadata(request.thread_id)
+            meta = self._thread_storage.get_thread_metadata(request.thread_id)
             if not meta.get("archived", False):
                 details = f"Thread {request.thread_id} is not archived"
                 logger.error(details)
                 return UnarchiveThreadResultFailure(result_details=details)
 
-            updated_meta = self.thread_storage_driver.update_thread_metadata(request.thread_id, archived=False)
-
+            updated_meta = self._thread_storage.update_thread_metadata(request.thread_id, archived=False)
             return UnarchiveThreadResultSuccess(
                 thread_id=request.thread_id,
                 updated_at=updated_meta["updated_at"],
@@ -333,309 +330,158 @@ class AgentManager:
             )
         except Exception as e:
             details = f"Error unarchiving thread: {e}"
-            logger.error(details)
+            logger.exception(details)
             return UnarchiveThreadResultFailure(result_details=details)
 
-    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        secrets_manager = GriptapeNodes.SecretsManager()
-        api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
+    # --- Configuration / inspection -------------------------------------
 
-        # Pre-bind to port 0 (or the configured port) so the OS assigns a free port before
-        # the server thread starts. This lets us know the actual port immediately with no
-        # race condition between discovering the port and uvicorn binding to it.
-        sock = bind_free_socket(GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT)
-        self._mcp_server_port = sock.getsockname()[1]
+    def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
+        """Update agent configuration. Currently honors only `model` for the prompt driver.
 
-        # Start MCP server in daemon thread
-        threading.Thread(target=start_mcp_server, args=(api_key, sock), daemon=True, name="mcp-server").start()
-
-    def _on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
-        # EventBus functionality removed - events now go directly to event queue
+        ``image_generation_driver`` settings are accepted but ignored: the new
+        runner does not provide an in-band image-generation tool yet. The chat
+        sidebar can still send the request without erroring.
+        """
         try:
-            # Get or create thread and validate
-            try:
-                thread_id = self._validate_thread_for_run(request.thread_id)
-            except ValueError as e:
-                details = str(e)
-                return RunAgentResultFailure(error={"message": details}, result_details=details)
+            if "model" in request.prompt_driver:
+                new_model = str(request.prompt_driver["model"])
+                if new_model != self._model_name:
+                    self._model_name = new_model
+                    self._runner_cache.clear()
+        except Exception as e:
+            details = f"Error configuring agent: {e}"
+            logger.exception(details)
+            return ConfigureAgentResultFailure(result_details=details)
+        return ConfigureAgentResultSuccess(result_details="Agent configured successfully.")
 
-            # Check if this is the first run
-            driver = self.thread_storage_driver.get_conversation_memory_driver(thread_id)
-            conversation_memory = ConversationMemory(conversation_memory_driver=driver)
-            is_first_run = len(conversation_memory.runs) == 0
+    def on_handle_list_agent_models_request(self, _: ListAgentModelsRequest) -> ResultPayload:
+        return ListAgentModelsResultSuccess(
+            prompt_models=list(MODEL_CHOICES),
+            image_models=list(IMAGE_MODEL_CHOICES),
+            deprecated_models={**DEPRECATED_MODELS, **IMAGE_DEPRECATED_MODELS},
+            result_details="Agent model lists retrieved successfully.",
+        )
 
-            artifacts = [
-                ImageLoader().parse(ImageUrlArtifact.from_dict(url_artifact).to_bytes())
-                for url_artifact in request.url_artifacts
-                if url_artifact["type"] == "ImageUrlArtifact"
-            ]
-            agent = self._create_agent(thread_id=thread_id, additional_mcp_servers=request.additional_mcp_servers)
-            event_stream = agent.run_stream([request.input, *artifacts])
-            self._process_agent_stream(event_stream)
-
-            if isinstance(agent.output, ErrorArtifact):
-                return RunAgentResultFailure(error=agent.output.to_dict(), result_details=agent.output.to_json())
-
-            # Auto-generate title from first message if needed
-            if is_first_run:
-                title = self._generate_title_from_input(request.input)
-                self.thread_storage_driver.update_thread_metadata(thread_id, title=title)
-            else:
-                # Just update the timestamp
-                self.thread_storage_driver.update_thread_metadata(thread_id)
-
-            return RunAgentResultSuccess(
-                output=agent.output.to_dict(),
-                thread_id=thread_id,
-                result_details="Agent execution completed successfully.",
+    def on_handle_get_conversation_memory_request(self, request: GetConversationMemoryRequest) -> ResultPayload:
+        try:
+            history = self._thread_storage.load_history(request.thread_id)
+            messages = ModelMessagesTypeAdapter.dump_python(history, mode="json")
+            return GetConversationMemoryResultSuccess(
+                messages=messages,
+                thread_id=request.thread_id,
+                result_details="Conversation memory retrieved successfully.",
             )
         except Exception as e:
-            err_msg = f"Error running agent: {e}"
-            logger.exception(err_msg)
-            return RunAgentResultFailure(error=ErrorArtifact(e).to_dict(), result_details=err_msg)
+            details = f"Error getting conversation memory: {e}"
+            logger.exception(details)
+            return GetConversationMemoryResultFailure(result_details=details)
 
-    def _create_agent(self, thread_id: str, additional_mcp_servers: list[str] | None = None) -> Agent:
-        output_schema = create_model(
-            "AgentOutputSchema",
-            conversation_output=(str, ...),
-            generated_image_urls=(list[str], ...),
-        )
+    # --- Internal helpers -----------------------------------------------
 
-        tools = []
-        if self.image_tool is not None:
-            tools.append(self.image_tool)
-        if self.mcp_tool is not None:
-            tools.append(self.mcp_tool)
+    def _build_runner(self, additional_mcp_servers: list[str]) -> PydanticAgentRunner:
+        cache_key = (self._model_name, tuple(sorted(additional_mcp_servers)))
+        if (cached := self._runner_cache.get(cache_key)) is not None:
+            return cached
 
-        # Add additional MCP servers if specified
-        if additional_mcp_servers:
-            additional_tools = self._create_additional_mcp_tools(additional_mcp_servers)
-            tools.extend(additional_tools)
+        api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
+        if not api_key:
+            msg = f"Secret '{API_KEY_ENV_VAR}' not found"
+            raise ValueError(msg)
 
-        # Get thread-specific conversation memory
-        driver = self.thread_storage_driver.get_conversation_memory_driver(thread_id)
-        conversation_memory = ConversationMemory(conversation_memory_driver=driver)
-
-        # Collect MCP server rulesets
-        mcp_rulesets = self._collect_mcp_server_rulesets(additional_mcp_servers)
-
-        # Get default rulesets
-        default_rulesets = self._get_default_rulesets()
-
-        return Agent(
-            prompt_driver=self.prompt_driver,
-            conversation_memory=conversation_memory,
-            tools=tools,
-            output_schema=output_schema,
-            rulesets=[*default_rulesets, *mcp_rulesets],
-        )
-
-    @staticmethod
-    def _create_ruleset_from_rules_string(rules_string: str | None, server_name: str) -> Ruleset | None:
-        """Create a Ruleset from a rules string for an MCP server.
-
-        Args:
-            rules_string: Optional rules string for the MCP server
-            server_name: Name of the MCP server
-
-        Returns:
-            Ruleset with a single Rule containing the rules string, or None if rules_string is None/empty
-        """
-        if not rules_string or not rules_string.strip():
-            return None
-
-        rules_text = rules_string.strip()
-        ruleset_name = f"mcp_{server_name}_rules"
-
-        return Ruleset(name=ruleset_name, rules=[Rule(rules_text)])
-
-    def _collect_mcp_server_rulesets(self, additional_mcp_servers: list[str] | None) -> list[Ruleset]:
-        """Collect rulesets from MCP server configurations."""
-        mcp_rulesets = []
-
-        # Collect server names to get rules for
-        server_names_to_check = []
-        if additional_mcp_servers:
-            server_names_to_check.extend(additional_mcp_servers)
-
-        # Get rules for all MCP servers
-        if not server_names_to_check:
-            return mcp_rulesets
-
-        enabled_result = GriptapeNodes.handle_request(GetEnabledMCPServersRequest())
-        if not isinstance(enabled_result, GetEnabledMCPServersResultSuccess):
-            return mcp_rulesets
-
-        for server_name in server_names_to_check:
-            if server_name not in enabled_result.servers:
-                continue
-
-            server_config = enabled_result.servers[server_name]
-            rules_string = server_config.get("rules")
-            ruleset = AgentManager._create_ruleset_from_rules_string(rules_string, server_name)
-            if ruleset is not None:
-                mcp_rulesets.append(ruleset)
-
-        return mcp_rulesets
-
-    def _get_default_rulesets(self) -> list[Ruleset]:
-        """Get the default rulesets for agents."""
-        return [
-            Ruleset(
-                name="generated_image_urls",
-                rules=[
-                    Rule("Do not hallucinate generated_image_urls."),
-                    Rule("Only set generated_image_urls with images generated with your tools."),
-                ],
-            ),
-            # Note: Griptape's MCPTool automatically wraps arguments in a 'values' key, but our MCP server
-            # expects arguments directly. This ruleset instructs the agent to provide arguments without
-            # the 'values' wrapper to avoid validation errors. If MCPTool behavior changes in the future,
-            # this ruleset may need to be updated or removed.
-            Ruleset(
-                name="mcp_tool_usage",
-                rules=[
-                    Rule(
-                        "When calling MCP tools (mcpGriptapeNodes), provide arguments directly without wrapping them in a 'values' key. "
-                        "For example, use {'node_type': 'FluxImageGeneration', 'node_name': 'MyNode'} not {'values': {'node_type': 'FluxImageGeneration'}}."
-                    ),
-                ],
-            ),
-            Ruleset(
-                name="node_rulesets",
-                rules=[
-                    Rule(
-                        "When asked to create a node, use ListNodeTypesInLibraryRequest or GetAllInfoForAllLibrariesRequest to check available node types and find the appropriate node."
-                    ),
-                    Rule(
-                        "When matching user requests to node types, account for variations: users may include spaces (e.g., 'Image Generation' vs 'ImageGeneration') or reorder words (e.g., 'Generate Image' vs 'Image Generation'). Match based on the words present, not exact spelling."
-                    ),
-                    Rule(
-                        "If you cannot determine the correct node type or node creation fails, ask the user for clarification."
-                    ),
-                ],
+        workspace_root = Path(config_manager.workspace_path)
+        mcp_servers: list[AbstractToolset[Any]] = [
+            streamable_http_local(
+                f"http://localhost:{self._mcp_server_port}/mcp/",
+                name="GriptapeNodes",
             ),
         ]
+        for cfg in self._lookup_mcp_configs(additional_mcp_servers):
+            built = mcp_server_from_config(cfg["name"], cfg)
+            if built is not None:
+                mcp_servers.append(built)
+
+        runner = PydanticAgentRunner(
+            model_name=self._model_name,
+            api_key=api_key,
+            workspace_root=workspace_root,
+            storage=self._thread_storage,
+            instructions=self._instructions,
+            workspace_config=WorkspaceToolsetConfig(workspace_root=workspace_root),
+            mcp_servers=mcp_servers,
+            usage_limits=DEFAULT_AGENT_USAGE_LIMITS,
+        )
+        self._runner_cache[cache_key] = runner
+        return runner
+
+    @staticmethod
+    def _lookup_mcp_configs(server_names: list[str]) -> list[dict[str, Any]]:
+        if not server_names:
+            return []
+        result = GriptapeNodes.handle_request(GetEnabledMCPServersRequest())
+        if not isinstance(result, GetEnabledMCPServersResultSuccess):
+            logger.warning("Could not load enabled MCP servers; agent will run without extras.")
+            return []
+        return [{**result.servers[name], "name": name} for name in server_names if name in result.servers]
 
     def _validate_thread_for_run(self, thread_id: str | None) -> str:
-        """Validate and return thread_id for agent run, or raise ValueError."""
-        if thread_id is None:
-            thread_id, _ = self.thread_storage_driver.create_thread()
-            return thread_id
+        if thread_id is None or not self._thread_storage.thread_exists(thread_id):
+            new_id, _ = self._thread_storage.create_thread()
+            return new_id
 
-        meta = self.thread_storage_driver.get_thread_metadata(thread_id)
+        meta = self._thread_storage.get_thread_metadata(thread_id)
         if meta.get("archived", False):
             details = f"Cannot run agent on archived thread {thread_id}. Unarchive it first."
-            logger.error(details)
             raise ValueError(details)
-
         return thread_id
 
-    def _process_agent_stream(self, event_stream: Iterator) -> None:
-        """Process agent stream events and emit streaming tokens."""
-        full_result = ""
-        last_conversation_output = ""
-        for event in event_stream:
-            if isinstance(event, TextChunkEvent):
-                full_result += event.token
-                try:
-                    result_json = json.loads(repair_json(full_result))
 
-                    if isinstance(result_json, dict) and "conversation_output" in result_json:
-                        new_conversation_output = result_json["conversation_output"]
-                        if new_conversation_output != last_conversation_output:
-                            GriptapeNodes.EventManager().put_event(
-                                ExecutionGriptapeNodeEvent(
-                                    wrapped_event=ExecutionEvent(
-                                        payload=AgentStreamEvent(
-                                            token=new_conversation_output[len(last_conversation_output) :]
-                                        )
-                                    )
-                                )
-                            )
-                            last_conversation_output = new_conversation_output
-                except json.JSONDecodeError:
-                    pass  # Ignore incomplete JSON
+def _compose_prompt(text: str, url_artifacts: list[Any]) -> str:
+    """Combine the plain text input with any attached URL artifacts.
 
-    def _initialize_prompt_driver(self) -> GriptapeCloudPromptDriver:
-        api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
-        if not api_key:
-            msg = f"Secret '{API_KEY_ENV_VAR}' not found"
-            raise ValueError(msg)
-        return GriptapeCloudPromptDriver(api_key=api_key, stream=True)
+    The new runner's prompt is ``str``-only at the surface; we render URL
+    artifacts as bracketed markers so the model still sees what was attached.
+    Once the model adapter exposes binary user content, this will route image
+    URLs through Pydantic AI's ``ImageUrl`` type instead.
+    """
+    if not url_artifacts:
+        return text
+    extras: list[str] = []
+    for artifact in url_artifacts:
+        url = artifact.get("value") if isinstance(artifact, dict) else None
+        kind = artifact.get("type") if isinstance(artifact, dict) else None
+        if url:
+            extras.append(f"[{kind or 'attachment'}: {url}]")
+    if not extras:
+        return text
+    return text + "\n\nAttachments:\n" + "\n".join(extras)
 
-    def _initialize_image_tool(self) -> NodesPromptImageGenerationTool:
-        api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
-        if not api_key:
-            msg = f"Secret '{API_KEY_ENV_VAR}' not found"
-            raise ValueError(msg)
-        return NodesPromptImageGenerationTool(
-            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key),
-            static_files_manager=self.static_files_manager,
+
+def _generate_title_from_input(user_input: str, max_length: int = 50) -> str:
+    if len(user_input) <= max_length:
+        return user_input
+    return user_input[:max_length].rsplit(" ", 1)[0] + "..."
+
+
+def _run_event_to_payload(event: RunEvent) -> Any:
+    """Translate a runner event into the matching ExecutionPayload.
+
+    Returns ``None`` for event kinds that don't have a UI counterpart yet.
+    """
+    if isinstance(event, TextDelta):
+        return AgentStreamEvent(token=event.delta)
+    if isinstance(event, ToolCall):
+        return AgentToolCallEvent(
+            tool_call_id=event.tool_call_id,
+            tool_name=event.tool_name,
+            args=event.args,
         )
-
-    def _initialize_mcp_tool(self) -> MCPTool:
-        connection: StreamableHttpConnection = {  # type: ignore[reportAssignmentType]
-            "transport": "streamable_http",
-            "url": f"http://localhost:{self._mcp_server_port}/mcp/",
-        }
-        return MCPTool(connection=connection, name="mcpGriptapeNodes")
-
-    def _initialize_thread_storage_driver(self) -> LocalThreadStorageDriver | GriptapeCloudThreadStorageDriver:
-        """Initialize the appropriate thread storage driver based on configuration."""
-        storage_backend = config_manager.get_config_value("thread_storage_backend")
-
-        if storage_backend == "gtc":
-            return GriptapeCloudThreadStorageDriver(config_manager, secrets_manager)
-
-        return LocalThreadStorageDriver(self._threads_dir, config_manager, secrets_manager)
-
-    def _create_additional_mcp_tools(self, server_names: list[str]) -> list[MCPTool]:
-        """Create MCP tools for additional servers specified in the request."""
-        additional_tools = []
-
-        try:
-            enabled_result = GriptapeNodes.handle_request(GetEnabledMCPServersRequest())
-
-            if not isinstance(enabled_result, GetEnabledMCPServersResultSuccess):
-                msg = f"Failed to get enabled MCP servers for additional tools: {enabled_result}. Agent will continue with default MCP tool only."
-                logger.warning(msg)
-                return additional_tools
-
-            for server_name in server_names:
-                if server_name in enabled_result.servers:
-                    server_config = enabled_result.servers[server_name]
-                    connection = self._create_connection_from_mcp_config(server_config)  # type: ignore[arg-type]
-                    tool = MCPTool(connection=connection, name=f"mcp{server_name.title()}")  # type: ignore[arg-type]
-                    additional_tools.append(tool)
-                else:
-                    msg = f"Additional MCP server '{server_name}' not found or not enabled"
-                    logger.warning(msg)
-
-        except Exception as e:
-            msg = f"Failed to create additional MCP tools: {e}"
-            logger.error(msg)
-
-        return additional_tools
-
-    def _create_connection_from_mcp_config(self, server_config: dict) -> dict:
-        """Create connection dictionary from MCP server configuration."""
-        transport = server_config.get("transport", "stdio")
-
-        # Start with transport
-        connection = {"transport": transport}
-
-        # Map relevant fields based on transport type
-        fields_to_map = self.TRANSPORT_FIELD_MAPPINGS.get(transport, self.TRANSPORT_FIELD_MAPPINGS["stdio"])
-        for field_name in fields_to_map:
-            if field_name in server_config and server_config[field_name] is not None:
-                connection[field_name] = server_config[field_name]
-
-        return connection
-
-    def _generate_title_from_input(self, user_input: str, max_length: int = 50) -> str:
-        """Generate a thread title from user input."""
-        if len(user_input) <= max_length:
-            return user_input
-
-        return user_input[:max_length].rsplit(" ", 1)[0] + "..."
+    if isinstance(event, ToolResult):
+        return AgentToolResultEvent(
+            tool_call_id=event.tool_call_id,
+            tool_name=event.tool_name,
+            content=event.content,
+            is_error=event.is_error,
+        )
+    if isinstance(event, ThinkingDelta):
+        return AgentThinkingEvent(delta=event.delta)
+    return None

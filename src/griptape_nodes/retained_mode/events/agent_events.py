@@ -1,7 +1,5 @@
 from dataclasses import dataclass, field
 
-from griptape.memory.structure import Run
-
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
@@ -84,7 +82,7 @@ class GetConversationMemoryRequest(RequestPayload):
     Args:
         thread_id: Thread ID to retrieve memory from.
 
-    Results: GetConversationMemoryResultSuccess (with runs) | GetConversationMemoryResultFailure (memory error)
+    Results: GetConversationMemoryResultSuccess (with messages) | GetConversationMemoryResultFailure (memory error)
     """
 
     thread_id: str
@@ -96,11 +94,15 @@ class GetConversationMemoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadS
     """Conversation memory retrieved successfully.
 
     Args:
-        runs: List of conversation runs (exchanges between user and agent)
-        thread_id: The thread ID for this conversation memory
+        messages: Pydantic AI ``ModelMessage`` JSON dicts in chronological order. Each
+            entry has a ``kind`` field (``"request"`` or ``"response"``) and a ``parts``
+            list of typed parts (``user-prompt``, ``text``, ``tool-call``, ``tool-return``,
+            etc.). Use ``pydantic_ai.messages.ModelMessagesTypeAdapter.validate_python``
+            to round-trip back into typed objects.
+        thread_id: The thread ID for this conversation memory.
     """
 
-    runs: list[Run]
+    messages: list[dict]
     thread_id: str
 
 
@@ -390,6 +392,64 @@ class AgentStreamEvent(ExecutionPayload):
     """
 
     token: str
+
+
+@dataclass
+@PayloadRegistry.register
+class AgentToolCallEvent(ExecutionPayload):
+    """Agent invoked a tool. Emitted when the model commits a tool call before execution.
+
+    Use when: Rendering tool-call cards in chat UIs, surfacing in-flight tool work,
+    debugging multi-step agent runs.
+
+    Args:
+        tool_call_id: Stable identifier for this call. Pairs with the matching
+            ``AgentToolResultEvent.tool_call_id``.
+        tool_name: Name of the tool the agent invoked.
+        args: JSON-encoded preview of the tool arguments. May be ``"{}"`` when the
+            model produced no arguments.
+    """
+
+    tool_call_id: str
+    tool_name: str
+    args: str
+
+
+@dataclass
+@PayloadRegistry.register
+class AgentToolResultEvent(ExecutionPayload):
+    """Tool call returned. Emitted after the workspace or MCP tool produces a result.
+
+    Use when: Updating tool-call cards with output, showing tool errors inline,
+    chaining UI state off the agent's tool pipeline.
+
+    Args:
+        tool_call_id: Identifier matching the originating ``AgentToolCallEvent``.
+        tool_name: Name of the tool that produced this result.
+        content: Stringified tool output. Non-string returns are JSON-encoded.
+        is_error: ``True`` when the tool raised or returned a retry prompt.
+    """
+
+    tool_call_id: str
+    tool_name: str
+    content: str
+    is_error: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class AgentThinkingEvent(ExecutionPayload):
+    """Streaming reasoning/thinking delta from the underlying model.
+
+    Use when: Showing a "thinking\u2026" indicator or rendering reasoning content
+    parts as the agent works through a problem.
+
+    Args:
+        delta: Incremental thinking text. Concatenate successive deltas to assemble
+            the full reasoning trace for a turn.
+    """
+
+    delta: str
 
 
 @dataclass

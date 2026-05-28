@@ -38,6 +38,7 @@ dependencies = [
   "truststore>=0.10.1",
   "cattrs>=26.1.0",
   "fileseq>=3.2.0",
+  "pydantic-ai-slim[mcp]>=1.95.1",
 ]
 
 [project.optional-dependencies]
@@ -126,6 +127,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "D104"]
 "libraries/**/tests/**" = ["S101", "D104", "INP001"]
+"scripts/*" = ["D103", "ASYNC240", "INP001", "T201", "S101", "SLF001"]
 "src/griptape_nodes/retained_mode/events/*" = ["TC001"]
 
 [tool.ruff.lint.flake8-type-checking]
