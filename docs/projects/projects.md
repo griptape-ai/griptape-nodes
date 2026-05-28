@@ -48,7 +48,7 @@ file_extension_directories:
 
 | Field                             | Required | Description                                                                                  |
 | --------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| `project_template_schema_version` | Yes      | Must match the supported version (`"0.3.0"`)                                                 |
+| `project_template_schema_version` | Yes      | Must match the supported version (`"0.3.1"`)                                                 |
 | `name`                            | Yes      | Human-readable name for this project                                                         |
 | `description`                     | No       | Optional description                                                                         |
 | `situations`                      | No       | Dict of situation overrides and additions                                                    |
@@ -75,9 +75,9 @@ When *modifying* an existing situation, you only need to provide the fields you 
 
 Each entry under `directories` is keyed by the logical name:
 
-| Field        | Required for new | Description                                                        |
-| ------------ | ---------------- | ------------------------------------------------------------------ |
-| `path_macro` | Yes              | Path string, may contain macros or environment variable references |
+| Field        | Required for new | Description                                                                                                                                           |
+| ------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path_macro` | Yes              | Path string (may contain macros or environment variable references), or a per-platform mapping. See [Directories](directories.md#per-platform-paths). |
 
 ## The merge model
 
