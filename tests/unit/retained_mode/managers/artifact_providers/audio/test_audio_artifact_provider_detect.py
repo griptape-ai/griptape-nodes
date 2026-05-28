@@ -40,6 +40,12 @@ class TestAudioDetectFormat:
     def test_mp3_mpeg_frame_sync(self) -> None:
         assert AudioArtifactProvider.detect_format(b"\xff\xfb" + b"\x00" * 32) == "mp3"
 
+    def test_aac_adts_sync(self) -> None:
+        # ADTS frame: 12 sync bits + layer=00 + protection bit. 0xFFF1 is
+        # MPEG-4 ADTS without CRC; 0xFFF9 is MPEG-2 ADTS without CRC.
+        assert AudioArtifactProvider.detect_format(b"\xff\xf1" + b"\x00" * 32) == "aac"
+        assert AudioArtifactProvider.detect_format(b"\xff\xf9" + b"\x00" * 32) == "aac"
+
     def test_wav_riff_wave(self) -> None:
         assert AudioArtifactProvider.detect_format(_wav_bytes()) == "wav"
 

@@ -14,12 +14,16 @@ if TYPE_CHECKING:
 
 
 # MPEG audio frame-sync markers used by detect_format below.
+# An MPEG audio frame starts with 11 sync bits (byte 0 == 0xFF, top 3 bits of
+# byte 1 == 111); bits 1-2 of byte 1 are the "layer" field. Layers I/II/III map
+# to MPEG audio (.mp3 etc.); layer=00 is reserved in MPEG audio and is what
+# ADTS (.aac) uses to mark its frame header, so the layer bits are the
+# unambiguous way to tell ADTS from MP3.
 _MPEG_FRAME_SYNC_BYTE = 0xFF
 _MPEG_FRAME_SYNC_MASK = 0xE0
 _MPEG_FRAME_SYNC_VALUE = 0xE0
-_ADTS_SYNC_MASK = 0xF0
-_ADTS_SYNC_VALUE = 0xF0
-_MP3_LAYER_BYTES = (0xFB, 0xF3, 0xF2)
+_MPEG_LAYER_MASK = 0x06
+_MPEG_LAYER_ADTS = 0x00
 
 
 class AudioArtifactProvider(BaseArtifactProvider):
@@ -60,6 +64,8 @@ class AudioArtifactProvider(BaseArtifactProvider):
         if head[:3] == b"ID3":
             return "mp3"
         if head[0] == _MPEG_FRAME_SYNC_BYTE and (head[1] & _MPEG_FRAME_SYNC_MASK) == _MPEG_FRAME_SYNC_VALUE:
+            if (head[1] & _MPEG_LAYER_MASK) == _MPEG_LAYER_ADTS:
+                return "aac"
             return "mp3"
         if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
             return "wav"
@@ -74,12 +80,6 @@ class AudioArtifactProvider(BaseArtifactProvider):
                 return "m4a"
             if head[8:12] == b"M4B ":
                 return "m4b"
-        if (
-            head[0] == _MPEG_FRAME_SYNC_BYTE
-            and (head[1] & _ADTS_SYNC_MASK) == _ADTS_SYNC_VALUE
-            and head[1] not in _MP3_LAYER_BYTES
-        ):
-            return "aac"
         return None
 
     @classmethod
