@@ -627,7 +627,10 @@ class ProjectManager:
 
             successfully_loaded.append(
                 ProjectTemplateInfo(
-                    project_id=project_id, validation=project_info.validation, name=project_info.template.name
+                    project_id=project_id,
+                    validation=project_info.validation,
+                    name=project_info.template.name,
+                    parent_project_id=project_info.template.parent_project_id,
                 )
             )
 
