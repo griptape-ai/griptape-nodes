@@ -288,6 +288,7 @@ def start_static_server(sock: socket.socket) -> None:
         "https://editor-nightly.nodes.griptape.ai",
         "http://localhost:5173",
         "http://localhost:5174",
+        "gtn-editor://editor",
         GriptapeNodes.StaticFilesManager().static_server_base_url,
     ]
 

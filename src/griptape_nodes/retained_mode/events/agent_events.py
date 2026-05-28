@@ -390,3 +390,40 @@ class AgentStreamEvent(ExecutionPayload):
     """
 
     token: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ListAgentModelsRequest(RequestPayload):
+    """List the prompt and image models available to the chat sidebar agent.
+
+    Use when: Populating the chat sidebar's model-picker dropdowns. The
+    engine-bundled agent is wired to Griptape Cloud (`GriptapeCloudPromptDriver`,
+    `GriptapeCloudImageGenerationDriver`), so this returns the GTC catalog.
+
+    Results: ListAgentModelsResultSuccess (with model lists and deprecation map) |
+        ListAgentModelsResultFailure (engine error).
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ListAgentModelsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Agent model lists retrieved successfully.
+
+    Args:
+        prompt_models: Ordered list of prompt-model IDs.
+        image_models: Ordered list of image-model IDs.
+        deprecated_models: Mapping of deprecated model ID to live replacement
+            (covers both the prompt and image namespaces).
+    """
+
+    prompt_models: list[str] = field(default_factory=list)
+    image_models: list[str] = field(default_factory=list)
+    deprecated_models: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+@PayloadRegistry.register
+class ListAgentModelsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Agent model list retrieval failed."""
