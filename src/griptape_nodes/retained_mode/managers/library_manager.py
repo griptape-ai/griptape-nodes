@@ -3066,7 +3066,7 @@ class LibraryManager:
         to sys.path so relative imports work when the workflow is loaded.
         """
         workflow_files: list[str] = []
-        library_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
+        library_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest(broadcast_result=False))
         if not isinstance(library_result, ListRegisteredLibrariesResultSuccess):
             return workflow_files
         for library_name in library_result.libraries:
@@ -3854,7 +3854,7 @@ class LibraryManager:
             return ReloadAllLibrariesResultFailure(result_details=details)
 
         # Unload all libraries now.
-        all_libraries_request = ListRegisteredLibrariesRequest()
+        all_libraries_request = ListRegisteredLibrariesRequest(broadcast_result=False)
         all_libraries_result = await GriptapeNodes.ahandle_request(all_libraries_request)
         if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
             details = "When preparing to reload all libraries, failed to get registered libraries."
@@ -4865,7 +4865,7 @@ class LibraryManager:
 
         # Phase 3: Check and update all registered libraries
         # Get all registered libraries
-        list_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
+        list_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest(broadcast_result=False))
         if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
             details = "Failed to list registered libraries for sync"
             return SyncLibrariesResultFailure(result_details=details)

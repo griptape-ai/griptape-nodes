@@ -1621,7 +1621,9 @@ class WorkflowManager:
             workflow_metadata.last_modified_date = WorkflowManager.EPOCH_START
             problems.append(MissingLastModifiedDateProblem(default_date=str(WorkflowManager.EPOCH_START)))
 
-        list_libraries_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
+        list_libraries_result = await GriptapeNodes.ahandle_request(
+            ListRegisteredLibrariesRequest(broadcast_result=False)
+        )
 
         if not isinstance(list_libraries_result, ListRegisteredLibrariesResultSuccess):
             registered_libraries = []
