@@ -5,8 +5,10 @@ These tests describe the observable contract of:
 * ``NodeExecutor.get_workflow_handler`` - returns the registered handler for a
   library, or raises ``ValueError`` with the library name in the message.
 * ``NodeExecutor._deserialize_parameter_value`` - resolves UUID-referenced
-  pickled bytes back into Python objects, with explicit fallbacks when the
-  stored value is not a UUID reference, not a string, or not unpicklable.
+  pickled bytes back into Python objects. By the time this function is called,
+  cattrs has already decoded base85-encoded bytes via the typed
+  ``ControlFlowResolvedEvent.unique_parameter_uuid_to_values`` field, so
+  ``stored_value`` is always ``bytes``.
 * ``NodeExecutor._extract_parameter_output_values`` - merges per-node output
   dicts from a subprocess result, using the deserializer for UUID references
   and falling back to a pre-mapping flat shape for backward compatibility.
@@ -72,7 +74,12 @@ class TestGetWorkflowHandler:
 
 
 class TestDeserializeParameterValue:
-    """_deserialize_parameter_value resolves UUID-referenced pickled values."""
+    """_deserialize_parameter_value resolves UUID-referenced pickled bytes.
+
+    By the time this function runs, ``ControlFlowResolvedEvent`` has already been
+    structured by cattrs (preconf.json), which auto-decodes base85-encoded strings
+    back to real ``bytes``. The stored value is therefore always ``bytes``.
+    """
 
     def test_returns_param_value_unchanged_when_not_a_uuid_reference(self) -> None:
         executor = _make_executor()
@@ -81,72 +88,34 @@ class TestDeserializeParameterValue:
         result = executor._deserialize_parameter_value(
             param_name="x",
             param_value=sentinel,
-            unique_uuid_to_values={"some-uuid": "irrelevant"},
+            unique_uuid_to_values={"some-uuid": pickle.dumps("irrelevant")},
         )
 
         assert result is sentinel
 
-    def test_returns_stored_value_directly_when_not_a_string(self) -> None:
-        executor = _make_executor()
-        stored = {"already": "deserialized"}
-
-        result = executor._deserialize_parameter_value(
-            param_name="x",
-            param_value="uuid-1",
-            unique_uuid_to_values={"uuid-1": stored},
-        )
-
-        assert result is stored
-
-    def test_unpickles_string_representation_of_bytes(self) -> None:
+    def test_unpickles_bytes_stored_under_uuid(self) -> None:
         executor = _make_executor()
         original = {"answer": 42, "items": [1, 2, 3]}
-        pickled_repr = repr(pickle.dumps(original))  # e.g. "b'\\x80\\x04...'"
 
         result = executor._deserialize_parameter_value(
             param_name="payload",
             param_value="uuid-1",
-            unique_uuid_to_values={"uuid-1": pickled_repr},
+            unique_uuid_to_values={"uuid-1": pickle.dumps(original)},
         )
 
         assert result == original
 
-    def test_returns_original_string_when_eval_fails(self) -> None:
+    def test_unpickles_arbitrary_python_objects(self) -> None:
         executor = _make_executor()
+        original = complex(3, 7)
 
         result = executor._deserialize_parameter_value(
-            param_name="payload",
-            param_value="uuid-1",
-            unique_uuid_to_values={"uuid-1": "not a bytes literal"},
+            param_name="point",
+            param_value="uuid-pt",
+            unique_uuid_to_values={"uuid-pt": pickle.dumps(original)},
         )
 
-        assert result == "not a bytes literal"
-
-    def test_returns_original_string_when_eval_yields_non_bytes(self) -> None:
-        """If literal_eval returns something that isn't bytes, fall through to the string."""
-        executor = _make_executor()
-
-        result = executor._deserialize_parameter_value(
-            param_name="payload",
-            param_value="uuid-1",
-            # "[1, 2, 3]" evals to a list, not bytes
-            unique_uuid_to_values={"uuid-1": "[1, 2, 3]"},
-        )
-
-        assert result == "[1, 2, 3]"
-
-    def test_returns_original_string_when_unpickle_fails(self) -> None:
-        executor = _make_executor()
-        # Valid bytes literal but not a valid pickle stream.
-        bogus = repr(b"\x99garbage\x00")
-
-        result = executor._deserialize_parameter_value(
-            param_name="payload",
-            param_value="uuid-1",
-            unique_uuid_to_values={"uuid-1": bogus},
-        )
-
-        assert result == bogus
+        assert result == original
 
 
 class TestExtractParameterOutputValues:
@@ -166,11 +135,10 @@ class TestExtractParameterOutputValues:
     def test_deserializes_uuid_referenced_values(self) -> None:
         executor = _make_executor()
         original = [10, 20, 30]
-        pickled_repr = repr(pickle.dumps(original))
         subprocess_result: dict[str, Any] = {
             "node_a": {
                 "parameter_output_values": {"items": "uuid-1"},
-                "unique_parameter_uuid_to_values": {"uuid-1": pickled_repr},
+                "unique_parameter_uuid_to_values": {"uuid-1": pickle.dumps(original)},
             },
         }
 
@@ -295,3 +263,49 @@ class TestExecuteSuccessReturnsNone:
             result = await _make_executor().execute(node)
 
         assert result is None
+
+
+class TestControlFlowResolvedEventCattrsRoundTrip:
+    """ControlFlowResolvedEvent.unique_parameter_uuid_to_values round-trips through cattrs.
+
+    cattrs.preconf.json registers symmetric base85 hooks for bytes.  When the
+    subprocess unstructures a ControlFlowResolvedEvent containing bytes values,
+    those values become base85 strings on the wire.  When the parent structures
+    the received payload back into a ControlFlowResolvedEvent, cattrs decodes
+    the base85 strings back into bytes — so _deserialize_parameter_value always
+    sees real bytes.
+    """
+
+    def test_bytes_values_survive_unstructure_structure_round_trip(self) -> None:
+        from griptape_nodes.retained_mode.events.event_converter import converter, safe_unstructure
+        from griptape_nodes.retained_mode.events.execution_events import ControlFlowResolvedEvent
+        from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
+
+        original = {"answer": 42}
+        pickled = pickle.dumps(original)
+        uuid = SerializedNodeCommands.UniqueParameterValueUUID("test-uuid-1")
+
+        event = ControlFlowResolvedEvent(
+            end_node_name="EndFlow",
+            parameter_output_values={"result": uuid},
+            unique_parameter_uuid_to_values={uuid: pickled},
+        )
+
+        # Simulate what the subprocess does: unstructure → JSON
+        raw = safe_unstructure(event)
+
+        # The bytes value must have been base85-encoded to a string on the wire
+        wire_value = raw["unique_parameter_uuid_to_values"][uuid]
+        assert isinstance(wire_value, str), "cattrs must base85-encode bytes during unstructure"
+
+        # Simulate what the parent does: JSON → structure
+        reconstructed = converter.structure(raw, ControlFlowResolvedEvent)
+
+        # After structuring with the typed field, value must be bytes again
+        assert reconstructed.unique_parameter_uuid_to_values is not None
+        stored = reconstructed.unique_parameter_uuid_to_values[uuid]
+        assert isinstance(stored, bytes), "cattrs must decode base85 back to bytes during structure"
+        assert stored == pickled
+
+        # And pickle.loads on the stored bytes must recover the original object
+        assert pickle.loads(stored) == original  # noqa: S301

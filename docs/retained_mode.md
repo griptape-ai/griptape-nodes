@@ -88,16 +88,17 @@ ______________________________________________________________________
 ### get_nodes_in_flow
 
 ```python
-cmd.get_nodes_in_flow(flow_name)
+cmd.get_nodes_in_flow(flow_name, node_types=None)
 ```
 
-Lists all nodes within a flow.
+Lists all nodes within a flow, with an optional filter by Python class name.
 
 #### Arguments
 
-| Name      | Argument Type | Required |
-| --------- | :-----------: | :------: |
-| flow_name |    string     |    🟢    |
+| Name       |    Argument Type     | Required |
+| ---------- | :------------------: | :------: |
+| flow_name  |        string        |    🟢    |
+| node_types | list[string] \| None |    🔴    |
 
 #### Return Value
 
@@ -105,7 +106,9 @@ ResultPayload object containing a list of node names
 
 #### Description
 
-Returns all nodes within the specified flow.
+Returns all nodes within the specified flow. When `node_types` is provided, only nodes whose
+Python class name matches one of the entries are returned (e.g. `["StartFlow", "Agent"]`).
+Omit `node_types` or pass `None` to return all nodes.
 
 ______________________________________________________________________
 

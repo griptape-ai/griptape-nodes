@@ -43,6 +43,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
+    from argparse import ArgumentParser, Namespace
     from types import TracebackType
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ class LocalExecutorError(Exception):
 
 
 class LocalWorkflowExecutor(WorkflowExecutor):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         *,
@@ -61,8 +62,9 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         skip_library_loading: bool = False,
         workflows_to_register: list[str] | None = None,
         save_on_failure_path: str | None = None,
+        pickle_control_flow_result: bool = False,
     ):
-        super().__init__()
+        super().__init__(pickle_control_flow_result=pickle_control_flow_result)
         self._set_storage_backend(storage_backend=storage_backend)
         self._project_file_path = project_file_path
         self._skip_library_loading = skip_library_loading
@@ -371,6 +373,8 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         self,
         flow_input: Any,
         storage_backend: StorageBackend | None = None,
+        *,
+        pickle_control_flow_result: bool | None = None,
         **kwargs: Any,
     ) -> None:
         """Executes a local workflow.
@@ -382,6 +386,8 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             workflow_name: The name of the workflow to execute.
             flow_input: Input data for the flow, typically a dictionary.
             storage_backend: The storage backend to use for the workflow execution.
+            pickle_control_flow_result: Per-call override for the executor's
+                save-time default. None means "use the instance default".
 
         Returns:
             None
@@ -393,10 +399,10 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         )
 
         # Now send the run command to actually execute it
-        pickle_control_flow_result = kwargs.get("pickle_control_flow_result", False)
-        start_flow_request = StartFlowRequest(
-            flow_name=flow_name, pickle_control_flow_result=pickle_control_flow_result
+        effective_pickle = (
+            pickle_control_flow_result if pickle_control_flow_result is not None else self._pickle_control_flow_result
         )
+        start_flow_request = StartFlowRequest(flow_name=flow_name, pickle_control_flow_result=effective_pickle)
         start_flow_result = await GriptapeNodes.ahandle_request(start_flow_request)
 
         if start_flow_result.failed():
@@ -427,3 +433,33 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
         if error is not None:
             raise error
+
+    @classmethod
+    def add_cli_arguments(
+        cls,
+        parser: ArgumentParser,
+        *,
+        pickle_control_flow_result_default: bool = False,
+    ) -> None:
+        super().add_cli_arguments(parser, pickle_control_flow_result_default=pickle_control_flow_result_default)
+        cls._add_save_on_failure_argument(parser)
+
+    @classmethod
+    def _add_save_on_failure_argument(cls, parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "--save-on-failure",
+            nargs="?",
+            const="",
+            default=None,
+            help=(
+                "On failure, save the current workflow state as a .py file. "
+                "With no value: uses the project 'save_failed_workflow' situation. "
+                "With a value: absolute or project-relative path."
+            ),
+        )
+
+    @classmethod
+    def _cli_constructor_kwargs(cls, args: Namespace) -> dict[str, Any]:
+        kwargs = super()._cli_constructor_kwargs(args)
+        kwargs["save_on_failure_path"] = args.save_on_failure
+        return kwargs

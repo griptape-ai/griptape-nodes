@@ -116,12 +116,15 @@ class ListNodesInFlowRequest(RequestPayload):
 
     Args:
         flow_name: Name of the flow to list nodes from (None for current context flow)
+        node_types: Optional list of Python class names to filter by (e.g. ["StartFlow", "Agent"]).
+            None returns all nodes.
 
     Results: ListNodesInFlowResultSuccess (with node names) | ListNodesInFlowResultFailure (flow not found)
     """
 
     # If None is passed, assumes we're using the flow in the Current Context.
     flow_name: str | None = None
+    node_types: list[str] | None = None
 
 
 @dataclass
