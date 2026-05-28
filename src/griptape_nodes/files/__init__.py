@@ -6,8 +6,8 @@ To use the File loader API:
 To use the Directory API:
     from griptape_nodes.files.directory import Directory, DirectoryDestination, DirectoryError
 
-To use the ImageSequence API:
-    from griptape_nodes.files.image_sequence import ImageSequence, ImageSequenceDestination, ImageSequenceError
+To use the FileSequence API:
+    from griptape_nodes.files.file_sequence import FileSequence, FileSequenceDestination, FileSequenceError
 """
 
 from griptape_nodes.files.base_file_driver import BaseFileDriver

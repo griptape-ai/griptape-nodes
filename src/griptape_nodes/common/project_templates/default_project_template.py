@@ -151,10 +151,10 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             ),
             fallback=None,
         ),
-        "save_image_sequence_frame": SituationTemplate(
-            name="save_image_sequence_frame",
-            description="Node writes an image sequence; version in directory and frame filenames",
-            macro="{outputs}/{sub_dirs?:/}{node_name?:_}{file_name_base}_v{_index:03}/{file_name_base}_v{_index:03}_{frame:04}.{file_extension}",
+        "save_file_sequence_entry": SituationTemplate(
+            name="save_file_sequence_entry",
+            description="Node writes a file sequence; version in directory and entry filenames",
+            macro="{outputs}/{sub_dirs?:/}{node_name?:_}{file_name_base}_v{_index:03}/{file_name_base}_v{_index:03}_{entry:04}.{file_extension}",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.CREATE_NEW,
                 create_dirs=True,
