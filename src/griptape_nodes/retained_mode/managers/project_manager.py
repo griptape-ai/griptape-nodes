@@ -1158,7 +1158,7 @@ class ProjectManager:
 
         self._parse_situation_macros(template.situations, validation)
         self._parse_directory_macros(template.directories, validation)
-        self._check_parent_chain_cycles(template, validation)
+        self._check_parent_chain_cycles(template, validation, request.project_id)
 
         if validation.status == ProjectValidationStatus.GOOD:
             details = "Template is valid"
@@ -1166,18 +1166,28 @@ class ProjectManager:
             details = f"Template validation found {len(validation.problems)} problem(s) (status: {validation.status})"
         return ValidateProjectTemplateResultSuccess(validation=validation, result_details=details)
 
-    def _check_parent_chain_cycles(self, template: ProjectTemplate, validation: ProjectValidationInfo) -> None:
+    def _check_parent_chain_cycles(
+        self,
+        template: ProjectTemplate,
+        validation: ProjectValidationInfo,
+        editing_project_id: str | None,
+    ) -> None:
         """Walk parent_project_id through the registry and report any cycle.
 
         Only consults `_successfully_loaded_project_templates` (no disk I/O), so
         it catches the common GUI scenario where the user picks a parent whose
         own ancestry transitively points back to itself. A parent that isn't
         registered yet is silently allowed; the load path catches truly missing
-        parents. The validator request is path-less, so a self-reference where
-        the child's parent_project_id is its own (yet-unsaved) path is also
-        deferred to load.
+        parents.
+
+        When `editing_project_id` is provided, it is canonicalized and seeded
+        into the visited set so a cycle that includes "myself" (e.g. the user
+        picks a parent that already points back at the project being edited)
+        is detected.
         """
         visited: set[str] = set()
+        if editing_project_id is not None:
+            visited.add(str(canonicalize_for_identity(Path(editing_project_id))))
         current_id = template.parent_project_id
         while current_id is not None:
             if current_id in visited:

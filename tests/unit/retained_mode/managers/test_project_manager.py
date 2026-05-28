@@ -3287,3 +3287,387 @@ directories:
         merged = result.template.directories["shared_outputs"]
         # Override took effect.
         assert merged.path_macro == "{workspace_dir}/child_override"
+
+    @pytest.mark.asyncio
+    async def test_list_canonicalizes_relative_parent_project_id(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """ListProjectTemplatesRequest must return parent_project_id as a canonical absolute path.
+
+        The GUI tree-build relies on string equality between a child's
+        parent_project_id and a peer's project_id. If the child's YAML stored a
+        relative path, the engine must resolve it before emitting the list, or
+        the tree linkage silently falls apart.
+        """
+        from griptape_nodes.retained_mode.events.project_events import (
+            ListProjectTemplatesRequest,
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        sub_dir = tmp_path / "sub"
+        sub_dir.mkdir()
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (sub_dir / "child.yml").resolve()
+        files = {
+            base_path: self.BASE_PROJECT_YAML,
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent="../base.yml"),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            base_load = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=base_path))
+            child_load = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(base_load, LoadProjectTemplateResultSuccess)
+        assert isinstance(child_load, LoadProjectTemplateResultSuccess)
+
+        list_result = pm.on_list_project_templates_request(ListProjectTemplatesRequest(include_system_builtins=False))
+        by_id = {info.project_id: info for info in list_result.successfully_loaded}
+
+        # Child's parent_project_id from the list must match the base's project_id
+        # so the GUI can build the tree via direct string lookup.
+        child_info = by_id[str(child_path)]
+        assert child_info.parent_project_id == str(base_path)
+
+    @pytest.mark.asyncio
+    async def test_overlay_round_trip_preserves_parent_project_id(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Saving a child's overlay YAML must preserve parent_project_id.
+
+        Covers the GUI save path: load merged template -> edit -> to_overlay_yaml ->
+        re-load. If the parent linkage is dropped, edits silently flatten the chain.
+        """
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+        files = {
+            base_path: self.BASE_PROJECT_YAML,
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+
+        # Re-emit the child as overlay YAML against the base parent it was loaded with.
+        # The merged result template should still serialize parent_project_id when
+        # diffed against a base that doesn't declare one.
+        from griptape_nodes.common.project_templates import DEFAULT_PROJECT_TEMPLATE
+
+        overlay_yaml = result.template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+        # YAML may quote the key; match on the substring, not a strict prefix.
+        assert "parent_project_id" in overlay_yaml
+        assert str(base_path) in overlay_yaml
+
+    @pytest.mark.asyncio
+    async def test_grandchild_tombstones_grandparent_directory(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A grandchild can null out a directory declared by the grandparent.
+
+        Pins the atomic-overlay merge: tombstones must compose through the chain,
+        not just override the immediate parent.
+        """
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+        grandchild_path = (tmp_path / "grandchild.yml").resolve()
+
+        # Grandchild explicitly tombstones `shared_outputs` (declared by grandparent).
+        grandchild_yaml = f"""\
+project_template_schema_version: "0.3.2"
+name: Grandchild
+parent_project_id: "{child_path!s}"
+directories:
+  shared_outputs: null
+  grandchild_outputs:
+    path_macro: "{{workspace_dir}}/grandchild_outputs"
+"""
+
+        files = {
+            base_path: self.BASE_PROJECT_YAML,
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+            grandchild_path: grandchild_yaml,
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=grandchild_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        # Tombstoned across two levels of inheritance.
+        assert "shared_outputs" not in result.template.directories
+        # Grandchild's own additions still present.
+        assert "grandchild_outputs" in result.template.directories
+        # Intermediate child's directory still present.
+        assert "child_outputs" in result.template.directories
+
+    @pytest.mark.asyncio
+    async def test_parent_situations_environment_and_file_ext_dirs_inherit(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """All inheritable sections (situations, environment, file_extension_directories) flow from parent.
+
+        Existing tests only cover directories; this guards against a "merge handler is
+        directories-only" regression in the chain walk.
+        """
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        rich_parent_yaml = """\
+project_template_schema_version: "0.3.2"
+name: Rich Parent
+situations:
+  custom_situation:
+    name: custom_situation
+    macro: "{outputs}/custom/{file_name_base}.{file_extension}"
+    policy:
+      on_collision: create_new
+      create_dirs: true
+    fallback: null
+environment:
+  CUSTOM_VAR: "from_parent"
+file_extension_directories:
+  xyz: "custom_xyz"
+"""
+
+        base_path = (tmp_path / "rich_parent.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+        files = {
+            base_path: rich_parent_yaml,
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        assert "custom_situation" in result.template.situations
+        assert result.template.environment.get("CUSTOM_VAR") == "from_parent"
+        assert result.template.file_extension_directories.get("xyz") == "custom_xyz"
+
+    @pytest.mark.asyncio
+    async def test_two_siblings_with_same_parent_load_independently(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Loading sibling A then sibling B (both pointing at the same parent) must both succeed.
+
+        Guards against the visited-set bleeding across top-level loads.
+        """
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        base_path = (tmp_path / "base.yml").resolve()
+        sibling_a_path = (tmp_path / "sibling_a.yml").resolve()
+        sibling_b_path = (tmp_path / "sibling_b.yml").resolve()
+        files = {
+            base_path: self.BASE_PROJECT_YAML,
+            sibling_a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+            sibling_b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            a_result = await pm.on_load_project_template_request(
+                LoadProjectTemplateRequest(project_path=sibling_a_path)
+            )
+            b_result = await pm.on_load_project_template_request(
+                LoadProjectTemplateRequest(project_path=sibling_b_path)
+            )
+
+        assert isinstance(a_result, LoadProjectTemplateResultSuccess)
+        assert isinstance(b_result, LoadProjectTemplateResultSuccess)
+        # Both inherit the same parent directory.
+        assert "shared_outputs" in a_result.template.directories
+        assert "shared_outputs" in b_result.template.directories
+
+    @pytest.mark.asyncio
+    async def test_three_node_cycle_detected(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A -> B -> C -> A cycle is reported."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultFailure,
+        )
+
+        a_path = (tmp_path / "a.yml").resolve()
+        b_path = (tmp_path / "b.yml").resolve()
+        c_path = (tmp_path / "c.yml").resolve()
+        files = {
+            a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(b_path)),
+            b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(c_path)),
+            c_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(a_path)),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=a_path))
+
+        assert isinstance(result, LoadProjectTemplateResultFailure)
+        assert any("Cycle" in p.message for p in result.validation.problems)
+
+    @pytest.mark.asyncio
+    async def test_cycle_through_relative_paths_detected(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A relative-path cycle (./a <-> ./b) must canonicalize before the visited check fires."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultFailure,
+        )
+
+        a_path = (tmp_path / "a.yml").resolve()
+        b_path = (tmp_path / "b.yml").resolve()
+        files = {
+            a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent="./b.yml"),
+            b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent="./a.yml"),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=a_path))
+
+        assert isinstance(result, LoadProjectTemplateResultFailure)
+        assert any("Cycle" in p.message for p in result.validation.problems)
+
+
+class TestValidateProjectTemplateParentChain:
+    """Tests for ValidateProjectTemplateRequest's parent-chain checks.
+
+    The validator is path-less and consults only the in-memory template registry,
+    so these tests seed `_successfully_loaded_project_templates` directly rather
+    than driving disk loads.
+    """
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    @staticmethod
+    def _seed_registered_template(pm: ProjectManager, project_id: str, parent_project_id: str | None) -> None:
+        """Insert a minimal ProjectInfo into the registry for chain-walking purposes."""
+        from griptape_nodes.common.project_templates import (
+            ProjectTemplate,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        template = ProjectTemplate(
+            project_template_schema_version="0.3.2",
+            name=project_id,
+            parent_project_id=parent_project_id,
+            situations={},
+            directories={},
+        )
+        pm._successfully_loaded_project_templates[project_id] = ProjectInfo(
+            project_id=project_id,
+            project_file_path=Path(project_id),
+            project_base_dir=Path(project_id).parent,
+            template=template,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas={},
+        )
+
+    def test_no_parent_passes(self, pm: ProjectManager) -> None:
+        """A template with parent_project_id == None is valid."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template_data = {
+            "project_template_schema_version": "0.3.2",
+            "name": "child",
+            "parent_project_id": None,
+            "situations": {},
+            "directories": {},
+        }
+        result = pm.on_validate_project_template_request(ValidateProjectTemplateRequest(template_data=template_data))
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert not any(p.field_path == "parent_project_id" for p in result.validation.problems)
+
+    def test_parent_not_registered_passes(self, pm: ProjectManager) -> None:
+        """A parent_project_id that isn't in the registry yet is silently allowed.
+
+        Load will catch a truly missing parent. We don't want validate to fail
+        on first-time edits where the user just hasn't registered the parent.
+        """
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        template_data = {
+            "project_template_schema_version": "0.3.2",
+            "name": "child",
+            "parent_project_id": "/some/unregistered/parent.yml",
+            "situations": {},
+            "directories": {},
+        }
+        result = pm.on_validate_project_template_request(ValidateProjectTemplateRequest(template_data=template_data))
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert not any(p.field_path == "parent_project_id" for p in result.validation.problems)
+
+    def test_deep_chain_in_registry_passes(self, pm: ProjectManager) -> None:
+        """A -> B -> C with no cycle is valid even when all three are registered."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        c_id = "/c.yml"
+        b_id = "/b.yml"
+        self._seed_registered_template(pm, c_id, parent_project_id=None)
+        self._seed_registered_template(pm, b_id, parent_project_id=c_id)
+
+        template_data = {
+            "project_template_schema_version": "0.3.2",
+            "name": "a",
+            "parent_project_id": b_id,
+            "situations": {},
+            "directories": {},
+        }
+        result = pm.on_validate_project_template_request(ValidateProjectTemplateRequest(template_data=template_data))
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert not any(p.field_path == "parent_project_id" for p in result.validation.problems)
+
+    def test_cycle_in_registry_detected(self, pm: ProjectManager) -> None:
+        """If the user picks parent B whose chain points back to A, validate fails."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            ValidateProjectTemplateRequest,
+            ValidateProjectTemplateResultSuccess,
+        )
+
+        a_id = "/a.yml"
+        b_id = "/b.yml"
+        # Registry already has B -> A. User now edits A and picks B as parent.
+        self._seed_registered_template(pm, a_id, parent_project_id=None)
+        self._seed_registered_template(pm, b_id, parent_project_id=a_id)
+
+        template_data = {
+            "project_template_schema_version": "0.3.2",
+            "name": "a edited",
+            "parent_project_id": b_id,
+            "situations": {},
+            "directories": {},
+        }
+        # Pass project_id so validator seeds visited set with self.
+        result = pm.on_validate_project_template_request(
+            ValidateProjectTemplateRequest(template_data=template_data, project_id=a_id)
+        )
+        assert isinstance(result, ValidateProjectTemplateResultSuccess)
+        assert any(p.field_path == "parent_project_id" and "Cycle" in p.message for p in result.validation.problems)

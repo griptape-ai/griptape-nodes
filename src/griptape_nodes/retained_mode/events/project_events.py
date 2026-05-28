@@ -362,11 +362,16 @@ class ValidateProjectTemplateRequest(RequestPayload):
 
     Args:
         template_data: Dict representation of the template to validate
+        project_id: Optional project_id of the template being edited. When provided,
+            it is seeded into the parent-chain visited set so a cycle that includes
+            "myself" (e.g. setting parent to a project that already points back at
+            this one) is detected.
 
     Results: ValidateProjectTemplateResultSuccess | ValidateProjectTemplateResultFailure
     """
 
     template_data: dict[str, Any]
+    project_id: str | None = None
 
 
 @dataclass
