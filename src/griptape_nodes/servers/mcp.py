@@ -74,6 +74,12 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     SetParameterValueRequest,
 )
+from griptape_nodes.retained_mode.events.permission_events import (
+    GetEffectivePolicyRequest,
+    GrantPermissionRuleRequest,
+    ListPermissionDecisionsRequest,
+    RevokePermissionRuleRequest,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     ListAllWorkflowsRequest,
     RunWorkflowWithCurrentStateRequest,
@@ -130,6 +136,21 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "SetParameterValueRequest": SetParameterValueRequest,
     "GetParameterDetailsRequest": GetParameterDetailsRequest,
     "GetConnectionsForParameterRequest": GetConnectionsForParameterRequest,
+    # Permissions
+    #
+    # These manage the engine's permission policy. They bypass the policy hook
+    # itself by design (so a too-restrictive policy can always be repaired),
+    # which means an MCP client connected here can read and edit the *user*
+    # policy. License-imposed rules are NOT mutable through this surface;
+    # they're owned by `PermissionManager.set_license_policy()` and are not
+    # exposed to MCP at all.
+    #
+    # If you expose this MCP server to untrusted clients, gate these tools at
+    # the transport layer or place equivalent constraints in the license layer.
+    "GetEffectivePolicyRequest": GetEffectivePolicyRequest,
+    "GrantPermissionRuleRequest": GrantPermissionRuleRequest,
+    "RevokePermissionRuleRequest": RevokePermissionRuleRequest,
+    "ListPermissionDecisionsRequest": ListPermissionDecisionsRequest,
 }
 
 # Synthetic MCP tool name for the batch envelope. Not a request payload (and so not a member of

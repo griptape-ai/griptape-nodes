@@ -27,6 +27,7 @@ plugins:
           - installation.md: Install the engine
         Configuration and CLI:
           - configuration.md: Engine configuration (workspace, secrets, libraries)
+          - permissions.md: Permission policy controlling privileged engine operations
           - command_line_interface.md: gtn CLI reference
         Scripting (retained mode):
           - retained_mode.md: Engine scripting API for building and running workflows
@@ -76,6 +77,7 @@ plugins:
           - how_to/mcp/servers/time.md
         Agent skills:
           - skills/griptape-nodes-workflows/SKILL.md: Build, run, and inspect workflows through the engine's MCP server
+          - skills/griptape-nodes-permissions/SKILL.md: Author and manage permission rules through the engine's MCP server
         Node reference:
           - nodes/*.md
 
@@ -148,6 +150,7 @@ nav:
               - 4. Compare Prompts: ftue/03_compare_prompts/FTUE_03_compare_prompts.md
               - 5. Build a Photography Team: ftue/04_photography_team/FTUE_04_photography_team.md
       - Engine Configuration: configuration.md
+      - Permissions: permissions.md
       - Command Line Interface: command_line_interface.md
       - Scripting: retained_mode.md
       - Project System:

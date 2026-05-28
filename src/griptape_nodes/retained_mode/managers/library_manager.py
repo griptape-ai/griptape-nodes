@@ -230,6 +230,7 @@ if TYPE_CHECKING:
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.events.base_events import Payload, RequestPayload, ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.permission_manager import PermissionManager
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -265,6 +266,51 @@ class LibraryUpdateResult(NamedTuple):
     old_version: str
     new_version: str
     result: ResultPayload
+
+
+def _enrich_register_library_request(request: Any) -> dict[str, Any]:
+    """Publish parsed library metadata as a fact for permission rule evaluation.
+
+    Reads the library JSON if `request.file_path` is set and exposes:
+
+    * ``request.metadata.name`` — library name from the JSON.
+    * ``request.metadata.declarations.lifecycle_stage`` — the stage from a
+      ``LifecycleStageLibraryProperty`` declaration if present, else None.
+    * ``request.metadata.declarations.types`` — flat list of declared
+      ``type`` strings, useful for ``in`` matchers.
+
+    Best-effort: any failure (missing file, malformed JSON, unexpected shape)
+    yields an empty contribution so the rule simply sees ``None`` for those
+    paths and matchers fall through cleanly.
+    """
+    file_path = getattr(request, "file_path", None)
+    if not file_path:
+        return {}
+    json_path = Path(file_path)
+    if json_path.is_dir():
+        # `RegisterLibraryFromFileRequest` accepts a directory containing
+        # `griptape_nodes_library.json`; resolve it to the actual JSON file.
+        json_path = json_path / "griptape_nodes_library.json"
+    try:
+        raw = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    metadata = raw.get("metadata")
+    declarations = metadata.get("declarations") if isinstance(metadata, dict) else None
+    if not isinstance(declarations, list):
+        declarations = []
+    declaration_types = [d.get("type") for d in declarations if isinstance(d, dict) and d.get("type")]
+    lifecycle_stage = next(
+        (d.get("stage") for d in declarations if isinstance(d, dict) and d.get("type") == "lifecycle_stage"),
+        None,
+    )
+    return {
+        "metadata.name": raw.get("name"),
+        "metadata.declarations.types": declaration_types,
+        "metadata.declarations.lifecycle_stage": lifecycle_stage,
+    }
 
 
 class LibraryManager:
@@ -374,7 +420,13 @@ class LibraryManager:
     # Callbacks invoked immediately before all libraries are reloaded.
     _pre_reload_callbacks: list[Callable[[], Awaitable[None]]]
 
-    def __init__(self, event_manager: EventManager, *, worker_manager: WorkerManager) -> None:
+    def __init__(
+        self,
+        event_manager: EventManager,
+        *,
+        worker_manager: WorkerManager,
+        permission_manager: PermissionManager | None = None,
+    ) -> None:
         self._library_file_path_to_info = {}
         self._dynamic_to_stable_module_mapping = {}
         self._stable_to_dynamic_module_mapping = {}
@@ -451,6 +503,16 @@ class LibraryManager:
         )
         event_manager.assign_manager_to_request_type(SyncLibrariesRequest, self.sync_libraries_request)
         event_manager.assign_manager_to_request_type(InspectLibraryRepoRequest, self.inspect_library_repo_request)
+
+        # Publish parsed library metadata as a per-request fact so permission
+        # rules can match against authored declarations (e.g. lifecycle stage)
+        # without LibraryManager having to know anything about permissions.
+        # Optional dependency: headless tooling can pass None and skip it.
+        if permission_manager is not None:
+            permission_manager.facts.register_request_enricher(
+                RegisterLibraryFromFileRequest.__name__,
+                _enrich_register_library_request,
+            )
 
         event_manager.add_listener_to_app_event(
             LibraryLoadedNotification,
@@ -2793,7 +2855,10 @@ class LibraryManager:
 
     async def _load_and_track_library(self, lib_path: str, index: int, total: int) -> None:
         """Load a single library and emit the corresponding progress event."""
-        load_result = await self.register_library_from_file_request(
+        # Route through the dispatcher so pre-dispatch hooks (PermissionManager,
+        # audit, retained-mode echo) see the request. Calling the handler
+        # method directly would bypass them.
+        load_result = await GriptapeNodes.ahandle_request(
             RegisterLibraryFromFileRequest(
                 file_path=lib_path,
                 load_as_default_library=False,
@@ -4093,7 +4158,10 @@ class LibraryManager:
         total_libraries = len(libraries_to_load)
 
         for current_library_index, lib_path in enumerate(libraries_to_load, start=1):
-            load_result = await self.register_library_from_file_request(
+            # Route through the dispatcher so pre-dispatch hooks (PermissionManager,
+            # audit, retained-mode echo) see the request. Calling the handler
+            # method directly would bypass them.
+            load_result = await GriptapeNodes.ahandle_request(
                 RegisterLibraryFromFileRequest(
                     file_path=lib_path,
                     load_as_default_library=False,
