@@ -95,8 +95,8 @@ class ProjectFileSequenceParameter(ProjectOutputParameter):
     def build_sequence(self, **extra_vars: str | int) -> FileSequenceDestination:
         """Build a FileSequenceDestination from the parameter's current value.
 
-        If an upstream node implements FileSequenceDestinationProvider, its
-        FileSequenceDestination is retrieved directly. Otherwise the parameter's
+        If an upstream node exposes a ``file_sequence_destination`` attribute, its
+        ``FileSequenceDestination`` is retrieved directly. Otherwise the parameter's
         string value (filename or #### pattern) is parsed and combined with the
         situation macro.
 
@@ -107,7 +107,7 @@ class ProjectFileSequenceParameter(ProjectOutputParameter):
             FileSequenceDestination with a versioned MacroPath and baked-in policy.
 
         Raises:
-            ValueError: If an upstream FileSequenceDestinationProvider returns None.
+            ValueError: If an upstream node exposes ``file_sequence_destination`` but returns None.
             FileSequenceError: If no available version index can be found.
         """
         upstream = self._get_upstream_destination("file_sequence_destination", "FileSequenceDestination")

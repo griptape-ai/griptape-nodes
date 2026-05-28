@@ -77,14 +77,14 @@ class ProjectFileParameter(ProjectOutputParameter):
     def build_file(self, **extra_vars: str | int) -> FileDestination:
         """Build a FileDestination with a MacroPath from the parameter's current value.
 
-        If an upstream node implements FileDestinationProvider (e.g., FileOutputSettings),
-        its FileDestination is retrieved directly without deserialising from the wire.
-        An upstream provider that returns None (misconfigured) raises instead of silently
-        falling back to the default situation, since that fallback hides user intent.
+        If an upstream node (e.g. FileOutputSettings) exposes a ``file_destination``
+        attribute, its ``FileDestination`` is retrieved directly without deserialising
+        from the wire. A node that exposes the attribute but returns None raises instead
+        of silently falling back to the default situation, since that fallback hides
+        user intent.
 
-        Otherwise the parameter's string value is parsed into
-        file_name_base/file_extension, combined with this component's default
-        situation, and wrapped in a FileDestination.
+        Otherwise the parameter's string value is combined with this component's
+        situation to build a ``FileDestination``.
 
         Args:
             **extra_vars: Additional variables for the macro (e.g., sub_dirs="renders")
@@ -93,7 +93,7 @@ class ProjectFileParameter(ProjectOutputParameter):
             FileDestination with a MacroPath and baked-in write policy for deferred path resolution
 
         Raises:
-            ValueError: If an upstream FileDestinationProvider is connected but returns None.
+            ValueError: If an upstream node exposes ``file_destination`` but returns None.
         """
         upstream = self._get_upstream_destination("file_destination", "FileDestination")
         if upstream is not None:

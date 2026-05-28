@@ -70,7 +70,7 @@ class FileSequence:
         The ``{entry:NN}`` macro variable is replaced with a run of ``#``
         characters matching the padding width.
 
-        Example: ``"{outputs}/renders_v001/frame_####.exr"``
+        Example: ``"{outputs}/dialogue_v001/####.wav"``
         """
         return entry_macro_to_hash_pattern(self.location)
 

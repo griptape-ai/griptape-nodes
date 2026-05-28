@@ -92,10 +92,9 @@ class ProjectDirectoryParameter(ProjectOutputParameter):
     def build_directory(self, **extra_vars: str | int) -> DirectoryDestination:
         """Build a DirectoryDestination from the parameter's current value.
 
-        If an upstream node implements DirectoryDestinationProvider, its
-        DirectoryDestination is retrieved directly. Otherwise the parameter's
-        string value is used as the directory name, combined with the situation
-        macro.
+        If an upstream node exposes a ``directory_destination`` attribute, its
+        ``DirectoryDestination`` is retrieved directly. Otherwise the parameter's
+        string value is used as the directory name, combined with the situation macro.
 
         Args:
             **extra_vars: Additional variables for the macro (e.g., sub_dirs="renders")
@@ -104,7 +103,7 @@ class ProjectDirectoryParameter(ProjectOutputParameter):
             DirectoryDestination with a versioned MacroPath and baked-in policy.
 
         Raises:
-            ValueError: If an upstream DirectoryDestinationProvider returns None.
+            ValueError: If an upstream node exposes ``directory_destination`` but returns None.
         """
         upstream = self._get_upstream_destination("directory_destination", "DirectoryDestination")
         if upstream is not None:

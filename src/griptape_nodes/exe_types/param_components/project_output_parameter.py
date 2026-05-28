@@ -135,10 +135,18 @@ class ProjectOutputParameter(ABC):
         destination_attr: str,
         destination_type_name: str,
     ) -> object | None:
-        """Return the upstream provider's destination, or None if no provider is connected.
+        """Return the destination from the first upstream node that exposes ``destination_attr``.
+
+        Returns None if no connected node has the attribute.
+
+        Args:
+            destination_attr: Attribute name to look for on the upstream node
+                (e.g. ``'file_destination'``).
+            destination_type_name: Human-readable type name used in error messages
+                (e.g. ``'FileDestination'``).
 
         Raises:
-            ValueError: If a provider is connected but returns None.
+            ValueError: If a connected node exposes ``destination_attr`` but returns None.
         """
         result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self._node.name))
         if not isinstance(result, ListConnectionsForNodeResultSuccess):
