@@ -52,7 +52,7 @@ class AudioArtifactProvider(BaseArtifactProvider):
         return {"mp3", "wav", "flac", "ogg", "opus", "m4a", "m4b", "aac"}
 
     @classmethod
-    def detect_format(cls, data: bytes) -> str | None:  # noqa: PLR0911
+    def detect_format(cls, data: bytes) -> str | None:  # noqa: C901, PLR0911
         """Magic-byte sniff for common audio container/codec formats."""
         if len(data) < cls._SNIFF_MIN_HEADER_BYTES:
             return None
