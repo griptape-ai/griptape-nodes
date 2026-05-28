@@ -625,12 +625,23 @@ class ProjectManager:
             if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
                 continue
 
+            # Resolve parent_project_id (which may be a relative path in the YAML)
+            # to the canonical absolute project_id used as a peer key, so consumers
+            # building hierarchies can match parent/child by string equality.
+            raw_parent = project_info.template.parent_project_id
+            resolved_parent: str | None = None
+            if raw_parent is not None:
+                parent_path = Path(raw_parent)
+                if not parent_path.is_absolute() and project_info.project_file_path is not None:
+                    parent_path = project_info.project_file_path.parent / parent_path
+                resolved_parent = str(canonicalize_for_identity(parent_path))
+
             successfully_loaded.append(
                 ProjectTemplateInfo(
                     project_id=project_id,
                     validation=project_info.validation,
                     name=project_info.template.name,
-                    parent_project_id=project_info.template.parent_project_id,
+                    parent_project_id=resolved_parent,
                 )
             )
 
