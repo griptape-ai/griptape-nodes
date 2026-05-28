@@ -269,7 +269,7 @@ class VersionCompatibilityManager:
         """
         issues: list[WorkflowVersionCompatibilityIssue] = []
 
-        list_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
+        list_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest(broadcast_result=False))
 
         if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
             return issues
