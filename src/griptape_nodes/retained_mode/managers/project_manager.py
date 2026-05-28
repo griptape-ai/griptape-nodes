@@ -511,7 +511,7 @@ class ProjectManager:
     ) -> ProjectTemplate | None:
         """Resolve the parent chain declared by an overlay into a base ProjectTemplate.
 
-        When `overlay.parent_project_id` is None, the base is `DEFAULT_PROJECT_TEMPLATE`.
+        When `overlay.parent_project_path` is None, the base is `DEFAULT_PROJECT_TEMPLATE`.
         Otherwise the parent YAML is read, recursively resolved, merged onto its own
         ancestors, and returned as the base for the caller.
 
@@ -519,18 +519,22 @@ class ProjectManager:
         that is currently being resolved further down the chain. A cycle records an
         error on `validation` and returns None.
 
-        Relative `parent_project_id` paths resolve against the directory of
+        Relative `parent_project_path` paths resolve against the directory of
         `project_file_path` so a child project can name its parent with a relative
-        path (e.g. `parent_project_id: ../base/griptape-nodes-project.yml`).
+        path (e.g. `parent_project_path: ../base/griptape-nodes-project.yml`). The
+        macro `{workspace_dir}` is also expanded against the active workspace so
+        a parent shared between collaborators on different machines remains
+        portable.
 
         Errors during parent resolution (missing file, unparsable YAML, cycle)
         are recorded on the child's `validation` and surfaced to the caller as
         a None return.
         """
-        if overlay.parent_project_id is None:
+        if overlay.parent_project_path is None:
             return DEFAULT_PROJECT_TEMPLATE
 
-        parent_path_raw = Path(overlay.parent_project_id)
+        parent_path_str = self._expand_workspace_dir_macro(overlay.parent_project_path)
+        parent_path_raw = Path(parent_path_str)
         if not parent_path_raw.is_absolute():
             parent_path_raw = project_file_path.parent / parent_path_raw
         parent_file_path = canonicalize_for_identity(parent_path_raw)
@@ -538,9 +542,9 @@ class ProjectManager:
         if parent_file_path in visited:
             cycle = " -> ".join(str(p) for p in [*sorted(visited, key=str), parent_file_path])
             validation.add_error(
-                field_path="parent_project_id",
+                field_path="parent_project_path",
                 message=f"Cycle detected in project parent chain: {cycle}",
-                line_number=overlay.line_info.get_line("parent_project_id"),
+                line_number=overlay.line_info.get_line("parent_project_path"),
             )
             return None
 
@@ -549,21 +553,23 @@ class ProjectManager:
             # Surface the parent's failure as a child-level error pointing at the link.
             parent_status = parent_load.validation.status
             validation.add_error(
-                field_path="parent_project_id",
-                message=(f"Parent project '{overlay.parent_project_id}' could not be loaded (status: {parent_status})"),
-                line_number=overlay.line_info.get_line("parent_project_id"),
+                field_path="parent_project_path",
+                message=(
+                    f"Parent project '{overlay.parent_project_path}' could not be loaded (status: {parent_status})"
+                ),
+                line_number=overlay.line_info.get_line("parent_project_path"),
             )
             return None
         parent_validation, parent_overlay = parent_load
 
         if not parent_validation.is_usable():
             validation.add_error(
-                field_path="parent_project_id",
+                field_path="parent_project_path",
                 message=(
-                    f"Parent project '{overlay.parent_project_id}' has validation errors "
+                    f"Parent project '{overlay.parent_project_path}' has validation errors "
                     f"(status: {parent_validation.status})"
                 ),
-                line_number=overlay.line_info.get_line("parent_project_id"),
+                line_number=overlay.line_info.get_line("parent_project_path"),
             )
             return None
 
@@ -585,9 +591,9 @@ class ProjectManager:
         if not parent_merge_validation.is_usable():
             for problem in parent_merge_validation.problems:
                 validation.add_error(
-                    field_path=f"parent_project_id.{problem.field_path}",
-                    message=f"Parent '{overlay.parent_project_id}': {problem.message}",
-                    line_number=overlay.line_info.get_line("parent_project_id"),
+                    field_path=f"parent_project_path.{problem.field_path}",
+                    message=f"Parent '{overlay.parent_project_path}': {problem.message}",
+                    line_number=overlay.line_info.get_line("parent_project_path"),
                 )
             return None
         return parent_template
@@ -625,23 +631,36 @@ class ProjectManager:
             if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
                 continue
 
-            # Resolve parent_project_id (which may be a relative path in the YAML)
-            # to the canonical absolute project_id used as a peer key, so consumers
-            # building hierarchies can match parent/child by string equality.
-            raw_parent = project_info.template.parent_project_id
+            # Surface the parent_project_path in its stored form (after expanding
+            # the {workspace_dir} macro and resolving relative paths against the
+            # child YAML's directory). The result is a canonical absolute path
+            # that consumers can match against other entries' project_id for
+            # hierarchy reconstruction. The original macro form (if any) lives
+            # on the child template itself; this field is for cross-referencing.
+            raw_parent = project_info.template.parent_project_path
             resolved_parent: str | None = None
             if raw_parent is not None:
-                parent_path = Path(raw_parent)
+                expanded = self._expand_workspace_dir_macro(raw_parent)
+                parent_path = Path(expanded)
                 if not parent_path.is_absolute() and project_info.project_file_path is not None:
                     parent_path = project_info.project_file_path.parent / parent_path
                 resolved_parent = str(canonicalize_for_identity(parent_path))
+
+            # Each project's own path expressed in portable macro form. The GUI
+            # parent-picker stores this directly into a child's parent_project_path
+            # so links remain valid across machines and OSes when both projects
+            # live under the workspace.
+            project_macro_path: str | None = None
+            if project_info.project_file_path is not None and project_id != SYSTEM_DEFAULTS_KEY:
+                project_macro_path = self._workspace_relative_macro_path(project_info.project_file_path)
 
             successfully_loaded.append(
                 ProjectTemplateInfo(
                     project_id=project_id,
                     validation=project_info.validation,
                     name=project_info.template.name,
-                    parent_project_id=resolved_parent,
+                    parent_project_path=resolved_parent,
+                    project_macro_path=project_macro_path,
                 )
             )
 
@@ -1172,7 +1191,7 @@ class ProjectManager:
         validation: ProjectValidationInfo,
         editing_project_id: str | None,
     ) -> None:
-        """Walk parent_project_id through the registry and report any cycle.
+        """Walk parent_project_path through the registry and report any cycle.
 
         Only consults `_successfully_loaded_project_templates` (no disk I/O), so
         it catches the common GUI scenario where the user picks a parent whose
@@ -1184,23 +1203,82 @@ class ProjectManager:
         into the visited set so a cycle that includes "myself" (e.g. the user
         picks a parent that already points back at the project being edited)
         is detected.
+
+        `parent_project_path` values are stored in their portable form (which
+        may include `{workspace_dir}` and may be relative). Each hop expands
+        the macro and resolves relative paths against the *containing*
+        template's file path before looking up the registry key.
         """
         visited: set[str] = set()
         if editing_project_id is not None:
             visited.add(str(canonicalize_for_identity(Path(editing_project_id))))
-        current_id = template.parent_project_id
-        while current_id is not None:
-            if current_id in visited:
+
+        current_parent_raw = template.parent_project_path
+        current_anchor: Path | None = (
+            Path(editing_project_id) if editing_project_id is not None else None
+        )
+        while current_parent_raw is not None:
+            resolved = self._resolve_parent_path_for_lookup(current_parent_raw, current_anchor)
+            if resolved is None:
+                return
+            if resolved in visited:
                 validation.add_error(
-                    field_path="parent_project_id",
-                    message=f"Cycle detected in parent chain at '{current_id}'",
+                    field_path="parent_project_path",
+                    message=f"Cycle detected in parent chain at '{resolved}'",
                 )
                 return
-            visited.add(current_id)
-            parent_info = self._successfully_loaded_project_templates.get(current_id)
+            visited.add(resolved)
+            parent_info = self._successfully_loaded_project_templates.get(resolved)
             if parent_info is None:
                 return
-            current_id = parent_info.template.parent_project_id
+            current_parent_raw = parent_info.template.parent_project_path
+            current_anchor = parent_info.project_file_path
+
+    def _resolve_parent_path_for_lookup(self, raw_parent: str, anchor: Path | None) -> str | None:
+        """Resolve a stored parent_project_path to a canonical registry key.
+
+        Expands `{workspace_dir}`, then resolves relative paths against `anchor`
+        (the containing template's file path). Returns None if the path is
+        relative and no anchor was provided, since we can't form an absolute
+        path without one.
+        """
+        expanded = self._expand_workspace_dir_macro(raw_parent)
+        parent_path = Path(expanded)
+        if not parent_path.is_absolute():
+            if anchor is None:
+                return None
+            parent_path = anchor.parent / parent_path
+        return str(canonicalize_for_identity(parent_path))
+
+    def _expand_workspace_dir_macro(self, value: str) -> str:
+        """Substitute the `{workspace_dir}` token with the active workspace path.
+
+        Other macro tokens are intentionally left untouched here. Path-bearing
+        fields that need full macro resolution (situations, directories) go
+        through the macro parser; `parent_project_path` only honors
+        `{workspace_dir}` to keep the resolution surface narrow.
+        """
+        if "{workspace_dir}" not in value:
+            return value
+        return value.replace("{workspace_dir}", str(self._config_manager.workspace_path))
+
+    def _workspace_relative_macro_path(self, absolute_path: Path) -> str:
+        """Express an absolute path in portable form for cross-machine sharing.
+
+        If the path lives under the active workspace, returns
+        `{workspace_dir}/<rel>` (POSIX-style). Otherwise returns the
+        canonicalized absolute path as a string. Callers persist this value
+        into a child's `parent_project_path` so the link survives moves
+        between machines that share the same workspace layout.
+        """
+        workspace = canonicalize_for_identity(self._config_manager.workspace_path)
+        abs_canon = canonicalize_for_identity(absolute_path)
+        if abs_canon.is_relative_to(workspace):
+            rel = abs_canon.relative_to(workspace).as_posix()
+            if rel == ".":
+                return "{workspace_dir}"
+            return f"{{workspace_dir}}/{rel}"
+        return str(abs_canon)
 
     def on_unregister_project_template_request(
         self, request: UnregisterProjectTemplateRequest
