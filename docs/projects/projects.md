@@ -48,9 +48,10 @@ file_extension_directories:
 
 | Field                             | Required | Description                                                                                  |
 | --------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| `project_template_schema_version` | Yes      | Must match the supported version (`"0.3.1"`)                                                 |
+| `project_template_schema_version` | Yes      | Must match the supported version (`"0.3.2"`)                                                 |
 | `name`                            | Yes      | Human-readable name for this project                                                         |
 | `description`                     | No       | Optional description                                                                         |
+| `parent_project_path`             | No       | Path to a parent project YAML; the parent's merged template becomes the base for this one. See [Parent projects](#parent-projects). |
 | `situations`                      | No       | Dict of situation overrides and additions                                                    |
 | `directories`                     | No       | Dict of directory overrides and additions                                                    |
 | `environment`                     | No       | Dict of custom key-value variables                                                           |
@@ -81,20 +82,72 @@ Each entry under `directories` is keyed by the logical name:
 
 ## The merge model
 
-The project system uses a two-layer model:
+The project system uses a layered model:
 
 1. **System defaults** — a complete, built-in project template that ships with Griptape Nodes. It defines all default situations and directories and is always loaded first.
 
-1. **Workspace overlay** — the contents of `griptape-nodes-project.yml`, if present. This file is merged *on top of* the system defaults.
+1. **Parent chain** (optional) — when a project declares `parent_project_path`, the parent's merged template is loaded recursively and replaces the system defaults as this project's base. See [Parent projects](#parent-projects).
+
+1. **This project's overlay** — the contents of this `griptape-nodes-project.yml`. It is merged *on top of* whatever base resolved above.
 
 The merge behavior is additive and field-level:
 
-- Situations and directories from the overlay are merged into the defaults. An overlay situation with the same name as a default situation changes only the fields you specify (e.g., just the macro, or just the policy). An overlay situation with a new name is added alongside the defaults.
-- Environment entries in the overlay override entries with the same key in the defaults. New keys are added.
+- Situations and directories from the overlay are merged into the base. An overlay situation with the same name as a base situation changes only the fields you specify (e.g., just the macro, or just the policy). An overlay situation with a new name is added alongside the base.
+- Environment entries in the overlay override entries with the same key in the base. New keys are added.
 - `file_extension_directories` entries merge per-key the same way as environment entries. A `null` value tombstones the base entry.
 - The `name` field is always taken from the overlay (required).
 
-You never need to repeat default values. Your project file only needs to contain the things you want to change.
+You never need to repeat inherited values. Your project file only needs to contain the things you want to change.
+
+## Parent projects
+
+A project can declare another project as its parent. The parent's fully merged template (after the parent has resolved its *own* parent chain) becomes the base, and this project's overlay is applied on top. This lets you keep a shared base configuration in one place — a team-wide directory layout, a fixed set of environment variables, a custom situation — and let derived projects inherit from it instead of restating every field.
+
+```yaml
+project_template_schema_version: "0.3.2"
+name: "Marketing Renders"
+parent_project_path: "{workspace_dir}/team-base/griptape-nodes-project.yml"
+
+# Only the diffs against the parent need to be listed.
+directories:
+  outputs:
+    path_macro: "renders/marketing"
+```
+
+### Path forms
+
+`parent_project_path` accepts three forms:
+
+| Form              | Example                                                  | Notes                                                                                              |
+| ----------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Workspace macro   | `{workspace_dir}/team-base/griptape-nodes-project.yml`   | Preferred. Expands to the active workspace at load time, so the link survives moves between machines and OSes. |
+| Relative          | `../team-base/griptape-nodes-project.yml`                | Resolved against the directory of *this* project's YAML file.                                       |
+| Absolute          | `/Users/alice/projects/team-base/griptape-nodes-project.yml` | Bakes in a per-machine path; works locally but does not travel.                                  |
+
+Only `{workspace_dir}` is honored as a macro inside `parent_project_path`. Other macros (`{project_dir}`, `{outputs}`, etc.) are not expanded here — those belong in `path_macro` and `situations.*.macro` fields.
+
+### Inheritance and tombstones
+
+The parent chain is resolved before merge. A grandchild → child → parent → defaults chain composes the same way the workspace overlay composes onto defaults: each level's fields override or extend the level beneath it.
+
+To **drop** an inherited entry rather than override it, set the value to `null`:
+
+```yaml
+directories:
+  scratch: null   # remove the parent's `scratch` directory entirely
+```
+
+Setting `parent_project_path: null` explicitly clears an inherited link, falling the project back to the system defaults as its base. Omitting the field entirely inherits the parent's link (which is rarely what you want — typically you set `parent_project_path` on each child explicitly).
+
+### Cycles and missing parents
+
+The engine refuses to load a project whose parent chain contains a cycle. A direct self-reference, A → B → A, and longer cycles are all caught and reported as a validation error on the child being loaded.
+
+A parent that cannot be read or parsed surfaces as a validation error on the child as well. The child is not silently downgraded to the system defaults — the load fails so the problem is visible.
+
+### Sharing across machines
+
+A workspace zipped on one machine and unpacked on another will keep parent links intact as long as the parent is referenced via `{workspace_dir}/...` and lives inside the workspace. Absolute paths break across machines (different home directories, different drive letters); the macro form is what makes parent chains portable.
 
 ## Validation status
 
