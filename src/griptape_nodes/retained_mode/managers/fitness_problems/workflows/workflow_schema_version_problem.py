@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 class WorkflowSchemaVersionProblem(WorkflowProblem):
     """Problem indicating a workflow has schema version compatibility issues.
 
-    This is context-specific and likely one-time only per workflow.
+    A workflow may collect more than one of these when it is older than several
+    migrations at once — each `WorkflowVersionCompatibilityCheck` that applies
+    contributes its own instance.
     """
 
     description: str
@@ -21,8 +23,8 @@ class WorkflowSchemaVersionProblem(WorkflowProblem):
     def collate_problems_for_display(cls, instances: list[WorkflowSchemaVersionProblem]) -> str:
         """Display workflow schema version problems."""
         if len(instances) > 1:
-            logger.error(
-                "WorkflowSchemaVersionProblem received %d instances but should typically only receive 1. This may indicate multiple schema issues.",
+            logger.debug(
+                "WorkflowSchemaVersionProblem received %d instances; multiple schema migrations apply to this workflow.",
                 len(instances),
             )
 
