@@ -163,6 +163,7 @@ nav:
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
       - Making Custom Scripts: how_to/making_custom_scripts.md
+      - For Agents: for_agents.md
       - External Resources:
           - Keys:
               - OpenAI: how_to/keys/openai.md
@@ -190,7 +191,6 @@ nav:
                   - Filesystem: how_to/mcp/servers/filesystem.md
                   - Time: how_to/mcp/servers/time.md
   - FAQ: faq.md
-  - For Agents: for_agents.md
   - Nodes Reference:
       - Overview: nodes/overview.md
       - Misc:

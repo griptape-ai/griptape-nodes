@@ -27,6 +27,8 @@ from griptape_nodes.retained_mode.events.config_events import (
     GetConfigValueRequest,
     GetConfigValueResultFailure,
     GetConfigValueResultSuccess,
+    GetWorkspaceRequest,
+    GetWorkspaceResultSuccess,
     ResetConfigRequest,
     ResetConfigResultFailure,
     ResetConfigResultSuccess,
@@ -108,6 +110,7 @@ class ConfigManager:
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
             event_manager.assign_manager_to_request_type(GetConfigPathRequest, self.on_handle_get_config_path_request)
+            event_manager.assign_manager_to_request_type(GetWorkspaceRequest, self.on_handle_get_workspace_request)
             event_manager.assign_manager_to_request_type(
                 GetConfigSchemaRequest, self.on_handle_get_config_schema_request
             )
@@ -510,6 +513,10 @@ class ConfigManager:
     def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:  # noqa: ARG002
         result_details = "Successfully returned the config path."
         return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH), result_details=result_details)
+
+    def on_handle_get_workspace_request(self, request: GetWorkspaceRequest) -> ResultPayload:  # noqa: ARG002
+        result_details = "Successfully returned the absolute workspace path."
+        return GetWorkspaceResultSuccess(workspace_path=str(self.workspace_path), result_details=result_details)
 
     def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
         """Handle request to get the configuration schema with current values and library settings.
