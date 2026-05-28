@@ -46,16 +46,16 @@ file_extension_directories:
 
 ### Fields reference
 
-| Field                             | Required | Description                                                                                  |
-| --------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| `project_template_schema_version` | Yes      | Must match the supported version (`"0.3.2"`)                                                 |
-| `name`                            | Yes      | Human-readable name for this project                                                         |
-| `description`                     | No       | Optional description                                                                         |
+| Field                             | Required | Description                                                                                                                         |
+| --------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `project_template_schema_version` | Yes      | Must match the supported version (`"0.3.2"`)                                                                                        |
+| `name`                            | Yes      | Human-readable name for this project                                                                                                |
+| `description`                     | No       | Optional description                                                                                                                |
 | `parent_project_path`             | No       | Path to a parent project YAML; the parent's merged template becomes the base for this one. See [Parent projects](#parent-projects). |
-| `situations`                      | No       | Dict of situation overrides and additions                                                    |
-| `directories`                     | No       | Dict of directory overrides and additions                                                    |
-| `environment`                     | No       | Dict of custom key-value variables                                                           |
-| `file_extension_directories`      | No       | Extension-to-folder routing; see [File Extension Directories](file_extension_directories.md) |
+| `situations`                      | No       | Dict of situation overrides and additions                                                                                           |
+| `directories`                     | No       | Dict of directory overrides and additions                                                                                           |
+| `environment`                     | No       | Dict of custom key-value variables                                                                                                  |
+| `file_extension_directories`      | No       | Extension-to-folder routing; see [File Extension Directories](file_extension_directories.md)                                        |
 
 ### Situation fields
 
@@ -118,11 +118,11 @@ directories:
 
 `parent_project_path` accepts three forms:
 
-| Form              | Example                                                  | Notes                                                                                              |
-| ----------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Workspace macro   | `{workspace_dir}/team-base/griptape-nodes-project.yml`   | Preferred. Expands to the active workspace at load time, so the link survives moves between machines and OSes. |
-| Relative          | `../team-base/griptape-nodes-project.yml`                | Resolved against the directory of *this* project's YAML file.                                       |
-| Absolute          | `/Users/alice/projects/team-base/griptape-nodes-project.yml` | Bakes in a per-machine path; works locally but does not travel.                                  |
+| Form            | Example                                                      | Notes                                                                                                          |
+| --------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Workspace macro | `{workspace_dir}/team-base/griptape-nodes-project.yml`       | Preferred. Expands to the active workspace at load time, so the link survives moves between machines and OSes. |
+| Relative        | `../team-base/griptape-nodes-project.yml`                    | Resolved against the directory of *this* project's YAML file.                                                  |
+| Absolute        | `/Users/alice/projects/team-base/griptape-nodes-project.yml` | Bakes in a per-machine path; works locally but does not travel.                                                |
 
 Only `{workspace_dir}` is honored as a macro inside `parent_project_path`. Other macros (`{project_dir}`, `{outputs}`, etc.) are not expanded here — those belong in `path_macro` and `situations.*.macro` fields.
 

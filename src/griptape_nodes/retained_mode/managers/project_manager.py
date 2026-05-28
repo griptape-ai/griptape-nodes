@@ -1214,9 +1214,7 @@ class ProjectManager:
             visited.add(str(canonicalize_for_identity(Path(editing_project_id))))
 
         current_parent_raw = template.parent_project_path
-        current_anchor: Path | None = (
-            Path(editing_project_id) if editing_project_id is not None else None
-        )
+        current_anchor: Path | None = Path(editing_project_id) if editing_project_id is not None else None
         while current_parent_raw is not None:
             resolved = self._resolve_parent_path_for_lookup(current_parent_raw, current_anchor)
             if resolved is None:
