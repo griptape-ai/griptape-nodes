@@ -75,8 +75,8 @@ When *modifying* an existing situation, you only need to provide the fields you 
 
 Each entry under `directories` is keyed by the logical name:
 
-| Field        | Required for new | Description                                                                                                                                |
-| ------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Field        | Required for new | Description                                                                                                                                           |
+| ------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `path_macro` | Yes              | Path string (may contain macros or environment variable references), or a per-platform mapping. See [Directories](directories.md#per-platform-paths). |
 
 ## The merge model
