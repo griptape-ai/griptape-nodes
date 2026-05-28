@@ -208,25 +208,6 @@ class TestSecretsManager:
                     assert os.environ["REFRESH_KEY"] == "new_value"
                     assert secrets_manager.get_secret("REFRESH_KEY") == "new_value"
 
-    def test_worker_refresh_secrets_handler_invokes_refresh(self) -> None:
-        """The handler wired to WorkerRefreshSecretsRequest calls refresh_from_env_file."""
-        from griptape_nodes.retained_mode.events.worker_events import (
-            WorkerRefreshSecretsRequest,
-            WorkerRefreshSecretsResultSuccess,
-        )
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_path = Path(temp_dir)
-            config_manager = ConfigManager()
-            config_manager.workspace_path = workspace_path
-            secrets_manager = SecretsManager(config_manager)
-
-            with patch.object(secrets_manager, "refresh_from_env_file") as mock_refresh:
-                result = secrets_manager.on_handle_worker_refresh_secrets_request(WorkerRefreshSecretsRequest())
-
-            mock_refresh.assert_called_once()
-            assert isinstance(result, WorkerRefreshSecretsResultSuccess)
-
     def test_set_secret_broadcasts_secret_changed(self) -> None:
         """Setting a secret emits a SecretChanged app event carrying the normalized key."""
         from griptape_nodes.retained_mode.events.app_events import SecretChanged
@@ -241,7 +222,7 @@ class TestSecretsManager:
 
             with (
                 patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env),
-                patch.object(SecretsManager, "_broadcast_refresh_to_workers"),
+                patch.object(SecretsManager, "_notify_workers_to_refresh_secrets"),
             ):
                 secrets_manager = SecretsManager(config_manager, event_manager=event_manager)
                 secrets_manager.on_handle_set_secret_request(
@@ -268,7 +249,7 @@ class TestSecretsManager:
 
             with (
                 patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env),
-                patch.object(SecretsManager, "_broadcast_refresh_to_workers") as mock_broadcast,
+                patch.object(SecretsManager, "_notify_workers_to_refresh_secrets") as mock_broadcast,
             ):
                 secrets_manager = SecretsManager(config_manager, event_manager=MagicMock())
                 secrets_manager.on_handle_set_secret_request(

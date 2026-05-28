@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.api_client.request_client import RequestClient
+    from griptape_nodes.retained_mode.events.base_events import RequestPayload
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -496,41 +497,18 @@ class WorkerManager:
         logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
         await self._tx.send_message("EventRequest", forwarded.json(), worker_request_topic)
 
-    def schedule_config_reload_broadcast(self) -> None:
-        """Tell every registered worker to reload config from disk.
+    def schedule_broadcast(self, request_type: type[RequestPayload]) -> None:
+        """Tell every registered worker to handle ``request_type`` locally.
 
-        Workers share the config file on the same machine but cache a merged
-        config in memory; they must re-read the file to pick up new values.
-        Safe to call from sync code and from inside a running event loop --
-        the fan-out is scheduled as a background task; the caller does not wait.
-        On a worker process (no registered workers) this is a cheap no-op.
+        Wraps ``request_type`` in an EventRequest and fans it out to every
+        registered worker. Safe to call from sync code and from inside a
+        running event loop -- the fan-out is scheduled as a background task;
+        the caller does not wait. On a worker process (no registered workers,
+        or no transport configured) this is a cheap no-op.
         """
         if self._transport is None or not self._workers:
             return
-        reload_event = EventRequest(request=worker_events.WorkerReloadConfigRequest())
-        self._schedule_broadcast(reload_event)
-
-    def schedule_secret_refresh_broadcast(self) -> None:
-        """Tell every registered worker to re-read the shared .env file.
-
-        The .env file is re-read by each worker so its os.environ shadow
-        (which get_secret consults first) reflects the new value. Same
-        fire-and-forget semantics as schedule_config_reload_broadcast.
-        """
-        if self._transport is None or not self._workers:
-            return
-        refresh_event = EventRequest(request=worker_events.WorkerRefreshSecretsRequest())
-        self._schedule_broadcast(refresh_event)
-
-    def _schedule_broadcast(self, event: EventRequest) -> None:
-        """Schedule broadcast_to_workers as a task on the running loop.
-
-        If there is no running loop (e.g. test harness, offline sync code),
-        drive the broadcast to completion via asyncio.run. Inside a running
-        loop we cannot await without blocking the caller, so we hand the
-        coroutine to the loop and retain the task reference to keep the GC
-        from cancelling it mid-flight.
-        """
+        event = EventRequest(request=request_type())
         running_loop: asyncio.AbstractEventLoop | None = None
         with contextlib.suppress(RuntimeError):
             running_loop = asyncio.get_running_loop()

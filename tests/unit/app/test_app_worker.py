@@ -768,7 +768,9 @@ class TestOrchestratorHeartbeatLoop:
 class TestBroadcastToWorkers:
     @pytest.mark.asyncio
     async def test_no_workers_is_noop(self, worker_manager: WorkerManager) -> None:
-        event = EventRequest(request=worker_events.WorkerReloadConfigRequest())
+        from griptape_nodes.app.worker_routing import ReloadConfigRequest
+
+        event = EventRequest(request=ReloadConfigRequest())
 
         await worker_manager.broadcast_to_workers(event)
 
@@ -776,6 +778,8 @@ class TestBroadcastToWorkers:
 
     @pytest.mark.asyncio
     async def test_sends_one_message_per_registered_worker(self, worker_manager: WorkerManager) -> None:
+        from griptape_nodes.app.worker_routing import ReloadConfigRequest
+
         expected_broadcast_count = 2
         worker_a, worker_b = "eng-a", "eng-b"
         worker_manager._workers[worker_a] = WorkerRegistration(
@@ -784,7 +788,7 @@ class TestBroadcastToWorkers:
         worker_manager._workers[worker_b] = WorkerRegistration(
             request_topic=f"sessions/{_SESSION}/workers/{worker_b}/request", worker_key=None
         )
-        event = EventRequest(request=worker_events.WorkerReloadConfigRequest())
+        event = EventRequest(request=ReloadConfigRequest())
 
         await worker_manager.broadcast_to_workers(event)
 
@@ -796,46 +800,39 @@ class TestBroadcastToWorkers:
         }
 
 
-class TestConfigReloadBroadcast:
+class TestScheduleBroadcast:
     @pytest.mark.asyncio
-    async def test_schedule_config_reload_broadcast_fans_out_reload_request(
-        self, worker_manager: WorkerManager
-    ) -> None:
+    async def test_fans_out_request_to_each_registered_worker(self, worker_manager: WorkerManager) -> None:
+        from griptape_nodes.app.worker_routing import ReloadConfigRequest
+
         worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
 
-        worker_manager.schedule_config_reload_broadcast()
+        worker_manager.schedule_broadcast(ReloadConfigRequest)
         # create_task on the running loop -- let it run.
         await asyncio.sleep(0)
 
         worker_manager._tx.send_message.assert_called_once()  # type: ignore[union-attr]
         sent_payload = json.loads(worker_manager._tx.send_message.call_args[0][1])  # type: ignore[union-attr]
-        assert sent_payload["request_type"] == "WorkerReloadConfigRequest"
+        assert sent_payload["request_type"] == "ReloadConfigRequest"
 
     @pytest.mark.asyncio
-    async def test_schedule_config_reload_broadcast_no_workers_is_noop(self, worker_manager: WorkerManager) -> None:
-        worker_manager.schedule_config_reload_broadcast()
-        await asyncio.sleep(0)
+    async def test_refresh_secrets_payload_round_trips(self, worker_manager: WorkerManager) -> None:
+        from griptape_nodes.app.worker_routing import RefreshSecretsRequest
 
-        worker_manager._tx.send_message.assert_not_called()  # type: ignore[union-attr]
-
-
-class TestSecretRefreshBroadcast:
-    @pytest.mark.asyncio
-    async def test_schedule_secret_refresh_broadcast_fans_out_refresh_request(
-        self, worker_manager: WorkerManager
-    ) -> None:
         worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
 
-        worker_manager.schedule_secret_refresh_broadcast()
+        worker_manager.schedule_broadcast(RefreshSecretsRequest)
         await asyncio.sleep(0)
 
         worker_manager._tx.send_message.assert_called_once()  # type: ignore[union-attr]
         sent_payload = json.loads(worker_manager._tx.send_message.call_args[0][1])  # type: ignore[union-attr]
-        assert sent_payload["request_type"] == "WorkerRefreshSecretsRequest"
+        assert sent_payload["request_type"] == "RefreshSecretsRequest"
 
     @pytest.mark.asyncio
-    async def test_schedule_secret_refresh_broadcast_no_workers_is_noop(self, worker_manager: WorkerManager) -> None:
-        worker_manager.schedule_secret_refresh_broadcast()
+    async def test_no_workers_is_noop(self, worker_manager: WorkerManager) -> None:
+        from griptape_nodes.app.worker_routing import ReloadConfigRequest
+
+        worker_manager.schedule_broadcast(ReloadConfigRequest)
         await asyncio.sleep(0)
 
         worker_manager._tx.send_message.assert_not_called()  # type: ignore[union-attr]

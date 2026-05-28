@@ -22,10 +22,6 @@ from griptape_nodes.retained_mode.events.secrets_events import (
     SetSecretValueRequest,
     SetSecretValueResultSuccess,
 )
-from griptape_nodes.retained_mode.events.worker_events import (
-    WorkerRefreshSecretsRequest,
-    WorkerRefreshSecretsResultSuccess,
-)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import SECRETS_TO_REGISTER_KEY
@@ -55,32 +51,19 @@ class SecretsManager:
             event_manager.assign_manager_to_request_type(
                 DeleteSecretValueRequest, self.on_handle_delete_secret_value_request
             )
-            event_manager.assign_manager_to_request_type(
-                WorkerRefreshSecretsRequest, self.on_handle_worker_refresh_secrets_request
-            )
 
-    def on_handle_worker_refresh_secrets_request(
-        self,
-        request: WorkerRefreshSecretsRequest,  # noqa: ARG002
-    ) -> ResultPayload:
-        self.refresh_from_env_file()
-        return WorkerRefreshSecretsResultSuccess(result_details="Refreshed secrets from shared .env file.")
+    def _notify_workers_to_refresh_secrets(self) -> None:
+        """Tell every registered worker to re-read the shared .env from disk.
 
-    def _broadcast_refresh_to_workers(self) -> None:
-        """Ask the orchestrator's WorkerManager to tell every worker to re-read .env.
-
-        Imported lazily because SecretsManager is constructed before the singleton
-        accessor is ready during engine boot. Skipped entirely when the
-        GriptapeNodes singleton has not been instantiated yet (e.g. isolated
-        unit tests that construct SecretsManager on its own), so this is safe
-        to call in any engine role.
+        Only the orchestrator's WorkerManager has any registered workers, so on
+        a worker process this is a cheap no-op via ``schedule_broadcast``.
+        Imported lazily because ``griptape_nodes.app`` is not importable at the
+        module level here -- SecretsManager is loaded during engine boot,
+        before ``app/__init__`` has finished importing.
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        from griptape_nodes.utils.metaclasses import SingletonMeta
+        from griptape_nodes.app.worker_routing import RefreshSecretsRequest, schedule_broadcast
 
-        if GriptapeNodes not in SingletonMeta._instances:
-            return
-        GriptapeNodes.WorkerManager().schedule_secret_refresh_broadcast()
+        schedule_broadcast(RefreshSecretsRequest)
 
     def refresh_from_env_file(self) -> None:
         """Re-read the shared .env file into os.environ, overriding stale values.
@@ -148,7 +131,7 @@ class SecretsManager:
 
         if self._event_manager is not None:
             self._event_manager.broadcast_app_event(SecretChanged(key=secret_name))
-        self._broadcast_refresh_to_workers()
+        self._notify_workers_to_refresh_secrets()
 
         return SetSecretValueResultSuccess(result_details=f"Successfully set secret value for key: {secret_name}")
 
@@ -178,7 +161,7 @@ class SecretsManager:
 
         if self._event_manager is not None:
             self._event_manager.broadcast_app_event(SecretChanged(key=secret_name))
-        self._broadcast_refresh_to_workers()
+        self._notify_workers_to_refresh_secrets()
 
         return DeleteSecretValueResultSuccess(result_details=f"Successfully deleted secret: {secret_name}")
 

@@ -7,8 +7,8 @@ file with the orchestrator, but each process captures values in-memory at boot
 (os.environ shadow for secrets; merged_config for config). A mutation on the
 orchestrator that only rewrites the file is invisible to the worker until it
 re-reads the file. PR #4477 closes that gap: after orchestrator-side handlers
-mutate the shared state, WorkerManager fires WorkerRefreshSecretsRequest /
-WorkerReloadConfigRequest at every registered worker, each of which re-reads
+mutate the shared state, WorkerManager fires RefreshSecretsRequest /
+ReloadConfigRequest at every registered worker, each of which re-reads
 from disk.
 
 These tests wire orchestrator-side SecretsManager/ConfigManager to a worker-
@@ -40,13 +40,14 @@ from unittest.mock import patch
 
 import pytest
 
+from griptape_nodes.app.worker_routing import (
+    RefreshSecretsRequest,
+    ReloadConfigRequest,
+    register_broadcast_handlers,
+)
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.config_events import SetConfigValueRequest
 from griptape_nodes.retained_mode.events.secrets_events import SetSecretValueRequest
-from griptape_nodes.retained_mode.events.worker_events import (
-    WorkerRefreshSecretsRequest,
-    WorkerReloadConfigRequest,
-)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from tests.unit.worker.harness import InProcessWorkerHarness
@@ -102,6 +103,11 @@ class TestSecretPropagation:
             worker_config = ConfigManager()
             worker_config.workspace_path = shared_workspace
             worker_secrets = SecretsManager(worker_config, event_manager=harness.worker)
+            register_broadcast_handlers(
+                harness.worker,
+                config_manager=worker_config,
+                secrets_manager=worker_secrets,
+            )
 
             # Sanity: both sides see the boot value before anything happens.
             assert orchestrator_secrets.get_secret(secret_key) == "boot_value"
@@ -127,8 +133,8 @@ class TestSecretPropagation:
 
                 # Deliver the refresh signal through the harness. This is the
                 # moral equivalent of WorkerManager broadcasting
-                # WorkerRefreshSecretsRequest to every registered worker.
-                await harness.route_to_worker(EventRequest(request=WorkerRefreshSecretsRequest()))
+                # RefreshSecretsRequest to every registered worker.
+                await harness.route_to_worker(EventRequest(request=RefreshSecretsRequest()))
 
                 # Worker now sees the fresh value.
                 assert worker_secrets.get_secret(secret_key) == "updated_value"
@@ -157,6 +163,11 @@ class TestSecretPropagation:
             worker_config = ConfigManager()
             worker_config.workspace_path = shared_workspace
             worker_secrets = SecretsManager(worker_config, event_manager=harness.worker)
+            register_broadcast_handlers(
+                harness.worker,
+                config_manager=worker_config,
+                secrets_manager=worker_secrets,
+            )
 
             assert worker_secrets.get_secret(secret_key) == "boot_value"
 
@@ -171,7 +182,7 @@ class TestSecretPropagation:
             # does on a real worker.
             await harness.start()
             try:
-                await harness.route_to_worker(EventRequest(request=WorkerRefreshSecretsRequest()))
+                await harness.route_to_worker(EventRequest(request=RefreshSecretsRequest()))
             finally:
                 await harness.stop()
 
@@ -203,6 +214,12 @@ class TestConfigPropagation:
             orchestrator_config.workspace_path = shared_workspace
             worker_config = ConfigManager(event_manager=harness.worker)
             worker_config.workspace_path = shared_workspace
+            worker_secrets = SecretsManager(worker_config, event_manager=harness.worker)
+            register_broadcast_handlers(
+                harness.worker,
+                config_manager=worker_config,
+                secrets_manager=worker_secrets,
+            )
 
             # Both see boot value.
             assert orchestrator_config.get_config_value("nested.key") == "boot_value"
@@ -220,7 +237,7 @@ class TestConfigPropagation:
                 assert worker_config.get_config_value("nested.key") == "boot_value"
 
                 # Deliver the reload signal.
-                await harness.route_to_worker(EventRequest(request=WorkerReloadConfigRequest()))
+                await harness.route_to_worker(EventRequest(request=ReloadConfigRequest()))
 
                 assert worker_config.get_config_value("nested.key") == "updated_value"
             finally:
