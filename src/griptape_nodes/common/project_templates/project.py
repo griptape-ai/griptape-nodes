@@ -23,11 +23,19 @@ if TYPE_CHECKING:
 class ProjectTemplate(BaseModel):
     """Complete project template loaded from project.yml."""
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.1"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.2"
 
     project_template_schema_version: str = Field(description="Schema version for the project template")
     name: str = Field(description="Name of the project")
     description: str | None = Field(default=None, description="Description of the project")
+    parent_project_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional path to a parent project YAML. When set, the parent's merged template is the "
+            "base for this template (instead of system defaults alone). Relative paths resolve "
+            "against the directory of this project's YAML file."
+        ),
+    )
     situations: dict[str, SituationTemplate] = Field(description="Situation templates (situation_name -> template)")
     directories: dict[str, DirectoryDefinition] = Field(
         description="Directory definitions (logical_name -> definition)",
@@ -73,6 +81,11 @@ class ProjectTemplate(BaseModel):
         # tombstones a previously-set base description.
         if self_dump.get("description") != base_dump.get("description"):
             output["description"] = self_dump.get("description")
+
+        # parent_project_id: emit only when it diverges from base. Explicit null
+        # tombstones an inherited link.
+        if self_dump.get("parent_project_id") != base_dump.get("parent_project_id"):
+            output["parent_project_id"] = self_dump.get("parent_project_id")
 
         situations_overlay = self._diff_named_items(self_dump["situations"], base_dump["situations"])
         if situations_overlay:
@@ -373,9 +386,22 @@ class ProjectTemplate(BaseModel):
         else:
             merged_description = base.description
 
+        # parent_project_id: overlay wins; absent inherits base. Explicit null in
+        # overlay clears the inherited value (treated like a tombstone). The
+        # parent has already been merged into `base` by the time we get here, but
+        # the field is preserved on the result so the saved YAML round-trips the
+        # child's declared inheritance link.
+        if overlay.clears_parent_project_id:
+            merged_parent_project_id = None
+        elif overlay.parent_project_id is not None:
+            merged_parent_project_id = overlay.parent_project_id
+        else:
+            merged_parent_project_id = base.parent_project_id
+
         return ProjectTemplate(
             project_template_schema_version=overlay.project_template_schema_version,
             name=overlay.name,
+            parent_project_id=merged_parent_project_id,
             situations=merged_situations,
             directories=merged_directories,
             environment=merged_environment,

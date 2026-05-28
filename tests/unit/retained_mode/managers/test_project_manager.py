@@ -3013,3 +3013,277 @@ class TestProjectDirectoryRecursion:
         )
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/workspace/legacy/img.png")
+
+
+class TestProjectParentChain:
+    """Tests for `parent_project_id` chained inheritance.
+
+    The handler reads YAML via `ReadFileRequest` routed through
+    `GriptapeNodes.ahandle_request`. These tests patch that boundary so the
+    project files live entirely in memory, keyed by the on-disk paths the
+    handler canonicalizes the request paths into.
+    """
+
+    BASE_PROJECT_YAML = """\
+project_template_schema_version: "0.3.2"
+name: Base Project
+directories:
+  shared_outputs:
+    path_macro: "{workspace_dir}/base_outputs"
+"""
+
+    CHILD_PROJECT_YAML_TEMPLATE = """\
+project_template_schema_version: "0.3.2"
+name: Child Project
+parent_project_id: "{parent}"
+directories:
+  child_outputs:
+    path_macro: "{{workspace_dir}}/child_outputs"
+"""
+
+    GRANDCHILD_PROJECT_YAML_TEMPLATE = """\
+project_template_schema_version: "0.3.2"
+name: Grandchild Project
+parent_project_id: "{parent}"
+directories:
+  grandchild_outputs:
+    path_macro: "{{workspace_dir}}/grandchild_outputs"
+"""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    @staticmethod
+    def _file_router(files: dict[Path, str]) -> AsyncMock:
+        """Build an `ahandle_request` mock that returns YAML content based on file path.
+
+        Unknown paths return a failure result so the handler treats them as MISSING.
+        """
+        from griptape_nodes.retained_mode.events.os_events import (
+            FileIOFailureReason,
+            ReadFileResultFailure,
+            ReadFileResultSuccess,
+        )
+
+        async def route(request: object) -> object:
+            file_path = Path(getattr(request, "file_path", ""))
+            content = files.get(file_path)
+            if content is None:
+                return ReadFileResultFailure(
+                    failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
+                    result_details=f"missing: {file_path}",
+                )
+            return ReadFileResultSuccess(
+                content=content,
+                file_size=len(content),
+                mime_type="text/plain",
+                encoding="utf-8",
+                result_details="ok",
+            )
+
+        return AsyncMock(side_effect=route)
+
+    @pytest.mark.asyncio
+    async def test_no_parent_still_merges_with_defaults(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A project without parent_project_id still merges on top of system defaults."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        child_path = (tmp_path / "child.yml").resolve()
+        files = {
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.replace('parent_project_id: "{parent}"\n', "").format(),
+        }
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        # Child's own directory survives.
+        assert "child_outputs" in result.template.directories
+        # System default directories still inherited.
+        assert "outputs" in result.template.directories
+
+    @pytest.mark.asyncio
+    async def test_parent_directories_inherited_into_child(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A child with parent_project_id inherits directories declared by the parent."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+        files = {
+            base_path: self.BASE_PROJECT_YAML,
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        # Inherited from parent.
+        assert "shared_outputs" in result.template.directories
+        # Declared by child.
+        assert "child_outputs" in result.template.directories
+        # parent_project_id round-trips on the merged template (so save_overlay can re-emit it).
+        assert result.template.parent_project_id == str(base_path)
+
+    @pytest.mark.asyncio
+    async def test_multi_level_chain_walks_all_ancestors(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Grandchild inherits from both parent and grandparent in one merged template."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+        grandchild_path = (tmp_path / "grandchild.yml").resolve()
+        files = {
+            base_path: self.BASE_PROJECT_YAML,
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+            grandchild_path: self.GRANDCHILD_PROJECT_YAML_TEMPLATE.format(parent=str(child_path)),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=grandchild_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        # All three layers present.
+        assert "shared_outputs" in result.template.directories
+        assert "child_outputs" in result.template.directories
+        assert "grandchild_outputs" in result.template.directories
+
+    @pytest.mark.asyncio
+    async def test_parent_path_resolves_relative_to_child(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A relative parent_project_id resolves against the child's directory."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        sub_dir = tmp_path / "sub"
+        sub_dir.mkdir()
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (sub_dir / "child.yml").resolve()
+        files = {
+            base_path: self.BASE_PROJECT_YAML,
+            # Relative path: child sits in tmp_path/sub, so ../base.yml resolves to base_path.
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent="../base.yml"),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        assert "shared_outputs" in result.template.directories
+
+    @pytest.mark.asyncio
+    async def test_self_reference_detected_as_cycle(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A project that names itself as its own parent fails with a cycle error."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultFailure,
+        )
+
+        self_path = (tmp_path / "self.yml").resolve()
+        files = {self_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(self_path))}
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=self_path))
+
+        assert isinstance(result, LoadProjectTemplateResultFailure)
+        assert any("Cycle" in p.message and p.field_path == "parent_project_id" for p in result.validation.problems)
+
+    @pytest.mark.asyncio
+    async def test_two_node_cycle_detected(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A → B → A is detected and reported."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultFailure,
+        )
+
+        a_path = (tmp_path / "a.yml").resolve()
+        b_path = (tmp_path / "b.yml").resolve()
+        files = {
+            a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(b_path)),
+            b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(a_path)),
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=a_path))
+
+        assert isinstance(result, LoadProjectTemplateResultFailure)
+        assert any("Cycle" in p.message for p in result.validation.problems)
+
+    @pytest.mark.asyncio
+    async def test_missing_parent_surfaces_as_validation_error(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A child whose parent file is missing fails to load with a clear error."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultFailure,
+        )
+
+        missing_parent = (tmp_path / "does_not_exist.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+        files = {child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(missing_parent))}
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultFailure)
+        assert any(
+            "could not be loaded" in p.message and p.field_path == "parent_project_id"
+            for p in result.validation.problems
+        )
+
+    @pytest.mark.asyncio
+    async def test_child_overrides_parent_directory(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Child can override a directory declared by its parent."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+
+        # Child overrides shared_outputs that the parent declared.
+        child_yaml = f"""\
+project_template_schema_version: "0.3.2"
+name: Child Override
+parent_project_id: "{base_path!s}"
+directories:
+  shared_outputs:
+    path_macro: "{{workspace_dir}}/child_override"
+"""
+
+        files = {
+            base_path: self.BASE_PROJECT_YAML,
+            child_path: child_yaml,
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        merged = result.template.directories["shared_outputs"]
+        # Override took effect.
+        assert merged.path_macro == "{workspace_dir}/child_override"

@@ -21,6 +21,7 @@ from griptape_nodes.common.macro_parser import (
 from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_TEMPLATE,
     DirectoryDefinition,
+    ProjectOverlayData,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
@@ -371,10 +372,11 @@ class ProjectManager:
         Flow:
         1. Issue ReadFileRequest to OSManager (for proper Windows long path handling)
         2. Parse YAML and load partial template (overlay) using load_partial_project_template()
-        3. Merge with system defaults using ProjectTemplate.merge()
-        4. Cache validation in registered_template_status
-        5. If usable, cache template in successful_templates
-        6. Return LoadProjectTemplateResultSuccess or LoadProjectTemplateResultFailure
+        3. Resolve the parent chain (if any) into a base ProjectTemplate
+        4. Merge the overlay onto that base using ProjectTemplate.merge()
+        5. Cache validation in registered_template_status
+        6. If usable, cache template in successful_templates
+        7. Return LoadProjectTemplateResultSuccess or LoadProjectTemplateResultFailure
         """
         # Expand ~/env vars and resolve to absolute so the same file always
         # produces the same project_id regardless of how the caller spelled
@@ -384,52 +386,28 @@ class ProjectManager:
         # use the canonical form so dedupe checks line up.
         project_file_path = canonicalize_for_identity(request.project_path)
 
-        read_request = ReadFileRequest(
-            file_path=str(project_file_path),
-            encoding="utf-8",
-            workspace_only=False,
+        read_load = await self._read_overlay(project_file_path)
+        if isinstance(read_load, LoadProjectTemplateResultFailure):
+            return read_load
+        validation, overlay = read_load
+
+        # Resolve the parent chain (if declared) into a base ProjectTemplate.
+        # Cycle detection seeds the visited set with the current project's path
+        # so a self-reference also fails fast.
+        base_template = await self._resolve_parent_chain(
+            overlay=overlay,
+            project_file_path=project_file_path,
+            validation=validation,
+            visited={project_file_path},
         )
-        read_result = await GriptapeNodes.ahandle_request(read_request)
-
-        if read_result.failed():
-            validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
-            self._registered_template_status[project_file_path] = validation
-
-            return LoadProjectTemplateResultFailure(
-                validation=validation,
-                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because file not found",
-            )
-
-        if not isinstance(read_result, ReadFileResultSuccess):
-            validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
-            self._registered_template_status[project_file_path] = validation
-
-            return LoadProjectTemplateResultFailure(
-                validation=validation,
-                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because file read returned unexpected result type",
-            )
-
-        yaml_text = read_result.content
-        if not isinstance(yaml_text, str):
-            validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
-            self._registered_template_status[project_file_path] = validation
-
-            return LoadProjectTemplateResultFailure(
-                validation=validation,
-                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because template must be text, got binary content",
-            )
-
-        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, validation)
-
-        if overlay is None:
+        if base_template is None:
             self._registered_template_status[project_file_path] = validation
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because YAML could not be parsed",
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because parent chain could not be resolved",
             )
 
-        template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
+        template = ProjectTemplate.merge(base_template, overlay, validation)
 
         project_id = str(project_file_path)
         project_base_dir = project_file_path.parent
@@ -472,6 +450,147 @@ class ProjectManager:
             validation=validation,
             result_details=f"Template loaded successfully with status: {validation.status}",
         )
+
+    async def _read_overlay(
+        self, project_file_path: Path
+    ) -> tuple[ProjectValidationInfo, ProjectOverlayData] | LoadProjectTemplateResultFailure:
+        """Read a project YAML and parse it into an overlay.
+
+        Returns either (validation, overlay) on success or a fully formed
+        LoadProjectTemplateResultFailure for the caller to return as-is.
+        """
+        read_request = ReadFileRequest(
+            file_path=str(project_file_path),
+            encoding="utf-8",
+            workspace_only=False,
+        )
+        read_result = await GriptapeNodes.ahandle_request(read_request)
+
+        if read_result.failed():
+            validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
+            self._registered_template_status[project_file_path] = validation
+            return LoadProjectTemplateResultFailure(
+                validation=validation,
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because file not found",
+            )
+
+        if not isinstance(read_result, ReadFileResultSuccess):
+            validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
+            self._registered_template_status[project_file_path] = validation
+            return LoadProjectTemplateResultFailure(
+                validation=validation,
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because file read returned unexpected result type",
+            )
+
+        yaml_text = read_result.content
+        if not isinstance(yaml_text, str):
+            validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
+            self._registered_template_status[project_file_path] = validation
+            return LoadProjectTemplateResultFailure(
+                validation=validation,
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because template must be text, got binary content",
+            )
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay = load_partial_project_template(yaml_text, validation)
+        if overlay is None:
+            self._registered_template_status[project_file_path] = validation
+            return LoadProjectTemplateResultFailure(
+                validation=validation,
+                result_details=f"Attempted to load project template from '{project_file_path}'. Failed because YAML could not be parsed",
+            )
+
+        return validation, overlay
+
+    async def _resolve_parent_chain(  # noqa: PLR0911
+        self,
+        overlay: ProjectOverlayData,
+        project_file_path: Path,
+        validation: ProjectValidationInfo,
+        visited: set[Path],
+    ) -> ProjectTemplate | None:
+        """Resolve the parent chain declared by an overlay into a base ProjectTemplate.
+
+        When `overlay.parent_project_id` is None, the base is `DEFAULT_PROJECT_TEMPLATE`.
+        Otherwise the parent YAML is read, recursively resolved, merged onto its own
+        ancestors, and returned as the base for the caller.
+
+        Cycle detection: `visited` carries the canonical Paths of every project file
+        that is currently being resolved further down the chain. A cycle records an
+        error on `validation` and returns None.
+
+        Relative `parent_project_id` paths resolve against the directory of
+        `project_file_path` so a child project can name its parent with a relative
+        path (e.g. `parent_project_id: ../base/griptape-nodes-project.yml`).
+
+        Errors during parent resolution (missing file, unparsable YAML, cycle)
+        are recorded on the child's `validation` and surfaced to the caller as
+        a None return.
+        """
+        if overlay.parent_project_id is None:
+            return DEFAULT_PROJECT_TEMPLATE
+
+        parent_path_raw = Path(overlay.parent_project_id)
+        if not parent_path_raw.is_absolute():
+            parent_path_raw = project_file_path.parent / parent_path_raw
+        parent_file_path = canonicalize_for_identity(parent_path_raw)
+
+        if parent_file_path in visited:
+            cycle = " -> ".join(str(p) for p in [*sorted(visited, key=str), parent_file_path])
+            validation.add_error(
+                field_path="parent_project_id",
+                message=f"Cycle detected in project parent chain: {cycle}",
+                line_number=overlay.line_info.get_line("parent_project_id"),
+            )
+            return None
+
+        parent_load = await self._read_overlay(parent_file_path)
+        if isinstance(parent_load, LoadProjectTemplateResultFailure):
+            # Surface the parent's failure as a child-level error pointing at the link.
+            parent_status = parent_load.validation.status
+            validation.add_error(
+                field_path="parent_project_id",
+                message=(f"Parent project '{overlay.parent_project_id}' could not be loaded (status: {parent_status})"),
+                line_number=overlay.line_info.get_line("parent_project_id"),
+            )
+            return None
+        parent_validation, parent_overlay = parent_load
+
+        if not parent_validation.is_usable():
+            validation.add_error(
+                field_path="parent_project_id",
+                message=(
+                    f"Parent project '{overlay.parent_project_id}' has validation errors "
+                    f"(status: {parent_validation.status})"
+                ),
+                line_number=overlay.line_info.get_line("parent_project_id"),
+            )
+            return None
+
+        ancestor_base = await self._resolve_parent_chain(
+            overlay=parent_overlay,
+            project_file_path=parent_file_path,
+            validation=validation,
+            visited={*visited, parent_file_path},
+        )
+        if ancestor_base is None:
+            return None
+
+        # Merge the parent overlay onto its own ancestor base using a fresh
+        # validation info so the parent's overrides don't bleed into the child's
+        # validation record. Errors during the parent merge still propagate
+        # upward via add_error below.
+        parent_merge_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        parent_template = ProjectTemplate.merge(ancestor_base, parent_overlay, parent_merge_validation)
+        if not parent_merge_validation.is_usable():
+            for problem in parent_merge_validation.problems:
+                validation.add_error(
+                    field_path=f"parent_project_id.{problem.field_path}",
+                    message=f"Parent '{overlay.parent_project_id}': {problem.message}",
+                    line_number=overlay.line_info.get_line("parent_project_id"),
+                )
+            return None
+        return parent_template
 
     def on_get_project_template_request(
         self, request: GetProjectTemplateRequest
