@@ -1158,12 +1158,39 @@ class ProjectManager:
 
         self._parse_situation_macros(template.situations, validation)
         self._parse_directory_macros(template.directories, validation)
+        self._check_parent_chain_cycles(template, validation)
 
         if validation.status == ProjectValidationStatus.GOOD:
             details = "Template is valid"
         else:
             details = f"Template validation found {len(validation.problems)} problem(s) (status: {validation.status})"
         return ValidateProjectTemplateResultSuccess(validation=validation, result_details=details)
+
+    def _check_parent_chain_cycles(self, template: ProjectTemplate, validation: ProjectValidationInfo) -> None:
+        """Walk parent_project_id through the registry and report any cycle.
+
+        Only consults `_successfully_loaded_project_templates` (no disk I/O), so
+        it catches the common GUI scenario where the user picks a parent whose
+        own ancestry transitively points back to itself. A parent that isn't
+        registered yet is silently allowed; the load path catches truly missing
+        parents. The validator request is path-less, so a self-reference where
+        the child's parent_project_id is its own (yet-unsaved) path is also
+        deferred to load.
+        """
+        visited: set[str] = set()
+        current_id = template.parent_project_id
+        while current_id is not None:
+            if current_id in visited:
+                validation.add_error(
+                    field_path="parent_project_id",
+                    message=f"Cycle detected in parent chain at '{current_id}'",
+                )
+                return
+            visited.add(current_id)
+            parent_info = self._successfully_loaded_project_templates.get(current_id)
+            if parent_info is None:
+                return
+            current_id = parent_info.template.parent_project_id
 
     def on_unregister_project_template_request(
         self, request: UnregisterProjectTemplateRequest
