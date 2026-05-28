@@ -132,7 +132,6 @@ class ProjectOutputParameter(ABC):
 
     def _get_upstream_destination(
         self,
-        provider_type: type,
         destination_attr: str,
         destination_type_name: str,
     ) -> object | None:
@@ -149,7 +148,7 @@ class ProjectOutputParameter(ABC):
             if conn.target_parameter_name != self._name:
                 continue
             source_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(conn.source_node_name)
-            if not isinstance(source_node, provider_type):
+            if source_node is None or not hasattr(source_node, destination_attr):
                 continue
             destination = getattr(source_node, destination_attr)
             if destination is None:

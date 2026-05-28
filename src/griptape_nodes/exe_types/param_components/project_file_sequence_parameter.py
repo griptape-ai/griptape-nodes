@@ -28,13 +28,6 @@ _FALLBACK_SEQUENCE_MACRO = (
 )
 
 
-class FileSequenceDestinationProvider:
-    """Protocol for nodes that provide a FileSequenceDestination without serializing it over the wire."""
-
-    @property
-    def file_sequence_destination(self) -> FileSequenceDestination | None: ...
-
-
 class ProjectFileSequenceParameter(ProjectOutputParameter):
     """Parameter component for project-aware file sequence output.
 
@@ -117,9 +110,7 @@ class ProjectFileSequenceParameter(ProjectOutputParameter):
             ValueError: If an upstream FileSequenceDestinationProvider returns None.
             FileSequenceError: If no available version index can be found.
         """
-        upstream = self._get_upstream_destination(
-            FileSequenceDestinationProvider, "file_sequence_destination", "FileSequenceDestination"
-        )
+        upstream = self._get_upstream_destination("file_sequence_destination", "FileSequenceDestination")
         if upstream is not None:
             return upstream  # type: ignore[return-value]
 

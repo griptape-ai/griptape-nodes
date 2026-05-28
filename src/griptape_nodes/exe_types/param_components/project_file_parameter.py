@@ -3,7 +3,7 @@
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.project_output_parameter import ProjectOutputParameter
-from griptape_nodes.files.file import FileDestination, FileDestinationProvider
+from griptape_nodes.files.file import FileDestination
 from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
@@ -95,7 +95,7 @@ class ProjectFileParameter(ProjectOutputParameter):
         Raises:
             ValueError: If an upstream FileDestinationProvider is connected but returns None.
         """
-        upstream = self._get_upstream_destination(FileDestinationProvider, "file_destination", "FileDestination")
+        upstream = self._get_upstream_destination("file_destination", "FileDestination")
         if upstream is not None:
             return upstream  # type: ignore[return-value]
 

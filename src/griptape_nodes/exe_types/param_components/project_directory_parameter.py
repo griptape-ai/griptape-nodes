@@ -22,13 +22,6 @@ logger = logging.getLogger("griptape_nodes")
 _FALLBACK_DIRECTORY_MACRO = "{outputs}/{node_name?:_}{dir_name}_v{_index:03}"
 
 
-class DirectoryDestinationProvider:
-    """Protocol for nodes that provide a DirectoryDestination without serializing it over the wire."""
-
-    @property
-    def directory_destination(self) -> DirectoryDestination | None: ...
-
-
 class ProjectDirectoryParameter(ProjectOutputParameter):
     """Parameter component for project-aware directory creation.
 
@@ -113,9 +106,7 @@ class ProjectDirectoryParameter(ProjectOutputParameter):
         Raises:
             ValueError: If an upstream DirectoryDestinationProvider returns None.
         """
-        upstream = self._get_upstream_destination(
-            DirectoryDestinationProvider, "directory_destination", "DirectoryDestination"
-        )
+        upstream = self._get_upstream_destination("directory_destination", "DirectoryDestination")
         if upstream is not None:
             return upstream  # type: ignore[return-value]
 
