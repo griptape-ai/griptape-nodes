@@ -47,7 +47,6 @@ from griptape_nodes.app.worker_routing import (
 )
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.events.config_events import SetConfigValueRequest
-from griptape_nodes.retained_mode.events.secrets_events import SetSecretValueRequest
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from tests.unit.worker.harness import InProcessWorkerHarness
@@ -83,63 +82,6 @@ def shared_workspace(tmp_path: Path) -> Path:
 )
 class TestSecretPropagation:
     """Orchestrator SetSecret should be visible to the worker after a refresh signal."""
-
-    @pytest.mark.asyncio
-    async def test_worker_reads_new_secret_after_refresh(
-        self,
-        shared_global_env: Path,
-        shared_workspace: Path,
-    ) -> None:
-        secret_key = "INTEG_TEST_SECRET"  # noqa: S105
-        # Prime the shared file and both processes' os.environ.
-        shared_global_env.write_text(f"{secret_key}=boot_value\n")  # noqa: ASYNC240
-
-        with patch.dict(os.environ, {secret_key: "boot_value"}, clear=False):
-            harness = InProcessWorkerHarness()
-            orchestrator_config = ConfigManager()
-            orchestrator_config.workspace_path = shared_workspace
-            orchestrator_secrets = SecretsManager(orchestrator_config, event_manager=harness.orchestrator)
-
-            worker_config = ConfigManager()
-            worker_config.workspace_path = shared_workspace
-            worker_secrets = SecretsManager(worker_config, event_manager=harness.worker)
-            register_broadcast_handlers(
-                harness.worker,
-                config_manager=worker_config,
-                secrets_manager=worker_secrets,
-            )
-
-            # Sanity: both sides see the boot value before anything happens.
-            assert orchestrator_secrets.get_secret(secret_key) == "boot_value"
-            assert worker_secrets.get_secret(secret_key) == "boot_value"
-
-            await harness.start()
-            try:
-                # Orchestrator mutates the secret. The handler writes the file and
-                # schedules a worker broadcast, but the harness has no real
-                # WorkerManager transport, so nothing reaches the worker yet.
-                orchestrator_secrets.on_handle_set_secret_request(
-                    SetSecretValueRequest(key=secret_key, value="updated_value"),
-                )
-                assert orchestrator_secrets.get_secret(secret_key) == "updated_value"
-
-                # Worker's os.environ shadow is still stale because no refresh
-                # signal has been delivered. get_secret hits env var first.
-                assert os.environ[secret_key] == "updated_value"  # orchestrator write-through
-                # ^ Note: orchestrator's set_secret uses load_dotenv(override=True),
-                # so on the same process os.environ ends up with the new value.
-                # This is fine on a single machine because secrets ride os.environ
-                # across the process boundary via the shared file.
-
-                # Deliver the refresh signal through the harness. This is the
-                # moral equivalent of WorkerManager broadcasting
-                # RefreshSecretsRequest to every registered worker.
-                await harness.route_to_worker(EventRequest(request=RefreshSecretsRequest()))
-
-                # Worker now sees the fresh value.
-                assert worker_secrets.get_secret(secret_key) == "updated_value"
-            finally:
-                await harness.stop()
 
     @pytest.mark.asyncio
     async def test_worker_holds_stale_value_until_refresh_arrives(

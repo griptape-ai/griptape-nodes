@@ -566,6 +566,7 @@ class ConfigManager:
             self._set_log_level(str(self.merged_config["log_level"]))
 
             result_details = "Successfully reset user configuration."
+            self._notify_workers_to_reload_config()
             return ResetConfigResultSuccess(result_details=result_details)
         except Exception as e:
             result_details = f"Attempted to reset user configuration but failed: {e}."

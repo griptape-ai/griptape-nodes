@@ -1,6 +1,6 @@
 import logging
+import os
 import re
-from os import getenv
 from pathlib import Path
 from typing import Literal, overload
 
@@ -37,9 +37,19 @@ class SecretsManager:
         self.config_manager = config_manager
         self._event_manager = event_manager
 
+        # Track which keys were sourced from .env files so refresh_from_env_file
+        # can pop deleted keys back out of os.environ. Without this, a deleted
+        # secret remains in os.environ as a stale shadow because load_dotenv
+        # only assigns keys that are present in the file.
+        self._loaded_env_keys: set[str] = set()
+
         # So that users can access secrets directly via `os.environ`
         load_dotenv(self.workspace_env_path, override=False)
         load_dotenv(ENV_VAR_PATH, override=False)
+        if self.workspace_env_path.exists():
+            self._loaded_env_keys.update(dotenv_values(self.workspace_env_path).keys())
+        if ENV_VAR_PATH.exists():
+            self._loaded_env_keys.update(dotenv_values(ENV_VAR_PATH).keys())
 
         # Register all our listeners.
         if event_manager is not None:
@@ -66,19 +76,40 @@ class SecretsManager:
         schedule_broadcast(RefreshSecretsRequest)
 
     def refresh_from_env_file(self) -> None:
-        """Re-read the shared .env file into os.environ, overriding stale values.
+        """Re-read the .env files into os.environ, applying the documented precedence.
 
         Same-machine workers share ~/.config/griptape_nodes/.env with the
         orchestrator, but each process captures the file contents into os.environ
         at boot. When the orchestrator updates the file, a worker's os.environ
         keeps the old value -- and get_secret() sees environment variables first,
-        so it returns the stale value. Calling load_dotenv with override=True
-        repopulates os.environ from the current file contents.
+        so it returns the stale value.
+
+        Reload global first (lowest priority) and workspace second (higher
+        priority) with override=True at each step. This matches the precedence
+        documented on get_secret: workspace overrides global. Reversing the
+        order would let global clobber workspace for keys present in both.
+
+        Also drops keys that disappeared from either file: load_dotenv only
+        assigns variables that exist in the file, so a deleted key stays in
+        os.environ as a stale shadow until we explicitly pop it.
         """
-        if self.workspace_env_path.exists():
-            load_dotenv(self.workspace_env_path, override=True)
+        previously_known_keys = set(self._loaded_env_keys)
+        currently_present: dict[str, set[str]] = {}
+
         if ENV_VAR_PATH.exists():
+            file_keys = set(dotenv_values(ENV_VAR_PATH).keys())
+            currently_present[str(ENV_VAR_PATH)] = file_keys
             load_dotenv(ENV_VAR_PATH, override=True)
+        if self.workspace_env_path.exists():
+            file_keys = set(dotenv_values(self.workspace_env_path).keys())
+            currently_present[str(self.workspace_env_path)] = file_keys
+            load_dotenv(self.workspace_env_path, override=True)
+
+        present_anywhere = set().union(*currently_present.values()) if currently_present else set()
+        for key in previously_known_keys - present_anywhere:
+            os.environ.pop(key, None)
+
+        self._loaded_env_keys = present_anywhere
         logger.debug("Refreshed secrets from .env files")
 
     @property
@@ -156,6 +187,13 @@ class SecretsManager:
             return DeleteSecretValueResultFailure(result_details=details)
 
         unset_key(ENV_VAR_PATH, secret_name)
+        # set_secret writes through to os.environ via load_dotenv(override=True);
+        # mirror that here so the orchestrator's own get_secret stops returning
+        # the just-deleted value. Workers see the same drop after the refresh
+        # broadcast lands -- refresh_from_env_file now pops keys that vanished
+        # from the file, not just keys still present.
+        os.environ.pop(secret_name, None)
+        self._loaded_env_keys.discard(secret_name)
 
         logger.info("Secret '%s' deleted.", secret_name)
 
@@ -181,7 +219,7 @@ class SecretsManager:
         secret_name = SecretsManager._apply_secret_name_compliance(secret_name)
 
         search_order = [
-            ("environment variables", lambda: getenv(secret_name)),
+            ("environment variables", lambda: os.getenv(secret_name)),
             (str(self.workspace_env_path), lambda: DotEnv(self.workspace_env_path).get(secret_name)),
             (str(ENV_VAR_PATH), lambda: DotEnv(ENV_VAR_PATH).get(secret_name)),
         ]
@@ -203,6 +241,7 @@ class SecretsManager:
             ENV_VAR_PATH.touch()
         set_key(ENV_VAR_PATH, secret_name, secret_value)
         load_dotenv(ENV_VAR_PATH, override=True)
+        self._loaded_env_keys.add(secret_name)
 
     @staticmethod
     def _apply_secret_name_compliance(secret_name: str) -> str:

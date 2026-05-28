@@ -27,6 +27,7 @@ routing metadata.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -77,6 +78,8 @@ from griptape_nodes.retained_mode.events.secrets_events import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
 from griptape_nodes.utils.async_utils import call_function
+
+logger = logging.getLogger("griptape_nodes")
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -265,11 +268,21 @@ def register_broadcast_handlers(
     """
 
     def handle_reload_config(request: ReloadConfigRequest) -> ResultPayload:  # noqa: ARG001
-        config_manager.load_configs()
+        try:
+            config_manager.load_configs()
+        except Exception as e:
+            details = f"Attempted to reload config from disk. Failed because of {type(e).__name__}: {e}."
+            logger.error(details)
+            return ReloadConfigResultFailure(result_details=details)
         return ReloadConfigResultSuccess(result_details="Reloaded config from disk.")
 
     def handle_refresh_secrets(request: RefreshSecretsRequest) -> ResultPayload:  # noqa: ARG001
-        secrets_manager.refresh_from_env_file()
+        try:
+            secrets_manager.refresh_from_env_file()
+        except Exception as e:
+            details = f"Attempted to refresh secrets from shared .env file. Failed because of {type(e).__name__}: {e}."
+            logger.error(details)
+            return RefreshSecretsResultFailure(result_details=details)
         return RefreshSecretsResultSuccess(result_details="Refreshed secrets from shared .env file.")
 
     event_manager.assign_manager_to_request_type(ReloadConfigRequest, handle_reload_config)
