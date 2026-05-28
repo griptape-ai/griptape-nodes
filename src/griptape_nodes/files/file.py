@@ -166,6 +166,8 @@ _EXTENSION_ALIASES: dict[str, str] = {
     "tiff": "tiff",
     "m4v": "mp4",
     "mp4": "mp4",
+    "m4a": "m4a",
+    "m4b": "m4a",
 }
 
 

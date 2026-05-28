@@ -69,8 +69,11 @@ class AudioArtifactProvider(BaseArtifactProvider):
             if b"OpusHead" in data[:128]:
                 return "opus"
             return "ogg"
-        if head[4:8] == b"ftyp" and head[8:12] in (b"M4A ", b"M4B "):
-            return "m4a"
+        if head[4:8] == b"ftyp":
+            if head[8:12] == b"M4A ":
+                return "m4a"
+            if head[8:12] == b"M4B ":
+                return "m4b"
         if (
             head[0] == _MPEG_FRAME_SYNC_BYTE
             and (head[1] & _ADTS_SYNC_MASK) == _ADTS_SYNC_VALUE

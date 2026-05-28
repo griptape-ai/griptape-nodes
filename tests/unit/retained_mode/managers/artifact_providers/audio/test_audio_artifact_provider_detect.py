@@ -29,6 +29,10 @@ def _m4a_bytes() -> bytes:
     return b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 16
 
 
+def _m4b_bytes() -> bytes:
+    return b"\x00\x00\x00\x18ftypM4B " + b"\x00" * 16
+
+
 class TestAudioDetectFormat:
     def test_mp3_id3(self) -> None:
         assert AudioArtifactProvider.detect_format(_mp3_bytes()) == "mp3"
@@ -50,6 +54,9 @@ class TestAudioDetectFormat:
 
     def test_m4a_iso_bmff(self) -> None:
         assert AudioArtifactProvider.detect_format(_m4a_bytes()) == "m4a"
+
+    def test_m4b_iso_bmff(self) -> None:
+        assert AudioArtifactProvider.detect_format(_m4b_bytes()) == "m4b"
 
     def test_short_data_returns_none(self) -> None:
         assert AudioArtifactProvider.detect_format(b"\x00\x01") is None
