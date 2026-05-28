@@ -453,3 +453,12 @@ The build batch in step 3 only works because every `CreateNodeRequest` carries a
 explicit `node_name`; the later `SetParameterValueRequest` and
 `CreateConnectionRequest` slots reference those names directly instead of waiting on
 the per-create response.
+
+## Further reading
+
+For anything beyond the build → wire → run → read scope of this skill, start at
+[`/for_agents/`](https://docs.griptapenodes.com/en/stable/for_agents/index.md). It is
+the canonical entry point to the engine's machine-readable doc surface — it explains
+the trade-offs between `/llms.txt` (curated index), `/llms-full.txt` (full corpus in
+one fetch), and per-page `.md` files, and lists the highest-value pages for grounding
+an agent in the engine's actual API.
