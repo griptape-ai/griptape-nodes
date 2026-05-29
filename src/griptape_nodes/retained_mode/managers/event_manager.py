@@ -67,6 +67,15 @@ def current_request_type() -> type[RequestPayload] | None:
 RESULT_TYPES_THAT_SKIP_FLUSH = {}
 
 
+class PreDispatchHookError(RuntimeError):
+    """Raised when a pre-dispatch hook errors.
+
+    The hook chain is an enforcement boundary, so a hook that raises denies the
+    request (fail closed) rather than letting it fall through to its manager
+    callback.
+    """
+
+
 def _running_loop() -> asyncio.AbstractEventLoop | None:
     """Return the currently running event loop, or None if not inside one."""
     try:
@@ -111,10 +120,17 @@ class EventManager:
         self._node_execution_depth: int = 0
         self._node_execution_lock = threading.Lock()
         # Pre-dispatch hook chain consulted before every request callback. Each
-        # hook returns either None (fall through to the next) or a ResultPayload
-        # to short-circuit the dispatcher. Used by PermissionManager to enforce
-        # policy without instrumenting every manager.
+        # hook returns None (fall through) or a ResultPayload (short-circuit the
+        # dispatcher). Lets PermissionManager enforce policy without instrumenting
+        # every manager.
         self._pre_dispatch_hooks: list[Callable[[RequestPayload, ResultContext], ResultPayload | None]] = []
+        # handle_request runs on arbitrary threads, so guard the list and snapshot
+        # it before iteration.
+        self._pre_dispatch_hooks_lock = threading.Lock()
+        # Thread-local flag: if a hook re-enters handle_request on this thread, the
+        # chain is skipped so the hook can't keep re-triggering itself into
+        # unbounded recursion.
+        self._hook_evaluation = threading.local()
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -238,38 +254,65 @@ class EventManager:
         Returning a ResultPayload short-circuits the dispatcher with that result;
         returning None lets dispatch continue.
 
-        Hooks must be cheap, sync, and must not themselves issue requests through
-        `handle_request` -- doing so risks unbounded recursion. Subscribe to
-        AppPayload events for state instead.
+        Hooks should be cheap and sync. A hook that re-enters `handle_request`
+        (directly or transitively) is bypassed on the re-entrant call rather
+        than recursing, but subscribing to AppPayload events for state is still
+        preferred. Registering the same hook twice is a no-op.
         """
-        self._pre_dispatch_hooks.append(hook)
+        with self._pre_dispatch_hooks_lock:
+            if hook not in self._pre_dispatch_hooks:
+                self._pre_dispatch_hooks.append(hook)
 
     def remove_pre_dispatch_hook(
         self,
         hook: Callable[[RequestPayload, ResultContext], ResultPayload | None],
     ) -> None:
-        try:
-            self._pre_dispatch_hooks.remove(hook)
-        except ValueError:
-            return
+        with self._pre_dispatch_hooks_lock:
+            try:
+                self._pre_dispatch_hooks.remove(hook)
+            except ValueError:
+                return
 
     def _run_pre_dispatch_hooks(
         self,
         request: RequestPayload,
         context: ResultContext,
     ) -> ResultPayload | None:
-        for hook in self._pre_dispatch_hooks:
-            try:
-                short_circuit = hook(request, context)
-            except Exception:
-                logging.getLogger("griptape_nodes").exception(
-                    "Pre-dispatch hook raised while evaluating %s; treating as no-op.",
-                    type(request).__name__,
-                )
-                continue
-            if short_circuit is not None:
-                return short_circuit
-        return None
+        # Bypass the chain when a hook is already running on this thread. A hook
+        # that re-enters handle_request would otherwise re-trigger itself and
+        # recurse without bound.
+        if getattr(self._hook_evaluation, "active", False):
+            return None
+
+        # Snapshot under the lock so concurrent add/remove on another thread
+        # cannot mutate the list mid-iteration.
+        with self._pre_dispatch_hooks_lock:
+            hooks = list(self._pre_dispatch_hooks)
+
+        if not hooks:
+            return None
+
+        self._hook_evaluation.active = True
+        try:
+            for hook in hooks:
+                try:
+                    short_circuit = hook(request, context)
+                except Exception as exc:
+                    # Fail closed: the chain is an enforcement boundary, so a
+                    # hook that errors must deny the request rather than let it
+                    # fall through to its manager callback.
+                    msg = (
+                        f"Attempted to evaluate pre-dispatch hooks for request "
+                        f"'{type(request).__name__}'. Failed because hook "
+                        f"'{getattr(hook, '__name__', hook)}' raised {type(exc).__name__}: {exc}"
+                    )
+                    logging.getLogger("griptape_nodes").exception(msg)
+                    raise PreDispatchHookError(msg) from exc
+                if short_circuit is not None:
+                    return short_circuit
+            return None
+        finally:
+            self._hook_evaluation.active = False
 
     def assign_manager_to_request_type(
         self,
