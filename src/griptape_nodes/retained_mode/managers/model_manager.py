@@ -751,8 +751,8 @@ class ModelManager:
         # Limit results (max 100 as per HF Hub API)
         limit = min(max(1, request.limit), 100)
 
-        # Perform the search, requesting safetensors metadata for size estimation
-        models_iterator = list_models(limit=limit, expand=["safetensors"], **search_params)
+        # Perform the search
+        models_iterator = list_models(limit=limit, **search_params)
 
         # Convert models to list and extract information
         models_list = []
@@ -770,7 +770,6 @@ class ModelManager:
                 task=getattr(model, "pipeline_tag", None),
                 library=getattr(model, "library_name", None),
                 tags=getattr(model, "tags", None),
-                estimated_size_bytes=self._estimate_size_from_safetensors(getattr(model, "safetensors", None)),
             )
             models_list.append(model_info)
 
@@ -791,40 +790,6 @@ class ModelManager:
             total_results=len(models_list),
             query_info=query_info,
         )
-
-    def _estimate_size_from_safetensors(self, safetensors_info: object | None) -> int | None:
-        """Estimate model download size in bytes from safetensors parameter metadata.
-
-        Uses parameter counts and dtype sizes as a rough approximation. The actual
-        download size may differ due to quantization, additional files, or metadata.
-        """
-        if safetensors_info is None:
-            return None
-
-        parameters = getattr(safetensors_info, "parameters", None)
-        if not parameters:
-            return None
-
-        # Bytes per parameter for common dtypes
-        dtype_bytes: dict[str, float] = {
-            "F64": 8,
-            "F32": 4,
-            "BF16": 2,
-            "F16": 2,
-            "I64": 8,
-            "I32": 4,
-            "I16": 2,
-            "I8": 1,
-            "U8": 1,
-            "BOOL": 1,
-        }
-
-        total = 0
-        for dtype, count in parameters.items():
-            bytes_per_param = dtype_bytes.get(dtype.upper(), 4)
-            total += int(count * bytes_per_param)
-
-        return total if total > 0 else None
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Handle app initialization complete event by downloading configured models and resuming unfinished downloads.

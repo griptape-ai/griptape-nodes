@@ -62,7 +62,6 @@ class ModelInfo:
     model_id: str
     local_path: str | None = None
     size_bytes: int | None = None
-    estimated_size_bytes: int | None = None
     author: str | None = None
     downloads: int | None = None
     likes: int | None = None
