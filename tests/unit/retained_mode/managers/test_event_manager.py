@@ -19,6 +19,8 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayloadSuccess,
     StrictModeViolationDetail,
 )
+from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
+from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
@@ -514,6 +516,10 @@ class TestPreDispatchHooks:
         # Fail closed: deny with a failure result, and never run the callback.
         assert event.result.failed()
         assert handler_calls == []
+        # The denial must use a concrete, registered failure type so it can
+        # round-trip on the worker-forward path (PayloadRegistry.get_type).
+        assert isinstance(event.result, GenericResultFailure)
+        assert PayloadRegistry.get_type(type(event.result).__name__) is GenericResultFailure
 
     def test_reentrant_hook_is_bypassed_not_recursive(self) -> None:
         event_manager = EventManager()
