@@ -23,6 +23,13 @@ from griptape_nodes.common.strict_mode import (
     StrictModeScopeKind,
     StrictModeSeverity,
 )
+
+# Intentional reach into a private module symbol: the public read API is
+# LibraryRegistry.is_constructing_node(), but there is no public setter --
+# the flag is set only inside LibraryRegistry.create_node. Tests need to
+# simulate "we are inside __init__" without calling create_node, so they
+# manipulate the underlying ContextVar directly. Keeping this private
+# avoids growing the registry's public surface for test-only plumbing.
 from griptape_nodes.node_library.library_registry import _constructing_node
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,

@@ -314,13 +314,13 @@ class EventManager:
         if not LibraryRegistry.is_constructing_node():
             return
         rule = RULES["reentrant-bus-in-init"]
-        # node_class is not available from the request, but "unknown"
-        # is fine -- the subject attribution comes from the LOAD_PROBE
-        # scope opened by the library manager around the probe, which
-        # already carries the class name.
+        # Subject attribution lives on the violation's ``subject`` field,
+        # set from the surrounding strict-mode scope (class name under
+        # LOAD_PROBE, instance name under RUNTIME_EXECUTE). The message
+        # only needs the request type.
         STRICT_MODE.report(
             rule_id=rule.rule_id,
-            message=rule.render(node_class="<in __init__>", request_type=type(request).__name__),
+            message=rule.render(request_type=type(request).__name__),
         )
 
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:

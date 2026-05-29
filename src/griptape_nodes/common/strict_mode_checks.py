@@ -56,7 +56,7 @@ RULES: dict[str, StrictModeRule] = {
             "re-entering the bus there deadlocks the worker."
         ),
         remediation_template=(
-            "Node class '{node_class}' issued '{request_type}' during __init__. "
+            "Issued '{request_type}' during __init__. "
             "Move the call into aprocess (or a lifecycle hook that runs after "
             "construction)."
         ),
