@@ -311,7 +311,7 @@ class GetModelInfoRequest(RequestPayload):
     Results: GetModelInfoResultSuccess (with size and metadata) | GetModelInfoResultFailure (model not found)
     """
 
-    model_id: str = ""
+    model_id: str
 
 
 @dataclass
