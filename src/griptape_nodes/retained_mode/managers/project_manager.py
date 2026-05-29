@@ -1127,9 +1127,40 @@ class ProjectManager:
                 result_details=f"Attempted to save project template to '{request.project_path}'. Failed because template data is invalid: {e}",
             )
 
-        # Step 2: Serialize to YAML
+        # Step 2: Choose the diff base. When the child declares a parent, the overlay
+        # must diff against the parent's fully-merged template so values inherited
+        # from the parent don't redundantly appear in the child's YAML. The parent
+        # must already be in the registry; if not, fail loudly rather than silently
+        # diffing against system defaults (which would emit inherited values into
+        # the child's overlay).
+        base_template: ProjectTemplate = DEFAULT_PROJECT_TEMPLATE
+        if template.parent_project_path is not None:
+            parent_id = self._resolve_parent_path_for_lookup(
+                template.parent_project_path,
+                anchor=request.project_path,
+            )
+            if parent_id is None:
+                return SaveProjectTemplateResultFailure(
+                    result_details=(
+                        f"Attempted to save project template to '{request.project_path}'. "
+                        f"Failed because parent_project_path '{template.parent_project_path}' "
+                        f"is relative and no anchor could be resolved."
+                    ),
+                )
+            parent_info = self._successfully_loaded_project_templates.get(parent_id)
+            if parent_info is None:
+                return SaveProjectTemplateResultFailure(
+                    result_details=(
+                        f"Attempted to save project template to '{request.project_path}'. "
+                        f"Failed because parent project '{template.parent_project_path}' "
+                        f"(resolved to '{parent_id}') is not loaded. Load the parent before saving the child."
+                    ),
+                )
+            base_template = parent_info.template
+
+        # Step 3: Serialize to YAML
         try:
-            yaml_content = template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+            yaml_content = template.to_overlay_yaml(base_template)
         except Exception as e:
             return SaveProjectTemplateResultFailure(
                 result_details=f"Attempted to save project template to '{request.project_path}'. Failed because YAML serialization failed: {e}",
