@@ -39,6 +39,7 @@ MCP_SERVERS = Category(name="MCP Servers", description="Model Context Protocol s
 PROJECTS = Category(name="Projects", description="Project template configurations and registrations")
 STATIC_SERVER = Category(name="Static Server", description="Static file server configuration for serving media assets")
 ARTIFACTS = Category(name="Artifacts", description="Settings for artifact providers and preview generation")
+PERMISSIONS = Category(name="Permissions", description="Permission policy controlling privileged engine operations")
 
 
 def Field(category: str | Category = "General", **kwargs) -> Any:
@@ -329,4 +330,9 @@ class Settings(BaseModel):
         category=PROJECTS,
         default_factory=dict,
         description="Mapping of project file paths to workspace directory overrides. When a project is loaded, if its resolved path matches a key here, the corresponding value is used as the workspace directory instead of the project-adjacent config or auto-default.",
+    )
+    permissions: dict[str, Any] = Field(
+        category=PERMISSIONS,
+        default_factory=dict,
+        description="Permission policy controlling privileged engine operations. Validated against PermissionSettings at PermissionManager startup.",
     )

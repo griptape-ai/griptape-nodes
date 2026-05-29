@@ -55,6 +55,7 @@ if TYPE_CHECKING:
         OperationDepthManager,
     )
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
+    from griptape_nodes.retained_mode.managers.permission_manager import PermissionManager
     from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
     from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -98,6 +99,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _session_manager: SessionManager
     _engine_identity_manager: EngineIdentityManager
     _mcp_manager: MCPManager
+    _permission_manager: PermissionManager
     _resource_manager: ResourceManager
     _sync_manager: SyncManager
     _user_manager: UserManager
@@ -125,6 +127,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             OperationDepthManager,
         )
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
+        from griptape_nodes.retained_mode.managers.permission_manager import PermissionManager
         from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
         from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -150,6 +153,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager = EventManager()
             self._resource_manager = ResourceManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
+            # PermissionManager registers a pre-dispatch hook on EventManager and
+            # listens to ConfigChanged. It must exist before any other manager
+            # registers handlers, so that those handlers run behind the policy.
+            self._permission_manager = PermissionManager(self._event_manager, self._config_manager)
             self._os_manager = OSManager(self._event_manager)
             self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
             self._object_manager = ObjectManager(self._event_manager)
@@ -336,6 +343,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def MCPManager(cls) -> MCPManager:
         return GriptapeNodes.get_instance()._mcp_manager
+
+    @classmethod
+    def PermissionManager(cls) -> PermissionManager:
+        return GriptapeNodes.get_instance()._permission_manager
 
     @classmethod
     def EngineIdentityManager(cls) -> EngineIdentityManager:
