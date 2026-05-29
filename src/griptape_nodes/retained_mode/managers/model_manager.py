@@ -680,6 +680,13 @@ class ModelManager:
         Returns:
             ResultPayload: Success with exact size and metadata, or failure with error details
         """
+        if get_token() is None:
+            error_msg = (
+                "No Hugging Face token found. Fetching info for gated models requires authentication. "
+                "Set your HF_TOKEN environment variable or log in with `huggingface-cli login`."
+            )
+            return GetModelInfoResultFailure(result_details=error_msg)
+
         try:
             info = await asyncio.to_thread(hf_model_info, request.model_id)
         except Exception as e:
