@@ -1810,6 +1810,21 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         return validators
 
     @property
+    def has_user_converters(self) -> bool:
+        """Whether the parameter has converters attached directly (not from traits)."""
+        return bool(self._converters)
+
+    @property
+    def has_user_validators(self) -> bool:
+        """Whether the parameter has validators attached directly (not from traits)."""
+        return bool(self._validators)
+
+    @property
+    def has_traits(self) -> bool:
+        """Whether the parameter has any Trait children attached."""
+        return bool(self.find_elements_by_type(Trait))
+
+    @property
     def on_incoming_connection_removed(self) -> list[Callable[[Parameter, str, str], None]]:
         return self._on_incoming_connection_removed
 

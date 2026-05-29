@@ -7,12 +7,14 @@ responsible for excluding violating classes from the returned schema list.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from griptape_nodes.common.strict_mode import STRICT_MODE
+from griptape_nodes.exe_types.core_types import Parameter, Trait
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
@@ -26,14 +28,19 @@ class _CleanProbe:
 
 
 class _ViolatingProbe:
-    """Node class whose __init__ triggers a fixture strict-mode violation."""
+    """Node class whose __init__ triggers a correctness-class violation.
+
+    Uses ``unknown-payload-type`` because it is registered with
+    ``correctness=True``; the LOAD_PROBE skip-on-correctness gate uses
+    that flag to decide whether to drop the class from the schema.
+    """
 
     parameters: list = []  # noqa: RUF012
 
     def __init__(self, name: str) -> None:
         self.name = name
         STRICT_MODE.report(
-            rule_id="fixture-probe-rule",
+            rule_id="unknown-payload-type",
             message="fixture probe violation",
         )
 
@@ -68,8 +75,6 @@ class TestSerializeSchemasStrictMode:
 
     @pytest.mark.asyncio
     async def test_violating_class_is_skipped(self, caplog: pytest.LogCaptureFixture) -> None:
-        import logging
-
         caplog.set_level(logging.DEBUG, logger="griptape_nodes.strict_mode")
         manager = GriptapeNodes.LibraryManager()
         nodes = {"Violator": _ViolatingProbe, "Clean": _CleanProbe}
@@ -86,56 +91,50 @@ class TestSerializeSchemasStrictMode:
         assert any("class=Violator" in r.getMessage() for r in errors)
 
 
-class _ParamWithConverters:
-    """Minimal shim that quacks like a Parameter for the behavior detector."""
+class _DummyTrait(Trait):
+    """Minimal concrete Trait used to exercise the trait-detection path."""
 
-    def __init__(
-        self,
-        *,
-        name: str,
-        converters: list | None = None,
-        validators: list | None = None,
-        traits: list | None = None,
-    ) -> None:
-        self.name = name
-        self._type = "str"
-        self._input_types: list[str] = []
-        self._output_type = ""
-        self.default_value = None
-        self.tooltip = ""
-        self.tooltip_as_input = ""
-        self.tooltip_as_property = ""
-        self.tooltip_as_output = ""
-        self.allowed_modes = set()
-        self.user_defined = False
-        self.settable = True
-        self.serializable = True
-        self.private = False
-        self.ui_options = None
-        self._converters = list(converters or [])
-        self._validators = list(validators or [])
-        self._traits = list(traits or [])
-
-    def find_elements_by_type(self, _type: type) -> list:
-        return list(self._traits)
+    @classmethod
+    def get_trait_keys(cls) -> list[str]:
+        return ["dummy"]
 
 
-class _ProbeWithBehaviorParam:
-    """Node class whose probe exposes a Parameter with converters attached."""
+class _ProbeWithConverterParam:
+    """Node class whose probe exposes a Parameter with a user-attached converter."""
 
     def __init__(self, name: str) -> None:
         self.name = name
         self.parameters = [
-            _ParamWithConverters(name="p_with_converter", converters=[lambda v: v]),
+            Parameter(name="p_with_converter", converters=[lambda v: v]),
+        ]
+
+
+class _ProbeWithValidatorParam:
+    """Node class whose probe exposes a Parameter with a user-attached validator."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.parameters = [
+            Parameter(name="p_with_validator", validators=[lambda _p, _v: None]),
+        ]
+
+
+class _ProbeWithTraitParam:
+    """Node class whose probe exposes a Parameter with a real Trait child."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.parameters = [
+            Parameter(name="p_with_trait", traits={_DummyTrait()}),
         ]
 
 
 class _ProbeWithCleanParams:
-    """Node class whose probe parameters have no converters/validators/traits."""
+    """Node class whose probe parameter has no converters/validators/traits."""
 
     def __init__(self, name: str) -> None:
         self.name = name
-        self.parameters = [_ParamWithConverters(name="p_clean")]
+        self.parameters = [Parameter(name="p_clean")]
 
 
 class TestParameterBehaviorsDropped:
@@ -159,8 +158,6 @@ class TestParameterBehaviorsDropped:
 
     @pytest.mark.asyncio
     async def test_clean_parameters_produce_no_violation(self, caplog: pytest.LogCaptureFixture) -> None:
-        import logging
-
         caplog.set_level(logging.WARNING, logger="griptape_nodes.strict_mode")
         manager = GriptapeNodes.LibraryManager()
         nodes = {"Clean": _ProbeWithCleanParams}
@@ -176,11 +173,9 @@ class TestParameterBehaviorsDropped:
     async def test_parameter_with_converter_reports_warning_but_keeps_schema(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        import logging
-
         caplog.set_level(logging.WARNING, logger="griptape_nodes.strict_mode")
         manager = GriptapeNodes.LibraryManager()
-        nodes = {"WithBehavior": _ProbeWithBehaviorParam}
+        nodes = {"WithBehavior": _ProbeWithConverterParam}
         library = self._make_library(nodes)
 
         with self._patch_registry(library, nodes):
@@ -193,3 +188,37 @@ class TestParameterBehaviorsDropped:
         assert any("p_with_converter" in r.getMessage() for r in warnings)
         assert any("converters" in r.getMessage() for r in warnings)
         assert any("class=WithBehavior" in r.getMessage() for r in warnings)
+
+    @pytest.mark.asyncio
+    async def test_parameter_with_validator_reports_warning_but_keeps_schema(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.WARNING, logger="griptape_nodes.strict_mode")
+        manager = GriptapeNodes.LibraryManager()
+        nodes = {"WithValidator": _ProbeWithValidatorParam}
+        library = self._make_library(nodes)
+
+        with self._patch_registry(library, nodes):
+            schemas = await manager._serialize_library_node_schemas("libA")
+
+        assert [s.class_name for s in schemas] == ["WithValidator"]
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("p_with_validator" in r.getMessage() for r in warnings)
+        assert any("validators" in r.getMessage() for r in warnings)
+
+    @pytest.mark.asyncio
+    async def test_parameter_with_trait_reports_warning_but_keeps_schema(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.WARNING, logger="griptape_nodes.strict_mode")
+        manager = GriptapeNodes.LibraryManager()
+        nodes = {"WithTrait": _ProbeWithTraitParam}
+        library = self._make_library(nodes)
+
+        with self._patch_registry(library, nodes):
+            schemas = await manager._serialize_library_node_schemas("libA")
+
+        assert [s.class_name for s in schemas] == ["WithTrait"]
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("p_with_trait" in r.getMessage() for r in warnings)
+        assert any("traits" in r.getMessage() for r in warnings)

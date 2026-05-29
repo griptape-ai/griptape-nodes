@@ -33,10 +33,9 @@ from xdg_base_dirs import xdg_data_home
 from griptape_nodes.common.strict_mode import (
     STRICT_MODE,
     StrictModeScopeKind,
-    StrictModeSeverity,
 )
 from griptape_nodes.common.strict_mode_checks import RULES
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io, resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
@@ -3521,11 +3520,11 @@ class LibraryManager:
         rule = RULES["parameter-behaviors-dropped-in-schema"]
         for param in probe.parameters:
             dropped: list[str] = []
-            if param._converters:
+            if param.has_user_converters:
                 dropped.append("converters")
-            if param._validators:
+            if param.has_user_validators:
                 dropped.append("validators")
-            if param.find_elements_by_type(Trait):
+            if param.has_traits:
                 dropped.append("traits")
             if not dropped:
                 continue
@@ -3586,7 +3585,14 @@ class LibraryManager:
                 # probe attempt.
                 self._report_parameter_behavior_losses(probe)
 
-            if any(v.severity is StrictModeSeverity.ERROR for v in scope.violations):
+            # Drop the class only when a correctness-class rule fired.
+            # Severity is a logging concern; correctness is the lifecycle
+            # signal ("this class is broken enough to exclude from the
+            # schema"). Gating on severity would also drop the class for
+            # any future ergonomics rule whose worker_escalation flag is
+            # left at the True default.
+            blocking_rule_ids = {rid for rid, r in RULES.items() if r.correctness}
+            if any(v.rule_id in blocking_rule_ids for v in scope.violations):
                 continue
 
             param_schemas: list[WorkerParameterSchema] = []
