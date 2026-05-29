@@ -512,8 +512,7 @@ class WorkerManager:
         if self._transport is None or not self._workers:
             return
         event = EventRequest(request=request_type())
-        running_loop = asyncio.get_running_loop()
-        task = running_loop.create_task(self.broadcast_to_workers(event))
+        task = asyncio.create_task(self.broadcast_to_workers(event))
         self._inflight_broadcast_tasks.add(task)
         task.add_done_callback(self._inflight_broadcast_tasks.discard)
 
