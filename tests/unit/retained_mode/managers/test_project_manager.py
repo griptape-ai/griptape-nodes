@@ -3141,7 +3141,9 @@ directories:
         # Declared by child.
         assert "child_outputs" in result.template.directories
         # parent_project_path round-trips on the merged template (so save_overlay can re-emit it).
-        assert result.template.parent_project_path == str(base_path)
+        # The child YAML stores the parent as a POSIX path (matches what the GUI/engine emit
+        # cross-platform), so compare against the POSIX form rather than the platform str().
+        assert result.template.parent_project_path == base_path.as_posix()
 
     @pytest.mark.asyncio
     async def test_multi_level_chain_walks_all_ancestors(self, pm: ProjectManager, tmp_path: Path) -> None:
@@ -3473,7 +3475,9 @@ directories:
         overlay_yaml = result.template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
         # YAML may quote the key; match on the substring, not a strict prefix.
         assert "parent_project_path" in overlay_yaml
-        assert str(base_path) in overlay_yaml
+        # The path is stored in POSIX form (as written into the child YAML), so compare
+        # against the POSIX spelling rather than the platform-native str().
+        assert base_path.as_posix() in overlay_yaml
 
     @pytest.mark.asyncio
     async def test_grandchild_tombstones_grandparent_directory(self, pm: ProjectManager, tmp_path: Path) -> None:
