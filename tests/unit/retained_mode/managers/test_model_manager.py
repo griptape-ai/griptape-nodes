@@ -48,15 +48,18 @@ class TestOnHandleGetModelInfoRequest:
 
     @pytest.mark.asyncio
     async def test_returns_success_with_size_and_metadata(self, model_manager: ModelManager) -> None:
+        expected_size = 11_125_567_216
+        expected_downloads = 123_456
+        expected_likes = 789
         fake_info = SimpleNamespace(
-            used_storage=11_125_567_216,
+            used_storage=expected_size,
             safetensors=SimpleNamespace(parameters={"F16": 2_779_683_840}),
             author="microsoft",
             pipeline_tag="text-generation",
             library_name="transformers",
             tags=["pytorch"],
-            downloads=123_456,
-            likes=789,
+            downloads=expected_downloads,
+            likes=expected_likes,
         )
 
         with (
@@ -75,13 +78,13 @@ class TestOnHandleGetModelInfoRequest:
 
         assert isinstance(result, GetModelInfoResultSuccess)
         assert result.model_id == "microsoft/phi-2"
-        assert result.size_bytes == 11_125_567_216
+        assert result.size_bytes == expected_size
         assert result.safetensors_parameters == {"F16": 2_779_683_840}
         assert result.author == "microsoft"
         assert result.task == "text-generation"
         assert result.library == "transformers"
-        assert result.downloads == 123_456
-        assert result.likes == 789
+        assert result.downloads == expected_downloads
+        assert result.likes == expected_likes
 
     @pytest.mark.asyncio
     async def test_returns_failure_when_hf_api_raises(self, model_manager: ModelManager) -> None:
