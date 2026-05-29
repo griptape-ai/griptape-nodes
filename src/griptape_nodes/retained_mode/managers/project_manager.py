@@ -38,6 +38,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
+    SYSTEM_DEFAULTS_KEY,
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultFailure,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -98,9 +99,6 @@ logger = logging.getLogger("griptape_nodes")
 # Type alias for project identifiers
 # Usually constructed from file path, but kept opaque to prevent abuse
 ProjectID = str
-
-# Synthetic identifier for the system default project template
-SYSTEM_DEFAULTS_KEY: ProjectID = "<system-defaults>"
 
 # Filename for workspace-level project template overrides
 WORKSPACE_PROJECT_FILE = "griptape-nodes-project.yml"
@@ -309,7 +307,10 @@ class ProjectManager:
 
         # Consolidated project information storage
         self._successfully_loaded_project_templates: dict[ProjectID, ProjectInfo] = {}
-        self._current_project_id: ProjectID | None = None
+        # Always populated. SYSTEM_DEFAULTS_KEY is the rest state when no user project
+        # is selected. Any code path that previously cleared this to None now routes
+        # back to system defaults via SetCurrentProjectRequest's default value.
+        self._current_project_id: ProjectID = SYSTEM_DEFAULTS_KEY
         # Set to True at end of on_app_initialization_complete. Guards workspace switch
         # logic so expensive reloads don't fire during startup.
         self._initialization_complete: bool = False
@@ -816,7 +817,7 @@ class ProjectManager:
         )
 
     async def _reload_after_project_switch(
-        self, project_id: str | None, *, workspace_changed: bool
+        self, project_id: str, *, workspace_changed: bool
     ) -> SetCurrentProjectResultFailure | None:
         """Reload libraries and optionally re-register workflows after a project switch.
 
@@ -835,7 +836,7 @@ class ProjectManager:
             await GriptapeNodes.WorkflowManager().refresh_workflow_registry()
         return None
 
-    async def on_set_current_project_request(  # noqa: C901, PLR0912
+    async def on_set_current_project_request(  # noqa: C901
         self, request: SetCurrentProjectRequest
     ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
         """Set which project user has selected.
@@ -863,57 +864,55 @@ class ProjectManager:
         # `_current_project_id` set to a phantom string that no GetCurrentProject
         # response can resolve. SYSTEM_DEFAULTS_KEY is a synthetic ID, not a
         # path, and is preserved verbatim.
-        resolved_project_id: ProjectID | None = request.project_id
-        if resolved_project_id is not None and resolved_project_id != SYSTEM_DEFAULTS_KEY:
+        resolved_project_id: ProjectID = request.project_id
+        if resolved_project_id != SYSTEM_DEFAULTS_KEY:
             resolved_project_id = str(canonicalize_for_identity(resolved_project_id))
 
         self._current_project_id = resolved_project_id
 
-        if resolved_project_id is not None:
-            project_info = self._successfully_loaded_project_templates.get(resolved_project_id)
-            if project_info is not None and project_info.project_file_path is not None:
-                project_file_path = project_info.project_file_path
-                project_dir = project_file_path.parent
-                self._config_manager.load_project_config(project_dir)
+        project_info = self._successfully_loaded_project_templates.get(resolved_project_id)
+        if project_info is not None and project_info.project_file_path is not None:
+            project_file_path = project_info.project_file_path
+            project_dir = project_file_path.parent
+            self._config_manager.load_project_config(project_dir)
 
-                # Determine workspace directory using the following priority:
-                # 1. project_workspaces in user config (per-user, per-project override)
-                # 2. workspace_directory in project-adjacent config (shared project default)
-                # 3. env vars
-                # 4. Auto-default to project directory
-                project_workspaces = self._config_manager.get_config_value(
-                    "project_workspaces",
-                    config_source="user_config",
-                    default={},
-                )
-                workspace_override = self._find_workspace_override(project_file_path, project_workspaces)
+            # Determine workspace directory using the following priority:
+            # 1. project_workspaces in user config (per-user, per-project override)
+            # 2. workspace_directory in project-adjacent config (shared project default)
+            # 3. env vars
+            # 4. Auto-default to project directory
+            project_workspaces = self._config_manager.get_config_value(
+                "project_workspaces",
+                config_source="user_config",
+                default={},
+            )
+            workspace_override = self._find_workspace_override(project_file_path, project_workspaces)
 
-                if workspace_override is not None:
-                    self._config_manager.set_workspace_override(Path(workspace_override))
-                elif (
-                    "workspace_directory" not in self._config_manager.project_config
-                    and "workspace_directory" not in self._config_manager.env_config
-                ):
-                    # If neither the project-adjacent config nor env vars explicitly set
-                    # workspace_directory, default the workspace to the project directory itself.
-                    self._config_manager.set_workspace_override(project_dir)
+            if workspace_override is not None:
+                self._config_manager.set_workspace_override(Path(workspace_override))
+            elif (
+                "workspace_directory" not in self._config_manager.project_config
+                and "workspace_directory" not in self._config_manager.env_config
+            ):
+                # If neither the project-adjacent config nor env vars explicitly set
+                # workspace_directory, default the workspace to the project directory itself.
+                self._config_manager.set_workspace_override(project_dir)
 
-                # Load workspace config layer from the resolved workspace directory.
-                self._config_manager.load_workspace_config(self._config_manager.workspace_path)
-            elif project_info is not None and project_info.project_file_path is None:
-                # Switching to system defaults: clear any project-specific workspace override
-                # and reload configs so workspace_path resolves from default config layers.
-                self._config_manager.set_workspace_override(None)
-                self._config_manager.load_configs()
+            # Load workspace config layer from the resolved workspace directory.
+            self._config_manager.load_workspace_config(self._config_manager.workspace_path)
+        elif project_info is not None and project_info.project_file_path is None:
+            # Switching to system defaults: clear any project-specific workspace override
+            # and reload configs so workspace_path resolves from default config layers.
+            self._config_manager.set_workspace_override(None)
+            self._config_manager.load_configs()
 
         # Apply the new project's environment variables to os.environ. Happens after
         # workspace resolution (so it doesn't affect workspace lookup -- the outgoing
         # project's entries were already restored above) and before library reload
         # (so nodes imported during reload observe the new values).
-        if resolved_project_id is not None:
-            new_project_info = self._successfully_loaded_project_templates.get(resolved_project_id)
-            if new_project_info is not None:
-                self._apply_project_env(new_project_info)
+        new_project_info = self._successfully_loaded_project_templates.get(resolved_project_id)
+        if new_project_info is not None:
+            self._apply_project_env(new_project_info)
 
         new_workspace = self._config_manager.workspace_path
         workspace_changed = old_workspace != new_workspace
@@ -924,10 +923,9 @@ class ProjectManager:
             # no file path, so persist None for that case and let startup fall
             # back to the workspace default.
             persisted_project_file: str | None = None
-            if resolved_project_id is not None:
-                persisted_info = self._successfully_loaded_project_templates.get(resolved_project_id)
-                if persisted_info is not None and persisted_info.project_file_path is not None:
-                    persisted_project_file = str(persisted_info.project_file_path)
+            persisted_info = self._successfully_loaded_project_templates.get(resolved_project_id)
+            if persisted_info is not None and persisted_info.project_file_path is not None:
+                persisted_project_file = str(persisted_info.project_file_path)
             try:
                 self._config_manager.set_config_value("project_file", persisted_project_file)
             except Exception:
@@ -936,11 +934,6 @@ class ProjectManager:
             failure = await self._reload_after_project_switch(resolved_project_id, workspace_changed=workspace_changed)
             if failure is not None:
                 return failure
-
-        if resolved_project_id is None:
-            return SetCurrentProjectResultSuccess(
-                result_details="Successfully set current project. No project selected",
-            )
 
         result = SetCurrentProjectResultSuccess(
             result_details=f"Successfully set current project. ID: {resolved_project_id}",
@@ -953,11 +946,6 @@ class ProjectManager:
         self, _request: GetCurrentProjectRequest
     ) -> GetCurrentProjectResultSuccess | GetCurrentProjectResultFailure:
         """Get currently selected project with template info."""
-        if self._current_project_id is None:
-            return GetCurrentProjectResultFailure(
-                result_details="Attempted to get current project. Failed because no project is currently set"
-            )
-
         project_info = self._successfully_loaded_project_templates.get(self._current_project_id)
         if project_info is None:
             return GetCurrentProjectResultFailure(
@@ -1078,11 +1066,11 @@ class ProjectManager:
         except Exception:
             logger.warning("Failed to remove project path '%s' from persisted config", project_id)
 
-        # If this was the active project, clear the current project (in-memory
+        # If this was the active project, fall back to system defaults (in-memory
         # and persisted) so the next restart doesn't try to restore a project
         # that is no longer registered.
         if self._current_project_id == project_id:
-            self._current_project_id = None
+            self._current_project_id = SYSTEM_DEFAULTS_KEY
             try:
                 self._config_manager.set_config_value("project_file", None)
             except Exception:
@@ -1219,9 +1207,7 @@ class ProjectManager:
         # If an explicit project was selected before init completed (e.g., by
         # LocalWorkflowExecutor loading --project-file-path), keep it. Still load
         # registered projects for visibility and mark init complete.
-        explicit_project_selected = (
-            self._current_project_id is not None and self._current_project_id != SYSTEM_DEFAULTS_KEY
-        )
+        explicit_project_selected = self._current_project_id != SYSTEM_DEFAULTS_KEY
         if explicit_project_selected:
             await self._load_registered_projects()
             self._initialization_complete = True
