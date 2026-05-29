@@ -1148,7 +1148,6 @@ class TestAddLibraryPathsToSysPath:
             assert str(base_dir) in sys.path
         finally:
             sys.path[:] = original_sys_path
-            sys.path[:] = original_sys_path
 
 
 class TestRegisterSandboxNodeFromSourceRequest:

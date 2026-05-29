@@ -20,6 +20,10 @@ from starlette.types import Receive, Scope, Send
 
 from griptape_nodes.api_client import Client, RequestClient
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
+from griptape_nodes.retained_mode.events.config_events import (
+    GetConfigValueRequest,
+    GetWorkspaceRequest,
+)
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     DeleteConnectionRequest,
@@ -91,6 +95,9 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "ListCategoriesInLibraryRequest": ListCategoriesInLibraryRequest,
     "RegisterSandboxNodeFromSourceRequest": RegisterSandboxNodeFromSourceRequest,
     "DescribeNodeTypeRequest": DescribeNodeTypeRequest,
+    # Configuration
+    "GetConfigValueRequest": GetConfigValueRequest,
+    "GetWorkspaceRequest": GetWorkspaceRequest,
     # Execution
     "ResolveNodeRequest": ResolveNodeRequest,
     "ExecuteNodeRequest": ExecuteNodeRequest,

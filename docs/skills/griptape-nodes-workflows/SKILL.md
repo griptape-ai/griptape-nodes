@@ -406,7 +406,7 @@ flow keeps running in the engine until it finishes or errors. A subsequent
 
 ## Custom nodes
 
-If the task involves writing a new node type via `RegisterSandboxNodeFromSourceRequest`, read [`docs/developing_nodes/comprehensive_guide.md`](../../developing_nodes/comprehensive_guide.md) **before** drafting source. The guide documents the engine-side conventions a sandbox class must follow:
+If the task involves writing a new node type via `RegisterSandboxNodeFromSourceRequest`, read the [comprehensive node development guide](https://docs.griptapenodes.com/en/stable/developing_nodes/comprehensive_guide/index.md) **before** drafting source. The guide documents the engine-side conventions a sandbox class must follow:
 
 - `BaseNode` subclassing and the `process` / `aprocess` contract
 - `Parameter` declaration, modes (`mode_allowed_input` / `..._property` / `..._output`), traits
@@ -454,3 +454,12 @@ The build batch in step 3 only works because every `CreateNodeRequest` carries a
 explicit `node_name`; the later `SetParameterValueRequest` and
 `CreateConnectionRequest` slots reference those names directly instead of waiting on
 the per-create response.
+
+## Further reading
+
+For anything beyond the build → wire → run → read scope of this skill, start at
+[`/for_agents/`](https://docs.griptapenodes.com/en/stable/for_agents/index.md). It is
+the canonical entry point to the engine's machine-readable doc surface — it explains
+the trade-offs between `/llms.txt` (curated index), `/llms-full.txt` (full corpus in
+one fetch), and per-page `.md` files, and lists the highest-value pages for grounding
+an agent in the engine's actual API.

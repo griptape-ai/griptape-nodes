@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError, MacroResolutionFailureReason
-from griptape_nodes.common.macro_parser.segments import MacroVariables, ParsedSegment, ParsedStaticValue, ParsedVariable
+from griptape_nodes.common.macro_parser.segments import (
+    MacroVariables,
+    ParsedSegment,
+    ParsedStaticValue,
+    ParsedVariable,
+)
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
