@@ -121,12 +121,12 @@ Paste `http://localhost:8125/mcp/` into the URL field and pick **Streamable HTTP
 
 ## Install the workflow-construction skill
 
-The engine ships a [`griptape-nodes-workflows` skill](https://docs.griptapenodes.com/skills/griptape-nodes-workflows/SKILL/) that teaches an agent how to drive the MCP tools described above (cold-start recipe, `EventRequestBatch`, common gotchas). Claude Code, Cursor, and VS Code natively load skills with the `name` + `description` frontmatter convention from [agentskills.io](https://agentskills.io), so installation is a directory drop.
+The engine ships a [`griptape-nodes-workflows` skill](https://docs.griptapenodes.com/en/stable/skills/griptape-nodes-workflows/SKILL/) that teaches an agent how to drive the MCP tools described above (cold-start recipe, `EventRequestBatch`, common gotchas). Claude Code, Cursor, and VS Code natively load skills with the `name` + `description` frontmatter convention from [agentskills.io](https://agentskills.io), so installation is a directory drop.
 
 The published markdown lives at:
 
 ```
-https://docs.griptapenodes.com/skills/griptape-nodes-workflows/SKILL/index.md
+https://docs.griptapenodes.com/en/stable/skills/griptape-nodes-workflows/SKILL/index.md
 ```
 
 Whichever scope you choose, the directory name **must** be `griptape-nodes-workflows` (it has to match the `name` field in the frontmatter) and the file **must** be named `SKILL.md`.
@@ -148,7 +148,7 @@ Adjust `DEST` per the table above:
 ```bash
 DEST="$HOME/.claude/skills/griptape-nodes-workflows"
 mkdir -p "$DEST" \
-  && curl -fsSL https://docs.griptapenodes.com/skills/griptape-nodes-workflows/SKILL/index.md \
+  && curl -fsSL https://docs.griptapenodes.com/en/stable/skills/griptape-nodes-workflows/SKILL/index.md \
        -o "$DEST/SKILL.md"
 ```
 
