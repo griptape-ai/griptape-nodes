@@ -836,6 +836,9 @@ class OSManager:
                     # This shouldn't happen - all non-index variables should be resolved
                     msg = f"Unexpected unresolved variable '{segment.info.name}' when building glob pattern"
                     raise ValueError(msg)
+            else:
+                msg = f"Unexpected segment type '{type(segment).__name__}' when building glob pattern"
+                raise TypeError(msg)
 
         return "".join(pattern_parts)
 
