@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import traceback
 import types
 from dataclasses import fields as dc_fields
 from dataclasses import is_dataclass
@@ -12,6 +13,9 @@ from cattrs.preconf.json import make_converter
 from cattrs.strategies import include_subclasses, use_class_methods
 from griptape.mixins.serializable_mixin import SerializableMixin
 from pydantic import BaseModel
+
+from griptape_nodes.common.strict_mode import STRICT_MODE
+from griptape_nodes.common.strict_mode_checks import RULES
 
 logger = logging.getLogger(__name__)
 
@@ -48,17 +52,9 @@ converter.register_unstructure_hook_func(
 # The dict form preserves enough context that the structure hook can
 # rebuild a ``ForwardedException`` on the receiving side.
 def _unstructure_exception(obj: BaseException) -> dict[str, Any]:
-    # Lazy imports: strict_mode depends on base_events, which registers
-    # this converter. Importing at module load creates a cycle; inside
-    # the hook we are long past bootstrap.
-    import traceback as _traceback
-
-    from griptape_nodes.common.strict_mode import STRICT_MODE
-    from griptape_nodes.common.strict_mode_checks import RULES
-
     rule = RULES["exception-fidelity-lost"]
     try:
-        tb = "".join(_traceback.format_exception(type(obj), obj, obj.__traceback__))
+        tb = "".join(traceback.format_exception(type(obj), obj, obj.__traceback__))
     except Exception:
         tb = None
         STRICT_MODE.report(
