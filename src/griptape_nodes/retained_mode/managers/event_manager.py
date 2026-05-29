@@ -88,6 +88,11 @@ class EventManager:
         # library-internal ThreadPoolExecutors ran node-emitted requests.
         self._node_execution_depth: int = 0
         self._node_execution_lock = threading.Lock()
+        # Pre-dispatch hook chain consulted before every request callback. Each
+        # hook returns either None (fall through to the next) or a ResultPayload
+        # to short-circuit the dispatcher. Used by PermissionManager to enforce
+        # policy without instrumenting every manager.
+        self._pre_dispatch_hooks: list[Callable[[RequestPayload, ResultContext], ResultPayload | None]] = []
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -200,6 +205,49 @@ class EventManager:
         else:
             # We're on the same thread as the event loop or no loop thread tracked, use async method
             await self._event_queue.put(event)
+
+    def add_pre_dispatch_hook(
+        self,
+        hook: Callable[[RequestPayload, ResultContext], ResultPayload | None],
+    ) -> None:
+        """Register a pre-dispatch hook.
+
+        Hooks run in registration order before the request's manager callback.
+        Returning a ResultPayload short-circuits the dispatcher with that result;
+        returning None lets dispatch continue.
+
+        Hooks must be cheap, sync, and must not themselves issue requests through
+        `handle_request` -- doing so risks unbounded recursion. Subscribe to
+        AppPayload events for state instead.
+        """
+        self._pre_dispatch_hooks.append(hook)
+
+    def remove_pre_dispatch_hook(
+        self,
+        hook: Callable[[RequestPayload, ResultContext], ResultPayload | None],
+    ) -> None:
+        try:
+            self._pre_dispatch_hooks.remove(hook)
+        except ValueError:
+            return
+
+    def _run_pre_dispatch_hooks(
+        self,
+        request: RequestPayload,
+        context: ResultContext,
+    ) -> ResultPayload | None:
+        for hook in self._pre_dispatch_hooks:
+            try:
+                short_circuit = hook(request, context)
+            except Exception:
+                logging.getLogger("griptape_nodes").exception(
+                    "Pre-dispatch hook raised while evaluating %s; treating as no-op.",
+                    type(request).__name__,
+                )
+                continue
+            if short_circuit is not None:
+                return short_circuit
+        return None
 
     def assign_manager_to_request_type(
         self,
@@ -460,6 +508,16 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
+        # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+        # the manager callback runs.
+        short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+        if short_circuit is not None:
+            return self._handle_request_core(
+                request,
+                short_circuit,
+                context=result_context,
+            )
+
         # Actually make the handler callback (support both sync and async):
         result_payload: ResultPayload = await call_function(callback, request)
 
@@ -498,6 +556,16 @@ class EventManager:
         if not callback:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
+
+        # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+        # the manager callback runs.
+        short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+        if short_circuit is not None:
+            return self._handle_request_core(
+                request,
+                short_circuit,
+                context=result_context,
+            )
 
         # Worker-side RemoteHandler callbacks are async but safe to invoke from a
         # running loop: forward_to_orchestrator dispatches onto the WS loop via
