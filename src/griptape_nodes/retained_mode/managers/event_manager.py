@@ -23,9 +23,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultDetails,
     ResultPayload,
-    ResultPayloadFailure,
 )
 from griptape_nodes.retained_mode.events.event_converter import converter
+from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.utils.async_utils import call_function
 
@@ -279,7 +279,7 @@ class EventManager:
                         f"'{getattr(hook, '__name__', hook)}' raised {type(exc).__name__}: {exc}"
                     )
                     logging.getLogger("griptape_nodes").exception(msg)
-                    return ResultPayloadFailure(exception=exc, result_details=msg)
+                    return GenericResultFailure(exception=exc, result_details=msg)
                 if short_circuit is not None:
                     return short_circuit
             return None
