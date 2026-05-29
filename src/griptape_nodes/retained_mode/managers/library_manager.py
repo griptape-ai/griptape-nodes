@@ -268,51 +268,6 @@ class LibraryUpdateResult(NamedTuple):
     result: ResultPayload
 
 
-def _enrich_register_library_request(request: Any) -> dict[str, Any]:
-    """Publish parsed library metadata as a fact for permission rule evaluation.
-
-    Reads the library JSON if `request.file_path` is set and exposes:
-
-    * ``request.metadata.name`` — library name from the JSON.
-    * ``request.metadata.declarations.lifecycle_stage`` — the stage from a
-      ``LifecycleStageLibraryProperty`` declaration if present, else None.
-    * ``request.metadata.declarations.types`` — flat list of declared
-      ``type`` strings, useful for ``in`` matchers.
-
-    Best-effort: any failure (missing file, malformed JSON, unexpected shape)
-    yields an empty contribution so the rule simply sees ``None`` for those
-    paths and matchers fall through cleanly.
-    """
-    file_path = getattr(request, "file_path", None)
-    if not file_path:
-        return {}
-    json_path = Path(file_path)
-    if json_path.is_dir():
-        # `RegisterLibraryFromFileRequest` accepts a directory containing
-        # `griptape_nodes_library.json`; resolve it to the actual JSON file.
-        json_path = json_path / "griptape_nodes_library.json"
-    try:
-        raw = json.loads(json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    metadata = raw.get("metadata")
-    declarations = metadata.get("declarations") if isinstance(metadata, dict) else None
-    if not isinstance(declarations, list):
-        declarations = []
-    declaration_types = [d.get("type") for d in declarations if isinstance(d, dict) and d.get("type")]
-    lifecycle_stage = next(
-        (d.get("stage") for d in declarations if isinstance(d, dict) and d.get("type") == "lifecycle_stage"),
-        None,
-    )
-    return {
-        "metadata.name": raw.get("name"),
-        "metadata.declarations.types": declaration_types,
-        "metadata.declarations.lifecycle_stage": lifecycle_stage,
-    }
-
-
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
@@ -511,7 +466,7 @@ class LibraryManager:
         if permission_manager is not None:
             permission_manager.facts.register_request_enricher(
                 RegisterLibraryFromFileRequest.__name__,
-                _enrich_register_library_request,
+                self._enrich_register_library_request,
             )
 
         event_manager.add_listener_to_app_event(
@@ -718,6 +673,72 @@ class LibraryManager:
             if library_info.library_name == library_name:
                 return library_info
         return None
+
+    def _enrich_register_library_request(self, request: Any) -> dict[str, Any]:
+        """Publish parsed library metadata as a fact for permission rule evaluation.
+
+        Reads the library JSON the request will load and exposes:
+
+        * ``request.metadata.name`` — library name from the JSON.
+        * ``request.metadata.declarations.lifecycle_stage`` — the stage from a
+          ``lifecycle_stage`` declaration if present, else None.
+        * ``request.metadata.declarations.types`` — flat list of declared
+          ``type`` strings, useful for ``in`` matchers.
+
+        The request may reference the library by ``file_path`` or by
+        ``library_name``; the latter is resolved to its tracked library path so
+        a by-name registration is gated by the same rules as a by-path one.
+
+        Best-effort: any failure (missing file, malformed JSON, unexpected
+        shape, or an untracked library name) yields an empty contribution so the
+        rule simply sees ``None`` for those paths and matchers fall through
+        cleanly.
+        """
+        json_path = self._resolve_register_library_json_path(request)
+        if json_path is None:
+            return {}
+        try:
+            raw = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        metadata = raw.get("metadata")
+        declarations = metadata.get("declarations") if isinstance(metadata, dict) else None
+        if not isinstance(declarations, list):
+            declarations = []
+        declaration_types = [d.get("type") for d in declarations if isinstance(d, dict) and d.get("type")]
+        lifecycle_stage = next(
+            (d.get("stage") for d in declarations if isinstance(d, dict) and d.get("type") == "lifecycle_stage"),
+            None,
+        )
+        return {
+            "metadata.name": raw.get("name"),
+            "metadata.declarations.types": declaration_types,
+            "metadata.declarations.lifecycle_stage": lifecycle_stage,
+        }
+
+    def _resolve_register_library_json_path(self, request: Any) -> Path | None:
+        """Resolve a register-library request to the JSON file it will load.
+
+        Accepts a ``file_path`` (a JSON file, or a directory whose standard
+        ``griptape_nodes_library.json`` is used) or a ``library_name`` that is
+        already tracked, mirroring how the loader resolves a name to
+        ``LibraryInfo.library_path``. Returns None when neither resolves.
+        """
+        file_path = getattr(request, "file_path", None)
+        if not file_path:
+            library_name = getattr(request, "library_name", None)
+            if library_name:
+                library_info = self.get_library_info_by_library_name(library_name)
+                if library_info is not None:
+                    file_path = library_info.library_path
+        if not file_path:
+            return None
+        json_path = Path(file_path)
+        if json_path.is_dir():
+            json_path = json_path / self.LIBRARY_CONFIG_FILENAME
+        return json_path
 
     def collate_problems_for_lib_info(self, lib_info: LibraryInfo) -> str | None:
         """Return a collated display string for a LibraryInfo's problems, or None if there are none."""

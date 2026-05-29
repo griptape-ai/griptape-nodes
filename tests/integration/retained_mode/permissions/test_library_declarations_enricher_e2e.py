@@ -204,6 +204,43 @@ class TestLibraryDeclarationsEnricher:
         assert not result.succeeded()
         assert "user.deny-labs-libraries" in str(result.result_details)
 
+    def test_library_name_registration_is_gated(self, permission_env: dict) -> None:
+        """A by-name registration is gated by the same declaration rules as a by-path one."""
+        json_path = _write_library_json(
+            permission_env["tmp"] / "named-labs-lib",
+            name="My Named Labs Library",
+            declarations=[{"type": "lifecycle_stage", "stage": "LABS"}],
+        )
+        # Register by path first (no rule active yet) so the LibraryManager
+        # tracks the library and can later resolve it by name.
+        GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path=str(json_path)))
+        assert (
+            permission_env["gn"].LibraryManager().get_library_info_by_library_name("My Named Labs Library") is not None
+        ), "expected the by-path registration to track the library so it is addressable by name"
+        _grant(
+            {
+                "id": "user.deny-labs-libraries",
+                "decision": "deny",
+                "reason": "labs-stage libraries are not permitted",
+                "when": {
+                    "action": {"request_type": {"op": "equals", "value": "RegisterLibraryFromFileRequest"}},
+                    "context": {
+                        "facts": {
+                            "request.metadata.declarations.lifecycle_stage": {
+                                "op": "equals",
+                                "value": "LABS",
+                            }
+                        }
+                    },
+                },
+            }
+        )
+        # The by-name path must resolve to the tracked JSON and be denied; if the
+        # enricher returned no facts for the name, the deny would not fire.
+        result = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(library_name="My Named Labs Library"))
+        assert not result.succeeded()
+        assert "user.deny-labs-libraries" in str(result.result_details)
+
     def test_malformed_library_json_falls_through_cleanly(self, permission_env: dict) -> None:
         """A library file with broken JSON yields empty facts, not a crash."""
         broken = permission_env["tmp"] / "broken-lib"

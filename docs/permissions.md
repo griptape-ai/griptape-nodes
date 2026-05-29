@@ -474,8 +474,9 @@ The enricher is best-effort: a library with a missing or malformed JSON file
 yields no facts, so the rule simply doesn't fire and registration falls
 through to subsequent rules or the policy default. It also accepts the
 directory form of `file_path` (the path to the folder containing
-`griptape_nodes_library.json`), matching `RegisterLibraryFromFileRequest`'s
-own semantics.
+`griptape_nodes_library.json`) and resolves a `library_name` against the
+engine's tracked libraries, so a registration by name is gated by the same
+rules as a registration by path.
 
 ### Conditional rule via context facts
 
