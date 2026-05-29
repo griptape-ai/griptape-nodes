@@ -263,7 +263,7 @@ class PydanticAgentRunner:
             agent_result = await self._await_run(run_task, cancel_event)
         except UsageLimitExceeded as exc:
             logger.warning(
-                "[run %s] usage limit exceeded: %s. Persisting partial history.",
+                "[run %s] usage limit exceeded: %s. Aborting run; no history saved for this turn.",
                 run_id,
                 exc,
             )

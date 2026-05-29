@@ -66,6 +66,14 @@ class TestWriteFile:
         with pytest.raises(PermissionError):
             workspace.write_file("../escape.txt", "nope")
 
+    def test_blocks_symlink_escape(self, workspace: WorkspaceToolset, tmp_path: Path) -> None:
+        outside_dir = tmp_path.parent / "outside_target"
+        outside_dir.mkdir()
+        (outside_dir / "secret.txt").write_text("top secret")
+        (tmp_path / "link").symlink_to(outside_dir)
+        with pytest.raises(PermissionError):
+            workspace.read_file("link/secret.txt")
+
 
 class TestEditFile:
     def test_unique_replacement(self, workspace: WorkspaceToolset, tmp_path: Path) -> None:

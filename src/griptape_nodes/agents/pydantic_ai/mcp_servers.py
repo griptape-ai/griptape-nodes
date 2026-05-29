@@ -142,13 +142,11 @@ class _TolerantMCPServer(AbstractToolset[Any]):
         name: str,
         inner: MCPServer,
         tool_blocklist: frozenset[str] = frozenset(),
-        tool_prefix: str | None = None,
     ) -> None:
         self._inner = inner
         self._mcp_name = name
         self._connected = False
         self._tool_blocklist = tool_blocklist
-        self._tool_prefix = tool_prefix
 
     @property
     def id(self) -> str | None:
@@ -208,17 +206,24 @@ class _TolerantMCPServer(AbstractToolset[Any]):
     def __getattr__(self, item: str) -> Any:
         # Forward anything else to the wrapped server. Done in __getattr__ so
         # explicit attributes above (e.g. `id`) take precedence on lookup.
+        # Guard `_inner` itself: if it is read before __init__ assigns it
+        # (copy/unpickle), forwarding would recurse into __getattr__ forever.
+        if item == "_inner":
+            raise AttributeError(item)
         return getattr(self._inner, item)
 
     def _bare_name(self, full_name: str) -> str:
         """Strip the configured Pydantic AI tool prefix off a discovered tool name.
 
         Pydantic AI prepends ``tool_prefix + '_'`` to every tool name when a
-        prefix is set. We only strip that exact prefix; tools whose underlying
-        names happen to contain underscores stay intact.
+        prefix is set. We read the prefix off the wrapped server so it can
+        never drift from what the inner server actually applied. We only strip
+        that exact prefix; tools whose underlying names happen to contain
+        underscores stay intact.
         """
-        if self._tool_prefix:
-            head = f"{self._tool_prefix}_"
+        tool_prefix = getattr(self._inner, "tool_prefix", None)
+        if tool_prefix:
+            head = f"{tool_prefix}_"
             if full_name.startswith(head):
                 return full_name[len(head) :]
         return full_name

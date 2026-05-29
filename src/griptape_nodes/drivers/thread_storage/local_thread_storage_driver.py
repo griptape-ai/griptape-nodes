@@ -53,7 +53,7 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
     def create_thread(self, title: str | None = None, local_id: str | None = None) -> tuple[str, dict]:
         thread_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
-        meta: dict[str, Any] = {"created_at": now, "updated_at": now}
+        meta: dict[str, Any] = {"created_at": now, "updated_at": now, "message_count": 0}
         if title is not None:
             meta["title"] = title
         if local_id is not None:
@@ -84,14 +84,13 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
         for meta_file in self.threads_directory.glob("thread_*.meta.json"):
             thread_id = meta_file.stem.removeprefix("thread_").removesuffix(".meta")
             meta = self._read_meta(thread_id)
-            history = self.load_history(thread_id)
             threads.append(
                 ThreadMetadata(
                     thread_id=thread_id,
                     title=meta.get("title"),
                     created_at=meta.get("created_at", ""),
                     updated_at=meta.get("updated_at", ""),
-                    message_count=len(history),
+                    message_count=meta.get("message_count", 0),
                     archived=meta.get("archived", False),
                     local_id=meta.get("local_id"),
                 ),
@@ -135,6 +134,7 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
         now = datetime.now(UTC).isoformat()
         meta.setdefault("created_at", now)
         meta["updated_at"] = now
+        meta["message_count"] = len(messages)
         self._write_meta(thread_id, meta)
 
     def _history_path(self, thread_id: str) -> Path:

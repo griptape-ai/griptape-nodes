@@ -46,7 +46,6 @@ async def test_blocklist_filters_named_tool_with_prefix() -> None:
         name="GriptapeNodes",
         inner=inner,  # type: ignore[arg-type]
         tool_blocklist=frozenset({"EventRequestBatch"}),
-        tool_prefix="GriptapeNodes",
     )
     async with wrapper:
         tools = await wrapper.get_tools(ctx=None)  # type: ignore[arg-type]
@@ -62,7 +61,6 @@ async def test_blocklist_handles_underscored_tool_names_without_prefix() -> None
         name="raw",
         inner=inner,  # type: ignore[arg-type]
         tool_blocklist=frozenset({"EventRequestBatch"}),
-        tool_prefix=None,
     )
     async with wrapper:
         tools = await wrapper.get_tools(ctx=None)  # type: ignore[arg-type]
@@ -77,7 +75,6 @@ async def test_empty_blocklist_keeps_every_tool() -> None:
     wrapper = _TolerantMCPServer(
         name="P",
         inner=inner,  # type: ignore[arg-type]
-        tool_prefix="P",
     )
     async with wrapper:
         tools = await wrapper.get_tools(ctx=None)  # type: ignore[arg-type]

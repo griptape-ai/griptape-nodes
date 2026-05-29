@@ -14,12 +14,13 @@ JSON schema) so the cloud sees one activity per tool with no extra wiring.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from griptape_nodes.files.path_utils import canonicalize_for_io
+from griptape_nodes.files.path_utils import canonicalize_for_identity
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -75,7 +76,7 @@ class WorkspaceToolset:
     """Owns the workspace root and exposes the agent-facing tool methods."""
 
     def __init__(self, config: WorkspaceToolsetConfig) -> None:
-        root = canonicalize_for_io(config.workspace_root)
+        root = canonicalize_for_identity(config.workspace_root)
         if not root.exists() or not root.is_dir():
             msg = f"Workspace root {root} does not exist or is not a directory."
             raise ValueError(msg)
@@ -270,10 +271,16 @@ class WorkspaceToolset:
         try:
             output_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=self._config.shell_timeout_seconds)
         except TimeoutError:
-            proc.kill()
-            await proc.wait()
             msg = f"Shell command timed out after {self._config.shell_timeout_seconds:g} seconds: {command}"
             raise TimeoutError(msg) from None
+        finally:
+            # Never let the subprocess outlive this tool call. A timeout or a
+            # cancelled agent run raises out of `communicate`, so without this
+            # an orphaned process would keep running in the workspace.
+            if proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                    await proc.wait()
 
         cap = self._config.max_shell_output_bytes
         truncated = len(output_bytes) > cap
@@ -286,8 +293,11 @@ class WorkspaceToolset:
         if not path:
             msg = "Path cannot be empty."
             raise ValueError(msg)
-        # Reject absolute paths outside root, escape sequences, etc.
-        candidate = canonicalize_for_io(path, base=self._root)
+        # Reject absolute paths outside root, escape sequences, and symlinks
+        # that resolve outside the workspace. `canonicalize_for_identity`
+        # follows symlinks, so the containment check below cannot be bypassed
+        # by a link that lives inside the root but points elsewhere.
+        candidate = canonicalize_for_identity(path, base=self._root)
         try:
             candidate.relative_to(self._root)
         except ValueError as exc:
