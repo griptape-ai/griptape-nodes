@@ -22,6 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class EqualsExpr(BaseModel):
     """Strict equality (`==`)."""
 
+    model_config = ConfigDict(extra="forbid")
+
     op: Literal["equals"] = "equals"
     value: Any
 
@@ -35,6 +37,8 @@ class InExpr(BaseModel):
     not, so prefer per-element rules when every element must be vetted.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     op: Literal["in"] = "in"
     values: list[Any]
 
@@ -47,6 +51,8 @@ class GlobExpr(BaseModel):
     is not collapsed. Use `PathUnderExpr` for filesystem containment checks.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     op: Literal["glob"] = "glob"
     pattern: str
 
@@ -58,12 +64,16 @@ class PathUnderExpr(BaseModel):
     comparison so policies can be authored in terms of `${workspace}/...`.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     op: Literal["path_under"] = "path_under"
     root: str
 
 
 class NotExpr(BaseModel):
     """Negation."""
+
+    model_config = ConfigDict(extra="forbid")
 
     op: Literal["not"] = "not"
     expr: MatchExpr
@@ -72,12 +82,16 @@ class NotExpr(BaseModel):
 class AllOfExpr(BaseModel):
     """Conjunction; matches when every sub-expression matches."""
 
+    model_config = ConfigDict(extra="forbid")
+
     op: Literal["all_of"] = "all_of"
     exprs: list[MatchExpr]
 
 
 class AnyOfExpr(BaseModel):
     """Disjunction; matches when any sub-expression matches."""
+
+    model_config = ConfigDict(extra="forbid")
 
     op: Literal["any_of"] = "any_of"
     exprs: list[MatchExpr]
@@ -106,6 +120,8 @@ class PrincipalMatch(BaseModel):
     Populated fields are AND'd; unpopulated fields are wildcards.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     kind: list[PrincipalKind] | None = None
     library: MatchExpr | None = None
     node_type: MatchExpr | None = None
@@ -114,6 +130,8 @@ class PrincipalMatch(BaseModel):
 
 class ActionMatch(BaseModel):
     """Match by `RequestPayload` class name (must be registered in PayloadRegistry)."""
+
+    model_config = ConfigDict(extra="forbid")
 
     request_type: MatchExpr
 
@@ -125,6 +143,8 @@ class ResourceMatch(BaseModel):
     semantics as `ConfigManager.get_dot_value`). All entries must match (AND).
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     fields: dict[str, MatchExpr] = Field(default_factory=dict)
 
 
@@ -134,11 +154,15 @@ class ContextMatch(BaseModel):
     Keys are dot-paths into the merged facts dict. All entries must match (AND).
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     facts: dict[str, MatchExpr] = Field(default_factory=dict)
 
 
 class WhenClause(BaseModel):
     """Combined matcher. Populated axes are AND'd; unpopulated axes are wildcards."""
+
+    model_config = ConfigDict(extra="forbid")
 
     principal: PrincipalMatch | None = None
     action: ActionMatch | None = None

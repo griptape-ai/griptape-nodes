@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from pydantic import ValidationError
 
 from griptape_nodes.retained_mode.managers.permissions import (
     AllOfExpr,
@@ -143,6 +144,22 @@ class TestUnhandledOperator:
 
         with pytest.raises(TypeError):
             _eval_match(cast("MatchExpr", _Bogus()), "anything", {})
+
+
+class TestSchemaRejectsUnknownKeys:
+    """A typo'd constraint key must raise, not silently drop to a wildcard default."""
+
+    def test_principal_match_rejects_unknown_key(self) -> None:
+        with pytest.raises(ValidationError):
+            PrincipalMatch(kind=[PrincipalKind.NODE], bogus_field=EqualsExpr(value="x"))  # type: ignore[reportCallIssue]
+
+    def test_when_clause_rejects_unknown_key(self) -> None:
+        with pytest.raises(ValidationError):
+            WhenClause(bogus_axis=PrincipalMatch())  # type: ignore[reportCallIssue]
+
+    def test_resource_match_rejects_unknown_key(self) -> None:
+        with pytest.raises(ValidationError):
+            ResourceMatch(bogus_fields={"name": EqualsExpr(value="x")})  # type: ignore[reportCallIssue]
 
 
 class TestPrincipalMatch:
