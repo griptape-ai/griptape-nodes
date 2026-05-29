@@ -2,11 +2,15 @@
 
 import logging
 import os
+import sys
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
 
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
 from griptape_nodes.retained_mode.events.project_events import (
@@ -955,6 +959,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         # Parse directory macros
         directory_schemas = {}
         for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            assert isinstance(dir_def.path_macro, str)
             directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
 
         project_info = ProjectInfo(
@@ -1007,6 +1012,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         # Parse directory macros
         directory_schemas = {}
         for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            assert isinstance(dir_def.path_macro, str)
             directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
 
         project_info = ProjectInfo(
@@ -1075,6 +1081,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         # Parse directory macros
         directory_schemas = {}
         for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            assert isinstance(dir_def.path_macro, str)
             directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
 
         project_info = ProjectInfo(
@@ -1127,6 +1134,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         # Parse directory macros
         directory_schemas = {}
         for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            assert isinstance(dir_def.path_macro, str)
             directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
 
         project_info = ProjectInfo(
@@ -1179,6 +1187,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         # Parse directory macros
         directory_schemas = {}
         for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            assert isinstance(dir_def.path_macro, str)
             directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
 
         project_info = ProjectInfo(
@@ -1240,6 +1249,7 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         # Parse directory macros
         directory_schemas = {}
         for dir_name, dir_def in custom_template.directories.items():
+            assert isinstance(dir_def.path_macro, str)
             directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
 
         project_info = ProjectInfo(
@@ -2796,7 +2806,7 @@ class TestProjectDirectoryRecursion:
 
     def _make_pm_with_directories(
         self,
-        directories: dict[str, str],
+        directories: "dict[str, str | PerPlatformPathMacro]",
         *,
         environment: dict[str, str] | None = None,
         workspace_path: Path = Path("/workspace"),
@@ -2908,3 +2918,98 @@ class TestProjectDirectoryRecursion:
         )
         assert isinstance(result, GetPathForMacroResultFailure)
         assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+
+    @pytest.mark.parametrize(
+        ("platform_value", "expected_path"),
+        [
+            ("linux", Path("/mnt/shared/outputs/img.png")),
+            ("darwin", Path("/Volumes/Shared/outputs/img.png")),
+            ("win32", Path("C:/Shared/outputs/img.png")),
+        ],
+    )
+    def test_directory_per_platform_picks_active_os(
+        self, monkeypatch: pytest.MonkeyPatch, platform_value: str, expected_path: Path
+    ) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
+
+        monkeypatch.setattr(sys, "platform", platform_value)
+        pm = self._make_pm_with_directories(
+            {
+                "outputs": PerPlatformPathMacro(
+                    linux="/mnt/shared/outputs",
+                    darwin="/Volumes/Shared/outputs",
+                    windows="C:/Shared/outputs",
+                ),
+            }
+        )
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == expected_path
+
+    @pytest.mark.parametrize("platform_value", ["linux", "darwin", "win32"])
+    def test_directory_per_platform_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch, platform_value: str
+    ) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
+
+        monkeypatch.setattr(sys, "platform", platform_value)
+        pm = self._make_pm_with_directories({"outputs": PerPlatformPathMacro(default="{workspace_dir}/fallback")})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/fallback/img.png")
+
+    def test_directory_per_platform_active_missing_no_default_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        # Mapping has only darwin / windows entries; linux engine and no default => failure.
+        pm = self._make_pm_with_directories(
+            {
+                "outputs": PerPlatformPathMacro(
+                    darwin="/Volumes/Shared/outputs",
+                    windows="C:/Shared/outputs",
+                ),
+            }
+        )
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+
+    def test_directory_per_platform_empty_mapping_rejected(self) -> None:
+        from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
+
+        with pytest.raises(ValueError, match="at least one"):
+            PerPlatformPathMacro()
+
+    def test_directory_per_platform_macro_resolves_recursively(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
+
+        monkeypatch.setattr(sys, "platform", "darwin")
+        # Per-platform value still recurses through {workspace_dir} like the string form.
+        pm = self._make_pm_with_directories({"outputs": PerPlatformPathMacro(darwin="{workspace_dir}/mac_outputs")})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/mac_outputs/img.png")
+
+    def test_directory_string_form_still_works(self) -> None:
+        # Regression guard: pre-existing string path_macros must keep resolving unchanged.
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        pm = self._make_pm_with_directories({"outputs": "{workspace_dir}/legacy"})
+        result = pm.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/img.png"), variables={})
+        )
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/legacy/img.png")

@@ -323,6 +323,15 @@ wheels = [
 ]
 
 [[package]]
+name = "fileseq"
+version = "3.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/6b/193ce3cf5d097b03be9b4965ecd952b60e183758a41f44f9d44530b54dc6/fileseq-3.2.0.tar.gz", hash = "sha256:afe858d6d312ff3e4df147c0fc16cfca7c412b37d1be0624f87285accd368dca", size = 2167970, upload-time = "2026-04-19T04:05:16.436Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/25/d9/af7357aabd5b69bf3696567c5d08a1aa6ac08ba2662a94181d75cec919ec/fileseq-3.2.0-py3-none-any.whl", hash = "sha256:8ae0dc525742b3f86d4261fa2e03b2ed1622f93a72c87db5cb788f9f0ee8d1d1", size = 202127, upload-time = "2026-04-19T04:05:14.589Z" },
+]
+
+[[package]]
 name = "filetype"
 version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -406,7 +415,7 @@ dependencies = [
 
 [[package]]
 name = "griptape-nodes-engine"
-version = "0.85.2"
+version = "0.85.3"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
@@ -414,6 +423,7 @@ dependencies = [
     { name = "binaryornot" },
     { name = "cattrs" },
     { name = "fastapi" },
+    { name = "fileseq" },
     { name = "griptape" },
     { name = "httpx" },
     { name = "huggingface-hub" },
@@ -484,6 +494,7 @@ requires-dist = [
     { name = "binaryornot", specifier = ">=0.4.4" },
     { name = "cattrs", specifier = ">=26.1.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
+    { name = "fileseq", specifier = ">=3.2.0" },
     { name = "griptape", specifier = ">=1.10.2" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "huggingface-hub", specifier = ">=1.9.0" },

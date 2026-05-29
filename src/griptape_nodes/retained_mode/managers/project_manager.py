@@ -88,6 +88,7 @@ from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -168,9 +169,34 @@ class _ProjectVariableResolver:
     def resolve_directory(self, name: str) -> str:
         if name in self.directories_resolved:
             return self.directories_resolved[name]
-        resolved = self._resolve_macro_string("directory", name, self.template.directories[name].path_macro)
+        path_macro = self.template.directories[name].path_macro
+        selected = self._select_platform_macro(name, path_macro)
+        resolved = self._resolve_macro_string("directory", name, selected)
         self.directories_resolved[name] = resolved
         return resolved
+
+    @staticmethod
+    def _select_platform_macro(name: str, path_macro: str | PerPlatformPathMacro) -> str:
+        """Pick the platform-specific path macro string from a directory definition.
+
+        For string-form `path_macro`, returns it unchanged. For the per-platform
+        mapping form, picks the active platform's value, falling back to `default`.
+        Raises MacroResolutionError if neither the active platform key nor `default`
+        is set.
+        """
+        if isinstance(path_macro, str):
+            return path_macro
+        selected = path_macro.select()
+        if selected is None:
+            msg = (
+                f"Directory '{name}' has no path_macro for the current platform and no 'default' fallback was provided"
+            )
+            raise MacroResolutionError(
+                msg,
+                failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                variable_name=name,
+            )
+        return selected
 
     def resolve_env(self, name: str) -> str:
         if name in self.env_resolved:
@@ -1326,8 +1352,21 @@ class ProjectManager:
         directory_schemas: dict[str, ParsedMacro] = {}
 
         for directory_name, directory_def in directories.items():
+            path_macro = directory_def.path_macro
             try:
-                directory_schemas[directory_name] = ParsedMacro(directory_def.path_macro)
+                if isinstance(path_macro, str):
+                    directory_schemas[directory_name] = ParsedMacro(path_macro)
+                else:
+                    # Per-platform mapping: parse every populated key to validate macro syntax.
+                    # Cache the active-platform parse under the directory name so call sites that
+                    # consume parsed_directory_schemas keep working.
+                    selected = path_macro.select()
+                    for platform_key in ("linux", "darwin", "windows", "default"):
+                        raw = getattr(path_macro, platform_key)
+                        if raw is not None:
+                            ParsedMacro(raw)
+                    if selected is not None:
+                        directory_schemas[directory_name] = ParsedMacro(selected)
             except Exception as e:
                 validation.add_error(f"directories.{directory_name}.path_macro", f"Failed to parse macro: {e}")
 
