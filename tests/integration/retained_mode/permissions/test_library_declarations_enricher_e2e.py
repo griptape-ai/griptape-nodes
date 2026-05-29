@@ -284,6 +284,44 @@ class TestLibraryDeclarationsEnricher:
         assert not result.succeeded()
         assert "user.deny-labs-libraries" in str(result.result_details)
 
+    def test_discoverable_sandbox_by_name_registration_is_gated(self, permission_env: dict) -> None:
+        """An untracked sandbox library registered by name is gated via the read-only sandbox scan."""
+        sandbox_dir = permission_env["tmp"] / "sandbox"
+        _write_library_json(
+            sandbox_dir,
+            name="Sandbox Library",
+            declarations=[{"type": "lifecycle_stage", "stage": "LABS"}],
+        )
+        # The handler discovers the sandbox library (`include_sandbox=True`); the
+        # gate must mirror that without the library being pre-tracked.
+        permission_env["gn"].ConfigManager().set_config_value("sandbox_library_directory", str(sandbox_dir))
+        assert permission_env["gn"].LibraryManager().get_library_info_by_library_name("Sandbox Library") is None, (
+            "sandbox library must be untracked at gate-evaluation time for this test to be meaningful"
+        )
+        _grant(
+            {
+                "id": "user.deny-labs-libraries",
+                "decision": "deny",
+                "reason": "labs-stage libraries are not permitted",
+                "when": {
+                    "action": {"request_type": {"op": "equals", "value": "RegisterLibraryFromFileRequest"}},
+                    "context": {
+                        "facts": {
+                            "request.metadata.declarations.lifecycle_stage": {
+                                "op": "equals",
+                                "value": "LABS",
+                            }
+                        }
+                    },
+                },
+            }
+        )
+        result = GriptapeNodes.handle_request(
+            RegisterLibraryFromFileRequest(library_name="Sandbox Library", perform_discovery_if_not_found=True)
+        )
+        assert not result.succeeded()
+        assert "user.deny-labs-libraries" in str(result.result_details)
+
     def test_malformed_library_json_falls_through_cleanly(self, permission_env: dict) -> None:
         """A library file with broken JSON yields empty facts, not a crash."""
         broken = permission_env["tmp"] / "broken-lib"

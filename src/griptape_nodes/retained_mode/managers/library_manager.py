@@ -753,19 +753,24 @@ class LibraryManager:
         A tracked library resolves to its ``LibraryInfo.library_path``. An
         untracked name is loadable only when the handler is allowed to run
         discovery (``perform_discovery_if_not_found``); in that case mirror the
-        loader with a read-only scan of the configured library files so the gate
-        evaluates the same declarations the loader would discover. The scan does
-        not mutate tracking state.
+        loader's ``include_sandbox`` discovery with a read-only scan of the
+        configured library files and the sandbox library so the gate evaluates
+        the same declarations the loader would discover. The scan does not
+        mutate tracking state and does not regenerate the sandbox JSON.
         """
         library_info = self.get_library_info_by_library_name(library_name)
         if library_info is not None:
             return library_info.library_path
         if not getattr(request, "perform_discovery_if_not_found", False):
             return None
-        for entry in self._discover_library_files():
-            raw = self._read_library_json_dict(Path(entry.path))
+        candidate_paths = [Path(entry.path) for entry in self._discover_library_files()]
+        sandbox_directory = self._get_sandbox_directory()
+        if sandbox_directory is not None:
+            candidate_paths.append(sandbox_directory / self.LIBRARY_CONFIG_FILENAME)
+        for candidate in candidate_paths:
+            raw = self._read_library_json_dict(candidate)
             if raw is not None and raw.get("name") == library_name:
-                return entry.path
+                return str(candidate)
         return None
 
     def collate_problems_for_lib_info(self, lib_info: LibraryInfo) -> str | None:
