@@ -1810,18 +1810,33 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         return validators
 
     @property
-    def has_user_converters(self) -> bool:
-        """Whether the parameter has converters attached directly (not from traits)."""
+    def has_directly_attached_converters(self) -> bool:
+        """The directly-attached converter list is non-empty.
+
+        Trait-derived converters are merged in by the ``converters``
+        getter; this checks only what was passed to ``__init__`` or
+        appended directly.
+        """
         return bool(self._converters)
 
     @property
-    def has_user_validators(self) -> bool:
-        """Whether the parameter has validators attached directly (not from traits)."""
+    def has_directly_attached_validators(self) -> bool:
+        """The directly-attached validator list is non-empty.
+
+        Trait-derived validators are merged in by the ``validators``
+        getter; this checks only what was passed to ``__init__`` or
+        appended directly.
+        """
         return bool(self._validators)
 
     @property
     def has_traits(self) -> bool:
-        """Whether the parameter has any Trait children attached."""
+        """Any Trait child is attached.
+
+        Walks ``find_elements_by_type(Trait)`` because traits are stored
+        as child node-elements, not in a flat list. Cheap at probe
+        scale (called once per parameter at library load).
+        """
         return bool(self.find_elements_by_type(Trait))
 
     @property

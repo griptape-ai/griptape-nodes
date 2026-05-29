@@ -8,7 +8,8 @@ responsible for excluding violating classes from the returned schema list.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +17,39 @@ import pytest
 from griptape_nodes.common.strict_mode import STRICT_MODE
 from griptape_nodes.exe_types.core_types import Parameter, Trait
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from contextlib import AbstractContextManager
+
+
+@pytest.fixture
+def patched_registry() -> Callable[[dict[str, type]], AbstractContextManager[None]]:
+    """Yield a context-manager factory that patches LibraryRegistry for a probe map.
+
+    Both test classes need the same MagicMock-backed library plus the
+    same ``create_node`` side-effect that constructs an instance from
+    the probe map. Returning a factory keeps the per-test ``nodes``
+    parameter readable at the call site.
+    """
+
+    @contextmanager
+    def _patch(nodes: dict[str, type]) -> Iterator[None]:
+        lib = MagicMock()
+        lib.get_registered_nodes.return_value = list(nodes.keys())
+        lib.get_node_class.side_effect = lambda name: nodes[name]
+
+        def _create_node(*, node_type: str, name: str, specific_library_name: str | None = None) -> Any:  # noqa: ARG001
+            return nodes[node_type](name)
+
+        with patch.multiple(
+            "griptape_nodes.retained_mode.managers.library_manager.LibraryRegistry",
+            get_library=MagicMock(return_value=lib),
+            create_node=MagicMock(side_effect=_create_node),
+        ):
+            yield
+
+    return _patch
 
 
 class _CleanProbe:
@@ -46,41 +80,21 @@ class _ViolatingProbe:
 
 
 class TestSerializeSchemasStrictMode:
-    def _make_library(self, nodes: dict[str, type]) -> MagicMock:
-        lib = MagicMock()
-        lib.get_registered_nodes.return_value = list(nodes.keys())
-        lib.get_node_class.side_effect = lambda name: nodes[name]
-        return lib
-
-    def _patch_registry(self, library: MagicMock, nodes: dict[str, type]) -> Any:
-        def _create_node(*, node_type: str, name: str, specific_library_name: str | None = None) -> Any:  # noqa: ARG001
-            return nodes[node_type](name)
-
-        return patch.multiple(
-            "griptape_nodes.retained_mode.managers.library_manager.LibraryRegistry",
-            get_library=MagicMock(return_value=library),
-            create_node=MagicMock(side_effect=_create_node),
-        )
-
     @pytest.mark.asyncio
-    async def test_clean_class_is_included(self) -> None:
+    async def test_clean_class_is_included(self, patched_registry: Callable[[dict[str, type]], Any]) -> None:
         manager = GriptapeNodes.LibraryManager()
-        nodes = {"Clean": _CleanProbe}
-        library = self._make_library(nodes)
-
-        with self._patch_registry(library, nodes):
+        with patched_registry({"Clean": _CleanProbe}):
             schemas = await manager._serialize_library_node_schemas("libA")
 
         assert [s.class_name for s in schemas] == ["Clean"]
 
     @pytest.mark.asyncio
-    async def test_violating_class_is_skipped(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_violating_class_is_skipped(
+        self, caplog: pytest.LogCaptureFixture, patched_registry: Callable[[dict[str, type]], Any]
+    ) -> None:
         caplog.set_level(logging.DEBUG, logger="griptape_nodes.strict_mode")
         manager = GriptapeNodes.LibraryManager()
-        nodes = {"Violator": _ViolatingProbe, "Clean": _CleanProbe}
-        library = self._make_library(nodes)
-
-        with self._patch_registry(library, nodes):
+        with patched_registry({"Violator": _ViolatingProbe, "Clean": _CleanProbe}):
             schemas = await manager._serialize_library_node_schemas("libA")
 
         # Violating class dropped from output.
@@ -140,30 +154,13 @@ class _ProbeWithCleanParams:
 class TestParameterBehaviorsDropped:
     """#4472: Parameters carrying converters/validators/traits emit a warn violation."""
 
-    def _make_library(self, nodes: dict[str, type]) -> MagicMock:
-        lib = MagicMock()
-        lib.get_registered_nodes.return_value = list(nodes.keys())
-        lib.get_node_class.side_effect = lambda name: nodes[name]
-        return lib
-
-    def _patch_registry(self, library: MagicMock, nodes: dict[str, type]) -> Any:
-        def _create_node(*, node_type: str, name: str, specific_library_name: str | None = None) -> Any:  # noqa: ARG001
-            return nodes[node_type](name)
-
-        return patch.multiple(
-            "griptape_nodes.retained_mode.managers.library_manager.LibraryRegistry",
-            get_library=MagicMock(return_value=library),
-            create_node=MagicMock(side_effect=_create_node),
-        )
-
     @pytest.mark.asyncio
-    async def test_clean_parameters_produce_no_violation(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_clean_parameters_produce_no_violation(
+        self, caplog: pytest.LogCaptureFixture, patched_registry: Callable[[dict[str, type]], Any]
+    ) -> None:
         caplog.set_level(logging.WARNING, logger="griptape_nodes.strict_mode")
         manager = GriptapeNodes.LibraryManager()
-        nodes = {"Clean": _ProbeWithCleanParams}
-        library = self._make_library(nodes)
-
-        with self._patch_registry(library, nodes):
+        with patched_registry({"Clean": _ProbeWithCleanParams}):
             schemas = await manager._serialize_library_node_schemas("libA")
 
         assert [s.class_name for s in schemas] == ["Clean"]
@@ -171,14 +168,11 @@ class TestParameterBehaviorsDropped:
 
     @pytest.mark.asyncio
     async def test_parameter_with_converter_reports_warning_but_keeps_schema(
-        self, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture, patched_registry: Callable[[dict[str, type]], Any]
     ) -> None:
         caplog.set_level(logging.WARNING, logger="griptape_nodes.strict_mode")
         manager = GriptapeNodes.LibraryManager()
-        nodes = {"WithBehavior": _ProbeWithConverterParam}
-        library = self._make_library(nodes)
-
-        with self._patch_registry(library, nodes):
+        with patched_registry({"WithBehavior": _ProbeWithConverterParam}):
             schemas = await manager._serialize_library_node_schemas("libA")
 
         # Warning, not error: the class still yields a schema.
@@ -191,14 +185,11 @@ class TestParameterBehaviorsDropped:
 
     @pytest.mark.asyncio
     async def test_parameter_with_validator_reports_warning_but_keeps_schema(
-        self, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture, patched_registry: Callable[[dict[str, type]], Any]
     ) -> None:
         caplog.set_level(logging.WARNING, logger="griptape_nodes.strict_mode")
         manager = GriptapeNodes.LibraryManager()
-        nodes = {"WithValidator": _ProbeWithValidatorParam}
-        library = self._make_library(nodes)
-
-        with self._patch_registry(library, nodes):
+        with patched_registry({"WithValidator": _ProbeWithValidatorParam}):
             schemas = await manager._serialize_library_node_schemas("libA")
 
         assert [s.class_name for s in schemas] == ["WithValidator"]
@@ -208,14 +199,11 @@ class TestParameterBehaviorsDropped:
 
     @pytest.mark.asyncio
     async def test_parameter_with_trait_reports_warning_but_keeps_schema(
-        self, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture, patched_registry: Callable[[dict[str, type]], Any]
     ) -> None:
         caplog.set_level(logging.WARNING, logger="griptape_nodes.strict_mode")
         manager = GriptapeNodes.LibraryManager()
-        nodes = {"WithTrait": _ProbeWithTraitParam}
-        library = self._make_library(nodes)
-
-        with self._patch_registry(library, nodes):
+        with patched_registry({"WithTrait": _ProbeWithTraitParam}):
             schemas = await manager._serialize_library_node_schemas("libA")
 
         assert [s.class_name for s in schemas] == ["WithTrait"]
