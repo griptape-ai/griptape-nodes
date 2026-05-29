@@ -686,8 +686,10 @@ class LibraryManager:
           ``type`` strings, useful for ``in`` matchers.
 
         The request may reference the library by ``file_path`` or by
-        ``library_name``; the latter is resolved to its tracked library path so
-        a by-name registration is gated by the same rules as a by-path one.
+        ``library_name``; the latter is resolved to its tracked library path, or
+        — when the request permits discovery and the name is not yet tracked —
+        to the matching JSON found by a read-only library scan, so a by-name
+        registration is gated by the same rules as a by-path one.
 
         Best-effort: any failure (missing file, malformed JSON, unexpected
         shape, or an untracked library name) yields an empty contribution so the
@@ -697,11 +699,8 @@ class LibraryManager:
         json_path = self._resolve_register_library_json_path(request)
         if json_path is None:
             return {}
-        try:
-            raw = json.loads(json_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {}
-        if not isinstance(raw, dict):
+        raw = self._read_library_json_dict(json_path)
+        if raw is None:
             return {}
         metadata = raw.get("metadata")
         declarations = metadata.get("declarations") if isinstance(metadata, dict) else None
@@ -718,27 +717,56 @@ class LibraryManager:
             "metadata.declarations.lifecycle_stage": lifecycle_stage,
         }
 
+    def _read_library_json_dict(self, json_path: Path) -> dict[str, Any] | None:
+        """Read and parse a library JSON file, or None if unreadable/not an object."""
+        try:
+            raw = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(raw, dict):
+            return None
+        return raw
+
     def _resolve_register_library_json_path(self, request: Any) -> Path | None:
         """Resolve a register-library request to the JSON file it will load.
 
         Accepts a ``file_path`` (a JSON file, or a directory whose standard
-        ``griptape_nodes_library.json`` is used) or a ``library_name`` that is
-        already tracked, mirroring how the loader resolves a name to
-        ``LibraryInfo.library_path``. Returns None when neither resolves.
+        ``griptape_nodes_library.json`` is used) or a ``library_name``, mirroring
+        how the loader resolves a name to ``LibraryInfo.library_path``. Returns
+        None when neither resolves.
         """
         file_path = getattr(request, "file_path", None)
         if not file_path:
             library_name = getattr(request, "library_name", None)
             if library_name:
-                library_info = self.get_library_info_by_library_name(library_name)
-                if library_info is not None:
-                    file_path = library_info.library_path
+                file_path = self._resolve_library_path_by_name(library_name, request)
         if not file_path:
             return None
         json_path = Path(file_path)
         if json_path.is_dir():
             json_path = json_path / self.LIBRARY_CONFIG_FILENAME
         return json_path
+
+    def _resolve_library_path_by_name(self, library_name: str, request: Any) -> str | None:
+        """Resolve a library name to the JSON path the loader will read.
+
+        A tracked library resolves to its ``LibraryInfo.library_path``. An
+        untracked name is loadable only when the handler is allowed to run
+        discovery (``perform_discovery_if_not_found``); in that case mirror the
+        loader with a read-only scan of the configured library files so the gate
+        evaluates the same declarations the loader would discover. The scan does
+        not mutate tracking state.
+        """
+        library_info = self.get_library_info_by_library_name(library_name)
+        if library_info is not None:
+            return library_info.library_path
+        if not getattr(request, "perform_discovery_if_not_found", False):
+            return None
+        for entry in self._discover_library_files():
+            raw = self._read_library_json_dict(Path(entry.path))
+            if raw is not None and raw.get("name") == library_name:
+                return entry.path
+        return None
 
     def collate_problems_for_lib_info(self, lib_info: LibraryInfo) -> str | None:
         """Return a collated display string for a LibraryInfo's problems, or None if there are none."""

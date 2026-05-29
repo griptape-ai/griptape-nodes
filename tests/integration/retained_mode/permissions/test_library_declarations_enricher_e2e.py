@@ -20,6 +20,7 @@ import griptape_nodes.retained_mode.managers.config_manager as config_manager_mo
 from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest
 from griptape_nodes.retained_mode.events.permission_events import GrantPermissionRuleRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
@@ -238,6 +239,48 @@ class TestLibraryDeclarationsEnricher:
         # The by-name path must resolve to the tracked JSON and be denied; if the
         # enricher returned no facts for the name, the deny would not fire.
         result = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(library_name="My Named Labs Library"))
+        assert not result.succeeded()
+        assert "user.deny-labs-libraries" in str(result.result_details)
+
+    def test_discoverable_by_name_registration_is_gated(self, permission_env: dict) -> None:
+        """An untracked-but-discoverable library registered by name is gated when discovery is allowed."""
+        json_path = _write_library_json(
+            permission_env["tmp"] / "discoverable-labs-lib",
+            name="Discoverable Labs Library",
+            declarations=[{"type": "lifecycle_stage", "stage": "LABS"}],
+        )
+        # Make the library discoverable via config without pre-tracking it,
+        # mirroring a search path added after startup. The name is unknown to the
+        # manager until the handler runs discovery, which happens after the gate.
+        permission_env["gn"].ConfigManager().set_config_value(LIBRARIES_TO_REGISTER_KEY, [str(json_path)])
+        assert (
+            permission_env["gn"].LibraryManager().get_library_info_by_library_name("Discoverable Labs Library") is None
+        ), "library must be untracked at gate-evaluation time for this test to be meaningful"
+        _grant(
+            {
+                "id": "user.deny-labs-libraries",
+                "decision": "deny",
+                "reason": "labs-stage libraries are not permitted",
+                "when": {
+                    "action": {"request_type": {"op": "equals", "value": "RegisterLibraryFromFileRequest"}},
+                    "context": {
+                        "facts": {
+                            "request.metadata.declarations.lifecycle_stage": {
+                                "op": "equals",
+                                "value": "LABS",
+                            }
+                        }
+                    },
+                },
+            }
+        )
+        # The gate must resolve the untracked name via a read-only discovery scan
+        # and deny before the handler ever discovers and loads the library.
+        result = GriptapeNodes.handle_request(
+            RegisterLibraryFromFileRequest(
+                library_name="Discoverable Labs Library", perform_discovery_if_not_found=True
+            )
+        )
         assert not result.succeeded()
         assert "user.deny-labs-libraries" in str(result.result_details)
 
