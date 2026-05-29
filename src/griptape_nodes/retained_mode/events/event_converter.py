@@ -66,8 +66,7 @@ def _unstructure_exception(obj: BaseException) -> dict[str, Any]:
             message=rule.render(exception_class=type(obj).__name__, missing_field="traceback"),
         )
     return {
-        "type": type(obj).__qualname__,
-        "module": type(obj).__module__,
+        "type": f"{type(obj).__module__}.{type(obj).__qualname__}",
         "message": str(obj),
         "traceback": tb,
     }
@@ -114,17 +113,13 @@ converter.register_structure_hook_func(
 )
 
 
-# Exception <- string or structured dict.
+# Exception <- structured dict.
 #
 # The receiving side never has the worker-side class imported, so we
 # rebuild a ``ForwardedException`` that carries the original type
 # name and traceback as attributes. Callers reading
 # ``result.exception`` get a live ``Exception`` that chains correctly
 # with ``raise ... from`` and still surfaces worker-side context.
-#
-# String payloads come from pre-migration serialized events that may
-# still be cached locally; fall back to wrapping them in a
-# ``ForwardedException`` with no attributes set.
 def _structure_exception(obj: Any, _cls: type) -> Exception:
     # Lazy import to avoid a circular dependency: base_events imports
     # from this module (event_converter is registered at import time
@@ -132,17 +127,11 @@ def _structure_exception(obj: Any, _cls: type) -> Exception:
     # module load.
     from griptape_nodes.retained_mode.events.base_events import ForwardedException
 
-    if isinstance(obj, str):
-        return ForwardedException(obj)
-    if isinstance(obj, dict):
-        message = str(obj.get("message", ""))
-        forwarded = ForwardedException(message)
-        module = obj.get("module")
-        type_name = obj.get("type")
-        forwarded.original_type = f"{module}.{type_name}" if module and type_name else type_name
-        forwarded.original_traceback = obj.get("traceback")
-        return forwarded
-    return ForwardedException(str(obj))
+    message = str(obj.get("message", ""))
+    forwarded = ForwardedException(message)
+    forwarded.original_type = obj.get("type")
+    forwarded.original_traceback = obj.get("traceback")
+    return forwarded
 
 
 converter.register_structure_hook_func(

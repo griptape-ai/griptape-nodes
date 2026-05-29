@@ -47,7 +47,7 @@ class TestExceptionFidelityLost:
             unstructured = converter.unstructure(captured)
 
         assert scope.violations == []
-        assert unstructured["type"] == "RuntimeError"
+        assert unstructured["type"] == "builtins.RuntimeError"
         assert unstructured["message"] == "expected boom"
         assert unstructured["traceback"] is not None
 
@@ -85,7 +85,7 @@ class TestExceptionFidelityLost:
         unstructured = converter.unstructure(ValueError("payload"))
 
         assert unstructured["traceback"] is None
-        assert unstructured["type"] == "ValueError"
+        assert unstructured["type"] == "builtins.ValueError"
 
 
 class TestStructuredExceptionRoundTrip:
@@ -106,10 +106,3 @@ class TestStructuredExceptionRoundTrip:
         assert rebuilt.original_type is not None
         assert "RuntimeError" in rebuilt.original_type
         assert rebuilt.original_traceback is not None
-
-    def test_string_form_falls_back_to_forwarded_exception(self) -> None:
-        rebuilt = converter.structure("legacy stringified exception", Exception)
-        assert isinstance(rebuilt, ForwardedException)
-        assert str(rebuilt) == "legacy stringified exception"
-        assert rebuilt.original_type is None
-        assert rebuilt.original_traceback is None

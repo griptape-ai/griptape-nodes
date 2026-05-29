@@ -282,7 +282,7 @@ class NodeExecutor:
                 suffix = f"\n{traceback_str}" if traceback_str else ""
                 type_prefix = f"[{exception_type}] " if exception_type else ""
                 msg = f"Node '{node.name}' execution failed: {type_prefix}{getattr(result, 'result_details', result)}{suffix}"
-                raise RuntimeError(msg)  # noqa: TRY004
+                raise RuntimeError(msg) from exc  # noqa: TRY004
             # Copy outputs back onto the in-memory node. Write directly into
             # parameter_output_values (not through set_parameter_value, which
             # targets parameter_values and re-fires before/after_value_set and

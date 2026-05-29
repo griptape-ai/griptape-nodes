@@ -66,9 +66,10 @@ RULES: dict[str, StrictModeRule] = {
         default_severity=StrictModeSeverity.ERROR,
         correctness=True,
         description=(
-            "A worker-side exception could not be serialized with full "
-            "fidelity (type, message, traceback) when forwarded to the "
-            "orchestrator. The caller sees only a stringified summary."
+            "A worker-side exception's traceback could not be captured "
+            "by ``traceback.format_exception`` when serialized for the "
+            "orchestrator. The caller sees the type and message but no "
+            "frames, making the failure hard to diagnose."
         ),
         remediation_template=(
             "Exception of type '{exception_class}' lost '{missing_field}' "
