@@ -816,7 +816,7 @@ class ModelManager:
             "I16": 2,
             "I8": 1,
             "U8": 1,
-            "BOOL": 0.125,
+            "BOOL": 1,
         }
 
         total = 0
