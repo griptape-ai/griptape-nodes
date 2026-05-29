@@ -46,9 +46,13 @@ class WorkspaceToolsetConfig:
         shell_enabled: When False, :func:`shell` raises immediately. Useful for
             environments where shell access is unsafe regardless of allowlist.
         shell_allowlist: When non-empty, the shell tool only allows commands
-            whose first token matches an entry. Entries are matched literally.
-        shell_denylist: Commands whose first token matches any entry are
-            always rejected. Applied after the allowlist.
+            whose first whitespace-delimited token matches an entry. This is a
+            coarse guard, not a sandbox: it cannot see through pipes, ``&&``,
+            subshells, or absolute paths.
+        shell_denylist: Commands whose first whitespace-delimited token matches
+            any entry are rejected (applied after the allowlist). Best-effort
+            only and trivially bypassable via shell metacharacters or alternate
+            spellings; do not rely on it as a security boundary.
         shell_timeout_seconds: Hard wall-clock cap on each shell invocation.
         max_file_bytes: Cap on bytes returned by ``read_file`` / accepted by
             ``write_file``.
@@ -194,6 +198,8 @@ class WorkspaceToolset:
         for path in self._root.glob(pattern):
             if any(part.startswith(".") for part in path.relative_to(self._root).parts):
                 continue
+            if not self._within_root(path):
+                continue
             if path.is_file():
                 results.append(self._relative(path))
             if len(results) >= DEFAULT_MAX_GLOB_MATCHES:
@@ -222,6 +228,8 @@ class WorkspaceToolset:
             if not path.is_file():
                 continue
             if any(part.startswith(".") for part in path.relative_to(self._root).parts):
+                continue
+            if not self._within_root(path):
                 continue
             try:
                 with path.open(encoding="utf-8", errors="replace") as fh:
@@ -310,6 +318,21 @@ class WorkspaceToolset:
 
     def _relative(self, path: Path) -> str:
         return path.relative_to(self._root).as_posix()
+
+    def _within_root(self, path: Path) -> bool:
+        """True when `path` stays inside the workspace after resolving symlinks.
+
+        ``glob`` returns paths spelled under the root, but a symlink inside the
+        root can still point outside it. Resolving symlinks before the
+        containment check keeps ``glob_files`` / ``grep_files`` from leaking
+        out-of-workspace contents, matching what ``_resolve`` enforces for the
+        explicit-path tools.
+        """
+        try:
+            canonicalize_for_identity(path).relative_to(self._root)
+        except ValueError:
+            return False
+        return True
 
 
 def register_workspace_tools(agent: Agent, config: WorkspaceToolsetConfig) -> WorkspaceToolset:

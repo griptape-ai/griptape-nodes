@@ -100,6 +100,13 @@ class TestGlob:
         (tmp_path / ".hidden" / "x.py").write_text("")
         assert ".hidden/x.py" not in workspace.glob_files("**/*.py")
 
+    def test_excludes_symlink_escape(self, workspace: WorkspaceToolset, tmp_path: Path) -> None:
+        outside_dir = tmp_path.parent / "outside_glob_target"
+        outside_dir.mkdir()
+        (outside_dir / "leak.py").write_text("x = 1\n")
+        (tmp_path / "link").symlink_to(outside_dir)
+        assert workspace.glob_files("**/*.py") == ["src/main.py"]
+
 
 class TestGrep:
     def test_finds_lines(self, workspace: WorkspaceToolset) -> None:
@@ -109,6 +116,13 @@ class TestGrep:
     def test_invalid_regex_raises(self, workspace: WorkspaceToolset) -> None:
         with pytest.raises(ValueError, match="Invalid regex"):
             workspace.grep_files("(unbalanced")
+
+    def test_excludes_symlink_escape(self, workspace: WorkspaceToolset, tmp_path: Path) -> None:
+        outside_dir = tmp_path.parent / "outside_grep_target"
+        outside_dir.mkdir()
+        (outside_dir / "secret.txt").write_text("TOP_SECRET_TOKEN=abc\n")
+        (tmp_path / "link.txt").symlink_to(outside_dir / "secret.txt")
+        assert workspace.grep_files("TOP_SECRET_TOKEN") == []
 
 
 @pytest.mark.asyncio
