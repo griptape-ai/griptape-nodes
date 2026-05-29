@@ -30,7 +30,7 @@ class _CleanProbe:
 class _ViolatingProbe:
     """Node class whose __init__ triggers a correctness-class violation.
 
-    Uses ``unknown-payload-type`` because it is registered with
+    Uses ``reentrant-bus-in-init`` because it is registered with
     ``correctness=True``; the LOAD_PROBE skip-on-correctness gate uses
     that flag to decide whether to drop the class from the schema.
     """
@@ -40,7 +40,7 @@ class _ViolatingProbe:
     def __init__(self, name: str) -> None:
         self.name = name
         STRICT_MODE.report(
-            rule_id="unknown-payload-type",
+            rule_id="reentrant-bus-in-init",
             message="fixture probe violation",
         )
 
