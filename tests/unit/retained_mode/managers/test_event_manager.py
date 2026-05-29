@@ -19,7 +19,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayloadSuccess,
     StrictModeViolationDetail,
 )
-from griptape_nodes.retained_mode.managers.event_manager import EventManager, PreDispatchHookError
+from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
 class TestEventManagerBroadcasting:
@@ -509,10 +509,10 @@ class TestPreDispatchHooks:
 
         event_manager.add_pre_dispatch_hook(hook)
 
-        with pytest.raises(PreDispatchHookError):
-            event_manager.handle_request(_ProbeRequest())
+        event = event_manager.handle_request(_ProbeRequest())
 
-        # Fail closed: the manager callback must never run when a hook errors.
+        # Fail closed: deny with a failure result, and never run the callback.
+        assert event.result.failed()
         assert handler_calls == []
 
     def test_reentrant_hook_is_bypassed_not_recursive(self) -> None:
@@ -544,7 +544,7 @@ class TestPreDispatchHooks:
         # Handler ran for both the re-entrant and the outer dispatch.
         assert len(handler_calls) == 2  # noqa: PLR2004
 
-    def test_hook_evaluation_flag_reset_after_raise(self) -> None:
+    def test_hook_error_does_not_wedge_later_dispatch(self) -> None:
         event_manager = EventManager()
 
         def handler(_request: _ProbeRequest) -> _ProbeResult:
@@ -562,13 +562,14 @@ class TestPreDispatchHooks:
 
         event_manager.add_pre_dispatch_hook(hook)
 
-        with pytest.raises(PreDispatchHookError):
-            event_manager.handle_request(_ProbeRequest())
+        # First dispatch is denied by the erroring hook...
+        first = event_manager.handle_request(_ProbeRequest())
+        assert first.result.failed()
 
-        # The thread-local guard must be cleared on the raising path so later
-        # dispatches still evaluate the chain.
-        event = event_manager.handle_request(_ProbeRequest())
-        assert event.result.succeeded()
+        # ...and the thread-local guard is cleared, so the next dispatch still
+        # evaluates the chain and succeeds.
+        second = event_manager.handle_request(_ProbeRequest())
+        assert second.result.succeeded()
         assert len(calls) == 2  # noqa: PLR2004
 
     def test_add_pre_dispatch_hook_dedupes(self) -> None:

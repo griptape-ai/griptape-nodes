@@ -27,6 +27,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultDetails,
     ResultPayload,
+    ResultPayloadFailure,
     StrictModeViolationDetail,
 )
 from griptape_nodes.retained_mode.events.event_converter import converter
@@ -65,15 +66,6 @@ def current_request_type() -> type[RequestPayload] | None:
 # Add result types to this set if they should never trigger a flush (typically because they ARE
 # the flush operation itself, or other internal operations that don't modify workflow state).
 RESULT_TYPES_THAT_SKIP_FLUSH = {}
-
-
-class PreDispatchHookError(RuntimeError):
-    """Raised when a pre-dispatch hook errors.
-
-    The hook chain is an enforcement boundary, so a hook that raises denies the
-    request (fail closed) rather than letting it fall through to its manager
-    callback.
-    """
 
 
 def _running_loop() -> asyncio.AbstractEventLoop | None:
@@ -299,15 +291,17 @@ class EventManager:
                     short_circuit = hook(request, context)
                 except Exception as exc:
                     # Fail closed: the chain is an enforcement boundary, so a
-                    # hook that errors must deny the request rather than let it
-                    # fall through to its manager callback.
+                    # hook that errors denies the request. Return a failure
+                    # result rather than raising, so the dispatcher still
+                    # delivers an EventResultFailure to the caller instead of
+                    # leaving its response future to hang.
                     msg = (
                         f"Attempted to evaluate pre-dispatch hooks for request "
                         f"'{type(request).__name__}'. Failed because hook "
                         f"'{getattr(hook, '__name__', hook)}' raised {type(exc).__name__}: {exc}"
                     )
                     logging.getLogger("griptape_nodes").exception(msg)
-                    raise PreDispatchHookError(msg) from exc
+                    return ResultPayloadFailure(exception=exc, result_details=msg)
                 if short_circuit is not None:
                     return short_circuit
             return None
