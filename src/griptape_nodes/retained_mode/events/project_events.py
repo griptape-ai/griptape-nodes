@@ -23,12 +23,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.project_manager import ProjectID, ProjectInfo
 
 
-# Synthetic identifier for the system default project template. Defined here (rather
-# than in project_manager) so SetCurrentProjectRequest can use it as the default value
-# for `project_id` -- making "no project selected" an unrepresentable state.
-SYSTEM_DEFAULTS_KEY: str = "<system-defaults>"
-
-
 class MacroPath(NamedTuple):
     """A macro path with its parsed template and variable values.
 
@@ -271,14 +265,13 @@ class SetCurrentProjectRequest(RequestPayload):
     and re-registers workflows from config and the new workspace.
 
     Args:
-        project_id: Identifier of the project to set as current. Defaults to
-            SYSTEM_DEFAULTS_KEY so an unselected request always lands the engine on
-            the system defaults rather than a "no project" state.
+        project_id: Identifier of the project to set as current. None lands the
+            engine on the system defaults rather than a "no project" state.
 
     Results: SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure
     """
 
-    project_id: ProjectID = SYSTEM_DEFAULTS_KEY
+    project_id: ProjectID | None = None
 
 
 @dataclass

@@ -38,7 +38,6 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
-    SYSTEM_DEFAULTS_KEY,
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultFailure,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -99,6 +98,9 @@ logger = logging.getLogger("griptape_nodes")
 # Type alias for project identifiers
 # Usually constructed from file path, but kept opaque to prevent abuse
 ProjectID = str
+
+# Synthetic identifier for the system default project template
+SYSTEM_DEFAULTS_KEY: ProjectID = "<system-defaults>"
 
 # Filename for workspace-level project template overrides
 WORKSPACE_PROJECT_FILE = "griptape-nodes-project.yml"
@@ -855,16 +857,19 @@ class ProjectManager:
         # Capture workspace BEFORE config changes for comparison after
         old_workspace = self._config_manager.workspace_path
 
-        # Canonicalize the incoming project_id to the same form used as the
-        # registry key when the project was loaded (`canonicalize_for_identity`
-        # in on_load_project_template_request). Without this, callers passing
-        # the raw path they received from the user (e.g. a Windows
+        # `None` is the wire-level "no project specified" signal -- normalize to
+        # SYSTEM_DEFAULTS_KEY so the engine lands on system defaults instead of
+        # a phantom "no project" state.
+        # Canonicalize a real project_id to the same form used as the registry
+        # key when the project was loaded (`canonicalize_for_identity` in
+        # on_load_project_template_request). Without this, callers passing the
+        # raw path they received from the user (e.g. a Windows
         # `C:\\Users\\Me\\project.yml`, an unexpanded `~/project.yml`, or a
         # symlinked `/var/...` path on macOS) miss the registry lookup, leaving
         # `_current_project_id` set to a phantom string that no GetCurrentProject
         # response can resolve. SYSTEM_DEFAULTS_KEY is a synthetic ID, not a
         # path, and is preserved verbatim.
-        resolved_project_id: ProjectID = request.project_id
+        resolved_project_id: ProjectID = request.project_id if request.project_id is not None else SYSTEM_DEFAULTS_KEY
         if resolved_project_id != SYSTEM_DEFAULTS_KEY:
             resolved_project_id = str(canonicalize_for_identity(resolved_project_id))
 
