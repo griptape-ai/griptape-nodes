@@ -239,9 +239,17 @@ class ScanSequencesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Sequence scan completed successfully.
 
     A successful scan may legitimately return zero sequences (the directory
-    had no files matching the template, or the active subset clipped them
-    all out). Callers that need to fail-fast on empty results can check
-    `has_entries`.
+    had no files matching the template, the padding didn't line up, or the
+    active subset clipped them all out). The diagnostic fields let consumers
+    distinguish those cases without inspecting `result_details` strings:
+
+    - `directory_had_matching_files=False` → wrong path / wrong template /
+      empty directory: nothing on disk matched the basename + extension.
+    - `directory_had_matching_files=True`, `has_entries=False` → right path,
+      but either the padding didn't line up with the template's zfill, or
+      the active subset (`start_number`/`end_number`) clipped everything out.
+      `discovered_first`/`discovered_last` give the on-disk range so callers
+      can show "asked for 90..100 but disk has 1..7."
 
     Attributes:
         sequences: Zero or more `Sequence` objects produced by the scan.
@@ -250,10 +258,22 @@ class ScanSequencesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
         has_entries: True iff at least one Sequence in `sequences` has at
             least one entry. Convenience for callers that just want to
             branch on "did the scan produce anything?" without iterating.
+        directory_had_matching_files: True iff the directory listing
+            produced ≥1 file matching the target's basename + extension
+            (before fileseq parsing or subset clipping).
+        discovered_first: Lowest item number actually found on disk that
+            matched the target's full shape (basename + extension + zfill),
+            ignoring any subset bounds. None when no sequences were inferred.
+        discovered_last: Highest item number actually found on disk that
+            matched the target's full shape, ignoring any subset bounds.
+            None when no sequences were inferred.
     """
 
     sequences: list[Sequence]
     has_entries: bool
+    directory_had_matching_files: bool
+    discovered_first: int | None = None
+    discovered_last: int | None = None
 
 
 @dataclass

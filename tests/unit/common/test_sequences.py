@@ -102,6 +102,9 @@ class TestBasicScanning:
             result = await _scan(directory, "render.####.png", policy=MissingItemPolicy.SPLIT)
         assert isinstance(result, ScanSequencesResultSuccess)
         assert result.has_entries is True
+        assert result.directory_had_matching_files is True
+        assert result.discovered_first == 1
+        assert result.discovered_last == 5
         seqs = result.sequences
         assert len(seqs) == 1
         assert seqs[0].first == 1
@@ -111,27 +114,35 @@ class TestBasicScanning:
 
     @pytest.mark.asyncio
     async def test_no_files_returns_empty_success(self) -> None:
-        """An empty directory yields a success with no sequences and `has_entries=False`."""
+        """An empty directory yields a success with no sequences and `has_entries=False`.
+
+        The `directory_had_matching_files` flag is False because nothing in
+        the listing matched the basename/extension shape.
+        """
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing("/work/in", [])):
             result = await _scan("/work/in", "render.####.png")
         assert isinstance(result, ScanSequencesResultSuccess)
         assert result.sequences == []
         assert result.has_entries is False
+        assert result.directory_had_matching_files is False
+        assert result.discovered_first is None
+        assert result.discovered_last is None
 
     @pytest.mark.asyncio
-    async def test_directory_listing_failure_returns_empty_success(self) -> None:
-        """A failed listing is currently swallowed by `_scan_sequences` and surfaces as an empty success.
+    async def test_directory_listing_failure_surfaces_file_io_failure(self) -> None:
+        """A failed listing propagates the OS-level `FileIOFailureReason` to the caller.
 
-        TODO: a future iteration may have the handler dispatch its own
-        `ListDirectoryRequest` first and surface OS-layer failures via
-        `FileIOFailureReason` instead of folding them into empty success.
+        `_scan_sequences` raises `_DirectoryListingError` when the inner
+        `ListDirectoryRequest` fails; the handler maps that to a
+        `ScanSequencesResultFailure` carrying the underlying reason. This
+        replaces the prior behavior where listing failures were silently
+        folded into empty success.
         """
-        # Stub always returns failure
+        # Stub always returns failure for /work/in (only /other is recognized)
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing("/other", [])):
             result = await _scan("/work/in", "render.####.png")
-        assert isinstance(result, ScanSequencesResultSuccess)
-        assert result.sequences == []
-        assert result.has_entries is False
+        assert isinstance(result, ScanSequencesResultFailure)
+        assert result.failure_reason is FileIOFailureReason.FILE_NOT_FOUND
 
     @pytest.mark.asyncio
     async def test_unrelated_files_filtered_out(self) -> None:
@@ -332,7 +343,14 @@ class TestSubsetClipping:
         assert [e.number for e in seqs[0].entries] == [2, 3, 4]
 
     @pytest.mark.asyncio
-    async def test_subset_outside_discovered_range_yields_empty_success(self) -> None:
+    async def test_subset_outside_discovered_range_reports_discovered_range(self) -> None:
+        """Subset clip drops every present item — diagnostic flags expose the on-disk range.
+
+        The directory has 1..3 on disk but the caller asked for 10..20.
+        `directory_had_matching_files=True` and `discovered_first/last` carry
+        the on-disk bounds so the caller can show "asked for 10..20 but disk
+        has 1..3" instead of a generic "no matches".
+        """
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 3]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
@@ -342,6 +360,9 @@ class TestSubsetClipping:
         assert isinstance(result, ScanSequencesResultSuccess)
         assert result.sequences == []
         assert result.has_entries is False
+        assert result.directory_had_matching_files is True
+        assert result.discovered_first == 1
+        assert result.discovered_last == 3
 
     @pytest.mark.asyncio
     async def test_negative_start_rejected(self) -> None:
@@ -373,8 +394,15 @@ class TestPatternVariants:
         assert [e.number for e in seqs[0].entries] == [1, 2, 3]
 
     @pytest.mark.asyncio
-    async def test_mismatched_padding_returns_empty_success(self) -> None:
-        """Disk has 3-digit numbers; user declared #### (4 digits). No match — empty success."""
+    async def test_mismatched_padding_reports_files_present(self) -> None:
+        """Disk has 3-digit numbers; user declared #### (4 digits). No match — empty success.
+
+        The basename/extension prefilter accepts these files (so
+        `directory_had_matching_files=True`), but fileseq groups them at
+        zfill=3 which doesn't match the target's zfill=4 — so no inferred
+        numbers and `discovered_first/last` stay None. The flag combination
+        tells the caller the cause is padding mismatch, not wrong path.
+        """
         directory = "/work/in"
         filenames = [f"render.{n:03d}.png" for n in [1, 2, 3]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
@@ -382,6 +410,9 @@ class TestPatternVariants:
         assert isinstance(result, ScanSequencesResultSuccess)
         assert result.sequences == []
         assert result.has_entries is False
+        assert result.directory_had_matching_files is True
+        assert result.discovered_first is None
+        assert result.discovered_last is None
 
     @pytest.mark.asyncio
     async def test_unpadded_printf_round_trip(self) -> None:

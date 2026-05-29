@@ -104,8 +104,19 @@ Sequence handling is built on [`fileseq`](https://github.com/justinfx/fileseq), 
 
 Scans are dispatched on the engine's event bus, not by importing a function. Send a `ScanSequencesRequest` (defined in `griptape_nodes.retained_mode.events.os_events`) and `await GriptapeNodes.ahandle_request(...)`; the handler runs the directory listing and fileseq parsing in a worker thread, so a long-running scan over a deep directory doesn't block the event loop.
 
-Success returns `ScanSequencesResultSuccess` carrying `sequences: list[Sequence]` and a `has_entries: bool` convenience flag (true iff at least one sequence has at least one entry). A scan that ran cleanly but found nothing is *success with `has_entries=False`*, not failure — callers that need to fail-fast on empty results check `has_entries` themselves.
+Success returns `ScanSequencesResultSuccess` carrying:
 
-Failure returns `ScanSequencesResultFailure` whose `failure_reason` is either a `SequenceScanFailureReason` (`INVALID_TEMPLATE`, `INVALID_BOUNDS`, `ABORTED_AT_GAP`) or an OS-layer `FileIOFailureReason`. Failures are reserved for cases where the scan couldn't proceed: bad bounds, bad template, or the `ABORT` policy hit a gap. Under `ABORTED_AT_GAP`, the failure also populates `missing_item_number` with the offending integer key.
+- **`sequences: list[Sequence]`** — the inferred sequences, post-policy.
+- **`has_entries: bool`** — true iff at least one Sequence has at least one entry. A scan that ran cleanly but found nothing is *success with `has_entries=False`*, not failure — callers that need to fail-fast on empty results check `has_entries` themselves.
+- **`directory_had_matching_files: bool`** — true iff the directory listing produced at least one file whose basename + extension matched the target shape (i.e. the prefilter accepted something). Combined with `has_entries`, it tells you *why* a scan came up empty: false means the path is wrong or the basename/extension doesn't match anything; true with `has_entries=False` means the files are there but the padding doesn't line up *or* the active subset clipped them all out.
+- **`discovered_first: int | None`** / **`discovered_last: int | None`** — the on-disk range of inferred numbers *before* subset clipping is applied. Populated whenever fileseq inferred at least one number from the directory; `None` if the listing yielded no padding-matching numbers. Lets the caller diagnose subset-clip cases without guessing — e.g. "asked for 90..100 but disk has 1..7" comes straight from these fields.
+
+These three diagnostic fields let consumers distinguish wrong-path / wrong-padding / wrong-range cases without inspecting `result_details` strings. Per-Sequence `discovered_first`/`discovered_last` (on each `Sequence` object) are still the right read when you have at least one sequence; the top-level fields are specifically for the empty-result diagnostic.
+
+Failure returns `ScanSequencesResultFailure` whose `failure_reason` is either a `SequenceScanFailureReason` (`INVALID_TEMPLATE`, `INVALID_BOUNDS`, `ABORTED_AT_GAP`) or an OS-layer `FileIOFailureReason`. Failures are reserved for cases where the scan couldn't proceed: bad bounds, bad template, the `ABORT` policy hit a gap, or the inner directory listing failed (directory not found, permission denied — these surface via `FileIOFailureReason`, not folded into empty success). Under `ABORTED_AT_GAP`, the failure also populates `missing_item_number` with the offending integer key.
+
+### Node-level: `fail_on_empty_result`
+
+The standard library's `ParseSequenceNode` and `ParseSplitSequenceNode` both expose a top-level `fail_on_empty_result: bool = True` parameter. When true (the default), an empty scan result routes the node through its Failure control-flow edge with a diagnostic-aware status message built from the fields above. When false, the node succeeds with empty outputs and a status noting the opt-out — for workflows that legitimately tolerate empty scans (e.g. a sweep that may find nothing).
 
 Library and node code should never import the underlying scanner directly — the request bus is the only public path.

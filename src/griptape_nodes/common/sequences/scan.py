@@ -31,6 +31,7 @@ from griptape_nodes.common.sequences.models import (
 )
 from griptape_nodes.common.sequences.policies import PolicyContext, apply_policy
 from griptape_nodes.retained_mode.events.os_events import (
+    FileIOFailureReason,
     ListDirectoryRequest,
     ListDirectoryResultSuccess,
 )
@@ -41,6 +42,34 @@ logger = logging.getLogger("griptape_nodes")
 # Mandatory pad style: each `#` = 1 zero, matching Nuke. fileseq's default
 # (HASH4) treats each `#` as 4 zeros, which would silently break templates.
 PAD_STYLE = PAD_STYLE_HASH1
+
+
+class _ScanOutcome(NamedTuple):
+    """The full result of a sequence scan, including diagnostics for empty results.
+
+    `directory_had_matching_files` and `discovered_first/last` let callers
+    distinguish "wrong path / template" from "right path, padding mismatch /
+    subset clipped out everything" without inspecting log strings.
+    """
+
+    sequences: list[Sequence]
+    directory_had_matching_files: bool
+    discovered_first: int | None
+    discovered_last: int | None
+
+
+class _DirectoryListingError(Exception):
+    """Raised when the inner `ListDirectoryRequest` returns a failure.
+
+    Carries the listing's own `FileIOFailureReason` and `result_details` so
+    the request handler can surface them through `ScanSequencesResultFailure`
+    without losing the OS-level diagnostic.
+    """
+
+    def __init__(self, failure_reason: FileIOFailureReason, result_details: str) -> None:
+        super().__init__(result_details)
+        self.failure_reason = failure_reason
+        self.result_details = result_details
 
 
 @dataclass(frozen=True)
@@ -65,7 +94,7 @@ def _scan_sequences(
     policy: MissingItemPolicy = MissingItemPolicy.SPLIT,
     start: int | None = None,
     end: int | None = None,
-) -> list[Sequence]:
+) -> _ScanOutcome:
     """Find sequences matching `pattern` inside `directory`.
 
     Module-private. The public entry point is `ScanSequencesRequest` on the
@@ -91,11 +120,17 @@ def _scan_sequences(
             supplied.
 
     Returns:
-        List of `Sequence` objects. Empty if the directory listing fails, the
-        directory contains no files matching the pattern, or the active
-        subset is empty.
+        `_ScanOutcome` carrying the inferred sequences plus diagnostic flags
+        (whether the directory had any files matching the basename/extension
+        shape, and the on-disk discovered range when sequences were inferred).
+        `sequences` is empty if the directory contains no matching files, the
+        padding doesn't line up, or the active subset clipped everything out;
+        the diagnostic fields tell the caller which case fired.
 
     Raises:
+        _DirectoryListingError: If the inner `ListDirectoryRequest` returns
+            a failure (directory not found, permission denied, etc.). Carries
+            the original `FileIOFailureReason`.
         InvalidSubsetBoundsError: If `start` < 0 or `end` < `start`.
         InvalidTemplateError: If `pattern` contains more than one sequence token.
         MissingItemError: If `policy` is ABORT and a gap is found inside the
@@ -108,20 +143,43 @@ def _scan_sequences(
     target = _coerce_target_pattern(pattern)
 
     relevant = _list_pattern_matching_filenames(directory, target)
+    directory_had_matching_files = bool(relevant)
     if not relevant:
-        return []
+        return _ScanOutcome(
+            sequences=[],
+            directory_had_matching_files=False,
+            discovered_first=None,
+            discovered_last=None,
+        )
 
     present = _collect_present_numbers(directory, target, relevant)
     if not present.by_number:
-        return []
+        # Directory had files matching the basename/extension shape, but
+        # fileseq grouped them at a different padding than the target's
+        # zfill. Surface the diagnostic flag so the caller can say "the
+        # padding is wrong" instead of a generic "no matches".
+        return _ScanOutcome(
+            sequences=[],
+            directory_had_matching_files=directory_had_matching_files,
+            discovered_first=None,
+            discovered_last=None,
+        )
 
     discovered_first = min(present.by_number)
     discovered_last = max(present.by_number)
     active = _compute_active_range(start, end, discovered_first, discovered_last)
     if active.first > active.last:
-        return []
+        # Active subset clipped every present item out. Surface the
+        # discovered range so the caller can show "asked for 90..100 but
+        # disk has 1..7".
+        return _ScanOutcome(
+            sequences=[],
+            directory_had_matching_files=directory_had_matching_files,
+            discovered_first=discovered_first,
+            discovered_last=discovered_last,
+        )
 
-    return apply_policy(
+    sequences = apply_policy(
         PolicyContext(
             fseq=target,
             present_numbers=present.by_number,
@@ -133,6 +191,12 @@ def _scan_sequences(
             discovered_last=discovered_last,
             dropped_negative_number_count=present.dropped_negatives,
         )
+    )
+    return _ScanOutcome(
+        sequences=sequences,
+        directory_had_matching_files=directory_had_matching_files,
+        discovered_first=discovered_first,
+        discovered_last=discovered_last,
     )
 
 
@@ -264,9 +328,13 @@ def _compute_active_range(
 def _list_directory_filenames(directory: str) -> list[str]:
     """List `directory` via ListDirectoryRequest, returning bare filenames.
 
-    Returns an empty list on any listing failure. Suppresses client toasts
-    via `broadcast_result=False` since "directory not found" is a normal
-    outcome of a user-supplied template.
+    Raises `_DirectoryListingError` on any listing failure, carrying the
+    underlying `FileIOFailureReason` so the request handler can surface
+    "directory not found" / "permission denied" / etc. through
+    `ScanSequencesResultFailure` without losing the OS-level diagnostic.
+
+    Suppresses client toasts via `broadcast_result=False` since "directory
+    not found" is a normal outcome of a user-supplied template.
     """
     result = GriptapeNodes.handle_request(
         ListDirectoryRequest(
@@ -281,6 +349,9 @@ def _list_directory_filenames(directory: str) -> list[str]:
         )
     )
     if not isinstance(result, ListDirectoryResultSuccess):
-        return []
+        raise _DirectoryListingError(
+            failure_reason=result.failure_reason,  # pyright: ignore[reportAttributeAccessIssue]
+            result_details=str(result.result_details),
+        )
     # Skip directories — we want files only.
     return [entry.name for entry in result.entries if not entry.is_dir]

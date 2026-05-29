@@ -29,7 +29,7 @@ from griptape_nodes.common.sequences import (
     InvalidTemplateError,
     MissingItemError,
 )
-from griptape_nodes.common.sequences.scan import _scan_sequences
+from griptape_nodes.common.sequences.scan import _DirectoryListingError, _scan_sequences
 from griptape_nodes.files.drivers.base64_file_driver import Base64FileDriver
 from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
 from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
@@ -1461,19 +1461,24 @@ class OSManager:
         inside `_scan_sequences`) nor fileseq parsing blocks the event loop.
 
         Routes failures to the appropriate taxonomy: typed exceptions raised by
-        the scanner map to `SequenceScanFailureReason`; OS-layer failures from
-        the inner listing surface via `FileIOFailureReason` (today's
-        `_scan_sequences` swallows them into an empty list, which becomes
-        `NO_MATCHES`).
+        the scanner map to `SequenceScanFailureReason`; OS-layer listing
+        failures (directory not found, permission denied) propagate via
+        `_DirectoryListingError` and map to `FileIOFailureReason` so the
+        underlying OS diagnostic isn't lost.
         """
         try:
-            sequences = await asyncio.to_thread(
+            outcome = await asyncio.to_thread(
                 _scan_sequences,
                 request.directory,
                 request.pattern,
                 policy=request.policy,
                 start=request.start_number,
                 end=request.end_number,
+            )
+        except _DirectoryListingError as e:
+            return ScanSequencesResultFailure(
+                failure_reason=e.failure_reason,
+                result_details=e.result_details,
             )
         except InvalidSubsetBoundsError as e:
             return ScanSequencesResultFailure(
@@ -1505,17 +1510,20 @@ class OSManager:
 
         # An empty result is a successful scan that simply found nothing —
         # not a failure. Callers that need to fail-fast can check `has_entries`.
-        has_entries = any(seq.entries for seq in sequences)
+        has_entries = any(seq.entries for seq in outcome.sequences)
         if has_entries:
-            details = f"Found {len(sequences)} sequence(s)."
+            details = f"Found {len(outcome.sequences)} sequence(s)."
         else:
             details = (
                 f"Scanned directory={request.directory!r} with pattern={request.pattern!r}; "
                 f"no matching sequence entries found."
             )
         return ScanSequencesResultSuccess(
-            sequences=sequences,
+            sequences=outcome.sequences,
             has_entries=has_entries,
+            directory_had_matching_files=outcome.directory_had_matching_files,
+            discovered_first=outcome.discovered_first,
+            discovered_last=outcome.discovered_last,
             result_details=details,
         )
 
