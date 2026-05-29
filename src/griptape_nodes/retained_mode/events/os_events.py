@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from griptape_nodes.common.sequences.models import MissingItemPolicy, Sequence
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -54,6 +55,23 @@ class FileIOFailureReason(StrEnum):
 
     # Recycle bin errors
     RECYCLE_BIN_UNAVAILABLE = "recycle_bin_unavailable"  # Recycle bin unavailable and behavior was RECYCLE_BIN_ONLY
+
+
+class SequenceScanFailureReason(StrEnum):
+    """Sequence-semantic failure reasons returned by `ScanSequencesRequest`.
+
+    OS-layer failures (directory not found, permission denied, etc.) are reported
+    using `FileIOFailureReason` instead; the request's failure payload accepts
+    either enum so the handler can pick the right taxonomy per layer.
+
+    A successful scan that simply found nothing is NOT a failure — it returns
+    `ScanSequencesResultSuccess` with `sequences=[]` and `has_entries=False`.
+    Failures are reserved for cases where the scan couldn't proceed.
+    """
+
+    INVALID_TEMPLATE = "invalid_template"  # Multi-token templates or fileseq parse errors.
+    INVALID_BOUNDS = "invalid_bounds"  # `start_number` < 0, or `end_number` < `start_number`.
+    ABORTED_AT_GAP = "aborted_at_gap"  # `MissingItemPolicy.ABORT` hit a gap; payload carries the offending number.
 
 
 class DeletionBehavior(StrEnum):
@@ -177,6 +195,84 @@ class ListDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """
 
     failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class ScanSequencesRequest(RequestPayload):
+    """Scan a directory for files matching a fileseq template; produce typed Sequence(s).
+
+    Use when: A node or workflow needs to discover frame/item sequences on disk
+    (e.g. a render output, a directory of dialogue takes). Mediates fileseq parsing
+    and the underlying directory listing through the engine's request bus so callers
+    don't import the engine's sequence helpers directly.
+
+    Args:
+        directory: Absolute directory path to scan. Listed via `ListDirectoryRequest`
+            internally (no direct filesystem access). Macro-form paths must be
+            resolved by the caller before dispatching this request.
+        pattern: A fileseq pattern (e.g. `render.####.exr`, `take_%02d.wav`). Sequence
+            tokens are interpreted in HASH1 mode regardless of pattern syntax. Multi-token
+            templates are rejected up-front with `INVALID_TEMPLATE`.
+        policy: How to handle gaps within the matched range. Defaults to `SPLIT`.
+        start_number: Optional lower bound (inclusive) for the active subset. Items
+            below this are dropped. Must be >= 0 if supplied; rejected with
+            `INVALID_BOUNDS` otherwise.
+        end_number: Optional upper bound (inclusive). Items above this are dropped.
+            Must be >= `start_number` if both supplied; rejected with `INVALID_BOUNDS`
+            otherwise.
+
+    Results: ScanSequencesResultSuccess (with sequences) | ScanSequencesResultFailure
+    (sequence-semantic or OS-layer failure).
+    """
+
+    directory: str
+    pattern: str
+    policy: MissingItemPolicy = MissingItemPolicy.SPLIT
+    start_number: int | None = None
+    end_number: int | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ScanSequencesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Sequence scan completed successfully.
+
+    A successful scan may legitimately return zero sequences (the directory
+    had no files matching the template, or the active subset clipped them
+    all out). Callers that need to fail-fast on empty results can check
+    `has_entries`.
+
+    Attributes:
+        sequences: Zero or more `Sequence` objects produced by the scan.
+            Under `SPLIT` policy this may contain multiple sub-sequences;
+            under all other policies it has at most one. May be empty.
+        has_entries: True iff at least one Sequence in `sequences` has at
+            least one entry. Convenience for callers that just want to
+            branch on "did the scan produce anything?" without iterating.
+    """
+
+    sequences: list[Sequence]
+    has_entries: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class ScanSequencesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Sequence scan failed.
+
+    Attributes:
+        failure_reason: Either a sequence-semantic reason (`SequenceScanFailureReason`)
+            or an OS-layer reason (`FileIOFailureReason`) when the underlying
+            directory listing failed.
+        missing_item_number: Populated only when `failure_reason` is
+            `SequenceScanFailureReason.ABORTED_AT_GAP`. Carries the integer key
+            of the first slot the scan aborted on.
+        result_details: Human-readable error message (inherited from ResultPayloadFailure).
+    """
+
+    failure_reason: SequenceScanFailureReason | FileIOFailureReason
+    missing_item_number: int | None = None
 
 
 @dataclass

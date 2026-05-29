@@ -1,7 +1,7 @@
 """Directory scanning for sequences.
 
-Single public function: `scan_sequences()`. Takes a directory + a fileseq
-pattern (either as a string like `render.####.exr` or a pre-constructed
+Module-private worker behind `ScanSequencesRequest`. Takes a directory + a
+fileseq pattern (either as a string like `render.####.exr` or a pre-constructed
 `FileSequence`), lists the directory via `ListDirectoryRequest`, hands the
 filenames to `fileseq.findSequencesInList`, applies subset clipping and the
 chosen missing-item policy, and returns a list of `Sequence` objects.
@@ -24,6 +24,8 @@ from fileseq.constants import PAD_STYLE_HASH1
 from fileseq.filesequence import FileSequence
 
 from griptape_nodes.common.sequences.models import (
+    InvalidSubsetBoundsError,
+    InvalidTemplateError,
     MissingItemPolicy,
     Sequence,
 )
@@ -56,7 +58,7 @@ class _ActiveRange(NamedTuple):
     last: int
 
 
-def scan_sequences(
+def _scan_sequences(
     directory: str,
     pattern: str | FileSequence,
     *,
@@ -65,6 +67,11 @@ def scan_sequences(
     end: int | None = None,
 ) -> list[Sequence]:
     """Find sequences matching `pattern` inside `directory`.
+
+    Module-private. The public entry point is `ScanSequencesRequest` on the
+    engine's event bus; that request's handler invokes this function via
+    `asyncio.to_thread()` so neither the directory listing nor fileseq parsing
+    blocks the event loop.
 
     Args:
         directory: Absolute directory path to scan. Listed via
@@ -75,7 +82,8 @@ def scan_sequences(
             HASH1 mode regardless of pattern syntax.
         policy: How to handle gaps within the matched range. SPLIT yields one
             Sequence per contiguous run; the others yield exactly one
-            Sequence with policy-driven gap fills (or omissions for ERROR).
+            Sequence with policy-driven gap fills (or omissions for SKIP, or
+            a `MissingItemError` for ABORT).
         start: Optional lower bound (inclusive) for the active subset. Items
             below this are dropped from output. Must be >= 0 if supplied.
         end: Optional upper bound (inclusive) for the active subset. Items
@@ -86,6 +94,12 @@ def scan_sequences(
         List of `Sequence` objects. Empty if the directory listing fails, the
         directory contains no files matching the pattern, or the active
         subset is empty.
+
+    Raises:
+        InvalidSubsetBoundsError: If `start` < 0 or `end` < `start`.
+        InvalidTemplateError: If `pattern` contains more than one sequence token.
+        MissingItemError: If `policy` is ABORT and a gap is found inside the
+            active range.
 
     Negative numbers on disk are filtered out before policy is applied;
     `Sequence.dropped_negative_number_count` records how many were skipped.
@@ -125,11 +139,14 @@ def scan_sequences(
 def _validate_subset_bounds(start: int | None, end: int | None) -> None:
     """Reject negative start values and end < start ranges before any work."""
     if start is not None and start < 0:
-        msg = f"`start` must be >= 0; got {start}"
-        raise ValueError(msg)
+        msg = f"Attempted to validate sequence subset bounds with start={start}. Failed because start must be >= 0."
+        raise InvalidSubsetBoundsError(msg)
     if start is not None and end is not None and end < start:
-        msg = f"`end` ({end}) must be >= `start` ({start})"
-        raise ValueError(msg)
+        msg = (
+            f"Attempted to validate sequence subset bounds with start={start}, end={end}. "
+            f"Failed because end must be >= start."
+        )
+        raise InvalidSubsetBoundsError(msg)
 
 
 def _coerce_target_pattern(pattern: str | FileSequence) -> FileSequence:
@@ -146,10 +163,11 @@ def _coerce_target_pattern(pattern: str | FileSequence) -> FileSequence:
     token_count = _count_sequence_tokens(pattern)
     if token_count > 1:
         msg = (
-            f"Pattern {pattern!r} contains {token_count} sequence tokens; only one is supported. "
+            f"Attempted to parse fileseq template {pattern!r}. "
+            f"Failed because it contains {token_count} sequence tokens; only one is supported. "
             f"Multi-token templates like 'v##_f####.exr' are not handled correctly by fileseq."
         )
-        raise ValueError(msg)
+        raise InvalidTemplateError(msg)
     return FileSequence(pattern, pad_style=PAD_STYLE)
 
 

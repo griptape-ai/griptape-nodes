@@ -51,7 +51,7 @@ Real sequences often have gaps — a render that crashed on frame 47, a sparse e
 
 | Policy              | What you get                                                                                                                                                                                      |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ABORT`             | Fail fast. Raises `MissingItemError` (with the offending item number) on the first gap inside `[first, last]`. No Sequence is returned.                                                           |
+| `ABORT`             | Fail fast. Surfaces a failure carrying the offending item number on the first gap inside `[first, last]`. No Sequence is returned.                                                                |
 | `SPLIT` *(default)* | One sequence per **contiguous run** of present items. A sequence with items 1–5, 8–12, 15 produces three separate sequences.                                                                      |
 | `SKIP`              | One sequence containing only the present items. Gaps are absent from the output (but visible via the sequence's `missing_numbers` set).                                                           |
 | `FILL_NEAREST`      | One sequence covering the full `[first, last]` range. Each missing item is filled with the path of the nearest **earlier** present item (or the nearest later one if no earlier neighbor exists). |
@@ -99,3 +99,13 @@ A few cases are deliberately excluded:
 ## Where this comes from
 
 Sequence handling is built on [`fileseq`](https://github.com/justinfx/fileseq), the de facto Python library for VFX-style frame-range parsing. We use it as a parser and number-math library; all filesystem listings still flow through the engine's request bus, so the same workspace permissions, path normalization, and Windows-long-path handling that govern other file operations apply here too. fileseq itself uses "frame" terminology throughout — that's an implementation detail; the public API speaks "items" and "numbers" so the same code can serve any numbered-filename sequence, not just images.
+
+## Public entry point: `ScanSequencesRequest`
+
+Scans are dispatched on the engine's event bus, not by importing a function. Send a `ScanSequencesRequest` (defined in `griptape_nodes.retained_mode.events.os_events`) and `await GriptapeNodes.ahandle_request(...)`; the handler runs the directory listing and fileseq parsing in a worker thread, so a long-running scan over a deep directory doesn't block the event loop.
+
+Success returns `ScanSequencesResultSuccess` carrying `sequences: list[Sequence]` and a `has_entries: bool` convenience flag (true iff at least one sequence has at least one entry). A scan that ran cleanly but found nothing is *success with `has_entries=False`*, not failure — callers that need to fail-fast on empty results check `has_entries` themselves.
+
+Failure returns `ScanSequencesResultFailure` whose `failure_reason` is either a `SequenceScanFailureReason` (`INVALID_TEMPLATE`, `INVALID_BOUNDS`, `ABORTED_AT_GAP`) or an OS-layer `FileIOFailureReason`. Failures are reserved for cases where the scan couldn't proceed: bad bounds, bad template, or the `ABORT` policy hit a gap. Under `ABORTED_AT_GAP`, the failure also populates `missing_item_number` with the offending integer key.
+
+Library and node code should never import the underlying scanner directly — the request bus is the only public path.

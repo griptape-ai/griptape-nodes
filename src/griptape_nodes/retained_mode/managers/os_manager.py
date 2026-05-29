@@ -16,6 +16,7 @@ from typing import Any, ClassVar, NamedTuple
 import anyio
 import portalocker
 import send2trash
+from fileseq.exceptions import FileSeqException
 from rich.console import Console
 
 from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, MacroVariables, ParsedMacro
@@ -23,6 +24,12 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
+from griptape_nodes.common.sequences import (
+    InvalidSubsetBoundsError,
+    InvalidTemplateError,
+    MissingItemError,
+)
+from griptape_nodes.common.sequences.scan import _scan_sequences
 from griptape_nodes.files.drivers.base64_file_driver import Base64FileDriver
 from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
 from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
@@ -79,6 +86,10 @@ from griptape_nodes.retained_mode.events.os_events import (
     ResolveMacroPathRequest,
     ResolveMacroPathResultFailure,
     ResolveMacroPathResultSuccess,
+    ScanSequencesRequest,
+    ScanSequencesResultFailure,
+    ScanSequencesResultSuccess,
+    SequenceScanFailureReason,
     WriteFileRequest,
     WriteFileResultFailure,
     WriteFileResultSuccess,
@@ -279,6 +290,10 @@ class OSManager:
             )
             event_manager.assign_manager_to_request_type(
                 request_type=ListDirectoryRequest, callback=self.on_list_directory_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=ScanSequencesRequest, callback=self.on_scan_sequences_request
             )
 
             event_manager.assign_manager_to_request_type(
@@ -1437,6 +1452,72 @@ class OSManager:
             msg = f"Unexpected error in list_directory: {type(e).__name__}: {e}"
             logger.error(msg)
             return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+    async def on_scan_sequences_request(self, request: ScanSequencesRequest) -> ResultPayload:
+        """Handle a request to scan a directory for sequences matching a fileseq template.
+
+        The handler runs `_scan_sequences` in a worker thread (`asyncio.to_thread`)
+        so neither the directory listing (via `ListDirectoryRequest`, performed
+        inside `_scan_sequences`) nor fileseq parsing blocks the event loop.
+
+        Routes failures to the appropriate taxonomy: typed exceptions raised by
+        the scanner map to `SequenceScanFailureReason`; OS-layer failures from
+        the inner listing surface via `FileIOFailureReason` (today's
+        `_scan_sequences` swallows them into an empty list, which becomes
+        `NO_MATCHES`).
+        """
+        try:
+            sequences = await asyncio.to_thread(
+                _scan_sequences,
+                request.directory,
+                request.pattern,
+                policy=request.policy,
+                start=request.start_number,
+                end=request.end_number,
+            )
+        except InvalidSubsetBoundsError as e:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_BOUNDS,
+                result_details=str(e),
+            )
+        except InvalidTemplateError as e:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=str(e),
+            )
+        except FileSeqException as e:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=(
+                    f"Attempted to scan sequences with pattern={request.pattern!r}. "
+                    f"Failed because fileseq could not parse the template: {e}"
+                ),
+            )
+        except MissingItemError as e:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.ABORTED_AT_GAP,
+                missing_item_number=e.number,
+                result_details=(
+                    f"Attempted to scan sequences with pattern={request.pattern!r}, policy=ABORT. "
+                    f"Failed because the sequence has a gap at item {e.number}."
+                ),
+            )
+
+        # An empty result is a successful scan that simply found nothing —
+        # not a failure. Callers that need to fail-fast can check `has_entries`.
+        has_entries = any(seq.entries for seq in sequences)
+        if has_entries:
+            details = f"Found {len(sequences)} sequence(s)."
+        else:
+            details = (
+                f"Scanned directory={request.directory!r} with pattern={request.pattern!r}; "
+                f"no matching sequence entries found."
+            )
+        return ScanSequencesResultSuccess(
+            sequences=sequences,
+            has_entries=has_entries,
+            result_details=details,
+        )
 
     def _detect_mime_type_from_location(self, location: str) -> str:
         """Detect MIME type from location string.
