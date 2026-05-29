@@ -14,9 +14,6 @@ from cattrs.strategies import include_subclasses, use_class_methods
 from griptape.mixins.serializable_mixin import SerializableMixin
 from pydantic import BaseModel
 
-from griptape_nodes.common.strict_mode import STRICT_MODE
-from griptape_nodes.common.strict_mode_checks import RULES
-
 logger = logging.getLogger(__name__)
 
 converter = make_converter()
@@ -51,35 +48,22 @@ converter.register_unstructure_hook_func(
 # hops lossy (authors saw ``RuntimeError: <message>`` with no frames).
 # The dict form preserves enough context that the structure hook can
 # rebuild a ``ForwardedException`` on the receiving side.
+#
+# Strict-mode detection for missing frames does NOT live here. This
+# hook runs during ``result_event.json()`` in ``app._emit_result``,
+# which fires after the worker's ``scoped_execution`` has already
+# closed; ``STRICT_MODE.report`` would no-op because no scope is
+# active. The check lives in ``ResultPayloadFailure.__post_init__``
+# instead, where it runs while the worker scope is still open.
 def _unstructure_exception(obj: Exception) -> dict[str, Any]:
-    rule = RULES["exception-fidelity-lost"]
-    # Two ways the wire-format loses frames:
-    #   (1) the exception was constructed but never raised, so
-    #       ``__traceback__`` is None;
-    #   (2) ``traceback.format_exception`` itself blew up (rare, but
-    #       e.g. a hostile metaclass or a corrupt ``__traceback__``).
-    # Both leave the orchestrator-side caller with a type + message
-    # but no frames. Report once for either, attributing the missing
-    # piece so the editor's strict-mode detail tells the user which
-    # branch fired.
     if obj.__traceback__ is None:
         tb = None
-        STRICT_MODE.report(
-            rule_id=rule.rule_id,
-            message=rule.render(exception_class=type(obj).__name__, missing_field="__traceback__"),
-        )
     else:
         try:
             tb = "".join(traceback.format_exception(type(obj), obj, obj.__traceback__))
         except Exception:
+            logger.debug("Failed to format traceback for %s", type(obj).__name__, exc_info=True)
             tb = None
-            STRICT_MODE.report(
-                rule_id=rule.rule_id,
-                message=rule.render(
-                    exception_class=type(obj).__name__,
-                    missing_field="formatted-traceback",
-                ),
-            )
     return {
         "type": f"{type(obj).__module__}.{type(obj).__qualname__}",
         "message": str(obj),
@@ -142,6 +126,12 @@ def _structure_exception(obj: Any, _cls: type) -> Exception:
     # module load.
     from griptape_nodes.retained_mode.events.base_events import ForwardedException
 
+    # Tolerate non-dict payloads. The previous hook accepted bare
+    # strings, and old persisted events on disk may still carry that
+    # shape; refusing to structure them would abort deserialization of
+    # the entire enclosing event.
+    if not isinstance(obj, dict):
+        return ForwardedException(str(obj))
     message = str(obj.get("message", ""))
     forwarded = ForwardedException(message)
     forwarded.original_type = obj.get("type")

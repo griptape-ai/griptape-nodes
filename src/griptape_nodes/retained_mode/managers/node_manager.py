@@ -64,7 +64,7 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeResultSuccess,
     OutgoingConnection,
 )
-from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
+from griptape_nodes.retained_mode.events.event_converter import converter, safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelExecuteNodeRequest,
     CancelExecuteNodeResultSuccess,
@@ -2877,9 +2877,16 @@ class NodeManager:
             self._orch_worker_requests.pop(request.node_name, None)
         result_type_name = execute_raw.get("result_type", "")
         result_data = execute_raw.get("result", {})
+        # Route through cattrs structure (not ``**result_data`` spread)
+        # so the registered exception hook rebuilds ``self.exception``
+        # into a ``ForwardedException`` carrying the worker-side type
+        # name and traceback. A bare spread would leave ``exception``
+        # as the raw {type, message, traceback} dict, breaking the
+        # worker-frame surfacing in
+        # ``NodeExecutor._format_node_failure_message``.
         if result_type_name == ExecuteNodeResultSuccess.__name__:
-            return ExecuteNodeResultSuccess(**result_data)
-        return ExecuteNodeResultFailure(**result_data)
+            return cast("ExecuteNodeResultSuccess", converter.structure(result_data, ExecuteNodeResultSuccess))
+        return cast("ExecuteNodeResultFailure", converter.structure(result_data, ExecuteNodeResultFailure))
 
     async def cancel_worker_execution(self, node_name: str) -> None:
         """Dispatch CancelExecuteNodeRequest to the worker running node_name.
@@ -2974,6 +2981,7 @@ class NodeManager:
                 except Exception as e:
                     return ExecuteNodeResultFailure(
                         result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
+                        exception=e,
                     )
             # Materialize parameter defaults into parameter_values so that user
             # process() code reading self.parameter_values[name] directly (rather
@@ -2990,8 +2998,18 @@ class NodeManager:
             try:
                 await node.aprocess()
             except Exception as e:
+                # Pass the live exception through ``exception=`` so the
+                # converter can capture worker-side frames into a
+                # ForwardedException on the orchestrator. Without this
+                # the orchestrator only sees the type and message --
+                # PR06's whole reason for the dict wire-format -- and
+                # NodeExecutor._format_node_failure_message would have
+                # nothing to surface. ``__traceback__`` is populated
+                # because ``e`` was actually raised, so the strict-mode
+                # tripwire stays quiet for raise-in-process.
                 return ExecuteNodeResultFailure(
                     result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
+                    exception=e,
                 )
         return ExecuteNodeResultSuccess(
             parameter_output_values=dict(node.parameter_output_values),

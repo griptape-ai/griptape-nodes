@@ -344,7 +344,16 @@ class WorkerManager:
         returned dict into the appropriate result type.
         """
         request_id = event_request.request_id or str(uuid.uuid4())
-        future = await self._tx.request_client.track_request(request_id, tag=worker_engine_id)
+        # Opt into structured-failure delivery so a worker-side
+        # ResultPayloadFailure arrives as the raw payload dict rather
+        # than being collapsed to a bare ``Exception(error_msg)`` by
+        # ``_try_match``. ``_execute_node_via_worker`` then runs the
+        # dict through ``converter.structure(...)``, which rebuilds
+        # ``self.exception`` into a ForwardedException carrying the
+        # worker-side type name and traceback string.
+        future = await self._tx.request_client.track_request(
+            request_id, tag=worker_engine_id, resolve_failures_as_payload=True
+        )
 
         await self.forward_event_to_worker(
             event_request.model_copy(update={"request_id": request_id}),
