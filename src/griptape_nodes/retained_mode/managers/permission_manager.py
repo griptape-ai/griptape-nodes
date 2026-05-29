@@ -360,6 +360,11 @@ class PermissionManager:
             entries = list(self._audit)
         if limit is None:
             return entries
+        # `entries[-0:]` is the whole list and a negative limit slices from the
+        # front, both of which would over-share an audit tail, so treat any
+        # non-positive limit as "no entries".
+        if limit <= 0:
+            return []
         return entries[-limit:]
 
     # ------------------------------------------------------------------ request handlers
@@ -404,7 +409,14 @@ class PermissionManager:
             slot.policy.rules.append(rule)
         # Persist outside the lock; set_config_value broadcasts ConfigChanged
         # synchronously, and our listener re-acquires _policy_lock.
-        self._persist_policy()
+        if not self._persist_policy():
+            return GrantPermissionRuleResultFailure(
+                result_details=(
+                    f"Attempted to grant permission rule '{rule.id}'. Failed because the rule could "
+                    "not be persisted to the user config, so it is not active. Check the engine log "
+                    "for the underlying write error."
+                )
+            )
         return GrantPermissionRuleResultSuccess(
             rule_id=rule.id,
             result_details=f"Granted permission rule '{rule.id}'.",
@@ -431,7 +443,14 @@ class PermissionManager:
                     "and defaults layers, plus license-imposed rules, are read-only at runtime."
                 )
             )
-        self._persist_policy()
+        if not self._persist_policy():
+            return RevokePermissionRuleResultFailure(
+                result_details=(
+                    f"Attempted to revoke permission rule '{request.rule_id}'. Failed because the "
+                    "change could not be persisted to the user config, so the rule is still active. "
+                    "Check the engine log for the underlying write error."
+                )
+            )
         return RevokePermissionRuleResultSuccess(
             rule_id=request.rule_id,
             result_details=f"Revoked permission rule '{request.rule_id}'.",
@@ -553,7 +572,7 @@ class PermissionManager:
             default_decision=default_decision if default_decision is not None else Decision.ALLOW,
         )
 
-    def _persist_policy(self) -> None:
+    def _persist_policy(self) -> bool:
         # Only the user-layer settings are persisted. Project / workspace / env
         # / defaults layers are owned by their own config files; license rules
         # live in memory only so a user editing `griptape_nodes_config.json`
@@ -563,6 +582,7 @@ class PermissionManager:
             rules = list(slot.policy.rules) if slot is not None else []
             default_explicit = slot is not None and self._USER_LAYER_NAME in self._explicit_defaults
             default_decision = slot.policy.default_decision if slot is not None else PermissionPolicy().default_decision
+        expected_ids = [rule.id for rule in rules]
         rule_payload = [rule.model_dump(mode="json") for rule in rules]
         policy_payload: dict[str, Any] = {"rules": rule_payload}
         # Only carry `default_decision` when the user layer actually set one.
@@ -577,6 +597,16 @@ class PermissionManager:
         if default_explicit:
             policy_payload["default_decision"] = default_decision.value
         self._config_manager.set_config_value("permissions", {"policy": policy_payload})
+        # set_config_value reloads _layer_settings from disk synchronously via the
+        # ConfigChanged broadcast, but _write_user_config_delta swallows disk
+        # errors (logs and returns). Compare the reloaded user-layer rule ids
+        # against what we intended to persist so a silently-dropped write is
+        # reported as failure instead of a false success that leaves the operator
+        # believing a rule is active.
+        with self._policy_lock:
+            reloaded = self._layer_settings.get(self._USER_LAYER_NAME)
+            reloaded_ids = [rule.id for rule in reloaded.policy.rules] if reloaded is not None else []
+        return reloaded_ids == expected_ids
 
     def _infer_principal(self, context: ResultContext | None) -> Principal:
         with self._node_stack_lock:
