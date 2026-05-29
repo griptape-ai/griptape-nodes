@@ -21,12 +21,14 @@ from griptape_nodes.common.macro_parser import (
 from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_TEMPLATE,
     DirectoryDefinition,
+    PerPlatformProjectPath,
     ProjectOverlayData,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
     SituationTemplate,
     load_partial_project_template,
+    select_project_path,
 )
 from griptape_nodes.files.derivation import DERIVATION_RULES, apply_derivation_rules
 from griptape_nodes.files.file import File, FileLoadError, FileWriteError
@@ -536,7 +538,20 @@ class ProjectManager:
         if overlay.parent_project_path is None:
             return DEFAULT_PROJECT_TEMPLATE
 
-        parent_path_str = self._expand_workspace_dir_macro(overlay.parent_project_path)
+        # Reduce the (possibly per-platform) value to a single string for the
+        # active platform. A per-platform mapping with no key matching the
+        # active OS and no `default` returns None — treat that as "no parent
+        # on this platform" and fall back to the system default base.
+        selected_parent = select_project_path(overlay.parent_project_path)
+        if selected_parent is None:
+            logger.debug(
+                "parent_project_path %r has no entry for the active platform and no default; "
+                "treating as no parent on this OS",
+                overlay.parent_project_path,
+            )
+            return DEFAULT_PROJECT_TEMPLATE
+
+        parent_path_str = self._expand_workspace_dir_macro(selected_parent)
         parent_path_raw = Path(parent_path_str)
         if not parent_path_raw.is_absolute():
             parent_path_raw = project_file_path.parent / parent_path_raw
@@ -557,9 +572,7 @@ class ProjectManager:
             parent_status = parent_load.validation.status
             validation.add_error(
                 field_path="parent_project_path",
-                message=(
-                    f"Parent project '{overlay.parent_project_path}' could not be loaded (status: {parent_status})"
-                ),
+                message=(f"Parent project '{selected_parent}' could not be loaded (status: {parent_status})"),
                 line_number=overlay.line_info.get_line("parent_project_path"),
             )
             return None
@@ -569,8 +582,7 @@ class ProjectManager:
             validation.add_error(
                 field_path="parent_project_path",
                 message=(
-                    f"Parent project '{overlay.parent_project_path}' has validation errors "
-                    f"(status: {parent_validation.status})"
+                    f"Parent project '{selected_parent}' has validation errors (status: {parent_validation.status})"
                 ),
                 line_number=overlay.line_info.get_line("parent_project_path"),
             )
@@ -640,10 +652,12 @@ class ProjectManager:
             # that consumers can match against other entries' project_id for
             # hierarchy reconstruction. The original macro form (if any) lives
             # on the child template itself; this field is for cross-referencing.
-            raw_parent = project_info.template.parent_project_path
+            # Per-platform mappings are reduced to the active platform's value
+            # before resolving so the GUI sees a single resolved string.
+            selected_parent = select_project_path(project_info.template.parent_project_path)
             resolved_parent: str | None = None
-            if raw_parent is not None:
-                expanded = self._expand_workspace_dir_macro(raw_parent)
+            if selected_parent is not None:
+                expanded = self._expand_workspace_dir_macro(selected_parent)
                 parent_path = Path(expanded)
                 if not parent_path.is_absolute() and project_info.project_file_path is not None:
                     parent_path = project_info.project_file_path.parent / parent_path
@@ -1138,18 +1152,21 @@ class ProjectManager:
         # from the parent don't redundantly appear in the child's YAML. The parent
         # must already be in the registry; if not, fail loudly rather than silently
         # diffing against system defaults (which would emit inherited values into
-        # the child's overlay).
+        # the child's overlay). Per-platform mappings are reduced to the active
+        # platform's path before lookup; a mapping with no matching key and no
+        # `default` falls back to system defaults (no parent on this OS).
         base_template: ProjectTemplate = DEFAULT_PROJECT_TEMPLATE
-        if template.parent_project_path is not None:
+        selected_parent = select_project_path(template.parent_project_path)
+        if selected_parent is not None:
             parent_id = self._resolve_parent_path_for_lookup(
-                template.parent_project_path,
+                selected_parent,
                 anchor=request.project_path,
             )
             if parent_id is None:
                 return SaveProjectTemplateResultFailure(
                     result_details=(
                         f"Attempted to save project template to '{request.project_path}'. "
-                        f"Failed because parent_project_path '{template.parent_project_path}' "
+                        f"Failed because parent_project_path '{selected_parent}' "
                         f"is relative and no anchor could be resolved."
                     ),
                 )
@@ -1158,7 +1175,7 @@ class ProjectManager:
                 return SaveProjectTemplateResultFailure(
                     result_details=(
                         f"Attempted to save project template to '{request.project_path}'. "
-                        f"Failed because parent project '{template.parent_project_path}' "
+                        f"Failed because parent project '{selected_parent}' "
                         f"(resolved to '{parent_id}') is not loaded. Load the parent before saving the child."
                     ),
                 )
@@ -1250,7 +1267,11 @@ class ProjectManager:
         if editing_project_id is not None:
             visited.add(str(canonicalize_for_identity(Path(editing_project_id))))
 
-        current_parent_raw = template.parent_project_path
+        # Reduce the (possibly per-platform) parent value to a string for the
+        # active OS at every hop. A per-platform mapping with no key matching
+        # this OS and no `default` ends the walk on this platform — the cycle
+        # only exists on platforms whose selections all land in the same chain.
+        current_parent_raw = select_project_path(template.parent_project_path)
         current_anchor: Path | None = Path(editing_project_id) if editing_project_id is not None else None
         while current_parent_raw is not None:
             resolved = self._resolve_parent_path_for_lookup(current_parent_raw, current_anchor)
@@ -1266,7 +1287,7 @@ class ProjectManager:
             parent_info = self._successfully_loaded_project_templates.get(resolved)
             if parent_info is None:
                 return
-            current_parent_raw = parent_info.template.parent_project_path
+            current_parent_raw = select_project_path(parent_info.template.parent_project_path)
             current_anchor = parent_info.project_file_path
 
     def _resolve_parent_path_for_lookup(self, raw_parent: str, anchor: Path | None) -> str | None:
@@ -1967,8 +1988,33 @@ class ProjectManager:
         workspace project) are skipped. Missing or invalid files are skipped
         with a warning rather than raising.
         """
-        registered_paths: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
-        for path_str in registered_paths:
+        registered_entries: list[str | dict | PerPlatformProjectPath] = (
+            self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+        )
+        for entry in registered_entries:
+            # Coerce raw dicts (from JSON/YAML config) into the per-platform
+            # model so select_project_path can apply the active-platform key
+            # and `default` fallback uniformly.
+            if isinstance(entry, dict):
+                try:
+                    selectable: str | PerPlatformProjectPath | None = PerPlatformProjectPath.model_validate(entry)
+                except ValidationError as err:
+                    logger.warning(
+                        "Skipping invalid per-platform projects_to_register entry %s: %s",
+                        entry,
+                        err,
+                    )
+                    continue
+            else:
+                selectable = entry
+            path_str = select_project_path(selectable)
+            if path_str is None:
+                logger.warning(
+                    "Skipping per-platform projects_to_register entry with no key for the active platform "
+                    "and no `default`: %s",
+                    entry,
+                )
+                continue
             # Project IDs are canonicalized absolute paths, so expand ~/env
             # vars and resolve the persisted string before checking for an
             # existing load (prevents duplicate entries when the same file
@@ -1994,11 +2040,26 @@ class ProjectManager:
         present. Errors are logged as warnings and do not affect the load result.
         """
         try:
-            registered: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            registered: list[str | dict | PerPlatformProjectPath] = (
+                self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            )
             # Compare by canonicalized path (~/env expansion + resolution) so a
             # previously persisted relative or ~/ spelling of the same file
-            # isn't re-persisted as a duplicate.
-            resolved_existing = {str(canonicalize_for_identity(p)) for p in registered}
+            # isn't re-persisted as a duplicate. Per-platform entries are
+            # reduced to the active-platform string before comparison; entries
+            # with no match for this platform are skipped from the dedupe set.
+            resolved_existing: set[str] = set()
+            for entry in registered:
+                if isinstance(entry, dict):
+                    try:
+                        selected = select_project_path(PerPlatformProjectPath.model_validate(entry))
+                    except ValidationError:
+                        continue
+                else:
+                    selected = select_project_path(entry)
+                if selected is None:
+                    continue
+                resolved_existing.add(str(canonicalize_for_identity(selected)))
             if project_id not in resolved_existing:
                 self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
         except Exception:

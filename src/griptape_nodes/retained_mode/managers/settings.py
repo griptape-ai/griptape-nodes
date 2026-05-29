@@ -5,6 +5,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PydanticField
 
+from griptape_nodes.common.project_templates import PerPlatformProjectPath
+
 LIBRARIES_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.libraries_to_register"
 LIBRARIES_TO_DOWNLOAD_KEY = "app_events.on_app_initialization_complete.libraries_to_download"
 WORKFLOWS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.workflows_to_register"
@@ -142,10 +144,17 @@ class AppInitializationComplete(BaseModel):
         description="Core secrets to register. Can be a list of secret names (default to empty values) or a dict mapping names to default values. Library-specific secrets are registered automatically from library settings.",
     )
     models_to_download: list[str] = Field(default_factory=list)
-    projects_to_register: list[str] = Field(
+    projects_to_register: list[str | PerPlatformProjectPath] = Field(
         category=PROJECTS,
         default_factory=list,
-        description="List of griptape-nodes-project.yml file paths to load at startup",
+        description=(
+            "List of griptape-nodes-project.yml file paths to load at startup. "
+            "Each entry may be either: "
+            "(1) a single path string (supports `${ENV_VAR}` and `~` expansion), or "
+            "(2) a per-platform mapping with optional `linux`, `darwin`, `windows`, and `default` keys "
+            "for cross-platform deployments where the same project resolves to different paths on each OS. "
+            "Per-platform entries with no key matching the active platform and no `default` are skipped with a warning."
+        ),
     )
 
 

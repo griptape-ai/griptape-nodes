@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 from ruamel.yaml import YAML
 
 from griptape_nodes.common.project_templates.directory import DirectoryDefinition
+from griptape_nodes.common.project_templates.project_path import PerPlatformProjectPath
 from griptape_nodes.common.project_templates.situation import SituationTemplate
 from griptape_nodes.common.project_templates.validation import (
     ProjectOverrideAction,
@@ -23,19 +24,23 @@ if TYPE_CHECKING:
 class ProjectTemplate(BaseModel):
     """Complete project template loaded from project.yml."""
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.2"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.3"
 
     project_template_schema_version: str = Field(description="Schema version for the project template")
     name: str = Field(description="Name of the project")
     description: str | None = Field(default=None, description="Description of the project")
-    parent_project_path: str | None = Field(
+    parent_project_path: str | PerPlatformProjectPath | None = Field(
         default=None,
         description=(
             "Optional path to a parent project YAML. When set, the parent's merged template is the "
             "base for this template (instead of system defaults alone). The value may be: "
-            "(1) absolute, (2) relative to the directory of this project's YAML, or "
-            "(3) the macro `{workspace_dir}/...` which expands to the active workspace at load time. "
-            "Macro form is preferred for cross-machine portability."
+            "(1) a string — absolute, relative to the directory of this project's YAML, or the "
+            "macro `{workspace_dir}/...` which expands to the active workspace at load time; "
+            "or (2) a per-platform mapping with optional `linux`, `darwin`, `windows`, and `default` "
+            "string fields, used when the parent lives at different filesystem paths on different OSes. "
+            "Macro form (single string) is preferred for cross-machine portability when both projects "
+            "live under the same workspace; the per-platform form is preferred when the parent lives "
+            "on shared storage mounted at different paths per OS."
         ),
     )
     situations: dict[str, SituationTemplate] = Field(description="Situation templates (situation_name -> template)")
