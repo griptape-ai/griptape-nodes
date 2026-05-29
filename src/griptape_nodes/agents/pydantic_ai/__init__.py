@@ -1,13 +1,13 @@
 """Pydantic AI bindings for Griptape Cloud.
 
-The :class:`GriptapeCloudModel` adapter lets a `pydantic_ai.Agent` talk to the
-Griptape Cloud `/api/chat/messages` and `/api/chat/messages/stream` endpoints.
-The model speaks Griptape's `Message` / `DeltaMessage` wire format on the way
-out and translates back into Pydantic AI's `ModelResponse` / streaming events.
+:func:`build_griptape_cloud_model` returns a Pydantic AI :class:`OpenAIChatModel`
+pointed at Griptape Cloud's OpenAI-compatible ``/api/v1`` endpoint, so a
+`pydantic_ai.Agent` talks to Cloud through the standard Chat Completions client.
+Text, native tool calls, structured output, and streaming usage all flow through
+that built-in path with no custom message translation.
 """
 
-from griptape_nodes.agents.pydantic_ai.griptape_cloud_model import GriptapeCloudModel
-from griptape_nodes.agents.pydantic_ai.griptape_cloud_provider import GriptapeCloudProvider
+from griptape_nodes.agents.pydantic_ai.model import build_griptape_cloud_model
 from griptape_nodes.agents.pydantic_ai.runner import AgentRunResult, PydanticAgentRunner
 from griptape_nodes.agents.pydantic_ai.workspace_tools import (
     WorkspaceToolset,
@@ -17,10 +17,9 @@ from griptape_nodes.agents.pydantic_ai.workspace_tools import (
 
 __all__ = [
     "AgentRunResult",
-    "GriptapeCloudModel",
-    "GriptapeCloudProvider",
     "PydanticAgentRunner",
     "WorkspaceToolset",
     "WorkspaceToolsetConfig",
+    "build_griptape_cloud_model",
     "register_workspace_tools",
 ]

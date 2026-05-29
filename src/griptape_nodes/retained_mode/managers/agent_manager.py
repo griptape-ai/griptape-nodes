@@ -3,7 +3,7 @@
 This manager owns:
 
   * the lifecycle of a per-process :class:`PydanticAgentRunner` that talks to
-    Griptape Cloud through :class:`GriptapeCloudModel`,
+    Griptape Cloud through its OpenAI-compatible Chat Completions endpoint,
   * the local thread storage backend that persists Pydantic AI message
     history,
   * the existing engine-bundled MCP server (started here as a background

@@ -42,7 +42,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
 )
 
-from griptape_nodes.agents.pydantic_ai.griptape_cloud_model import GriptapeCloudModel
+from griptape_nodes.agents.pydantic_ai.model import build_griptape_cloud_model
 from griptape_nodes.agents.pydantic_ai.repo_context import load_repo_context
 from griptape_nodes.agents.pydantic_ai.skills import load_skills
 from griptape_nodes.agents.pydantic_ai.workspace_tools import (
@@ -153,7 +153,7 @@ class PydanticAgentRunner:
         toolsets: list[Any] = list(self.mcp_servers)
         instructions = self._build_instructions()
         self._agent = Agent(
-            GriptapeCloudModel(self.model_name, api_key=self.api_key, base_url=self.base_url),
+            build_griptape_cloud_model(self.model_name, api_key=self.api_key, base_url=self.base_url),
             instructions=instructions,
             toolsets=toolsets or None,
         )
