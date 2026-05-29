@@ -16,7 +16,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.video.video_artifa
 
 # Default project template matching the values from project_template.yml
 DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
-    project_template_schema_version="0.3.0",
+    project_template_schema_version="0.3.1",
     name="Default Project",
     description="System default configuration",
     directories={
@@ -163,6 +163,16 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
                 create_dirs=True,
             ),
             fallback="save_static_file",
+        ),
+        "save_failed_workflow": SituationTemplate(
+            name="save_failed_workflow",
+            description="Save a failed workflow snapshot for post-mortem debugging",
+            macro="{workspace_dir}/failures/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.CREATE_NEW,
+                create_dirs=True,
+            ),
+            fallback="save_workflow",
         ),
     },
 )

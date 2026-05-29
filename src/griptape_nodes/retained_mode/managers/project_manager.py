@@ -88,6 +88,7 @@ from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -168,9 +169,34 @@ class _ProjectVariableResolver:
     def resolve_directory(self, name: str) -> str:
         if name in self.directories_resolved:
             return self.directories_resolved[name]
-        resolved = self._resolve_macro_string("directory", name, self.template.directories[name].path_macro)
+        path_macro = self.template.directories[name].path_macro
+        selected = self._select_platform_macro(name, path_macro)
+        resolved = self._resolve_macro_string("directory", name, selected)
         self.directories_resolved[name] = resolved
         return resolved
+
+    @staticmethod
+    def _select_platform_macro(name: str, path_macro: str | PerPlatformPathMacro) -> str:
+        """Pick the platform-specific path macro string from a directory definition.
+
+        For string-form `path_macro`, returns it unchanged. For the per-platform
+        mapping form, picks the active platform's value, falling back to `default`.
+        Raises MacroResolutionError if neither the active platform key nor `default`
+        is set.
+        """
+        if isinstance(path_macro, str):
+            return path_macro
+        selected = path_macro.select()
+        if selected is None:
+            msg = (
+                f"Directory '{name}' has no path_macro for the current platform and no 'default' fallback was provided"
+            )
+            raise MacroResolutionError(
+                msg,
+                failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                variable_name=name,
+            )
+        return selected
 
     def resolve_env(self, name: str) -> str:
         if name in self.env_resolved:
@@ -337,7 +363,7 @@ class ProjectManager:
         self._load_system_defaults()
         self._current_project_id = SYSTEM_DEFAULTS_KEY
 
-    def on_load_project_template_request(
+    async def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
     ) -> LoadProjectTemplateResultSuccess | LoadProjectTemplateResultFailure:
         """Load user's project.yml and merge with system defaults.
@@ -363,7 +389,7 @@ class ProjectManager:
             encoding="utf-8",
             workspace_only=False,
         )
-        read_result = GriptapeNodes.handle_request(read_request)
+        read_result = await GriptapeNodes.ahandle_request(read_request)
 
         if read_result.failed():
             validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
@@ -806,7 +832,7 @@ class ProjectManager:
                 f"Config updated but library reload failed: {reload_result.result_details}",
             )
         if workspace_changed:
-            GriptapeNodes.WorkflowManager().refresh_workflow_registry()
+            await GriptapeNodes.WorkflowManager().refresh_workflow_registry()
         return None
 
     async def on_set_current_project_request(  # noqa: C901, PLR0912
@@ -1184,7 +1210,7 @@ class ProjectManager:
             self._current_project_id is not None and self._current_project_id != SYSTEM_DEFAULTS_KEY
         )
         if explicit_project_selected:
-            self._load_registered_projects()
+            await self._load_registered_projects()
             self._initialization_complete = True
             return
 
@@ -1202,7 +1228,7 @@ class ProjectManager:
         await self._load_workspace_project()
 
         # Load any additional project templates previously registered by the user
-        self._load_registered_projects()
+        await self._load_registered_projects()
 
         # Mark initialization complete so subsequent project switches trigger
         # workspace detection and library reload when the workspace actually changes.
@@ -1326,8 +1352,21 @@ class ProjectManager:
         directory_schemas: dict[str, ParsedMacro] = {}
 
         for directory_name, directory_def in directories.items():
+            path_macro = directory_def.path_macro
             try:
-                directory_schemas[directory_name] = ParsedMacro(directory_def.path_macro)
+                if isinstance(path_macro, str):
+                    directory_schemas[directory_name] = ParsedMacro(path_macro)
+                else:
+                    # Per-platform mapping: parse every populated key to validate macro syntax.
+                    # Cache the active-platform parse under the directory name so call sites that
+                    # consume parsed_directory_schemas keep working.
+                    selected = path_macro.select()
+                    for platform_key in ("linux", "darwin", "windows", "default"):
+                        raw = getattr(path_macro, platform_key)
+                        if raw is not None:
+                            ParsedMacro(raw)
+                    if selected is not None:
+                        directory_schemas[directory_name] = ParsedMacro(selected)
             except Exception as e:
                 validation.add_error(f"directories.{directory_name}.path_macro", f"Failed to parse macro: {e}")
 
@@ -1571,10 +1610,10 @@ class ProjectManager:
             return
 
         workspace_project_path = workspace_project_path.resolve()
-        logger.info("Found workspace project file at '%s', loading", workspace_project_path)
+        logger.debug("Found workspace project file at '%s', loading", workspace_project_path)
 
         try:
-            yaml_text = File(str(workspace_project_path)).read_text()
+            yaml_text = await File(str(workspace_project_path)).aread_text()
         except FileLoadError as e:
             logger.error(
                 "Attempted to read workspace project file at '%s'. Failed with: %s",
@@ -1639,7 +1678,7 @@ class ProjectManager:
 
         logger.debug("Successfully loaded workspace project from '%s'", workspace_project_path)
 
-    def _load_registered_projects(self) -> None:
+    async def _load_registered_projects(self) -> None:
         """Load project templates from paths persisted in user config.
 
         Called after workspace project loading so that user-registered paths
@@ -1657,7 +1696,7 @@ class ProjectManager:
             if resolved_id in self._successfully_loaded_project_templates:
                 continue
             load_request = LoadProjectTemplateRequest(project_path=Path(path_str))
-            result = self.on_load_project_template_request(load_request)
+            result = await self.on_load_project_template_request(load_request)
             if result.failed():
                 logger.warning(
                     "Failed to load registered project '%s' on startup: %s",

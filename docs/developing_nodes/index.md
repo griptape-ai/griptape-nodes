@@ -4,10 +4,10 @@ This section provides comprehensive documentation for developers building custom
 
 !!! tip "For AI Assistants & Coding Agents"
 
-    All documentation in this section is available as raw markdown for use with AI coding assistants:
+    All documentation in this section is available as post-processed markdown for AI coding assistants. The site exposes a full machine-readable surface; see [For Agents](../for_agents.md) for the index.
 
-    - **Getting Started**: [Download/View Raw Markdown](https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/docs/developing_nodes/getting_started.md)
-    - **Comprehensive Guide**: [Download/View Raw Markdown](https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/docs/developing_nodes/comprehensive_guide.md)
+    - **Getting Started**: [Markdown](https://docs.griptapenodes.com/en/stable/developing_nodes/getting_started/index.md)
+    - **Comprehensive Guide**: [Markdown](https://docs.griptapenodes.com/en/stable/developing_nodes/comprehensive_guide/index.md)
     - **Example Code**: [View Python Example](https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/docs/developing_nodes/example_control_node.py)
 
     **Usage:** Point your AI assistant to these URLs with instructions like:

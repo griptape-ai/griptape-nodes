@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_validator
 
+from griptape_nodes.node_library.library_declarations import LibraryDeclaration, NodeDeclaration
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
 )
@@ -104,6 +105,9 @@ class LibraryMetadata(BaseModel):
     resources: ResourceRequirements | None = None
     # Worker process configuration. If None or disabled, nodes execute in the orchestrator process.
     worker: WorkerConfig | None = None
+    # Declarative properties / capabilities for this library. Applies to all nodes in the library.
+    # See griptape_nodes.node_library.library_declarations for the supported types.
+    declarations: list[LibraryDeclaration] = Field(default_factory=list)
 
 
 class IconVariant(BaseModel):
@@ -132,6 +136,9 @@ class NodeMetadata(BaseModel):
     group: str | None = None
     deprecation: NodeDeprecationMetadata | None = None
     is_node_group: bool | None = None
+    # Declarative properties / capabilities for this node.
+    # See griptape_nodes.node_library.library_declarations for the supported types.
+    declarations: list[NodeDeclaration] = Field(default_factory=list)
 
 
 class CategoryDefinition(BaseModel):
@@ -183,7 +190,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.7.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.8.0"
 
     name: str
     library_schema_version: str
@@ -431,6 +438,23 @@ class Library:
         self._node_metadata[node_class_as_str] = metadata
         return library_problem
 
+    def unregister_node_type(self, node_class_name: str) -> None:
+        """Remove a single node type from this library.
+
+        Exists to support incremental re-registration (e.g. an agent iterates on a sandbox
+        node's source code during a session). Does not touch existing node instances of this
+        class that are already living in a flow; callers are responsible for deleting and
+        recreating them if they want the new class to take effect.
+        """
+        if node_class_name not in self._node_types:
+            msg = (
+                f"Node type '{node_class_name}' was requested to be unregistered from library "
+                f"'{self._library_data.name}', but it wasn't registered in the first place."
+            )
+            raise KeyError(msg)
+        del self._node_types[node_class_name]
+        self._node_metadata.pop(node_class_name, None)
+
     def get_library_data(self) -> LibrarySchema:
         return self._library_data
 
@@ -467,6 +491,18 @@ class Library:
         if node_type not in self._node_metadata:
             raise KeyError(self._library_data.name, node_type)
         return self._node_metadata[node_type]
+
+    def get_node_class(self, node_type: str) -> type[BaseNode]:
+        """Return the BaseNode subclass registered under `node_type`.
+
+        For callers that need the class itself, e.g. classmethod checks like
+        `allow_outgoing_connection_by_class` or building a throwaway probe instance,
+        rather than an instance produced by `create_node` (which also injects library
+        metadata into the node).
+        """
+        if node_type not in self._node_types:
+            raise KeyError(self._library_data.name, node_type)
+        return self._node_types[node_type]
 
     def get_categories(self) -> list[dict[str, CategoryDefinition]]:
         return self._library_data.categories

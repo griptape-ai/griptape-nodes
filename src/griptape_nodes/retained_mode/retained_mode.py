@@ -93,11 +93,15 @@ logger = logging.getLogger("griptpae_nodes_engine")
 
 
 def node_param_split(node_and_param: str) -> tuple[str, str]:
-    """Split a string in format 'node.param' into node and param."""
+    """Split a string in format 'node.param' into node and param.
+
+    Splits on the final '.' so node names containing dots (e.g. "FLUX.2 Image Generation")
+    are preserved intact; parameter names are identifiers and never contain dots.
+    """
     if "." not in node_and_param:
         msg = f"Expected format 'node.param', got '{node_and_param}'"
         raise ValueError(msg)
-    parts = node_and_param.split(".", 1)
+    parts = node_and_param.rsplit(".", 1)
     return parts[0], parts[1]  # Explicitly return two values
 
 
@@ -225,11 +229,13 @@ class RetainedMode:
         return result
 
     @classmethod
-    def get_nodes_in_flow(cls, flow_name: str) -> ResultPayload:
+    def get_nodes_in_flow(cls, flow_name: str, node_types: list[str] | None = None) -> ResultPayload:
         """Lists all nodes contained within a specific flow.
 
         Args:
             flow_name (str): Name of the flow to inspect.
+            node_types (list[str] | None): Optional list of Python class names to filter by
+                (e.g. ["StartFlow", "Agent"]). None returns all nodes.
 
         Returns:
             ResultPayload: Contains a list of node names in the flow.
@@ -237,8 +243,11 @@ class RetainedMode:
         Example:
             # Get all nodes in a flow
             result = cmd.get_nodes_in_flow("my_flow")
+
+            # Get only Agent nodes
+            result = cmd.get_nodes_in_flow("my_flow", node_types=["Agent"])
         """
-        request = ListNodesInFlowRequest(flow_name=flow_name)
+        request = ListNodesInFlowRequest(flow_name=flow_name, node_types=node_types)
         result = GriptapeNodes().handle_request(request)
         return result
 

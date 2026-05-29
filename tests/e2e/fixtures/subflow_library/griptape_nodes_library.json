@@ -1,0 +1,44 @@
+{
+  "name": "Subflow Library",
+  "library_schema_version": "0.7.0",
+  "metadata": {
+    "author": "Test Fixture",
+    "description": "Minimal library used by subflow e2e tests",
+    "library_version": "0.1.0",
+    "engine_version": "0.0.0",
+    "tags": ["test"],
+    "dependencies": {
+      "pip_dependencies": []
+    }
+  },
+  "categories": [
+    {
+      "test": {
+        "title": "test",
+        "description": "Test nodes",
+        "color": "border-gray-500",
+        "icon": "Folder"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "class_name": "EchoNode",
+      "file_path": "subflow_echo_node.py",
+      "metadata": {
+        "category": "test",
+        "description": "Copies its text input to its text output",
+        "display_name": "Echo"
+      }
+    },
+    {
+      "class_name": "SubflowGroupNode",
+      "file_path": "subflow_echo_node.py",
+      "metadata": {
+        "category": "test",
+        "description": "Minimal subflow group node for testing",
+        "display_name": "Subflow Group"
+      }
+    }
+  ]
+}

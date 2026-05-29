@@ -1,13 +1,14 @@
 """Tests for uv_utils module."""
 
 import platform
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
-from griptape_nodes.utils.uv_utils import find_uv_bin
+from griptape_nodes.utils.uv_utils import find_uv_bin, is_venv_functional, venv_python_path
 
 
 @pytest.mark.skipif(
@@ -111,3 +112,63 @@ class TestUvUtils:
             # Should raise the exception from the system UV lookup
             with pytest.raises(RuntimeError, match="UV not found"):
                 find_uv_bin()
+
+
+def _make_functional_venv(venv_path: Path) -> Path:
+    """Create a directory layout that mimics a working venv on the current platform."""
+    venv_path.mkdir(parents=True, exist_ok=True)
+    (venv_path / "pyvenv.cfg").write_text("home = /fake\n")
+    if sys.platform == "win32":
+        python_dir = venv_path / "Scripts"
+        python_path = python_dir / "python.exe"
+    else:
+        python_dir = venv_path / "bin"
+        python_path = python_dir / "python"
+    python_dir.mkdir(parents=True, exist_ok=True)
+    python_path.write_text("")
+    return python_path
+
+
+class TestVenvPythonPath:
+    """Test the platform-specific Python executable path resolution."""
+
+    def test_returns_bin_python_on_posix(self) -> None:
+        with patch("griptape_nodes.utils.uv_utils.sys.platform", "linux"):
+            assert venv_python_path(Path("/v")) == Path("/v/bin/python")
+
+    def test_returns_scripts_python_exe_on_windows(self) -> None:
+        with patch("griptape_nodes.utils.uv_utils.sys.platform", "win32"):
+            assert venv_python_path(Path("/v")) == Path("/v/Scripts/python.exe")
+
+
+class TestIsVenvFunctional:
+    """Test the venv-layout health check."""
+
+    def test_returns_false_when_directory_missing(self, tmp_path: Path) -> None:
+        assert is_venv_functional(tmp_path / "nope") is False
+
+    def test_returns_false_when_path_is_a_file(self, tmp_path: Path) -> None:
+        venv_path = tmp_path / ".venv"
+        venv_path.write_text("not a venv")
+
+        assert is_venv_functional(venv_path) is False
+
+    def test_returns_false_when_pyvenv_cfg_missing(self, tmp_path: Path) -> None:
+        venv_path = tmp_path / ".venv"
+        _make_functional_venv(venv_path)
+        (venv_path / "pyvenv.cfg").unlink()
+
+        assert is_venv_functional(venv_path) is False
+
+    def test_returns_false_when_python_executable_missing(self, tmp_path: Path) -> None:
+        venv_path = tmp_path / ".venv"
+        python_path = _make_functional_venv(venv_path)
+        python_path.unlink()
+
+        assert is_venv_functional(venv_path) is False
+
+    def test_returns_true_for_complete_layout(self, tmp_path: Path) -> None:
+        venv_path = tmp_path / ".venv"
+        _make_functional_venv(venv_path)
+
+        assert is_venv_functional(venv_path) is True

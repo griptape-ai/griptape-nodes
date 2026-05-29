@@ -19,8 +19,8 @@ from griptape_nodes.retained_mode.managers.settings import (
     WORKER_HEARTBEAT_INTERVAL_KEY,
     WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
     WORKER_HEARTBEAT_TIMEOUT_KEY,
-    WORKER_NODE_EXECUTION_TIMEOUT_KEY,
 )
+from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -73,12 +73,11 @@ class WorkerManager:
 
     DEFAULT_HEARTBEAT_INTERVAL_S: float = 5.0
     DEFAULT_HEARTBEAT_TIMEOUT_S: float = 15.0
-    DEFAULT_NODE_EXECUTION_TIMEOUT_S: float = 1800.0
     # How long after spawn to wait before enforcing heartbeat timeout.
     # Workers install venv deps and import modules before receiving heartbeats;
     # this matches the _await_pending_workers() ceiling so a worker never kills
     # itself before the orchestrator gives up waiting for it.
-    DEFAULT_HEARTBEAT_STARTUP_GRACE_S: float = 120.0
+    DEFAULT_HEARTBEAT_STARTUP_GRACE_S: float = 600.0
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
 
@@ -116,9 +115,6 @@ class WorkerManager:
         )
         self.heartbeat_timeout_s: float = config.get_config_value(
             WORKER_HEARTBEAT_TIMEOUT_KEY, default=WorkerManager.DEFAULT_HEARTBEAT_TIMEOUT_S, cast_type=float
-        )
-        self.node_execution_timeout_s: float = config.get_config_value(
-            WORKER_NODE_EXECUTION_TIMEOUT_KEY, default=WorkerManager.DEFAULT_NODE_EXECUTION_TIMEOUT_S, cast_type=float
         )
         self.heartbeat_startup_grace_s: float = config.get_config_value(
             WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
@@ -172,6 +168,16 @@ class WorkerManager:
     ) -> worker_events.RegisterWorkerResultSuccess | worker_events.RegisterWorkerResultFailure:
         """Handle a worker registration request from a worker engine."""
         wid = request.worker_engine_id
+        if request.engine_version != engine_version:
+            details = (
+                f"Worker {wid} reported engine_version '{request.engine_version}' "
+                f"but orchestrator is running engine_version '{engine_version}'. "
+                "Workers and orchestrators must share an engine version because the "
+                "wire shape of every event is tied to the engine build."
+            )
+            logger.error(details)
+            return worker_events.RegisterWorkerResultFailure(result_details=details)
+
         session_id = self._griptape_nodes.get_session_id()
         request_topic = f"sessions/{session_id}/workers/{wid}/request"
         self._workers[wid] = WorkerRegistration(request_topic=request_topic, worker_key=request.library_name)
@@ -250,15 +256,13 @@ class WorkerManager:
     async def worker_heartbeat_monitor(self) -> None:
         """Shut down the worker if orchestrator heartbeats stop arriving.
 
-        A startup grace period is added to the initial seed so the worker does not
-        time out during library loading (venv creation, pip install, module import).
-        Once the first heartbeat arrives the timer resets to normal operation.
+        Waits out a startup grace period before enforcing the timeout, so
+        library loading (venv creation, pip install, module import) cannot kill
+        the worker before the orchestrator has a chance to start sending
+        challenges. Does not mutate `_worker_heartbeat_last_received_at`; that
+        attribute is owned by `handle_worker_heartbeat_request`.
         """
-        # Seed with extra time so the first timeout cannot fire until after the
-        # startup grace period.  Library loading can take tens of seconds; we do
-        # not want the worker to kill itself before the orchestrator even has a
-        # chance to start sending challenges.
-        self._worker_heartbeat_last_received_at = time.monotonic() + self.heartbeat_startup_grace_s
+        await asyncio.sleep(self.heartbeat_startup_grace_s)
         while True:
             await asyncio.sleep(self.heartbeat_interval_s)
             elapsed = time.monotonic() - self._worker_heartbeat_last_received_at
@@ -342,11 +346,13 @@ class WorkerManager:
             worker_engine_id=worker_engine_id,
             worker_request_topic=worker_request_topic,
         )
-        try:
-            return await asyncio.wait_for(future, timeout=self.node_execution_timeout_s)
-        except TimeoutError:
-            msg = f"Worker request timed out after {self.node_execution_timeout_s:.0f}s."
-            raise RuntimeError(msg) from None
+        # No wall-clock timeout here: long-running AI workloads (diffusion,
+        # multi-pass refinement) routinely exceed any sensible default. Worker
+        # liveness is enforced by the heartbeat loop, which evicts silent
+        # workers and cancels their in-flight requests via
+        # RequestClient.cancel_requests_by_tag, so a dead worker still surfaces
+        # to the caller without a per-request ceiling.
+        return await future
 
     async def evict_worker(self, worker_engine_id: str) -> None:
         """Remove a worker from the registry and unsubscribe from its response topic."""
@@ -406,7 +412,13 @@ class WorkerManager:
         """Wait for an active session then spawn a worker subprocess for the given library."""
         # If a session is already active, skip the wait entirely.
         if not self._griptape_nodes.get_session_id():
+            logger.info(
+                "Worker for library '%s' is waiting for a session to start before spawning. "
+                "Start a session (via the Griptape Nodes GUI or AppStartSessionRequest) to proceed.",
+                library_name,
+            )
             await self._session_ready_event.wait()
+            logger.info("Session started; spawning worker for library '%s'.", library_name)
         session_id = self._griptape_nodes.get_session_id()
         if not session_id:
             logger.error("Session event set but no session ID available for library '%s'.", library_name)
