@@ -270,7 +270,11 @@ def _eval_match(expr: MatchExpr, value: Any, macros: Mapping[str, str]) -> bool:
     if isinstance(expr, GlobExpr):
         if value is None:
             return False
-        return fnmatch.fnmatch(str(value), expr.pattern)
+        # `fnmatchcase` ignores OS path conventions so a policy matches identically
+        # on every platform; plain `fnmatch` would case-fold and rewrite separators
+        # on Windows, silently changing a security decision.
+        pattern = _expand_macros(expr.pattern, macros)
+        return fnmatch.fnmatchcase(str(value), pattern)
     if isinstance(expr, PathUnderExpr):
         return _path_under(value, expr.root, macros)
     if isinstance(expr, NotExpr):
@@ -279,7 +283,11 @@ def _eval_match(expr: MatchExpr, value: Any, macros: Mapping[str, str]) -> bool:
         return all(_eval_match(sub, value, macros) for sub in expr.exprs)
     if isinstance(expr, AnyOfExpr):
         return any(_eval_match(sub, value, macros) for sub in expr.exprs)
-    return False
+    # A discriminated-union member with no handler is a programming error, not a
+    # policy miss. Fail loud rather than silently returning False, which under a
+    # surrounding `NotExpr` would invert into an unconditional allow.
+    msg = f"Unhandled match expression type: {type(expr).__name__}"
+    raise TypeError(msg)
 
 
 def _path_under(value: Any, root_template: str, macros: Mapping[str, str]) -> bool:
@@ -287,9 +295,14 @@ def _path_under(value: Any, root_template: str, macros: Mapping[str, str]) -> bo
         return False
     target_str = _expand_macros(str(value), macros)
     root_str = _expand_macros(root_template, macros)
+    # Anchor relative paths to the workspace, matching how the engine's file
+    # boundary (`OSManager`) resolves request paths. Anchoring to CWD here would
+    # judge a different path than the one actually read/written.
+    workspace = macros.get("workspace")
+    base = Path(workspace) if workspace else None
     try:
-        target = canonicalize_for_identity(target_str)
-        root = canonicalize_for_identity(root_str)
+        target = canonicalize_for_identity(target_str, base=base)
+        root = canonicalize_for_identity(root_str, base=base)
     except (OSError, ValueError):
         return False
     try:

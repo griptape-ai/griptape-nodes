@@ -50,6 +50,19 @@ class _FactProvider:
     invalidator: FactInvalidator
     cached: Any = None
     has_cache: bool = False
+    # Bumped on every invalidation so a compute that started before the
+    # invalidation cannot commit a stale value after it (see `build_fact_tree`).
+    generation: int = 0
+
+
+@dataclass
+class _ProviderSnapshot:
+    """Provider state captured under the lock for one `build_fact_tree` call."""
+
+    provider: _FactProvider
+    has_cache: bool
+    cached: Any
+    generation: int
 
 
 RequestFactEnricher = Callable[["RequestPayload"], dict[str, Any]]
@@ -115,12 +128,14 @@ class FactRegistry:
                 if provider.invalidator is invalidator:
                     provider.has_cache = False
                     provider.cached = None
+                    provider.generation += 1
 
     def invalidate_all(self) -> None:
         with self._lock:
             for provider in self._providers.values():
                 provider.has_cache = False
                 provider.cached = None
+                provider.generation += 1
 
     def build_fact_tree(self, request: RequestPayload | None = None) -> dict[str, Any]:
         """Compute the merged fact tree for one rule evaluation.
@@ -130,24 +145,50 @@ class FactRegistry:
         ``type(request).__name__`` are merged under the ``request.*`` prefix.
         """
         with self._lock:
-            providers = list(self._providers.values())
+            snapshots = [
+                _ProviderSnapshot(
+                    provider=provider,
+                    has_cache=provider.has_cache,
+                    cached=provider.cached,
+                    generation=provider.generation,
+                )
+                for provider in self._providers.values()
+            ]
             enrichers = list(self._enrichers.get(type(request).__name__, [])) if request is not None else []
         tree: dict[str, Any] = {}
-        for provider in providers:
-            if provider.invalidator is FactInvalidator.PER_REQUEST or not provider.has_cache:
+        for snapshot in snapshots:
+            provider = snapshot.provider
+            if provider.invalidator is FactInvalidator.PER_REQUEST:
                 value = _safe_compute(provider.compute)
-                provider.cached = value
-                provider.has_cache = True
-            set_dot_value(tree, provider.path, provider.cached)
+            elif snapshot.has_cache:
+                value = snapshot.cached
+            else:
+                value = _safe_compute(provider.compute)
+                self._commit_cache(provider, value, snapshot.generation)
+            set_dot_value(tree, provider.path, value)
         if request is not None:
-            request_facts: dict[str, Any] = {}
             for enricher in enrichers:
                 contribution = _safe_enrich(enricher, request)
+                # Merge each entry under the `request.` prefix individually rather
+                # than replacing the whole subtree, so facts published under
+                # `request.*` by a provider are not clobbered.
                 for key, value in contribution.items():
-                    set_dot_value(request_facts, key, value)
-            if request_facts:
-                set_dot_value(tree, "request", request_facts)
+                    set_dot_value(tree, f"request.{key}", value)
         return tree
+
+    def _commit_cache(self, provider: _FactProvider, value: Any, generation: int) -> None:
+        """Store a freshly computed value unless an invalidation raced the compute.
+
+        The compute ran outside the lock, so an `invalidate` call may have bumped
+        the provider's generation in the meantime. Committing in that case would
+        resurrect a value the caller asked to drop, so skip it and let the next
+        `build_fact_tree` recompute.
+        """
+        with self._lock:
+            if provider.generation != generation:
+                return
+            provider.cached = value
+            provider.has_cache = True
 
 
 def _safe_compute(compute: Callable[[], Any]) -> Any:

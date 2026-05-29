@@ -27,14 +27,25 @@ class EqualsExpr(BaseModel):
 
 
 class InExpr(BaseModel):
-    """Membership (`value in values`)."""
+    """Membership (`value in values`).
+
+    Against a list-valued field this uses any-overlap semantics: it matches when
+    any element of the field is in `values`. An allow-list built this way lets a
+    request through as soon as one element qualifies, even if other elements do
+    not, so prefer per-element rules when every element must be vetted.
+    """
 
     op: Literal["in"] = "in"
     values: list[Any]
 
 
 class GlobExpr(BaseModel):
-    """fnmatch-style glob match against a string field."""
+    """Case-sensitive, platform-independent fnmatch glob against a string field.
+
+    `${...}` macros in `pattern` are expanded before matching. This is NOT
+    path-aware: `*` spans `/`, and nothing is canonicalized, so `..` traversal
+    is not collapsed. Use `PathUnderExpr` for filesystem containment checks.
+    """
 
     op: Literal["glob"] = "glob"
     pattern: str

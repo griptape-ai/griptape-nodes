@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.managers.permissions import FactInvalidator, FactRegistry
@@ -89,11 +90,37 @@ class TestFactRegistryProviders:
         registry.build_fact_tree()
         assert counter["n"] == _EXPECTED_TWO
 
+    def test_invalidation_during_compute_is_not_lost(self) -> None:
+        """An invalidate that races a compute must drop the freshly computed value.
+
+        The compute runs outside the registry lock, so a concurrent invalidate can
+        land between the cache-miss check and the cache write. The generation guard
+        means that value is used for the current tree but never committed, so the
+        next build recomputes instead of serving a stale cached value.
+        """
+        registry = FactRegistry()
+        counter = {"n": 0}
+
+        def compute() -> int:
+            counter["n"] += 1
+            if counter["n"] == 1:
+                # Simulate an invalidation landing while this compute is in flight.
+                registry.invalidate(FactInvalidator.ON_LIBRARY_LOADED)
+            return counter["n"]
+
+        registry.register_provider("c", compute, invalidator=FactInvalidator.ON_LIBRARY_LOADED)
+        first = registry.build_fact_tree()
+        second = registry.build_fact_tree()
+        assert first["c"] == 1
+        assert second["c"] == _EXPECTED_TWO
+
 
 class TestFactRegistryEnrichers:
     def test_request_enricher_contributes_under_request_namespace(self) -> None:
         registry = FactRegistry()
-        registry.register_request_enricher("_FakeRequest", lambda r: {"foo": "bar", "len_a": len(r.field_a)})
+        registry.register_request_enricher(
+            "_FakeRequest", lambda r: {"foo": "bar", "len_a": len(cast("_FakeRequest", r).field_a)}
+        )
         tree = registry.build_fact_tree(_FakeRequest(field_a="hello"))
         assert tree == {"request": {"foo": "bar", "len_a": 5}}
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -28,7 +29,10 @@ from griptape_nodes.retained_mode.managers.permissions import (
     evaluate_policy,
     evaluate_rule,
 )
-from griptape_nodes.retained_mode.managers.permissions.matchers import ActionMatch
+from griptape_nodes.retained_mode.managers.permissions.matchers import ActionMatch, _eval_match
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class TestMatchExprPrimitives:
@@ -55,6 +59,22 @@ class TestMatchExprPrimitives:
         assert evaluate_rule(rule, **_ctx(request_fields={"name": "prefix_thing"}))
         assert not evaluate_rule(rule, **_ctx(request_fields={"name": "thing"}))
 
+    def test_glob_is_case_sensitive_on_every_platform(self) -> None:
+        rule = _rule_with_resource("name", GlobExpr(pattern="Secret_*"))
+        assert evaluate_rule(rule, **_ctx(request_fields={"name": "Secret_x"}))
+        assert not evaluate_rule(rule, **_ctx(request_fields={"name": "secret_x"}))
+
+    def test_glob_expands_macros_in_pattern(self) -> None:
+        rule = _rule_with_resource("name", GlobExpr(pattern="${prefix}_*"))
+        assert evaluate_rule(
+            rule,
+            **_ctx(request_fields={"name": "abc_thing"}, macros={"prefix": "abc"}),
+        )
+        assert not evaluate_rule(
+            rule,
+            **_ctx(request_fields={"name": "xyz_thing"}, macros={"prefix": "abc"}),
+        )
+
     def test_not(self) -> None:
         rule = _rule_with_resource("name", NotExpr(expr=EqualsExpr(value="foo")))
         assert not evaluate_rule(rule, **_ctx(request_fields={"name": "foo"}))
@@ -76,7 +96,7 @@ class TestPathUnderExpr:
     """`path_under` does macro expansion + canonical containment, not string prefix match."""
 
     @pytest.fixture
-    def workspace(self) -> Path:
+    def workspace(self) -> Iterator[Path]:
         with tempfile.TemporaryDirectory() as tmp:
             ws = Path(tmp) / "ws"
             ws.mkdir()
@@ -104,6 +124,25 @@ class TestPathUnderExpr:
             rule,
             **_ctx(request_fields={"file_path": None}, macros={"workspace": str(workspace)}),
         )
+
+    def test_relative_value_anchored_to_workspace(self, workspace: Path) -> None:
+        """A relative target resolves against the workspace, not the process CWD."""
+        rule = _rule_with_resource("file_path", PathUnderExpr(root="${workspace}"))
+        assert evaluate_rule(
+            rule,
+            **_ctx(request_fields={"file_path": "outputs/image.png"}, macros={"workspace": str(workspace)}),
+        )
+
+
+class TestUnhandledOperator:
+    def test_unhandled_expression_raises(self) -> None:
+        """An expression type with no handler must fail loud, not fall through to a miss."""
+
+        class _Bogus:
+            pass
+
+        with pytest.raises(TypeError):
+            _eval_match(cast("MatchExpr", _Bogus()), "anything", {})
 
 
 class TestPrincipalMatch:
