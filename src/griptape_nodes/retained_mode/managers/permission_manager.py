@@ -135,11 +135,13 @@ class PermissionManager:
         self._audit: deque[dict[str, Any]] = deque(maxlen=self._audit_max_entries)
         self._node_stack_lock = Lock()
         self._node_stack: list[dict[str, str | None]] = []
-        # Re-entrancy guard so a request issued while the policy is being
-        # evaluated does not recurse through the hook (would be the case if a
-        # fact provider or audit listener accidentally dispatched a request).
-        self._evaluating = False
-        self._evaluating_lock = Lock()
+        # Re-entrancy is handled by `EventManager`, which guards the hook chain
+        # with a thread-local flag: a fact provider or audit listener that
+        # re-enters `handle_request` on the evaluating thread bypasses the
+        # chain instead of recursing. A manager-level flag here would have to be
+        # thread-local to match, and a shared one would fail open by skipping
+        # evaluation for requests dispatched concurrently on other threads, so
+        # we deliberately keep no such flag.
 
         self._reload_settings()
 
@@ -445,16 +447,8 @@ class PermissionManager:
             return None
         if not self._enabled:
             return None
-        with self._evaluating_lock:
-            if self._evaluating:
-                return None
-            self._evaluating = True
-        try:
-            principal = self._infer_principal(context=context)
-            result = self.evaluate(request, principal=principal, context=context)
-        finally:
-            with self._evaluating_lock:
-                self._evaluating = False
+        principal = self._infer_principal(context=context)
+        result = self.evaluate(request, principal=principal, context=context)
         if result.decision is Decision.ALLOW:
             return None
         if result.decision is Decision.PROMPT:
@@ -566,8 +560,23 @@ class PermissionManager:
         # cannot remove a license-imposed deny by hand.
         with self._policy_lock:
             slot = self._layer_settings.get(self._USER_LAYER_NAME)
-            settings = slot.model_copy(deep=True) if slot is not None else PermissionSettings()
-        self._config_manager.set_config_value("permissions", settings.model_dump(mode="json"))
+            rules = list(slot.policy.rules) if slot is not None else []
+            default_explicit = slot is not None and self._USER_LAYER_NAME in self._explicit_defaults
+            default_decision = slot.policy.default_decision if slot is not None else PermissionPolicy().default_decision
+        rule_payload = [rule.model_dump(mode="json") for rule in rules]
+        policy_payload: dict[str, Any] = {"rules": rule_payload}
+        # Only carry `default_decision` when the user layer actually set one.
+        # `set_config_value` merges this delta into the user config file, and
+        # `merge_dicts` replaces the `rules` list while preserving every other
+        # key the user already set. Dumping a fully-populated `PermissionSettings`
+        # instead would write schema defaults (`enabled`,
+        # `consent_prompts_enabled`, `audit_log_max_entries`, and a defaulted
+        # `policy.default_decision`) that `_reload_settings` would then treat as
+        # explicit operator intent, e.g. promoting a defaulted `allow` over a
+        # lower layer's explicit `deny`.
+        if default_explicit:
+            policy_payload["default_decision"] = default_decision.value
+        self._config_manager.set_config_value("permissions", {"policy": policy_payload})
 
     def _infer_principal(self, context: ResultContext | None) -> Principal:
         with self._node_stack_lock:
@@ -724,20 +733,25 @@ def _resource_summary(request: RequestPayload) -> dict[str, Any]:
 _SUMMARY_PRIMITIVES = (str, int, float, bool, type(None))
 _SUMMARY_MAX_STR = 256
 _SUMMARY_MAX_LIST = 8
+_SUMMARY_MAX_DEPTH = 6
 
 
-def _summarise(value: Any) -> Any:
+def _summarise(value: Any, depth: int = 0) -> Any:
     if isinstance(value, _SUMMARY_PRIMITIVES):
         if isinstance(value, str) and len(value) > _SUMMARY_MAX_STR:
             return value[:_SUMMARY_MAX_STR] + "..."
         return value
     if isinstance(value, (bytes, bytearray)):
         return f"<{len(value)} bytes>"
-    if isinstance(value, dict):
-        return {k: _summarise(v) for k, v in list(value.items())[:_SUMMARY_MAX_LIST]}
-    if isinstance(value, (list, tuple, set, frozenset)):
+    # Bound recursion so a deeply nested or self-referential payload can't raise
+    # RecursionError here and turn an audit record into a denied request. Past
+    # the depth bound, fall through to the repr summary below.
+    within_depth = depth < _SUMMARY_MAX_DEPTH
+    if within_depth and isinstance(value, dict):
+        return {k: _summarise(v, depth + 1) for k, v in list(value.items())[:_SUMMARY_MAX_LIST]}
+    if within_depth and isinstance(value, (list, tuple, set, frozenset)):
         items = list(value)[:_SUMMARY_MAX_LIST]
-        return [_summarise(item) for item in items]
+        return [_summarise(item, depth + 1) for item in items]
     return repr(value)[:_SUMMARY_MAX_STR]
 
 
