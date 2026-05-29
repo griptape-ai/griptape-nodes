@@ -854,10 +854,23 @@ class ProjectManager:
         # Capture workspace BEFORE config changes for comparison after
         old_workspace = self._config_manager.workspace_path
 
-        self._current_project_id = request.project_id
+        # Canonicalize the incoming project_id to the same form used as the
+        # registry key when the project was loaded (`canonicalize_for_identity`
+        # in on_load_project_template_request). Without this, callers passing
+        # the raw path they received from the user (e.g. a Windows
+        # `C:\\Users\\Me\\project.yml`, an unexpanded `~/project.yml`, or a
+        # symlinked `/var/...` path on macOS) miss the registry lookup, leaving
+        # `_current_project_id` set to a phantom string that no GetCurrentProject
+        # response can resolve. SYSTEM_DEFAULTS_KEY is a synthetic ID, not a
+        # path, and is preserved verbatim.
+        resolved_project_id: ProjectID | None = request.project_id
+        if resolved_project_id is not None and resolved_project_id != SYSTEM_DEFAULTS_KEY:
+            resolved_project_id = str(canonicalize_for_identity(resolved_project_id))
 
-        if request.project_id is not None:
-            project_info = self._successfully_loaded_project_templates.get(request.project_id)
+        self._current_project_id = resolved_project_id
+
+        if resolved_project_id is not None:
+            project_info = self._successfully_loaded_project_templates.get(resolved_project_id)
             if project_info is not None and project_info.project_file_path is not None:
                 project_file_path = project_info.project_file_path
                 project_dir = project_file_path.parent
@@ -897,8 +910,8 @@ class ProjectManager:
         # workspace resolution (so it doesn't affect workspace lookup -- the outgoing
         # project's entries were already restored above) and before library reload
         # (so nodes imported during reload observe the new values).
-        if request.project_id is not None:
-            new_project_info = self._successfully_loaded_project_templates.get(request.project_id)
+        if resolved_project_id is not None:
+            new_project_info = self._successfully_loaded_project_templates.get(resolved_project_id)
             if new_project_info is not None:
                 self._apply_project_env(new_project_info)
 
@@ -911,8 +924,8 @@ class ProjectManager:
             # no file path, so persist None for that case and let startup fall
             # back to the workspace default.
             persisted_project_file: str | None = None
-            if request.project_id is not None:
-                persisted_info = self._successfully_loaded_project_templates.get(request.project_id)
+            if resolved_project_id is not None:
+                persisted_info = self._successfully_loaded_project_templates.get(resolved_project_id)
                 if persisted_info is not None and persisted_info.project_file_path is not None:
                     persisted_project_file = str(persisted_info.project_file_path)
             try:
@@ -920,17 +933,17 @@ class ProjectManager:
             except Exception:
                 logger.warning("Failed to persist project_file '%s' to config", persisted_project_file)
 
-            failure = await self._reload_after_project_switch(request.project_id, workspace_changed=workspace_changed)
+            failure = await self._reload_after_project_switch(resolved_project_id, workspace_changed=workspace_changed)
             if failure is not None:
                 return failure
 
-        if request.project_id is None:
+        if resolved_project_id is None:
             return SetCurrentProjectResultSuccess(
                 result_details="Successfully set current project. No project selected",
             )
 
         result = SetCurrentProjectResultSuccess(
-            result_details=f"Successfully set current project. ID: {request.project_id}",
+            result_details=f"Successfully set current project. ID: {resolved_project_id}",
         )
         if workspace_changed and self._initialization_complete:
             result.altered_workflow_state = True
