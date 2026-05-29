@@ -68,11 +68,9 @@ Sequence-aware nodes accept optional `start` and `end` bounds. When supplied, th
 - The original disk range is still reported via `discovered_first` / `discovered_last`, so you can see what existed before the clip.
 - Subset bounds outside the discovered range yield an empty result (Failure).
 
-`ParseSequenceNode` exposes the bounds through a dropdown-driven UI: each side can be the discovered first/last, an absolute number, or an offset relative to the discovered first/last. Negative values are rejected at the node boundary.
-
 ## What you get back
 
-`Sequence` is a Pydantic model — read fields by attribute (`seq.first`, `seq.entries[0].number`). Nodes that operate on sequences should declare their input as `type="Sequence"`; the engine validates the connection by name, so `ParseSequenceNode`'s outputs route into any `Sequence`-typed input cleanly. `ParseSequenceNode` exposes two outputs whose visibility tracks the missing-item policy: `sequences: list[Sequence]` under `SPLIT`, `sequence: Sequence` under `SKIP` / `FILL_NEAREST` (and the node fails outright under `ABORT`). `DisplaySequenceNode` accepts a `Sequence` and emits its `entries` as a list — useful as a terminal display node or as an adapter where downstream wants the entry list directly.
+`Sequence` is a Pydantic model — read fields by attribute (`seq.first`, `seq.entries[0].number`). Nodes that operate on sequences should declare their input as `type="Sequence"`; the engine validates the connection by name.
 
 Each `Sequence` carries:
 
