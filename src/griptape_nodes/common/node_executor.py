@@ -40,7 +40,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
-from griptape_nodes.retained_mode.events.base_events import ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import ForwardedException, ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -272,16 +272,15 @@ class NodeExecutor:
                 )
             )
             if not isinstance(result, ExecuteNodeResultSuccess):
-                # Surface the worker-side type + traceback that the converter
-                # attached to the rebuilt ForwardedException. Without this the
-                # orchestrator only sees the message string; the real frames
-                # live on the forwarded exception's attrs.
+                # Surface the worker-side type prefix when the converter
+                # rebuilt a ForwardedException; the worker traceback rides
+                # along on the chained ``from exc`` so we do not need to
+                # interpolate it into the message.
                 exc = getattr(result, "exception", None)
-                exception_type = getattr(exc, "original_type", None) if exc is not None else None
-                traceback_str = getattr(exc, "original_traceback", None) if exc is not None else None
-                suffix = f"\n{traceback_str}" if traceback_str else ""
-                type_prefix = f"[{exception_type}] " if exception_type else ""
-                msg = f"Node '{node.name}' execution failed: {type_prefix}{getattr(result, 'result_details', result)}{suffix}"
+                type_prefix = (
+                    f"[{exc.original_type}] " if isinstance(exc, ForwardedException) and exc.original_type else ""
+                )
+                msg = f"Node '{node.name}' execution failed: {type_prefix}{getattr(result, 'result_details', result)}"
                 raise RuntimeError(msg) from exc  # noqa: TRY004
             # Copy outputs back onto the in-memory node. Write directly into
             # parameter_output_values (not through set_parameter_value, which

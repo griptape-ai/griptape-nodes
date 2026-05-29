@@ -51,16 +51,35 @@ converter.register_unstructure_hook_func(
 # hops lossy (authors saw ``RuntimeError: <message>`` with no frames).
 # The dict form preserves enough context that the structure hook can
 # rebuild a ``ForwardedException`` on the receiving side.
-def _unstructure_exception(obj: BaseException) -> dict[str, Any]:
+def _unstructure_exception(obj: Exception) -> dict[str, Any]:
     rule = RULES["exception-fidelity-lost"]
-    try:
-        tb = "".join(traceback.format_exception(type(obj), obj, obj.__traceback__))
-    except Exception:
+    # Two ways the wire-format loses frames:
+    #   (1) the exception was constructed but never raised, so
+    #       ``__traceback__`` is None;
+    #   (2) ``traceback.format_exception`` itself blew up (rare, but
+    #       e.g. a hostile metaclass or a corrupt ``__traceback__``).
+    # Both leave the orchestrator-side caller with a type + message
+    # but no frames. Report once for either, attributing the missing
+    # piece so the editor's strict-mode detail tells the user which
+    # branch fired.
+    if obj.__traceback__ is None:
         tb = None
         STRICT_MODE.report(
             rule_id=rule.rule_id,
-            message=rule.render(exception_class=type(obj).__name__, missing_field="traceback"),
+            message=rule.render(exception_class=type(obj).__name__, missing_field="__traceback__"),
         )
+    else:
+        try:
+            tb = "".join(traceback.format_exception(type(obj), obj, obj.__traceback__))
+        except Exception:
+            tb = None
+            STRICT_MODE.report(
+                rule_id=rule.rule_id,
+                message=rule.render(
+                    exception_class=type(obj).__name__,
+                    missing_field="formatted-traceback",
+                ),
+            )
     return {
         "type": f"{type(obj).__module__}.{type(obj).__qualname__}",
         "message": str(obj),

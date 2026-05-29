@@ -63,19 +63,22 @@ RULES: dict[str, StrictModeRule] = {
     ),
     "exception-fidelity-lost": StrictModeRule(
         rule_id="exception-fidelity-lost",
-        default_severity=StrictModeSeverity.ERROR,
-        correctness=True,
+        default_severity=StrictModeSeverity.WARNING,
+        correctness=False,
         description=(
-            "A worker-side exception's traceback could not be captured "
-            "by ``traceback.format_exception`` when serialized for the "
-            "orchestrator. The caller sees the type and message but no "
-            "frames, making the failure hard to diagnose."
+            "A worker-side exception serialized to the orchestrator "
+            "without traceback frames. Either the exception was never "
+            "raised (no ``__traceback__``) or ``traceback.format_exception`` "
+            "failed. The caller sees the type and message but no frames, "
+            "making worker-side failures hard to diagnose."
         ),
         remediation_template=(
             "Exception of type '{exception_class}' lost '{missing_field}' "
-            "when crossing the wire. Ensure the exception class is "
-            "picklable or expose the failing field as a serializable "
-            "attribute."
+            "when crossing the wire. Construct the exception by raising "
+            "it (so ``__traceback__`` is populated) instead of building "
+            "and returning it; if the traceback formatter itself failed, "
+            "ensure the exception's ``__class__`` and ``__traceback__`` "
+            "attributes are well-formed."
         ),
     ),
 }
