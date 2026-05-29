@@ -117,6 +117,6 @@ Failure returns `ScanSequencesResultFailure` whose `failure_reason` is either a 
 
 ### Node-level: `fail_on_empty_result`
 
-The standard library's `ParseSequenceNode` and `ParseSplitSequenceNode` both expose a top-level `fail_on_empty_result: bool = True` parameter. When true (the default), an empty scan result routes the node through its Failure control-flow edge with a diagnostic-aware status message built from the fields above. When false, the node succeeds with empty outputs and a status noting the opt-out — for workflows that legitimately tolerate empty scans (e.g. a sweep that may find nothing).
+The standard library's `ScanSequenceNode` and `ScanSplitSequenceNode` both expose a top-level `fail_on_empty_result: bool = True` parameter. When true (the default), an empty scan result routes the node through its Failure control-flow edge with a diagnostic-aware status message built from the fields above. When false, the node succeeds with empty outputs and a status noting the opt-out — for workflows that legitimately tolerate empty scans (e.g. a sweep that may find nothing).
 
 Library and node code should never import the underlying scanner directly — the request bus is the only public path.

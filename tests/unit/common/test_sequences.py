@@ -1,8 +1,8 @@
 """Tests for `griptape_nodes.common.sequences` via the public `ScanSequencesRequest`.
 
-The public entry point is the bus request, not the (now module-private)
-`_scan_sequences` function. Each test dispatches via `GriptapeNodes.ahandle_request(...)`
-and asserts on the typed result payload.
+The intended entry point is the bus request, not the underlying
+`scan_sequences` function. Each test dispatches via
+`GriptapeNodes.ahandle_request(...)` and asserts on the typed result payload.
 
 Filesystem listings are stubbed by patching `GriptapeNodes.handle_request` so the
 inner `ListDirectoryRequest` returns canned filenames; this leaves the real
@@ -132,7 +132,7 @@ class TestBasicScanning:
     async def test_directory_listing_failure_surfaces_file_io_failure(self) -> None:
         """A failed listing propagates the OS-level `FileIOFailureReason` to the caller.
 
-        `_scan_sequences` raises `_DirectoryListingError` when the inner
+        `scan_sequences` raises `DirectoryListingError` when the inner
         `ListDirectoryRequest` fails; the handler maps that to a
         `ScanSequencesResultFailure` carrying the underlying reason. This
         replaces the prior behavior where listing failures were silently

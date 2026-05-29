@@ -29,7 +29,7 @@ from griptape_nodes.common.sequences import (
     InvalidTemplateError,
     MissingItemError,
 )
-from griptape_nodes.common.sequences.scan import _DirectoryListingError, _scan_sequences
+from griptape_nodes.common.sequences.scan import DirectoryListingError, scan_sequences
 from griptape_nodes.files.drivers.base64_file_driver import Base64FileDriver
 from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
 from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
@@ -1456,26 +1456,26 @@ class OSManager:
     async def on_scan_sequences_request(self, request: ScanSequencesRequest) -> ResultPayload:
         """Handle a request to scan a directory for sequences matching a fileseq template.
 
-        The handler runs `_scan_sequences` in a worker thread (`asyncio.to_thread`)
+        The handler runs `scan_sequences` in a worker thread (`asyncio.to_thread`)
         so neither the directory listing (via `ListDirectoryRequest`, performed
-        inside `_scan_sequences`) nor fileseq parsing blocks the event loop.
+        inside `scan_sequences`) nor fileseq parsing blocks the event loop.
 
         Routes failures to the appropriate taxonomy: typed exceptions raised by
         the scanner map to `SequenceScanFailureReason`; OS-layer listing
         failures (directory not found, permission denied) propagate via
-        `_DirectoryListingError` and map to `FileIOFailureReason` so the
+        `DirectoryListingError` and map to `FileIOFailureReason` so the
         underlying OS diagnostic isn't lost.
         """
         try:
             outcome = await asyncio.to_thread(
-                _scan_sequences,
+                scan_sequences,
                 request.directory,
                 request.pattern,
                 policy=request.policy,
                 start=request.start_number,
                 end=request.end_number,
             )
-        except _DirectoryListingError as e:
+        except DirectoryListingError as e:
             return ScanSequencesResultFailure(
                 failure_reason=e.failure_reason,
                 result_details=e.result_details,

@@ -1,10 +1,14 @@
 """Directory scanning for sequences.
 
-Module-private worker behind `ScanSequencesRequest`. Takes a directory + a
-fileseq pattern (either as a string like `render.####.exr` or a pre-constructed
+Worker behind `ScanSequencesRequest`. Takes a directory + a fileseq pattern
+(either as a string like `render.####.exr` or a pre-constructed
 `FileSequence`), lists the directory via `ListDirectoryRequest`, hands the
 filenames to `fileseq.findSequencesInList`, applies subset clipping and the
-chosen missing-item policy, and returns a list of `Sequence` objects.
+chosen missing-item policy, and returns a `ScanOutcome` carrying the
+inferred sequences plus diagnostic flags. The intended caller is
+`OSManager.on_scan_sequences_request`; other callers are welcome but should
+prefer dispatching the bus request unless they have a strong reason to
+bypass the worker-thread / async-dispatch path.
 
 All filesystem I/O is routed through the engine's request bus — this module
 never calls `os.scandir`, `os.walk`, or `pathlib.Path.glob` directly.
@@ -44,7 +48,7 @@ logger = logging.getLogger("griptape_nodes")
 PAD_STYLE = PAD_STYLE_HASH1
 
 
-class _ScanOutcome(NamedTuple):
+class ScanOutcome(NamedTuple):
     """The full result of a sequence scan, including diagnostics for empty results.
 
     `directory_had_matching_files` and `discovered_first/last` let callers
@@ -58,7 +62,7 @@ class _ScanOutcome(NamedTuple):
     discovered_last: int | None
 
 
-class _DirectoryListingError(Exception):
+class DirectoryListingError(Exception):
     """Raised when the inner `ListDirectoryRequest` returns a failure.
 
     Carries the listing's own `FileIOFailureReason` and `result_details` so
@@ -87,20 +91,21 @@ class _ActiveRange(NamedTuple):
     last: int
 
 
-def _scan_sequences(
+def scan_sequences(
     directory: str,
     pattern: str | FileSequence,
     *,
     policy: MissingItemPolicy = MissingItemPolicy.SPLIT,
     start: int | None = None,
     end: int | None = None,
-) -> _ScanOutcome:
+) -> ScanOutcome:
     """Find sequences matching `pattern` inside `directory`.
 
-    Module-private. The public entry point is `ScanSequencesRequest` on the
-    engine's event bus; that request's handler invokes this function via
-    `asyncio.to_thread()` so neither the directory listing nor fileseq parsing
-    blocks the event loop.
+    The intended entry point is `ScanSequencesRequest` on the engine's event
+    bus; that request's handler invokes this function via `asyncio.to_thread()`
+    so neither the directory listing nor fileseq parsing blocks the event loop.
+    Callers that bypass the request lose the worker-thread offload — only do so
+    if you've already taken the I/O off the event loop yourself.
 
     Args:
         directory: Absolute directory path to scan. Listed via
@@ -120,7 +125,7 @@ def _scan_sequences(
             supplied.
 
     Returns:
-        `_ScanOutcome` carrying the inferred sequences plus diagnostic flags
+        `ScanOutcome` carrying the inferred sequences plus diagnostic flags
         (whether the directory had any files matching the basename/extension
         shape, and the on-disk discovered range when sequences were inferred).
         `sequences` is empty if the directory contains no matching files, the
@@ -128,7 +133,7 @@ def _scan_sequences(
         the diagnostic fields tell the caller which case fired.
 
     Raises:
-        _DirectoryListingError: If the inner `ListDirectoryRequest` returns
+        DirectoryListingError: If the inner `ListDirectoryRequest` returns
             a failure (directory not found, permission denied, etc.). Carries
             the original `FileIOFailureReason`.
         InvalidSubsetBoundsError: If `start` < 0 or `end` < `start`.
@@ -145,7 +150,7 @@ def _scan_sequences(
     relevant = _list_pattern_matching_filenames(directory, target)
     directory_had_matching_files = bool(relevant)
     if not relevant:
-        return _ScanOutcome(
+        return ScanOutcome(
             sequences=[],
             directory_had_matching_files=False,
             discovered_first=None,
@@ -158,7 +163,7 @@ def _scan_sequences(
         # fileseq grouped them at a different padding than the target's
         # zfill. Surface the diagnostic flag so the caller can say "the
         # padding is wrong" instead of a generic "no matches".
-        return _ScanOutcome(
+        return ScanOutcome(
             sequences=[],
             directory_had_matching_files=directory_had_matching_files,
             discovered_first=None,
@@ -172,7 +177,7 @@ def _scan_sequences(
         # Active subset clipped every present item out. Surface the
         # discovered range so the caller can show "asked for 90..100 but
         # disk has 1..7".
-        return _ScanOutcome(
+        return ScanOutcome(
             sequences=[],
             directory_had_matching_files=directory_had_matching_files,
             discovered_first=discovered_first,
@@ -192,7 +197,7 @@ def _scan_sequences(
             dropped_negative_number_count=present.dropped_negatives,
         )
     )
-    return _ScanOutcome(
+    return ScanOutcome(
         sequences=sequences,
         directory_had_matching_files=directory_had_matching_files,
         discovered_first=discovered_first,
@@ -328,7 +333,7 @@ def _compute_active_range(
 def _list_directory_filenames(directory: str) -> list[str]:
     """List `directory` via ListDirectoryRequest, returning bare filenames.
 
-    Raises `_DirectoryListingError` on any listing failure, carrying the
+    Raises `DirectoryListingError` on any listing failure, carrying the
     underlying `FileIOFailureReason` so the request handler can surface
     "directory not found" / "permission denied" / etc. through
     `ScanSequencesResultFailure` without losing the OS-level diagnostic.
@@ -349,7 +354,7 @@ def _list_directory_filenames(directory: str) -> list[str]:
         )
     )
     if not isinstance(result, ListDirectoryResultSuccess):
-        raise _DirectoryListingError(
+        raise DirectoryListingError(
             failure_reason=result.failure_reason,  # pyright: ignore[reportAttributeAccessIssue]
             result_details=str(result.result_details),
         )
