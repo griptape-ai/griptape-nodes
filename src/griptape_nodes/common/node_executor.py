@@ -2006,6 +2006,33 @@ class NodeExecutor:
 
         return sources
 
+    def _resolve_on_each_entry(self, node: SubflowNodeGroup) -> tuple[str | None, str | None]:
+        """Return (entry_node_name, entry_param_name) from on_each connection, or (None, None)."""
+        # on_each only exists on iterative groups; non-iterative subflows fall back to implicit child-discovery.
+        if not isinstance(node, BaseIterativeNodeGroup):
+            return None, None
+        flow_manager = GriptapeNodes.FlowManager()
+        connections = flow_manager.get_connections()
+        # Use node.on_each.name instead of a literal so renames stay in sync.
+        # Control outputs are single-target (enforced in connections.py), so index 0 is the only connection.
+        on_each_conns = connections.outgoing_index.get(node.name, {}).get(node.on_each.name, [])
+        if not on_each_conns:
+            return None, None
+        first_conn = connections.connections[on_each_conns[0]]
+        if first_conn.target_node.name == node.name:
+            # on_each is a proxy port on the group boundary. When the user wires on_each → a child node,
+            # two hops are stored: group→proxy (boundary edge) then proxy→child (internal edge).
+            # Follow both to find the actual entry node inside the group.
+            proxy_param = first_conn.target_parameter
+            proxy_conns = connections.outgoing_index.get(node.name, {}).get(proxy_param.name, [])
+            if proxy_conns:
+                # Control outputs are single-target, so index 0 is the only connection.
+                internal_conn = connections.connections[proxy_conns[0]]
+                if internal_conn.is_node_group_internal:
+                    return internal_conn.target_node.name, internal_conn.target_parameter.name
+            return None, None
+        return first_conn.target_node.name, first_conn.target_parameter.name
+
     async def _package_subflow_group_body(
         self, node: SubflowNodeGroup, label: str
     ) -> PackageNodesAsSerializedFlowResultSuccess | None:
@@ -2039,6 +2066,8 @@ class NodeExecutor:
         sanitized_node_name = node.name.replace(" ", "_")
         output_parameter_prefix = f"{sanitized_node_name}_{label}_"
 
+        entry_control_node_name, entry_control_parameter_name = self._resolve_on_each_entry(node)
+
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
             start_node_type=workflow_start_end_nodes.start_flow_node_type,
@@ -2046,8 +2075,8 @@ class NodeExecutor:
             start_node_library_name=workflow_start_end_nodes.start_flow_node_library_name,
             end_node_library_name=workflow_start_end_nodes.end_flow_node_library_name,
             output_parameter_prefix=output_parameter_prefix,
-            entry_control_node_name=None,
-            entry_control_parameter_name=None,
+            entry_control_node_name=entry_control_node_name,
+            entry_control_parameter_name=entry_control_parameter_name,
             node_group_name=node.name,
         )
 
