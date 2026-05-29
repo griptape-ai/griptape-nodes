@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from huggingface_hub import get_token, list_models, scan_cache_dir, snapshot_download
+from huggingface_hub import model_info as hf_model_info
 from huggingface_hub.utils.tqdm import tqdm
 from xdg_base_dirs import xdg_data_home
 
@@ -28,6 +29,9 @@ from griptape_nodes.retained_mode.events.model_events import (
     DownloadModelRequest,
     DownloadModelResultFailure,
     DownloadModelResultSuccess,
+    GetModelInfoRequest,
+    GetModelInfoResultFailure,
+    GetModelInfoResultSuccess,
     ListModelDownloadsRequest,
     ListModelDownloadsResultFailure,
     ListModelDownloadsResultSuccess,
@@ -234,6 +238,7 @@ class ModelManager:
             event_manager.assign_manager_to_request_type(ListModelsRequest, self.on_handle_list_models_request)
             event_manager.assign_manager_to_request_type(DeleteModelRequest, self.on_handle_delete_model_request)
             event_manager.assign_manager_to_request_type(SearchModelsRequest, self.on_handle_search_models_request)
+            event_manager.assign_manager_to_request_type(GetModelInfoRequest, self.on_handle_get_model_info_request)
             event_manager.assign_manager_to_request_type(
                 ListModelDownloadsRequest, self.on_handle_list_model_downloads_request
             )
@@ -666,6 +671,40 @@ class ModelManager:
                 result_details=result_details,
             )
 
+    async def on_handle_get_model_info_request(self, request: GetModelInfoRequest) -> ResultPayload:
+        """Fetch detailed info for a specific model from Hugging Face Hub.
+
+        Args:
+            request: The request containing the model_id to look up
+
+        Returns:
+            ResultPayload: Success with exact size and metadata, or failure with error details
+        """
+        try:
+            info = await asyncio.to_thread(hf_model_info, request.model_id)
+        except Exception as e:
+            error_msg = f"Attempted to get model info for '{request.model_id}'. Failed because: {e}"
+            return GetModelInfoResultFailure(
+                result_details=error_msg,
+                exception=e,
+            )
+
+        safetensors = getattr(info, "safetensors", None)
+        safetensors_parameters = dict(safetensors.parameters) if safetensors else None
+
+        return GetModelInfoResultSuccess(
+            model_id=request.model_id,
+            size_bytes=getattr(info, "used_storage", None),
+            safetensors_parameters=safetensors_parameters,
+            author=getattr(info, "author", None),
+            task=getattr(info, "pipeline_tag", None),
+            library=getattr(info, "library_name", None),
+            tags=getattr(info, "tags", None),
+            downloads=getattr(info, "downloads", None),
+            likes=getattr(info, "likes", None),
+            result_details=f"Retrieved info for '{request.model_id}'",
+        )
+
     def _search_models(self, request: SearchModelsRequest) -> SearchResultsData:
         """Synchronous model search implementation.
 
@@ -705,8 +744,8 @@ class ModelManager:
         # Limit results (max 100 as per HF Hub API)
         limit = min(max(1, request.limit), 100)
 
-        # Perform the search
-        models_iterator = list_models(limit=limit, **search_params)
+        # Perform the search, requesting safetensors metadata for size estimation
+        models_iterator = list_models(limit=limit, expand=["safetensors"], **search_params)
 
         # Convert models to list and extract information
         models_list = []
@@ -724,6 +763,7 @@ class ModelManager:
                 task=getattr(model, "pipeline_tag", None),
                 library=getattr(model, "library_name", None),
                 tags=getattr(model, "tags", None),
+                estimated_size_bytes=self._estimate_size_from_safetensors(getattr(model, "safetensors", None)),
             )
             models_list.append(model_info)
 
@@ -744,6 +784,40 @@ class ModelManager:
             total_results=len(models_list),
             query_info=query_info,
         )
+
+    def _estimate_size_from_safetensors(self, safetensors_info: object | None) -> int | None:
+        """Estimate model download size in bytes from safetensors parameter metadata.
+
+        Uses parameter counts and dtype sizes as a rough approximation. The actual
+        download size may differ due to quantization, additional files, or metadata.
+        """
+        if safetensors_info is None:
+            return None
+
+        parameters = getattr(safetensors_info, "parameters", None)
+        if not parameters:
+            return None
+
+        # Bytes per parameter for common dtypes
+        dtype_bytes: dict[str, float] = {
+            "F64": 8,
+            "F32": 4,
+            "BF16": 2,
+            "F16": 2,
+            "I64": 8,
+            "I32": 4,
+            "I16": 2,
+            "I8": 1,
+            "U8": 1,
+            "BOOL": 0.125,
+        }
+
+        total = 0
+        for dtype, count in parameters.items():
+            bytes_per_param = dtype_bytes.get(dtype.upper(), 4)
+            total += int(count * bytes_per_param)
+
+        return total if total > 0 else None
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Handle app initialization complete event by downloading configured models and resuming unfinished downloads.

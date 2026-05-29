@@ -62,6 +62,7 @@ class ModelInfo:
     model_id: str
     local_path: str | None = None
     size_bytes: int | None = None
+    estimated_size_bytes: int | None = None
     author: str | None = None
     downloads: int | None = None
     likes: int | None = None
@@ -294,3 +295,54 @@ class SearchModelsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class SearchModelsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Model search failed. Common causes: network error, invalid parameters, API limits."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetModelInfoRequest(RequestPayload):
+    """Fetch detailed information for a specific model from Hugging Face Hub.
+
+    Use when: Retrieving exact storage size before downloading, inspecting model
+    metadata after selecting a model from search results.
+
+    Args:
+        model_id: Model identifier (e.g., "microsoft/phi-2")
+
+    Results: GetModelInfoResultSuccess (with size and metadata) | GetModelInfoResultFailure (model not found)
+    """
+
+    model_id: str = ""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetModelInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Model info retrieved successfully.
+
+    Args:
+        model_id: The model identifier
+        size_bytes: Exact storage size on Hugging Face in bytes
+        safetensors_parameters: Parameter count by dtype (e.g. {"F16": 2779683840})
+        author: Model author or organization
+        task: Pipeline tag / task type
+        library: Library name (e.g. "transformers")
+        tags: List of tags
+        downloads: Total download count
+        likes: Total like count
+    """
+
+    model_id: str
+    size_bytes: int | None
+    safetensors_parameters: dict[str, int] | None
+    author: str | None
+    task: str | None
+    library: str | None
+    tags: list[str] | None
+    downloads: int | None
+    likes: int | None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetModelInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Model info retrieval failed. Common causes: invalid model ID, network error, authentication required."""
