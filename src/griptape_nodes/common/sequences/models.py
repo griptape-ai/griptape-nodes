@@ -43,6 +43,24 @@ class MissingItemError(Exception):
         self.number = number
 
 
+class InvalidSubsetBoundsError(ValueError):
+    """Raised when `scan_sequences`'s `start` / `end` bounds are unusable.
+
+    Subclasses `ValueError` so existing `except ValueError` clauses keep working,
+    but lets request handlers and other callers discriminate this failure mode
+    from invalid-template errors via `except InvalidSubsetBoundsError`.
+    """
+
+
+class InvalidTemplateError(ValueError):
+    """Raised when a template string can't be parsed as a single-token fileseq pattern.
+
+    Subclasses `ValueError` so existing `except ValueError` clauses keep working,
+    but lets request handlers and other callers discriminate this failure mode
+    from invalid-bounds errors via `except InvalidTemplateError`.
+    """
+
+
 class SequenceEntry(BaseModel):
     """One entry in a Sequence.
 
