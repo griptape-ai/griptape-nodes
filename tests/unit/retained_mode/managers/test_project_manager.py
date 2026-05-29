@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
 
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
+from griptape_nodes.files.path_utils import canonicalize_for_identity
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -3127,7 +3128,7 @@ directories:
         child_path = (tmp_path / "child.yml").resolve()
         files = {
             base_path: self.BASE_PROJECT_YAML,
-            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=base_path.as_posix()),
         }
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -3155,8 +3156,8 @@ directories:
         grandchild_path = (tmp_path / "grandchild.yml").resolve()
         files = {
             base_path: self.BASE_PROJECT_YAML,
-            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
-            grandchild_path: self.GRANDCHILD_PROJECT_YAML_TEMPLATE.format(parent=str(child_path)),
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=base_path.as_posix()),
+            grandchild_path: self.GRANDCHILD_PROJECT_YAML_TEMPLATE.format(parent=child_path.as_posix()),
         }
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -3203,7 +3204,7 @@ directories:
         )
 
         self_path = (tmp_path / "self.yml").resolve()
-        files = {self_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(self_path))}
+        files = {self_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=self_path.as_posix())}
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_gn.ahandle_request = self._file_router(files)
@@ -3223,8 +3224,8 @@ directories:
         a_path = (tmp_path / "a.yml").resolve()
         b_path = (tmp_path / "b.yml").resolve()
         files = {
-            a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(b_path)),
-            b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(a_path)),
+            a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=b_path.as_posix()),
+            b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=a_path.as_posix()),
         }
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -3244,7 +3245,7 @@ directories:
 
         missing_parent = (tmp_path / "does_not_exist.yml").resolve()
         child_path = (tmp_path / "child.yml").resolve()
-        files = {child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(missing_parent))}
+        files = {child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=missing_parent.as_posix())}
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
             mock_gn.ahandle_request = self._file_router(files)
@@ -3271,7 +3272,7 @@ directories:
         child_yaml = f"""\
 project_template_schema_version: "0.3.2"
 name: Child Override
-parent_project_path: "{base_path!s}"
+parent_project_path: "{base_path.as_posix()}"
 directories:
   shared_outputs:
     path_macro: "{{workspace_dir}}/child_override"
@@ -3420,6 +3421,7 @@ directories:
         list_result = pm.on_list_project_templates_request(ListProjectTemplatesRequest(include_system_builtins=False))
         info = list_result.successfully_loaded[0]
 
+        assert info.project_macro_path is not None
         assert info.project_macro_path == str(base_path)
         assert "{workspace_dir}" not in info.project_macro_path
 
@@ -3454,7 +3456,7 @@ directories:
         child_path = (tmp_path / "child.yml").resolve()
         files = {
             base_path: self.BASE_PROJECT_YAML,
-            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=base_path.as_posix()),
         }
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -3493,7 +3495,7 @@ directories:
         grandchild_yaml = f"""\
 project_template_schema_version: "0.3.2"
 name: Grandchild
-parent_project_path: "{child_path!s}"
+parent_project_path: "{child_path.as_posix()}"
 directories:
   shared_outputs: null
   grandchild_outputs:
@@ -3502,7 +3504,7 @@ directories:
 
         files = {
             base_path: self.BASE_PROJECT_YAML,
-            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=base_path.as_posix()),
             grandchild_path: grandchild_yaml,
         }
 
@@ -3553,7 +3555,7 @@ file_extension_directories:
         child_path = (tmp_path / "child.yml").resolve()
         files = {
             base_path: rich_parent_yaml,
-            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=base_path.as_posix()),
         }
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -3581,8 +3583,8 @@ file_extension_directories:
         sibling_b_path = (tmp_path / "sibling_b.yml").resolve()
         files = {
             base_path: self.BASE_PROJECT_YAML,
-            sibling_a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
-            sibling_b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(base_path)),
+            sibling_a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=base_path.as_posix()),
+            sibling_b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=base_path.as_posix()),
         }
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -3612,9 +3614,9 @@ file_extension_directories:
         b_path = (tmp_path / "b.yml").resolve()
         c_path = (tmp_path / "c.yml").resolve()
         files = {
-            a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(b_path)),
-            b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(c_path)),
-            c_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=str(a_path)),
+            a_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=b_path.as_posix()),
+            b_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=c_path.as_posix()),
+            c_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent=a_path.as_posix()),
         }
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -3666,8 +3668,16 @@ class TestValidateProjectTemplateParentChain:
         return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
     @staticmethod
-    def _seed_registered_template(pm: ProjectManager, project_id: str, parent_project_path: str | None) -> None:
-        """Insert a minimal ProjectInfo into the registry for chain-walking purposes."""
+    def _seed_registered_template(pm: ProjectManager, project_id: str, parent_project_path: str | None) -> str:
+        r"""Insert a minimal ProjectInfo into the registry for chain-walking purposes.
+
+        Returns the canonical registry key actually used so callers (and the
+        edited template's `parent_project_path`) can reference it. The
+        manager's chain-walk canonicalizes all parent path lookups, so on
+        Windows raw POSIX-style ids like "/a.yml" are normalized to
+        "C:\a.yml" before lookup. Mirroring that here keeps the test cross
+        -platform.
+        """
         from griptape_nodes.common.project_templates import (
             ProjectTemplate,
             ProjectValidationInfo,
@@ -3675,22 +3685,27 @@ class TestValidateProjectTemplateParentChain:
         )
         from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
+        canonical_id = str(canonicalize_for_identity(Path(project_id)))
+        canonical_parent: str | None = None
+        if parent_project_path is not None:
+            canonical_parent = str(canonicalize_for_identity(Path(parent_project_path)))
         template = ProjectTemplate(
             project_template_schema_version="0.3.2",
-            name=project_id,
-            parent_project_path=parent_project_path,
+            name=canonical_id,
+            parent_project_path=canonical_parent,
             situations={},
             directories={},
         )
-        pm._successfully_loaded_project_templates[project_id] = ProjectInfo(
-            project_id=project_id,
-            project_file_path=Path(project_id),
-            project_base_dir=Path(project_id).parent,
+        pm._successfully_loaded_project_templates[canonical_id] = ProjectInfo(
+            project_id=canonical_id,
+            project_file_path=Path(canonical_id),
+            project_base_dir=Path(canonical_id).parent,
             template=template,
             validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
             parsed_situation_schemas={},
             parsed_directory_schemas={},
         )
+        return canonical_id
 
     def test_no_parent_passes(self, pm: ProjectManager) -> None:
         """A template with parent_project_path == None is valid."""
@@ -3739,10 +3754,8 @@ class TestValidateProjectTemplateParentChain:
             ValidateProjectTemplateResultSuccess,
         )
 
-        c_id = "/c.yml"
-        b_id = "/b.yml"
-        self._seed_registered_template(pm, c_id, parent_project_path=None)
-        self._seed_registered_template(pm, b_id, parent_project_path=c_id)
+        c_id = self._seed_registered_template(pm, "/c.yml", parent_project_path=None)
+        b_id = self._seed_registered_template(pm, "/b.yml", parent_project_path=c_id)
 
         template_data = {
             "project_template_schema_version": "0.3.2",
@@ -3762,11 +3775,9 @@ class TestValidateProjectTemplateParentChain:
             ValidateProjectTemplateResultSuccess,
         )
 
-        a_id = "/a.yml"
-        b_id = "/b.yml"
         # Registry already has B -> A. User now edits A and picks B as parent.
-        self._seed_registered_template(pm, a_id, parent_project_path=None)
-        self._seed_registered_template(pm, b_id, parent_project_path=a_id)
+        a_id = self._seed_registered_template(pm, "/a.yml", parent_project_path=None)
+        b_id = self._seed_registered_template(pm, "/b.yml", parent_project_path=a_id)
 
         template_data = {
             "project_template_schema_version": "0.3.2",
