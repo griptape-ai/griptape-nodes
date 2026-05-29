@@ -6,6 +6,7 @@ plumbing without hitting Griptape Cloud.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -75,6 +76,62 @@ async def test_run_streams_tokens_and_persists_history(tmp_path: Path) -> None:
 
     reloaded = runner.storage.load_history(result.thread_id)
     assert any(isinstance(p, TextPart) and "Hi there" in p.content for m in reloaded for p in getattr(m, "parts", []))
+
+
+@pytest.mark.asyncio
+async def test_run_cancel_event_returns_partial_and_skips_persist(tmp_path: Path) -> None:
+    """Setting the cancel event mid-run returns partial text and persists nothing."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    threads_dir = tmp_path / "threads"
+
+    hang = asyncio.Event()  # never set: the model blocks here until cancelled
+
+    async def stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
+        yield "partial "
+        await hang.wait()
+        yield "never"
+
+    runner = _runner_with_function_model(workspace, threads_dir, stream)
+
+    cancel_event = asyncio.Event()
+    got_token = asyncio.Event()
+    received: list[str] = []
+
+    def on_token(token: str) -> None:
+        received.append(token)
+        got_token.set()
+
+    run_task = asyncio.create_task(runner.run("go", token_sink=on_token, cancel_event=cancel_event))
+    # Wait until the first token is actually delivered, then cancel, so the
+    # partial-output assertion is deterministic rather than racing the stream.
+    await asyncio.wait_for(got_token.wait(), timeout=5)
+    cancel_event.set()
+    result = await asyncio.wait_for(run_task, timeout=5)
+
+    assert result.cancelled is True
+    assert result.output == "partial "
+    assert result.message_count == 0
+    # A cancelled turn leaves the thread untouched.
+    assert runner.storage.load_history(result.thread_id) == []
+
+
+@pytest.mark.asyncio
+async def test_run_cancel_event_unset_runs_to_completion(tmp_path: Path) -> None:
+    """Passing a cancel event that is never set does not disturb a normal run."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    threads_dir = tmp_path / "threads"
+
+    async def stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
+        yield "all done"
+
+    runner = _runner_with_function_model(workspace, threads_dir, stream)
+    result = await runner.run("go", cancel_event=asyncio.Event())
+
+    assert result.cancelled is False
+    assert result.output == "all done"
+    assert result.message_count >= 2  # noqa: PLR2004
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    SkipTheLineMixin,
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -51,7 +52,11 @@ class RunAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Agent execution completed successfully.
 
     Args:
-        output: Dictionary containing agent response and execution results
+        output: Dictionary containing agent response and execution results. Keys:
+            ``text`` (the assistant's final text), ``message_count`` (messages in
+            the thread after this turn), and ``cancelled`` (``True`` when the run
+            was stopped by a ``CancelAgentRequest`` before completing; ``text``
+            then holds whatever was streamed before cancellation).
         thread_id: The thread ID used for this conversation
     """
 
@@ -69,6 +74,52 @@ class RunAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """
 
     error: dict
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelAgentRequest(RequestPayload, SkipTheLineMixin):
+    """Cancel an in-flight agent run for a thread.
+
+    Use when: The user stops a running chat turn. Signals cooperative
+    cancellation to the active :class:`RunAgentRequest` for ``thread_id``; the
+    run unwinds promptly and returns a ``RunAgentResultSuccess`` whose ``output``
+    carries ``cancelled: True`` and any text streamed so far. The cancelled
+    turn is not persisted to the thread.
+
+    ``SkipTheLineMixin`` so the cancel bypasses the event queue and reaches the
+    dispatcher even while the run task is in flight.
+
+    Args:
+        thread_id: ID of the thread whose active run should be cancelled.
+
+    Results: CancelAgentResultSuccess (idempotent; succeeds even when no run is
+        in flight) | CancelAgentResultFailure (cancellation could not be delivered).
+    """
+
+    thread_id: str
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Cancellation was delivered.
+
+    Args:
+        thread_id: ID of the thread the cancellation targeted.
+        was_running: ``True`` when a run was in flight and got signalled;
+            ``False`` when no active run existed (the call is still a success).
+    """
+
+    thread_id: str
+    was_running: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Cancellation could not be delivered. Common causes: invalid thread_id."""
 
 
 @dataclass

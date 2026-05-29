@@ -19,8 +19,10 @@ Streaming tokens come straight off Pydantic AI's text deltas via the runner's
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -53,6 +55,9 @@ from griptape_nodes.retained_mode.events.agent_events import (
     ArchiveThreadRequest,
     ArchiveThreadResultFailure,
     ArchiveThreadResultSuccess,
+    CancelAgentRequest,
+    CancelAgentResultFailure,
+    CancelAgentResultSuccess,
     ConfigureAgentRequest,
     ConfigureAgentResultFailure,
     ConfigureAgentResultSuccess,
@@ -136,6 +141,20 @@ DEFAULT_AGENT_INSTRUCTIONS = (
 DEFAULT_AGENT_USAGE_LIMITS = UsageLimits(request_limit=60)
 
 
+@dataclass
+class _ActiveRun:
+    """Handle to an in-flight agent run, used to deliver cancellation.
+
+    ``cancel_event`` belongs to ``loop`` (the loop the run awaits on). A
+    ``CancelAgentRequest`` may be handled on a different loop (skip-the-line
+    requests run on the websocket loop), so the event is always set via
+    ``loop.call_soon_threadsafe`` rather than touched directly.
+    """
+
+    cancel_event: asyncio.Event
+    loop: asyncio.AbstractEventLoop
+
+
 class AgentManager:
     """Owns the chat-sidebar agent runner and the engine-bundled MCP server."""
 
@@ -153,8 +172,14 @@ class AgentManager:
         # Cache one runner per (model, mcp-set) tuple; rebuild when either changes.
         self._runner_cache: dict[tuple[str, tuple[str, ...]], PydanticAgentRunner] = {}
 
+        # Cancel handles for in-flight runs, keyed by thread_id. A CancelAgentRequest
+        # signals the event; the run races it and unwinds. Populated for the duration
+        # of each run only.
+        self._active_runs: dict[str, _ActiveRun] = {}
+
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
+            event_manager.assign_manager_to_request_type(CancelAgentRequest, self.on_handle_cancel_agent_request)
             event_manager.assign_manager_to_request_type(ConfigureAgentRequest, self.on_handle_configure_agent_request)
             event_manager.assign_manager_to_request_type(
                 GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request
@@ -214,7 +239,23 @@ class AgentManager:
                 ),
             )
 
-        result = await runner.run(prompt, thread_id=thread_id, event_sink=emit)
+        cancel_event = asyncio.Event()
+        self._active_runs[thread_id] = _ActiveRun(cancel_event=cancel_event, loop=asyncio.get_running_loop())
+        try:
+            result = await runner.run(prompt, thread_id=thread_id, event_sink=emit, cancel_event=cancel_event)
+        finally:
+            # Only drop our own entry; a newer run for the same thread may have
+            # replaced it (shouldn't happen for the chat sidebar, but stay safe).
+            if (active := self._active_runs.get(thread_id)) is not None and active.cancel_event is cancel_event:
+                del self._active_runs[thread_id]
+
+        if result.cancelled:
+            logger.info("Agent run for thread %s cancelled by request.", result.thread_id)
+            return RunAgentResultSuccess(
+                output={"text": result.output, "message_count": result.message_count, "cancelled": True},
+                thread_id=result.thread_id,
+                result_details="Agent run cancelled.",
+            )
 
         if is_first_run:
             self._thread_storage.update_thread_metadata(
@@ -222,10 +263,38 @@ class AgentManager:
             )
 
         return RunAgentResultSuccess(
-            output={"text": result.output, "message_count": result.message_count},
+            output={"text": result.output, "message_count": result.message_count, "cancelled": False},
             thread_id=result.thread_id,
             result_details="Agent execution completed successfully.",
         )
+
+    def on_handle_cancel_agent_request(self, request: CancelAgentRequest) -> ResultPayload:
+        """Signal cooperative cancellation to the in-flight run for a thread.
+
+        Idempotent: returns success even when no run is active so the UI can fire
+        cancel without first checking run state. ``was_running`` distinguishes
+        the two cases.
+        """
+        try:
+            active = self._active_runs.get(request.thread_id)
+            if active is None:
+                return CancelAgentResultSuccess(
+                    thread_id=request.thread_id,
+                    was_running=False,
+                    result_details=f"No active agent run for thread {request.thread_id}.",
+                )
+            # The run awaits on active.loop, which may differ from the loop handling
+            # this (skip-the-line) request; asyncio.Event is not thread-safe, so hop.
+            active.loop.call_soon_threadsafe(active.cancel_event.set)
+            return CancelAgentResultSuccess(
+                thread_id=request.thread_id,
+                was_running=True,
+                result_details=f"Cancellation signalled for thread {request.thread_id}.",
+            )
+        except Exception as e:
+            details = f"Error cancelling agent run: {e}"
+            logger.exception(details)
+            return CancelAgentResultFailure(result_details=details)
 
     # --- Thread CRUD -----------------------------------------------------
 

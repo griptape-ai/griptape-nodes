@@ -5,6 +5,8 @@ The handler is a thin wrapper over the module-level catalog constants in
 `__init__` and exercise the handler directly.
 """
 
+import asyncio
+
 import pytest
 
 from griptape_nodes.drivers.cloud_models import (
@@ -14,10 +16,12 @@ from griptape_nodes.drivers.cloud_models import (
     MODEL_CHOICES,
 )
 from griptape_nodes.retained_mode.events.agent_events import (
+    CancelAgentRequest,
+    CancelAgentResultSuccess,
     ListAgentModelsRequest,
     ListAgentModelsResultSuccess,
 )
-from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
+from griptape_nodes.retained_mode.managers.agent_manager import AgentManager, _ActiveRun
 
 
 @pytest.fixture
@@ -65,3 +69,30 @@ class TestOnHandleListAgentModelsRequest:
             assert key in result.deprecated_models
         for key in IMAGE_DEPRECATED_MODELS:
             assert key in result.deprecated_models
+
+
+class TestOnHandleCancelAgentRequest:
+    def test_no_active_run_is_idempotent_success(self) -> None:
+        agent_manager = AgentManager.__new__(AgentManager)
+        agent_manager._active_runs = {}
+
+        result = agent_manager.on_handle_cancel_agent_request(CancelAgentRequest(thread_id="missing"))
+
+        assert isinstance(result, CancelAgentResultSuccess)
+        assert result.thread_id == "missing"
+        assert result.was_running is False
+
+    @pytest.mark.asyncio
+    async def test_active_run_is_signalled(self) -> None:
+        agent_manager = AgentManager.__new__(AgentManager)
+        agent_manager._active_runs = {}
+        cancel_event = asyncio.Event()
+        agent_manager._active_runs["t1"] = _ActiveRun(cancel_event=cancel_event, loop=asyncio.get_running_loop())
+
+        result = agent_manager.on_handle_cancel_agent_request(CancelAgentRequest(thread_id="t1"))
+
+        assert isinstance(result, CancelAgentResultSuccess)
+        assert result.was_running is True
+        # The event is set via call_soon_threadsafe; yield once so it runs.
+        await asyncio.sleep(0)
+        assert cancel_event.is_set()

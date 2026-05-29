@@ -20,6 +20,8 @@ swap.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -121,13 +123,18 @@ class AgentRunResult:
 
     Attributes:
         thread_id: The thread that was used (created if the caller passed None).
-        output: The final assistant text response.
+        output: The final assistant text response (or the partial text streamed
+            so far when ``cancelled`` is ``True``).
         message_count: Total messages in the thread after this run.
+        cancelled: ``True`` when the run was stopped via its cancel event before
+            completing. A cancelled run does not persist its turn to the thread,
+            so ``message_count`` reflects the pre-run history length.
     """
 
     thread_id: str
     output: str
     message_count: int
+    cancelled: bool = False
 
 
 @dataclass
@@ -200,6 +207,7 @@ class PydanticAgentRunner:
         thread_id: str | None = None,
         token_sink: Callable[[str], Awaitable[None] | None] | None = None,
         event_sink: Callable[[RunEvent], Awaitable[None] | None] | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> AgentRunResult:
         """Run the agent against ``prompt``, streaming events and saving history.
 
@@ -212,6 +220,10 @@ class PydanticAgentRunner:
             event_sink: Callback invoked for every structured run event
                 (text deltas, tool calls, tool results, thinking deltas).
                 Use this to drive rich UI surfaces.
+            cancel_event: When set while the run is in flight, the agent task is
+                cancelled and :meth:`run` returns an :class:`AgentRunResult` with
+                ``cancelled=True`` carrying the text streamed so far. The
+                cancelled turn is not persisted.
 
         Returns:
             An :class:`AgentRunResult` describing the new state of the thread.
@@ -239,15 +251,16 @@ class PydanticAgentRunner:
         async def event_handler(_ctx: RunContext[Any], events: AsyncIterable[Any]) -> None:
             await counters.consume(events, token_sink, event_sink, text_buffer)
 
-        try:
-            agent_result = await self._agent.run(
+        run_task = asyncio.ensure_future(
+            self._agent.run(
                 prompt,
                 message_history=history,
                 usage_limits=self.usage_limits,
                 event_stream_handler=event_handler,
             )
-            new_messages = agent_result.all_messages()
-            usage = agent_result.usage
+        )
+        try:
+            agent_result = await self._await_run(run_task, cancel_event)
         except UsageLimitExceeded as exc:
             logger.warning(
                 "[run %s] usage limit exceeded: %s. Persisting partial history.",
@@ -255,6 +268,25 @@ class PydanticAgentRunner:
                 exc,
             )
             raise
+
+        if agent_result is None:
+            text = "".join(text_buffer)
+            logger.info(
+                "[run %s] cancelled after %.2fs: tool_calls=%d partial_output=%r",
+                run_id,
+                time.monotonic() - started,
+                counters.tool_calls,
+                _preview(text),
+            )
+            return AgentRunResult(
+                thread_id=thread_id,
+                output=text,
+                message_count=len(history),
+                cancelled=True,
+            )
+
+        new_messages = agent_result.all_messages()
+        usage = agent_result.usage
 
         elapsed = time.monotonic() - started
         text = "".join(text_buffer)
@@ -289,6 +321,34 @@ class PydanticAgentRunner:
             output=text,
             message_count=len(new_messages),
         )
+
+    @staticmethod
+    async def _await_run(run_task: asyncio.Future[Any], cancel_event: asyncio.Event | None) -> Any:
+        """Await the agent run, racing it against ``cancel_event`` when provided.
+
+        Returns the agent result, or ``None`` when the run was cancelled before
+        completing. If the run finishes first, its result (or exception) wins
+        even when cancellation was requested in the same tick.
+        """
+        if cancel_event is None:
+            return await run_task
+
+        cancel_waiter = asyncio.ensure_future(cancel_event.wait())
+        try:
+            await asyncio.wait({run_task, cancel_waiter}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            cancel_waiter.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await cancel_waiter
+
+        if run_task.done():
+            # Run won the race (possibly raising); surface its outcome.
+            return run_task.result()
+
+        run_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await run_task
+        return None
 
 
 @dataclass
