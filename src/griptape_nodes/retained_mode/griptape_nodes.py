@@ -164,7 +164,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._flow_manager = FlowManager(self._event_manager)
             self._context_manager = ContextManager(self._event_manager)
             self._worker_manager = WorkerManager(griptape_nodes=self, event_manager=self._event_manager)
-            self._library_manager = LibraryManager(self._event_manager, worker_manager=self._worker_manager)
+            self._library_manager = LibraryManager(
+                self._event_manager,
+                worker_manager=self._worker_manager,
+                permission_manager=self._permission_manager,
+            )
             self._model_manager = ModelManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._workflow_variables_manager = VariablesManager(self._event_manager)

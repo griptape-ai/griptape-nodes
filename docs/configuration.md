@@ -201,3 +201,10 @@ Now when workflows generate media:
 - Local access: Works via the tunnel URL
 - External services: Can fetch media via the ngrok URL
 - CORS: Automatically configured for the tunnel URL
+
+## Permissions
+
+The `permissions` key in any config file holds a declarative policy controlling
+which privileged engine operations are allowed. See [Permissions](permissions.md)
+for the rule schema, operator reference, layered evaluation, the license layer,
+and worked examples.
