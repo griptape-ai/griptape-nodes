@@ -271,7 +271,7 @@ class SetCurrentProjectRequest(RequestPayload):
     Results: SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure
     """
 
-    project_id: ProjectID | None = None
+    project_id: ProjectID | None
 
 
 @dataclass

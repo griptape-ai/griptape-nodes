@@ -547,7 +547,7 @@ class TestSidecarMetadata:
 
         yield
 
-        GriptapeNodes.handle_request(SetCurrentProjectRequest())
+        GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=None))
         griptape_nodes.ConfigManager().workspace_path = original_workspace
 
     def test_sidecar_not_written_without_file_metadata(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
