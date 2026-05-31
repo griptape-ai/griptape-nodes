@@ -8,6 +8,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameterInput,
+    ControlParameterOutput,
     Parameter,
     ParameterMode,
     ParameterTypeBuiltin,
@@ -69,6 +70,41 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
     ) -> None:
         super().__init__(name, metadata)
 
+        # Top-level control flow ports — wires this group into a control chain
+        self.exec_in = ControlParameterInput(
+            tooltip="Start the loop",
+            name="exec_in",
+        )
+        self.exec_in.ui_options = {"display_name": "Start Loop"}
+        self.add_parameter(self.exec_in)
+        # The GroupNode renderer orders rail params by their position in LEFT/RIGHT_PARAMETERS_KEY.
+        # Inserting at index 0 pins the control port to the top of the rail, above data parameters.
+        if LEFT_PARAMETERS_KEY not in self.metadata:
+            self.metadata[LEFT_PARAMETERS_KEY] = []
+        self.metadata[LEFT_PARAMETERS_KEY].insert(0, self.exec_in.name)
+
+        # Per-iteration control output — pairs visually with exec_in on the LEFT rail.
+        # Connect this to the first body node to make that node each iteration's entry point.
+        # If unconnected, executor falls back to implicit child-discovery.
+        self.on_each = ControlParameterOutput(
+            tooltip="Fired at the start of each iteration. Connect to the first node in the loop body.",
+            name="on_each",
+        )
+        self.on_each.ui_options = {"display_name": "On Each"}
+        self.add_parameter(self.on_each)
+        self.metadata[LEFT_PARAMETERS_KEY].append(self.on_each.name)
+
+        self.exec_out = ControlParameterOutput(
+            tooltip="Fired after all iterations complete",
+            name="exec_out",
+        )
+        self.exec_out.ui_options = {"display_name": "On Complete"}
+        self.add_parameter(self.exec_out)
+        # Insert at index 0 so exec_out appears at the top of the right rail (see LEFT_PARAMETERS_KEY comment above).
+        if RIGHT_PARAMETERS_KEY not in self.metadata:
+            self.metadata[RIGHT_PARAMETERS_KEY] = []
+        self.metadata[RIGHT_PARAMETERS_KEY].insert(0, self.exec_out.name)
+
         # Initialize iteration state
         self._items = []
         self._current_iteration_count = 0
@@ -112,7 +148,7 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         # Track left parameters for UI layout
         if LEFT_PARAMETERS_KEY not in self.metadata:
             self.metadata[LEFT_PARAMETERS_KEY] = []
-        self.metadata[LEFT_PARAMETERS_KEY].append("index")
+        self.metadata[LEFT_PARAMETERS_KEY].append(self.index_param.name)
 
         # Control input for loop completion (right side - primary loop completion path)
         self.loop_complete = ControlParameterInput(
@@ -159,11 +195,11 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
             self.metadata[RIGHT_PARAMETERS_KEY] = []
         self.metadata[RIGHT_PARAMETERS_KEY].extend(
             [
-                IterationControlParam.LOOP_COMPLETE.value,
-                "new_item_to_add",
-                IterationControlParam.SKIP_ITERATION.value,
-                IterationControlParam.BREAK_LOOP.value,
-                "results",
+                self.loop_complete.name,
+                self.new_item_to_add.name,
+                self.skip_iteration.name,
+                self.break_loop.name,
+                self.results.name,
             ]
         )
 
@@ -185,6 +221,11 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
                 # Hide controls when running in parallel (not supported)
                 self.hide_parameter_by_name(self.skip_iteration.name)
                 self.hide_parameter_by_name(self.break_loop.name)
+
+    def get_next_control_output(self) -> Parameter | None:
+        # Without this override the base returns None and the DAG executor stops at the group
+        # after all iterations complete, never advancing to whatever is wired downstream of exec_out.
+        return self.exec_out
 
     @abstractmethod
     def _get_iteration_items(self) -> list[Any]:
