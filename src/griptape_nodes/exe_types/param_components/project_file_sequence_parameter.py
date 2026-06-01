@@ -14,7 +14,6 @@ from griptape_nodes.exe_types.param_components.project_output_parameter import P
 from griptape_nodes.files.file_sequence import (
     FileSequenceDestination,
     build_versioned_sequence_destination,
-    hash_pattern_to_entry_macro,
 )
 from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.files.project_file import SITUATION_TO_FILE_POLICY
@@ -160,8 +159,7 @@ def _build_sequence_destination_from_situation(
         existing_file_policy = ExistingFilePolicy.OVERWRITE
         create_parents = True
 
-    normalized_filename = hash_pattern_to_entry_macro(filename)
-    parts = FilenameParts.from_filename(normalized_filename)
+    parts = FilenameParts.from_filename(filename)
 
     variables: dict[str, str | int] = {
         "file_name_base": parts.stem,
