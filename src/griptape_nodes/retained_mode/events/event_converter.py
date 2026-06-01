@@ -48,13 +48,6 @@ converter.register_unstructure_hook_func(
 # hops lossy (authors saw ``RuntimeError: <message>`` with no frames).
 # The dict form preserves enough context that the structure hook can
 # rebuild a ``ForwardedException`` on the receiving side.
-#
-# Strict-mode detection for missing frames does NOT live here. This
-# hook runs during ``result_event.json()`` in ``app._emit_result``,
-# which fires after the worker's ``scoped_execution`` has already
-# closed; ``STRICT_MODE.report`` would no-op because no scope is
-# active. The check lives in ``ResultPayloadFailure.__post_init__``
-# instead, where it runs while the worker scope is still open.
 def _unstructure_exception(obj: Exception) -> dict[str, Any]:
     if obj.__traceback__ is None:
         tb = None
@@ -126,10 +119,6 @@ def _structure_exception(obj: Any, _cls: type) -> Exception:
     # module load.
     from griptape_nodes.retained_mode.events.base_events import ForwardedException
 
-    # Tolerate non-dict payloads. The previous hook accepted bare
-    # strings, and old persisted events on disk may still carry that
-    # shape; refusing to structure them would abort deserialization of
-    # the entire enclosing event.
     if not isinstance(obj, dict):
         return ForwardedException(str(obj))
     message = str(obj.get("message", ""))
