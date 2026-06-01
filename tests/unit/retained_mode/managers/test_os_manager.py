@@ -9,6 +9,7 @@ import anyio
 import pytest
 import send2trash
 
+from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.files.path_utils import normalize_path_for_platform, resolve_path_safely
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
@@ -25,6 +26,12 @@ from griptape_nodes.retained_mode.events.os_events import (
     GetFileInfoRequest,
     GetFileInfoResultFailure,
     GetFileInfoResultSuccess,
+    GetNextUnusedFilenameRequest,
+    GetNextUnusedFilenameResultFailure,
+    GetNextUnusedFilenameResultSuccess,
+    GetNextVersionIndexRequest,
+    GetNextVersionIndexResultFailure,
+    GetNextVersionIndexResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -38,6 +45,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileResultFailure,
     WriteFileResultSuccess,
 )
+from griptape_nodes.retained_mode.events.project_events import MacroPath
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager, WindowsSpecialFolderError
 
@@ -1450,3 +1458,125 @@ class TestDiskSpaceProbe:
         # probe branch emits "Available:" numbers. We want the probe branch.
         assert "Available:" in message
         assert "Could not determine disk space" not in message
+
+
+class TestGetNextUnusedFilenameRequest:
+    """Test GetNextUnusedFilenameRequest preview behavior."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+        yield
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_base_filename_available_returns_unindexed_path(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """When the base filename is free, preview returns that path and no index."""
+        os_manager = griptape_nodes.OSManager()
+        requested_path = temp_dir / "render.png"
+
+        result = os_manager.on_get_next_unused_filename_request(
+            GetNextUnusedFilenameRequest(file_path=str(requested_path))
+        )
+
+        assert isinstance(result, GetNextUnusedFilenameResultSuccess)
+        assert Path(result.available_filename).resolve() == requested_path.resolve()
+        assert result.index_used is None
+        assert not requested_path.exists()
+
+    def test_existing_base_filename_returns_indexed_candidate(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """When base exists, preview switches to indexed naming."""
+        os_manager = griptape_nodes.OSManager()
+        (temp_dir / "render.png").write_text("base")
+
+        result = os_manager.on_get_next_unused_filename_request(
+            GetNextUnusedFilenameRequest(file_path=str(temp_dir / "render.png"))
+        )
+
+        assert isinstance(result, GetNextUnusedFilenameResultSuccess)
+        assert result.index_used == 1
+        assert Path(result.available_filename).resolve() == (temp_dir / "render_1.png").resolve()
+
+    def test_macro_without_unresolved_index_fails(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Macro path without an unresolved index variable cannot be auto-incremented."""
+        os_manager = griptape_nodes.OSManager()
+        macro_path = MacroPath(parsed_macro=ParsedMacro(f"{temp_dir}/render.png"), variables={})
+
+        result = os_manager.on_get_next_unused_filename_request(
+            GetNextUnusedFilenameRequest(file_path=macro_path)
+        )
+
+        assert isinstance(result, GetNextUnusedFilenameResultFailure)
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
+
+
+class TestGetNextVersionIndexRequest:
+    """Test GetNextVersionIndexRequest index-preview behavior."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+        yield
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_required_index_returns_one_when_no_matches(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Required index templates start at index 1 when nothing exists yet."""
+        os_manager = griptape_nodes.OSManager()
+
+        request = GetNextVersionIndexRequest(
+            macro_path=MacroPath(
+                parsed_macro=ParsedMacro("{outputs}/render_v{_index:03}"),
+                variables={"outputs": str(temp_dir)},
+            )
+        )
+        result = os_manager.on_get_next_version_index_request(request)
+
+        assert isinstance(result, GetNextVersionIndexResultSuccess)
+        assert result.index == 1
+
+    def test_optional_index_is_rejected_as_invalid_path(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Optional index templates currently fail because no required unresolved index exists."""
+        os_manager = griptape_nodes.OSManager()
+
+        request = GetNextVersionIndexRequest(
+            macro_path=MacroPath(
+                parsed_macro=ParsedMacro("{outputs}/render{_index?:_}.png"),
+                variables={"outputs": str(temp_dir)},
+            )
+        )
+        result = os_manager.on_get_next_version_index_request(request)
+
+        assert isinstance(result, GetNextVersionIndexResultFailure)
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
+
+    def test_missing_unresolved_index_returns_failure(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Requests without an unresolved {_index} variable should fail as invalid path input."""
+        os_manager = griptape_nodes.OSManager()
+        request = GetNextVersionIndexRequest(
+            macro_path=MacroPath(
+                parsed_macro=ParsedMacro("{outputs}/render.png"),
+                variables={"outputs": str(temp_dir)},
+            )
+        )
+
+        result = os_manager.on_get_next_version_index_request(request)
+
+        assert isinstance(result, GetNextVersionIndexResultFailure)
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
