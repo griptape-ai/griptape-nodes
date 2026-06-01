@@ -44,6 +44,12 @@ from pydantic_ai.messages import (
     ToolCallPart,
 )
 
+from griptape_nodes.agents.pydantic_ai.image_tools import (
+    IMAGE_TOOL_NAME,
+    ImageGenerationToolset,
+    ImageGenerationToolsetConfig,
+    register_image_tools,
+)
 from griptape_nodes.agents.pydantic_ai.model import build_griptape_cloud_model
 from griptape_nodes.agents.pydantic_ai.repo_context import load_repo_context
 from griptape_nodes.agents.pydantic_ai.skills import load_skills
@@ -62,6 +68,7 @@ if TYPE_CHECKING:
     from pydantic_ai.usage import UsageLimits
 
     from griptape_nodes.drivers.thread_storage.base_thread_storage_driver import BaseThreadStorageDriver
+    from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -126,6 +133,8 @@ class AgentRunResult:
         output: The final assistant text response (or the partial text streamed
             so far when ``cancelled`` is ``True``).
         message_count: Total messages in the thread after this run.
+        image_urls: URLs of images produced by the ``generate_image`` tool
+            during this run, in call order. Empty when no image was generated.
         cancelled: ``True`` when the run was stopped via its cancel event before
             completing. A cancelled run does not persist its turn to the thread,
             so ``message_count`` reflects the pre-run history length.
@@ -134,6 +143,7 @@ class AgentRunResult:
     thread_id: str
     output: str
     message_count: int
+    image_urls: list[str] = field(default_factory=list)
     cancelled: bool = False
 
 
@@ -149,12 +159,15 @@ class PydanticAgentRunner:
     base_url: str | None = None
     workspace_config: WorkspaceToolsetConfig | None = None
     mcp_servers: list[AbstractToolset[Any]] = field(default_factory=list)
+    image_config: ImageGenerationToolsetConfig | None = None
+    static_files_manager: StaticFilesManager | None = None
     auto_load_repo_context: bool = True
     auto_load_skills: bool = True
     usage_limits: UsageLimits | None = None
 
     _agent: Agent[Any, str] = field(init=False)
     _toolset: WorkspaceToolset = field(init=False)
+    _image_toolset: ImageGenerationToolset | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         toolsets: list[Any] = list(self.mcp_servers)
@@ -166,13 +179,19 @@ class PydanticAgentRunner:
         )
         config = self.workspace_config or WorkspaceToolsetConfig(workspace_root=self.workspace_root)
         self._toolset = register_workspace_tools(self._agent, config)
+        if self.image_config is not None:
+            if self.static_files_manager is None:
+                msg = "image_config requires a static_files_manager to persist generated images."
+                raise ValueError(msg)
+            self._image_toolset = register_image_tools(self._agent, self.image_config, self.static_files_manager)
         logger.info(
             "PydanticAgentRunner ready: model=%s workspace=%s mcp_servers=%d tools=%d "
-            "auto_repo_context=%s usage_limits=%s",
+            "image_tool=%s auto_repo_context=%s usage_limits=%s",
             self.model_name,
             self.workspace_root,
             len(self.mcp_servers),
             len(getattr(self._agent, "_function_tools", []) or []),
+            self._image_toolset is not None,
             self.auto_load_repo_context,
             self.usage_limits,
         )
@@ -199,6 +218,10 @@ class PydanticAgentRunner:
     @property
     def workspace_toolset(self) -> WorkspaceToolset:
         return self._toolset
+
+    @property
+    def image_toolset(self) -> ImageGenerationToolset | None:
+        return self._image_toolset
 
     async def run(
         self,
@@ -282,6 +305,7 @@ class PydanticAgentRunner:
                 thread_id=thread_id,
                 output=text,
                 message_count=len(history),
+                image_urls=list(counters.image_urls),
                 cancelled=True,
             )
 
@@ -320,6 +344,7 @@ class PydanticAgentRunner:
             thread_id=thread_id,
             output=text,
             message_count=len(new_messages),
+            image_urls=list(counters.image_urls),
         )
 
     @staticmethod
@@ -359,6 +384,7 @@ class _RunCounters:
     text_parts: int = 0
     tool_calls: int = 0
     final_result_emitted: bool = False
+    image_urls: list[str] = field(default_factory=list)
 
     async def consume(
         self,
@@ -406,6 +432,8 @@ class _RunCounters:
             tool_name = getattr(part, "tool_name", "?")
             is_error = isinstance(part, RetryPromptPart)
             content_str = _stringify(content)
+            if tool_name == IMAGE_TOOL_NAME and not is_error and content_str:
+                self.image_urls.append(content_str)
             logger.info(
                 "[run %s] tool result <- %s id=%s preview=%r is_error=%s",
                 self.run_id,

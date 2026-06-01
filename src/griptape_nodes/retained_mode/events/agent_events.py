@@ -54,9 +54,11 @@ class RunAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     Args:
         output: Dictionary containing agent response and execution results. Keys:
             ``text`` (the assistant's final text), ``message_count`` (messages in
-            the thread after this turn), and ``cancelled`` (``True`` when the run
-            was stopped by a ``CancelAgentRequest`` before completing; ``text``
-            then holds whatever was streamed before cancellation).
+            the thread after this turn), ``generated_image_urls`` (URLs of images
+            produced by the ``generate_image`` tool this turn, in call order;
+            empty when none were generated), and ``cancelled`` (``True`` when the
+            run was stopped by a ``CancelAgentRequest`` before completing;
+            ``text`` then holds whatever was streamed before cancellation).
         thread_id: The thread ID used for this conversation
     """
 

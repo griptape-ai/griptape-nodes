@@ -37,6 +37,7 @@ def _runner_with_function_model(
     workspace: Path,
     threads_dir: Path,
     function: Callable[..., AsyncIterator[Any]],
+    extra_tools: list[Callable[..., Any]] | None = None,
 ) -> PydanticAgentRunner:
     """Build a runner whose Agent uses a FunctionModel instead of GriptapeCloudModel."""
     storage = LocalThreadStorageDriver(threads_dir, config_manager=None, secrets_manager=None)  # type: ignore[arg-type]
@@ -50,6 +51,8 @@ def _runner_with_function_model(
     )
     new_agent: Agent[None, str] = Agent(FunctionModel(stream_function=function), instructions="Be concise.")
     runner._toolset.register_on(new_agent)
+    for tool in extra_tools or []:
+        new_agent.tool_plain(tool)
     runner._agent = new_agent
     return runner
 
@@ -182,6 +185,34 @@ async def test_tool_call_round_trips_through_runner(tmp_path: Path) -> None:
     assert any(
         isinstance(p, ToolCallPart) and p.tool_name == "read_file" for m in history for p in getattr(m, "parts", [])
     )
+
+
+@pytest.mark.asyncio
+async def test_run_captures_generate_image_urls(tmp_path: Path) -> None:
+    """URLs returned by the `generate_image` tool surface on the run result."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    threads_dir = tmp_path / "threads"
+
+    def generate_image(prompt: str, negative_prompt: str = "") -> str:  # noqa: ARG001
+        return "https://files.local/generated.png"
+
+    call_count = 0
+
+    async def stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[Any]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield {0: DeltaToolCall(name="generate_image", json_args='{"prompt": "a cat"}', tool_call_id="img1")}
+            return
+        for ch in "Here you go.":
+            yield ch
+
+    runner = _runner_with_function_model(workspace, threads_dir, stream, extra_tools=[generate_image])
+    result = await runner.run("Make a cat.")
+
+    assert result.image_urls == ["https://files.local/generated.png"]
+    assert "Here you go." in result.output
 
 
 @pytest.mark.asyncio

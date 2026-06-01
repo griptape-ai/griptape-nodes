@@ -30,6 +30,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_ai.usage import UsageLimits
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.agents.pydantic_ai.image_tools import ImageGenerationToolsetConfig
 from griptape_nodes.agents.pydantic_ai.mcp_servers import mcp_server_from_config, streamable_http_local
 from griptape_nodes.agents.pydantic_ai.runner import (
     PydanticAgentRunner,
@@ -119,7 +120,10 @@ DEFAULT_AGENT_INSTRUCTIONS = (
     "Use these to read, write, search, and run code inside the user's workspace.\n"
     "  - GriptapeNodes MCP tools (prefixed `GriptapeNodes_`). Use these to interact with the "
     "engine: list libraries and node types, create nodes, set parameter values, wire "
-    "connections, save and run workflows.\n\n"
+    "connections, save and run workflows.\n"
+    "  - generate_image: turn a text prompt into an image via Griptape Cloud. The chat UI "
+    "displays the generated image inline automatically, so briefly describe what you made and "
+    "do NOT paste the returned URL or markdown image syntax into your reply.\n\n"
     "Behavior rules (these are non-negotiable):\n"
     "  1. NEVER respond with only a plan or a description of what you intend to do. If a "
     "     task requires tool work, call the relevant tools in the SAME turn as your "
@@ -162,6 +166,7 @@ class AgentManager:
         self.static_files_manager = static_files_manager
         self._mcp_server_port = GTN_MCP_SERVER_PORT
         self._model_name: str = MODEL_CHOICES[0] if MODEL_CHOICES else "gpt-4o"
+        self._image_model_name: str = IMAGE_MODEL_CHOICES[0] if IMAGE_MODEL_CHOICES else "gpt-image-1-mini"
         self._instructions: str = DEFAULT_AGENT_INSTRUCTIONS
 
         self._threads_dir: Path = xdg_data_home() / "griptape_nodes" / "threads"
@@ -169,8 +174,8 @@ class AgentManager:
             self._threads_dir, config_manager, secrets_manager
         )
 
-        # Cache one runner per (model, mcp-set) tuple; rebuild when either changes.
-        self._runner_cache: dict[tuple[str, tuple[str, ...]], PydanticAgentRunner] = {}
+        # Cache one runner per (model, image-model, mcp-set) tuple; rebuild when any changes.
+        self._runner_cache: dict[tuple[str, str, tuple[str, ...]], PydanticAgentRunner] = {}
 
         # Cancel handles for in-flight runs, keyed by thread_id. A CancelAgentRequest
         # signals the event; the run races it and unwinds. Populated for the duration
@@ -252,7 +257,12 @@ class AgentManager:
         if result.cancelled:
             logger.info("Agent run for thread %s cancelled by request.", result.thread_id)
             return RunAgentResultSuccess(
-                output={"text": result.output, "message_count": result.message_count, "cancelled": True},
+                output={
+                    "text": result.output,
+                    "message_count": result.message_count,
+                    "cancelled": True,
+                    "generated_image_urls": result.image_urls,
+                },
                 thread_id=result.thread_id,
                 result_details="Agent run cancelled.",
             )
@@ -263,7 +273,12 @@ class AgentManager:
             )
 
         return RunAgentResultSuccess(
-            output={"text": result.output, "message_count": result.message_count, "cancelled": False},
+            output={
+                "text": result.output,
+                "message_count": result.message_count,
+                "cancelled": False,
+                "generated_image_urls": result.image_urls,
+            },
             thread_id=result.thread_id,
             result_details="Agent execution completed successfully.",
         )
@@ -405,17 +420,24 @@ class AgentManager:
     # --- Configuration / inspection -------------------------------------
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
-        """Update agent configuration. Currently honors only `model` for the prompt driver.
+        """Update agent configuration from the chat sidebar.
 
-        ``image_generation_driver`` settings are accepted but ignored: the new
-        runner does not provide an in-band image-generation tool yet. The chat
-        sidebar can still send the request without erroring.
+        Honors ``model`` on the prompt driver and ``model`` on the image
+        generation driver. Other ``image_generation_driver`` keys (size,
+        quality, background, output_format) are accepted but not yet plumbed
+        through to the runner's image config; changing the model rebuilds the
+        cached runners so the next run picks up the new image tool.
         """
         try:
             if "model" in request.prompt_driver:
                 new_model = str(request.prompt_driver["model"])
                 if new_model != self._model_name:
                     self._model_name = new_model
+                    self._runner_cache.clear()
+            if "model" in request.image_generation_driver:
+                new_image_model = str(request.image_generation_driver["model"])
+                if new_image_model != self._image_model_name:
+                    self._image_model_name = new_image_model
                     self._runner_cache.clear()
         except Exception as e:
             details = f"Error configuring agent: {e}"
@@ -448,7 +470,7 @@ class AgentManager:
     # --- Internal helpers -----------------------------------------------
 
     def _build_runner(self, additional_mcp_servers: list[str]) -> PydanticAgentRunner:
-        cache_key = (self._model_name, tuple(sorted(additional_mcp_servers)))
+        cache_key = (self._model_name, self._image_model_name, tuple(sorted(additional_mcp_servers)))
         if (cached := self._runner_cache.get(cache_key)) is not None:
             return cached
 
@@ -477,6 +499,8 @@ class AgentManager:
             instructions=self._instructions,
             workspace_config=WorkspaceToolsetConfig(workspace_root=workspace_root),
             mcp_servers=mcp_servers,
+            image_config=ImageGenerationToolsetConfig(api_key=api_key, model=self._image_model_name),
+            static_files_manager=self.static_files_manager,
             usage_limits=DEFAULT_AGENT_USAGE_LIMITS,
         )
         self._runner_cache[cache_key] = runner
