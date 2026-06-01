@@ -176,7 +176,10 @@ class DirectoryDestination:
 
             absolute_path = resolve_result.absolute_path
             if not absolute_path.exists():
-                absolute_path.mkdir(parents=self._create_parents, exist_ok=False)
+                try:
+                    absolute_path.mkdir(parents=self._create_parents, exist_ok=False)
+                except FileExistsError:
+                    continue
                 locked_macro = MacroPath(macro_path.parsed_macro, variables)
                 return _map_to_macro_directory(absolute_path, locked_macro)
 

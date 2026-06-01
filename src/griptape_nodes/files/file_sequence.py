@@ -143,7 +143,11 @@ class FileSequence:
         if not isinstance(resolve_result, GetPathForMacroResultSuccess):
             return []
         resolved_dir = str(resolve_result.absolute_path.parent)
-        filename_pattern = PurePosixPath(self.pattern).name
+        filename_template = PurePosixPath(self.location).name
+        entry_match = _ENTRY_MACRO_PATTERN.search(filename_template)
+        entry_width = int(entry_match.group(1)) if entry_match and entry_match.group(1) else 4
+        entry_zero_str = format(0, f"0{entry_width}d")
+        filename_pattern = resolve_result.absolute_path.name.replace(entry_zero_str, "#" * entry_width, 1)
         scan_result = GriptapeNodes.handle_request(
             ScanSequencesRequest(
                 directory=resolved_dir,
@@ -296,6 +300,10 @@ def build_versioned_sequence_destination(
 
         parent_dir = resolve_result.absolute_path.parent
         if not parent_dir.exists():
+            try:
+                parent_dir.mkdir(parents=create_parents, exist_ok=False)
+            except FileExistsError:
+                continue
             locked_vars = {**entry_macro.variables, "_index": index}
             locked_macro = MacroPath(entry_macro.parsed_macro, locked_vars)
             return FileSequenceDestination(
