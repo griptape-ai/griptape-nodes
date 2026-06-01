@@ -1,4 +1,7 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -22,11 +25,13 @@ class RunArbitraryPythonStringRequest(RequestPayload):
 
     Args:
         python_string: Python code string to execute
+        variable_names_to_capture: Optional names of local variables in the executed code to capture and return alongside stdout.
 
     Results: RunArbitraryPythonStringResultSuccess (with output) | RunArbitraryPythonStringResultFailure (execution error)
     """
 
     python_string: str
+    variable_names_to_capture: list[str] | None = None
 
 
 @dataclass
@@ -35,10 +40,14 @@ class RunArbitraryPythonStringResultSuccess(ResultPayloadSuccess):
     """Python code executed successfully.
 
     Args:
-        python_output: String output from the executed Python code
+        python_output: Stdout from the executed Python code, with ANSI escape codes stripped.
+        found_variable_values: Map of requested variable names to their captured values. Empty when no capture was requested.
+        missing_variables: Requested variable names that were not present in the executed code's namespace. Empty when no capture was requested or all names were found.
     """
 
     python_output: str
+    found_variable_values: dict[str, Any] = field(default_factory=dict)
+    missing_variables: list[str] = field(default_factory=list)
 
 
 @dataclass
