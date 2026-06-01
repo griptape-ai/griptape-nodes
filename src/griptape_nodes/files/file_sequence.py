@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from fileseq.constants import PAD_STYLE_HASH1
 from fileseq.filesequence import FileSequence as _FSeq
 
+from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.common.sequences import MissingItemPolicy, Sequence
 from griptape_nodes.files.directory import Directory
 from griptape_nodes.files.file import File, FileDestination
@@ -70,9 +71,14 @@ class FileSequence:
 
     @property
     def location(self) -> str:
-        """Return the raw macro template for wire serialisation.
+        """Return the raw macro template for this sequence.
 
-        Example: ``"{outputs}/dialogue_v001/{entry:04}.wav"``
+        Unresolved placeholders (including ``{_index}`` when versioning is in
+        effect) remain in the returned string. Use ``_entry_macro`` directly
+        when a self-contained (template + locked variables) representation is
+        needed for serialisation.
+
+        Example: ``"{outputs}/dialogue_v{_index:03}/{entry:04}.wav"``
         """
         return self._entry_macro.parsed_macro.template
 
@@ -81,9 +87,10 @@ class FileSequence:
         """Return the #### notation form of this sequence's entry pattern.
 
         The ``{entry:NN}`` macro variable is replaced with a run of ``#``
-        characters matching the padding width.
+        characters matching the padding width. Other placeholders (e.g.
+        ``{_index}``) remain unresolved.
 
-        Example: ``"{outputs}/dialogue_v001/####.wav"``
+        Example: ``"{outputs}/dialogue_v{_index:03}/####.wav"``
         """
         return entry_macro_to_hash_pattern(self.location)
 
@@ -92,10 +99,12 @@ class FileSequence:
         """Return the containing directory as a Directory.
 
         No I/O is performed; the directory path is derived from the macro
-        template by stripping the filename component.
+        template by stripping the filename component. The locked variables
+        (e.g. ``_index``) are preserved so the returned Directory can be resolved.
         """
-        dir_location = str(PurePosixPath(self.location).parent)
-        return Directory(dir_location)
+        dir_template = str(PurePosixPath(self.location).parent)
+        dir_variables = {k: v for k, v in self._entry_macro.variables.items() if k != _ENTRY_VAR_NAME}
+        return Directory(MacroPath(ParsedMacro(dir_template), dir_variables))
 
     def entry(self, entry_number: int) -> File:
         """Return a File for reading a specific entry.

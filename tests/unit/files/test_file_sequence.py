@@ -150,6 +150,23 @@ class TestFileSequenceDirectory:
         directory = seq.directory
         assert directory.location == "{outputs}/frames"
 
+    def test_directory_preserves_locked_index_variable(self) -> None:
+        locked_index = 2
+        template = "{outputs}/renders_v{_index:03}/frame_{entry:04}.exr"
+        macro_path = MacroPath(ParsedMacro(template), {"_index": locked_index})
+        seq = FileSequence(macro_path)
+        directory = seq.directory
+        assert isinstance(directory._dir_path, MacroPath)
+        assert directory._dir_path.variables["_index"] == locked_index
+
+    def test_directory_does_not_carry_entry_variable(self) -> None:
+        template = "{outputs}/frames/frame_{entry:04}.exr"
+        macro_path = MacroPath(ParsedMacro(template), {"_index": 1, "entry": 5})
+        seq = FileSequence(macro_path)
+        directory = seq.directory
+        assert isinstance(directory._dir_path, MacroPath)
+        assert "entry" not in directory._dir_path.variables
+
     def test_directory_no_io_performed(self) -> None:
         macro_path = MacroPath(ParsedMacro("{outputs}/frames/frame_{entry:04}.exr"), {})
         with patch(HANDLE_REQUEST_PATH) as mock_handle:
