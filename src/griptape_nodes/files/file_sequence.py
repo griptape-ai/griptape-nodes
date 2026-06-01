@@ -9,7 +9,7 @@ build_versioned_sequence_destination.
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from fileseq.constants import PAD_STYLE_HASH1
@@ -94,7 +94,7 @@ class FileSequence:
         No I/O is performed; the directory path is derived from the macro
         template by stripping the filename component.
         """
-        dir_location = str(Path(self.location).parent)
+        dir_location = str(PurePosixPath(self.location).parent)
         return Directory(dir_location)
 
     def entry(self, entry_number: int) -> File:
@@ -134,7 +134,7 @@ class FileSequence:
         if not isinstance(resolve_result, GetPathForMacroResultSuccess):
             return []
         resolved_dir = str(resolve_result.absolute_path.parent)
-        filename_pattern = Path(self.pattern).name
+        filename_pattern = PurePosixPath(self.pattern).name
         scan_result = GriptapeNodes.handle_request(
             ScanSequencesRequest(
                 directory=resolved_dir,
@@ -312,7 +312,7 @@ def hash_pattern_to_entry_macro(pattern: str) -> str:
         Macro template string with the token replaced by ``{entry:NN}``. Returns
         the input unchanged if no sequence token is found.
     """
-    path = Path(pattern)
+    path = PurePosixPath(pattern)
     fseq = _FSeq(path.name, pad_style=PAD_STYLE_HASH1)
     width = fseq.zfill()
     if width == 0:
@@ -320,7 +320,7 @@ def hash_pattern_to_entry_macro(pattern: str) -> str:
     entry_part = f"{{entry:{width:02}}}"
     new_name = fseq.basename() + entry_part + fseq.extension()
     parent = str(path.parent)
-    return str(Path(parent) / new_name) if parent != "." else new_name
+    return f"{parent}/{new_name}" if parent != "." else new_name
 
 
 def entry_macro_to_hash_pattern(template: str) -> str:
