@@ -771,12 +771,24 @@ class WorkflowManager:
                 RegisterLibraryFromFileRequest(
                     library_name=lib_ref.library_name,
                     perform_discovery_if_not_found=True,
+                    # The outer RunWorkflowFromRegistry failure already names the missing library
+                    # in a user-readable form; suppressing this inner result keeps the GUI from
+                    # showing a duplicate `RegisterLibraryFromFile Failed` toast on top of it.
+                    failure_log_level=logging.DEBUG,
                 )
             )
             if not register_result.succeeded():
+                # `library_version` may carry a non-semver placeholder (e.g. when the workflow was
+                # saved while the library was already unavailable, see node_manager._serialize_node_to_commands).
+                # Only render the version suffix when the stored value parses as semver.
+                has_real_version = bool(lib_ref.library_version) and semver.VersionInfo.is_valid(
+                    lib_ref.library_version
+                )
+                version_suffix = f" v{lib_ref.library_version}" if has_real_version else ""
+                inner_details = getattr(register_result, "result_details", "")
                 details = (
-                    f"Failed to ensure library '{lib_ref.library_name}' for workflow "
-                    f"'{complete_file_path}': {getattr(register_result, 'result_details', '')}"
+                    f"Workflow '{complete_file_path.name}' requires library "
+                    f"'{lib_ref.library_name}'{version_suffix}, which is not loaded. {inner_details}"
                 )
                 return WorkflowManager.WorkflowExecutionResult(
                     execution_successful=False,
