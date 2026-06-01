@@ -10,7 +10,7 @@ from rich.console import Console
 # Add current directory to path for imports to work
 sys.path.append(str(Path.cwd()))
 
-from griptape_nodes.cli.commands import config, doctor, engine, init, libraries, models, self
+from griptape_nodes.cli.commands import config, doctor, init, libraries, models, self
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
 console = Console()
@@ -18,7 +18,7 @@ console = Console()
 app = typer.Typer(
     name="griptape-nodes",
     help="Griptape Nodes Engine CLI",
-    no_args_is_help=False,
+    no_args_is_help=True,
     rich_markup_mode="rich",
     invoke_without_command=True,
 )
@@ -29,13 +29,11 @@ app.add_typer(config.app, name="config")
 app.add_typer(self.app, name="self")
 app.add_typer(libraries.app, name="libraries")
 app.add_typer(models.app, name="models")
-app.command("engine")(engine.engine_command)
 app.command("doctor")(doctor.doctor_command)
 
 
 @app.callback()
 def main(
-    ctx: typer.Context,
     version: bool = typer.Option(  # noqa: FBT001
         False, "--version", help="Show version and exit."
     ),
@@ -53,10 +51,6 @@ def main(
         version_string = get_complete_version_string()
         console.print(f"[bold green]{version_string}[/bold green]")
         raise typer.Exit
-
-    if ctx.invoked_subcommand is None:
-        # Default to engine command when no subcommand is specified
-        engine.engine_command()
 
 
 if __name__ == "__main__":
