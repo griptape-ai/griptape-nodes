@@ -1,4 +1,8 @@
-"""ProjectDirectoryParameter - parameter component for project-aware directory creation."""
+"""ProjectDirectoryParameter - parameter component for project-aware directory creation.
+
+Provisions a versioned output directory via situation-based macro routing and exposes it as a
+DirectoryDestination. Falls back to a sensible default when no situation is configured.
+"""
 
 import logging
 

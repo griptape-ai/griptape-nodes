@@ -1,4 +1,9 @@
-"""Directory - path-like object for directory operations via the retained mode API."""
+"""Directory - a macro-path handle for project directories.
+
+Supports I/O-free path inspection and deferred write via DirectoryDestination.
+Versioned directories (v001, v002 …) are provisioned by build_versioned_directory_destination,
+which probes the filesystem via the retained mode API to find the first unused index.
+"""
 
 from __future__ import annotations
 

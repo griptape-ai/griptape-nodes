@@ -1,4 +1,9 @@
-"""ProjectFileSequenceParameter - parameter component for project-aware file sequence output."""
+"""ProjectFileSequenceParameter - parameter component for project-aware file sequence output.
+
+Provisions a versioned output directory and exposes a FileSequenceDestination whose entry()
+method returns a per-frame FileDestination. Situation-based macro routing determines the
+directory layout; falls back to a sensible default when no situation is configured.
+"""
 
 import logging
 

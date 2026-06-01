@@ -1,4 +1,8 @@
-"""ProjectFileParameter - parameter component for project-aware file saving."""
+"""ProjectFileParameter - parameter component for project-aware file saving.
+
+Wraps a MacroPath into a FileDestination with a baked-in write policy, deferring
+path resolution to execution time via the situation-based macro system.
+"""
 
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode

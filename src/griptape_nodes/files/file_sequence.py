@@ -1,4 +1,10 @@
-"""FileSequence - a collection of files identified by an entry-number pattern."""
+"""FileSequence and FileSequenceDestination for numbered file collections (frames, audio takes, etc.).
+
+Entry macros like ``{outputs}/dialogue_v{_index:03}/{entry:04}.wav`` drive both reading
+(FileSequence) and writing (FileSequenceDestination). Scanning delegates to the engine via
+ScanSequencesRequest; versioned destinations lock a free directory index via
+build_versioned_sequence_destination.
+"""
 
 from __future__ import annotations
 
@@ -6,10 +12,18 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from fileseq.constants import PAD_STYLE_HASH1
+from fileseq.filesequence import FileSequence as _FSeq
+
+from griptape_nodes.common.sequences import MissingItemPolicy, Sequence
 from griptape_nodes.files.directory import Directory
 from griptape_nodes.files.file import File, FileDestination
 from griptape_nodes.files.project_file import ProjectFileDestination
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
+    ScanSequencesRequest,
+    ScanSequencesResultSuccess,
+)
 from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
@@ -21,7 +35,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 _ENTRY_VAR_NAME = "entry"
-_HASH_PATTERN = re.compile(r"#+")
 _ENTRY_MACRO_PATTERN = re.compile(r"\{entry(?::(\d+))?\}")
 _MAX_VERSION_INDEX = 9999
 
@@ -95,6 +108,45 @@ class FileSequence:
         """
         variables = {**self._entry_macro.variables, _ENTRY_VAR_NAME: entry_number}
         return File(MacroPath(self._entry_macro.parsed_macro, variables))
+
+    def scan(
+        self,
+        *,
+        policy: MissingItemPolicy = MissingItemPolicy.SPLIT,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> list[Sequence]:
+        """Scan the sequence directory and return what's on disk.
+
+        Args:
+            policy: How to handle gaps in the number range. Defaults to SPLIT.
+            start: Optional lower bound (inclusive) for the active subset.
+            end: Optional upper bound (inclusive) for the active subset.
+
+        Returns:
+            List of Sequence objects. Empty if the directory cannot be resolved
+            or contains no matching files.
+        """
+        probe_vars = {**self._entry_macro.variables, _ENTRY_VAR_NAME: 0}
+        resolve_result = GriptapeNodes.handle_request(
+            GetPathForMacroRequest(parsed_macro=self._entry_macro.parsed_macro, variables=probe_vars)
+        )
+        if not isinstance(resolve_result, GetPathForMacroResultSuccess):
+            return []
+        resolved_dir = str(resolve_result.absolute_path.parent)
+        filename_pattern = Path(self.pattern).name
+        scan_result = GriptapeNodes.handle_request(
+            ScanSequencesRequest(
+                directory=resolved_dir,
+                pattern=filename_pattern,
+                policy=policy,
+                start_number=start,
+                end_number=end,
+            )
+        )
+        if not isinstance(scan_result, ScanSequencesResultSuccess):
+            return []
+        return scan_result.sequences
 
 
 class _EntryWriteDestination(ProjectFileDestination):
@@ -248,20 +300,27 @@ def build_versioned_sequence_destination(
 
 
 def hash_pattern_to_entry_macro(pattern: str) -> str:
-    """Convert a #### entry pattern to a macro template with {entry:NN} syntax.
+    """Convert a sequence token pattern to a macro template with {entry:NN} syntax.
+
+    Accepts all fileseq token forms: ``####``, ``%04d``, ``@@@@``, ``$F4``.
 
     Args:
-        pattern: Pattern string like ``"render_####.exr"`` or ``"frame_##.png"``.
+        pattern: Pattern string like ``"render_####.exr"``, ``"render_%04d.exr"``,
+            or a full path like ``"{outputs}/renders/render_####.exr"``.
 
     Returns:
-        Macro template string like ``"render_{entry:04}.exr"``.
+        Macro template string with the token replaced by ``{entry:NN}``. Returns
+        the input unchanged if no sequence token is found.
     """
-
-    def replace_hashes(match: re.Match) -> str:
-        width = len(match.group())
-        return f"{{entry:{width:02d}}}"
-
-    return _HASH_PATTERN.sub(replace_hashes, pattern)
+    path = Path(pattern)
+    fseq = _FSeq(path.name, pad_style=PAD_STYLE_HASH1)
+    width = fseq.zfill()
+    if width == 0:
+        return pattern
+    entry_part = f"{{entry:{width:02}}}"
+    new_name = fseq.basename() + entry_part + fseq.extension()
+    parent = str(path.parent)
+    return str(Path(parent) / new_name) if parent != "." else new_name
 
 
 def entry_macro_to_hash_pattern(template: str) -> str:

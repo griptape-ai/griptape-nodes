@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.sequences import MissingItemPolicy, Sequence, SequenceEntry
 from griptape_nodes.files.file_sequence import (
     FileSequence,
     FileSequenceDestination,
@@ -14,7 +15,13 @@ from griptape_nodes.files.file_sequence import (
     entry_macro_to_hash_pattern,
     hash_pattern_to_entry_macro,
 )
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
+    ScanSequencesRequest,
+    ScanSequencesResultFailure,
+    ScanSequencesResultSuccess,
+    SequenceScanFailureReason,
+)
 from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroResultFailure,
     GetPathForMacroResultSuccess,
@@ -68,6 +75,21 @@ class TestHashPatternConversion:
     def test_roundtrip_macro_to_hash_to_macro(self) -> None:
         original = "render_{entry:04}.exr"
         assert hash_pattern_to_entry_macro(entry_macro_to_hash_pattern(original)) == original
+
+    def test_hash_to_entry_macro_printf_pattern(self) -> None:
+        assert hash_pattern_to_entry_macro("render_%04d.exr") == "render_{entry:04}.exr"
+
+    def test_hash_to_entry_macro_full_path_with_parent_dir(self) -> None:
+        assert (
+            hash_pattern_to_entry_macro("{outputs}/renders/render_####.exr")
+            == "{outputs}/renders/render_{entry:04}.exr"
+        )
+
+    def test_hash_to_entry_macro_printf_in_full_path(self) -> None:
+        assert (
+            hash_pattern_to_entry_macro("{outputs}/renders/render_%04d.exr")
+            == "{outputs}/renders/render_{entry:04}.exr"
+        )
 
 
 class TestFileSequenceConstructor:
@@ -253,6 +275,122 @@ class TestFileSequenceDestination:
 
         assert len(callback_calls) == 1
         assert callback_calls[0] is written_file
+
+
+class TestFileSequenceScan:
+    """Tests for FileSequence.scan().
+
+    scan() makes two handle_request calls:
+      1. GetPathForMacroRequest  — resolves the macro to an absolute directory path.
+      2. ScanSequencesRequest    — delegates the actual filesystem scan to the engine.
+    """
+
+    _ABS_DIR = "/abs/work/frames"
+    _TEMPLATE = "{outputs}/frames/frame_{entry:04}.exr"
+
+    def _path_success(self) -> GetPathForMacroResultSuccess:
+        return GetPathForMacroResultSuccess(
+            result_details="OK",
+            resolved_path=Path("frames/frame_0000.exr"),
+            absolute_path=Path(f"{self._ABS_DIR}/frame_0000.exr"),
+        )
+
+    def _scan_success(self, sequences: list[Sequence] | None = None) -> ScanSequencesResultSuccess:
+        seqs = sequences or []
+        return ScanSequencesResultSuccess(
+            result_details="ok",
+            sequences=seqs,
+            has_entries=any(s.entries for s in seqs),
+            directory_had_matching_files=bool(seqs),
+        )
+
+    def _make_sequence(self) -> Sequence:
+        return Sequence(
+            entries=[SequenceEntry(number=1, padded_number="0001", path=f"{self._ABS_DIR}/frame_0001.exr")],
+            first=1,
+            last=1,
+            discovered_first=1,
+            discovered_last=1,
+            padding=4,
+            pattern="frame_####.exr",
+            directory=self._ABS_DIR,
+            policy=MissingItemPolicy.SPLIT,
+            present_numbers={1},
+        )
+
+    def test_returns_empty_list_when_macro_resolution_fails(self) -> None:
+        seq = FileSequence(MacroPath(ParsedMacro(self._TEMPLATE), {}))
+        failure = GetPathForMacroResultFailure(
+            result_details="missing outputs",
+            failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=failure):
+            assert seq.scan() == []
+
+    def test_returns_empty_list_when_scan_request_fails(self) -> None:
+        seq = FileSequence(MacroPath(ParsedMacro(self._TEMPLATE), {}))
+        scan_failure = ScanSequencesResultFailure(
+            result_details="listing error",
+            failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+        )
+        with patch(HANDLE_REQUEST_PATH, side_effect=[self._path_success(), scan_failure]):
+            assert seq.scan() == []
+
+    def test_returns_sequences_on_success(self) -> None:
+        seq = FileSequence(MacroPath(ParsedMacro(self._TEMPLATE), {}))
+        expected = [self._make_sequence()]
+        with patch(HANDLE_REQUEST_PATH, side_effect=[self._path_success(), self._scan_success(expected)]):
+            result = seq.scan()
+        assert result == expected
+
+    def test_returns_empty_list_when_no_sequences_found(self) -> None:
+        seq = FileSequence(MacroPath(ParsedMacro(self._TEMPLATE), {}))
+        with patch(HANDLE_REQUEST_PATH, side_effect=[self._path_success(), self._scan_success()]):
+            assert seq.scan() == []
+
+    def test_dispatches_resolved_directory_to_scan_request(self) -> None:
+        seq = FileSequence(MacroPath(ParsedMacro(self._TEMPLATE), {}))
+        with patch(HANDLE_REQUEST_PATH, side_effect=[self._path_success(), self._scan_success()]) as mock_handle:
+            seq.scan()
+        scan_request = mock_handle.call_args_list[1][0][0]
+        assert isinstance(scan_request, ScanSequencesRequest)
+        assert scan_request.directory == self._ABS_DIR
+
+    def test_dispatches_filename_only_pattern_to_scan_request(self) -> None:
+        seq = FileSequence(MacroPath(ParsedMacro(self._TEMPLATE), {}))
+        with patch(HANDLE_REQUEST_PATH, side_effect=[self._path_success(), self._scan_success()]) as mock_handle:
+            seq.scan()
+        scan_request = mock_handle.call_args_list[1][0][0]
+        assert isinstance(scan_request, ScanSequencesRequest)
+        assert scan_request.pattern == "frame_####.exr"
+
+    def test_forwards_policy_to_scan_request(self) -> None:
+        seq = FileSequence(MacroPath(ParsedMacro(self._TEMPLATE), {}))
+        with patch(HANDLE_REQUEST_PATH, side_effect=[self._path_success(), self._scan_success()]) as mock_handle:
+            seq.scan(policy=MissingItemPolicy.SKIP)
+        scan_request = mock_handle.call_args_list[1][0][0]
+        assert isinstance(scan_request, ScanSequencesRequest)
+        assert scan_request.policy == MissingItemPolicy.SKIP
+
+    def test_forwards_start_and_end_to_scan_request(self) -> None:
+        start, end = 2, 10
+        seq = FileSequence(MacroPath(ParsedMacro(self._TEMPLATE), {}))
+        with patch(HANDLE_REQUEST_PATH, side_effect=[self._path_success(), self._scan_success()]) as mock_handle:
+            seq.scan(start=start, end=end)
+        scan_request = mock_handle.call_args_list[1][0][0]
+        assert isinstance(scan_request, ScanSequencesRequest)
+        assert scan_request.start_number == start
+        assert scan_request.end_number == end
+
+    def test_probe_macro_includes_entry_zero(self) -> None:
+        locked_index = 3
+        macro_path = MacroPath(ParsedMacro(self._TEMPLATE), {"_index": locked_index})
+        seq = FileSequence(macro_path)
+        with patch(HANDLE_REQUEST_PATH, side_effect=[self._path_success(), self._scan_success()]) as mock_handle:
+            seq.scan()
+        path_request = mock_handle.call_args_list[0][0][0]
+        assert path_request.variables["entry"] == 0
+        assert path_request.variables["_index"] == locked_index
 
 
 class TestBuildVersionedSequenceDestination:
