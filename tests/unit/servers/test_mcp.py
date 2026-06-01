@@ -1,17 +1,13 @@
-import json
-
 import pytest
 
 from griptape_nodes.servers.mcp import (
     _BATCH_MAX_AUTO_TIMEOUT_MS,
     _BATCH_PER_REQUEST_TIMEOUT_MS,
     EVENT_REQUEST_BATCH_TOOL_NAME,
-    INSPECT_TOOL_SCHEMA_TOOL_NAME,
     SUPPORTED_REQUEST_EVENTS,
     _build_batch_pairs,
     _event_request_batch_input_schema,
     _resolve_batch_timeout_ms,
-    _resolve_tool_schema,
     _summarize_result_details,
     _trim_batch_results,
     _trim_response,
@@ -106,83 +102,28 @@ class TestEventRequestBatchInputSchema:
     def test_enumerates_every_supported_request_type(self) -> None:
         schema = _event_request_batch_input_schema()
 
-        name_enum = schema["properties"]["invocations"]["items"]["properties"]["name"]["enum"]
-        assert set(name_enum) == set(SUPPORTED_REQUEST_EVENTS)
+        request_type_enum = schema["properties"]["requests"]["items"]["properties"]["request_type"]["enum"]
+        assert set(request_type_enum) == set(SUPPORTED_REQUEST_EVENTS)
 
-    def test_marks_invocations_required_and_non_empty(self) -> None:
-        # Schema intentionally does NOT mark `invocations` required and does NOT use minItems:
-        # both checks happen in the handler so the empty-call error message can carry an
-        # actionable example rather than the MCP SDK's generic validator string.
+    def test_marks_requests_required_and_non_empty(self) -> None:
         schema = _event_request_batch_input_schema()
 
-        assert "required" not in schema
-        assert "minItems" not in schema["properties"]["invocations"]
-
-    def test_arguments_field_is_string_not_object(self) -> None:
-        # Anthropic's batch-tool cookbook recipe types `arguments` as a stringified-JSON string,
-        # not as a polymorphic object. Claude reliably populates strings; the polymorphic-object
-        # variant triggers empty-args sampling.
-        schema = _event_request_batch_input_schema()
-
-        items = schema["properties"]["invocations"]["items"]
-        arguments_field = items["properties"]["arguments"]
-        assert arguments_field["type"] == "string"
-        assert items["required"] == ["name", "arguments"]
-
-    def test_name_uses_enum_for_closed_discriminator(self) -> None:
-        schema = _event_request_batch_input_schema()
-
-        name_field = schema["properties"]["invocations"]["items"]["properties"]["name"]
-        assert name_field["type"] == "string"
-        assert sorted(name_field["enum"]) == sorted(SUPPORTED_REQUEST_EVENTS)
-
-
-class TestResolveToolSchema:
-    def test_returns_batch_schema_for_batch_tool(self) -> None:
-        schema = _resolve_tool_schema(EVENT_REQUEST_BATCH_TOOL_NAME)
-
-        # New shape per Anthropic batch-tool cookbook: enum on `name`, string on `arguments`.
-        items = schema["properties"]["invocations"]["items"]
-        assert "oneOf" not in items
-        assert items["properties"]["name"]["enum"]
-        assert items["properties"]["arguments"]["type"] == "string"
-
-    def test_returns_typeadapter_schema_for_supported_request(self) -> None:
-        schema = _resolve_tool_schema("CreateNodeRequest")
-
-        assert schema["title"] == "CreateNodeRequest"
-        assert "node_type" in schema["properties"]
-
-    def test_returns_inspect_schema_for_inspect_tool(self) -> None:
-        schema = _resolve_tool_schema(INSPECT_TOOL_SCHEMA_TOOL_NAME)
-
-        assert schema["required"] == ["tool_name"]
-
-    def test_rejects_unknown_tool_name(self) -> None:
-        with pytest.raises(ValueError, match="no tool by that name"):
-            _resolve_tool_schema("NopeRequest")
-
-    def test_rejects_non_string_tool_name(self) -> None:
-        with pytest.raises(ValueError, match="non-empty string"):
-            _resolve_tool_schema(123)
-        with pytest.raises(ValueError, match="non-empty string"):
-            _resolve_tool_schema("")
+        assert schema["required"] == ["requests"]
+        assert schema["properties"]["requests"]["minItems"] == 1
 
 
 class TestBuildBatchPairs:
-    def test_builds_pairs_for_valid_inner_invocations(self) -> None:
+    def test_builds_pairs_for_valid_inner_requests(self) -> None:
         raw = [
-            {"name": "CreateNodeRequest", "arguments": json.dumps({"node_type": "TextInput"})},
+            {"request_type": "CreateNodeRequest", "request": {"node_type": "TextInput"}},
             {
-                "name": "CreateConnectionRequest",
-                "arguments": json.dumps(
-                    {
-                        "source_parameter_name": "text",
-                        "target_parameter_name": "prompt",
-                        "source_node_name": "TextInput_1",
-                        "target_node_name": "Agent_1",
-                    }
-                ),
+                "request_type": "CreateConnectionRequest",
+                "request": {
+                    "source_parameter_name": "text",
+                    "target_parameter_name": "prompt",
+                    "source_node_name": "TextInput_1",
+                    "target_node_name": "Agent_1",
+                },
             },
         ]
 
@@ -193,60 +134,29 @@ class TestBuildBatchPairs:
         assert pairs[0][1]["node_type"] == "TextInput"
         assert pairs[1][1]["source_node_name"] == "TextInput_1"
 
-    def test_accepts_already_parsed_object_arguments(self) -> None:
-        # Some clients may send `arguments` as a dict instead of a string; accept both rather
-        # than punishing well-behaved callers.
-        raw = [{"name": "CreateNodeRequest", "arguments": {"node_type": "TextInput"}}]
-
-        pairs = _build_batch_pairs(raw)
-
-        assert pairs[0][0] == "CreateNodeRequest"
-        assert pairs[0][1]["node_type"] == "TextInput"
-
-    def test_treats_missing_arguments_as_empty(self) -> None:
-        # ListAllWorkflowsRequest has no required fields; an entry without an arguments field
-        # should default to an empty object, not blow up.
-        raw = [{"name": "ListAllWorkflowsRequest"}]
-
-        pairs = _build_batch_pairs(raw)
-
-        assert pairs[0][0] == "ListAllWorkflowsRequest"
-
-    def test_rejects_missing_invocations_with_actionable_hint(self) -> None:
-        # When the schema validator is bypassed and our handler sees no `invocations` field at
-        # all (raw_invocations is None), surface the agent-actionable hint with a working
-        # example instead of a bland TypeError.
-        with pytest.raises(ValueError, match=r"working example|invocations.*array"):
-            _build_batch_pairs(None)
-
-    def test_rejects_non_list_invocations(self) -> None:
+    def test_rejects_non_list_requests(self) -> None:
         with pytest.raises(TypeError, match="must be a list"):
             _build_batch_pairs("not a list")
 
-    def test_rejects_empty_list_with_actionable_hint(self) -> None:
-        with pytest.raises(ValueError, match=r"working example|invocations.*array"):
+    def test_rejects_empty_list(self) -> None:
+        with pytest.raises(ValueError, match="empty"):
             _build_batch_pairs([])
 
     def test_rejects_non_dict_entry(self) -> None:
         with pytest.raises(TypeError, match="entry 0"):
             _build_batch_pairs(["not a dict"])
 
-    def test_rejects_unknown_name(self) -> None:
+    def test_rejects_unknown_request_type(self) -> None:
         with pytest.raises(ValueError, match="is not a supported tool"):
-            _build_batch_pairs([{"name": "NopeRequest", "arguments": "{}"}])
+            _build_batch_pairs([{"request_type": "NopeRequest", "request": {}}])
 
-    def test_rejects_invalid_json_in_arguments(self) -> None:
-        with pytest.raises(ValueError, match="not valid JSON"):
-            _build_batch_pairs([{"name": "CreateNodeRequest", "arguments": "{not json}"}])
-
-    def test_rejects_arguments_that_are_not_objects(self) -> None:
-        with pytest.raises(TypeError, match="must be a JSON object"):
-            _build_batch_pairs([{"name": "CreateNodeRequest", "arguments": "[1,2,3]"}])
+    def test_rejects_non_dict_request_payload(self) -> None:
+        with pytest.raises(TypeError, match="must be an object"):
+            _build_batch_pairs([{"request_type": "ListRegisteredLibrariesRequest", "request": "bad"}])
 
     def test_rejects_unknown_kwargs_in_inner_payload(self) -> None:
-        bad = [{"name": "CreateNodeRequest", "arguments": json.dumps({"node_type": "X", "bogus_field": 1})}]
         with pytest.raises(ValueError, match="Attempted to construct CreateNodeRequest"):
-            _build_batch_pairs(bad)
+            _build_batch_pairs([{"request_type": "CreateNodeRequest", "request": {"node_type": "X", "bogus_field": 1}}])
 
 
 class TestResolveBatchTimeoutMs:
