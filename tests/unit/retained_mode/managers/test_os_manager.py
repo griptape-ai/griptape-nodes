@@ -1511,9 +1511,7 @@ class TestGetNextUnusedFilenameRequest:
         os_manager = griptape_nodes.OSManager()
         macro_path = MacroPath(parsed_macro=ParsedMacro(f"{temp_dir}/render.png"), variables={})
 
-        result = os_manager.on_get_next_unused_filename_request(
-            GetNextUnusedFilenameRequest(file_path=macro_path)
-        )
+        result = os_manager.on_get_next_unused_filename_request(GetNextUnusedFilenameRequest(file_path=macro_path))
 
         assert isinstance(result, GetNextUnusedFilenameResultFailure)
         assert result.failure_reason == FileIOFailureReason.INVALID_PATH
@@ -1549,9 +1547,7 @@ class TestGetNextVersionIndexRequest:
         assert isinstance(result, GetNextVersionIndexResultSuccess)
         assert result.index == 1
 
-    def test_optional_index_is_rejected_as_invalid_path(
-        self, griptape_nodes: GriptapeNodes, temp_dir: Path
-    ) -> None:
+    def test_optional_index_is_rejected_as_invalid_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Optional index templates currently fail because no required unresolved index exists."""
         os_manager = griptape_nodes.OSManager()
 
