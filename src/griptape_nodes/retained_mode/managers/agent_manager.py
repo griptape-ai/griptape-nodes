@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
-from pydantic_ai.messages import ModelMessagesTypeAdapter
+import httpx
+from pydantic_ai.messages import BinaryContent, ModelMessagesTypeAdapter
 from pydantic_ai.usage import UsageLimits
 from xdg_base_dirs import xdg_data_home
 
@@ -99,6 +102,7 @@ from griptape_nodes.servers import bind_free_socket
 from griptape_nodes.servers.mcp import GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT, start_mcp_server
 
 if TYPE_CHECKING:
+    from pydantic_ai.messages import UserContent
     from pydantic_ai.toolsets import AbstractToolset
 
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -143,6 +147,12 @@ DEFAULT_AGENT_INSTRUCTIONS = (
 # requests is enough for a complex multi-tool task while still protecting the
 # user from a tool-call loop.
 DEFAULT_AGENT_USAGE_LIMITS = UsageLimits(request_limit=60)
+
+# Bound how long we wait when downloading an attached image server-side before
+# inlining it for the model, and the media type to assume when neither the
+# response header nor the URL extension identifies one.
+_ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS = 30.0
+_DEFAULT_IMAGE_MEDIA_TYPE = "image/png"
 
 
 @dataclass
@@ -230,7 +240,7 @@ class AgentManager:
         is_first_run = len(self._thread_storage.load_history(thread_id)) == 0
 
         runner = self._build_runner(request.additional_mcp_servers)
-        prompt = _compose_prompt(request.input, request.url_artifacts)
+        prompt = await _compose_prompt(request.input, request.url_artifacts)
 
         event_manager = GriptapeNodes.EventManager()
 
@@ -528,25 +538,84 @@ class AgentManager:
         return thread_id
 
 
-def _compose_prompt(text: str, url_artifacts: list[Any]) -> str:
-    """Combine the plain text input with any attached URL artifacts.
+async def _compose_prompt(text: str, url_artifacts: list[Any]) -> str | list[UserContent]:
+    """Combine the plain text input with any attached image artifacts.
 
-    The new runner's prompt is ``str``-only at the surface; we render URL
-    artifacts as bracketed markers so the model still sees what was attached.
-    Once the model adapter exposes binary user content, this will route image
-    URLs through Pydantic AI's ``ImageUrl`` type instead.
+    Image attachments are downloaded server-side and inlined as
+    ``BinaryContent`` so the model receives the actual pixels rather than a URL.
+    The engine fetches the bytes itself, which is why this works even when the
+    static file store hands out localhost URLs the model provider cannot reach.
+
+    Returns the plain ``text`` when there are no usable image attachments,
+    otherwise a ``[text, BinaryContent, ...]`` sequence for ``Agent.run``.
     """
-    if not url_artifacts:
+    image_urls = [
+        url
+        for artifact in url_artifacts
+        if _artifact_field(artifact, "type") == "ImageUrlArtifact" and (url := _artifact_field(artifact, "value"))
+    ]
+    if not image_urls:
         return text
-    extras: list[str] = []
-    for artifact in url_artifacts:
-        url = artifact.get("value") if isinstance(artifact, dict) else None
-        kind = artifact.get("type") if isinstance(artifact, dict) else None
-        if url:
-            extras.append(f"[{kind or 'attachment'}: {url}]")
-    if not extras:
+
+    contents: list[UserContent] = []
+    if text:
+        contents.append(text)
+    async with httpx.AsyncClient(timeout=_ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS) as client:
+        for url in image_urls:
+            content = await _download_image_content(client, url)
+            if content is not None:
+                contents.append(content)
+
+    # Every download failed: fall back to plain text so the turn still runs.
+    if not any(isinstance(content, BinaryContent) for content in contents):
         return text
-    return text + "\n\nAttachments:\n" + "\n".join(extras)
+    return contents
+
+
+async def _download_image_content(client: httpx.AsyncClient, url: str) -> BinaryContent | None:
+    """Download an image URL and wrap its bytes as inline ``BinaryContent``.
+
+    Returns ``None`` when the download fails so the caller can drop the
+    attachment and still run the turn with whatever else succeeded.
+    """
+    try:
+        response = await client.get(url)
+        response.raise_for_status()
+    except httpx.HTTPError as e:
+        logger.warning("Attempted to attach image from %s. Skipping it because the download failed with %s.", url, e)
+        return None
+    return BinaryContent(data=response.content, media_type=_resolve_image_media_type(response, url))
+
+
+def _resolve_image_media_type(response: httpx.Response, url: str) -> str:
+    """Determine the image media type from the response header, then the URL.
+
+    Prefers the server's ``Content-Type`` and falls back to guessing from the
+    URL path (query string stripped) before defaulting to PNG.
+    """
+    header_media_type = response.headers.get("content-type", "").split(";", 1)[0].strip()
+    if header_media_type.startswith("image/"):
+        return header_media_type
+    guessed_media_type, _ = mimetypes.guess_type(urlsplit(url).path)
+    if guessed_media_type and guessed_media_type.startswith("image/"):
+        return guessed_media_type
+    return _DEFAULT_IMAGE_MEDIA_TYPE
+
+
+def _artifact_field(artifact: Any, key: str) -> Any:
+    """Read ``key`` from a request artifact, attribute first then dict item.
+
+    ``RunAgentRequestArtifact`` is a dataclass that subclasses ``dict`` but
+    keeps its data in attributes, leaving the dict portion empty. Plain dicts
+    (e.g. in tests) carry the data as items instead. Checking the attribute
+    first and falling back to the item handles both shapes.
+    """
+    value = getattr(artifact, key, None)
+    if value is not None:
+        return value
+    if isinstance(artifact, dict):
+        return artifact.get(key)
+    return None
 
 
 def _generate_title_from_input(user_input: str, max_length: int = 50) -> str:

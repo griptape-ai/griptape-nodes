@@ -60,10 +60,11 @@ from griptape_nodes.agents.pydantic_ai.workspace_tools import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterable, Awaitable, Callable
+    from collections.abc import AsyncIterable, Awaitable, Callable, Sequence
     from pathlib import Path
 
     from pydantic_ai._run_context import RunContext
+    from pydantic_ai.messages import UserContent
     from pydantic_ai.toolsets import AbstractToolset
     from pydantic_ai.usage import UsageLimits
 
@@ -225,7 +226,7 @@ class PydanticAgentRunner:
 
     async def run(
         self,
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         thread_id: str | None = None,
         token_sink: Callable[[str], Awaitable[None] | None] | None = None,
@@ -235,7 +236,9 @@ class PydanticAgentRunner:
         """Run the agent against ``prompt``, streaming events and saving history.
 
         Args:
-            prompt: The user prompt for this turn.
+            prompt: The user prompt for this turn. Either plain text or a
+                sequence of Pydantic AI user-content parts (e.g. text plus
+                inlined ``BinaryContent`` images) for multimodal input.
             thread_id: Existing thread id, or ``None`` to start a fresh one.
             token_sink: Callback invoked with each text-delta token as it
                 arrives from the model. Convenience hook for text-only
@@ -262,7 +265,7 @@ class PydanticAgentRunner:
             run_id,
             self.model_name,
             len(history),
-            _preview(prompt),
+            _prompt_preview(prompt),
         )
         started = time.monotonic()
 
@@ -532,6 +535,18 @@ def _preview(value: str) -> str:
     if len(value) <= _LOG_PREVIEW_BYTES:
         return value
     return value[:_LOG_PREVIEW_BYTES] + "..."
+
+
+def _prompt_preview(prompt: str | Sequence[UserContent]) -> str:
+    """Render a log-safe preview of a prompt that may carry binary content.
+
+    Text parts are previewed inline; non-text parts (images, audio, etc.) are
+    rendered as a ``<TypeName>`` marker so a binary payload never hits the log.
+    """
+    if isinstance(prompt, str):
+        return _preview(prompt)
+    parts = [_preview(item) if isinstance(item, str) else f"<{type(item).__name__}>" for item in prompt]
+    return " ".join(parts)
 
 
 def _stringify(value: Any) -> str:
