@@ -18,10 +18,6 @@ class GetConfigValueRequest(RequestPayload):
     Use when: Reading application settings, checking node configurations, retrieving user preferences,
     accessing environment-specific values. Key format: "category.key" or "category.subcategory.key".
 
-    Values stored as `$SECRET_NAME` are returned as the literal placeholder string; this request never
-    dereferences secrets. Use `GetSecretValueRequest` (subject to its own gating) when the resolved
-    secret value is required.
-
     Args:
         category_and_key: Configuration key in format "category.key" or "category.subcategory.key"
 
