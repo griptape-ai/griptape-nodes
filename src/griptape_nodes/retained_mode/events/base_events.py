@@ -226,19 +226,31 @@ class ForwardedException(Exception):  # noqa: N818
     """Placeholder for an exception that crossed the worker boundary.
 
     The converter's Exception hook emits worker-side exceptions as a
-    ``{type, module, message, traceback}`` dict, then rebuilds them
-    into a ``ForwardedException`` on the receiving side. The
-    placeholder is still an ``Exception`` (so ``raise ... from result.exception``
-    still chains) but carries ``original_type`` / ``original_traceback``
-    attributes so callers can see the worker-side class name and
-    frames without any structured-field duplication on
-    ``ResultPayloadFailure``.
+    ``{type, message, traceback}`` dict, then rebuilds them into a
+    ``ForwardedException`` on the receiving side. The placeholder is
+    still an ``Exception`` (so ``raise ... from result.exception``
+    chains) and carries the worker-side class name and formatted
+    traceback so the orchestrator can show both.
+
+    ``NodeExecutor._format_node_failure_message`` is the consumer:
+    it reads ``original_type`` for the ``[builtins.ValueError]``
+    prefix on the user-visible ``RuntimeError`` message, and
+    ``original_traceback`` for the ``Worker traceback:`` block.
+    Without these attributes the chained exception would print only
+    ``Type: message`` with no frames, because the placeholder is
+    constructed (not raised) and so its ``__traceback__`` is ``None``.
     """
 
-    def __init__(self, message: str) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        original_type: str | None = None,
+        original_traceback: str | None = None,
+    ) -> None:
         super().__init__(message)
-        self.original_type: str | None = None
-        self.original_traceback: str | None = None
+        self.original_type = original_type
+        self.original_traceback = original_traceback
 
 
 # Failure result payload abstract base class

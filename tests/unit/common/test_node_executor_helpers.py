@@ -279,8 +279,7 @@ class TestFormatNodeFailureMessage:
     def test_includes_original_type_prefix(self) -> None:
         from griptape_nodes.retained_mode.events.base_events import ForwardedException
 
-        exc = ForwardedException("rebuilt")
-        exc.original_type = "builtins.RuntimeError"
+        exc = ForwardedException("rebuilt", original_type="builtins.RuntimeError")
 
         msg = NodeExecutor._format_node_failure_message("MyNode", MagicMock(result_details="oops"), exc)
 
@@ -290,9 +289,11 @@ class TestFormatNodeFailureMessage:
     def test_appends_worker_traceback_when_present(self) -> None:
         from griptape_nodes.retained_mode.events.base_events import ForwardedException
 
-        exc = ForwardedException("rebuilt")
-        exc.original_type = "builtins.ValueError"
-        exc.original_traceback = 'Traceback...\n  File "a.py", line 1, in <module>\nValueError: rebuilt\n'
+        exc = ForwardedException(
+            "rebuilt",
+            original_type="builtins.ValueError",
+            original_traceback='Traceback...\n  File "a.py", line 1, in <module>\nValueError: rebuilt\n',
+        )
 
         msg = NodeExecutor._format_node_failure_message("MyNode", MagicMock(result_details="oops"), exc)
 

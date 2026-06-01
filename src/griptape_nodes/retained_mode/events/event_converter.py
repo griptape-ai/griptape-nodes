@@ -43,11 +43,13 @@ converter.register_unstructure_hook_func(
 
 # Exception -> structured dict.
 #
-# The old hook stringified exceptions, dropping type identity and the
-# traceback. That made worker -> orchestrator ``ResultPayloadFailure``
-# hops lossy (authors saw ``RuntimeError: <message>`` with no frames).
-# The dict form preserves enough context that the structure hook can
-# rebuild a ``ForwardedException`` on the receiving side.
+# The three dict keys are the wire form of ``ForwardedException``:
+#   ``type``      -> ``ForwardedException.original_type``      -> ``[<type>]`` prefix
+#   ``message``   -> ``ForwardedException.args[0]``            -> message body
+#   ``traceback`` -> ``ForwardedException.original_traceback`` -> ``Worker traceback:`` block
+# ``_structure_exception`` rebuilds the placeholder on the receiving side, and
+# ``NodeExecutor._format_node_failure_message`` renders the prefix and block
+# into the user-visible ``RuntimeError`` message.
 def _unstructure_exception(obj: Exception) -> dict[str, Any]:
     if obj.__traceback__ is None:
         tb = None
@@ -107,11 +109,12 @@ converter.register_structure_hook_func(
 
 # Exception <- structured dict.
 #
-# The receiving side never has the worker-side class imported, so we
-# rebuild a ``ForwardedException`` that carries the original type
-# name and traceback as attributes. Callers reading
-# ``result.exception`` get a live ``Exception`` that chains correctly
-# with ``raise ... from`` and still surfaces worker-side context.
+# Rebuilds a ``ForwardedException`` on the receiving side because the
+# worker-side class is rarely importable on the orchestrator. The
+# ``original_type`` and ``original_traceback`` fields are read by
+# ``NodeExecutor._format_node_failure_message`` to render the
+# ``[<type>] ... Worker traceback: ...`` block in the orchestrator's
+# user-visible ``RuntimeError`` message.
 def _structure_exception(obj: Any, _cls: type) -> Exception:
     # Lazy import to avoid a circular dependency: base_events imports
     # from this module (event_converter is registered at import time
@@ -121,11 +124,11 @@ def _structure_exception(obj: Any, _cls: type) -> Exception:
 
     if not isinstance(obj, dict):
         return ForwardedException(str(obj))
-    message = str(obj.get("message", ""))
-    forwarded = ForwardedException(message)
-    forwarded.original_type = obj.get("type")
-    forwarded.original_traceback = obj.get("traceback")
-    return forwarded
+    return ForwardedException(
+        str(obj.get("message", "")),
+        original_type=obj.get("type"),
+        original_traceback=obj.get("traceback"),
+    )
 
 
 converter.register_structure_hook_func(
