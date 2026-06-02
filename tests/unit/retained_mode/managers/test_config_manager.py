@@ -608,3 +608,53 @@ class TestConfigManagerEventGating:
 
         assert isinstance(result, SetConfigCategoryResultFailure)
         assert received == []
+
+    def test_set_config_category_non_empty_category_returns_failure_when_write_fails(self) -> None:
+        """The non-empty-category branch routes through ``set_config_value``; failure must propagate."""
+        from griptape_nodes.retained_mode.events.config_events import (
+            SetConfigCategoryRequest,
+            SetConfigCategoryResultFailure,
+        )
+
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received: list[ConfigChanged] = []
+        event_manager.add_listener_to_app_event(ConfigChanged, received.append)
+
+        request = SetConfigCategoryRequest(category="some_category", contents={"any": "thing"})
+        with patch.object(config_manager, "_write_user_config_delta", return_value=False):
+            result = config_manager.on_handle_set_config_category_request(request)
+
+        assert isinstance(result, SetConfigCategoryResultFailure)
+        assert received == []
+
+    def test_set_config_value_request_returns_failure_when_write_fails(self) -> None:
+        """The set-value handler must surface a failure result when the write didn't land."""
+        from griptape_nodes.retained_mode.events.config_events import (
+            SetConfigValueRequest,
+            SetConfigValueResultFailure,
+        )
+
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received: list[ConfigChanged] = []
+        event_manager.add_listener_to_app_event(ConfigChanged, received.append)
+
+        request = SetConfigValueRequest(category_and_key="some.key", value="v")
+        with patch.object(config_manager, "_write_user_config_delta", return_value=False):
+            result = config_manager.on_handle_set_config_value_request(request)
+
+        assert isinstance(result, SetConfigValueResultFailure)
+        assert received == []
+
+    def test_set_config_value_returns_true_on_success_and_false_on_failure(self) -> None:
+        """``set_config_value`` exposes the write outcome so handlers can propagate failure."""
+        config_manager = ConfigManager()
+
+        with patch.object(config_manager, "_write_user_config_delta", return_value=True):
+            assert config_manager.set_config_value(key="k", value="v") is True
+
+        with patch.object(config_manager, "_write_user_config_delta", return_value=False):
+            assert config_manager.set_config_value(key="k", value="v") is False

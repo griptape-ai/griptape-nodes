@@ -406,13 +406,19 @@ class ConfigManager:
 
         return value
 
-    def set_config_value(self, key: str, value: Any, *, should_set_env_var_if_detected: bool = True) -> None:
+    def set_config_value(self, key: str, value: Any, *, should_set_env_var_if_detected: bool = True) -> bool:
         """Set a value in the configuration.
 
         Args:
             key: The configuration key to set. Can use dot notation for nested keys (e.g., 'category.subcategory.key').
             value: The value to associate with the key.
             should_set_env_var_if_detected: If True, and the value starts with a $, it will be set in the environment variables.
+
+        Returns:
+            True if the change was persisted to disk; False if the underlying
+            ``_write_user_config_delta`` call failed. Callers that surface a
+            result payload to a request handler should propagate the failure
+            instead of reporting success on a stale write.
         """
         # Capture old value before making changes (for event emission)
         old_value = self.get_config_value(key, should_load_env_var_if_detected=False)
@@ -444,6 +450,8 @@ class ConfigManager:
         if write_succeeded and self._event_manager is not None:
             event = ConfigChanged(key=key, old_value=old_value, new_value=value)
             self._event_manager.broadcast_app_event(event)
+
+        return write_succeeded
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -500,7 +508,13 @@ class ConfigManager:
 
             return SetConfigCategoryResultSuccess(result_details=result_details)
 
-        self.set_config_value(key=request.category, value=request.contents)
+        write_succeeded = self.set_config_value(key=request.category, value=request.contents)
+        if not write_succeeded:
+            result_details = (
+                f"Attempted to set config category '{request.category}'. Failed because the user config "
+                "file could not be written; see prior logs for the underlying I/O error."
+            )
+            return SetConfigCategoryResultFailure(result_details=result_details)
 
         result_details = f"Successfully assigned the config dictionary for section '{request.category}'."
         return SetConfigCategoryResultSuccess(result_details=result_details)
@@ -638,7 +652,13 @@ class ConfigManager:
             old_value_copy = old_value
 
         # Set the new value
-        self.set_config_value(key=request.category_and_key, value=request.value)
+        write_succeeded = self.set_config_value(key=request.category_and_key, value=request.value)
+        if not write_succeeded:
+            result_details = (
+                f"Attempted to set config value '{request.category_and_key}'. Failed because the user "
+                "config file could not be written; see prior logs for the underlying I/O error."
+            )
+            return SetConfigValueResultFailure(result_details=result_details)
 
         # For container types, indicate the change with a diff
         if isinstance(request.value, (dict, list)):
