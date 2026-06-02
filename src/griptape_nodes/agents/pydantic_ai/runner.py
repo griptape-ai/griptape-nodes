@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import json
 import logging
 import time
@@ -518,8 +519,8 @@ async def _push_token(
     if token_sink is None:
         return
     result = token_sink(token)
-    if hasattr(result, "__await__"):
-        await result  # type: ignore[func-returns-value]
+    if inspect.isawaitable(result):
+        await result
 
 
 async def _push_event(
@@ -529,8 +530,8 @@ async def _push_event(
     if event_sink is None:
         return
     result = event_sink(event)
-    if hasattr(result, "__await__"):
-        await result  # type: ignore[func-returns-value]
+    if inspect.isawaitable(result):
+        await result
 
 
 def _preview(value: str) -> str:
