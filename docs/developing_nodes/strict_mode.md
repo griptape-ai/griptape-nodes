@@ -66,17 +66,6 @@ cattrs converter.
 `@PayloadRegistry.register` so it can cross the
 worker/orchestrator boundary.
 
-#### `exception-fidelity-lost`
-
-A worker-side exception could not be serialized with full fidelity
-(type, message, traceback) when forwarded to the orchestrator. The
-caller sees only a stringified summary through a
-`ForwardedException`, with `original_type` / `original_traceback`
-attached when they could be captured.
-
-**Remediation**: ensure the exception class is picklable and exposes
-the failing field as a serializable attribute.
-
 ### Ergonomics rules (warnings)
 
 #### `parameter-behaviors-dropped-in-schema`
