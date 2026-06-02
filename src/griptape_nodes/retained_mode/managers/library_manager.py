@@ -1472,7 +1472,12 @@ class LibraryManager:
         node_class = library.get_node_class(request.node_type)
         probe_name = f"__describe_node_type_probe__{request.node_type}"
         try:
-            probe_node = node_class(name=probe_name)
+            # Wrap in ``LibraryRegistry.constructing_node()`` so the
+            # parameter-mutation detector skips this ephemeral probe's
+            # declarative ``add_parameter`` calls (this construction
+            # bypasses ``LibraryRegistry.create_node``).
+            with LibraryRegistry.constructing_node():
+                probe_node = node_class(name=probe_name)
         except Exception as err:
             probe_error = f"{type(err).__name__}: {err}"
             return DescribeNodeTypeResultSuccess(
