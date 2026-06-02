@@ -1768,7 +1768,7 @@ class OSManager:
         try:
             index_info = self._identify_index_variable(parsed_macro, variables)
         except ValueError as e:
-            msg = str(e)
+            msg = f"Failed to identify index variable in path template: {e}"
             logger.error(msg)
             return GetNextUnusedFilenameResultFailure(
                 failure_reason=FileIOFailureReason.INVALID_PATH,
@@ -1821,7 +1821,7 @@ class OSManager:
         try:
             index_info = self._identify_index_variable(parsed_macro, variables)
         except ValueError as e:
-            msg = str(e)
+            msg = f"Attempted to find next version index. Failed: {e}"
             logger.error(msg)
             return GetNextVersionIndexResultFailure(
                 failure_reason=FileIOFailureReason.INVALID_PATH,
