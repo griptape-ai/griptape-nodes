@@ -33,9 +33,6 @@ def _mcp_toolset(composed: Any) -> MCPToolset:
     return node
 
 
-# --- mcp_server_from_config: transport mapping --------------------------------
-
-
 def test_stdio_without_command_returns_none() -> None:
     """A stdio config missing `command` is rejected."""
     assert mcp_server_from_config("svc", {"transport": "stdio"}) is None
@@ -92,9 +89,6 @@ def test_default_transport_is_stdio() -> None:
     assert isinstance(_mcp_toolset(composed).client.transport, StdioTransport)
 
 
-# --- composition: prefix + optional blocklist --------------------------------
-
-
 def test_compose_applies_name_prefix() -> None:
     """`_compose` exposes tools under the server name prefix."""
     composed = _compose("Svc", MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3))
@@ -139,9 +133,6 @@ def test_streamable_http_local_prefixes_with_default_name() -> None:
     assert isinstance(composed, PrefixedToolset)
     assert composed.prefix == "GriptapeNodes"
     assert isinstance(_mcp_toolset(composed).client.transport, StreamableHttpTransport)
-
-
-# --- blocklist predicate ------------------------------------------------------
 
 
 def test_blocklist_filter_drops_only_listed_bare_names() -> None:

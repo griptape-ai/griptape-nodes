@@ -216,15 +216,11 @@ class AgentManager:
                 self.on_app_initialization_complete,
             )
 
-    # --- App lifecycle ----------------------------------------------------
-
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         sock = bind_free_socket(GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT)
         self._mcp_server_port = sock.getsockname()[1]
         threading.Thread(target=start_mcp_server, args=(api_key, sock), daemon=True, name="mcp-server").start()
-
-    # --- Run agent --------------------------------------------------------
 
     async def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
@@ -319,8 +315,6 @@ class AgentManager:
             details = f"Error cancelling agent run: {e}"
             logger.exception(details)
             return CancelAgentResultFailure(result_details=details)
-
-    # --- Thread CRUD -----------------------------------------------------
 
     def on_handle_create_thread_request(self, request: CreateThreadRequest) -> ResultPayload:
         try:
@@ -426,8 +420,6 @@ class AgentManager:
             logger.exception(details)
             return UnarchiveThreadResultFailure(result_details=details)
 
-    # --- Configuration / inspection -------------------------------------
-
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
         """Update agent configuration from the chat sidebar.
 
@@ -475,8 +467,6 @@ class AgentManager:
             details = f"Error getting conversation memory: {e}"
             logger.exception(details)
             return GetConversationMemoryResultFailure(result_details=details)
-
-    # --- Internal helpers -----------------------------------------------
 
     def _build_runner(self, additional_mcp_servers: list[str]) -> PydanticAgentRunner:
         cache_key = (self._model_name, self._image_model_name, tuple(sorted(additional_mcp_servers)))
