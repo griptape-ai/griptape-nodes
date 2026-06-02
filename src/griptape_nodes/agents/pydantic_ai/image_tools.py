@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import httpx
+from pydantic_ai.exceptions import ModelRetry
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -110,7 +111,7 @@ class ImageGenerationToolset:
         """
         if not prompt or not prompt.strip():
             msg = "generate_image requires a non-empty `prompt`."
-            raise ValueError(msg)
+            raise ModelRetry(msg)
 
         payload: dict[str, object] = {
             "prompts": [prompt],
@@ -120,13 +121,24 @@ class ImageGenerationToolset:
             payload["negative_prompts"] = [negative_prompt]
 
         url = f"{self._base_url}/api/images/generations"
-        async with httpx.AsyncClient(timeout=self._config.timeout_seconds) as client:
-            response = await client.post(url, headers=self._headers, json=payload)
-        response.raise_for_status()
-
-        artifact = response.json()["artifact"]
-        image_bytes = base64.b64decode(artifact["value"])
-        image_format = artifact.get("format", "png")
+        # Recoverable Cloud/parse failures are surfaced as ModelRetry so a single
+        # bad image request does not abort the whole agent turn (and discard any
+        # state already mutated by earlier tool calls); the model can retry or
+        # explain the failure instead.
+        try:
+            async with httpx.AsyncClient(timeout=self._config.timeout_seconds) as client:
+                response = await client.post(url, headers=self._headers, json=payload)
+            response.raise_for_status()
+            artifact = response.json()["artifact"]
+            image_bytes = base64.b64decode(artifact["value"])
+            image_format = artifact.get("format", "png")
+        except httpx.HTTPError as exc:
+            msg = f"Image generation request to Griptape Cloud failed: {exc}"
+            raise ModelRetry(msg) from exc
+        except (KeyError, ValueError) as exc:
+            # ValueError covers json.JSONDecodeError and base64 binascii.Error.
+            msg = f"Image generation returned an unexpected response: {exc}"
+            raise ModelRetry(msg) from exc
         filename = f"{uuid.uuid4()}.{image_format}"
 
         # `save_static_file` is synchronous disk/network I/O; offload it so the

@@ -89,6 +89,23 @@ def test_load_history_for_unknown_thread_returns_empty(storage: LocalThreadStora
     assert storage.load_history("does-not-exist") == []
 
 
+def test_load_history_preserves_corrupt_file(storage: LocalThreadStorageDriver) -> None:
+    """A corrupt history file is moved aside, not silently destroyed, on load failure."""
+    thread_id, _ = storage.create_thread()
+    history_path = storage.threads_directory / f"thread_{thread_id}.json"
+    history_path.write_bytes(b"not valid json")
+
+    assert storage.load_history(thread_id) == []
+
+    # The unreadable bytes survive in a sibling backup so they are recoverable.
+    backups = list(storage.threads_directory.glob(f"thread_{thread_id}.json.corrupt-*"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == b"not valid json"
+    # A subsequent save does not clobber the preserved data.
+    storage.save_history(thread_id, [ModelRequest(parts=[UserPromptPart(content="Hi")])])
+    assert backups[0].read_bytes() == b"not valid json"
+
+
 def test_update_thread_metadata_rename(storage: LocalThreadStorageDriver) -> None:
     """Renaming a thread overwrites the title and persists."""
     thread_id, _ = storage.create_thread(title="old name")

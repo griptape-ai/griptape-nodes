@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import pytest
+from pydantic_ai.exceptions import ModelRetry
 
 from griptape_nodes.agents.pydantic_ai.image_tools import (
     ImageGenerationToolset,
@@ -102,7 +103,7 @@ class TestConfig:
 class TestGenerateImage:
     async def test_rejects_empty_prompt(self, static_files: _FakeStaticFilesManager) -> None:
         toolset = _make_toolset(ImageGenerationToolsetConfig(api_key="k"), static_files)
-        with pytest.raises(ValueError, match="non-empty"):
+        with pytest.raises(ModelRetry, match="non-empty"):
             await toolset.generate_image("   ")
 
     async def test_saves_image_and_returns_url(
@@ -179,6 +180,17 @@ class TestGenerateImage:
         patch_transport.responses.append(httpx.Response(500, json={"error": "boom"}))
         toolset = _make_toolset(ImageGenerationToolsetConfig(api_key="k"), static_files)
 
-        with pytest.raises(httpx.HTTPStatusError):
+        # A Cloud failure becomes a ModelRetry so the agent turn survives.
+        with pytest.raises(ModelRetry):
+            await toolset.generate_image("a cat")
+        assert static_files.saved == []
+
+    async def test_raises_on_malformed_response(
+        self, static_files: _FakeStaticFilesManager, patch_transport: _TransportRecorder
+    ) -> None:
+        patch_transport.responses.append(httpx.Response(200, json={"unexpected": "shape"}))
+        toolset = _make_toolset(ImageGenerationToolsetConfig(api_key="k"), static_files)
+
+        with pytest.raises(ModelRetry):
             await toolset.generate_image("a cat")
         assert static_files.saved == []

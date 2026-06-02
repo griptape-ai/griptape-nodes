@@ -261,6 +261,14 @@ class AgentManager:
             if (active := self._active_runs.get(thread_id)) is not None and active.cancel_event is cancel_event:
                 del self._active_runs[thread_id]
 
+        # A first run creates the thread; title it from the input even when the
+        # turn is cancelled, so a quick send-then-cancel doesn't leave a
+        # titleless orphan thread in the listing.
+        if is_first_run:
+            self._thread_storage.update_thread_metadata(
+                result.thread_id, title=textwrap.shorten(request.input, width=50, placeholder="...")
+            )
+
         if result.cancelled:
             logger.info("Agent run for thread %s cancelled by request.", result.thread_id)
             return RunAgentResultSuccess(
@@ -272,11 +280,6 @@ class AgentManager:
                 },
                 thread_id=result.thread_id,
                 result_details="Agent run cancelled.",
-            )
-
-        if is_first_run:
-            self._thread_storage.update_thread_metadata(
-                result.thread_id, title=textwrap.shorten(request.input, width=50, placeholder="...")
             )
 
         return RunAgentResultSuccess(
