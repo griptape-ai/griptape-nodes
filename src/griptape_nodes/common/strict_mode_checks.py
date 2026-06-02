@@ -7,9 +7,9 @@ escalation), a human description, and a ``str.format``-ready
 remediation template.
 
 Detectors import ``RULES`` to look up their rule and call
-``report_violation(rule_id=..., message=RULES[rid].render(...))`` at
-their own call site. No enforcement logic lives here -- this module
-is a static catalog.
+``STRICT_MODE.report(rule_id=..., message=RULES[rid].render(...))``
+at their own call site. No enforcement logic lives here -- this
+module is a static catalog.
 """
 
 from __future__ import annotations
@@ -92,9 +92,9 @@ RULES: dict[str, StrictModeRule] = {
         ),
         remediation_template=(
             "Node mutated parameter '{parameter_name}' during aprocess via "
-            "{mutation}. Emit AddParameterRequest or "
-            "RemoveParameterFromNodeRequest (both ForwardFromWorkerMixin) "
-            "to propagate the change to the orchestrator."
+            "{mutation}. Emit AddParameterToNodeRequest or "
+            "RemoveParameterFromNodeRequest to propagate the change to "
+            "the orchestrator."
         ),
     ),
     "worker-reach-into-orchestrator": StrictModeRule(

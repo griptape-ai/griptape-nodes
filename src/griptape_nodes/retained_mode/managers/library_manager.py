@@ -3520,9 +3520,9 @@ class LibraryManager:
         rule = RULES["parameter-behaviors-dropped-in-schema"]
         for param in probe.parameters:
             dropped: list[str] = []
-            if param.has_user_converters:
+            if param.has_directly_attached_converters:
                 dropped.append("converters")
-            if param.has_user_validators:
+            if param.has_directly_attached_validators:
                 dropped.append("validators")
             if param.has_traits:
                 dropped.append("traits")
@@ -3555,7 +3555,7 @@ class LibraryManager:
                 kind=StrictModeScopeKind.LOAD_PROBE,
                 subject=class_name,
                 library_name=library_name,
-                is_worker=True,
+                is_worker=self.is_worker,
             ) as scope:
                 try:
                     probe = await asyncio.wait_for(
