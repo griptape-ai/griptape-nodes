@@ -91,10 +91,10 @@ RULES: dict[str, StrictModeRule] = {
             "transient node and do not sync back to the orchestrator."
         ),
         remediation_template=(
-            "Node mutated parameter '{parameter_name}' during aprocess via "
-            "{mutation}. Emit AddParameterToNodeRequest or "
-            "RemoveParameterFromNodeRequest to propagate the change to "
-            "the orchestrator."
+            "Node '{node_name}' (type '{node_class}') mutated parameter "
+            "'{parameter_name}' during aprocess via {mutation}. Emit "
+            "AddParameterToNodeRequest or RemoveParameterFromNodeRequest "
+            "to propagate the change to the orchestrator."
         ),
     ),
     "worker-reach-into-orchestrator": StrictModeRule(
