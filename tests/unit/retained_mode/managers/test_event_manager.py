@@ -390,8 +390,9 @@ class TestLogResultDetailsSkipsStrictModeViolations:
         assert ordinary.message in [r.message for r in caplog.records]
 
     def test_mixed_details_log_only_non_violations(self, caplog: pytest.LogCaptureFixture) -> None:
-        """A result with both kinds: the ordinary detail logs, the
-        violation does not.
+        """A result with both kinds logs only the non-violation detail.
+
+        The ordinary detail logs; the violation does not.
         """
         event_manager = EventManager()
         ordinary = ResultDetail(level=logging.WARNING, message="ordinary mixed-case detail")

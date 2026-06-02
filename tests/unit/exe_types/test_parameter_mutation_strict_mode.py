@@ -265,9 +265,9 @@ class TestParameterMutationDetector:
                 is_worker=True,
             ) as scope,
             aprocess_scope(),
+            LibraryRegistry.constructing_node(),
         ):
-            with LibraryRegistry.constructing_node():
-                HelperNodeWithParams(name="REFERENCE NODE")
+            HelperNodeWithParams(name="REFERENCE NODE")
         assert scope.violations == []
 
     def test_violation_when_direct_construction_is_not_wrapped(self, mock_node: MockNode) -> None:
@@ -321,9 +321,11 @@ class TestConstructingNodeContextManager:
         assert LibraryRegistry.is_constructing_node() is False
 
     def test_nesting_restores_outer_state_on_exit(self) -> None:
-        """Tokens stack: an outer ``constructing_node`` block stays True
-        across an inner block's enter/exit, and the outer block's exit
-        restores the original False state.
+        """Outer ``constructing_node`` flag survives nested enter/exit.
+
+        Tokens stack: an outer block stays True across an inner block's
+        enter/exit, and the outer block's exit restores the original
+        False state.
         """
         assert LibraryRegistry.is_constructing_node() is False
         with LibraryRegistry.constructing_node():
@@ -336,9 +338,14 @@ class TestConstructingNodeContextManager:
 
     def test_flag_reset_on_exception(self) -> None:
         """Exiting via exception still resets the flag."""
-        assert LibraryRegistry.is_constructing_node() is False
-        with pytest.raises(RuntimeError, match="boom"):
+
+        def _trigger() -> None:
             with LibraryRegistry.constructing_node():
                 assert LibraryRegistry.is_constructing_node() is True
-                raise RuntimeError("boom")
+                msg = "boom"
+                raise RuntimeError(msg)
+
+        assert LibraryRegistry.is_constructing_node() is False
+        with pytest.raises(RuntimeError, match="boom"):
+            _trigger()
         assert LibraryRegistry.is_constructing_node() is False

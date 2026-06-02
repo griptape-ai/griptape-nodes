@@ -40,16 +40,6 @@ the bus there deadlocks the worker.
 **Remediation**: move the call into `aprocess` (or a lifecycle hook
 that runs after construction).
 
-#### `unknown-payload-type`
-
-A payload type crossing the wire was not registered in
-`PayloadRegistry`. Unknown types cannot be deserialized safely by the
-cattrs converter.
-
-**Remediation**: decorate the payload class with
-`@PayloadRegistry.register` so it can cross the
-worker/orchestrator boundary.
-
 ### Ergonomics rules (warnings)
 
 #### `parameter-behaviors-dropped-in-schema`
