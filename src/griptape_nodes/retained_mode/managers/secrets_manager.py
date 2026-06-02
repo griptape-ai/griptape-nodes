@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Literal, overload
 
-from dotenv import dotenv_values, get_key, load_dotenv, set_key, unset_key
+from dotenv import dotenv_values, get_key, set_key, unset_key
 from dotenv.main import DotEnv
 from xdg_base_dirs import xdg_config_home
 
@@ -37,33 +37,25 @@ class SecretsManager:
         self.config_manager = config_manager
         self._event_manager = event_manager
 
-        # Track which keys were sourced from .env files so refresh_from_env_file
-        # can pop deleted keys back out of os.environ. Without this, a deleted
-        # secret remains in os.environ as a stale shadow because load_dotenv
-        # only assigns keys that are present in the file.
-        self._loaded_env_keys: set[str] = set()
+        # Track keys this manager itself has installed into os.environ from a
+        # .env file -- distinct from "keys seen in a file." The single
+        # invariant: ``self._managed_env_keys`` exactly equals the set of
+        # keys this manager has written to ``os.environ`` from a file. Only
+        # managed keys are safe to overwrite or pop in
+        # ``refresh_from_env_file`` and the delete-secret handler; OS-set
+        # keys (e.g. container-injected env vars) must be left alone even
+        # if they collide with a .env entry. The invariant is held by
+        # routing every ``os.environ`` mutation through
+        # ``_install_managed`` / ``_uninstall_managed``.
+        self._managed_env_keys: set[str] = set()
 
-        # So that users can access secrets directly via `os.environ`
-        load_dotenv(self.workspace_env_path, override=False)
-        load_dotenv(ENV_VAR_PATH, override=False)
-        if self.workspace_env_path.exists():
-            self._loaded_env_keys.update(dotenv_values(self.workspace_env_path).keys())
-        if ENV_VAR_PATH.exists():
-            self._loaded_env_keys.update(dotenv_values(ENV_VAR_PATH).keys())
+        self._load_env_files_into_environ()
 
-        # Register all our listeners.
         if event_manager is not None:
-            event_manager.assign_manager_to_request_type(GetSecretValueRequest, self.on_handle_get_secret_request)
-            event_manager.assign_manager_to_request_type(SetSecretValueRequest, self.on_handle_set_secret_request)
-            event_manager.assign_manager_to_request_type(
-                GetAllSecretValuesRequest, self.on_handle_get_all_secret_values_request
-            )
-            event_manager.assign_manager_to_request_type(
-                DeleteSecretValueRequest, self.on_handle_delete_secret_value_request
-            )
+            self._register_handlers(event_manager)
 
     def refresh_from_env_file(self) -> None:
-        """Re-read the .env files into os.environ, applying the documented precedence.
+        """Re-read the .env files into os.environ for keys this manager owns.
 
         Same-machine workers share ~/.config/griptape_nodes/.env with the
         orchestrator, but each process captures the file contents into os.environ
@@ -71,33 +63,57 @@ class SecretsManager:
         keeps the old value -- and get_secret() sees environment variables first,
         so it returns the stale value.
 
-        Reload global first (lowest priority) and workspace second (higher
-        priority) with override=True at each step. This matches the precedence
-        documented on get_secret: workspace overrides global. Reversing the
-        order would let global clobber workspace for keys present in both.
+        Override only keys this manager already installed from a file
+        (tracked in ``_managed_env_keys``). A key that is also a real OS
+        env var -- e.g. a container-injected ``OPENAI_API_KEY`` that
+        collides with a .env entry -- was preserved over the file at boot
+        and must keep being preserved here. Otherwise an unrelated secret
+        change could silently swap an operator-set value for the file's.
 
-        Also drops keys that disappeared from either file: load_dotenv only
-        assigns variables that exist in the file, so a deleted key stays in
-        os.environ as a stale shadow until we explicitly pop it.
+        Drops managed keys that disappeared from both files. Only managed
+        keys are eligible to pop -- removing a key from the file does not
+        give the manager license to delete an unrelated OS env var that
+        happens to share the name. If neither file exists at refresh time,
+        no pop happens at all: a transient missing file must not wipe
+        state.
         """
-        previously_known_keys = set(self._loaded_env_keys)
-        currently_present: dict[str, set[str]] = {}
+        if not ENV_VAR_PATH.exists() and not self.workspace_env_path.exists():
+            logger.debug("No .env files to refresh from; leaving os.environ untouched.")
+            return
 
-        if ENV_VAR_PATH.exists():
-            file_keys = set(dotenv_values(ENV_VAR_PATH).keys())
-            currently_present[str(ENV_VAR_PATH)] = file_keys
-            load_dotenv(ENV_VAR_PATH, override=True)
-        if self.workspace_env_path.exists():
-            file_keys = set(dotenv_values(self.workspace_env_path).keys())
-            currently_present[str(self.workspace_env_path)] = file_keys
-            load_dotenv(self.workspace_env_path, override=True)
+        merged = self._read_merged_env_files()
+        previously_managed = set(self._managed_env_keys)
+        installed = 0
+        overridden = 0
+        survived: set[str] = set()
+        for key, value in merged.items():
+            if key in previously_managed:
+                # Manager-owned: overwrite with the file's value.
+                self._install_managed(key, value)
+                survived.add(key)
+                overridden += 1
+            elif key not in os.environ:
+                # New file entry that does not collide with an OS-set var.
+                self._install_managed(key, value)
+                survived.add(key)
+                installed += 1
+            # else: OS-set value the manager does not own. Leave it alone.
 
-        present_anywhere = set().union(*currently_present.values()) if currently_present else set()
-        for key in previously_known_keys - present_anywhere:
-            os.environ.pop(key, None)
+        # Pop managed keys that vanished from both files. Skip non-managed
+        # keys: removing a key from a file does not authorize wiping an OS
+        # env var that happens to share the name.
+        popped = 0
+        for key in previously_managed - survived:
+            self._uninstall_managed(key)
+            popped += 1
 
-        self._loaded_env_keys = present_anywhere
-        logger.debug("Refreshed secrets from .env files")
+        logger.debug(
+            "Refreshed secrets: installed=%d overridden=%d popped=%d managed_total=%d",
+            installed,
+            overridden,
+            popped,
+            len(self._managed_env_keys),
+        )
 
     @property
     def workspace_env_path(self) -> Path:
@@ -176,13 +192,10 @@ class SecretsManager:
             return DeleteSecretValueResultFailure(result_details=details)
 
         unset_key(ENV_VAR_PATH, secret_name)
-        # set_secret writes through to os.environ via load_dotenv(override=True);
-        # mirror that here so the orchestrator's own get_secret stops returning
-        # the just-deleted value. Workers see the same drop after the refresh
-        # broadcast lands -- refresh_from_env_file now pops keys that vanished
-        # from the file, not just keys still present.
-        os.environ.pop(secret_name, None)
-        self._loaded_env_keys.discard(secret_name)
+        # ``_uninstall_managed`` is a no-op when the manager does not own
+        # the key, which preserves a colliding OS-set env var
+        # (operator-injected) that survived boot via override=False.
+        self._uninstall_managed(secret_name)
 
         logger.info("Secret '%s' deleted.", secret_name)
 
@@ -228,8 +241,101 @@ class SecretsManager:
         if not ENV_VAR_PATH.exists():
             ENV_VAR_PATH.touch()
         set_key(ENV_VAR_PATH, secret_name, secret_value)
-        load_dotenv(ENV_VAR_PATH, override=True)
-        self._loaded_env_keys.add(secret_name)
+        # An explicit set_secret call is the user's stated intent: the new
+        # value wins from now on, and the manager claims ownership of the
+        # key. If the key was previously OS-set (operator-injected) the
+        # manager is overwriting it -- warn so the asymmetry with the
+        # refresh / delete paths (which preserve OS-set values) is not
+        # silent.
+        if secret_name not in self._managed_env_keys and secret_name in os.environ:
+            logger.warning(
+                "set_secret('%s') is overriding an OS-set environment variable. "
+                "The OS-set value is replaced for the lifetime of this process; "
+                "restart with the operator-set value cleared to revert.",
+                secret_name,
+            )
+        self._install_managed(secret_name, secret_value)
+
+    def _load_env_files_into_environ(self) -> None:
+        """Read both .env files into ``os.environ`` and seed ``_managed_env_keys``.
+
+        Mirrors the precedence ``get_secret`` documents: OS env beats .env
+        files; among files, workspace beats global. Reads each file once
+        via ``dotenv_values`` and applies values manually so the precedence
+        rule is expressed in exactly one place (this method) and the rest
+        of the manager keeps its bookkeeping invariant via
+        ``_install_managed`` / ``_uninstall_managed``.
+
+        A key already present in ``os.environ`` before this runs is
+        treated as OS-set (operator-injected, container-injected, etc.)
+        and is left untouched, which is what ``override=False`` semantics
+        delivered before.
+        """
+        pre_load_environ = set(os.environ.keys())
+        merged = self._read_merged_env_files()
+        for key, value in merged.items():
+            if key in pre_load_environ:
+                # OS-owned. Leave alone.
+                continue
+            self._install_managed(key, value)
+
+    def _read_merged_env_files(self) -> dict[str, str]:
+        """Return the merged contents of both .env files with workspace winning.
+
+        Workspace overrides global because that is the precedence order
+        ``get_secret`` documents. Empty values (``FOO=`` in the file) are
+        kept as empty strings; missing files are skipped. ``None`` values
+        from ``dotenv_values`` are filtered out so callers can rely on
+        ``dict[str, str]`` shape.
+        """
+        merged: dict[str, str] = {}
+        if ENV_VAR_PATH.exists():
+            for key, value in dotenv_values(ENV_VAR_PATH).items():
+                if value is not None:
+                    merged[key] = value
+        if self.workspace_env_path.exists():
+            for key, value in dotenv_values(self.workspace_env_path).items():
+                if value is not None:
+                    merged[key] = value
+        return merged
+
+    def _register_handlers(self, event_manager: EventManager) -> None:
+        """Wire request types to their handlers."""
+        event_manager.assign_manager_to_request_type(GetSecretValueRequest, self.on_handle_get_secret_request)
+        event_manager.assign_manager_to_request_type(SetSecretValueRequest, self.on_handle_set_secret_request)
+        event_manager.assign_manager_to_request_type(
+            GetAllSecretValuesRequest, self.on_handle_get_all_secret_values_request
+        )
+        event_manager.assign_manager_to_request_type(
+            DeleteSecretValueRequest, self.on_handle_delete_secret_value_request
+        )
+
+    def _install_managed(self, key: str, value: str) -> None:
+        """Write ``key`` to ``os.environ`` and claim it as manager-owned.
+
+        Single source of truth for installs into ``os.environ`` from a
+        .env file. Idempotent: re-installing an already-managed key is a
+        plain overwrite. The bookkeeping invariant is held here -- every
+        caller that touches ``os.environ`` for a file-sourced value goes
+        through this method (or its inverse, ``_uninstall_managed``).
+        """
+        os.environ[key] = value
+        self._managed_env_keys.add(key)
+
+    def _uninstall_managed(self, key: str) -> None:
+        """Pop ``key`` from ``os.environ`` and release manager ownership.
+
+        Counterpart to ``_install_managed``. No-op when ``key`` is not in
+        ``_managed_env_keys`` -- popping a key the manager does not own
+        would delete an OS-set env var (operator-injected, container-
+        injected) the manager has no business touching. The ownership
+        check lives here so callers cannot violate the invariant by
+        forgetting to guard.
+        """
+        if key not in self._managed_env_keys:
+            return
+        os.environ.pop(key, None)
+        self._managed_env_keys.discard(key)
 
     @staticmethod
     def _apply_secret_name_compliance(secret_name: str) -> str:

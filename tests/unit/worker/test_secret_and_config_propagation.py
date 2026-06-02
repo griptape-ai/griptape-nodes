@@ -98,9 +98,14 @@ class TestSecretPropagation:
         secret_key = "INTEG_STALE_SECRET"  # noqa: S105
         shared_global_env.write_text(f"{secret_key}=boot_value\n")  # noqa: ASYNC240
 
-        # Only the worker side has the old value in its environment. The
-        # orchestrator side will write through load_dotenv(override=True).
-        with patch.dict(os.environ, {secret_key: "boot_value"}, clear=False):
+        # Make sure no OS-set value pre-exists. The manager's __init__ must
+        # install it from the file via load_dotenv -- that is what marks the
+        # key as managed and authorizes the refresh override below. A
+        # pre-existing OS env var would model an operator-injected secret
+        # the manager must NOT override (covered separately by
+        # ``test_refresh_preserves_os_set_env_var``).
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(secret_key, None)
             harness = InProcessWorkerHarness()
             worker_config = ConfigManager()
             worker_config.workspace_path = shared_workspace
