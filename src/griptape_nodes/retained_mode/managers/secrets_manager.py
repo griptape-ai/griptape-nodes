@@ -62,19 +62,6 @@ class SecretsManager:
                 DeleteSecretValueRequest, self.on_handle_delete_secret_value_request
             )
 
-    def _notify_workers_to_refresh_secrets(self) -> None:
-        """Tell every registered worker to re-read the shared .env from disk.
-
-        Only the orchestrator's WorkerManager has any registered workers, so on
-        a worker process this is a cheap no-op via ``schedule_broadcast``.
-        Imported lazily because ``griptape_nodes.app`` is not importable at the
-        module level here -- SecretsManager is loaded during engine boot,
-        before ``app/__init__`` has finished importing.
-        """
-        from griptape_nodes.app.worker_routing import RefreshSecretsRequest, schedule_broadcast
-
-        schedule_broadcast(RefreshSecretsRequest)
-
     def refresh_from_env_file(self) -> None:
         """Re-read the .env files into os.environ, applying the documented precedence.
 
@@ -160,9 +147,11 @@ class SecretsManager:
 
         self.set_secret(secret_name, secret_value)
 
+        # Domain event on success only -- listeners (e.g. WorkerManager) decide
+        # what to do with it. set_secret raises on a write failure, so reaching
+        # this line means the .env file was updated.
         if self._event_manager is not None:
             self._event_manager.broadcast_app_event(SecretChanged(key=secret_name))
-        self._notify_workers_to_refresh_secrets()
 
         return SetSecretValueResultSuccess(result_details=f"Successfully set secret value for key: {secret_name}")
 
@@ -199,7 +188,6 @@ class SecretsManager:
 
         if self._event_manager is not None:
             self._event_manager.broadcast_app_event(SecretChanged(key=secret_name))
-        self._notify_workers_to_refresh_secrets()
 
         return DeleteSecretValueResultSuccess(result_details=f"Successfully deleted secret: {secret_name}")
 

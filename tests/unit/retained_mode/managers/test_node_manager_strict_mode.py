@@ -21,10 +21,10 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
-    NodeMetadata,
 )
 
 if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.events.execution_events import NodeMetadata
     from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
 

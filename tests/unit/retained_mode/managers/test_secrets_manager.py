@@ -209,7 +209,12 @@ class TestSecretsManager:
                     assert secrets_manager.get_secret("REFRESH_KEY") == "new_value"
 
     def test_set_secret_broadcasts_secret_changed(self) -> None:
-        """Setting a secret emits a SecretChanged app event carrying the normalized key."""
+        """Setting a secret emits a SecretChanged app event carrying the normalized key.
+
+        Worker fan-out lives elsewhere (WorkerManager listens for SecretChanged
+        and schedules RefreshSecretsRequest); this manager only owns the
+        domain event.
+        """
         from griptape_nodes.retained_mode.events.app_events import SecretChanged
         from griptape_nodes.retained_mode.events.secrets_events import SetSecretValueRequest
 
@@ -220,10 +225,7 @@ class TestSecretsManager:
             config_manager.workspace_path = workspace_path
             event_manager = MagicMock()
 
-            with (
-                patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env),
-                patch.object(SecretsManager, "_notify_workers_to_refresh_secrets"),
-            ):
+            with patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env):
                 secrets_manager = SecretsManager(config_manager, event_manager=event_manager)
                 secrets_manager.on_handle_set_secret_request(
                     SetSecretValueRequest(key="my api key", value="xyz"),
@@ -236,24 +238,3 @@ class TestSecretsManager:
             ]
             assert len(broadcast_calls) == 1
             assert broadcast_calls[0].args[0].key == "MY_API_KEY"
-
-    def test_set_secret_triggers_worker_refresh_broadcast(self) -> None:
-        """Setting a secret schedules a refresh broadcast to all workers."""
-        from griptape_nodes.retained_mode.events.secrets_events import SetSecretValueRequest
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_path = Path(temp_dir)
-            global_env = workspace_path / "global.env"
-            config_manager = ConfigManager()
-            config_manager.workspace_path = workspace_path
-
-            with (
-                patch("griptape_nodes.retained_mode.managers.secrets_manager.ENV_VAR_PATH", global_env),
-                patch.object(SecretsManager, "_notify_workers_to_refresh_secrets") as mock_broadcast,
-            ):
-                secrets_manager = SecretsManager(config_manager, event_manager=MagicMock())
-                secrets_manager.on_handle_set_secret_request(
-                    SetSecretValueRequest(key="MY_KEY", value="xyz"),
-                )
-
-            mock_broadcast.assert_called_once()

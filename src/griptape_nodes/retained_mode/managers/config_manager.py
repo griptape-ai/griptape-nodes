@@ -423,7 +423,7 @@ class ConfigManager:
         elif key == "workspace_directory":
             self.workspace_path = value
         self.user_config = merge_dicts(self.merged_config, delta)
-        self._write_user_config_delta(delta)
+        write_succeeded = self._write_user_config_delta(delta)
 
         if should_set_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -436,11 +436,14 @@ class ConfigManager:
         self.load_configs()
         logger.debug("Config value '%s' set to '%s'", key, value)
 
-        # Broadcast config change event so other managers can respond
-        if self._event_manager is not None:
+        # Broadcast a domain event on success only. Listeners (in production:
+        # WorkerManager) take it from here -- this manager has no knowledge of
+        # who consumes the event. Failed writes are logged inside
+        # ``_write_user_config_delta``; no event fires so listeners cannot act
+        # on a state that does not exist on disk.
+        if write_succeeded and self._event_manager is not None:
             event = ConfigChanged(key=key, old_value=old_value, new_value=value)
             self._event_manager.broadcast_app_event(event)
-        self._notify_workers_to_reload_config()
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -475,10 +478,18 @@ class ConfigManager:
 
         if request.category is None or request.category == "":
             # Assign the whole shebang.
-            self._write_user_config_delta(request.contents)
+            write_succeeded = self._write_user_config_delta(request.contents)
+            if not write_succeeded:
+                result_details = (
+                    "Attempted to assign the entire config dictionary. Failed because the user config "
+                    "file could not be written; see prior logs for the underlying I/O error."
+                )
+                return SetConfigCategoryResultFailure(result_details=result_details)
+
             result_details = "Successfully assigned the entire config dictionary."
 
-            # Broadcast config change event for full config replacement
+            # Domain event on success only -- listeners (e.g. WorkerManager)
+            # decide what to do with it.
             if self._event_manager is not None:
                 event = ConfigChanged(
                     key="",
@@ -486,7 +497,6 @@ class ConfigManager:
                     new_value=request.contents,
                 )
                 self._event_manager.broadcast_app_event(event)
-            self._notify_workers_to_reload_config()
 
             return SetConfigCategoryResultSuccess(result_details=result_details)
 
@@ -566,24 +576,16 @@ class ConfigManager:
             self._set_log_level(str(self.merged_config["log_level"]))
 
             result_details = "Successfully reset user configuration."
-            self._notify_workers_to_reload_config()
+            # Reset is a full replacement; emit the same shape of ConfigChanged
+            # that ``on_handle_set_config_category_request`` does for category=None,
+            # so listeners cannot tell the two paths apart.
+            if self._event_manager is not None:
+                event = ConfigChanged(key="", old_value=None, new_value=self.merged_config)
+                self._event_manager.broadcast_app_event(event)
             return ResetConfigResultSuccess(result_details=result_details)
         except Exception as e:
             result_details = f"Attempted to reset user configuration but failed: {e}."
             return ResetConfigResultFailure(result_details=result_details)
-
-    def _notify_workers_to_reload_config(self) -> None:
-        """Tell every registered worker to reload its config from the shared file.
-
-        Only the orchestrator's WorkerManager has any registered workers, so on a
-        worker process this is a cheap no-op via ``schedule_broadcast``. Imported
-        lazily because ``griptape_nodes.app`` is not importable at the module
-        level here -- ConfigManager is loaded during engine boot, before
-        ``app/__init__`` has finished importing.
-        """
-        from griptape_nodes.app.worker_routing import ReloadConfigRequest, schedule_broadcast
-
-        schedule_broadcast(ReloadConfigRequest)
 
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
         """Generate a diff between the old and new values."""
@@ -654,7 +656,7 @@ class ConfigManager:
 
         return SetConfigValueResultSuccess(result_details=result_details)
 
-    def _write_user_config_delta(self, user_config_delta: dict) -> None:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def _write_user_config_delta(self, user_config_delta: dict) -> bool:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Write user configuration delta to config file with atomic read-modify-write.
 
         This method performs an atomic read-modify-write operation on the user config file:
@@ -671,6 +673,12 @@ class ConfigManager:
         Args:
             user_config_delta: Configuration changes to merge with existing config.
                               Uses dot notation keys (e.g., {"nodes.max_depth": 10})
+
+        Returns:
+            True if the merged config was written to disk; False if any step
+            (file info, create, read, write) failed. Callers must gate
+            worker fan-out on this so workers don't reload from a file that
+            wasn't actually updated.
         """
         # Lazy import to avoid circular dependency during initialization
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -689,7 +697,7 @@ class ConfigManager:
                 config_path_str,
                 info_result.result_details,
             )
-            return
+            return False
 
         # Step 2: Create config file if it doesn't exist
         if info_result.file_entry is None:
@@ -714,7 +722,7 @@ class ConfigManager:
                     config_path_str,
                     create_result.result_details,
                 )
-                return
+                return False
 
         # Step 3: Read current config directly from disk.
         #
@@ -728,28 +736,28 @@ class ConfigManager:
                 "Attempted to read user config at '%s'. File not found despite creation attempt.",
                 config_path_str,
             )
-            return
+            return False
         except PermissionError as e:
             logger.error(
                 "Attempted to read user config at '%s'. Permission denied: %s",
                 config_path_str,
                 e,
             )
-            return
+            return False
         except UnicodeDecodeError as e:
             logger.error(
                 "Attempted to read user config at '%s'. Encoding error: %s",
                 config_path_str,
                 e,
             )
-            return
+            return False
         except OSError as e:
             logger.error(
                 "Attempted to read user config at '%s'. Failed with: %s",
                 config_path_str,
                 e,
             )
-            return
+            return False
 
         # Step 4: Parse JSON from file content
         try:
@@ -838,10 +846,11 @@ class ConfigManager:
                         config_path_str,
                         write_result.result_details,
                     )
-            return
+            return False
 
         # Success path: Reload configs to reflect the changes
         logger.debug("Successfully wrote user config delta to '%s', reloading configs", config_path_str)
+        return True
 
     def _set_log_level(self, level: str) -> None:
         """Set the log level for the logger.

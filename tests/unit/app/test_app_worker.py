@@ -840,3 +840,77 @@ class TestScheduleBroadcast:
         await asyncio.sleep(0)
 
         worker_manager._tx.send_message.assert_not_called()  # type: ignore[union-attr]
+
+
+class TestWorkerManagerDomainEventListeners:
+    """WorkerManager owns the bridge from domain events to worker fan-out.
+
+    ConfigManager and SecretsManager emit ConfigChanged / SecretChanged on
+    successful state mutations; WorkerManager translates those into
+    ReloadConfigRequest / RefreshSecretsRequest broadcasts. The managers
+    themselves know nothing about workers.
+    """
+
+    @pytest.fixture
+    def worker_manager_with_real_events(self) -> WorkerManager:
+        from griptape_nodes.retained_mode.managers.event_manager import EventManager
+
+        gtn = MagicMock()
+        gtn.get_session_id.return_value = _SESSION
+        gtn.get_engine_id.return_value = _ENGINE
+        gtn._config_manager.get_config_value.side_effect = lambda _key, default, cast_type=float: cast_type(default)
+        wm = WorkerManager(griptape_nodes=gtn, event_manager=EventManager())
+        wm.attach_transport(
+            ws_outgoing_queue=asyncio.Queue(),
+            send_message=AsyncMock(),
+            subscribe_to_topic=AsyncMock(),
+            unsubscribe_from_topic=AsyncMock(),
+            request_client=_FakeRequestClient(),  # type: ignore[arg-type]
+        )
+        return wm
+
+    @pytest.mark.asyncio
+    async def test_config_changed_event_triggers_reload_config_broadcast(
+        self, worker_manager_with_real_events: WorkerManager
+    ) -> None:
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+
+        wm = worker_manager_with_real_events
+        wm._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
+
+        wm._event_manager.broadcast_app_event(ConfigChanged(key="x.y", old_value=None, new_value="v"))
+        await asyncio.sleep(0)
+
+        wm._tx.send_message.assert_called_once()  # type: ignore[union-attr]
+        sent_payload = json.loads(wm._tx.send_message.call_args[0][1])  # type: ignore[union-attr]
+        assert sent_payload["request_type"] == "ReloadConfigRequest"
+
+    @pytest.mark.asyncio
+    async def test_secret_changed_event_triggers_refresh_secrets_broadcast(
+        self, worker_manager_with_real_events: WorkerManager
+    ) -> None:
+        from griptape_nodes.retained_mode.events.app_events import SecretChanged
+
+        wm = worker_manager_with_real_events
+        wm._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
+
+        wm._event_manager.broadcast_app_event(SecretChanged(key="MY_KEY"))
+        await asyncio.sleep(0)
+
+        wm._tx.send_message.assert_called_once()  # type: ignore[union-attr]
+        sent_payload = json.loads(wm._tx.send_message.call_args[0][1])  # type: ignore[union-attr]
+        assert sent_payload["request_type"] == "RefreshSecretsRequest"
+
+    @pytest.mark.asyncio
+    async def test_no_broadcast_when_there_are_no_registered_workers(
+        self, worker_manager_with_real_events: WorkerManager
+    ) -> None:
+        """On a worker process there are zero registered workers; the listener fires but is a no-op."""
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+
+        wm = worker_manager_with_real_events
+
+        wm._event_manager.broadcast_app_event(ConfigChanged(key="x", old_value=None, new_value="v"))
+        await asyncio.sleep(0)
+
+        wm._tx.send_message.assert_not_called()  # type: ignore[union-attr]
