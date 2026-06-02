@@ -41,9 +41,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 
-from griptape_nodes.common.strict_mode_checks import RULES
-from griptape_nodes.retained_mode.events.base_events import ResultDetails, StrictModeViolationDetail
-
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
@@ -122,6 +119,10 @@ def _default_severity_resolver(*, rule_id: str, is_worker: bool) -> StrictModeSe
     historical worker=ERROR / orchestrator=WARNING split so detectors
     can land before the registry entry is added.
     """
+    # Lazy import: strict_mode_checks imports StrictModeSeverity from this
+    # module, so a top-level import would cycle once RULES is non-empty.
+    from griptape_nodes.common.strict_mode_checks import RULES
+
     rule = RULES.get(rule_id)
     if rule is None:
         # A typo'd or unregistered rule_id should not silently produce a
@@ -301,6 +302,13 @@ class StrictModeReporter:
         Each violation becomes a ``StrictModeViolationDetail`` appended
         to the existing list. Mutates ``result``; returns ``None``.
         """
+        # Lazy import: base_events declares the result/violation dataclasses
+        # the framework consumes here, but base_events also imports STRICT_MODE
+        # at its detector sites. Keeping the cycle break in this single
+        # framework method lets every detector module import strict-mode
+        # symbols at the top of the file.
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails, StrictModeViolationDetail
+
         if not scope.violations:
             return
 

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.api_client.request_client import RequestClient
+    from griptape_nodes.retained_mode.events.base_events import RequestPayload
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -105,6 +106,10 @@ class WorkerManager:
 
         # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
         self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
+
+        # Fire-and-forget broadcast tasks scheduled from sync callers; held here so
+        # the event loop's weak-ref to tasks does not GC them before completion.
+        self._inflight_broadcast_tasks: set[asyncio.Task] = set()
 
         # Set when an active session becomes available; gates worker spawning.
         self._session_ready_event: asyncio.Event = asyncio.Event()
@@ -339,7 +344,16 @@ class WorkerManager:
         returned dict into the appropriate result type.
         """
         request_id = event_request.request_id or str(uuid.uuid4())
-        future = await self._tx.request_client.track_request(request_id, tag=worker_engine_id)
+        # Opt into structured-failure delivery so a worker-side
+        # ResultPayloadFailure arrives as the raw payload dict rather
+        # than being collapsed to a bare ``Exception(error_msg)`` by
+        # ``_try_match``. ``_execute_node_via_worker`` then runs the
+        # dict through ``converter.structure(...)``, which rebuilds
+        # ``self.exception`` into a ForwardedException carrying the
+        # worker-side type name and traceback string.
+        future = await self._tx.request_client.track_request(
+            request_id, tag=worker_engine_id, resolve_failures_as_payload=True
+        )
 
         await self.forward_event_to_worker(
             event_request.model_copy(update={"request_id": request_id}),
@@ -490,6 +504,44 @@ class WorkerManager:
         forwarded = event.model_copy(update={"response_topic": worker_response_topic})
         logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
         await self._tx.send_message("EventRequest", forwarded.json(), worker_request_topic)
+
+    def schedule_broadcast(self, request_type: type[RequestPayload]) -> None:
+        """Tell every registered worker to handle ``request_type`` locally.
+
+        Wraps ``request_type`` in an EventRequest and fans it out to every
+        registered worker as a fire-and-forget background task on the
+        caller's running event loop. On a worker process (no registered
+        workers, or no transport configured) this is a cheap no-op.
+
+        Must be called from inside a running event loop. Every production
+        caller reaches this through EventManager.handle_request /
+        ahandle_request, which itself runs under asyncio.run(astart_app)
+        on the engine side or inside an ``await`` in a CLI subcommand.
+        """
+        if self._transport is None or not self._workers:
+            return
+        event = EventRequest(request=request_type())
+        task = asyncio.create_task(self.broadcast_to_workers(event))
+        self._inflight_broadcast_tasks.add(task)
+        task.add_done_callback(self._inflight_broadcast_tasks.discard)
+
+    async def broadcast_to_workers(self, event: EventRequest) -> None:
+        """Fire-and-forget fan out of an EventRequest to every registered worker.
+
+        Used for orchestrator-originated notifications that every worker must
+        act on locally (e.g. reload config, refresh secrets). The request is
+        sent to each worker's dedicated request topic; no response is awaited.
+
+        Safe to call with zero registered workers -- it is a no-op.
+        """
+        if not self._workers:
+            return
+        for wid, registration in list(self._workers.items()):
+            await self.forward_event_to_worker(
+                event,
+                worker_engine_id=wid,
+                worker_request_topic=registration.request_topic,
+            )
 
     async def relay_worker_result(self, payload: dict) -> None:
         """Relay an unmatched worker result to the GUI session response topic.

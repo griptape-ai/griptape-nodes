@@ -440,6 +440,7 @@ class ConfigManager:
         if self._event_manager is not None:
             event = ConfigChanged(key=key, old_value=old_value, new_value=value)
             self._event_manager.broadcast_app_event(event)
+        self._notify_workers_to_reload_config()
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -485,6 +486,7 @@ class ConfigManager:
                     new_value=request.contents,
                 )
                 self._event_manager.broadcast_app_event(event)
+            self._notify_workers_to_reload_config()
 
             return SetConfigCategoryResultSuccess(result_details=result_details)
 
@@ -564,10 +566,24 @@ class ConfigManager:
             self._set_log_level(str(self.merged_config["log_level"]))
 
             result_details = "Successfully reset user configuration."
+            self._notify_workers_to_reload_config()
             return ResetConfigResultSuccess(result_details=result_details)
         except Exception as e:
             result_details = f"Attempted to reset user configuration but failed: {e}."
             return ResetConfigResultFailure(result_details=result_details)
+
+    def _notify_workers_to_reload_config(self) -> None:
+        """Tell every registered worker to reload its config from the shared file.
+
+        Only the orchestrator's WorkerManager has any registered workers, so on a
+        worker process this is a cheap no-op via ``schedule_broadcast``. Imported
+        lazily because ``griptape_nodes.app`` is not importable at the module
+        level here -- ConfigManager is loaded during engine boot, before
+        ``app/__init__`` has finished importing.
+        """
+        from griptape_nodes.app.worker_routing import ReloadConfigRequest, schedule_broadcast
+
+        schedule_broadcast(ReloadConfigRequest)
 
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
         """Generate a diff between the old and new values."""
@@ -702,13 +718,9 @@ class ConfigManager:
 
         # Step 3: Read current config directly from disk.
         #
-        # We intentionally bypass the ReadFileRequest handler here. `_write_user_config_delta`
-        # is called from both sync (set_config_value) and async (app-init handlers that
-        # register provider settings) contexts; the ReadFileRequest handler is async, so
-        # dispatching it from an async context via sync handle_request trips the
-        # sync-in-async fail-fast (issue #4469). The enclosing writes already use
-        # os_manager.on_write_file_request directly (sync), so the read matches that
-        # bootstrap-path style and avoids coupling config load to event-loop state.
+        # We intentionally bypass the ReadFileRequest handler here. The enclosing writes
+        # already use os_manager.on_write_file_request directly (sync), so the read matches
+        # that bootstrap-path style and avoids coupling config load to event-loop state.
         try:
             file_content = Path(config_path_str).read_text(encoding="utf-8")
         except FileNotFoundError:
