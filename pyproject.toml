@@ -38,6 +38,7 @@ dependencies = [
   "truststore>=0.10.1",
   "cattrs>=26.1.0",
   "fileseq>=3.2.0",
+  "pydantic-ai-slim[mcp,openai]>=1.95.1",
 ]
 
 [project.optional-dependencies]

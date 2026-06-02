@@ -5,7 +5,11 @@ The handler is a thin wrapper over the module-level catalog constants in
 `__init__` and exercise the handler directly.
 """
 
+from dataclasses import dataclass, field
+
+import httpx
 import pytest
+from pydantic_ai.messages import BinaryContent
 
 from griptape_nodes.drivers.cloud_models import (
     DEPRECATED_MODELS,
@@ -16,8 +20,9 @@ from griptape_nodes.drivers.cloud_models import (
 from griptape_nodes.retained_mode.events.agent_events import (
     ListAgentModelsRequest,
     ListAgentModelsResultSuccess,
+    RunAgentRequestArtifact,
 )
-from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
+from griptape_nodes.retained_mode.managers.agent_manager import AgentManager, _compose_prompt
 
 
 @pytest.fixture
@@ -65,3 +70,130 @@ class TestOnHandleListAgentModelsRequest:
             assert key in result.deprecated_models
         for key in IMAGE_DEPRECATED_MODELS:
             assert key in result.deprecated_models
+
+
+@dataclass
+class _GetRecorder:
+    """Serves queued `httpx.Response`s keyed by URL and records requested URLs."""
+
+    responses: dict[str, httpx.Response] = field(default_factory=dict)
+    requested_urls: list[str] = field(default_factory=list)
+
+
+@pytest.fixture
+def patch_get(monkeypatch: pytest.MonkeyPatch) -> _GetRecorder:
+    """Route `httpx.AsyncClient.get` through a recorder keyed by URL.
+
+    Unmapped URLs resolve to a 404 so download-failure paths are exercisable.
+    """
+    recorder = _GetRecorder()
+
+    async def fake_get(self: httpx.AsyncClient, url: str, **kwargs: object) -> httpx.Response:  # noqa: ARG001
+        recorder.requested_urls.append(url)
+        request = httpx.Request("GET", url)
+        response = recorder.responses.get(url, httpx.Response(404))
+        response.request = request
+        return response
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    return recorder
+
+
+def _image_artifact(url: str) -> dict[str, str]:
+    return {"type": "ImageUrlArtifact", "value": url}
+
+
+class TestComposePrompt:
+    @pytest.mark.asyncio
+    async def test_no_artifacts_returns_plain_text(self, patch_get: _GetRecorder) -> None:
+        result = await _compose_prompt("hello", [])
+
+        assert result == "hello"
+        assert patch_get.requested_urls == []
+
+    @pytest.mark.asyncio
+    async def test_non_image_artifacts_are_ignored(self, patch_get: _GetRecorder) -> None:
+        artifacts = [{"type": "TextArtifact", "value": "http://x/file.txt"}]
+
+        result = await _compose_prompt("hello", artifacts)
+
+        assert result == "hello"
+        assert patch_get.requested_urls == []
+
+    @pytest.mark.asyncio
+    async def test_image_is_downloaded_and_inlined(self, patch_get: _GetRecorder) -> None:
+        url = "http://localhost:9/workspace/cat.png"
+        patch_get.responses[url] = httpx.Response(200, content=b"png-bytes", headers={"content-type": "image/png"})
+
+        result = await _compose_prompt("look", [_image_artifact(url)])
+
+        assert isinstance(result, list)
+        assert result[0] == "look"
+        image = result[1]
+        assert isinstance(image, BinaryContent)
+        assert image.data == b"png-bytes"
+        assert image.media_type == "image/png"
+        assert patch_get.requested_urls == [url]
+
+    @pytest.mark.asyncio
+    async def test_reads_request_artifact_attributes(self, patch_get: _GetRecorder) -> None:
+        # The wire deserializer hands back RunAgentRequestArtifact instances
+        # whose data lives in attributes, not dict items.
+        url = "http://localhost:9/workspace/dog.png"
+        patch_get.responses[url] = httpx.Response(200, content=b"dog", headers={"content-type": "image/png"})
+        artifact = RunAgentRequestArtifact(type="ImageUrlArtifact", value=url)
+        assert dict(artifact) == {}
+
+        result = await _compose_prompt("who is this", [artifact])
+
+        assert isinstance(result, list)
+        binary_parts = [part for part in result if isinstance(part, BinaryContent)]
+        assert len(binary_parts) == 1
+        assert binary_parts[0].data == b"dog"
+
+    @pytest.mark.asyncio
+    async def test_media_type_falls_back_to_url_extension(self, patch_get: _GetRecorder) -> None:
+        url = "http://localhost:9/workspace/cat.jpeg?t=123"
+        patch_get.responses[url] = httpx.Response(
+            200, content=b"jpeg-bytes", headers={"content-type": "application/octet-stream"}
+        )
+
+        result = await _compose_prompt("", [_image_artifact(url)])
+
+        assert isinstance(result, list)
+        # Empty text contributes no leading string element.
+        assert len(result) == 1
+        image = result[0]
+        assert isinstance(image, BinaryContent)
+        assert image.media_type == "image/jpeg"
+
+    @pytest.mark.asyncio
+    async def test_media_type_defaults_to_png_when_unknown(self, patch_get: _GetRecorder) -> None:
+        url = "http://localhost:9/workspace/blob"
+        patch_get.responses[url] = httpx.Response(200, content=b"raw")
+
+        result = await _compose_prompt("hi", [_image_artifact(url)])
+
+        assert isinstance(result, list)
+        assert isinstance(result[1], BinaryContent)
+        assert result[1].media_type == "image/png"
+
+    @pytest.mark.asyncio
+    async def test_failed_download_is_dropped(self, patch_get: _GetRecorder) -> None:
+        ok_url = "http://localhost:9/workspace/ok.png"
+        bad_url = "http://localhost:9/workspace/missing.png"
+        patch_get.responses[ok_url] = httpx.Response(200, content=b"ok", headers={"content-type": "image/png"})
+
+        result = await _compose_prompt("two", [_image_artifact(bad_url), _image_artifact(ok_url)])
+
+        assert isinstance(result, list)
+        binary_parts = [part for part in result if isinstance(part, BinaryContent)]
+        assert len(binary_parts) == 1
+        assert binary_parts[0].data == b"ok"
+
+    @pytest.mark.asyncio
+    async def test_all_downloads_failing_falls_back_to_text(self, patch_get: _GetRecorder) -> None:
+        result = await _compose_prompt("text", [_image_artifact("http://localhost:9/workspace/gone.png")])
+
+        assert result == "text"
+        assert patch_get.requested_urls == ["http://localhost:9/workspace/gone.png"]
