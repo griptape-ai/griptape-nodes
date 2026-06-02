@@ -43,6 +43,7 @@ from pydantic_ai.messages import (
     ThinkingPartDelta,
     ToolCallPart,
 )
+from pydantic_ai_skills import SkillsCapability
 
 from griptape_nodes.agents.pydantic_ai.image_tools import (
     IMAGE_TOOL_NAME,
@@ -52,7 +53,6 @@ from griptape_nodes.agents.pydantic_ai.image_tools import (
 )
 from griptape_nodes.agents.pydantic_ai.model import build_griptape_cloud_model
 from griptape_nodes.agents.pydantic_ai.repo_context import load_repo_context
-from griptape_nodes.agents.pydantic_ai.skills import load_skills
 from griptape_nodes.agents.pydantic_ai.workspace_tools import (
     WorkspaceToolset,
     WorkspaceToolsetConfig,
@@ -164,6 +164,7 @@ class PydanticAgentRunner:
     static_files_manager: StaticFilesManager | None = None
     auto_load_repo_context: bool = True
     auto_load_skills: bool = True
+    skills_directory: str = ".agents/skills"
     usage_limits: UsageLimits | None = None
 
     _agent: Agent[Any, str] = field(init=False)
@@ -173,10 +174,12 @@ class PydanticAgentRunner:
     def __post_init__(self) -> None:
         toolsets: list[Any] = list(self.mcp_servers)
         instructions = self._build_instructions()
+        capabilities = self._build_skills_capabilities()
         self._agent = Agent(
             build_griptape_cloud_model(self.model_name, api_key=self.api_key, base_url=self.base_url),
             instructions=instructions,
             toolsets=toolsets or None,
+            capabilities=capabilities or None,
         )
         config = self.workspace_config or WorkspaceToolsetConfig(workspace_root=self.workspace_root)
         self._toolset = register_workspace_tools(self._agent, config)
@@ -187,18 +190,23 @@ class PydanticAgentRunner:
             self._image_toolset = register_image_tools(self._agent, self.image_config, self.static_files_manager)
         logger.info(
             "PydanticAgentRunner ready: model=%s workspace=%s mcp_servers=%d tools=%d "
-            "image_tool=%s auto_repo_context=%s usage_limits=%s",
+            "image_tool=%s auto_repo_context=%s skills=%d usage_limits=%s",
             self.model_name,
             self.workspace_root,
             len(self.mcp_servers),
             len(getattr(self._agent, "_function_tools", []) or []),
             self._image_toolset is not None,
             self.auto_load_repo_context,
+            len(capabilities),
             self.usage_limits,
         )
 
     def _build_instructions(self) -> str | None:
-        """Compose the instruction string from the user's input plus repo context plus skills."""
+        """Compose the instruction string from the user's input plus repo context.
+
+        Skill guidance is injected separately by :class:`SkillsCapability` via
+        its own ``get_instructions`` hook, so it is not concatenated here.
+        """
         parts: list[str] = []
         if self.instructions:
             parts.append(self.instructions)
@@ -206,11 +214,30 @@ class PydanticAgentRunner:
             repo_context = load_repo_context(self.workspace_root)
             if repo_context:
                 parts.append(repo_context)
-        if self.auto_load_skills:
-            skills = load_skills(self.workspace_root)
-            if skills:
-                parts.append(skills)
         return "\n\n".join(parts) or None
+
+    def _build_skills_capabilities(self) -> list[SkillsCapability]:
+        """Build the skills capability exposing ``.agents/skills`` to the agent.
+
+        Returns an empty list when skills are disabled or the skills directory
+        is absent so the agent is created without a skills capability rather
+        than an empty one. ``run_skill_script`` is excluded because the workspace
+        already exposes a gated shell tool and skills here ship no scripts;
+        ``auto_reload`` re-scans the directory before each run so edits land
+        without restarting the engine.
+        """
+        if not self.auto_load_skills:
+            return []
+        skills_dir = self.workspace_root / self.skills_directory
+        if not skills_dir.is_dir():
+            return []
+        return [
+            SkillsCapability(
+                directories=[skills_dir],
+                exclude_tools={"run_skill_script"},
+                auto_reload=True,
+            )
+        ]
 
     @property
     def agent(self) -> Agent[Any, str]:

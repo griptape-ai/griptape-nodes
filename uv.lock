@@ -572,6 +572,7 @@ dependencies = [
     { name = "pillow" },
     { name = "portalocker" },
     { name = "pydantic" },
+    { name = "pydantic-ai-skills" },
     { name = "pydantic-ai-slim", extra = ["mcp", "openai"] },
     { name = "pygit2" },
     { name = "python-dotenv" },
@@ -644,6 +645,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "portalocker", specifier = ">=2.10.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
+    { name = "pydantic-ai-skills", specifier = ">=0.11.0" },
     { name = "pydantic-ai-slim", extras = ["mcp", "openai"], specifier = ">=1.95.1" },
     { name = "pygit2", specifier = ">=1.19.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
@@ -1621,6 +1623,20 @@ wheels = [
 [package.optional-dependencies]
 email = [
     { name = "email-validator" },
+]
+
+[[package]]
+name = "pydantic-ai-skills"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "pydantic-ai-slim" },
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/94/d1/f8fbc1c792ba8d73fc424ddab143ab0e1d95f9e982be5a949aaa3c84d64e/pydantic_ai_skills-0.11.0.tar.gz", hash = "sha256:d4040f0b81da34e25b8f14dac5e1895e59d00390db8896448aac1ed1a4d0cf90", size = 9023711, upload-time = "2026-05-26T01:52:55.375Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9a/80/d9b4bf0f5a3e8d256d62aa30b1c4589dc492efdb2a2d0da0334b4e71f25c/pydantic_ai_skills-0.11.0-py3-none-any.whl", hash = "sha256:af8d78d451ce192dd2ef33abe86ad900bd51d9fd10c81a11abee82f62e8daf30", size = 61218, upload-time = "2026-05-26T01:52:53.773Z" },
 ]
 
 [[package]]

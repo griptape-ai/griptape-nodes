@@ -1,82 +1,72 @@
-"""Tests for the skills auto-loader."""
+"""Tests for how the runner wires `.agents/skills` into a `SkillsCapability`.
+
+Skill discovery and progressive disclosure are owned by `pydantic-ai-skills`;
+these tests cover only the runner's contract: when a capability is built, what
+it discovers, and which tools it exposes.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from griptape_nodes.agents.pydantic_ai.skills import (
-    MAX_SKILL_BYTES,
-    load_skills,
-)
+import pytest
+
+from griptape_nodes.agents.pydantic_ai.runner import PydanticAgentRunner
+from griptape_nodes.drivers.thread_storage.local_thread_storage_driver import LocalThreadStorageDriver
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_returns_none_when_directory_missing(tmp_path: Path) -> None:
-    """Workspace with no `.agents/skills` dir yields no skill content."""
-    assert load_skills(tmp_path) is None
+def _runner(workspace: Path, threads_dir: Path, *, auto_load_skills: bool = True) -> PydanticAgentRunner:
+    """Build a runner rooted at `workspace` without touching Griptape Cloud."""
+    storage = LocalThreadStorageDriver(threads_dir, config_manager=None, secrets_manager=None)  # type: ignore[arg-type]
+    return PydanticAgentRunner(
+        model_name="test",
+        api_key="dummy",
+        workspace_root=workspace,
+        storage=storage,
+        auto_load_skills=auto_load_skills,
+    )
 
 
-def test_returns_none_when_no_skills(tmp_path: Path) -> None:
-    """Empty skills directory yields no content."""
-    (tmp_path / ".agents/skills").mkdir(parents=True)
-    assert load_skills(tmp_path) is None
-
-
-def test_loads_single_skill(tmp_path: Path) -> None:
-    """One skill produces a header + a single delimited section."""
-    skill_dir = tmp_path / ".agents/skills/my-skill"
+def _write_skill(workspace: Path, name: str, body: str = "Guidance for the task.") -> None:
+    """Create a minimal valid `.agents/skills/<name>/SKILL.md` under `workspace`."""
+    skill_dir = workspace / ".agents/skills" / name
     skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("body content here")
-    out = load_skills(tmp_path)
-    assert out is not None
-    assert "BEGIN skill: my-skill" in out
-    assert "body content here" in out
-    assert "END skill: my-skill" in out
+    (skill_dir / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {name} description\n---\n\n{body}")
 
 
-def test_loads_multiple_skills_alphabetically(tmp_path: Path) -> None:
-    """Multiple skills are emitted in alphabetical directory order."""
-    base = tmp_path / ".agents/skills"
-    (base / "zeta").mkdir(parents=True)
-    (base / "zeta/SKILL.md").write_text("zeta-body")
-    (base / "alpha").mkdir(parents=True)
-    (base / "alpha/SKILL.md").write_text("alpha-body")
-
-    out = load_skills(tmp_path)
-    assert out is not None
-    assert out.find("alpha-body") < out.find("zeta-body")
+@pytest.fixture
+def workspace(tmp_path: Path) -> Path:
+    """An empty workspace root."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    return ws
 
 
-def test_truncates_oversize_skill(tmp_path: Path) -> None:
-    """Files larger than MAX_SKILL_BYTES are truncated with a marker."""
-    skill_dir = tmp_path / ".agents/skills/big"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("x" * (MAX_SKILL_BYTES + 100))
-    out = load_skills(tmp_path)
-    assert out is not None
-    assert "[truncated" in out
+def test_no_capability_when_skills_dir_missing(workspace: Path, tmp_path: Path) -> None:
+    """A workspace with no `.agents/skills` dir yields no skills capability."""
+    runner = _runner(workspace, tmp_path / "threads")
+    assert runner._build_skills_capabilities() == []
 
 
-def test_overall_byte_cap_drops_later_skills(tmp_path: Path) -> None:
-    """Once the running total would exceed MAX_TOTAL_BYTES, later skills are skipped."""
-    base = tmp_path / ".agents/skills"
-    # Five skills near the per-skill cap. Total well exceeds MAX_TOTAL_BYTES so
-    # the loader has to drop something.
-    for name in ("a", "b", "c", "d", "e"):
-        (base / name).mkdir(parents=True)
-        (base / name / "SKILL.md").write_text("y" * (MAX_SKILL_BYTES - 200))
-
-    out = load_skills(tmp_path)
-    assert out is not None
-    assert "BEGIN skill: a" in out
-    assert "omitted: total skill bytes exceed" in out
+def test_no_capability_when_disabled(workspace: Path, tmp_path: Path) -> None:
+    """`auto_load_skills=False` suppresses the capability even when skills exist."""
+    _write_skill(workspace, "demo-skill")
+    runner = _runner(workspace, tmp_path / "threads", auto_load_skills=False)
+    assert runner._build_skills_capabilities() == []
 
 
-def test_skips_empty_skill_files(tmp_path: Path) -> None:
-    """Whitespace-only SKILL.md files are ignored."""
-    skill_dir = tmp_path / ".agents/skills/empty"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("   \n   \n")
-    assert load_skills(tmp_path) is None
+def test_discovers_skill_and_excludes_script_tool(workspace: Path, tmp_path: Path) -> None:
+    """A present skill is discovered; `run_skill_script` is excluded from the tools."""
+    _write_skill(workspace, "demo-skill")
+    runner = _runner(workspace, tmp_path / "threads")
+
+    capabilities = runner._build_skills_capabilities()
+    assert len(capabilities) == 1
+
+    toolset = capabilities[0].toolset
+    assert "demo-skill" in toolset.skills
+    assert "run_skill_script" not in toolset.tools
+    assert {"list_skills", "load_skill"} <= set(toolset.tools)
