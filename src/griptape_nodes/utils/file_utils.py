@@ -4,10 +4,34 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from fnmatch import fnmatch
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write ``data`` to ``path`` atomically.
+
+    Writes to a temp file in the same directory and renames it into place via
+    ``Path.replace`` (an atomic rename on the same filesystem), so a crash
+    mid-write leaves the previous file intact rather than a truncated one. The
+    temp file is removed if the write or rename fails.
+
+    Args:
+        path: Destination file path. Its parent directory must already exist.
+        data: Bytes to write.
+    """
+    tmp_fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(tmp_fd, "wb") as tmp_file:
+            tmp_file.write(data)
+        tmp_path.replace(path)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def find_file_in_directory(directory: Path, pattern: str) -> Path | None:

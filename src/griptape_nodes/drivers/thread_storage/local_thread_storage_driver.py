@@ -16,19 +16,19 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 
 from griptape_nodes.drivers.thread_storage.base_thread_storage_driver import BaseThreadStorageDriver
 from griptape_nodes.retained_mode.events.agent_events import ThreadMetadata
+from griptape_nodes.utils.file_utils import atomic_write_bytes
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from pydantic_ai.messages import ModelMessage
 
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -61,7 +61,7 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
             meta["local_id"] = local_id
 
         self._write_meta(thread_id, meta)
-        self._atomic_write(self._history_path(thread_id), b"[]")
+        atomic_write_bytes(self._history_path(thread_id), b"[]")
         return thread_id, meta
 
     def get_thread_metadata(self, thread_id: str) -> dict:
@@ -135,7 +135,7 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
             return []
 
     def save_history(self, thread_id: str, messages: list[ModelMessage]) -> None:
-        self._atomic_write(self._history_path(thread_id), ModelMessagesTypeAdapter.dump_json(list(messages)))
+        atomic_write_bytes(self._history_path(thread_id), ModelMessagesTypeAdapter.dump_json(list(messages)))
         meta = self._read_meta(thread_id)
         now = datetime.now(UTC).isoformat()
         meta.setdefault("created_at", now)
@@ -160,24 +160,7 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
             return {}
 
     def _write_meta(self, thread_id: str, meta: dict[str, Any]) -> None:
-        self._atomic_write(self._meta_path(thread_id), json.dumps(meta, indent=2).encode("utf-8"))
-
-    def _atomic_write(self, path: Path, data: bytes) -> None:
-        """Write ``data`` to ``path`` atomically via a temp file in the same dir.
-
-        Writing to a sibling temp file and ``os.replace``-ing it into place means
-        a crash mid-write leaves the previous file intact rather than a truncated
-        one, which would otherwise trip ``load_history``'s corrupt-file path.
-        """
-        tmp_fd, tmp_name = tempfile.mkstemp(dir=str(self.threads_directory), suffix=".tmp")
-        tmp_path = Path(tmp_name)
-        try:
-            with os.fdopen(tmp_fd, "wb") as tmp_file:
-                tmp_file.write(data)
-            tmp_path.replace(path)
-        except OSError:
-            tmp_path.unlink(missing_ok=True)
-            raise
+        atomic_write_bytes(self._meta_path(thread_id), json.dumps(meta, indent=2).encode("utf-8"))
 
     def _backup_corrupt_history(self, path: Path) -> Path:
         """Move an unreadable history file aside so the next save can't destroy it.
