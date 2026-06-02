@@ -2150,16 +2150,13 @@ class NodeManager:
             details = f'"{node_name}.{param_name}" not found'
             return GetParameterValueResultFailure(result_details=details)
 
-        # Values are actually stored on the NODE, so let's ask them.
-        if param_name not in node.parameter_values:
-            # Check if it might be in output values (for output parameters)
-            if param_name in node.parameter_output_values:
-                data_value = node.parameter_output_values[param_name]
-            else:
-                # Use the default if not found in either place
-                data_value = parameter.default_value
-        else:
+        # Output values take priority (they represent the result of execution).
+        if param_name in node.parameter_output_values:
+            data_value = node.parameter_output_values[param_name]
+        elif param_name in node.parameter_values:
             data_value = node.parameter_values[param_name]
+        else:
+            data_value = parameter.default_value
 
         # Cool.
         details = f"{node_name}.{request.parameter_name} = {data_value}"

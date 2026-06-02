@@ -492,14 +492,16 @@ class TestProjectManagerGetStateForMacro:
         return pm
 
     def test_get_state_for_macro_no_current_project(self) -> None:
-        """Test GetStateForMacro fails when no current project is set."""
+        """Test GetStateForMacro fails when current project ID does not resolve to a loaded template."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
-        pm._current_project_id = None
+        # Drop the system defaults loaded in __init__ so the current project ID
+        # no longer resolves -- simulating the same failure as "no project set".
+        pm._successfully_loaded_project_templates.clear()
 
         parsed_macro = ParsedMacro("{file_name}.txt")
 
@@ -634,7 +636,7 @@ class TestProjectManagerGetCurrentProject:
     """Test ProjectManager GetCurrentProject request handler."""
 
     def test_get_current_project_no_project_set(self) -> None:
-        """Test GetCurrentProject fails when no project is set."""
+        """Test GetCurrentProject fails when current project ID does not resolve to a loaded template."""
         from griptape_nodes.retained_mode.events.project_events import (
             GetCurrentProjectRequest,
             GetCurrentProjectResultFailure,
@@ -644,13 +646,15 @@ class TestProjectManagerGetCurrentProject:
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
-        pm._current_project_id = None
+        # Drop the system defaults loaded in __init__ so the current project ID
+        # no longer resolves to a loaded template.
+        pm._successfully_loaded_project_templates.clear()
 
         request = GetCurrentProjectRequest()
         result = pm.on_get_current_project_request(request)
 
         assert isinstance(result, GetCurrentProjectResultFailure)
-        assert "no project is currently set" in str(result.result_details)
+        assert "project not found" in str(result.result_details)
 
     def test_get_current_project_returns_project_info(self) -> None:
         """Test GetCurrentProject returns complete ProjectInfo."""
@@ -1050,11 +1054,11 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             assert result.mapped_path is None
 
     def test_attempt_map_path_no_current_project(self, project_manager: ProjectManager) -> None:
-        """Test mapping when no current project is set (returns failure)."""
+        """Test mapping when current project ID does not resolve to a loaded template (returns failure)."""
         from griptape_nodes.retained_mode.events.project_events import AttemptMapAbsolutePathToProjectResultFailure
 
-        # Clear the system defaults loaded in __init__ to simulate no current project
-        project_manager._current_project_id = None
+        # Clear the system defaults loaded in __init__ to simulate no resolvable project
+        project_manager._successfully_loaded_project_templates.clear()
 
         absolute_path = Path("/Users/test/project/outputs/file.png")
 
