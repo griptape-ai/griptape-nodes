@@ -4843,6 +4843,9 @@ class NodeManager:
             return ResetNodeToDefaultsResultFailure(result_details=details)
         parent_flow_name = self._name_to_parent_flow_name[node_name]
 
+        # Preserve parent group membership
+        parent_group_name = node.parent_group.name if node.parent_group else None
+
         # FAILURE CHECK: Create new node with temporary name
         temp_node_name = f"{node_name}_temp"
         create_node_request = CreateNodeRequest(
@@ -4850,6 +4853,7 @@ class NodeManager:
             specific_library_name=library_name,
             node_name=temp_node_name,
             override_parent_flow_name=parent_flow_name,
+            parent_group_name=parent_group_name,
             create_error_proxy_on_failure=False,
         )
         create_result = self.on_create_node_request(create_node_request)
