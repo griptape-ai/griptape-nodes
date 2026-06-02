@@ -27,6 +27,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultDetails,
     ResultPayload,
+    StrictModeViolationDetail,
 )
 from griptape_nodes.retained_mode.events.event_converter import converter
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -414,12 +415,21 @@ class EventManager:
     def _log_result_details(self, result: ResultPayload) -> None:
         """Log the result details at their specified levels.
 
+        Strict-mode violations are skipped here because
+        ``StrictModeReporter.report`` has already logged them at
+        detection time with the scope's ``node=... library=...``
+        prefix, which is more informative than the bare message
+        repeated here. Without the skip every violation would log
+        twice -- once from the reporter and once from this loop.
+
         Args:
             result: The result payload containing details to log
         """
         if isinstance(result.result_details, ResultDetails):
             logger = logging.getLogger("griptape_nodes")
             for detail in result.result_details.result_details:
+                if isinstance(detail, StrictModeViolationDetail):
+                    continue
                 logger.log(detail.level, detail.message)
 
     def _handle_request_core(

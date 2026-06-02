@@ -3258,11 +3258,15 @@ class NodeManager:
                 )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
-            # For ErrorProxyNode, we can't create a reference node, so skip comparison
+            # For ErrorProxyNode, we can't create a reference node, so skip comparison.
+            # Wrap in ``LibraryRegistry.constructing_node()`` so the parameter-mutation
+            # detector skips this ephemeral instance's declarative ``add_parameter``
+            # calls (this construction bypasses ``LibraryRegistry.create_node``).
             if isinstance(node, ErrorProxyNode):
                 reference_node = None
             else:
-                reference_node = type(node)(name="REFERENCE NODE")
+                with LibraryRegistry.constructing_node():
+                    reference_node = type(node)(name="REFERENCE NODE")
 
             # Now creation or alteration of all of the elements.
             element_modification_commands = []

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
@@ -18,6 +19,8 @@ from griptape_nodes.retained_mode.managers.resource_components.resource_instance
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
@@ -354,11 +357,30 @@ class LibraryRegistry(metaclass=SingletonMeta):
             node_type=node_type, specific_library_name=specific_library_name
         )
 
-        # Expose the "a node is being constructed right now" signal that the
-        # reentrant-bus-in-init detector reads from EventManager.handle_request.
+        with cls.constructing_node():
+            return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
+
+    @classmethod
+    @contextmanager
+    def constructing_node(cls) -> Iterator[None]:
+        """Mark the enclosed block as a node ``__init__`` running on the calling task.
+
+        Sets the same task-local flag that ``create_node`` sets. Use at
+        any direct construction site that bypasses ``create_node``
+        (e.g. ``type(node)(name=...)`` or ``node_class(name=...)`` for
+        an ephemeral probe / reference node), so:
+
+        - the parameter-mutation-during-aprocess detector skips the
+          declarative ``add_parameter`` calls inside the constructed
+          node's ``__init__`` (otherwise it would fire once per
+          parameter declared by the helper instance), and
+        - the reentrant-bus-in-init detector still fires for the
+          right reason if the constructed node's ``__init__`` issues
+          a bus request.
+        """
         token = _constructing_node.set(True)
         try:
-            return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
+            yield
         finally:
             _constructing_node.reset(token)
 
@@ -366,9 +388,10 @@ class LibraryRegistry(metaclass=SingletonMeta):
     def is_constructing_node(cls) -> bool:
         """Return True if a node ``__init__`` is currently running on the calling task.
 
-        The reentrant-bus-in-init strict-mode detector consults this so it
-        can fire from ``EventManager.handle_request`` without owning its
-        own depth counter. The flag is set by ``create_node``.
+        The reentrant-bus-in-init and parameter-mutation-during-aprocess
+        strict-mode detectors consult this so they can fire from outside
+        ``LibraryRegistry`` without owning their own depth counter. The
+        flag is set by ``create_node`` and by ``constructing_node()``.
         """
         return _constructing_node.get()
 

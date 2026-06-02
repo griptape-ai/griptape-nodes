@@ -1438,7 +1438,12 @@ class BaseNode(ABC):
         rule = RULES["parameter-mutation-during-aprocess"]
         STRICT_MODE.report(
             rule_id=rule.rule_id,
-            message=rule.render(parameter_name=parameter_name, mutation=mutation),
+            message=rule.render(
+                node_name=self.name,
+                node_class=type(self).__name__,
+                parameter_name=parameter_name,
+                mutation=mutation,
+            ),
         )
 
     def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, *, remove: bool = False) -> None:
