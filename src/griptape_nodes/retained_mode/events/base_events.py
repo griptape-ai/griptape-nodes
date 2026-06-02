@@ -222,10 +222,48 @@ class ResultPayloadSuccess(ResultPayload, ABC):
         return True
 
 
+class ForwardedException(Exception):  # noqa: N818
+    """Placeholder for an exception that crossed the worker boundary.
+
+    The converter's Exception hook emits worker-side exceptions as a
+    ``{type, message, traceback}`` dict, then rebuilds them into a
+    ``ForwardedException`` on the receiving side. The placeholder is
+    still an ``Exception`` (so ``raise ... from result.exception``
+    chains) and carries the worker-side class name and formatted
+    traceback so the orchestrator can show both.
+
+    ``NodeExecutor._format_node_failure_message`` is the consumer:
+    it reads ``original_type`` for the ``[builtins.ValueError]``
+    prefix on the user-visible ``RuntimeError`` message, and
+    ``original_traceback`` for the ``Worker traceback:`` block.
+    Without these attributes the chained exception would print only
+    ``Type: message`` with no frames, because the placeholder is
+    constructed (not raised) and so its ``__traceback__`` is ``None``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        original_type: str | None = None,
+        original_traceback: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.original_type = original_type
+        self.original_traceback = original_traceback
+
+
 # Failure result payload abstract base class
 @dataclass(kw_only=True)
 class ResultPayloadFailure(ResultPayload, ABC):
-    """Abstract base class for failure result payloads."""
+    """Abstract base class for failure result payloads.
+
+    ``exception`` is the single source of truth. On the local path it
+    is the live ``Exception``. Across the worker -> orchestrator wire
+    the converter emits it as a structured dict and rebuilds it as a
+    ``ForwardedException`` carrying the original type name and
+    traceback as attributes, so callers can read both paths uniformly.
+    """
 
     result_details: ResultDetails | str
     exception: Exception | None = None
