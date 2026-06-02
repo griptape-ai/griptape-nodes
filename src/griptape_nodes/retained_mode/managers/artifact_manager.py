@@ -339,7 +339,7 @@ class ArtifactManager:
             )
 
         # FAILURE CASE: Verify provider generates previews
-        if not provider_class.get_preview_formats():
+        if len(provider_class.get_preview_formats()) == 0:
             return GeneratePreviewResultFailure(
                 result_details=f"Attempted to generate preview for '{source_path}'. "
                 f"Failed due to: provider '{request.artifact_provider_name}' does not generate previews"
@@ -502,7 +502,7 @@ class ArtifactManager:
             )
 
         # FAILURE CASE: Verify provider generates previews
-        if not provider_class.get_preview_formats():
+        if len(provider_class.get_preview_formats()) == 0:
             return GeneratePreviewFromDefaultsResultFailure(
                 result_details=f"Attempted to generate preview using defaults. "
                 f"Failed due to: provider '{request.artifact_provider_name}' does not generate previews"
@@ -581,7 +581,7 @@ class ArtifactManager:
             )
 
         # FAILURE CASE: Verify provider generates previews
-        if not provider_class.get_preview_formats():
+        if len(provider_class.get_preview_formats()) == 0:
             return GetPreviewForArtifactResultFailure(
                 result_details=f"Attempted to get preview for '{source_path}'. "
                 f"Failed due to: provider '{request.artifact_provider_name}' does not generate previews"
@@ -1024,7 +1024,7 @@ class ArtifactManager:
 
         for provider_class in self._registry.get_all_provider_classes():
             # Providers that don't generate previews have no preview schema to publish.
-            if not provider_class.get_preview_formats():
+            if len(provider_class.get_preview_formats()) == 0:
                 continue
 
             provider_friendly_name = provider_class.get_friendly_name()
@@ -1094,7 +1094,7 @@ class ArtifactManager:
             settings registration entirely.
         """
         # Providers that don't generate previews have no preview settings to register.
-        if not provider_class.get_preview_formats():
+        if len(provider_class.get_preview_formats()) == 0:
             return
 
         # Validate and write provider-level settings (format, generator name)
