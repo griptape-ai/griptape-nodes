@@ -290,13 +290,9 @@ class SecretsManager:
         """
         merged: dict[str, str] = {}
         if ENV_VAR_PATH.exists():
-            for key, value in dotenv_values(ENV_VAR_PATH).items():
-                if value is not None:
-                    merged[key] = value
+            merged.update({k: v for k, v in dotenv_values(ENV_VAR_PATH).items() if v is not None})
         if self.workspace_env_path.exists():
-            for key, value in dotenv_values(self.workspace_env_path).items():
-                if value is not None:
-                    merged[key] = value
+            merged.update({k: v for k, v in dotenv_values(self.workspace_env_path).items() if v is not None})
         return merged
 
     def _register_handlers(self, event_manager: EventManager) -> None:

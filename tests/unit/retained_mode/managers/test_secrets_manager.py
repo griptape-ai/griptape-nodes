@@ -582,10 +582,10 @@ class TestSecretsManager:
                     assert os.environ["CASCADE_KEY"] == "global_cascade"
                     assert "CASCADE_KEY" in secrets_manager._managed_env_keys
 
-    def test_full_lifecycle_keeps_bookkeeping_invariant(self) -> None:
-        """Drive boot -> set_secret -> refresh -> delete -> refresh and verify
-        the manager's bookkeeping invariant survives each step.
+    def test_full_lifecycle_keeps_bookkeeping_invariant(self) -> None:  # noqa: PLR0915
+        """Drive a full secret lifecycle and verify the bookkeeping invariant survives each step.
 
+        Sequence: boot -> set_secret -> refresh -> delete -> refresh.
         The invariant: every key in ``_managed_env_keys`` is in
         ``os.environ`` with the value the manager last installed. Drift
         between the two would let ``get_secret`` return stale values or
@@ -608,8 +608,7 @@ class TestSecretsManager:
                 assert key in os.environ, f"managed key {key!r} missing from os.environ"
                 if key in merged:
                     assert os.environ[key] == merged[key], (
-                        f"managed key {key!r} has os.environ value {os.environ[key]!r} "
-                        f"but file says {merged[key]!r}"
+                        f"managed key {key!r} has os.environ value {os.environ[key]!r} but file says {merged[key]!r}"
                     )
 
         with tempfile.TemporaryDirectory() as temp_dir:
