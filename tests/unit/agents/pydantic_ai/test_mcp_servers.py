@@ -1,97 +1,151 @@
-"""Tests for the tolerant MCP server wrapper.
+"""Tests for building Pydantic AI MCP toolsets from engine configs.
 
-These exercise the blocklist filter and the prefix-stripping logic without
-spinning up a real MCP server. We construct a minimal stub that quacks like
-an :class:`MCPServer` enough for the wrapper to use.
+These cover two concerns without spinning up a real MCP server:
+
+* config -> transport mapping in :func:`mcp_server_from_config`, and
+* the combinator composition (optional blocklist filter -> name prefix) in
+  :func:`_compose`.
 """
 
 from __future__ import annotations
 
-from typing import Any, Self
+from types import SimpleNamespace
+from typing import Any
 
-import pytest
+from fastmcp.client.transports import SSETransport, StdioTransport, StreamableHttpTransport
+from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.toolsets.filtered import FilteredToolset
+from pydantic_ai.toolsets.prefixed import PrefixedToolset
 
-from griptape_nodes.agents.pydantic_ai.mcp_servers import _TolerantMCPServer
-
-
-class _StubMCPServer:
-    """The narrow surface of `MCPServer` that `_TolerantMCPServer` actually uses."""
-
-    def __init__(self, *, tool_names: list[str], tool_prefix: str | None) -> None:
-        self.tool_prefix = tool_prefix
-        self._tool_names = tool_names
-        self.id: str | None = None
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(self, *exc_info: object) -> bool | None:
-        return None
-
-    async def get_tools(self, _ctx: Any) -> dict[str, Any]:
-        return {self._full_name(name): object() for name in self._tool_names}
-
-    def _full_name(self, name: str) -> str:
-        return f"{self.tool_prefix}_{name}" if self.tool_prefix else name
+from griptape_nodes.agents.pydantic_ai.mcp_servers import (
+    _blocklist_filter,
+    _compose,
+    mcp_server_from_config,
+    streamable_http_local,
+)
 
 
-@pytest.mark.asyncio
-async def test_blocklist_filters_named_tool_with_prefix() -> None:
-    """A blocklisted tool is dropped from the toolset under the configured prefix."""
-    inner = _StubMCPServer(
-        tool_names=["EventRequestBatch", "CreateNodeRequest", "ListNodeTypesInLibraryRequest"],
-        tool_prefix="GriptapeNodes",
+def _mcp_toolset(composed: Any) -> MCPToolset:
+    """Walk the combinator chain down to the wrapped MCPToolset."""
+    node = composed
+    while not isinstance(node, MCPToolset):
+        node = node.wrapped
+    return node
+
+
+# --- mcp_server_from_config: transport mapping --------------------------------
+
+
+def test_stdio_without_command_returns_none() -> None:
+    """A stdio config missing `command` is rejected."""
+    assert mcp_server_from_config("svc", {"transport": "stdio"}) is None
+
+
+def test_sse_without_url_returns_none() -> None:
+    """An sse config missing `url` is rejected."""
+    assert mcp_server_from_config("svc", {"transport": "sse"}) is None
+
+
+def test_streamable_http_without_url_returns_none() -> None:
+    """A streamable-http config missing `url` is rejected."""
+    assert mcp_server_from_config("svc", {"transport": "streamable_http"}) is None
+
+
+def test_unsupported_transport_returns_none() -> None:
+    """An unknown transport is rejected rather than guessed."""
+    assert mcp_server_from_config("svc", {"transport": "carrier-pigeon"}) is None
+
+
+def test_stdio_maps_command_args_env_cwd() -> None:
+    """Stdio config fields land on the FastMCP StdioTransport."""
+    composed = mcp_server_from_config(
+        "svc",
+        {"transport": "stdio", "command": "uvx", "args": ["server"], "env": {"K": "V"}, "cwd": "/srv/app"},
     )
-    wrapper = _TolerantMCPServer(
-        name="GriptapeNodes",
-        inner=inner,  # type: ignore[arg-type]
-        tool_blocklist=frozenset({"EventRequestBatch"}),
+    transport = _mcp_toolset(composed).client.transport
+    assert isinstance(transport, StdioTransport)
+    assert transport.command == "uvx"
+    assert transport.args == ["server"]
+    assert transport.env == {"K": "V"}
+    assert transport.cwd == "/srv/app"
+
+
+def test_sse_maps_url_and_headers() -> None:
+    """An sse config builds an SSETransport at the configured URL."""
+    composed = mcp_server_from_config("svc", {"transport": "sse", "url": "http://h/sse", "headers": {"A": "1"}})
+    transport = _mcp_toolset(composed).client.transport
+    assert isinstance(transport, SSETransport)
+    assert str(transport.url) == "http://h/sse"
+
+
+def test_streamable_http_maps_url() -> None:
+    """A streamable-http config builds a StreamableHttpTransport at the configured URL."""
+    composed = mcp_server_from_config("svc", {"transport": "streamable_http", "url": "http://h/mcp/"})
+    transport = _mcp_toolset(composed).client.transport
+    assert isinstance(transport, StreamableHttpTransport)
+    assert str(transport.url) == "http://h/mcp/"
+
+
+def test_default_transport_is_stdio() -> None:
+    """A config with no `transport` key defaults to stdio."""
+    composed = mcp_server_from_config("svc", {"command": "run"})
+    assert isinstance(_mcp_toolset(composed).client.transport, StdioTransport)
+
+
+# --- composition: prefix + optional blocklist --------------------------------
+
+
+def test_compose_applies_name_prefix() -> None:
+    """`_compose` exposes tools under the server name prefix."""
+    composed = _compose("Svc", MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3))
+    assert isinstance(composed, PrefixedToolset)
+    assert composed.prefix == "Svc"
+    assert isinstance(composed.wrapped, MCPToolset)
+
+
+def test_compose_without_blocklist_skips_filter() -> None:
+    """No blocklist means no filter layer is inserted."""
+    composed = _compose("Svc", MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3))
+    assert isinstance(composed, PrefixedToolset)
+    assert not isinstance(composed.wrapped, FilteredToolset)
+
+
+def test_compose_with_blocklist_inserts_filter_under_prefix() -> None:
+    """A non-empty blocklist inserts a filter between the prefix and the MCP toolset."""
+    composed = _compose(
+        "Svc",
+        MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3),
+        tool_blocklist=frozenset({"danger"}),
     )
-    async with wrapper:
-        tools = await wrapper.get_tools(ctx=None)  # type: ignore[arg-type]
-    names = sorted(tools.keys())
-    assert names == ["GriptapeNodes_CreateNodeRequest", "GriptapeNodes_ListNodeTypesInLibraryRequest"]
+    assert isinstance(composed, PrefixedToolset)
+    assert isinstance(composed.wrapped, FilteredToolset)
+    assert isinstance(composed.wrapped.wrapped, MCPToolset)
 
 
-@pytest.mark.asyncio
-async def test_blocklist_handles_underscored_tool_names_without_prefix() -> None:
-    """Tool names containing underscores are not mangled when no prefix is set."""
-    inner = _StubMCPServer(tool_names=["fancy_tool_name", "EventRequestBatch"], tool_prefix=None)
-    wrapper = _TolerantMCPServer(
-        name="raw",
-        inner=inner,  # type: ignore[arg-type]
-        tool_blocklist=frozenset({"EventRequestBatch"}),
+def test_empty_blocklist_is_not_applied() -> None:
+    """An empty blocklist must not wrap the toolset in a filter at all."""
+    composed = _compose(
+        "Svc",
+        MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3),
+        tool_blocklist=frozenset(),
     )
-    async with wrapper:
-        tools = await wrapper.get_tools(ctx=None)  # type: ignore[arg-type]
-    assert "fancy_tool_name" in tools
-    assert "EventRequestBatch" not in tools
+    assert isinstance(composed, PrefixedToolset)
+    assert not isinstance(composed.wrapped, FilteredToolset)
 
 
-@pytest.mark.asyncio
-async def test_empty_blocklist_keeps_every_tool() -> None:
-    """No blocklist == pass-through."""
-    inner = _StubMCPServer(tool_names=["a", "b"], tool_prefix="P")
-    wrapper = _TolerantMCPServer(
-        name="P",
-        inner=inner,  # type: ignore[arg-type]
-    )
-    async with wrapper:
-        tools = await wrapper.get_tools(ctx=None)  # type: ignore[arg-type]
-    assert sorted(tools.keys()) == ["P_a", "P_b"]
+def test_streamable_http_local_prefixes_with_default_name() -> None:
+    """The engine's own server defaults to the `GriptapeNodes` prefix over streamable HTTP."""
+    composed = streamable_http_local("http://localhost:9/mcp/")
+    assert isinstance(composed, PrefixedToolset)
+    assert composed.prefix == "GriptapeNodes"
+    assert isinstance(_mcp_toolset(composed).client.transport, StreamableHttpTransport)
 
 
-@pytest.mark.asyncio
-async def test_get_tools_returns_empty_when_aenter_failed() -> None:
-    """A failed connect drops the toolset to empty rather than blowing up."""
+# --- blocklist predicate ------------------------------------------------------
 
-    class _FailingStub(_StubMCPServer):
-        async def __aenter__(self) -> Self:
-            msg = "connect refused"
-            raise RuntimeError(msg)
 
-    inner = _FailingStub(tool_names=["x"], tool_prefix=None)
-    wrapper = _TolerantMCPServer(name="x", inner=inner)  # type: ignore[arg-type]
-    async with wrapper:
-        tools = await wrapper.get_tools(ctx=None)  # type: ignore[arg-type]
-    assert tools == {}
+def test_blocklist_filter_drops_only_listed_bare_names() -> None:
+    """The predicate keeps unlisted tools and drops listed ones by bare name."""
+    keep = _blocklist_filter(frozenset({"EventRequestBatch"}))
+    assert keep(None, SimpleNamespace(name="CreateNodeRequest")) is True  # type: ignore[arg-type]
+    assert keep(None, SimpleNamespace(name="EventRequestBatch")) is False  # type: ignore[arg-type]
