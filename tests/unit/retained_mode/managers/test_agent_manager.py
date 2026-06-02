@@ -38,6 +38,23 @@ def agent_manager() -> AgentManager:
     return AgentManager.__new__(AgentManager)
 
 
+class TestComposeInstructions:
+    """Per-MCP-server `rules` are folded into the system prompt, not dropped."""
+
+    def test_no_rules_returns_base_instructions(self, agent_manager: AgentManager) -> None:
+        agent_manager._instructions = "BASE"
+        assert agent_manager._compose_instructions([]) == "BASE"
+
+    def test_rules_are_appended_to_base_instructions(self, agent_manager: AgentManager) -> None:
+        agent_manager._instructions = "BASE"
+        composed = agent_manager._compose_instructions(
+            ["Rules for MCP server 'a':\nbe terse", "Rules for MCP server 'b':\nbe kind"]
+        )
+        assert composed.startswith("BASE")
+        assert "be terse" in composed
+        assert "be kind" in composed
+
+
 class TestOnHandleListAgentModelsRequest:
     def test_returns_full_griptape_cloud_catalog(self, agent_manager: AgentManager) -> None:
         result = agent_manager.on_handle_list_agent_models_request(ListAgentModelsRequest())

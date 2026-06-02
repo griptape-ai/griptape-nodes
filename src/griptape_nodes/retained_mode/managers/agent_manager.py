@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
+import os
 import textwrap
 import threading
 from dataclasses import dataclass
@@ -34,7 +35,7 @@ from pydantic_ai.messages import BinaryContent, ModelMessagesTypeAdapter
 from pydantic_ai.usage import UsageLimits
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.agents.pydantic_ai.image_tools import ImageGenerationToolsetConfig
+from griptape_nodes.agents.pydantic_ai.image_tools import GRIPTAPE_CLOUD_BASE_URL, ImageGenerationToolsetConfig
 from griptape_nodes.agents.pydantic_ai.mcp_servers import mcp_server_from_config, streamable_http_local
 from griptape_nodes.agents.pydantic_ai.runner import (
     PydanticAgentRunner,
@@ -121,26 +122,25 @@ secrets_manager = SecretsManager(config_manager)
 DEFAULT_AGENT_INSTRUCTIONS = (
     "You are a coding assistant embedded in Griptape Nodes. You operate by calling tools.\n\n"
     "Tools available to you:\n"
-    "  - Workspace file tools: read_file, write_file, edit_file, glob_files, grep_files, shell. "
-    "Use these to read, write, search, and run code inside the user's workspace.\n"
     "  - GriptapeNodes MCP tools (prefixed `GriptapeNodes_`). Use these to interact with the "
     "engine: list libraries and node types, create nodes, set parameter values, wire "
     "connections, save and run workflows.\n"
     "  - generate_image: turn a text prompt into an image via Griptape Cloud. The chat UI "
     "displays the generated image inline automatically, so briefly describe what you made and "
-    "do NOT paste the returned URL or markdown image syntax into your reply.\n\n"
+    "do NOT paste the returned URL or markdown image syntax into your reply.\n"
+    "  - Additional MCP tools may be available, each prefixed with its server name.\n\n"
     "Behavior rules (these are non-negotiable):\n"
     "  1. NEVER respond with only a plan or a description of what you intend to do. If a "
     "     task requires tool work, call the relevant tools in the SAME turn as your "
     "     acknowledgment. A response of the form 'I'll do X' with no tool calls is wrong.\n"
     "  2. When the user asks you to build, create, modify, inspect, or run something, "
-    "     start with discovery tool calls (e.g. ListRegisteredLibrariesRequest, "
-    "     ListNodeTypesInLibraryRequest, glob_files, read_file) before doing anything that "
+    "     start with discovery tool calls (e.g. GriptapeNodes_ListRegisteredLibrariesRequest, "
+    "     GriptapeNodes_ListNodeTypesInLibraryRequest) before doing anything that "
     "     mutates state.\n"
     "  3. Make multiple tool calls in parallel when they don't depend on each other.\n"
     "  4. Only after you have actually completed the user's task should you produce a final "
     "     text response. That final response should be a short summary of what you did, "
-    "     including the names of any nodes/files you created or changed.\n"
+    "     including the names of any nodes you created or changed.\n"
 )
 
 # Cap each chat-sidebar turn so a runaway loop can't burn through credits or
@@ -483,6 +483,7 @@ class AgentManager:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
 
+        cloud_base_url = os.environ.get("GT_CLOUD_BASE_URL", GRIPTAPE_CLOUD_BASE_URL)
         workspace_root = Path(config_manager.workspace_path)
         mcp_servers: list[AbstractToolset[Any]] = [
             streamable_http_local(
@@ -490,24 +491,42 @@ class AgentManager:
                 name="GriptapeNodes",
             ),
         ]
+        server_rules: list[str] = []
         for cfg in self._lookup_mcp_configs(additional_mcp_servers):
             built = mcp_server_from_config(cfg["name"], cfg)
             if built is not None:
                 mcp_servers.append(built)
+            rules = cfg.get("rules")
+            if isinstance(rules, str) and rules.strip():
+                server_rules.append(f"Rules for MCP server '{cfg['name']}':\n{rules.strip()}")
 
         runner = PydanticAgentRunner(
             model_name=self._model_name,
             api_key=api_key,
+            base_url=cloud_base_url,
             workspace_root=workspace_root,
             storage=self._thread_storage,
-            instructions=self._instructions,
+            instructions=self._compose_instructions(server_rules),
             mcp_servers=mcp_servers,
-            image_config=ImageGenerationToolsetConfig(api_key=api_key, model=self._image_model_name),
+            image_config=ImageGenerationToolsetConfig(
+                api_key=api_key, model=self._image_model_name, base_url=cloud_base_url
+            ),
             static_files_manager=self.static_files_manager,
             usage_limits=DEFAULT_AGENT_USAGE_LIMITS,
         )
         self._runner_cache[cache_key] = runner
         return runner
+
+    def _compose_instructions(self, server_rules: list[str]) -> str:
+        """Append any per-MCP-server `rules` to the base instructions.
+
+        The previous harness injected each enabled MCP server's configured
+        ``rules`` as agent rulesets; this folds them into the system prompt so
+        that user-configured per-server guidance is not silently dropped.
+        """
+        if not server_rules:
+            return self._instructions
+        return self._instructions + "\n\n" + "\n\n".join(server_rules)
 
     @staticmethod
     def _lookup_mcp_configs(server_names: list[str]) -> list[dict[str, Any]]:
