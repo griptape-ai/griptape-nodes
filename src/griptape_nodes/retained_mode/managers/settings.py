@@ -295,10 +295,11 @@ class Settings(BaseModel):
         default="synced_workflows",
         description="Path to the synced workflows directory, relative to the workspace directory.",
     )
-    thread_storage_backend: Literal["local", "gtc"] = Field(
+    thread_storage_backend: Literal["local"] = Field(
         category=STORAGE,
         default="local",
-        description="Storage backend for conversation threads: 'local' for filesystem or 'gtc' for Griptape Cloud",
+        description="Storage backend for conversation threads. Only 'local' (filesystem) is supported; "
+        "Griptape Cloud support was removed in the Pydantic AI migration.",
     )
     enable_workspace_file_watching: bool = Field(
         category=FILE_SYSTEM,
