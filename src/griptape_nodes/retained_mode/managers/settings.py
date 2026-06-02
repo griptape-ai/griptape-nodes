@@ -301,6 +301,20 @@ class Settings(BaseModel):
         description="Storage backend for conversation threads. Only 'local' (filesystem) is supported; "
         "Griptape Cloud support was removed in the Pydantic AI migration.",
     )
+
+    @field_validator("thread_storage_backend", mode="before")
+    @classmethod
+    def validate_thread_storage_backend(cls, v: Any) -> str:
+        """Coerce legacy/unknown backends (e.g. the removed 'gtc') to 'local'.
+
+        Persisted configs from before Griptape Cloud thread storage was removed
+        carry ``thread_storage_backend: "gtc"``. Without this, validating the
+        whole config fails and the user's entire config is reset to defaults.
+        """
+        if v == "local":
+            return v
+        return "local"
+
     enable_workspace_file_watching: bool = Field(
         category=FILE_SYSTEM,
         default=True,

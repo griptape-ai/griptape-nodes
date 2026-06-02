@@ -155,7 +155,7 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
             return {}
         try:
             return json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             logger.exception("Failed to read thread metadata at %s.", path)
             return {}
 
