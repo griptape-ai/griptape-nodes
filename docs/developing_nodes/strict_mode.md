@@ -104,6 +104,40 @@ sanctioned: the handler wraps its call in
 `sanctioned_parameter_mutation()` so the detector does not
 false-positive on legitimate request-driven mutations.
 
+#### `worker-reach-into-orchestrator`
+
+A node running on a worker issued a request whose authoritative state
+lives on the orchestrator (flow graph, connections, parameter
+registry, config, secrets). The request is forwarded across the
+WebSocket bus; each call is a network round-trip and the returned
+view is stale-by-call.
+
+Detection runs at the `RemoteHandler` dispatch site, which is gated
+by `EventManager.worker_node_execution_scope` -- opened by
+`NodeManager._hydrate_and_run_node_inner` around BOTH input
+hydration and `aprocess`. A forwarded request issued from
+`before_value_set` / `after_value_set` will trip this rule even
+though no `aprocess()` has run yet; the remediation message says
+"during node execution" rather than "from aprocess" for that reason.
+
+This rule does **not** escalate on the worker
+(`worker_escalation=False`) because every forwarded request would
+otherwise become a node failure -- the calls succeed, they are just
+expensive. The point is to surface the round-trip so authors can
+choose to pass data in via parameters instead of fetching per-call.
+
+**Known blind spot**: violations issued from library-internal helper
+threads (e.g. `ThreadPoolExecutor` inside diffusers / transformers)
+are not reported. The strict-mode reporter is task-local, so a
+helper thread's `STRICT_MODE.report` finds no active scope and
+no-ops. The forward still proceeds normally; only the rule's
+recording is silent.
+
+**Remediation**: if this is an intentional write (e.g. publishing a
+parameter value), ignore the warning. If this is a read of flow /
+connection state, consider whether the data could be passed in via
+parameters instead of fetched per-call.
+
 ## Adding a new rule
 
 1. Add a `StrictModeRule` entry to `RULES` in
@@ -117,20 +151,24 @@ false-positive on legitimate request-driven mutations.
 1. Report the violation at the call site:
 
     ```python
-    from griptape_nodes.common.strict_mode import report_violation
+    from griptape_nodes.common.strict_mode import STRICT_MODE
     from griptape_nodes.common.strict_mode_checks import RULES
 
     rule = RULES["my-rule-id"]
-    report_violation(
+    STRICT_MODE.report(
         rule_id=rule.rule_id,
         message=rule.render(some_field="value"),
     )
     ```
 
-1. If the detector runs off the asyncio task that owns the scope, use
-    `any_scope_active_threadsafe()` from
-    [`common/strict_mode.py`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/common/strict_mode.py)
-    to cheaply skip the detector when no scope is open.
+1. The strict-mode reporter is task-local: `STRICT_MODE.report` reads
+    the active scope from a `ContextVar`, so a detector running on a
+    helper thread (e.g. one spawned by a third-party library's
+    `ThreadPoolExecutor`) finds no active scope and the report is
+    dropped silently. Detectors in that situation cannot record
+    violations against the originating node's scope. Either run the
+    detector on the asyncio task that owns the scope, or accept the
+    blind spot and document it on the rule's `description`.
 
 1. Add a unit test that opens a scope, triggers the detector, and
     asserts `scope.violations[0].rule_id` and severity. See
