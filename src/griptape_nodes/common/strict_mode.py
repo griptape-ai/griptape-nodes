@@ -41,8 +41,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 
-from griptape_nodes.retained_mode.events.base_events import ResultDetails, StrictModeViolationDetail
-
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
@@ -304,6 +302,13 @@ class StrictModeReporter:
         Each violation becomes a ``StrictModeViolationDetail`` appended
         to the existing list. Mutates ``result``; returns ``None``.
         """
+        # Lazy import: base_events declares the result/violation dataclasses
+        # the framework consumes here, but base_events also imports STRICT_MODE
+        # at its detector sites. Keeping the cycle break in this single
+        # framework method lets every detector module import strict-mode
+        # symbols at the top of the file.
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails, StrictModeViolationDetail
+
         if not scope.violations:
             return
 

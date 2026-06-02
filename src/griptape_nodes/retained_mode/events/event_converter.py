@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import traceback
 import types
 from dataclasses import fields as dc_fields
 from dataclasses import is_dataclass
@@ -39,10 +40,35 @@ converter.register_unstructure_hook_func(
     lambda obj: obj.isoformat(),
 )
 
-# Exception -> string representation
+
+# Exception -> structured dict.
+#
+# The three dict keys are the wire form of ``ForwardedException``:
+#   ``type``      -> ``ForwardedException.original_type``      -> ``[<type>]`` prefix
+#   ``message``   -> ``ForwardedException.args[0]``            -> message body
+#   ``traceback`` -> ``ForwardedException.original_traceback`` -> ``Worker traceback:`` block
+# ``_structure_exception`` rebuilds the placeholder on the receiving side, and
+# ``NodeExecutor._format_node_failure_message`` renders the prefix and block
+# into the user-visible ``RuntimeError`` message.
+def _unstructure_exception(obj: Exception) -> dict[str, Any]:
+    if obj.__traceback__ is None:
+        tb = None
+    else:
+        try:
+            tb = "".join(traceback.format_exception(type(obj), obj, obj.__traceback__))
+        except Exception:
+            logger.debug("Failed to format traceback for %s", type(obj).__name__, exc_info=True)
+            tb = None
+    return {
+        "type": f"{type(obj).__module__}.{type(obj).__qualname__}",
+        "message": str(obj),
+        "traceback": tb,
+    }
+
+
 converter.register_unstructure_hook_func(
     lambda cls: isinstance(cls, type) and issubclass(cls, Exception),
-    str,
+    _unstructure_exception,
 )
 
 # Bare `type` references (e.g. provider_class: type)
@@ -80,10 +106,34 @@ converter.register_structure_hook_func(
     lambda obj, cls: cls.model_validate(obj),
 )
 
-# Exception <- string or dict
+
+# Exception <- structured dict.
+#
+# Rebuilds a ``ForwardedException`` on the receiving side because the
+# worker-side class is rarely importable on the orchestrator. The
+# ``original_type`` and ``original_traceback`` fields are read by
+# ``NodeExecutor._format_node_failure_message`` to render the
+# ``[<type>] ... Worker traceback: ...`` block in the orchestrator's
+# user-visible ``RuntimeError`` message.
+def _structure_exception(obj: Any, _cls: type) -> Exception:
+    # Lazy import to avoid a circular dependency: base_events imports
+    # from this module (event_converter is registered at import time
+    # from base_events), so ForwardedException cannot be imported at
+    # module load.
+    from griptape_nodes.retained_mode.events.base_events import ForwardedException
+
+    if not isinstance(obj, dict):
+        return ForwardedException(str(obj))
+    return ForwardedException(
+        str(obj.get("message", "")),
+        original_type=obj.get("type"),
+        original_traceback=obj.get("traceback"),
+    )
+
+
 converter.register_structure_hook_func(
     lambda cls: isinstance(cls, type) and issubclass(cls, Exception),
-    lambda obj, cls: cls(obj) if isinstance(obj, str) else cls(str(obj)),
+    _structure_exception,
 )
 
 
