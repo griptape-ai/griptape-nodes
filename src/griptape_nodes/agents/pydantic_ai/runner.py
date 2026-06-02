@@ -52,7 +52,6 @@ from griptape_nodes.agents.pydantic_ai.image_tools import (
     register_image_tools,
 )
 from griptape_nodes.agents.pydantic_ai.model import build_griptape_cloud_model
-from griptape_nodes.agents.pydantic_ai.repo_context import load_repo_context
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterable, Awaitable, Callable, Sequence
@@ -156,7 +155,6 @@ class PydanticAgentRunner:
     mcp_servers: list[AbstractToolset[Any]] = field(default_factory=list)
     image_config: ImageGenerationToolsetConfig | None = None
     static_files_manager: StaticFilesManager | None = None
-    auto_load_repo_context: bool = True
     auto_load_skills: bool = True
     skills_directory: str = ".agents/skills"
     usage_limits: UsageLimits | None = None
@@ -180,31 +178,22 @@ class PydanticAgentRunner:
                 raise ValueError(msg)
             self._image_toolset = register_image_tools(self._agent, self.image_config, self.static_files_manager)
         logger.info(
-            "PydanticAgentRunner ready: model=%s workspace=%s mcp_servers=%d "
-            "image_tool=%s auto_repo_context=%s skills=%d usage_limits=%s",
+            "PydanticAgentRunner ready: model=%s workspace=%s mcp_servers=%d image_tool=%s skills=%d usage_limits=%s",
             self.model_name,
             self.workspace_root,
             len(self.mcp_servers),
             self._image_toolset is not None,
-            self.auto_load_repo_context,
             len(capabilities),
             self.usage_limits,
         )
 
     def _build_instructions(self) -> str | None:
-        """Compose the instruction string from the user's input plus repo context.
+        """Compose the instruction string from the user's input.
 
         Skill guidance is injected separately by :class:`SkillsCapability` via
         its own ``get_instructions`` hook, so it is not concatenated here.
         """
-        parts: list[str] = []
-        if self.instructions:
-            parts.append(self.instructions)
-        if self.auto_load_repo_context:
-            repo_context = load_repo_context(self.workspace_root)
-            if repo_context:
-                parts.append(repo_context)
-        return "\n\n".join(parts) or None
+        return self.instructions or None
 
     def _build_skills_capabilities(self) -> list[SkillsCapability]:
         """Build the skills capability exposing ``.agents/skills`` to the agent.
