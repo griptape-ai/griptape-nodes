@@ -1,6 +1,7 @@
 """Test EventManager functionality including sync/async event broadcasting."""
 
 import asyncio
+import logging
 import threading
 from dataclasses import dataclass
 from unittest.mock import AsyncMock
@@ -12,7 +13,10 @@ from griptape_nodes.retained_mode.events.app_events import ConfigChanged
 from griptape_nodes.retained_mode.events.base_events import (
     EventResultSuccess,
     RequestPayload,
+    ResultDetail,
+    ResultDetails,
     ResultPayloadSuccess,
+    StrictModeViolationDetail,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -341,3 +345,70 @@ class TestBroadcastAppEventLoopSafety:
 
         assert "listener_loop" in captured
         assert captured["listener_loop"] is not caller_loop
+
+
+class TestLogResultDetailsSkipsStrictModeViolations:
+    """``_log_result_details`` must not duplicate strict-mode violation logs.
+
+    ``StrictModeReporter.report`` already logs each violation at
+    detection time with the scope's ``node=... library=...`` prefix
+    (see ``StrictModeReporter`` in ``common/strict_mode.py``).
+    Without the skip in ``_log_result_details`` every violation
+    that is also attached to the result payload would log a second
+    time as a bare message, doubling the noise in the worker log
+    that motivated the fix.
+    """
+
+    def _make_result_with_details(self, *details: ResultDetail) -> _ProbeResult:
+        return _ProbeResult(result_details=ResultDetails(*details))
+
+    def test_strict_mode_violation_details_are_not_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        event_manager = EventManager()
+        violation = StrictModeViolationDetail(
+            level=logging.WARNING,
+            message="violation message that must not appear here",
+            rule_id="parameter-mutation-during-aprocess",
+            severity="warning",
+            subject="some-node",
+            library_name="some-library",
+        )
+        result = self._make_result_with_details(violation)
+
+        caplog.set_level(logging.DEBUG, logger="griptape_nodes")
+        event_manager._log_result_details(result)
+
+        assert violation.message not in [r.message for r in caplog.records]
+
+    def test_non_violation_details_still_log(self, caplog: pytest.LogCaptureFixture) -> None:
+        event_manager = EventManager()
+        ordinary = ResultDetail(level=logging.WARNING, message="ordinary detail")
+        result = self._make_result_with_details(ordinary)
+
+        caplog.set_level(logging.DEBUG, logger="griptape_nodes")
+        event_manager._log_result_details(result)
+
+        assert ordinary.message in [r.message for r in caplog.records]
+
+    def test_mixed_details_log_only_non_violations(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A result with both kinds logs only the non-violation detail.
+
+        The ordinary detail logs; the violation does not.
+        """
+        event_manager = EventManager()
+        ordinary = ResultDetail(level=logging.WARNING, message="ordinary mixed-case detail")
+        violation = StrictModeViolationDetail(
+            level=logging.WARNING,
+            message="mixed-case violation message",
+            rule_id="parameter-mutation-during-aprocess",
+            severity="warning",
+            subject="n",
+            library_name=None,
+        )
+        result = self._make_result_with_details(ordinary, violation)
+
+        caplog.set_level(logging.DEBUG, logger="griptape_nodes")
+        event_manager._log_result_details(result)
+
+        messages = [r.message for r in caplog.records]
+        assert ordinary.message in messages
+        assert violation.message not in messages
