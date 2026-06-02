@@ -160,6 +160,101 @@ class TestNodeManagerAlterParameterDetailsClearDefaultValue:
         assert "test_node" in caplog.records[0].message
 
 
+class TestGetParameterValueOutputPriority:
+    """Output values must take priority over input/property values in GetParameterValueRequest."""
+
+    def test_output_value_takes_priority_over_parameter_value(self, griptape_nodes: GriptapeNodes) -> None:
+        """When both parameter_values and parameter_output_values contain a key, the output value wins."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes.retained_mode.events.parameter_events import (
+            GetParameterValueRequest,
+            GetParameterValueResultSuccess,
+        )
+
+        input_value: float = 0.0
+        output_value: float = 42.0
+
+        param = Parameter(name="result", type="float", default_value=input_value)
+        mock_node = MagicMock(spec=BaseNode)
+        mock_node.name = "test_node"
+        mock_node.parameter_values = {"result": input_value}
+        mock_node.parameter_output_values = {"result": output_value}
+        mock_node.get_parameter_by_name.return_value = param
+
+        obj_mgr = griptape_nodes.ObjectManager()
+        obj_mgr.add_object_by_name("test_node", mock_node)
+
+        node_manager = griptape_nodes.NodeManager()
+        request = GetParameterValueRequest(parameter_name="result", node_name="test_node")
+        result = node_manager.on_get_parameter_value_request(request)
+
+        assert isinstance(result, GetParameterValueResultSuccess)
+        assert result.value == output_value
+
+    def test_falls_back_to_parameter_value_when_no_output(self, griptape_nodes: GriptapeNodes) -> None:
+        """When parameter_output_values is empty, parameter_values is used."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes.retained_mode.events.parameter_events import (
+            GetParameterValueRequest,
+            GetParameterValueResultSuccess,
+        )
+
+        input_value: float = 3.0
+
+        param = Parameter(name="a", type="float", default_value=0.0)
+        mock_node = MagicMock(spec=BaseNode)
+        mock_node.name = "test_node"
+        mock_node.parameter_values = {"a": input_value}
+        mock_node.parameter_output_values = {}
+        mock_node.get_parameter_by_name.return_value = param
+
+        obj_mgr = griptape_nodes.ObjectManager()
+        obj_mgr.add_object_by_name("test_node", mock_node)
+
+        node_manager = griptape_nodes.NodeManager()
+        request = GetParameterValueRequest(parameter_name="a", node_name="test_node")
+        result = node_manager.on_get_parameter_value_request(request)
+
+        assert isinstance(result, GetParameterValueResultSuccess)
+        assert result.value == input_value
+
+    def test_falls_back_to_default_when_no_values(self, griptape_nodes: GriptapeNodes) -> None:
+        """When neither dict contains the key, the parameter default is returned."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes.retained_mode.events.parameter_events import (
+            GetParameterValueRequest,
+            GetParameterValueResultSuccess,
+        )
+
+        default_value: float = 99.0
+
+        param = Parameter(name="x", type="float", default_value=default_value)
+        mock_node = MagicMock(spec=BaseNode)
+        mock_node.name = "test_node"
+        mock_node.parameter_values = {}
+        mock_node.parameter_output_values = {}
+        mock_node.get_parameter_by_name.return_value = param
+
+        obj_mgr = griptape_nodes.ObjectManager()
+        obj_mgr.add_object_by_name("test_node", mock_node)
+
+        node_manager = griptape_nodes.NodeManager()
+        request = GetParameterValueRequest(parameter_name="x", node_name="test_node")
+        result = node_manager.on_get_parameter_value_request(request)
+
+        assert isinstance(result, GetParameterValueResultSuccess)
+        assert result.value == default_value
+
+
 class TestNodeManagerCancelExecuteNode:
     """Tests for the CancelExecuteNodeRequest handler and cancel_worker_execution dispatch."""
 
