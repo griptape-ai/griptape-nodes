@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import logging
 import pickle
@@ -44,6 +45,8 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeResolutionState,
     TransformedParameterValue,
+    aprocess_scope,
+    sanctioned_parameter_mutation,
 )
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -1545,14 +1548,15 @@ class NodeManager:
             settable=request.settable,
         )
         try:
-            if request.parent_container_name and request.initial_setup:
-                parameter_parent = node.get_parameter_by_name(request.parent_container_name)
-                if parameter_parent is not None:
-                    parameter_parent.add_child(new_param)
-            elif parent_group is not None:
-                parent_group.add_child(new_param)
-            else:
-                node.add_parameter(new_param)
+            with sanctioned_parameter_mutation():
+                if request.parent_container_name and request.initial_setup:
+                    parameter_parent = node.get_parameter_by_name(request.parent_container_name)
+                    if parameter_parent is not None:
+                        parameter_parent.add_child(new_param)
+                elif parent_group is not None:
+                    parent_group.add_child(new_param)
+                else:
+                    node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to Node '{node_name}'. Error: {e}"
             return AddParameterToNodeResultFailure(result_details=details)
@@ -1743,7 +1747,8 @@ class NodeManager:
 
         # Delete the Element itself.
         if element is not None:
-            node.remove_parameter_element(element)
+            with sanctioned_parameter_mutation():
+                node.remove_parameter_element(element)
         else:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because element didn't exist."
 
@@ -2936,14 +2941,15 @@ class NodeManager:
     async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         """Hydrate a node's input parameters and execute it.
 
-        Hydration and node.aprocess() both run inside worker_node_execution_scope
-        so that any nested handle_request calls originated from node code (on a
-        worker) forward to the orchestrator. Hydration calls set_parameter_value,
-        which cascades into ListConnectionsForNodeRequest and similar cross-node
-        lookups; those must forward because the worker only owns its single node
-        copy and cannot resolve parent-flow or peer-node state locally. On the
-        orchestrator the scope is a no-op because forwarding is not configured
-        there.
+        On a worker, hydration and node.aprocess() both run inside
+        worker_node_execution_scope so that any nested handle_request calls
+        originated from node code forward to the orchestrator. Hydration calls
+        set_parameter_value, which cascades into ListConnectionsForNodeRequest
+        and similar cross-node lookups; those must forward because the worker
+        only owns its single node copy and cannot resolve parent-flow or peer-
+        node state locally. On the orchestrator we skip the scope entirely --
+        there is no RemoteHandler to read the flag, so opening it there would
+        only bump a refcount nothing observes.
         """
         # Register this aprocess task under its request_id so
         # CancelExecuteNodeRequest can locate it. Only populated when the caller
@@ -2962,7 +2968,15 @@ class NodeManager:
 
     async def _hydrate_and_run_node_inner(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         node_name = request.node_name
-        with GriptapeNodes.EventManager().worker_node_execution_scope():
+        # The node-execution scope only has meaning on a worker: it is what
+        # RemoteHandler consults to decide whether to forward a request to the
+        # orchestrator. On the orchestrator itself there is no RemoteHandler
+        # installed (register_remote_handlers is worker-only), so opening the
+        # scope there would just bump a refcount that nothing reads. Skip it
+        # to keep the depth counter accurate to its name.
+        is_worker = GriptapeNodes.LibraryManager()._is_worker
+        scope_cm = GriptapeNodes.EventManager().worker_node_execution_scope() if is_worker else contextlib.nullcontext()
+        with scope_cm:
             # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.
             parameter_values = hydrate_parameter_values(request.parameter_values)
             for param_name, value in parameter_values.items():
@@ -2996,7 +3010,8 @@ class NodeManager:
                     continue
                 node.parameter_values[param.name] = param.default_value
             try:
-                await node.aprocess()
+                with aprocess_scope():
+                    await node.aprocess()
             except Exception as e:
                 # Pass the live exception through ``exception=`` so the
                 # converter can capture worker-side frames into a
