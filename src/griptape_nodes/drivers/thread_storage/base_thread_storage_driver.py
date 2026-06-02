@@ -41,7 +41,7 @@ class BaseThreadStorageDriver(ABC):
         Returns:
             Tuple of (thread_id, metadata_dict).
         """
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def get_thread_metadata(self, thread_id: str) -> dict:
@@ -53,7 +53,7 @@ class BaseThreadStorageDriver(ABC):
         Returns:
             Metadata dictionary.
         """
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def update_thread_metadata(self, thread_id: str, **updates: object) -> dict:
@@ -66,12 +66,12 @@ class BaseThreadStorageDriver(ABC):
         Returns:
             Updated metadata dictionary.
         """
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def list_threads(self) -> list[ThreadMetadata]:
         """List every thread, sorted most-recently-updated first."""
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def delete_thread(self, thread_id: str) -> None:
@@ -83,12 +83,12 @@ class BaseThreadStorageDriver(ABC):
         Raises:
             ValueError: If the thread is not archived or does not exist.
         """
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def thread_exists(self, thread_id: str) -> bool:
         """Return True iff this backend currently holds a thread with this id."""
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def load_history(self, thread_id: str) -> list["ModelMessage"]:
@@ -98,7 +98,7 @@ class BaseThreadStorageDriver(ABC):
         new thread). The caller is responsible for handling missing threads
         via :meth:`thread_exists`.
         """
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def save_history(self, thread_id: str, messages: list["ModelMessage"]) -> None:
@@ -108,4 +108,4 @@ class BaseThreadStorageDriver(ABC):
         history every time. Implementations are also responsible for bumping
         ``updated_at`` in metadata so the thread floats to the top of listings.
         """
-        ...
+        raise NotImplementedError
