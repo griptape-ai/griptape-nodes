@@ -483,7 +483,10 @@ class AgentManager:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
 
-        cloud_base_url = os.environ.get("GT_CLOUD_BASE_URL", GRIPTAPE_CLOUD_BASE_URL)
+        # Match build_griptape_cloud_model's `or` semantics: a set-but-empty
+        # GT_CLOUD_BASE_URL falls back to the default rather than yielding a
+        # malformed endpoint, so the chat and image paths agree.
+        cloud_base_url = os.environ.get("GT_CLOUD_BASE_URL") or GRIPTAPE_CLOUD_BASE_URL
         workspace_root = Path(config_manager.workspace_path)
         mcp_servers: list[AbstractToolset[Any]] = [
             streamable_http_local(
