@@ -43,7 +43,6 @@ from griptape_nodes.agents.pydantic_ai.runner import (
     ToolCall,
     ToolResult,
 )
-from griptape_nodes.agents.pydantic_ai.workspace_tools import WorkspaceToolsetConfig
 from griptape_nodes.drivers.cloud_models import (
     DEPRECATED_MODELS,
     IMAGE_DEPRECATED_MODELS,
@@ -507,7 +506,6 @@ class AgentManager:
             workspace_root=workspace_root,
             storage=self._thread_storage,
             instructions=self._instructions,
-            workspace_config=WorkspaceToolsetConfig(workspace_root=workspace_root),
             mcp_servers=mcp_servers,
             image_config=ImageGenerationToolsetConfig(api_key=api_key, model=self._image_model_name),
             static_files_manager=self.static_files_manager,

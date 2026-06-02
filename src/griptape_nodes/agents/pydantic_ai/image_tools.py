@@ -9,9 +9,7 @@ image through the engine's static file store, and returns the resulting URL so
 the model can reference it in its reply.
 
 The tool registers against a ``pydantic_ai.Agent`` via
-:func:`register_image_tools`, mirroring how
-:func:`griptape_nodes.agents.pydantic_ai.workspace_tools.register_workspace_tools`
-wires the workspace toolset.
+:func:`register_image_tools`.
 """
 
 from __future__ import annotations

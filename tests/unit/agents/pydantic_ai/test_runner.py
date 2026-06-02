@@ -25,7 +25,6 @@ from griptape_nodes.agents.pydantic_ai.runner import (
     ToolCall,
     ToolResult,
 )
-from griptape_nodes.agents.pydantic_ai.workspace_tools import WorkspaceToolsetConfig
 from griptape_nodes.drivers.thread_storage.local_thread_storage_driver import LocalThreadStorageDriver
 
 if TYPE_CHECKING:
@@ -47,10 +46,8 @@ def _runner_with_function_model(
         workspace_root=workspace,
         storage=storage,
         instructions="Be concise.",
-        workspace_config=WorkspaceToolsetConfig(workspace_root=workspace, shell_enabled=False),
     )
     new_agent: Agent[None, str] = Agent(FunctionModel(stream_function=function), instructions="Be concise.")
-    runner._toolset.register_on(new_agent)
     for tool in extra_tools or []:
         new_agent.tool_plain(tool)
     runner._agent = new_agent
@@ -161,11 +158,14 @@ async def test_history_carries_across_runs(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_tool_call_round_trips_through_runner(tmp_path: Path) -> None:
-    """A tool call from the model invokes the workspace tool and lands in history."""
+    """A tool call from the model invokes a registered tool and lands in history."""
     workspace = tmp_path / "ws"
     workspace.mkdir()
     (workspace / "data.txt").write_text("payload-7")
     threads_dir = tmp_path / "threads"
+
+    def read_file(path: str) -> str:
+        return (workspace / path).read_text()
 
     call_count = 0
 
@@ -178,7 +178,7 @@ async def test_tool_call_round_trips_through_runner(tmp_path: Path) -> None:
         for ch in "Got it.":
             yield ch
 
-    runner = _runner_with_function_model(workspace, threads_dir, stream)
+    runner = _runner_with_function_model(workspace, threads_dir, stream, extra_tools=[read_file])
     result = await runner.run("Read data.txt and confirm.")
     assert "Got it." in result.output
     history = runner.storage.load_history(result.thread_id)
@@ -227,6 +227,9 @@ async def test_event_sink_receives_text_tool_call_and_tool_result(tmp_path: Path
     (workspace / "data.txt").write_text("payload-7")
     threads_dir = tmp_path / "threads"
 
+    def read_file(path: str) -> str:
+        return (workspace / path).read_text()
+
     call_count = 0
 
     async def stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[Any]:
@@ -238,7 +241,7 @@ async def test_event_sink_receives_text_tool_call_and_tool_result(tmp_path: Path
         for ch in "Got it.":
             yield ch
 
-    runner = _runner_with_function_model(workspace, threads_dir, stream)
+    runner = _runner_with_function_model(workspace, threads_dir, stream, extra_tools=[read_file])
 
     events: list[RunEvent] = []
     await runner.run("Read data.txt and confirm.", event_sink=events.append)

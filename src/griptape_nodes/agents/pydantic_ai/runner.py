@@ -5,7 +5,7 @@ This module is the single point of contact between the request-handling layer
 point :meth:`PydanticAgentRunner.run` that:
 
   * builds (or reuses) a Pydantic AI ``Agent`` configured with the Griptape
-    Cloud model, the workspace toolset, and any MCP servers the caller passed,
+    Cloud model, the skills capability, and any MCP servers the caller passed,
   * loads message history for the requested thread from the storage driver,
   * runs the conversation while emitting Griptape Nodes ``AgentStreamEvent``
     tokens through the supplied sink so the chat sidebar UI streams as before,
@@ -53,11 +53,6 @@ from griptape_nodes.agents.pydantic_ai.image_tools import (
 )
 from griptape_nodes.agents.pydantic_ai.model import build_griptape_cloud_model
 from griptape_nodes.agents.pydantic_ai.repo_context import load_repo_context
-from griptape_nodes.agents.pydantic_ai.workspace_tools import (
-    WorkspaceToolset,
-    WorkspaceToolsetConfig,
-    register_workspace_tools,
-)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterable, Awaitable, Callable, Sequence
@@ -158,7 +153,6 @@ class PydanticAgentRunner:
     storage: BaseThreadStorageDriver
     instructions: str | None = None
     base_url: str | None = None
-    workspace_config: WorkspaceToolsetConfig | None = None
     mcp_servers: list[AbstractToolset[Any]] = field(default_factory=list)
     image_config: ImageGenerationToolsetConfig | None = None
     static_files_manager: StaticFilesManager | None = None
@@ -168,7 +162,6 @@ class PydanticAgentRunner:
     usage_limits: UsageLimits | None = None
 
     _agent: Agent[Any, str] = field(init=False)
-    _toolset: WorkspaceToolset = field(init=False)
     _image_toolset: ImageGenerationToolset | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
@@ -181,20 +174,17 @@ class PydanticAgentRunner:
             toolsets=toolsets or None,
             capabilities=capabilities or None,
         )
-        config = self.workspace_config or WorkspaceToolsetConfig(workspace_root=self.workspace_root)
-        self._toolset = register_workspace_tools(self._agent, config)
         if self.image_config is not None:
             if self.static_files_manager is None:
                 msg = "image_config requires a static_files_manager to persist generated images."
                 raise ValueError(msg)
             self._image_toolset = register_image_tools(self._agent, self.image_config, self.static_files_manager)
         logger.info(
-            "PydanticAgentRunner ready: model=%s workspace=%s mcp_servers=%d tools=%d "
+            "PydanticAgentRunner ready: model=%s workspace=%s mcp_servers=%d "
             "image_tool=%s auto_repo_context=%s skills=%d usage_limits=%s",
             self.model_name,
             self.workspace_root,
             len(self.mcp_servers),
-            len(getattr(self._agent, "_function_tools", []) or []),
             self._image_toolset is not None,
             self.auto_load_repo_context,
             len(capabilities),
@@ -242,10 +232,6 @@ class PydanticAgentRunner:
     @property
     def agent(self) -> Agent[Any, str]:
         return self._agent
-
-    @property
-    def workspace_toolset(self) -> WorkspaceToolset:
-        return self._toolset
 
     @property
     def image_toolset(self) -> ImageGenerationToolset | None:
