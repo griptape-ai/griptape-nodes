@@ -30,6 +30,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     StrictModeViolationDetail,
 )
 from griptape_nodes.retained_mode.events.event_converter import converter
+from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.utils.async_utils import call_function
 
@@ -110,6 +111,18 @@ class EventManager:
         # library-internal ThreadPoolExecutors ran node-emitted requests.
         self._node_execution_depth: int = 0
         self._node_execution_lock = threading.Lock()
+        # Pre-dispatch hook chain consulted before every request callback. Each
+        # hook returns None (fall through) or a ResultPayload (short-circuit the
+        # dispatcher). Lets PermissionManager enforce policy without instrumenting
+        # every manager.
+        self._pre_dispatch_hooks: list[Callable[[RequestPayload, ResultContext], ResultPayload | None]] = []
+        # handle_request runs on arbitrary threads, so guard the list and snapshot
+        # it before iteration.
+        self._pre_dispatch_hooks_lock = threading.Lock()
+        # Thread-local flag: if a hook re-enters handle_request on this thread, the
+        # chain is skipped so the hook can't keep re-triggering itself into
+        # unbounded recursion.
+        self._hook_evaluation = threading.local()
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -222,6 +235,78 @@ class EventManager:
         else:
             # We're on the same thread as the event loop or no loop thread tracked, use async method
             await self._event_queue.put(event)
+
+    def add_pre_dispatch_hook(
+        self,
+        hook: Callable[[RequestPayload, ResultContext], ResultPayload | None],
+    ) -> None:
+        """Register a pre-dispatch hook.
+
+        Hooks run in registration order before the request's manager callback.
+        Returning a ResultPayload short-circuits the dispatcher with that result;
+        returning None lets dispatch continue.
+
+        Hooks should be cheap and sync. A hook that re-enters `handle_request`
+        (directly or transitively) is bypassed on the re-entrant call rather
+        than recursing, but subscribing to AppPayload events for state is still
+        preferred. Registering the same hook twice is a no-op.
+        """
+        with self._pre_dispatch_hooks_lock:
+            if hook not in self._pre_dispatch_hooks:
+                self._pre_dispatch_hooks.append(hook)
+
+    def remove_pre_dispatch_hook(
+        self,
+        hook: Callable[[RequestPayload, ResultContext], ResultPayload | None],
+    ) -> None:
+        with self._pre_dispatch_hooks_lock:
+            try:
+                self._pre_dispatch_hooks.remove(hook)
+            except ValueError:
+                return
+
+    def _run_pre_dispatch_hooks(
+        self,
+        request: RequestPayload,
+        context: ResultContext,
+    ) -> ResultPayload | None:
+        # Bypass the chain when a hook is already running on this thread. A hook
+        # that re-enters handle_request would otherwise re-trigger itself and
+        # recurse without bound.
+        if getattr(self._hook_evaluation, "active", False):
+            return None
+
+        # Snapshot under the lock so concurrent add/remove on another thread
+        # cannot mutate the list mid-iteration.
+        with self._pre_dispatch_hooks_lock:
+            hooks = list(self._pre_dispatch_hooks)
+
+        if not hooks:
+            return None
+
+        self._hook_evaluation.active = True
+        try:
+            for hook in hooks:
+                try:
+                    short_circuit = hook(request, context)
+                except Exception as exc:
+                    # Fail closed: the chain is an enforcement boundary, so a
+                    # hook that errors denies the request. Return a failure
+                    # result rather than raising, so the dispatcher still
+                    # delivers an EventResultFailure to the caller instead of
+                    # leaving its response future to hang.
+                    msg = (
+                        f"Attempted to evaluate pre-dispatch hooks for request "
+                        f"'{type(request).__name__}'. Failed because hook "
+                        f"'{getattr(hook, '__name__', hook)}' raised {type(exc).__name__}: {exc}"
+                    )
+                    logging.getLogger("griptape_nodes").exception(msg)
+                    return GenericResultFailure(exception=exc, result_details=msg)
+                if short_circuit is not None:
+                    return short_circuit
+            return None
+        finally:
+            self._hook_evaluation.active = False
 
     def assign_manager_to_request_type(
         self,
@@ -514,6 +599,16 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
+        # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+        # the manager callback runs.
+        short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+        if short_circuit is not None:
+            return self._handle_request_core(
+                request,
+                short_circuit,
+                context=result_context,
+            )
+
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
         try:
@@ -533,7 +628,7 @@ class EventManager:
         finally:
             _active_request_type.reset(token)
 
-    def handle_request(
+    def handle_request(  # noqa: PLR0912
         self,
         request: RP,
         *,
@@ -559,6 +654,16 @@ class EventManager:
         if not callback:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
+
+        # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+        # the manager callback runs.
+        short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+        if short_circuit is not None:
+            return self._handle_request_core(
+                request,
+                short_circuit,
+                context=result_context,
+            )
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
