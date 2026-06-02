@@ -79,6 +79,7 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
+    AudioArtifactProvider,
     BaseArtifactPreviewGenerator,
     BaseArtifactProvider,
     BaseGeneratorParameters,
@@ -211,6 +212,28 @@ class ArtifactManager:
                 self.on_app_initialization_complete,
             )
 
+    def sniff_extension(self, data: bytes) -> str | None:
+        """Sniff a canonical on-disk extension for ``data`` from registered providers.
+
+        Iterates the registered providers in registration order and returns the
+        first non-None ``detect_format`` result. Providers own the format
+        knowledge for their media type; this method is a thin dispatcher used
+        by ``File`` to validate that bytes about to be written match the
+        destination's extension.
+
+        Args:
+            data: Raw file bytes (the head of the buffer is sufficient).
+
+        Returns:
+            Canonical lowercase extension WITHOUT a leading dot (e.g. ``"png"``,
+            ``"mp4"``, ``"mp3"``), or ``None`` if no provider recognized the bytes.
+        """
+        for provider_class in self._registry.get_all_provider_classes():
+            sniffed = provider_class.detect_format(data)
+            if sniffed is not None:
+                return sniffed
+        return None
+
     def prepare_content_for_write(self, data: bytes, file_name: str) -> bytes:
         """Process content before writing to disk by dispatching to the appropriate provider.
 
@@ -247,7 +270,7 @@ class ArtifactManager:
         # Register default providers (order matters: Image, Video, Audio)
         # Generator settings are now registered automatically via _register_provider_settings()
         failures = []
-        for provider_class in [ImageArtifactProvider, VideoArtifactProvider]:
+        for provider_class in [ImageArtifactProvider, VideoArtifactProvider, AudioArtifactProvider]:
             request = RegisterArtifactProviderRequest(provider_class=provider_class)
             result = self.on_handle_register_artifact_provider_request(request)
             if isinstance(result, RegisterArtifactProviderResultFailure):
@@ -1042,7 +1065,13 @@ class ArtifactManager:
         Note:
             Default generators are registered WITHOUT instantiating the provider (lazy instantiation).
             Generator settings are registered statically using class methods.
+            Providers that don't generate previews (empty preview-formats set) skip
+            settings registration entirely.
         """
+        # Providers that don't generate previews have no preview settings to register.
+        if not provider_class.get_preview_formats():
+            return
+
         # Validate and write provider-level settings (format, generator name)
         self._validate_and_write_provider_settings(provider_class)
 
