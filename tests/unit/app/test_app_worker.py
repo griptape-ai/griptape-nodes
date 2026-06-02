@@ -914,3 +914,57 @@ class TestWorkerManagerDomainEventListeners:
         await asyncio.sleep(0)
 
         wm._tx.send_message.assert_not_called()  # type: ignore[union-attr]
+
+    def test_broadcast_completes_when_listener_is_dispatched_via_threadrunner(
+        self, worker_manager_with_real_events: WorkerManager
+    ) -> None:
+        """Production path: sync request handler -> sync broadcast_app_event -> ThreadRunner side loop.
+
+        ``EventManager.broadcast_app_event`` detects a running loop and
+        runs the listener fan-out on a transient ``ThreadRunner`` side
+        loop. If the listener schedules its fan-out via
+        ``asyncio.create_task`` and returns, the side loop is torn down
+        before the orphan task ever runs and no broadcast actually goes
+        out. The listener now awaits the broadcast inline; this test
+        confirms the broadcast lands by the time
+        ``broadcast_app_event`` returns control to the caller, even
+        when the underlying transport ``await`` does not resolve
+        synchronously (the production shape -- a real WebSocket send
+        yields back to the loop).
+        """
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+
+        wm = worker_manager_with_real_events
+        wm._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key=None)
+
+        # Force send_message to yield repeatedly before recording the call.
+        # An orphan ``asyncio.create_task`` scheduled inside the listener
+        # would lose its race with ``ThreadRunner.__exit__`` -> ``loop.stop()``
+        # under enough yield points, so the broadcast would silently drop.
+        # ``AsyncMock`` returns synchronously which would mask the bug;
+        # the production transport awaits real I/O and yields many times.
+        send_calls: list[tuple] = []
+
+        async def slow_send(*args: object) -> None:
+            for _ in range(50):
+                await asyncio.sleep(0)
+            send_calls.append(args)
+
+        wm._tx.send_message = slow_send  # type: ignore[union-attr,assignment]
+
+        async def driver() -> None:
+            # Inside this coroutine there is a running loop on the main
+            # thread. ``broadcast_app_event`` is sync; calling it from
+            # here triggers the ThreadRunner side-loop branch -- the same
+            # branch that runs in production when a sync request handler
+            # (e.g. ``on_handle_set_config_value_request``) calls
+            # ``set_config_value`` which calls ``broadcast_app_event``.
+            wm._event_manager.broadcast_app_event(ConfigChanged(key="x.y", old_value=None, new_value="v"))
+
+        asyncio.run(driver())
+
+        # By the time broadcast_app_event returns, the listener (and the
+        # awaited broadcast inside it) must have completed.
+        assert len(send_calls) == 1
+        sent_payload = json.loads(send_calls[0][1])
+        assert sent_payload["request_type"] == "ReloadConfigRequest"

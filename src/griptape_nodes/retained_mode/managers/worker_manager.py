@@ -513,31 +513,45 @@ class WorkerManager:
         logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
         await self._tx.send_message("EventRequest", forwarded.json(), worker_request_topic)
 
-    def _on_config_changed(self, _event: ConfigChanged) -> None:
+    async def _on_config_changed(self, _event: ConfigChanged) -> None:
         """Fan out a ReloadConfigRequest after the orchestrator's config mutation succeeded.
 
         ConfigManager only emits ``ConfigChanged`` after the disk write
         succeeded, so receiving the event is sufficient evidence that
-        workers should re-read the file. The lazy import breaks a cycle
-        between this module and ``griptape_nodes.app.worker_routing``,
-        which itself imports ``EventManager`` from the retained_mode
-        managers package.
+        workers should re-read the file.
+
+        Listener is async and awaits the broadcast directly so the work
+        is owned by the listener's own task. ``broadcast_app_event``
+        invokes listeners on a transient ``ThreadRunner`` side loop when
+        called from sync code (the production path); a fire-and-forget
+        ``asyncio.create_task`` from inside the listener would land on
+        that side loop and be killed when ``ThreadRunner.__exit__``
+        stops the loop, so the broadcast must be awaited inline.
+
+        Lazy import breaks a cycle between this module and
+        ``griptape_nodes.app.worker_routing``, which itself imports
+        ``EventManager`` from the retained_mode managers package.
         """
         from griptape_nodes.app.worker_routing import ReloadConfigRequest
 
-        self.schedule_broadcast(ReloadConfigRequest)
+        if self._transport is None or not self._workers:
+            return
+        await self.broadcast_to_workers(EventRequest(request=ReloadConfigRequest()))
 
-    def _on_secret_changed(self, _event: SecretChanged) -> None:
+    async def _on_secret_changed(self, _event: SecretChanged) -> None:
         """Fan out a RefreshSecretsRequest after the orchestrator's secret mutation succeeded.
 
         SecretsManager raises if the .env write fails, so reaching the
         event broadcast means disk is up to date. Workers re-read the
-        shared file via ``refresh_from_env_file``. Lazy import for the
-        same circular-dependency reason as ``_on_config_changed``.
+        shared file via ``refresh_from_env_file``. Awaited inline for
+        the same side-loop reason documented on ``_on_config_changed``;
+        lazy import for the same circular-dependency reason.
         """
         from griptape_nodes.app.worker_routing import RefreshSecretsRequest
 
-        self.schedule_broadcast(RefreshSecretsRequest)
+        if self._transport is None or not self._workers:
+            return
+        await self.broadcast_to_workers(EventRequest(request=RefreshSecretsRequest()))
 
     def schedule_broadcast(self, request_type: type[RequestPayload]) -> None:
         """Tell every registered worker to handle ``request_type`` locally.
