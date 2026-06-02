@@ -53,6 +53,11 @@ def test_unsupported_transport_returns_none() -> None:
     assert mcp_server_from_config("svc", {"transport": "carrier-pigeon"}) is None
 
 
+def test_websocket_transport_returns_none() -> None:
+    """Websocket has no FastMCP transport, so it is rejected rather than routed over HTTP."""
+    assert mcp_server_from_config("svc", {"transport": "websocket", "url": "ws://h/mcp"}) is None
+
+
 def test_stdio_maps_command_args_env_cwd() -> None:
     """Stdio config fields land on the FastMCP StdioTransport."""
     composed = mcp_server_from_config(

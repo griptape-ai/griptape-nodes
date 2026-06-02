@@ -92,7 +92,7 @@ def mcp_server_from_config(name: str, config: Mapping[str, Any]) -> AbstractTool
             MCPToolset(client, max_retries=DEFAULT_TOOL_MAX_RETRIES, init_timeout=_connect_timeout(config)),
         )
 
-    if transport in ("streamable_http", "websocket"):
+    if transport == "streamable_http":
         url = config.get("url")
         if not url:
             logger.warning("MCP server %r: %s transport requires `url`; skipping.", name, transport)

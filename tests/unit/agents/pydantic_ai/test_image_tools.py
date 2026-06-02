@@ -194,3 +194,14 @@ class TestGenerateImage:
         with pytest.raises(ModelRetry):
             await toolset.generate_image("a cat")
         assert static_files.saved == []
+
+    async def test_raises_when_artifact_not_a_dict(
+        self, static_files: _FakeStaticFilesManager, patch_transport: _TransportRecorder
+    ) -> None:
+        # A JSON body whose `artifact` is the wrong shape must not escape as TypeError.
+        patch_transport.responses.append(httpx.Response(200, json={"artifact": ["not", "a", "dict"]}))
+        toolset = _make_toolset(ImageGenerationToolsetConfig(api_key="k"), static_files)
+
+        with pytest.raises(ModelRetry):
+            await toolset.generate_image("a cat")
+        assert static_files.saved == []

@@ -135,8 +135,10 @@ class ImageGenerationToolset:
         except httpx.HTTPError as exc:
             msg = f"Image generation request to Griptape Cloud failed: {exc}"
             raise ModelRetry(msg) from exc
-        except (KeyError, ValueError) as exc:
-            # ValueError covers json.JSONDecodeError and base64 binascii.Error.
+        except (KeyError, ValueError, TypeError) as exc:
+            # ValueError covers json.JSONDecodeError and base64 binascii.Error;
+            # KeyError/TypeError cover a JSON body whose `artifact` is missing or
+            # not the expected dict shape.
             msg = f"Image generation returned an unexpected response: {exc}"
             raise ModelRetry(msg) from exc
         filename = f"{uuid.uuid4()}.{image_format}"
