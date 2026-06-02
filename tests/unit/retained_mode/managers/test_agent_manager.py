@@ -129,8 +129,8 @@ def patch_get(monkeypatch: pytest.MonkeyPatch) -> _GetRecorder:
     return recorder
 
 
-def _image_artifact(url: str) -> dict[str, str]:
-    return {"type": "ImageUrlArtifact", "value": url}
+def _image_artifact(url: str) -> RunAgentRequestArtifact:
+    return RunAgentRequestArtifact(type="ImageUrlArtifact", value=url)
 
 
 class TestComposePrompt:
@@ -143,7 +143,7 @@ class TestComposePrompt:
 
     @pytest.mark.asyncio
     async def test_non_image_artifacts_are_ignored(self, patch_get: _GetRecorder) -> None:
-        artifacts = [{"type": "TextArtifact", "value": "http://x/file.txt"}]
+        artifacts = [RunAgentRequestArtifact(type="TextArtifact", value="http://x/file.txt")]
 
         result = await _compose_prompt("hello", artifacts)
 
@@ -168,11 +168,10 @@ class TestComposePrompt:
     @pytest.mark.asyncio
     async def test_reads_request_artifact_attributes(self, patch_get: _GetRecorder) -> None:
         # The wire deserializer hands back RunAgentRequestArtifact instances
-        # whose data lives in attributes, not dict items.
+        # whose data lives in attributes.
         url = "http://localhost:9/workspace/dog.png"
         patch_get.responses[url] = httpx.Response(200, content=b"dog", headers={"content-type": "image/png"})
         artifact = RunAgentRequestArtifact(type="ImageUrlArtifact", value=url)
-        assert dict(artifact) == {}
 
         result = await _compose_prompt("who is this", [artifact])
 

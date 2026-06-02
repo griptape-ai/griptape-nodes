@@ -12,7 +12,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
-class RunAgentRequestArtifact(dict):
+class RunAgentRequestArtifact:
     type: str
     value: str
 

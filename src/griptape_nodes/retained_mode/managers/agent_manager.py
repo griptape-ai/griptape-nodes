@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
+import textwrap
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,6 +83,7 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RenameThreadResultFailure,
     RenameThreadResultSuccess,
     RunAgentRequest,
+    RunAgentRequestArtifact,
     RunAgentResultFailure,
     RunAgentResultSuccess,
     UnarchiveThreadRequest,
@@ -274,7 +276,7 @@ class AgentManager:
 
         if is_first_run:
             self._thread_storage.update_thread_metadata(
-                result.thread_id, title=_generate_title_from_input(request.input)
+                result.thread_id, title=textwrap.shorten(request.input, width=50, placeholder="...")
             )
 
         return RunAgentResultSuccess(
@@ -526,7 +528,7 @@ class AgentManager:
         return thread_id
 
 
-async def _compose_prompt(text: str, url_artifacts: list[Any]) -> str | list[UserContent]:
+async def _compose_prompt(text: str, url_artifacts: list[RunAgentRequestArtifact]) -> str | list[UserContent]:
     """Combine the plain text input with any attached image artifacts.
 
     Image attachments are downloaded server-side and inlined as
@@ -538,9 +540,7 @@ async def _compose_prompt(text: str, url_artifacts: list[Any]) -> str | list[Use
     otherwise a ``[text, BinaryContent, ...]`` sequence for ``Agent.run``.
     """
     image_urls = [
-        url
-        for artifact in url_artifacts
-        if _artifact_field(artifact, "type") == "ImageUrlArtifact" and (url := _artifact_field(artifact, "value"))
+        artifact.value for artifact in url_artifacts if artifact.type == "ImageUrlArtifact" and artifact.value
     ]
     if not image_urls:
         return text
@@ -588,28 +588,6 @@ def _resolve_image_media_type(response: httpx.Response, url: str) -> str:
     if guessed_media_type and guessed_media_type.startswith("image/"):
         return guessed_media_type
     return _DEFAULT_IMAGE_MEDIA_TYPE
-
-
-def _artifact_field(artifact: Any, key: str) -> Any:
-    """Read ``key`` from a request artifact, attribute first then dict item.
-
-    ``RunAgentRequestArtifact`` is a dataclass that subclasses ``dict`` but
-    keeps its data in attributes, leaving the dict portion empty. Plain dicts
-    (e.g. in tests) carry the data as items instead. Checking the attribute
-    first and falling back to the item handles both shapes.
-    """
-    value = getattr(artifact, key, None)
-    if value is not None:
-        return value
-    if isinstance(artifact, dict):
-        return artifact.get(key)
-    return None
-
-
-def _generate_title_from_input(user_input: str, max_length: int = 50) -> str:
-    if len(user_input) <= max_length:
-        return user_input
-    return user_input[:max_length].rsplit(" ", 1)[0] + "..."
 
 
 def _run_event_to_payload(event: RunEvent) -> Any:
