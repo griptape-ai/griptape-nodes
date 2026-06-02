@@ -80,36 +80,43 @@ class BaseArtifactProvider(ABC):
     def get_default_preview_generator(cls) -> str:
         """Default preview generator for this provider.
 
-        Override in subclasses that support preview generation.
+        Only valid for providers that generate previews. Callers must check
+        ``get_preview_formats()`` first; calling this on a provider that
+        does not generate previews raises ``NotImplementedError``.
 
         Returns:
-            Friendly name of the default preview generator, or empty string if unsupported.
+            Friendly name of the default preview generator.
         """
-        return ""
+        msg = f"{cls.__name__} does not generate previews; check get_preview_formats() before calling."
+        raise NotImplementedError(msg)
 
     @classmethod
     def get_default_preview_format(cls) -> str:
         """Default preview format for this provider.
 
-        Override in subclasses that support preview generation.
+        Only valid for providers that generate previews. Callers must check
+        ``get_preview_formats()`` first; calling this on a provider that
+        does not generate previews raises ``NotImplementedError``.
 
         Returns:
-            Default format extension WITHOUT leading dot (e.g., 'png', 'webp'),
-            or empty string if unsupported.
+            Default format extension WITHOUT leading dot (e.g., 'png', 'webp').
         """
-        return ""
+        msg = f"{cls.__name__} does not generate previews; check get_preview_formats() before calling."
+        raise NotImplementedError(msg)
 
     @classmethod
     def get_default_preview_generators(cls) -> list[type[BaseArtifactPreviewGenerator]]:
         """Get default preview generator classes for this provider.
 
-        Override in subclasses that support preview generation. The default
-        empty list indicates this provider does not generate previews.
+        Only valid for providers that generate previews. Callers must check
+        ``get_preview_formats()`` first; calling this on a provider that
+        does not generate previews raises ``NotImplementedError``.
 
         Returns:
-            List of default preview generator classes
+            List of default preview generator classes.
         """
-        return []
+        msg = f"{cls.__name__} does not generate previews; check get_preview_formats() before calling."
+        raise NotImplementedError(msg)
 
     @classmethod
     def get_config_key_prefix(cls) -> str:
