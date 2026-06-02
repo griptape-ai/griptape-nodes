@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
-from griptape_nodes.common.strict_mode import STRICT_MODE, StrictModeScopeKind
+from griptape_nodes.common.strict_mode import STRICT_MODE
 from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -105,6 +105,15 @@ CONTROL_INPUT_PARAMETER = "Control Input Selection"
 # from inside aprocess do not, and that is what the rule catches.
 _sanctioned_mutation: ContextVar[bool] = ContextVar("_node_types_sanctioned_mutation", default=False)
 
+# Per-task flag: True only while ``await node.aprocess()`` is on the stack.
+# The detector uses this to distinguish actual aprocess execution from the
+# surrounding RUNTIME_EXECUTE scope, which also wraps input hydration.
+# Hydration-time set_parameter_value calls run before/after_value_set hooks,
+# and many real nodes (e.g. dynamic-pipeline diffuser nodes) legitimately
+# call add_parameter / remove_parameter_element from those hooks; keying off
+# the broader RUNTIME_EXECUTE scope would false-positive on every such node.
+_in_aprocess: ContextVar[bool] = ContextVar("_node_types_in_aprocess", default=False)
+
 
 @contextmanager
 def sanctioned_parameter_mutation() -> Iterator[None]:
@@ -119,6 +128,22 @@ def sanctioned_parameter_mutation() -> Iterator[None]:
         yield
     finally:
         _sanctioned_mutation.reset(token)
+
+
+@contextmanager
+def aprocess_scope() -> Iterator[None]:
+    """Mark the enclosed block as the actual aprocess() execution.
+
+    The framework wraps ``await node.aprocess()`` with this so the
+    parameter-mutation-during-aprocess detector fires only for mutations
+    that happen inside aprocess itself, not the surrounding hydration
+    pass that also runs under the RUNTIME_EXECUTE strict-mode scope.
+    """
+    token = _in_aprocess.set(True)
+    try:
+        yield
+    finally:
+        _in_aprocess.reset(token)
 
 
 class ImportDependency(NamedTuple):
@@ -1386,11 +1411,19 @@ class BaseNode(ABC):
         mutation, which does not sync back to the orchestrator when the
         node runs in a worker subprocess.
 
-        ``LibraryManager._serialize_library_node_schemas`` instantiates every
-        node class inside a ``LOAD_PROBE`` scope to extract its schema. Nodes
-        routinely call ``self.add_parameter(...)`` from ``__init__``, which
-        is the intended way to declare parameters, so calls made from inside
-        a constructor are not a violation of this rule.
+        Detection keys off ``_in_aprocess`` (set by ``aprocess_scope()`` only
+        around ``await node.aprocess()``) rather than the broader
+        ``RUNTIME_EXECUTE`` strict-mode scope, because that scope also wraps
+        input hydration. Hydration runs ``set_parameter_value`` ->
+        ``before_value_set`` / ``after_value_set``, and dynamic-pipeline
+        nodes legitimately call ``add_parameter`` from those hooks; keying
+        off ``RUNTIME_EXECUTE`` would false-positive on every such node.
+
+        Nested node construction (a node's ``__init__`` declaring parameters
+        from inside another node's ``aprocess``) is handled by the
+        ``is_constructing_node()`` short-circuit: declarative ``__init__``
+        calls to ``add_parameter`` are not violations even when an outer
+        ``aprocess`` is on the stack.
         """
         # Lazy import: library_registry imports BaseNode from this module,
         # so importing at module load creates a cycle.
@@ -1400,8 +1433,7 @@ class BaseNode(ABC):
             return
         if LibraryRegistry.is_constructing_node():
             return
-        scope = STRICT_MODE.current_scope()
-        if scope is None or scope.kind is not StrictModeScopeKind.RUNTIME_EXECUTE:
+        if not _in_aprocess.get():
             return
         rule = RULES["parameter-mutation-during-aprocess"]
         STRICT_MODE.report(

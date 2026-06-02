@@ -44,6 +44,7 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeResolutionState,
     TransformedParameterValue,
+    aprocess_scope,
     sanctioned_parameter_mutation,
 )
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
@@ -2999,7 +3000,8 @@ class NodeManager:
                     continue
                 node.parameter_values[param.name] = param.default_value
             try:
-                await node.aprocess()
+                with aprocess_scope():
+                    await node.aprocess()
             except Exception as e:
                 # Pass the live exception through ``exception=`` so the
                 # converter can capture worker-side frames into a
