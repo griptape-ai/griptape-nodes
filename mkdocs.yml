@@ -95,7 +95,7 @@ extra:
     - icon: fontawesome/brands/discord
       link: https://discord.gg/gnWRz88eym
     - icon: fontawesome/brands/github
-      link: https://github.com/griptape-ai/griptape-nodes
+      link: https://github.com/griptape-ai/griptape-nodes-engine
 
 theme:
   name: material

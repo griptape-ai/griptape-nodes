@@ -7,8 +7,8 @@ We welcome contributions to the Griptape Nodes project! Whether it's bug fixes, 
 1. **Clone the Repository:**
 
     ```shell
-    git clone https://github.com/griptape-ai/griptape-nodes.git
-    cd griptape-nodes
+    git clone https://github.com/griptape-ai/griptape-nodes-engine.git
+    cd griptape-nodes-engine
     ```
 
 1. **Install `uv`:**
@@ -38,7 +38,7 @@ The application that launches an engine is the `griptape-nodes` package on PyPI,
 To test your engine changes, install the published `griptape-nodes` app and layer your local engine checkout over it as an editable install:
 
 ```shell
-uv tool install griptape-nodes --with-editable /path/to/griptape-nodes --force
+uv tool install griptape-nodes --with-editable /path/to/griptape-nodes-engine --force
 ```
 
 That creates a persistent tool venv containing the published app, plus a `.pth` file pointing at this checkout's `src` directory. Every subsequent `gtn` (or `griptape-nodes`) invocation imports the engine from your local source, so engine edits are reflected immediately with no reinstall.
@@ -144,7 +144,7 @@ Griptape Nodes uses a configuration loading system. For full details, see the [C
 
 1. **Using the Local Nodes Library:** By default, a regularly installed engine looks for node definitions (the library config file: `griptape_nodes_library.json` or `griptape-nodes-library.json`) in a system data directory. For development, you **must** tell the engine (run via `gtn` from your cloned repository's root) to use the library file directly from your cloned repository (`./libraries/griptape_nodes_library/griptape_nodes_library.json`).
 
-    - **How to Override:** Create a configuration file in a location that has higher priority than the default system paths. The simplest location is the **root of your cloned `griptape-nodes` repository**.
+    - **How to Override:** Create a configuration file in a location that has higher priority than the default system paths. The simplest location is the **root of your cloned `griptape-nodes-engine` repository**.
 
     - Create a file named `griptape_nodes_config.json` in the project root.
 
@@ -219,7 +219,7 @@ This will start a local webserver (usually at `http://127.0.0.1:8000/`). The sit
 1. Create a new branch for your feature or bug fix: `git checkout -b my-feature-branch`.
 1. Make your changes, commit them with clear messages, and ensure all checks (`make check`) and tests (`make test/unit`) pass.
 1. Push your branch to your fork: `git push origin my-feature-branch`.
-1. Open a Pull Request (PR) against the `main` branch of the `griptape-ai/griptape-nodes` repository.
+1. Open a Pull Request (PR) against the `main` branch of the `griptape-ai/griptape-nodes-engine` repository.
 1. Clearly describe your changes in the PR description.
 
 ## Making a Release (Maintainers)
