@@ -89,6 +89,12 @@ A node called `add_parameter` or `remove_parameter_element` during
 `aprocess`. On the worker, these mutations apply to the transient
 node instance and do not sync back to the orchestrator.
 
+Detection is keyed on `aprocess_scope()`, which the framework opens
+only around `await node.aprocess()`. Hydration-time mutations made
+from `before_value_set` / `after_value_set` (the standard dynamic-
+parameter pattern) do **not** trip this rule, even though they share
+the surrounding `RUNTIME_EXECUTE` strict-mode scope.
+
 **Remediation**: emit an `AddParameterToNodeRequest` or
 `RemoveParameterFromNodeRequest` (both `ForwardFromWorkerMixin`) so
 the mutation propagates to the authoritative orchestrator-side node.
