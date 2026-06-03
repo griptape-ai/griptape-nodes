@@ -1,12 +1,17 @@
-"""Declarative identity properties for libraries and nodes.
+"""Declarative properties and capabilities for libraries and nodes.
 
 Attached to `LibraryMetadata.declarations` and `NodeMetadata.declarations` and
 serialized into `griptape_nodes_library.json`.
 
-This module currently ships only **Properties** (identity facts: "I am BETA", "I
-require a customer key"). The `LibraryDeclaration` and `NodeDeclaration` unions
-are scaffolded for future declaration categories — capabilities, requirements,
-etc. — to slot in additively without churning the schema shape.
+Two declaration categories ship today:
+
+* **Properties** are identity facts ("I am BETA", "I require a customer key").
+* **Capabilities** describe how a library wants to be hosted or executed
+  (e.g. `WorkerLibraryCapability` for orchestrator vs. worker process).
+
+The `LibraryDeclaration` and `NodeDeclaration` unions are scaffolded so that
+additional categories (further capabilities, requirements, etc.) can slot in
+additively without churning the schema shape.
 """
 
 from __future__ import annotations
@@ -50,7 +55,7 @@ class KeySupport(StrEnum):
 class WorkerSupport(StrEnum):
     """How a library wants to be hosted across orchestrator vs. worker processes.
 
-    Absence of a WorkerSupportLibraryProperty means REQUIRES_ORCHESTRATOR_MODE;
+    Absence of a WorkerLibraryCapability means REQUIRES_ORCHESTRATOR_MODE;
     consumers default at the call site rather than the schema synthesizing an
     implicit instance.
     """
@@ -74,14 +79,18 @@ class LifecycleStageLibraryProperty(BaseModel):
     stage: LifecycleStage
 
 
-class WorkerSupportLibraryProperty(BaseModel):
-    """Declares how this library wants to be hosted (orchestrator vs. worker process).
+class WorkerLibraryCapability(BaseModel):
+    """Declares how this library can be hosted (orchestrator vs. worker process).
+
+    Worker hosting is modeled as a capability (rather than a property) so that
+    additional worker-execution knobs (e.g. concurrency) can attach to this same
+    declaration without inventing a parallel category.
 
     Absence means REQUIRES_ORCHESTRATOR_MODE; consumers default at the call site.
     Today the engine maps SUPPORTS_WORKER_MODE to in-process; the GUI flip lands later.
     """
 
-    type: Literal["worker_support"] = "worker_support"
+    type: Literal["worker"] = "worker"
     support: WorkerSupport
 
     def requires_worker_process(self) -> bool:
@@ -106,7 +115,7 @@ class WorkerSupportLibraryProperty(BaseModel):
 # A single-member union is still wrapped in this idiom because future declaration types
 # (capabilities, requirements) slot in additively without changing the field's shape.
 LibraryDeclaration = Annotated[
-    LifecycleStageLibraryProperty | WorkerSupportLibraryProperty,
+    LifecycleStageLibraryProperty | WorkerLibraryCapability,
     Field(discriminator="type"),
 ]
 

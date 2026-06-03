@@ -49,11 +49,11 @@ heavier library next to yours.
 
 ## How to opt in
 
-Add a `WorkerSupport` declaration to your library's `metadata.declarations`
-in `griptape-nodes-library.json`. Use `REQUIRES_WORKER_MODE` to opt in.
-`SUPPORTS_WORKER_MODE` reserves the right to opt in later via the GUI;
-`REQUIRES_ORCHESTRATOR_MODE` (or omitting the declaration entirely) keeps
-the library in the orchestrator process.
+Add a `worker` capability declaration to your library's
+`metadata.declarations` in `griptape-nodes-library.json`. Use
+`REQUIRES_WORKER_MODE` to opt in. `SUPPORTS_WORKER_MODE` reserves the right
+to opt in later via the GUI; `REQUIRES_ORCHESTRATOR_MODE` (or omitting the
+declaration entirely) keeps the library in the orchestrator process.
 
 ```json
 {
@@ -67,7 +67,7 @@ the library in the orchestrator process.
         "tags": ["AI", "Custom"],
         "declarations": [
             {
-                "type": "worker_support",
+                "type": "worker",
                 "support": "REQUIRES_WORKER_MODE"
             }
         ],
@@ -95,7 +95,7 @@ hatch for index URLs and other arguments your install legitimately
 needs.
 
 The schemas:
-[`WorkerSupportLibraryProperty`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_declarations.py)
+[`WorkerLibraryCapability`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_declarations.py)
 in `library_declarations.py` and
 [`Dependencies`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py#L39)
 in `library_registry.py`.
@@ -253,7 +253,7 @@ logs a `WARNING` so the asymmetry is visible.
 
 ## "Is my library worker-ready?" checklist
 
-- [ ] `WorkerSupport.REQUIRES_WORKER_MODE` declared in `metadata.declarations`
+- [ ] `worker` capability with `REQUIRES_WORKER_MODE` declared in `metadata.declarations`
 - [ ] `__init__` does no I/O and issues no event-bus requests
 - [ ] No `add_parameter` / `remove_parameter_element` from inside
     `process`; use `AddParameterToNodeRequest` /

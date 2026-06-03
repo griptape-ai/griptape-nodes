@@ -96,7 +96,7 @@ class LibraryMetadata(BaseModel):
     resources: ResourceRequirements | None = None
     # Declarative properties / capabilities for this library. Applies to all nodes in the library.
     # See griptape_nodes.node_library.library_declarations for the supported types,
-    # including WorkerSupportLibraryProperty for orchestrator/worker hosting.
+    # including WorkerLibraryCapability for orchestrator/worker hosting.
     declarations: list[LibraryDeclaration] = Field(default_factory=list)
 
 

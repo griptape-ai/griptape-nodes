@@ -38,7 +38,7 @@ from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io, resolve_workspace_path
-from griptape_nodes.node_library.library_declarations import WorkerSupportLibraryProperty
+from griptape_nodes.node_library.library_declarations import WorkerLibraryCapability
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -346,7 +346,7 @@ class LibraryManager:
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
         # True when the library declares WorkerSupport.REQUIRES_WORKER_MODE via a
-        # WorkerSupportLibraryProperty in its metadata.declarations. Set whenever
+        # WorkerLibraryCapability in its metadata.declarations. Set whenever
         # metadata is first successfully parsed (discovery or lifecycle progression).
         requires_worker: bool = False
         # Set when the library enters WORKER_PENDING state. The orchestrator waits on this
@@ -1779,7 +1779,7 @@ class LibraryManager:
                         (
                             d
                             for d in metadata_result.library_schema.metadata.declarations
-                            if isinstance(d, WorkerSupportLibraryProperty)
+                            if isinstance(d, WorkerLibraryCapability)
                         ),
                         None,
                     )
@@ -4025,7 +4025,7 @@ class LibraryManager:
                 (
                     d
                     for d in metadata_result.library_schema.metadata.declarations
-                    if isinstance(d, WorkerSupportLibraryProperty)
+                    if isinstance(d, WorkerLibraryCapability)
                 ),
                 None,
             )
