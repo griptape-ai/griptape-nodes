@@ -12,22 +12,22 @@ worker-mode mistakes, see
 A few terms used throughout this page:
 
 - **Orchestrator** — the main Griptape Nodes Python process. It owns
-  the flow graph, connections, parameter registry, config, and
-  secrets. The editor talks to the orchestrator directly.
+    the flow graph, connections, parameter registry, config, and
+    secrets. The editor talks to the orchestrator directly.
 - **Worker subprocess** — a separate Python process that runs your
-  library's nodes. Each library that opts into worker mode gets its
-  own. Workers communicate with the orchestrator over a WebSocket
-  connection (the **bus**).
+    library's nodes. Each library that opts into worker mode gets its
+    own. Workers communicate with the orchestrator over a WebSocket
+    connection (the **bus**).
 - **`process` and `aprocess`** — your node's execution method.
-  Implement `process(self) -> ...` as you do today; the framework
-  wraps it as `async def aprocess(self) -> None` so it can run on the
-  worker's event loop. The strict-mode rules describe behavior "from
-  inside aprocess," but in practice that means "from inside the
-  `process` method you wrote."
+    Implement `process(self) -> ...` as you do today; the framework
+    wraps it as `async def aprocess(self) -> None` so it can run on the
+    worker's event loop. The strict-mode rules describe behavior "from
+    inside aprocess," but in practice that means "from inside the
+    `process` method you wrote."
 - **Schema probe** — a one-time pass at library load where the worker
-  instantiates each registered node class once to discover its
-  parameter layout. This runs your `__init__` before any execute
-  request arrives.
+    instantiates each registered node class once to discover its
+    parameter layout. This runs your `__init__` before any execute
+    request arrives.
 
 ## Should I opt in?
 
@@ -106,17 +106,17 @@ the worker reads it, the orchestrator may have moved on.
 Two practical implications:
 
 - **Pass data into nodes via parameters; don't fetch flow state
-  during execution.** Reading connection or peer-node state from
-  inside `process` (or from `before_value_set` /
-  `after_value_set`, which run during input hydration on the same
-  scope) works but is expensive and surfaces as the
-  [`worker-reach-into-orchestrator`](strict_mode.md) warning.
+    during execution.** Reading connection or peer-node state from
+    inside `process` (or from `before_value_set` /
+    `after_value_set`, which run during input hydration on the same
+    scope) works but is expensive and surfaces as the
+    [`worker-reach-into-orchestrator`](strict_mode.md) warning.
 - **Intentional writes are sanctioned**, not penalized. Emit the
-  corresponding request (`SetParameterValueRequest`,
-  `AddParameterToNodeRequest`, `RemoveParameterFromNodeRequest`,
-  etc.) and the engine handles the round-trip correctly. The strict-
-  mode rule's remediation explicitly flags writes as fine to
-  ignore.
+    corresponding request (`SetParameterValueRequest`,
+    `AddParameterToNodeRequest`, `RemoveParameterFromNodeRequest`,
+    etc.) and the engine handles the round-trip correctly. The strict-
+    mode rule's remediation explicitly flags writes as fine to
+    ignore.
 
 Requests issued **outside** node execution (during library load or
 bootstrap) are not forwarded — the worker is not connected to the
@@ -133,19 +133,19 @@ at startup to extract a parameter schema for the orchestrator. Three
 implications:
 
 - **No I/O in `__init__`.** Network calls, auth checks, disk reads,
-  database connections all block library load. The schema probe has
-  a finite timeout, and a class whose `__init__` raises or times out
-  is **silently dropped from the exported library** with no rule
-  fired. Move I/O into `process` or a lifecycle hook that runs after
-  construction.
+    database connections all block library load. The schema probe has
+    a finite timeout, and a class whose `__init__` raises or times out
+    is **silently dropped from the exported library** with no rule
+    fired. Move I/O into `process` or a lifecycle hook that runs after
+    construction.
 - **No event-bus calls in `__init__`.** Reentering the bus during
-  the schema probe deadlocks the worker. The
-  [`reentrant-bus-in-init`](strict_mode.md) correctness rule fails
-  the class on this; because it is a correctness-class violation,
-  the class is also dropped from the library schema.
+    the schema probe deadlocks the worker. The
+    [`reentrant-bus-in-init`](strict_mode.md) correctness rule fails
+    the class on this; because it is a correctness-class violation,
+    the class is also dropped from the library schema.
 - **Parameters declared in `__init__` are the normal pattern.**
-  `self.add_parameter(...)` is fine here — the schema probe is the
-  one place a node is "supposed to" define its parameter list.
+    `self.add_parameter(...)` is fine here — the schema probe is the
+    one place a node is "supposed to" define its parameter list.
 
 ### Each `ExecuteNodeRequest` constructs a fresh node
 
@@ -156,19 +156,19 @@ between calls.**
 The supported patterns for moving values:
 
 - **Inputs** arrive in `self.parameter_values` at the start of each
-  execute, hydrated from the orchestrator's authoritative copy.
-  Read them inside `process`; do not assume the values from a prior
-  call are still present.
+    execute, hydrated from the orchestrator's authoritative copy.
+    Read them inside `process`; do not assume the values from a prior
+    call are still present.
 - **Outputs** go in `self.parameter_output_values`. The framework
-  ships these back to the orchestrator after `process` returns. Set
-  `self.parameter_output_values["my_param"] = value` inside
-  `process`.
+    ships these back to the orchestrator after `process` returns. Set
+    `self.parameter_output_values["my_param"] = value` inside
+    `process`.
 - **Cross-call state that must persist** belongs in the
-  orchestrator. Issue a `SetParameterValueRequest` from inside
-  `process` to update an authoritative value; on the next execute
-  the new value will hydrate into `self.parameter_values`. Do not
-  rely on `self.parameter_values[k] = v` mid-execute as a way to
-  carry state forward — that mutation does not propagate.
+    orchestrator. Issue a `SetParameterValueRequest` from inside
+    `process` to update an authoritative value; on the next execute
+    the new value will hydrate into `self.parameter_values`. Do not
+    rely on `self.parameter_values[k] = v` mid-execute as a way to
+    carry state forward — that mutation does not propagate.
 
 What does **not** work: setting `self.foo = ...` and expecting it to
 survive. The next execute gets a fresh node instance.
@@ -219,12 +219,12 @@ at library load.
 Two workable patterns:
 
 - **Move the validation or transform into `process`.** The worker
-  re-runs it on the actual value. The cost is that the editor
-  cannot show the user a validation failure inline; they only see
-  it when the node executes.
+    re-runs it on the actual value. The cost is that the editor
+    cannot show the user a validation failure inline; they only see
+    it when the node executes.
 - **Accept the divergence as orchestrator-only UI sugar.** If the
-  converter is purely a display nicety (e.g., title-casing a
-  string), losing it on the orchestrator is harmless.
+    converter is purely a display nicety (e.g., title-casing a
+    string), losing it on the orchestrator is harmless.
 
 ## Configuration and secrets propagate automatically
 
@@ -250,16 +250,16 @@ logs a `WARNING` so the asymmetry is visible.
 - [ ] `metadata.worker.enabled = true` in the manifest
 - [ ] `__init__` does no I/O and issues no event-bus requests
 - [ ] No `add_parameter` / `remove_parameter_element` from inside
-      `process`; use `AddParameterToNodeRequest` /
-      `RemoveParameterFromNodeRequest` via
-      `GriptapeNodes.handle_request(...)` instead
+    `process`; use `AddParameterToNodeRequest` /
+    `RemoveParameterFromNodeRequest` via
+    `GriptapeNodes.handle_request(...)` instead
 - [ ] Cross-node / flow state passed in via parameters, not fetched
-      from inside `process`
+    from inside `process`
 - [ ] Custom `converters` / `validators` / `traits` either re-run
-      inside `process` or accepted as orchestrator-only UI sugar
+    inside `process` or accepted as orchestrator-only UI sugar
 - [ ] `pip_dependencies` pinned to specific versions
 - [ ] `pip_install_flags` set if your install needs a custom index
-      URL or other arguments
+    URL or other arguments
 
 ## Strict mode is your safety net
 
@@ -272,12 +272,12 @@ entries.
 
 The four rules and their actual severities:
 
-| Rule | Orchestrator | Worker | Notes |
-|---|---|---|---|
-| [`reentrant-bus-in-init`](strict_mode.md) | ERROR | ERROR | Correctness rule. The class is dropped from the library schema. |
-| [`parameter-behaviors-dropped-in-schema`](strict_mode.md) | WARNING | WARNING | Fires during library load when a `Parameter` carries `converters` / `validators` / `traits` that the worker schema cannot serialize. Does not escalate. |
-| [`parameter-mutation-during-aprocess`](strict_mode.md) | WARNING | ERROR | Promotes the node's result to a failure on the worker. |
-| [`worker-reach-into-orchestrator`](strict_mode.md) | n/a | WARNING | Fires anywhere during node execution including hydration. Does not escalate; intentional writes are explicitly fine to ignore. |
+| Rule                                                      | Orchestrator | Worker  | Notes                                                                                                                                                   |
+| --------------------------------------------------------- | ------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`reentrant-bus-in-init`](strict_mode.md)                 | ERROR        | ERROR   | Correctness rule. The class is dropped from the library schema.                                                                                         |
+| [`parameter-behaviors-dropped-in-schema`](strict_mode.md) | WARNING      | WARNING | Fires during library load when a `Parameter` carries `converters` / `validators` / `traits` that the worker schema cannot serialize. Does not escalate. |
+| [`parameter-mutation-during-aprocess`](strict_mode.md)    | WARNING      | ERROR   | Promotes the node's result to a failure on the worker.                                                                                                  |
+| [`worker-reach-into-orchestrator`](strict_mode.md)        | n/a          | WARNING | Fires anywhere during node execution including hydration. Does not escalate; intentional writes are explicitly fine to ignore.                          |
 
 If a strict-mode line fires, the rule's remediation message names
 exactly which guideline above was violated and how to fix it. A
