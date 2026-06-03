@@ -38,7 +38,13 @@ from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io, resolve_workspace_path
-from griptape_nodes.node_library.library_declarations import requires_worker_process
+from griptape_nodes.node_library.library_declarations import (
+    LibraryDeclaration,
+    WorkerCompatibility,
+    WorkerMode,
+    WorkerModeCompatibility,
+    requires_worker_process,
+)
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -1777,8 +1783,9 @@ class LibraryManager:
                     # Update library_info with metadata results
                     library_info.library_name = metadata_result.library_schema.name
                     library_info.library_version = metadata_result.library_schema.metadata.library_version
-                    library_info.requires_worker = requires_worker_process(
-                        metadata_result.library_schema.metadata.declarations
+                    library_info.requires_worker = self._resolve_requires_worker(
+                        library_info.library_path,
+                        metadata_result.library_schema.metadata.declarations,
                     )
                     library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
@@ -3817,6 +3824,52 @@ class LibraryManager:
 
         return True
 
+    def _resolve_requires_worker(
+        self,
+        library_path: str | None,
+        declarations: list[LibraryDeclaration],
+    ) -> bool:
+        """Apply per-entry worker_mode_override iff the library is worker-compatible; otherwise honor the manifest.
+
+        The override lives on the matching `LibraryRegistration` entry in
+        `libraries_to_register` (keyed by path, mirroring how `enabled` works).
+        Returns the load-time `requires_worker` bool used by the lifecycle state
+        machine. Centralized here so both writer sites stay in sync.
+        """
+        manifest_default = requires_worker_process(declarations)
+
+        capability = next((d for d in declarations if isinstance(d, WorkerModeCompatibility)), None)
+        is_incompatible = capability is not None and capability.compatibility is WorkerCompatibility.INCOMPATIBLE
+        if is_incompatible or not library_path:
+            return manifest_default
+
+        config_mgr = GriptapeNodes.ConfigManager()
+        raw_entries = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY) or []
+        target_path_lower = library_path.lower()
+        for entry in raw_entries:
+            entry_path = extract_library_path(entry)
+            if not entry_path or entry_path.lower() != target_path_lower:
+                continue
+            override_raw: Any = None
+            if isinstance(entry, LibraryRegistration):
+                override_raw = entry.worker_mode_override
+            elif isinstance(entry, dict):
+                override_raw = entry.get("worker_mode_override")
+            if override_raw is None:
+                return manifest_default
+            try:
+                effective_mode = WorkerMode(override_raw)
+            except ValueError:
+                logger.debug(
+                    "Ignoring invalid worker_mode_override %r on libraries_to_register entry %r; falling back to manifest suggested mode.",
+                    override_raw,
+                    library_path,
+                )
+                return manifest_default
+            return effective_mode is WorkerMode.WORKER
+
+        return manifest_default
+
     def _remove_missing_libraries_from_config(self, config_category: str) -> None:
         # Now remove all libraries that were missing from the user's config.
         config_mgr = GriptapeNodes.ConfigManager()
@@ -4015,7 +4068,10 @@ class LibraryManager:
         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
             library_name = metadata_result.library_schema.name
             library_version = metadata_result.library_schema.metadata.library_version
-            requires_worker = requires_worker_process(metadata_result.library_schema.metadata.declarations)
+            requires_worker = self._resolve_requires_worker(
+                file_path_str,
+                metadata_result.library_schema.metadata.declarations,
+            )
             lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
         if not enabled:

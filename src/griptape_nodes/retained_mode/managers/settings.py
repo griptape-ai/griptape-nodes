@@ -5,6 +5,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PydanticField
 
+from griptape_nodes.node_library.library_declarations import WorkerMode
+
 LIBRARIES_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.libraries_to_register"
 LIBRARIES_TO_DOWNLOAD_KEY = "app_events.on_app_initialization_complete.libraries_to_download"
 WORKFLOWS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.workflows_to_register"
@@ -111,7 +113,8 @@ class LibraryRegistration(BaseModel):
     """A library entry in libraries_to_register with optional metadata.
 
     Bare path strings remain valid in the config; this object form is used when
-    additional fields (such as `enabled`) need to be set per entry.
+    additional fields (such as `enabled` or `worker_mode_override`) need to be
+    set per entry.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -120,6 +123,15 @@ class LibraryRegistration(BaseModel):
     enabled: bool = Field(
         default=True,
         description="When False, the library remains in config but is not loaded on startup.",
+    )
+    worker_mode_override: WorkerMode | None = Field(
+        default=None,
+        description=(
+            "Per-library override of the launch mode declared in the library's manifest. "
+            "ORCHESTRATOR or WORKER. Only honored when the manifest declares "
+            "WorkerModeCompatibility.COMPATIBLE; ignored for INCOMPATIBLE libraries. "
+            "None reverts to the manifest's SuggestedWorkerMode."
+        ),
     )
 
 

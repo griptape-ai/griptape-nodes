@@ -54,6 +54,9 @@ def _make_node_metadata(**kwargs: Any) -> NodeMetadata:
 
 class TestMetadataDeclarationsDefaults:
     def test_library_metadata_declarations_defaults_to_empty(self) -> None:
+        # Absence of any declaration is "no opinion" -- consumers (e.g.
+        # ``requires_worker_process``) apply their own defaults rather than
+        # the model materializing synthetic declarations.
         assert _make_library_metadata().declarations == []
 
     def test_node_metadata_declarations_defaults_to_empty(self) -> None:
