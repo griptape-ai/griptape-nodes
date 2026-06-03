@@ -338,6 +338,13 @@ class ArtifactManager:
                 f"Failed due to: provider '{request.artifact_provider_name}' not found"
             )
 
+        # FAILURE CASE: Verify provider generates previews
+        if len(provider_class.get_preview_formats()) == 0:
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to generate preview for '{source_path}'. "
+                f"Failed due to: provider '{request.artifact_provider_name}' does not generate previews"
+            )
+
         # FAILURE CASE: Verify provider supports this file format
         if file_extension not in provider_class.get_supported_formats():
             return GeneratePreviewResultFailure(
@@ -494,6 +501,13 @@ class ArtifactManager:
                 f"Failed due to: provider '{request.artifact_provider_name}' not found"
             )
 
+        # FAILURE CASE: Verify provider generates previews
+        if len(provider_class.get_preview_formats()) == 0:
+            return GeneratePreviewFromDefaultsResultFailure(
+                result_details=f"Attempted to generate preview using defaults. "
+                f"Failed due to: provider '{request.artifact_provider_name}' does not generate previews"
+            )
+
         # Read settings from config with validation
         try:
             settings = self._get_preview_settings_from_config(provider_class, request.artifact_provider_name)
@@ -564,6 +578,13 @@ class ArtifactManager:
         if provider_class is None:
             return GetPreviewForArtifactResultFailure(
                 result_details=f"Attempted to get preview for '{source_path}'. Failed due to: provider '{request.artifact_provider_name}' not found"
+            )
+
+        # FAILURE CASE: Verify provider generates previews
+        if len(provider_class.get_preview_formats()) == 0:
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get preview for '{source_path}'. "
+                f"Failed due to: provider '{request.artifact_provider_name}' does not generate previews"
             )
 
         # FAILURE CASE: Calculate metadata path using same logic as preview path (metadata uses .json extension)
@@ -1002,6 +1023,10 @@ class ArtifactManager:
         provider_schemas: dict[str, ProviderSchema] = {}
 
         for provider_class in self._registry.get_all_provider_classes():
+            # Providers that don't generate previews have no preview schema to publish.
+            if len(provider_class.get_preview_formats()) == 0:
+                continue
+
             provider_friendly_name = provider_class.get_friendly_name()
             provider_key = normalize_friendly_name_to_key(provider_friendly_name)
 
@@ -1069,7 +1094,7 @@ class ArtifactManager:
             settings registration entirely.
         """
         # Providers that don't generate previews have no preview settings to register.
-        if not provider_class.get_preview_formats():
+        if len(provider_class.get_preview_formats()) == 0:
             return
 
         # Validate and write provider-level settings (format, generator name)

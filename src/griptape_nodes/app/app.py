@@ -23,7 +23,7 @@ from rich.panel import Panel
 
 from griptape_nodes.api_client import Client, RequestClient
 from griptape_nodes.app.engine_log import _engine_role_filter, _rich_handler
-from griptape_nodes.app.worker_routing import register_remote_handlers
+from griptape_nodes.app.worker_routing import register_broadcast_handlers, register_remote_handlers
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.common.node_executor import current_executing_node_name
 from griptape_nodes.retained_mode.events import app_events, execution_events, worker_events
@@ -375,6 +375,14 @@ async def _run_worker(client: Client, role: Worker) -> None:
             # of dispatching locally. Bootstrap paths (library load, AppInitializationComplete
             # fan-out) run outside the scope and continue to hit the original local handlers.
             register_remote_handlers(griptape_nodes.EventManager())
+            # Install handlers for orchestrator-originated broadcasts (config reload,
+            # secrets refresh) so this worker re-reads shared on-disk state when the
+            # orchestrator mutates it.
+            register_broadcast_handlers(
+                griptape_nodes.EventManager(),
+                config_manager=griptape_nodes.ConfigManager(),
+                secrets_manager=griptape_nodes.SecretsManager(),
+            )
 
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_send_outgoing_messages(client))

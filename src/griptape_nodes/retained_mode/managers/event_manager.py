@@ -6,13 +6,17 @@ import logging
 import threading
 from collections import defaultdict
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
+from griptape_nodes.common.strict_mode import STRICT_MODE
+from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
@@ -23,8 +27,10 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultDetails,
     ResultPayload,
+    StrictModeViolationDetail,
 )
 from griptape_nodes.retained_mode.events.event_converter import converter
+from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.utils.async_utils import call_function
 
@@ -37,6 +43,23 @@ if TYPE_CHECKING:
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
 AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
+
+
+_active_request_type: ContextVar[type[RequestPayload] | None] = ContextVar(
+    "_event_manager_active_request_type", default=None
+)
+
+
+def current_request_type() -> type[RequestPayload] | None:
+    """Return the request type currently being dispatched on this task, or None.
+
+    Detectors that need to know "what request is the active handler servicing?"
+    (e.g. parameter-mutation-during-aprocess, which exempts the sanctioned
+    AddParameterToNodeRequest / RemoveParameterFromNodeRequest paths) read
+    this ContextVar.
+    """
+    return _active_request_type.get()
+
 
 # Result types that should NOT trigger a flush request.
 #
@@ -88,6 +111,18 @@ class EventManager:
         # library-internal ThreadPoolExecutors ran node-emitted requests.
         self._node_execution_depth: int = 0
         self._node_execution_lock = threading.Lock()
+        # Pre-dispatch hook chain consulted before every request callback. Each
+        # hook returns None (fall through) or a ResultPayload (short-circuit the
+        # dispatcher). Lets PermissionManager enforce policy without instrumenting
+        # every manager.
+        self._pre_dispatch_hooks: list[Callable[[RequestPayload, ResultContext], ResultPayload | None]] = []
+        # handle_request runs on arbitrary threads, so guard the list and snapshot
+        # it before iteration.
+        self._pre_dispatch_hooks_lock = threading.Lock()
+        # Thread-local flag: if a hook re-enters handle_request on this thread, the
+        # chain is skipped so the hook can't keep re-triggering itself into
+        # unbounded recursion.
+        self._hook_evaluation = threading.local()
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -201,6 +236,78 @@ class EventManager:
             # We're on the same thread as the event loop or no loop thread tracked, use async method
             await self._event_queue.put(event)
 
+    def add_pre_dispatch_hook(
+        self,
+        hook: Callable[[RequestPayload, ResultContext], ResultPayload | None],
+    ) -> None:
+        """Register a pre-dispatch hook.
+
+        Hooks run in registration order before the request's manager callback.
+        Returning a ResultPayload short-circuits the dispatcher with that result;
+        returning None lets dispatch continue.
+
+        Hooks should be cheap and sync. A hook that re-enters `handle_request`
+        (directly or transitively) is bypassed on the re-entrant call rather
+        than recursing, but subscribing to AppPayload events for state is still
+        preferred. Registering the same hook twice is a no-op.
+        """
+        with self._pre_dispatch_hooks_lock:
+            if hook not in self._pre_dispatch_hooks:
+                self._pre_dispatch_hooks.append(hook)
+
+    def remove_pre_dispatch_hook(
+        self,
+        hook: Callable[[RequestPayload, ResultContext], ResultPayload | None],
+    ) -> None:
+        with self._pre_dispatch_hooks_lock:
+            try:
+                self._pre_dispatch_hooks.remove(hook)
+            except ValueError:
+                return
+
+    def _run_pre_dispatch_hooks(
+        self,
+        request: RequestPayload,
+        context: ResultContext,
+    ) -> ResultPayload | None:
+        # Bypass the chain when a hook is already running on this thread. A hook
+        # that re-enters handle_request would otherwise re-trigger itself and
+        # recurse without bound.
+        if getattr(self._hook_evaluation, "active", False):
+            return None
+
+        # Snapshot under the lock so concurrent add/remove on another thread
+        # cannot mutate the list mid-iteration.
+        with self._pre_dispatch_hooks_lock:
+            hooks = list(self._pre_dispatch_hooks)
+
+        if not hooks:
+            return None
+
+        self._hook_evaluation.active = True
+        try:
+            for hook in hooks:
+                try:
+                    short_circuit = hook(request, context)
+                except Exception as exc:
+                    # Fail closed: the chain is an enforcement boundary, so a
+                    # hook that errors denies the request. Return a failure
+                    # result rather than raising, so the dispatcher still
+                    # delivers an EventResultFailure to the caller instead of
+                    # leaving its response future to hang.
+                    msg = (
+                        f"Attempted to evaluate pre-dispatch hooks for request "
+                        f"'{type(request).__name__}'. Failed because hook "
+                        f"'{getattr(hook, '__name__', hook)}' raised {type(exc).__name__}: {exc}"
+                    )
+                    logging.getLogger("griptape_nodes").exception(msg)
+                    return GenericResultFailure(exception=exc, result_details=msg)
+                if short_circuit is not None:
+                    return short_circuit
+            return None
+        finally:
+            self._hook_evaluation.active = False
+
     def assign_manager_to_request_type(
         self,
         request_type: type[RP],
@@ -280,6 +387,27 @@ class EventManager:
         """Return True when this worker is currently inside a node-execution scope."""
         with self._node_execution_lock:
             return self._node_execution_depth > 0
+
+    def _report_reentrant_bus_in_init(self, request: RequestPayload) -> None:
+        """Detect the reentrant-bus-in-init rule.
+
+        A node class that issues an event-bus request from its __init__
+        deadlocks the worker's schema probe, which calls __init__ on
+        the worker thread during library load. LibraryRegistry sets a
+        ContextVar around create_node so every __init__ body in the
+        hierarchy is covered.
+        """
+        if not LibraryRegistry.is_constructing_node():
+            return
+        rule = RULES["reentrant-bus-in-init"]
+        # Subject attribution lives on the violation's ``subject`` field,
+        # set from the surrounding strict-mode scope (class name under
+        # LOAD_PROBE, instance name under RUNTIME_EXECUTE). The message
+        # only needs the request type.
+        STRICT_MODE.report(
+            rule_id=rule.rule_id,
+            message=rule.render(request_type=type(request).__name__),
+        )
 
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
         """Return the currently-registered handler callback for a request type, or None."""
@@ -372,12 +500,21 @@ class EventManager:
     def _log_result_details(self, result: ResultPayload) -> None:
         """Log the result details at their specified levels.
 
+        Strict-mode violations are skipped here because
+        ``StrictModeReporter.report`` has already logged them at
+        detection time with the scope's ``node=... library=...``
+        prefix, which is more informative than the bare message
+        repeated here. Without the skip every violation would log
+        twice -- once from the reporter and once from this loop.
+
         Args:
             result: The result payload containing details to log
         """
         if isinstance(result.result_details, ResultDetails):
             logger = logging.getLogger("griptape_nodes")
             for detail in result.result_details.result_details:
+                if isinstance(detail, StrictModeViolationDetail):
+                    continue
                 logger.log(detail.level, detail.message)
 
     def _handle_request_core(
@@ -453,6 +590,8 @@ class EventManager:
         if result_context is None:
             result_context = ResultContext()
 
+        self._report_reentrant_bus_in_init(request)
+
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -460,21 +599,36 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
-        # Actually make the handler callback (support both sync and async):
-        result_payload: ResultPayload = await call_function(callback, request)
+        # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+        # the manager callback runs.
+        short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+        if short_circuit is not None:
+            return self._handle_request_core(
+                request,
+                short_circuit,
+                context=result_context,
+            )
 
-        # Queue flush request for async context (unless result type should skip flush)
-        with operation_depth_mgr:
-            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                self._flush_tracked_parameter_changes()
+        # Expose the dispatching request type to detectors (see current_request_type).
+        token = _active_request_type.set(request_type)
+        try:
+            # Actually make the handler callback (support both sync and async):
+            result_payload: ResultPayload = await call_function(callback, request)
 
-        return self._handle_request_core(
-            request,
-            cast("ResultPayload", result_payload),
-            context=result_context,
-        )
+            # Queue flush request for async context (unless result type should skip flush)
+            with operation_depth_mgr:
+                if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                    self._flush_tracked_parameter_changes()
 
-    def handle_request(
+            return self._handle_request_core(
+                request,
+                cast("ResultPayload", result_payload),
+                context=result_context,
+            )
+        finally:
+            _active_request_type.reset(token)
+
+    def handle_request(  # noqa: PLR0912
         self,
         request: RP,
         *,
@@ -492,6 +646,8 @@ class EventManager:
         if result_context is None:
             result_context = ResultContext()
 
+        self._report_reentrant_bus_in_init(request)
+
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -499,53 +655,72 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
-        # Worker-side RemoteHandler callbacks are async but safe to invoke from a
-        # running loop: forward_to_orchestrator dispatches onto the WS loop via
-        # run_coroutine_threadsafe, which runs on a different thread than the caller's
-        # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
-        # Hop the callback onto the WS loop here and block the caller's thread on the
-        # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
-        from griptape_nodes.app.worker_routing import RemoteHandler
+        # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+        # the manager callback runs.
+        short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+        if short_circuit is not None:
+            return self._handle_request_core(
+                request,
+                short_circuit,
+                context=result_context,
+            )
 
-        if isinstance(callback, RemoteHandler):
-            if _running_loop() is not None:
-                if self._websocket_event_loop is None:
-                    msg = (
-                        f"Cannot forward '{type(request).__name__}' from a running event loop: "
-                        "the websocket event loop is not configured. This indicates a bootstrap order bug."
-                    )
-                    raise RuntimeError(msg)
-                future = asyncio.run_coroutine_threadsafe(callback(request), self._websocket_event_loop)
-                result_payload: ResultPayload = future.result()
+        # Expose the dispatching request type to detectors (see current_request_type).
+        token = _active_request_type.set(request_type)
+        try:
+            # Worker-side RemoteHandler callbacks are async but safe to invoke from a
+            # running loop: forward_to_orchestrator dispatches onto the WS loop via
+            # run_coroutine_threadsafe, which runs on a different thread than the caller's
+            # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
+            # Hop the callback onto the WS loop here and block the caller's thread on the
+            # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
+            #
+            # Lazy import: worker_routing imports ResultContext from this module at
+            # runtime, so a top-level import here would cycle through event_manager
+            # -> worker_routing -> event_manager during module load.
+            from griptape_nodes.app.worker_routing import RemoteHandler
+
+            if isinstance(callback, RemoteHandler):
+                if _running_loop() is not None:
+                    if self._websocket_event_loop is None:
+                        msg = (
+                            f"Cannot forward '{type(request).__name__}' from a running event loop: "
+                            "the websocket event loop is not configured. This indicates a bootstrap order bug."
+                        )
+                        raise RuntimeError(msg)
+                    future = asyncio.run_coroutine_threadsafe(callback(request), self._websocket_event_loop)
+                    result_payload: ResultPayload = future.result()
+                else:
+                    result_payload: ResultPayload = asyncio.run(callback(request))
+            # Support async callbacks invoked from sync code. If no loop is running
+            # (bootstrap, worker threads) asyncio.run drives the coroutine directly.
+            # If a loop IS running (pre-#4449 workflow files exec'd from inside the
+            # engine loop), dispatch onto a side loop via ThreadRunner. The #4469
+            # deadlock shape is specific to callbacks whose coroutines share
+            # primitives with the caller's loop; RemoteHandler is the only such case
+            # and is handled above via run_coroutine_threadsafe onto the WS loop.
+            # For all other async handlers the side-loop path is safe.
+            elif inspect.iscoroutinefunction(callback):
+                if _running_loop() is not None:
+                    with ThreadRunner() as runner:
+                        result_payload: ResultPayload = runner.run(callback(request))
+                else:
+                    result_payload = asyncio.run(callback(request))
             else:
-                result_payload: ResultPayload = asyncio.run(callback(request))
-        # Support async callbacks invoked from sync code. If no loop is running
-        # (bootstrap, worker threads) asyncio.run drives the coroutine directly.
-        # If a loop IS running (pre-#4449 workflow files exec'd from inside the
-        # engine loop), dispatch onto a side loop via ThreadRunner. The #4469
-        # deadlock shape is specific to callbacks whose coroutines share
-        # primitives with the caller's loop; RemoteHandler is the only such case
-        # and is handled above via run_coroutine_threadsafe onto the WS loop.
-        # For all other async handlers the side-loop path is safe.
-        elif inspect.iscoroutinefunction(callback):
-            if _running_loop() is not None:
-                with ThreadRunner() as runner:
-                    result_payload: ResultPayload = runner.run(callback(request))
-            else:
-                result_payload = asyncio.run(callback(request))
-        else:
-            result_payload = callback(request)
+                result_payload = callback(request)
 
-        # Queue flush request for sync context (unless result type should skip flush)
-        with operation_depth_mgr:
-            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                self._flush_tracked_parameter_changes()
+            # Queue flush request for sync context (unless result type should skip flush)
+            with operation_depth_mgr:
+                if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                    self._flush_tracked_parameter_changes()
 
-        return self._handle_request_core(
-            request,
-            cast("ResultPayload", result_payload),
-            context=result_context,
-        )
+            return self._handle_request_core(
+                request,
+                cast("ResultPayload", result_payload),
+                context=result_context,
+            )
+        finally:
+            _active_request_type.reset(token)
 
     def add_listener_to_app_event(
         self, app_event_type: type[AP], callback: Callable[[AP], None] | Callable[[AP], Awaitable[None]]
