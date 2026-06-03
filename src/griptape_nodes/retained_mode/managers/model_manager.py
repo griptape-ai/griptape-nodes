@@ -879,7 +879,7 @@ class ModelManager:
             return None
 
         try:
-            with status_file.open() as f:
+            with status_file.open(encoding="utf-8") as f:
                 data = json.load(f)
 
             # Get byte counts from status file
@@ -923,7 +923,7 @@ class ModelManager:
         statuses = []
         for status_file in status_dir.glob("*.json"):
             try:
-                with status_file.open() as f:
+                with status_file.open(encoding="utf-8") as f:
                     data = json.load(f)
 
                 model_id = data.get("model_id", "")
@@ -952,7 +952,7 @@ class ModelManager:
         unfinished_models = []
         for status_file in status_dir.glob("*.json"):
             try:
-                with status_file.open() as f:
+                with status_file.open(encoding="utf-8") as f:
                     data = json.load(f)
 
                 status = data.get("status", "")
