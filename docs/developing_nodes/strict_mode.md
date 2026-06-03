@@ -1,5 +1,9 @@
 # Strict Mode Reference
 
+> For when and how to opt your library into worker mode in the first
+> place, see [Worker Mode](worker_mode.md). This page is the rule
+> catalog that catches worker-mode incompatibilities.
+
 Strict mode is a runtime contract for what node code is allowed to do
 across the orchestrator and worker subprocess. When a node violates the
 contract, the framework records a named violation and routes it to the

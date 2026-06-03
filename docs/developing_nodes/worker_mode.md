@@ -1,0 +1,255 @@
+# Worker Mode
+
+This page is the operational guide for running your library in
+**worker mode**: a dedicated Python subprocess so your library's
+pinned dependencies (`torch`, `transformers`, `diffusers`) cannot
+collide with another library's. For the rule catalog that catches
+worker-mode mistakes, see
+[Strict Mode Reference](strict_mode.md).
+
+## Vocabulary
+
+A few terms used throughout this page:
+
+- **Orchestrator** — the main Griptape Nodes Python process. It owns
+  the flow graph, connections, parameter registry, config, and
+  secrets. The editor talks to the orchestrator directly.
+- **Worker subprocess** — a separate Python process that runs your
+  library's nodes. Each library that opts into worker mode gets its
+  own. Workers communicate with the orchestrator over a WebSocket
+  connection (the **bus**).
+- **`process` and `aprocess`** — your node's execution method.
+  Implement `process(self) -> ...` as you do today; the framework
+  wraps it as `async def aprocess(self) -> None` so it can run on the
+  worker's event loop. The strict-mode rules describe behavior "from
+  inside aprocess," but in practice that means "from inside the
+  `process` method you wrote."
+- **Schema probe** — a one-time pass at library load where the worker
+  instantiates each registered node class once to discover its
+  parameter layout. This runs your `__init__` before any execute
+  request arrives.
+
+## Should I opt in?
+
+**Opt in if** your library pins specific versions of heavy ML
+packages (`torch`, `transformers`, `diffusers`, `accelerate`,
+`peft`, `controlnet-aux`, custom CUDA wheels) and you want to coexist
+with other libraries that pin different versions. Worker mode is the
+mechanism for cross-library dependency isolation.
+
+**Stay opted out if** your library only uses lightweight, broadly
+compatible packages (the standard library, `pydantic`, `griptape`
+itself, common HTTP / YAML / JSON tooling). Running in the
+orchestrator process avoids the cross-process serialization tax
+described below.
+
+If unsure, the safer default is to opt in — the cost is real but
+small, and it future-proofs against a downstream user installing a
+heavier library next to yours.
+
+## How to opt in
+
+Add a `worker.enabled = true` block to your library's metadata in
+`griptape-nodes-library.json`:
+
+```json
+{
+    "name": "My Library",
+    "library_schema_version": "0.8.0",
+    "metadata": {
+        "author": "<Your Name>",
+        "description": "<Description>",
+        "library_version": "0.1.0",
+        "engine_version": "0.85.0",
+        "tags": ["AI", "Custom"],
+        "worker": {
+            "enabled": true
+        },
+        "dependencies": {
+            "pip_dependencies": [
+                "torch==2.4.1",
+                "transformers==4.45.2"
+            ],
+            "pip_install_flags": [
+                "--extra-index-url",
+                "https://download.pytorch.org/whl/cu121"
+            ]
+        }
+    },
+    "categories": [],
+    "nodes": []
+}
+```
+
+Worker mode only delivers isolation if you actually pin specific
+wheels. A loose `torch>=2.0` resolves to whatever pip finds, which
+drifts between developers' machines and users' machines. Pin
+`torch==2.4.1`, not `torch>=2.0`. `pip_install_flags` is the escape
+hatch for index URLs and other arguments your install legitimately
+needs.
+
+The schemas:
+[`WorkerConfig`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py)
+and
+[`Dependencies`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py)
+in `library_registry.py`.
+
+## What you give up
+
+Cross-process serialization tax. When your worker-side node calls
+back into orchestrator-owned state (flow graph, connections,
+parameter registry, config, secrets) **during a node execute**, that
+request is forwarded over the WebSocket bus. Each call is a network
+round-trip, and the returned view is **stale-by-call** — by the time
+the worker reads it, the orchestrator may have moved on.
+
+Two practical implications:
+
+- **Pass data into nodes via parameters; don't fetch flow state
+  during execution.** Reading connection or peer-node state from
+  inside `process` (or from `before_value_set` /
+  `after_value_set`, which run during input hydration on the same
+  scope) works but is expensive and surfaces as the
+  [`worker-reach-into-orchestrator`](strict_mode.md) warning.
+- **Intentional writes are sanctioned**, not penalized. Emit the
+  corresponding request (`SetParameterValueRequest`,
+  `AddParameterToNodeRequest`, `RemoveParameterFromNodeRequest`,
+  etc.) and the engine handles the round-trip correctly. The strict-
+  mode rule's remediation explicitly flags writes as fine to
+  ignore.
+
+Requests issued **outside** node execution (during library load or
+bootstrap) are not forwarded — the worker is not connected to the
+orchestrator at that point. Bus calls from `__init__` reentrantly
+hit the worker's own event loop, which is why `__init__` has its own
+strict-mode rule (next section).
+
+## Lifecycle changes you need to know
+
+### `__init__` runs during library load
+
+The worker subprocess instantiates each registered node class once
+at startup to extract a parameter schema for the orchestrator. Three
+implications:
+
+- **No I/O in `__init__`.** Network calls, auth checks, disk reads,
+  database connections all block library load. The schema probe has
+  a finite timeout, and a class whose `__init__` raises or times out
+  is **silently dropped from the exported library** with no rule
+  fired. Move I/O into `process` or a lifecycle hook that runs after
+  construction.
+- **No event-bus calls in `__init__`.** Reentering the bus during
+  the schema probe deadlocks the worker. The
+  [`reentrant-bus-in-init`](strict_mode.md) correctness rule fails
+  the class on this; because it is a correctness-class violation,
+  the class is also dropped from the library schema.
+- **Parameters declared in `__init__` are the normal pattern.**
+  `self.add_parameter(...)` is fine here — the schema probe is the
+  one place a node is "supposed to" define its parameter list.
+
+### Each `ExecuteNodeRequest` constructs a fresh node
+
+The worker materializes a transient node from request metadata, runs
+`process`, and discards it. **Your node holds no in-memory state
+between calls.**
+
+The supported patterns for moving values:
+
+- **Inputs** arrive in `self.parameter_values` at the start of each
+  execute, hydrated from the orchestrator's authoritative copy.
+  Read them inside `process`; do not assume the values from a prior
+  call are still present.
+- **Outputs** go in `self.parameter_output_values`. The framework
+  ships these back to the orchestrator after `process` returns. Set
+  `self.parameter_output_values["my_param"] = value` inside
+  `process`.
+- **Cross-call state that must persist** belongs in the
+  orchestrator. Issue a `SetParameterValueRequest` from inside
+  `process` to update an authoritative value; on the next execute
+  the new value will hydrate into `self.parameter_values`. Do not
+  rely on `self.parameter_values[k] = v` mid-execute as a way to
+  carry state forward — that mutation does not propagate.
+
+What does **not** work: setting `self.foo = ...` and expecting it to
+survive. The next execute gets a fresh node instance.
+
+### Mutating the parameter list during execute does not propagate
+
+`self.add_parameter(...)` and `self.remove_parameter_element(...)`
+called from inside `process` (or `aprocess`) apply only to the
+transient worker-side node. The orchestrator's authoritative copy
+never sees the change.
+
+To mutate parameters during execution, route through the request
+bus:
+
+- `AddParameterToNodeRequest` to add a parameter
+- `RemoveParameterFromNodeRequest` to remove one
+
+Issue the request via `GriptapeNodes.handle_request(...)` from
+inside `process`. The handler-side path propagates the change back
+to the orchestrator. Worker subprocesses pick up the new parameter
+list on the next execute. The
+[`parameter-mutation-during-aprocess`](strict_mode.md) rule fires
+on direct in-execute mutations and tells you which one to use.
+
+**Hydration-time mutations are explicitly sanctioned.** The standard
+dynamic-pipeline pattern — `before_value_set` / `after_value_set`
+adjusts the parameter list as inputs change — does **not** trip this
+rule. The rule only fires once the framework has entered
+`aprocess_scope()`, which it opens specifically around `process`
+execution, not around the input-hydration pass.
+
+## Configuration and secrets propagate automatically
+
+The orchestrator broadcasts `ReloadConfigRequest` and
+`RefreshSecretsRequest` to every registered worker after a
+successful config or secret mutation. Each worker re-reads the
+shared on-disk files and updates its in-memory view. You do not need
+to wire this up; it happens automatically.
+
+A subtle point: operator-set OS environment variables (e.g., a
+container-injected `OPENAI_API_KEY`) are preserved across **refresh
+broadcasts** and **explicit deletes**. The worker's refresh re-reads
+the `.env` file but does not overwrite an operator-set value, and
+deleting a secret from the file does not pop a colliding OS env
+var.
+
+`set_secret(...)` is the one path that does override an OS-set
+value, because it represents the user's stated intent. The engine
+logs a `WARNING` so the asymmetry is visible.
+
+## "Is my library worker-ready?" checklist
+
+- [ ] `metadata.worker.enabled = true` in the manifest
+- [ ] `__init__` does no I/O and issues no event-bus requests
+- [ ] No `add_parameter` / `remove_parameter_element` from inside
+      `process`; use `AddParameterToNodeRequest` /
+      `RemoveParameterFromNodeRequest` via
+      `GriptapeNodes.handle_request(...)` instead
+- [ ] Cross-node / flow state passed in via parameters, not fetched
+      from inside `process`
+- [ ] `pip_dependencies` pinned to specific versions
+- [ ] `pip_install_flags` set if your install needs a custom index
+      URL or other arguments
+
+## Strict mode is your safety net
+
+Run your library locally with the engine and watch the worker
+process's log output for `strict-mode` lines during a normal node
+execute. Look for both **WARNING** and **ERROR** entries.
+
+The four rules and their actual severities:
+
+| Rule | Orchestrator | Worker | Notes |
+|---|---|---|---|
+| [`reentrant-bus-in-init`](strict_mode.md) | ERROR | ERROR | Correctness rule. The class is dropped from the library schema. |
+| [`parameter-behaviors-dropped-in-schema`](strict_mode.md) | WARNING | WARNING | Fires during library load when a `Parameter` carries `converters` / `validators` / `traits` that the worker schema cannot serialize. Does not escalate. |
+| [`parameter-mutation-during-aprocess`](strict_mode.md) | WARNING | ERROR | Promotes the node's result to a failure on the worker. |
+| [`worker-reach-into-orchestrator`](strict_mode.md) | n/a | WARNING | Fires anywhere during node execution including hydration. Does not escalate; intentional writes are explicitly fine to ignore. |
+
+If a strict-mode line fires, the rule's remediation message names
+exactly which guideline above was violated and how to fix it. A
+worker log free of strict-mode WARNING and ERROR entries (apart from
+the explicitly-fine-to-ignore writes flagged by
+`worker-reach-into-orchestrator`) is the bar for "worker-ready."
