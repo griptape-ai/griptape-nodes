@@ -89,9 +89,9 @@ hatch for index URLs and other arguments your install legitimately
 needs.
 
 The schemas:
-[`WorkerConfig`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py)
+[`WorkerConfig`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py#L84)
 and
-[`Dependencies`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py)
+[`Dependencies`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py#L39)
 in `library_registry.py`.
 
 ## What you give up
@@ -263,9 +263,12 @@ logs a `WARNING` so the asymmetry is visible.
 
 ## Strict mode is your safety net
 
-Run your library locally with the engine and watch the worker
-process's log output for `strict-mode` lines during a normal node
-execute. Look for both **WARNING** and **ERROR** entries.
+Run your library locally with the engine and watch the engine's
+console output for `strict-mode` lines during a normal node execute.
+Worker output appears in the same terminal you launched the engine
+from, prefixed with `Worker-<engine-id>` so you can tell it apart
+from orchestrator output. Look for both **WARNING** and **ERROR**
+entries.
 
 The four rules and their actual severities:
 
