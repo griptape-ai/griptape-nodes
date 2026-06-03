@@ -4360,7 +4360,15 @@ situations:
         """A per-platform entry with no key for the active OS and no `default` is skipped + logged."""
         from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
 
-        monkeypatch.setattr("sys.platform", "linux")
+        # Patch the per-platform selector directly rather than `sys.platform`. The skip
+        # path emits a `logger.warning(...)`, which on first call lazily constructs the
+        # GriptapeNodes singleton; that init reads the *real* `sys.platform` to set up
+        # OS-specific resources, and falls into `os.uname()` on Linux/Mac branches.
+        # On a Windows CI host with `sys.platform` faked to "linux", that crashes.
+        monkeypatch.setattr(
+            "griptape_nodes.common.project_templates.directory._active_platform_key",
+            lambda: "linux",
+        )
         entry = {
             "darwin": "/Volumes/unused.yml",
             "windows": "Z:\\unused.yml",
