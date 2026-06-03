@@ -1,16 +1,16 @@
 """Tests for PublicArtifactUrlParameter.get_public_url_for_parameter input handling.
 
 These cover the artifact shapes that reach the component in practice -- serialized
-artifact dicts (orchestrator <-> worker JSON boundary), raw BlobArtifact bytes, and
-ErrorArtifact propagated from an upstream failure -- in addition to the original
-UrlArtifact / bare-string paths. See griptape-ai/griptape-nodes-engine#4688.
+artifact dicts (orchestrator <-> worker JSON boundary) and ErrorArtifact propagated
+from an upstream failure -- in addition to the original UrlArtifact / bare-string
+paths. See griptape-ai/griptape-nodes-engine#4688.
 """
 
 from typing import Any, NamedTuple
 from unittest.mock import Mock
 
 import pytest
-from griptape.artifacts import AudioArtifact, BlobArtifact, ErrorArtifact, ImageArtifact
+from griptape.artifacts import ErrorArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter
@@ -65,31 +65,6 @@ class TestGetPublicUrlForParameter:
         assert component.get_public_url_for_parameter() == "https://example.com/img.png"
         driver.upload_file.assert_not_called()
 
-    def test_blob_artifact_uploads_bytes(self) -> None:
-        component, driver = _make_component(ImageArtifact(value=b"\x89PNG", format="png", width=1, height=1))
-
-        assert component.get_public_url_for_parameter() == PUBLIC_URL
-        _, kwargs = driver.upload_file.call_args
-        assert kwargs["file_content"] == b"\x89PNG"
-        assert component.gtc_file_path is not None
-        assert component.gtc_file_path.suffix == ".png"
-
-    def test_serialized_blob_artifact_dict_uploads_bytes(self) -> None:
-        component, driver = _make_component(ImageArtifact(value=b"\x89PNG", format="png", width=1, height=1).to_dict())
-
-        assert component.get_public_url_for_parameter() == PUBLIC_URL
-        _, kwargs = driver.upload_file.call_args
-        assert kwargs["file_content"] == b"\x89PNG"
-
-    def test_audio_blob_artifact_uploads_bytes(self) -> None:
-        component, driver = _make_component(
-            AudioArtifact(value=b"ID3audio", format="mp3"), param_type="AudioUrlArtifact"
-        )
-
-        assert component.get_public_url_for_parameter() == PUBLIC_URL
-        _, kwargs = driver.upload_file.call_args
-        assert kwargs["file_content"] == b"ID3audio"
-
     def test_error_artifact_raises_with_upstream_message(self) -> None:
         component, driver = _make_component(ErrorArtifact(value="upstream blew up"))
 
@@ -99,28 +74,3 @@ class TestGetPublicUrlForParameter:
         # The error should name the parameter so the editor points at the real cause.
         assert "image" in str(excinfo.value)
         driver.upload_file.assert_not_called()
-
-    def test_unsupported_type_raises_type_error(self) -> None:
-        component, driver = _make_component(42)
-
-        with pytest.raises(TypeError, match="unsupported type"):
-            component.get_public_url_for_parameter()
-        driver.upload_file.assert_not_called()
-
-
-class TestFilenameForBlobArtifact:
-    def test_keeps_name_with_extension(self) -> None:
-        artifact = ImageArtifact(value=b"\x89PNG", format="png", width=1, height=1)
-
-        filename = PublicArtifactUrlParameter._filename_for_blob_artifact(artifact)
-
-        assert filename == artifact.name
-        assert filename.endswith(".png")
-
-    def test_appends_extension_from_mime_type_when_missing(self) -> None:
-        artifact = BlobArtifact(value=b"abc", name="nameless")
-
-        filename = PublicArtifactUrlParameter._filename_for_blob_artifact(artifact)
-
-        # BlobArtifact defaults to application/octet-stream -> .bin
-        assert filename == "nameless.bin"

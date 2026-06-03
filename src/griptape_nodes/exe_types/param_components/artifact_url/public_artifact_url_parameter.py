@@ -1,4 +1,3 @@
-import mimetypes
 import os
 from pathlib import Path
 from typing import Any, ClassVar
@@ -6,7 +5,6 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-from griptape.artifacts.blob_artifact import BlobArtifact
 from griptape.artifacts.error_artifact import ErrorArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 from griptape.artifacts.url_artifact import UrlArtifact
@@ -133,27 +131,7 @@ class PublicArtifactUrlParameter:
             )
             raise RuntimeError(msg)  # noqa: TRY004 the upstream failure is a runtime error, not a type error.
 
-        # Bytes-bearing artifacts (ImageArtifact, AudioArtifact, ...) are exactly what this upload
-        # path exists for: upload the raw bytes directly rather than treating them as a URL.
-        if isinstance(parameter_value, BlobArtifact):
-            return self._upload_bytes(
-                file_content=parameter_value.to_bytes(),
-                filename=self._filename_for_blob_artifact(parameter_value),
-            )
-
-        # UrlArtifact carries the URL in .value; a bare string is already a URL or path.
-        if isinstance(parameter_value, UrlArtifact):
-            url = parameter_value.value
-        elif isinstance(parameter_value, str):
-            url = parameter_value
-        else:
-            msg = (
-                f"Attempted to generate a public URL for parameter '{self._parameter.name}' on node "
-                f"'{self._node.name}'. Failed because the value is of unsupported type "
-                f"'{type(parameter_value).__name__}'. Expected a URL string, a UrlArtifact, or a "
-                f"BlobArtifact carrying bytes."
-            )
-            raise TypeError(msg)
+        url = parameter_value.value if isinstance(parameter_value, UrlArtifact) else parameter_value
 
         # check if the URL is already public
         if url.startswith(("http://", "https://")) and "localhost" not in url:
@@ -163,23 +141,15 @@ class PublicArtifactUrlParameter:
 
         file_contents = File(url).read_bytes()
         filename = Path(urlparse(url).path).name
-        return self._upload_bytes(file_content=file_contents, filename=filename)
+
+        self.gtc_file_path = Path("artifact_url_storage") / uuid4().hex / filename
+
+        # upload to Griptape Cloud and get a public URL
+        public_url = self._storage_driver.upload_file(path=self.gtc_file_path, file_content=file_contents)
+
+        return public_url
 
     def delete_uploaded_artifact(self) -> None:
         if not self.gtc_file_path:
             return
         self._storage_driver.delete_file(self.gtc_file_path)
-
-    def _upload_bytes(self, *, file_content: bytes, filename: str) -> str:
-        self.gtc_file_path = Path("artifact_url_storage") / uuid4().hex / filename
-        return self._storage_driver.upload_file(path=self.gtc_file_path, file_content=file_content)
-
-    @staticmethod
-    def _filename_for_blob_artifact(artifact: BlobArtifact) -> str:
-        # Strip any path separators the artifact name might carry so it stays a single
-        # filename segment, matching how the URL branch derives its filename.
-        name = Path(artifact.name).name
-        if Path(name).suffix:
-            return name
-        extension = mimetypes.guess_extension(artifact.mime_type) or ""
-        return f"{name}{extension}"
