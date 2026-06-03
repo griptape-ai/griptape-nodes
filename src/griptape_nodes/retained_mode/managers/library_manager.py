@@ -189,6 +189,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     EngineVersionErrorProblem,
     IncompatibleRequirementsProblem,
     InvalidVersionStringProblem,
+    LibraryDependencyProblem,
     LibraryJsonDecodeProblem,
     LibraryLoadExceptionProblem,
     LibraryNotFoundProblem,
@@ -1951,7 +1952,60 @@ class LibraryManager:
                     library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.EVALUATED
 
                 case LibraryManager.LibraryLifecycleState.EVALUATED:
-                    # EVALUATED → DEPENDENCIES_INSTALLED or WORKER_DELEGATED
+                    # EVALUATED -> DEPENDENCIES_INSTALLED or WORKER_DELEGATED
+                    # Resolve library_dependencies before node imports: each dependency library must be
+                    # fully loaded (including its venv added to sys.path via _add_library_paths_to_sys_path)
+                    # before this library's nodes are imported in the LOADED phase. Venvs are completely
+                    # isolated - dependency packages are not accessible to this library's pip install
+                    # subprocess.
+                    dep_metadata_result = self.load_library_metadata_from_file_request(
+                        LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
+                    )
+                    if not isinstance(dep_metadata_result, LoadLibraryMetadataFromFileResultFailure):
+                        dep_schema = dep_metadata_result.library_schema
+                        griptape_library_deps = (
+                            dep_schema.metadata.dependencies.library_dependencies
+                            if dep_schema.metadata.dependencies is not None
+                            else None
+                        )
+
+                        # Download and install any griptape libraries this library depends on.
+                        if griptape_library_deps:
+                            for dep_url_ref in griptape_library_deps:
+                                parsed = parse_git_url_with_ref(dep_url_ref)
+                                normalized_url = normalize_github_url(parsed.url)
+                                repo_name = normalized_url.rstrip("/").split("/")[-1].removesuffix(".git")
+                                already_registered = any(
+                                    f"/{repo_name}/" in path or path.endswith(f"/{repo_name}")
+                                    for path in self._library_file_path_to_info
+                                )
+                                if already_registered:
+                                    logger.debug(
+                                        "Library dependency '%s' is already registered, skipping download",
+                                        dep_url_ref,
+                                    )
+                                    continue
+                                dep_result = await self.download_library_request(
+                                    DownloadLibraryRequest(
+                                        git_url=normalized_url,
+                                        branch_tag_commit=parsed.ref,
+                                        fail_on_exists=False,
+                                        auto_register=True,
+                                    )
+                                )
+                                if isinstance(dep_result, DownloadLibraryResultFailure):
+                                    library_info.problems.append(
+                                        LibraryDependencyProblem(
+                                            dependency_name=dep_url_ref,
+                                            error_message=str(dep_result.result_details),
+                                        )
+                                    )
+                                    library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+                                    library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
+                                    self._library_file_path_to_info[library_info.library_path] = library_info
+                                    details = f"Attempted to load Library '{library_info.library_name}'. Failed to load required library dependency '{dep_url_ref}': {dep_result.result_details}"
+                                    return RegisterLibraryFromFileResultFailure(result_details=details)
+
                     # On the orchestrator (_is_worker is False), skip venv creation and pip
                     # install for libraries that require a dedicated worker. The lifecycle still
                     # completes through LOADED so the library is registered in LibraryRegistry
