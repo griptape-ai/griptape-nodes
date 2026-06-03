@@ -27,6 +27,7 @@ plugins:
           - installation.md: Install the engine
         Configuration and CLI:
           - configuration.md: Engine configuration (workspace, secrets, libraries)
+          - libraries.md: Installing and managing node libraries
           - command_line_interface.md: gtn CLI reference
         Scripting (retained mode):
           - retained_mode.md: Engine scripting API for building and running workflows
@@ -150,6 +151,7 @@ nav:
               - 4. Compare Prompts: ftue/03_compare_prompts/FTUE_03_compare_prompts.md
               - 5. Build a Photography Team: ftue/04_photography_team/FTUE_04_photography_team.md
       - Engine Configuration: configuration.md
+      - Libraries: libraries.md
       - Command Line Interface: command_line_interface.md
       - Scripting: retained_mode.md
       - Project System:
