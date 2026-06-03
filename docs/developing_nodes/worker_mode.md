@@ -86,7 +86,7 @@ declaration entirely) keeps the library in the orchestrator process.
 }
 ```
 
-Worker mode only delivers isolation if you actually pin specific
+Worker mode only delivers specific environment control if you pin specific
 wheels. A loose `torch>=2.0` resolves to whatever pip finds, which
 drifts between developers' machines and users' machines. Pin
 `torch==2.4.1`, not `torch>=2.0`. `pip_install_flags` is the escape
