@@ -15,6 +15,7 @@ from griptape_nodes.node_library.library_declarations import (
     LifecycleStageLibraryProperty,
     LifecycleStageNodeProperty,
     WorkerLibraryCapability,
+    WorkerMode,
     WorkerSupport,
 )
 from griptape_nodes.node_library.library_registry import (
@@ -176,52 +177,88 @@ class TestRoundTripSerialization:
 
 class TestWorkerLibraryCapability:
     @pytest.mark.parametrize(
-        "support",
+        ("support", "default_mode"),
         [
-            WorkerSupport.SUPPORTS_WORKER_MODE,
-            WorkerSupport.REQUIRES_ORCHESTRATOR_MODE,
-            WorkerSupport.REQUIRES_WORKER_MODE,
+            (WorkerSupport.BOTH, None),
+            (WorkerSupport.BOTH, WorkerMode.ORCHESTRATOR),
+            (WorkerSupport.BOTH, WorkerMode.WORKER),
+            (WorkerSupport.ORCHESTRATOR_ONLY, None),
+            (WorkerSupport.ORCHESTRATOR_ONLY, WorkerMode.ORCHESTRATOR),
         ],
     )
-    def test_round_trips_each_enum_value(self, support: WorkerSupport) -> None:
-        capability = WorkerLibraryCapability(support=support)
+    def test_round_trips_each_combination(
+        self, support: WorkerSupport, default_mode: WorkerMode | None
+    ) -> None:
+        capability = WorkerLibraryCapability(support=support, default_mode=default_mode)
 
         rebuilt = WorkerLibraryCapability.model_validate(json.loads(capability.model_dump_json()))
 
         assert rebuilt.support is support
+        assert rebuilt.default_mode is default_mode
+
+    def test_default_capability_is_both_with_no_default_mode(self) -> None:
+        capability = WorkerLibraryCapability()
+
+        assert capability.support is WorkerSupport.BOTH
+        assert capability.default_mode is None
 
     def test_rejects_unknown_support_value(self) -> None:
         with pytest.raises(ValidationError):
             WorkerLibraryCapability.model_validate({"type": "worker", "support": "BOGUS"})
 
+    def test_rejects_unknown_default_mode_value(self) -> None:
+        with pytest.raises(ValidationError):
+            WorkerLibraryCapability.model_validate(
+                {"type": "worker", "support": "BOTH", "default_mode": "BOGUS"}
+            )
+
+    def test_rejects_orchestrator_only_with_default_mode_worker(self) -> None:
+        with pytest.raises(ValidationError):
+            WorkerLibraryCapability(
+                support=WorkerSupport.ORCHESTRATOR_ONLY, default_mode=WorkerMode.WORKER
+            )
+
     @pytest.mark.parametrize(
-        ("support", "expected"),
+        ("support", "default_mode", "expected"),
         [
-            (WorkerSupport.SUPPORTS_WORKER_MODE, False),
-            (WorkerSupport.REQUIRES_ORCHESTRATOR_MODE, False),
-            (WorkerSupport.REQUIRES_WORKER_MODE, True),
+            # Capability missing entirely (the consumer-site default) is tested separately;
+            # these cover the explicit-declaration paths.
+            (WorkerSupport.BOTH, None, False),
+            (WorkerSupport.BOTH, WorkerMode.ORCHESTRATOR, False),
+            (WorkerSupport.BOTH, WorkerMode.WORKER, True),
+            (WorkerSupport.ORCHESTRATOR_ONLY, None, False),
+            (WorkerSupport.ORCHESTRATOR_ONLY, WorkerMode.ORCHESTRATOR, False),
         ],
     )
-    def test_requires_worker_process_only_for_required_worker_mode(
-        self, support: WorkerSupport, *, expected: bool
+    def test_requires_worker_process_matches_support_and_default_mode(
+        self,
+        support: WorkerSupport,
+        default_mode: WorkerMode | None,
+        *,
+        expected: bool,
     ) -> None:
-        assert WorkerLibraryCapability(support=support).requires_worker_process() is expected
+        capability = WorkerLibraryCapability(support=support, default_mode=default_mode)
+        assert capability.requires_worker_process() is expected
 
     def test_library_metadata_round_trips_worker_capability_declaration(self) -> None:
         metadata = _make_library_metadata(
-            declarations=[WorkerLibraryCapability(support=WorkerSupport.REQUIRES_WORKER_MODE)],
+            declarations=[
+                WorkerLibraryCapability(support=WorkerSupport.BOTH, default_mode=WorkerMode.WORKER),
+            ],
         )
 
         rebuilt = LibraryMetadata.model_validate(metadata.model_dump())
 
         decl = rebuilt.declarations[0]
         assert isinstance(decl, WorkerLibraryCapability)
-        assert decl.support is WorkerSupport.REQUIRES_WORKER_MODE
+        assert decl.support is WorkerSupport.BOTH
+        assert decl.default_mode is WorkerMode.WORKER
 
-    def test_metadata_without_worker_capability_defaults_to_no_worker(self) -> None:
+    def test_metadata_without_worker_capability_defaults_to_orchestrator(self) -> None:
         # Replays the consumer-site idiom from library_manager.py: when no
-        # WorkerLibraryCapability is present, requires_worker falls through to False
-        # (i.e. REQUIRES_ORCHESTRATOR_MODE behavior).
+        # WorkerLibraryCapability is present, requires_worker falls through to False.
+        # The schema docstring treats absence as `BOTH` with no default_mode -- equivalent
+        # to declaring the capability explicitly with those values.
         metadata = _make_library_metadata(
             declarations=[LifecycleStageLibraryProperty(stage=LifecycleStage.STABLE)],
         )

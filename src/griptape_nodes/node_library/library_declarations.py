@@ -19,7 +19,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # ---------- Shared enums ----------
 
@@ -53,16 +53,29 @@ class KeySupport(StrEnum):
 
 
 class WorkerSupport(StrEnum):
-    """How a library wants to be hosted across orchestrator vs. worker processes.
+    """What hosting modes a library is capable of running under.
 
-    Absence of a WorkerLibraryCapability means REQUIRES_ORCHESTRATOR_MODE;
-    consumers default at the call site rather than the schema synthesizing an
-    implicit instance.
+    Capability ("can it run as a worker?"), not configuration ("where does it
+    launch?"). The launch decision lives in `WorkerLibraryCapability.default_mode`
+    and -- once it ships -- the GUI override.
+
+    Absence of a WorkerLibraryCapability is treated as `BOTH` with no
+    `default_mode` set; consumers apply the orchestrator default at the call site.
     """
 
-    SUPPORTS_WORKER_MODE = "SUPPORTS_WORKER_MODE"
-    REQUIRES_ORCHESTRATOR_MODE = "REQUIRES_ORCHESTRATOR_MODE"
-    REQUIRES_WORKER_MODE = "REQUIRES_WORKER_MODE"
+    BOTH = "BOTH"
+    ORCHESTRATOR_ONLY = "ORCHESTRATOR_ONLY"
+
+
+class WorkerMode(StrEnum):
+    """Where the library actually launches when the engine starts.
+
+    Configuration ("where do I launch?"), not capability ("can I launch there?").
+    Only meaningful when paired with `WorkerSupport.BOTH`.
+    """
+
+    ORCHESTRATOR = "ORCHESTRATOR"
+    WORKER = "WORKER"
 
 
 # ---------- Library-level declarations ----------
@@ -86,20 +99,36 @@ class WorkerLibraryCapability(BaseModel):
     additional worker-execution knobs (e.g. concurrency) can attach to this same
     declaration without inventing a parallel category.
 
-    Absence means REQUIRES_ORCHESTRATOR_MODE; consumers default at the call site.
-    Today the engine maps SUPPORTS_WORKER_MODE to in-process; the GUI flip lands later.
+    Two axes:
+
+    * `support` -- what the library is capable of (`BOTH` or `ORCHESTRATOR_ONLY`).
+    * `default_mode` -- where the library launches when nothing else overrides
+      (the future GUI override is the "something else"). `None` means the engine
+      picks: today that's orchestrator.
+
+    Absence of the entire declaration is treated as `support=BOTH` with no
+    `default_mode` -- equivalent to declaring it explicitly with those values.
     """
 
     type: Literal["worker"] = "worker"
-    support: WorkerSupport
+    support: WorkerSupport = WorkerSupport.BOTH
+    default_mode: WorkerMode | None = None
+
+    @model_validator(mode="after")
+    def _validate_default_mode_against_support(self) -> WorkerLibraryCapability:
+        if self.support is WorkerSupport.ORCHESTRATOR_ONLY and self.default_mode is WorkerMode.WORKER:
+            msg = "WorkerLibraryCapability cannot set default_mode=WORKER when support=ORCHESTRATOR_ONLY."
+            raise ValueError(msg)
+        return self
 
     def requires_worker_process(self) -> bool:
-        """Map the declared support to today's load-time `requires_worker` bool.
+        """Map the declared capability and default to today's load-time `requires_worker` bool.
 
-        Centralized here so the future GUI flip for SUPPORTS_WORKER_MODE updates
-        only one site.
+        Centralized here so the future GUI flip updates only one site.
         """
-        return self.support is WorkerSupport.REQUIRES_WORKER_MODE
+        if self.support is WorkerSupport.ORCHESTRATOR_ONLY:
+            return False
+        return self.default_mode is WorkerMode.WORKER
 
 
 # `Annotated[X | Y, Field(discriminator="type")]` is Pydantic v2's discriminated-union

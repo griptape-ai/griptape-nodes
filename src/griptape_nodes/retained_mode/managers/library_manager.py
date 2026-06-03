@@ -345,9 +345,10 @@ class LibraryManager:
         library_name: str | None = None
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
-        # True when the library declares WorkerSupport.REQUIRES_WORKER_MODE via a
-        # WorkerLibraryCapability in its metadata.declarations. Set whenever
-        # metadata is first successfully parsed (discovery or lifecycle progression).
+        # True when the library's WorkerLibraryCapability resolves to launching
+        # in a worker process (`support=BOTH` and `default_mode=WORKER`). Set
+        # whenever metadata is first successfully parsed (discovery or lifecycle
+        # progression). Absence of the declaration falls through to False.
         requires_worker: bool = False
         # Set when the library enters WORKER_PENDING state. The orchestrator waits on this
         # event before returning RegisterLibraryFromFileResultSuccess so callers see the real

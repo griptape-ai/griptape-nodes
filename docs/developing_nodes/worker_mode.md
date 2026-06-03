@@ -50,9 +50,24 @@ heavier library next to yours.
 ## How to opt in
 
 Add a `worker` capability declaration to your library's
-`metadata.declarations` in `griptape-nodes-library.json`. Use
-`REQUIRES_WORKER_MODE` to opt in. `SUPPORTS_WORKER_MODE` gives users the ability to opt in (default) or out via the GUI; `REQUIRES_ORCHESTRATOR_MODE` (or omitting the
-declaration entirely) keeps the library in the orchestrator process.
+`metadata.declarations` in `griptape-nodes-library.json`. The capability has
+two fields:
+
+- `support`: what the library is *capable* of running under.
+    - `BOTH` (default): the library can run in either the orchestrator
+        process or a dedicated worker subprocess.
+    - `ORCHESTRATOR_ONLY`: the library only works in the orchestrator
+        process and must never be hosted on a worker.
+- `default_mode`: where the library *launches* when nothing else
+    overrides. `ORCHESTRATOR` or `WORKER`. Omit it (or set `null`) to take
+    the engine default, which today is the orchestrator. Once the GUI
+    override ships, users will be able to flip a `BOTH` library between
+    modes; `default_mode` is the author's preferred starting point.
+
+Omitting the declaration entirely is equivalent to declaring
+`{"support": "BOTH"}` with no `default_mode` -- the library is capable of
+worker mode but launches in the orchestrator until something asks for the
+flip.
 
 ```json
 {
@@ -67,7 +82,8 @@ declaration entirely) keeps the library in the orchestrator process.
         "declarations": [
             {
                 "type": "worker",
-                "support": "REQUIRES_WORKER_MODE"
+                "support": "BOTH",
+                "default_mode": "WORKER"
             }
         ],
         "dependencies": {
@@ -252,7 +268,10 @@ logs a `WARNING` so the asymmetry is visible.
 
 ## "Is my library worker-ready?" checklist
 
-- [ ] `worker` capability with `REQUIRES_WORKER_MODE` declared in `metadata.declarations`
+- [ ] `worker` capability declared in `metadata.declarations` with
+    `support: BOTH` and `default_mode: WORKER` (or `default_mode` omitted
+    if you want the library to launch in the orchestrator by default and
+    let users opt in via the GUI)
 - [ ] `__init__` does no I/O and issues no event-bus requests
 - [ ] No `add_parameter` / `remove_parameter_element` from inside
     `process`; use `AddParameterToNodeRequest` /
