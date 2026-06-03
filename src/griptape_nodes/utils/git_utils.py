@@ -1046,7 +1046,7 @@ def _extract_library_version_from_json(json_path: Path, remote_url: str) -> str:
     import json
 
     try:
-        with json_path.open() as f:
+        with json_path.open(encoding="utf-8") as f:
             library_data = json.load(f)
     except json.JSONDecodeError as e:
         msg = f"JSON decode error reading library metadata from {remote_url}: {e}"
@@ -1111,7 +1111,7 @@ def _sparse_checkout_with_git_cli(remote_url: str, ref: str) -> tuple[str, str, 
                 "*/griptape-nodes-library.json",
                 "*/*/griptape-nodes-library.json",
             ]
-            sparse_checkout_file.write_text("\n".join(patterns))
+            sparse_checkout_file.write_text("\n".join(patterns), encoding="utf-8")
 
             # Fetch with depth 1 (shallow clone)
             _run_git_command(
@@ -1142,7 +1142,7 @@ def _sparse_checkout_with_git_cli(remote_url: str, ref: str) -> tuple[str, str, 
 
             # Read the JSON data before temp directory is deleted
             try:
-                with library_json_path.open() as f:
+                with library_json_path.open(encoding="utf-8") as f:
                     library_data = json.load(f)
             except (OSError, json.JSONDecodeError) as e:
                 msg = f"Failed to read library file from {remote_url}: {e}"
@@ -1221,7 +1221,7 @@ def _shallow_clone_with_pygit2(remote_url: str, ref: str) -> tuple[str, str, dic
 
             # Read the JSON data before temp directory is deleted
             try:
-                with library_json_path.open() as f:
+                with library_json_path.open(encoding="utf-8") as f:
                     library_data = json.load(f)
             except (OSError, json.JSONDecodeError) as e:
                 msg = f"Failed to read library file from {remote_url}: {e}"

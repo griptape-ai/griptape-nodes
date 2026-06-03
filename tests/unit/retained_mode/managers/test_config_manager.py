@@ -1,3 +1,4 @@
+import json
 import os
 import platform
 import tempfile
@@ -549,3 +550,28 @@ class TestConfigManagerEventEmission:
             "/path/to/enabled.json",
             {"path": "/path/to/disabled.json", "enabled": False},
         ]
+
+
+class TestConfigManagerUtf8:
+    """_load_config_from_file must read UTF-8 regardless of the platform locale."""
+
+    def test_reads_utf8_config_when_locale_is_cp949(self, tmp_path: Path) -> None:
+        config_data = {"workspace": "C:\\Users\\한국어\\griptape"}
+        config_file = tmp_path / "griptape_nodes_config.json"
+        config_file.write_text(json.dumps(config_data), encoding="utf-8")
+
+        manager = ConfigManager.__new__(ConfigManager)
+
+        with patch("locale.getpreferredencoding", return_value="cp949"):
+            result = manager._load_config_from_file(config_file, "test")
+
+        assert result == config_data
+
+    def test_returns_empty_dict_on_unicode_decode_error(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "griptape_nodes_config.json"
+        config_file.write_bytes(b'{"key": "\xb9\xd9"}')  # cp949-encoded bytes, not valid UTF-8
+
+        manager = ConfigManager.__new__(ConfigManager)
+        result = manager._load_config_from_file(config_file, "test")
+
+        assert result == {}
