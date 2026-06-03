@@ -607,7 +607,7 @@ class ProjectManager:
             for problem in parent_merge_validation.problems:
                 validation.add_error(
                     field_path=f"parent_project_path.{problem.field_path}",
-                    message=f"Parent '{overlay.parent_project_path}': {problem.message}",
+                    message=f"Parent '{selected_parent}': {problem.message}",
                     line_number=overlay.line_info.get_line("parent_project_path"),
                 )
             return None
