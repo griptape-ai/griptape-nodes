@@ -47,6 +47,19 @@ class KeySupport(StrEnum):
     REQUIRES_GRIPTAPE_KEY = "REQUIRES_GRIPTAPE_KEY"
 
 
+class WorkerSupport(StrEnum):
+    """How a library wants to be hosted across orchestrator vs. worker processes.
+
+    Absence of a WorkerSupportLibraryProperty means REQUIRES_ORCHESTRATOR_MODE;
+    consumers default at the call site rather than the schema synthesizing an
+    implicit instance.
+    """
+
+    SUPPORTS_WORKER_MODE = "SUPPORTS_WORKER_MODE"
+    REQUIRES_ORCHESTRATOR_MODE = "REQUIRES_ORCHESTRATOR_MODE"
+    REQUIRES_WORKER_MODE = "REQUIRES_WORKER_MODE"
+
+
 # ---------- Library-level declarations ----------
 
 
@@ -59,6 +72,25 @@ class LifecycleStageLibraryProperty(BaseModel):
 
     type: Literal["lifecycle_stage"] = "lifecycle_stage"
     stage: LifecycleStage
+
+
+class WorkerSupportLibraryProperty(BaseModel):
+    """Declares how this library wants to be hosted (orchestrator vs. worker process).
+
+    Absence means REQUIRES_ORCHESTRATOR_MODE; consumers default at the call site.
+    Today the engine maps SUPPORTS_WORKER_MODE to in-process; the GUI flip lands later.
+    """
+
+    type: Literal["worker_support"] = "worker_support"
+    support: WorkerSupport
+
+    def requires_worker_process(self) -> bool:
+        """Map the declared support to today's load-time `requires_worker` bool.
+
+        Centralized here so the future GUI flip for SUPPORTS_WORKER_MODE updates
+        only one site.
+        """
+        return self.support is WorkerSupport.REQUIRES_WORKER_MODE
 
 
 # `Annotated[X | Y, Field(discriminator="type")]` is Pydantic v2's discriminated-union
@@ -74,7 +106,7 @@ class LifecycleStageLibraryProperty(BaseModel):
 # A single-member union is still wrapped in this idiom because future declaration types
 # (capabilities, requirements) slot in additively without changing the field's shape.
 LibraryDeclaration = Annotated[
-    LifecycleStageLibraryProperty,
+    LifecycleStageLibraryProperty | WorkerSupportLibraryProperty,
     Field(discriminator="type"),
 ]
 

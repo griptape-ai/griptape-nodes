@@ -14,6 +14,8 @@ from griptape_nodes.node_library.library_declarations import (
     LifecycleStage,
     LifecycleStageLibraryProperty,
     LifecycleStageNodeProperty,
+    WorkerSupport,
+    WorkerSupportLibraryProperty,
 )
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
@@ -169,9 +171,74 @@ class TestRoundTripSerialization:
         assert isinstance(node_decls[1], KeySupportNodeProperty)
 
 
+# ---------- WorkerSupportLibraryProperty ----------
+
+
+class TestWorkerSupportLibraryProperty:
+    @pytest.mark.parametrize(
+        "support",
+        [
+            WorkerSupport.SUPPORTS_WORKER_MODE,
+            WorkerSupport.REQUIRES_ORCHESTRATOR_MODE,
+            WorkerSupport.REQUIRES_WORKER_MODE,
+        ],
+    )
+    def test_round_trips_each_enum_value(self, support: WorkerSupport) -> None:
+        prop = WorkerSupportLibraryProperty(support=support)
+
+        rebuilt = WorkerSupportLibraryProperty.model_validate(json.loads(prop.model_dump_json()))
+
+        assert rebuilt.support is support
+
+    def test_rejects_unknown_support_value(self) -> None:
+        with pytest.raises(ValidationError):
+            WorkerSupportLibraryProperty.model_validate({"type": "worker_support", "support": "BOGUS"})
+
+    @pytest.mark.parametrize(
+        ("support", "expected"),
+        [
+            (WorkerSupport.SUPPORTS_WORKER_MODE, False),
+            (WorkerSupport.REQUIRES_ORCHESTRATOR_MODE, False),
+            (WorkerSupport.REQUIRES_WORKER_MODE, True),
+        ],
+    )
+    def test_requires_worker_process_only_for_required_worker_mode(
+        self, support: WorkerSupport, *, expected: bool
+    ) -> None:
+        assert WorkerSupportLibraryProperty(support=support).requires_worker_process() is expected
+
+    def test_library_metadata_round_trips_worker_support_declaration(self) -> None:
+        metadata = _make_library_metadata(
+            declarations=[WorkerSupportLibraryProperty(support=WorkerSupport.REQUIRES_WORKER_MODE)],
+        )
+
+        rebuilt = LibraryMetadata.model_validate(metadata.model_dump())
+
+        decl = rebuilt.declarations[0]
+        assert isinstance(decl, WorkerSupportLibraryProperty)
+        assert decl.support is WorkerSupport.REQUIRES_WORKER_MODE
+
+    def test_metadata_without_worker_support_declaration_defaults_to_no_worker(self) -> None:
+        # Replays the consumer-site idiom from library_manager.py: when no
+        # WorkerSupportLibraryProperty is present, requires_worker falls through to False
+        # (i.e. REQUIRES_ORCHESTRATOR_MODE behavior).
+        metadata = _make_library_metadata(
+            declarations=[LifecycleStageLibraryProperty(stage=LifecycleStage.STABLE)],
+        )
+
+        worker_decl = next(
+            (d for d in metadata.declarations if isinstance(d, WorkerSupportLibraryProperty)),
+            None,
+        )
+        requires_worker = worker_decl.requires_worker_process() if worker_decl is not None else False
+
+        assert worker_decl is None
+        assert requires_worker is False
+
+
 # ---------- Schema version ----------
 
 
 class TestSchemaVersion:
-    def test_latest_schema_version_is_080(self) -> None:
-        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.8.0"
+    def test_latest_schema_version_is_090(self) -> None:
+        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.9.0"

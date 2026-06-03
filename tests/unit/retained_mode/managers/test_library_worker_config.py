@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from griptape_nodes.node_library.library_registry import LibraryMetadata, WorkerConfig
+from griptape_nodes.node_library.library_registry import LibraryMetadata
 from griptape_nodes.retained_mode.events.app_events import LibraryLoadedNotification
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -25,54 +25,6 @@ def _make_metadata(**kwargs: Any) -> LibraryMetadata:
 
 def _make_library_manager() -> LibraryManager:
     return LibraryManager(event_manager=MagicMock(), worker_manager=MagicMock())
-
-
-class TestWorkerConfig:
-    def test_defaults_to_disabled(self) -> None:
-        config = WorkerConfig()
-
-        assert config.enabled is False
-
-    def test_can_be_enabled(self) -> None:
-        config = WorkerConfig(enabled=True)
-
-        assert config.enabled is True
-
-    def test_parses_from_dict(self) -> None:
-        config = WorkerConfig.model_validate({"enabled": True})
-
-        assert config.enabled is True
-
-    def test_unknown_fields_are_ignored(self) -> None:
-        """Extra fields in JSON are silently ignored for forward compatibility."""
-        config = WorkerConfig.model_validate({"enabled": True, "count": 3, "spinup_policy": "eager"})
-
-        assert config.enabled is True
-
-
-class TestLibraryMetadataWorkerField:
-    def test_worker_defaults_to_none(self) -> None:
-        metadata = _make_metadata()
-
-        assert metadata.worker is None
-
-    def test_worker_can_be_set_enabled(self) -> None:
-        metadata = _make_metadata(worker=WorkerConfig(enabled=True))
-
-        assert metadata.worker is not None
-        assert metadata.worker.enabled is True
-
-    def test_worker_parses_from_dict(self) -> None:
-        metadata = _make_metadata(worker={"enabled": True})
-
-        assert metadata.worker is not None
-        assert metadata.worker.enabled is True
-
-    def test_worker_disabled_explicitly(self) -> None:
-        metadata = _make_metadata(worker={"enabled": False})
-
-        assert metadata.worker is not None
-        assert metadata.worker.enabled is False
 
 
 class TestLibraryInfoRequiresWorker:

@@ -49,22 +49,28 @@ heavier library next to yours.
 
 ## How to opt in
 
-Add a `worker.enabled = true` block to your library's metadata in
-`griptape-nodes-library.json`:
+Add a `WorkerSupport` declaration to your library's `metadata.declarations`
+in `griptape-nodes-library.json`. Use `REQUIRES_WORKER_MODE` to opt in.
+`SUPPORTS_WORKER_MODE` reserves the right to opt in later via the GUI;
+`REQUIRES_ORCHESTRATOR_MODE` (or omitting the declaration entirely) keeps
+the library in the orchestrator process.
 
 ```json
 {
     "name": "My Library",
-    "library_schema_version": "0.8.0",
+    "library_schema_version": "0.9.0",
     "metadata": {
         "author": "<Your Name>",
         "description": "<Description>",
         "library_version": "0.1.0",
         "engine_version": "0.85.0",
         "tags": ["AI", "Custom"],
-        "worker": {
-            "enabled": true
-        },
+        "declarations": [
+            {
+                "type": "worker_support",
+                "support": "REQUIRES_WORKER_MODE"
+            }
+        ],
         "dependencies": {
             "pip_dependencies": [
                 "torch==2.4.1",
@@ -89,8 +95,8 @@ hatch for index URLs and other arguments your install legitimately
 needs.
 
 The schemas:
-[`WorkerConfig`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py#L84)
-and
+[`WorkerSupportLibraryProperty`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_declarations.py)
+in `library_declarations.py` and
 [`Dependencies`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py#L39)
 in `library_registry.py`.
 
@@ -247,7 +253,7 @@ logs a `WARNING` so the asymmetry is visible.
 
 ## "Is my library worker-ready?" checklist
 
-- [ ] `metadata.worker.enabled = true` in the manifest
+- [ ] `WorkerSupport.REQUIRES_WORKER_MODE` declared in `metadata.declarations`
 - [ ] `__init__` does no I/O and issues no event-bus requests
 - [ ] No `add_parameter` / `remove_parameter_element` from inside
     `process`; use `AddParameterToNodeRequest` /

@@ -38,6 +38,7 @@ from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io, resolve_workspace_path
+from griptape_nodes.node_library.library_declarations import WorkerSupportLibraryProperty
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -344,8 +345,9 @@ class LibraryManager:
         library_name: str | None = None
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
-        # True when the library declares worker.enabled = True in its metadata.
-        # Set whenever metadata is first successfully parsed (discovery or lifecycle progression).
+        # True when the library declares WorkerSupport.REQUIRES_WORKER_MODE via a
+        # WorkerSupportLibraryProperty in its metadata.declarations. Set whenever
+        # metadata is first successfully parsed (discovery or lifecycle progression).
         requires_worker: bool = False
         # Set when the library enters WORKER_PENDING state. The orchestrator waits on this
         # event before returning RegisterLibraryFromFileResultSuccess so callers see the real
@@ -1773,8 +1775,17 @@ class LibraryManager:
                     # Update library_info with metadata results
                     library_info.library_name = metadata_result.library_schema.name
                     library_info.library_version = metadata_result.library_schema.metadata.library_version
-                    worker_cfg = metadata_result.library_schema.metadata.worker
-                    library_info.requires_worker = bool(worker_cfg and worker_cfg.enabled)
+                    worker_decl = next(
+                        (
+                            d
+                            for d in metadata_result.library_schema.metadata.declarations
+                            if isinstance(d, WorkerSupportLibraryProperty)
+                        ),
+                        None,
+                    )
+                    library_info.requires_worker = (
+                        worker_decl.requires_worker_process() if worker_decl is not None else False
+                    )
                     library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
                 case LibraryManager.LibraryLifecycleState.METADATA_LOADED:
@@ -4010,8 +4021,15 @@ class LibraryManager:
         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
             library_name = metadata_result.library_schema.name
             library_version = metadata_result.library_schema.metadata.library_version
-            worker_cfg = metadata_result.library_schema.metadata.worker
-            requires_worker = bool(worker_cfg and worker_cfg.enabled)
+            worker_decl = next(
+                (
+                    d
+                    for d in metadata_result.library_schema.metadata.declarations
+                    if isinstance(d, WorkerSupportLibraryProperty)
+                ),
+                None,
+            )
+            requires_worker = worker_decl.requires_worker_process() if worker_decl is not None else False
             lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
         if not enabled:
