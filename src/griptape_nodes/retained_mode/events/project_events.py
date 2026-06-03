@@ -265,7 +265,8 @@ class SetCurrentProjectRequest(RequestPayload):
     and re-registers workflows from config and the new workspace.
 
     Args:
-        project_id: Identifier of the project to set as current (None to clear)
+        project_id: Identifier of the project to set as current. None lands the
+            engine on the system defaults rather than a "no project" state.
 
     Results: SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure
     """

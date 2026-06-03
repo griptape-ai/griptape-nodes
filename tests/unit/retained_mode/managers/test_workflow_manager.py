@@ -2074,6 +2074,139 @@ class TestLibraryResolutionOnLoad:
         assert result.execution_successful is False
         assert "Missing Library" in result.execution_details
 
+    def test_ensure_libraries_failure_message_uses_filename_and_renders_semver(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """Failure message uses the workflow file name (not full path) and renders v<version> for semver values."""
+        import logging as _logging
+
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+        from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+        from griptape_nodes.retained_mode.events.library_events import (
+            RegisterLibraryFromFileRequest,
+            RegisterLibraryFromFileResultFailure,
+        )
+        from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadataResultSuccess
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        metadata = WorkflowMetadata(
+            name="t",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="0.0.0",
+            node_libraries_referenced=[
+                LibraryNameAndVersion(library_name="Missing Library", library_version="1.2.3"),
+            ],
+        )
+        load_result = LoadWorkflowMetadataResultSuccess(metadata=metadata, result_details="ok")
+
+        dispatched: list[RegisterLibraryFromFileRequest] = []
+
+        async def fake_ahandle_request(request: object) -> object:
+            dispatched.append(request)  # type: ignore[arg-type]
+            return RegisterLibraryFromFileResultFailure(result_details="not found")
+
+        with (
+            patch.object(workflow_manager, "on_load_workflow_metadata_request", AsyncMock(return_value=load_result)),
+            patch.object(GriptapeNodes, "ahandle_request", side_effect=fake_ahandle_request),
+        ):
+            result = asyncio.run(
+                workflow_manager._ensure_libraries_for_workflow(
+                    relative_file_path="nested/dir/corridorKey.py",
+                    complete_file_path=Path("/abs/path/to/nested/dir/corridorKey.py"),
+                )
+            )
+
+        assert result is not None
+        assert result.execution_successful is False
+        # Filename only, not the absolute path
+        assert "corridorKey.py" in result.execution_details
+        assert "/abs/path/to" not in result.execution_details
+        # Semver version renders with v-prefix
+        assert "v1.2.3" in result.execution_details
+        assert "Missing Library" in result.execution_details
+        # Inner request is suppressed at DEBUG so the GUI doesn't double-toast.
+        assert len(dispatched) == 1
+        assert dispatched[0].failure_log_level == _logging.DEBUG
+
+    def test_ensure_libraries_failure_message_omits_non_semver_version(self, griptape_nodes: GriptapeNodes) -> None:
+        """Non-semver `library_version` values (e.g. unavailable-library placeholder) are not rendered as v<...>."""
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+        from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+        from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileResultFailure
+        from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadataResultSuccess
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        placeholder = "<version unavailable; workflow was saved when library was unable to be loaded>"
+        metadata = WorkflowMetadata(
+            name="t",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="0.0.0",
+            node_libraries_referenced=[
+                LibraryNameAndVersion(library_name="Missing Library", library_version=placeholder),
+            ],
+        )
+        load_result = LoadWorkflowMetadataResultSuccess(metadata=metadata, result_details="ok")
+
+        with (
+            patch.object(workflow_manager, "on_load_workflow_metadata_request", AsyncMock(return_value=load_result)),
+            patch.object(
+                GriptapeNodes,
+                "ahandle_request",
+                AsyncMock(return_value=RegisterLibraryFromFileResultFailure(result_details="not found")),
+            ),
+        ):
+            result = asyncio.run(
+                workflow_manager._ensure_libraries_for_workflow(
+                    relative_file_path="corridorKey.py",
+                    complete_file_path=Path("corridorKey.py"),
+                )
+            )
+
+        assert result is not None
+        assert result.execution_successful is False
+        assert "Missing Library" in result.execution_details
+        # Placeholder must not leak into the user-facing message in any form
+        assert placeholder not in result.execution_details
+        assert " v" not in result.execution_details.split("Missing Library", 1)[1]
+
+    def test_ensure_libraries_failure_message_omits_empty_version(self, griptape_nodes: GriptapeNodes) -> None:
+        """An empty `library_version` falls through the semver check and renders no version suffix."""
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+        from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+        from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileResultFailure
+        from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadataResultSuccess
+
+        workflow_manager = griptape_nodes.WorkflowManager()
+        metadata = WorkflowMetadata(
+            name="t",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="0.0.0",
+            node_libraries_referenced=[
+                LibraryNameAndVersion(library_name="Missing Library", library_version=""),
+            ],
+        )
+        load_result = LoadWorkflowMetadataResultSuccess(metadata=metadata, result_details="ok")
+
+        with (
+            patch.object(workflow_manager, "on_load_workflow_metadata_request", AsyncMock(return_value=load_result)),
+            patch.object(
+                GriptapeNodes,
+                "ahandle_request",
+                AsyncMock(return_value=RegisterLibraryFromFileResultFailure(result_details="not found")),
+            ),
+        ):
+            result = asyncio.run(
+                workflow_manager._ensure_libraries_for_workflow(
+                    relative_file_path="corridorKey.py",
+                    complete_file_path=Path("corridorKey.py"),
+                )
+            )
+
+        assert result is not None
+        assert result.execution_successful is False
+        assert "Missing Library" in result.execution_details
+        assert " v" not in result.execution_details.split("Missing Library", 1)[1]
+
     def test_ensure_libraries_is_noop_when_metadata_missing(self, griptape_nodes: GriptapeNodes) -> None:
         """If metadata can't be loaded, _ensure_libraries_for_workflow returns None (tolerant fallback)."""
         from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadataResultFailure

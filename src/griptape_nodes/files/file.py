@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from pathlib import Path
 from typing import NamedTuple, Protocol, cast, runtime_checkable
 
@@ -28,6 +29,8 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SituationMetadata,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class FileLoadError(Exception):
@@ -152,6 +155,71 @@ async def _aresolve_file_path(file_path: str | MacroPath) -> str:
     return str(resolve_result.absolute_path)  # type: ignore[union-attr]
 
 
+# Pairs of suffixes that should be treated as equivalent when comparing a
+# user-supplied filename extension against the canonical extension reported
+# by ArtifactManager.sniff_extension. Keys and values are lowercase, no
+# leading dot.
+_EXTENSION_ALIASES: dict[str, str] = {
+    "jpg": "jpeg",
+    "jpeg": "jpeg",
+    "tif": "tiff",
+    "tiff": "tiff",
+    "m4v": "mp4",
+    "mp4": "mp4",
+    "m4a": "m4a",
+    "m4b": "m4a",
+}
+
+
+def _canonical_extension(ext: str) -> str:
+    """Return the canonical form of an on-disk extension for equivalence checks."""
+    lowered = ext.lstrip(".").lower()
+    return _EXTENSION_ALIASES.get(lowered, lowered)
+
+
+def _validate_extension_matches_bytes(file_path: str, content: str | bytes) -> None:
+    """Raise ValueError if `content`'s sniffed extension disagrees with the path suffix.
+
+    The actual sniffing is delegated to
+    ``GriptapeNodes.ArtifactManager().sniff_extension``, which dispatches to
+    each registered artifact provider's ``detect_format``. Validation is
+    skipped when:
+    - `content` is text (not bytes),
+    - the path has no extension,
+    - the bytes can't be identified by any provider (a warning is logged).
+
+    Args:
+        file_path: The resolved on-disk path the bytes will be written to.
+        content: The bytes (or text) being written.
+
+    Raises:
+        ValueError: If the sniffed canonical extension disagrees with the
+            extension on `file_path`.
+    """
+    if not isinstance(content, bytes):
+        return
+
+    suffix = Path(file_path).suffix.lstrip(".").lower()
+    if not suffix:
+        return
+
+    sniffed = GriptapeNodes.ArtifactManager().sniff_extension(content)
+    if sniffed is None:
+        logger.warning(
+            "Could not identify byte content for '%s'; writing through without extension validation.",
+            file_path,
+        )
+        return
+
+    if _canonical_extension(suffix) != _canonical_extension(sniffed):
+        msg = (
+            f"Refusing to write {sniffed.upper()} bytes to '{file_path}' "
+            f"(extension '.{suffix}'). The file extension must match the byte content; "
+            f"either rename the destination to '.{sniffed}' or supply bytes that match '.{suffix}'."
+        )
+        raise ValueError(msg)
+
+
 class File:
     """Path-like object for reading and writing files via the retained mode API.
 
@@ -243,6 +311,11 @@ class File:
     ) -> Path:
         """Write bytes to the file.
 
+        The bytes are sniffed for a known media format. If the sniffed format
+        disagrees with the file's extension, ``ValueError`` is raised before
+        any I/O happens. If the bytes can't be identified, a warning is
+        logged and the write proceeds unchanged.
+
         Args:
             content: The bytes to write.
             existing_file_policy: How to handle an existing file. Ignored when
@@ -256,6 +329,8 @@ class File:
 
         Raises:
             FileWriteError: If the file cannot be written.
+            ValueError: If the bytes' sniffed format does not match the file
+                extension.
         """
         return self._write_content(
             content,
@@ -287,6 +362,8 @@ class File:
 
         Raises:
             FileWriteError: If the file cannot be written.
+            ValueError: If the bytes' sniffed format does not match the file
+                extension.
         """
         return await self._awrite_content(
             content,
@@ -564,9 +641,13 @@ class File:
 
         Raises:
             FileWriteError: If the file cannot be written.
+            ValueError: If `content` is bytes whose sniffed format does not
+                match the file extension.
         """
+        resolved_path = _resolve_file_path(self._file_path)
+        _validate_extension_matches_bytes(resolved_path, content)
         request = WriteFileRequest(
-            file_path=_resolve_file_path(self._file_path),
+            file_path=resolved_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,
@@ -609,9 +690,13 @@ class File:
 
         Raises:
             FileWriteError: If the file cannot be written.
+            ValueError: If `content` is bytes whose sniffed format does not
+                match the file extension.
         """
+        resolved_path = await _aresolve_file_path(self._file_path)
+        _validate_extension_matches_bytes(resolved_path, content)
         request = WriteFileRequest(
-            file_path=await _aresolve_file_path(self._file_path),
+            file_path=resolved_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,

@@ -549,3 +549,112 @@ class TestConfigManagerEventEmission:
             "/path/to/enabled.json",
             {"path": "/path/to/disabled.json", "enabled": False},
         ]
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="xdg_base_dirs cannot find XDG_CONFIG_HOME on Windows on GitHub Actions"
+)
+class TestConfigManagerEventGating:
+    """``ConfigChanged`` must only fire when the disk write actually landed.
+
+    Listeners (in production: WorkerManager fans out ReloadConfigRequest to
+    every registered worker) consume ConfigChanged. Emitting on a failed
+    write would tell every consumer to act on a state that does not exist
+    on disk -- e.g. workers reload the file and either see stale values or
+    fail to find the new key.
+    """
+
+    def test_set_config_value_does_not_emit_when_write_fails(self) -> None:
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received: list[ConfigChanged] = []
+        event_manager.add_listener_to_app_event(ConfigChanged, received.append)
+
+        with patch.object(config_manager, "_write_user_config_delta", return_value=False):
+            config_manager.set_config_value(key="test_key", value="new_value")
+
+        assert received == []
+
+    def test_set_config_value_emits_when_write_succeeds(self) -> None:
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received: list[ConfigChanged] = []
+        event_manager.add_listener_to_app_event(ConfigChanged, received.append)
+
+        with patch.object(config_manager, "_write_user_config_delta", return_value=True):
+            config_manager.set_config_value(key="test_key", value="new_value")
+
+        assert len(received) == 1
+        assert received[0].key == "test_key"
+        assert received[0].new_value == "new_value"
+
+    def test_set_config_category_full_replacement_returns_failure_when_write_fails(self) -> None:
+        from griptape_nodes.retained_mode.events.config_events import (
+            SetConfigCategoryRequest,
+            SetConfigCategoryResultFailure,
+        )
+
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received: list[ConfigChanged] = []
+        event_manager.add_listener_to_app_event(ConfigChanged, received.append)
+
+        request = SetConfigCategoryRequest(category=None, contents={"any": "thing"})
+        with patch.object(config_manager, "_write_user_config_delta", return_value=False):
+            result = config_manager.on_handle_set_config_category_request(request)
+
+        assert isinstance(result, SetConfigCategoryResultFailure)
+        assert received == []
+
+    def test_set_config_category_non_empty_category_returns_failure_when_write_fails(self) -> None:
+        """The non-empty-category branch routes through ``set_config_value``; failure must propagate."""
+        from griptape_nodes.retained_mode.events.config_events import (
+            SetConfigCategoryRequest,
+            SetConfigCategoryResultFailure,
+        )
+
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received: list[ConfigChanged] = []
+        event_manager.add_listener_to_app_event(ConfigChanged, received.append)
+
+        request = SetConfigCategoryRequest(category="some_category", contents={"any": "thing"})
+        with patch.object(config_manager, "_write_user_config_delta", return_value=False):
+            result = config_manager.on_handle_set_config_category_request(request)
+
+        assert isinstance(result, SetConfigCategoryResultFailure)
+        assert received == []
+
+    def test_set_config_value_request_returns_failure_when_write_fails(self) -> None:
+        """The set-value handler must surface a failure result when the write didn't land."""
+        from griptape_nodes.retained_mode.events.config_events import (
+            SetConfigValueRequest,
+            SetConfigValueResultFailure,
+        )
+
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received: list[ConfigChanged] = []
+        event_manager.add_listener_to_app_event(ConfigChanged, received.append)
+
+        request = SetConfigValueRequest(category_and_key="some.key", value="v")
+        with patch.object(config_manager, "_write_user_config_delta", return_value=False):
+            result = config_manager.on_handle_set_config_value_request(request)
+
+        assert isinstance(result, SetConfigValueResultFailure)
+        assert received == []
+
+    def test_set_config_value_returns_true_on_success_and_false_on_failure(self) -> None:
+        """``set_config_value`` exposes the write outcome so handlers can propagate failure."""
+        config_manager = ConfigManager()
+
+        with patch.object(config_manager, "_write_user_config_delta", return_value=True):
+            assert config_manager.set_config_value(key="k", value="v") is True
+
+        with patch.object(config_manager, "_write_user_config_delta", return_value=False):
+            assert config_manager.set_config_value(key="k", value="v") is False

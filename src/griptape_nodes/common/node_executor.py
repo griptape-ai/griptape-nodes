@@ -40,7 +40,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
-from griptape_nodes.retained_mode.events.base_events import ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import ForwardedException, ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -272,8 +272,9 @@ class NodeExecutor:
                 )
             )
             if not isinstance(result, ExecuteNodeResultSuccess):
-                msg = f"Node '{node.name}' execution failed: {getattr(result, 'result_details', result)}"
-                raise RuntimeError(msg)  # noqa: TRY004
+                exc = getattr(result, "exception", None)
+                msg = self._format_node_failure_message(node.name, result, exc)
+                raise RuntimeError(msg) from exc  # noqa: TRY004
             # Copy outputs back onto the in-memory node. Write directly into
             # parameter_output_values (not through set_parameter_value, which
             # targets parameter_values and re-fires before/after_value_set and
@@ -288,6 +289,31 @@ class NodeExecutor:
                 node.parameter_output_values[name] = value
         finally:
             current_executing_node_name.reset(token)
+
+    @staticmethod
+    def _format_node_failure_message(node_name: str, result: Any, exc: BaseException | None) -> str:
+        """Compose the RuntimeError message for a failed node execution.
+
+        When the worker rebuilt a ``ForwardedException``, surface its
+        ``original_type`` and ``original_traceback`` directly in the
+        message. Chaining via ``from exc`` is not enough on its own:
+        a ForwardedException is constructed (not raised) on the
+        receiving side, so its ``__traceback__`` is None and Python's
+        chained-exception display prints only the cause's
+        ``Type: message`` line with no frames. Interpolating
+        ``original_traceback`` here is what actually puts the worker
+        frames in front of the user.
+        """
+        type_prefix = ""
+        tb_suffix = ""
+        if isinstance(exc, ForwardedException):
+            if exc.original_type:
+                type_prefix = f"[{exc.original_type}] "
+            if exc.original_traceback:
+                tb_suffix = f"\nWorker traceback:\n{exc.original_traceback}"
+        return (
+            f"Node '{node_name}' execution failed: {type_prefix}{getattr(result, 'result_details', result)}{tb_suffix}"
+        )
 
     async def _execute_and_apply_workflow(
         self,
