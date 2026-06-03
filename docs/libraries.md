@@ -9,18 +9,16 @@ yourself. This page is for the artist installing and using libraries
 
 If you're worried about installing two libraries that conflict, jump
 to [Coexistence guarantees](#coexistence-guarantees) — the short
-answer is that Python dependency conflicts cannot break your engine,
-but two libraries with the same node name can be ambiguous and the
-engine will tell you about it.
+answer is that two libraries' Python dependencies cannot break each
+other, but two libraries with the same node name can be ambiguous
+and the engine will tell you about it.
 
 ## What you start with
 
 A fresh engine install gives you the **Sandbox Library** — a
 scratchpad library that picks up `.py` node files from the sandbox
 directory configured in your settings. What you see in the editor's
-Sandbox category depends on what's actually in that directory; if
-the directory isn't set or doesn't exist, the Sandbox Library is
-empty.
+Sandbox category depends on what's actually in that directory.
 
 During `gtn init`, you're offered the **Advanced Media Library**
 (diffusion, image generation, video). You can register it then or
@@ -28,55 +26,91 @@ re-run `gtn init` later to add it. See the
 [FAQ](faq.md#how-do-i-install-the-advanced-media-library-after-initial-setup)
 for that path.
 
-Other libraries — first-party or community — you install yourself.
+Other libraries — first-party or community — you install yourself
+through the editor.
 
-## Installing a library
+## Installing a library (in the editor)
 
-Two CLI commands, both via the `gtn` command (also spelled
-`griptape-nodes`). `gtn` is the command-line tool the engine
-installs alongside the editor; you run it from a terminal (Terminal
-on macOS, PowerShell or Command Prompt on Windows, any shell on
-Linux). If `gtn` isn't found, the engine installation didn't add it
-to your PATH — see [Installation](installation.md).
+The editor's **Library Management** panel is the primary install
+surface. Open it from the sidebar.
 
-### `gtn libraries download <git_url>`
+![Library Management panel](assets/img/libraries/library_management.png)
 
-Clone a library's Git repository and register it. The library's
-`griptape-nodes-library.json` (its **manifest** — the file that
-describes the library) is read; the library is added to your config
-so it auto-loads on every future engine start. Dependencies are
-installed at download time, before the command returns.
+The top of the panel is **Install New Library**. Paste a Git URL
+(for example a GitHub repository hosting a community library), pick
+a branch, tag, or commit (the default is `main`), and click
+**Download**. The editor clones the repo into the **Download
+Directory** shown below the field, reads the library's
+`griptape_nodes_library.json` manifest, installs its dependencies,
+and registers it.
 
-```bash
-gtn libraries download https://github.com/some-org/some-library.git
-```
+The **View Community Libraries** link near the field opens a
+curated list of libraries you can install.
 
-If the URL is wrong, the repo is private and you don't have
-credentials, the manifest is missing, or the target directory
-already exists, the command returns a clear failure. A failed
-download may leave a partially cloned directory on disk; if you
-retry, pass `--overwrite` or remove that directory first.
+After a successful install, the new library appears under
+**Installed Libraries**, alongside the Sandbox Library that ships
+with the engine. Each entry shows:
 
-Optional flags include `--branch`, `--target-dir`, and `--overwrite`.
-Run `gtn libraries download --help` for the full list.
+- The library's name and version.
+- The number of nodes it provides.
+- An **Open** action that opens the library's directory in your
+  file manager.
+- An **Advanced** disclosure that shows the library's Git remote,
+  ref (branch or tag), and current commit. If you ever need to
+  report a bug, the commit shown there is the precise version to
+  cite.
 
-### `gtn libraries sync`
+You can filter the installed list by **All**, **Needs Update**, or
+**Errors** using the chips above the list. **Errors** is your first
+stop when something is wrong with one of your libraries — it
+surfaces install failures, dependency-install failures, and
+load-time failures together.
 
-Update every registered library to its latest version. For each
-library:
+## Updating libraries
 
-1. Pulls the latest commit from its Git remote (or, if the library
-   was installed from a Git tag rather than a branch, re-fetches
-   that tag in case it points to a new commit).
-2. Re-installs the library's pinned dependencies into its
-   per-library virtual environment.
-3. Reloads the library in place so the new code and dependencies
-   take effect immediately. You do not need to restart the engine.
+In the same **Library Management** panel:
 
-Sync respects uncommitted changes: if you have local edits in a
-library's clone, sync fails for that library and tells you so. Use
-`gtn libraries sync --overwrite` only if you want to discard those
-edits.
+- Click **Check All Libraries for Updates** to scan all installed
+  libraries for new versions. Anything with an update available
+  shows up under the **Needs Update** filter.
+- Use **Refresh** to re-read the installed-library list (helpful
+  if you just installed something and want to confirm it took).
+
+For ambient update awareness, **Configuration Editor → Libraries**
+controls how aggressively the engine checks for library updates on
+its own.
+
+![Configuration Editor → Libraries](assets/img/libraries/configuration_libraries.png)
+
+**Update Notifications** options:
+
+- **Enable sidebar notifications** — show a badge on the Libraries
+  tab and per-library buttons when an update is available.
+- **Notification color / animation** — visual style for the badge.
+- **Check on startup** — scan for updates each time the engine
+  loads.
+- **Check periodically** — repeating schedule (Never, Hourly, etc.).
+- **Check Now** — trigger an immediate scan.
+
+You don't have to configure any of this; the defaults are fine for
+most artists.
+
+## Toggling and removing libraries
+
+The same **Configuration Editor → Libraries** view also shows
+**Library Registration → Libraries To Register**. Each entry in
+that list is a library the engine loads at startup. Two controls
+per entry:
+
+- The toggle (left) — flip off to keep the library on disk but stop
+  loading it on engine start.
+- The trash icon (right) — remove the entry entirely. The clone on
+  disk stays put; delete its directory manually if you want the
+  disk space back.
+
+The **Add Library** button below lets you point the engine at a
+`griptape_nodes_library.json` you already have on disk (a library
+you cloned manually, or a library you're developing locally).
 
 ## Coexistence guarantees
 
@@ -89,16 +123,14 @@ Every registered library gets its own **virtual environment** — an
 isolated set of Python packages that doesn't share state with the
 engine's own packages or with any other library's. Library A can
 pin `torch==2.4.1`; library B can pin `torch==2.0.0`. Both are
-installed into separate `.venv` directories. When the engine loads
-a library, it uses that library's `.venv` for that library's
-imports.
+installed into separate `.venv` directories, and each library uses
+its own when its nodes run.
 
-For libraries that opt into [worker mode](developing_nodes/worker_mode.md),
-the virtual environment is created and used inside the worker
-subprocess rather than alongside the engine; from the artist's
-perspective the isolation is the same, but if you go looking for
-the `.venv` directory on disk you may not see it until the worker
-has run for the first time.
+For libraries that run in worker mode (see
+[Worker Mode](developing_nodes/worker_mode.md) for the manifest
+shape), the virtual environment lives inside the library's worker
+subprocess instead of next to the manifest on disk. From the
+artist's perspective the isolation is the same.
 
 **You can install incompatibly-pinned libraries together without
 pip resolution conflicts.** This is the most important guarantee on
@@ -106,9 +138,8 @@ this page.
 
 ### Process isolation: opt-in via worker mode
 
-If a library opts into worker mode (a `worker.enabled = true` entry
-in its `griptape-nodes-library.json`), its nodes run in a separate
-process from the rest of the engine. That gives you:
+A library can declare that it runs in its own dedicated subprocess
+instead of inside the engine's main process. That gives you:
 
 - **Fault tolerance.** If the library crashes, only that library
   goes down — the rest of the engine keeps running.
@@ -120,9 +151,9 @@ Heavy ML libraries (diffusion, transformers, custom CUDA stacks)
 typically opt in. Lightweight libraries (simple HTTP / data nodes)
 typically don't.
 
-You can tell whether a library is worker-isolated by looking at its
-`griptape-nodes-library.json`: a `"worker": { "enabled": true }`
-block under `metadata` means the library runs in its own process.
+To check whether a specific library is worker-mode, look at its
+`griptape_nodes_library.json` for a `worker_support` declaration —
+see [Worker Mode](developing_nodes/worker_mode.md) for the schema.
 
 ### Node-name collisions: not solved
 
@@ -130,56 +161,66 @@ If two libraries register a node class with the same name (e.g.
 both ship a `MyImageNode`), the engine accepts both. **The engine
 does not warn you at install time.** When you create that node:
 
-- If the editor or your workflow names the library explicitly, it
-  works.
+- If your workflow names the library explicitly, it works.
 - If it doesn't, the engine raises an error listing both libraries
   so you can disambiguate.
 
 This is the one coexistence concern the engine doesn't solve for
 you. If you suspect a collision, the safest fix is to remove the
-library you don't want from your config (see
-[I want to remove a library](#i-want-to-remove-a-library)).
+library you don't want from the **Libraries To Register** list.
 
 ## When something goes wrong
 
-The "engine console" referenced below is the terminal window where
-the engine is running — the same window you launched the engine
-from. Error lines from libraries appear there with a `Worker-<id>`
-prefix when they come from a worker library.
-
 ### "I installed the library but I don't see its nodes"
 
-Most likely the library's dependencies failed to install. Check the
-engine console for `Failed to install dependencies` lines. Common
-causes:
+Open **Library Management** and switch the filter to **Errors**.
+That's the consolidated view of every library that failed to
+install, failed to install dependencies, or failed to load. Click
+into the offending library for the specific error message.
 
-- The library pins a wheel (a pre-built Python package) that doesn't
-  exist for your Python version or platform — for example a `torch`
-  wheel for an unsupported CUDA version.
+Common causes:
+
+- The library pins a wheel (a pre-built Python package) that
+  doesn't exist for your Python version or platform — for example a
+  `torch` wheel for an unsupported CUDA version.
 - Your network blocked the install (corporate proxy, or no internet
   during the install step).
 - Disk full (the engine reports this explicitly).
 
-Fix the underlying issue, then re-run `gtn libraries sync`.
+Fix the underlying issue, then re-trigger the install (re-paste the
+URL in **Install New Library**, or use the CLI alternative below
+with `--overwrite`).
 
 ### "A node looks broken or red in the editor"
 
 The engine couldn't construct that node — usually because its
 library failed to load. The editor swaps in a placeholder so your
-workflow file isn't corrupted. Check the engine console for the
-library's load error; once you fix it (typically re-run
-`gtn libraries sync`), reopening the workflow will use the real
-node again.
+workflow file isn't corrupted. Check the **Errors** filter in
+Library Management for the underlying load error; once you fix it,
+reopening the workflow uses the real node again.
 
-### I want to remove a library
+### Looking for the raw error text
 
-Edit `~/.config/griptape_nodes/griptape_nodes_config.json` (or the
-platform equivalent — see [Engine Configuration](configuration.md))
-and remove the library's entry from the
-`app_events.on_app_initialization_complete.libraries_to_register`
-list. On the next engine start it won't load. The clone on disk
-stays put; delete its directory manually if you want the disk
-space back.
+The terminal window where the engine is running (the same window
+you launched the engine from) carries the verbose error log,
+including stack traces. Errors from worker-mode libraries appear
+there with a `Worker-<id>` prefix.
+
+## CLI alternatives
+
+If you'd rather use the command line — for automation, headless
+engines, or just preference — the editor's library actions have
+`gtn` equivalents:
+
+| Editor action | CLI equivalent |
+|---|---|
+| Install New Library → Download | `gtn libraries download <git_url>` |
+| Check All Libraries for Updates → install pending updates | `gtn libraries sync` |
+| Sync over local edits | `gtn libraries sync --overwrite` |
+| Re-register Advanced Media Library | `gtn init`, answer `y` |
+
+See [Command Line Interface](command_line_interface.md) for the
+full reference.
 
 ## Where libraries are stored on disk
 
@@ -187,24 +228,14 @@ space back.
   (or the platform equivalent — see
   [Engine Configuration](configuration.md)). The
   `app_events.on_app_initialization_complete.libraries_to_register`
-  list inside it controls what loads.
-- **Clones / venvs**: in the directory you cloned the library into
-  (which becomes the directory containing the library's
-  `griptape-nodes-library.json`); the `.venv` lives next to that
-  manifest.
+  list inside it is what the editor's Libraries To Register list
+  edits.
+- **Clones / venvs**: in the directory the editor cloned the
+  library into (the **Download Directory** shown in Library
+  Management); the library's `.venv` lives next to its
+  `griptape_nodes_library.json`.
 - **Sandbox library**: the sandbox directory is configured
   separately in your settings; defaults vary by platform.
-
-## Quick reference
-
-| You want to | Run |
-|---|---|
-| Install a library from Git | `gtn libraries download <git_url>` |
-| Update all libraries | `gtn libraries sync` |
-| Discard local edits while syncing | `gtn libraries sync --overwrite` |
-| Remove a library | Edit `app_events.on_app_initialization_complete.libraries_to_register` in your config |
-| Re-register Advanced Media Library | `gtn init`, answer `y` |
-| See full options for a command | `gtn libraries <command> --help` |
 
 For library authors: see [Custom Nodes](developing_nodes/index.md)
 and [Worker Mode](developing_nodes/worker_mode.md).
