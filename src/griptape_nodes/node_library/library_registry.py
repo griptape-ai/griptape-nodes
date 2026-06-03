@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_validator
@@ -18,11 +20,15 @@ from griptape_nodes.retained_mode.managers.resource_components.resource_instance
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
 
 logger = logging.getLogger("griptape_nodes")
+
+_constructing_node: ContextVar[bool] = ContextVar("_library_registry_constructing_node", default=False)
 
 
 class LibraryNameAndVersion(NamedTuple):
@@ -358,8 +364,43 @@ class LibraryRegistry(metaclass=SingletonMeta):
             node_type=node_type, specific_library_name=specific_library_name
         )
 
-        # Ask the library to create the node.
-        return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
+        with cls.constructing_node():
+            return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
+
+    @classmethod
+    @contextmanager
+    def constructing_node(cls) -> Iterator[None]:
+        """Mark the enclosed block as a node ``__init__`` running on the calling task.
+
+        Sets the same task-local flag that ``create_node`` sets. Use at
+        any direct construction site that bypasses ``create_node``
+        (e.g. ``type(node)(name=...)`` or ``node_class(name=...)`` for
+        an ephemeral probe / reference node), so:
+
+        - the parameter-mutation-during-aprocess detector skips the
+          declarative ``add_parameter`` calls inside the constructed
+          node's ``__init__`` (otherwise it would fire once per
+          parameter declared by the helper instance), and
+        - the reentrant-bus-in-init detector still fires for the
+          right reason if the constructed node's ``__init__`` issues
+          a bus request.
+        """
+        token = _constructing_node.set(True)
+        try:
+            yield
+        finally:
+            _constructing_node.reset(token)
+
+    @classmethod
+    def is_constructing_node(cls) -> bool:
+        """Return True if a node ``__init__`` is currently running on the calling task.
+
+        The reentrant-bus-in-init and parameter-mutation-during-aprocess
+        strict-mode detectors consult this so they can fire from outside
+        ``LibraryRegistry`` without owning their own depth counter. The
+        flag is set by ``create_node`` and by ``constructing_node()``.
+        """
+        return _constructing_node.get()
 
     @classmethod
     def get_all_library_schemas(cls) -> dict[str, dict]:
@@ -496,9 +537,8 @@ class Library:
         """Return the BaseNode subclass registered under `node_type`.
 
         For callers that need the class itself, e.g. classmethod checks like
-        `allow_outgoing_connection_by_class` or building a throwaway probe instance,
-        rather than an instance produced by `create_node` (which also injects library
-        metadata into the node).
+        `allow_outgoing_connection_by_class`, rather than an instance produced
+        by `create_node`.
         """
         if node_type not in self._node_types:
             raise KeyError(self._library_data.name, node_type)

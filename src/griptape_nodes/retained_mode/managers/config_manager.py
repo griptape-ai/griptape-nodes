@@ -409,13 +409,19 @@ class ConfigManager:
 
         return value
 
-    def set_config_value(self, key: str, value: Any, *, should_set_env_var_if_detected: bool = True) -> None:
+    def set_config_value(self, key: str, value: Any, *, should_set_env_var_if_detected: bool = True) -> bool:
         """Set a value in the configuration.
 
         Args:
             key: The configuration key to set. Can use dot notation for nested keys (e.g., 'category.subcategory.key').
             value: The value to associate with the key.
             should_set_env_var_if_detected: If True, and the value starts with a $, it will be set in the environment variables.
+
+        Returns:
+            True if the change was persisted to disk; False if the underlying
+            ``_write_user_config_delta`` call failed. Callers that surface a
+            result payload to a request handler should propagate the failure
+            instead of reporting success on a stale write.
         """
         # Capture old value before making changes (for event emission)
         old_value = self.get_config_value(key, should_load_env_var_if_detected=False)
@@ -426,7 +432,7 @@ class ConfigManager:
         elif key == "workspace_directory":
             self.workspace_path = value
         self.user_config = merge_dicts(self.merged_config, delta)
-        self._write_user_config_delta(delta)
+        write_succeeded = self._write_user_config_delta(delta)
 
         if should_set_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -439,10 +445,16 @@ class ConfigManager:
         self.load_configs()
         logger.debug("Config value '%s' set to '%s'", key, value)
 
-        # Broadcast config change event so other managers can respond
-        if self._event_manager is not None:
+        # Broadcast a domain event on success only. Listeners (in production:
+        # WorkerManager) take it from here -- this manager has no knowledge of
+        # who consumes the event. Failed writes are logged inside
+        # ``_write_user_config_delta``; no event fires so listeners cannot act
+        # on a state that does not exist on disk.
+        if write_succeeded and self._event_manager is not None:
             event = ConfigChanged(key=key, old_value=old_value, new_value=value)
             self._event_manager.broadcast_app_event(event)
+
+        return write_succeeded
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -477,10 +489,18 @@ class ConfigManager:
 
         if request.category is None or request.category == "":
             # Assign the whole shebang.
-            self._write_user_config_delta(request.contents)
+            write_succeeded = self._write_user_config_delta(request.contents)
+            if not write_succeeded:
+                result_details = (
+                    "Attempted to assign the entire config dictionary. Failed because the user config "
+                    "file could not be written; see prior logs for the underlying I/O error."
+                )
+                return SetConfigCategoryResultFailure(result_details=result_details)
+
             result_details = "Successfully assigned the entire config dictionary."
 
-            # Broadcast config change event for full config replacement
+            # Domain event on success only -- listeners (e.g. WorkerManager)
+            # decide what to do with it.
             if self._event_manager is not None:
                 event = ConfigChanged(
                     key="",
@@ -491,7 +511,13 @@ class ConfigManager:
 
             return SetConfigCategoryResultSuccess(result_details=result_details)
 
-        self.set_config_value(key=request.category, value=request.contents)
+        write_succeeded = self.set_config_value(key=request.category, value=request.contents)
+        if not write_succeeded:
+            result_details = (
+                f"Attempted to set config category '{request.category}'. Failed because the user config "
+                "file could not be written; see prior logs for the underlying I/O error."
+            )
+            return SetConfigCategoryResultFailure(result_details=result_details)
 
         result_details = f"Successfully assigned the config dictionary for section '{request.category}'."
         return SetConfigCategoryResultSuccess(result_details=result_details)
@@ -571,6 +597,12 @@ class ConfigManager:
             self._set_log_level(str(self.merged_config["log_level"]))
 
             result_details = "Successfully reset user configuration."
+            # Reset is a full replacement; emit the same shape of ConfigChanged
+            # that ``on_handle_set_config_category_request`` does for category=None,
+            # so listeners cannot tell the two paths apart.
+            if self._event_manager is not None:
+                event = ConfigChanged(key="", old_value=None, new_value=self.merged_config)
+                self._event_manager.broadcast_app_event(event)
             return ResetConfigResultSuccess(result_details=result_details)
         except Exception as e:
             result_details = f"Attempted to reset user configuration but failed: {e}."
@@ -627,7 +659,13 @@ class ConfigManager:
             old_value_copy = old_value
 
         # Set the new value
-        self.set_config_value(key=request.category_and_key, value=request.value)
+        write_succeeded = self.set_config_value(key=request.category_and_key, value=request.value)
+        if not write_succeeded:
+            result_details = (
+                f"Attempted to set config value '{request.category_and_key}'. Failed because the user "
+                "config file could not be written; see prior logs for the underlying I/O error."
+            )
+            return SetConfigValueResultFailure(result_details=result_details)
 
         # For container types, indicate the change with a diff
         if isinstance(request.value, (dict, list)):
@@ -645,7 +683,7 @@ class ConfigManager:
 
         return SetConfigValueResultSuccess(result_details=result_details)
 
-    def _write_user_config_delta(self, user_config_delta: dict) -> None:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def _write_user_config_delta(self, user_config_delta: dict) -> bool:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Write user configuration delta to config file with atomic read-modify-write.
 
         This method performs an atomic read-modify-write operation on the user config file:
@@ -662,6 +700,12 @@ class ConfigManager:
         Args:
             user_config_delta: Configuration changes to merge with existing config.
                               Uses dot notation keys (e.g., {"nodes.max_depth": 10})
+
+        Returns:
+            True if the merged config was written to disk; False if any step
+            (file info, create, read, write) failed. Callers must gate
+            worker fan-out on this so workers don't reload from a file that
+            wasn't actually updated.
         """
         # Lazy import to avoid circular dependency during initialization
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -680,7 +724,7 @@ class ConfigManager:
                 config_path_str,
                 info_result.result_details,
             )
-            return
+            return False
 
         # Step 2: Create config file if it doesn't exist
         if info_result.file_entry is None:
@@ -705,17 +749,13 @@ class ConfigManager:
                     config_path_str,
                     create_result.result_details,
                 )
-                return
+                return False
 
         # Step 3: Read current config directly from disk.
         #
-        # We intentionally bypass the ReadFileRequest handler here. `_write_user_config_delta`
-        # is called from both sync (set_config_value) and async (app-init handlers that
-        # register provider settings) contexts; the ReadFileRequest handler is async, so
-        # dispatching it from an async context via sync handle_request trips the
-        # sync-in-async fail-fast (issue #4469). The enclosing writes already use
-        # os_manager.on_write_file_request directly (sync), so the read matches that
-        # bootstrap-path style and avoids coupling config load to event-loop state.
+        # We intentionally bypass the ReadFileRequest handler here. The enclosing writes
+        # already use os_manager.on_write_file_request directly (sync), so the read matches
+        # that bootstrap-path style and avoids coupling config load to event-loop state.
         try:
             file_content = Path(config_path_str).read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -723,28 +763,28 @@ class ConfigManager:
                 "Attempted to read user config at '%s'. File not found despite creation attempt.",
                 config_path_str,
             )
-            return
+            return False
         except PermissionError as e:
             logger.error(
                 "Attempted to read user config at '%s'. Permission denied: %s",
                 config_path_str,
                 e,
             )
-            return
+            return False
         except UnicodeDecodeError as e:
             logger.error(
                 "Attempted to read user config at '%s'. Encoding error: %s",
                 config_path_str,
                 e,
             )
-            return
+            return False
         except OSError as e:
             logger.error(
                 "Attempted to read user config at '%s'. Failed with: %s",
                 config_path_str,
                 e,
             )
-            return
+            return False
 
         # Step 4: Parse JSON from file content
         try:
@@ -833,10 +873,11 @@ class ConfigManager:
                         config_path_str,
                         write_result.result_details,
                     )
-            return
+            return False
 
         # Success path: Reload configs to reflect the changes
         logger.debug("Successfully wrote user config delta to '%s', reloading configs", config_path_str)
+        return True
 
     def _set_log_level(self, level: str) -> None:
         """Set the log level for the logger.

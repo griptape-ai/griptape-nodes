@@ -127,11 +127,29 @@ class GetProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 class ProjectTemplateInfo:
-    """Information about a loaded or failed project template."""
+    """Information about a loaded or failed project template.
+
+    Fields:
+        project_id: Canonical absolute path identifying this template in the registry.
+        validation: Outcome of loading + parsing this template.
+        name: Display name from the template body, when available.
+        parent_project_path: The parent's path expressed in the same form a user
+            would write into a YAML overlay (e.g. `{workspace_dir}/base.yml`,
+            an absolute path, or None). Use this when persisting a child's link
+            back to a parent.
+        project_macro_path: This template's own path expressed as a portable
+            macro string. If the template lives under the active workspace,
+            this is `{workspace_dir}/<rel>`; otherwise it is the canonical
+            absolute path. The GUI parent-picker stores this value into a
+            child's `parent_project_path` so the link round-trips across
+            machines without baking in absolute home directories.
+    """
 
     project_id: ProjectID
     validation: ProjectValidationInfo
     name: str | None = None
+    parent_project_path: str | None = None
+    project_macro_path: str | None = None
 
 
 @dataclass
@@ -265,7 +283,8 @@ class SetCurrentProjectRequest(RequestPayload):
     and re-registers workflows from config and the new workspace.
 
     Args:
-        project_id: Identifier of the project to set as current (None to clear)
+        project_id: Identifier of the project to set as current. None lands the
+            engine on the system defaults rather than a "no project" state.
 
     Results: SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure
     """
@@ -361,11 +380,16 @@ class ValidateProjectTemplateRequest(RequestPayload):
 
     Args:
         template_data: Dict representation of the template to validate
+        project_id: Optional project_id of the template being edited. When provided,
+            it is seeded into the parent-chain visited set so a cycle that includes
+            "myself" (e.g. setting parent to a project that already points back at
+            this one) is detected.
 
     Results: ValidateProjectTemplateResultSuccess | ValidateProjectTemplateResultFailure
     """
 
     template_data: dict[str, Any]
+    project_id: str | None = None
 
 
 @dataclass

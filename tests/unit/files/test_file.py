@@ -1,13 +1,22 @@
 """Unit tests for File and FileDestination."""
 
 import base64
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from PIL import Image
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
-from griptape_nodes.files.file import File, FileContent, FileDestination, FileLoadError, FileWriteError
+from griptape_nodes.files.file import (
+    File,
+    FileContent,
+    FileDestination,
+    FileLoadError,
+    FileWriteError,
+    _validate_extension_matches_bytes,
+)
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     FileIOFailureReason,
@@ -1123,3 +1132,133 @@ class TestFileResolve:
             File("{outputs}/image.png").resolve()
 
         assert exc_info.value.failure_reason == FileIOFailureReason.MISSING_MACRO_VARIABLES
+
+
+def _pil_bytes(fmt: str, mode: str = "RGB") -> bytes:
+    buf = BytesIO()
+    Image.new(mode, (1, 1), color=0 if mode == "P" else "white").save(buf, format=fmt)
+    return buf.getvalue()
+
+
+def _png_bytes() -> bytes:
+    return _pil_bytes("PNG")
+
+
+def _jpeg_bytes() -> bytes:
+    return _pil_bytes("JPEG")
+
+
+def _m4v_bytes() -> bytes:
+    return b"\x00\x00\x00\x18ftypM4V " + b"\x00" * 16
+
+
+@pytest.fixture
+def _registered_providers() -> None:
+    """Ensure default artifact providers are registered with the ArtifactManager.
+
+    Validation goes through ``ArtifactManager.sniff_extension``, which dispatches
+    to each registered provider's ``detect_format``. Registration normally
+    happens on ``AppInitializationComplete``, which doesn't fire in unit tests,
+    so we register the default providers manually here.
+    """
+    from griptape_nodes.retained_mode.events.artifact_events import RegisterArtifactProviderRequest
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+    from griptape_nodes.retained_mode.managers.artifact_providers import (
+        AudioArtifactProvider,
+        ImageArtifactProvider,
+        VideoArtifactProvider,
+    )
+
+    artifact_manager = GriptapeNodes.ArtifactManager()
+    for provider_class in (ImageArtifactProvider, VideoArtifactProvider, AudioArtifactProvider):
+        artifact_manager.on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=provider_class)
+        )
+
+
+@pytest.mark.usefixtures("_registered_providers")
+class TestValidateExtensionMatchesBytes:
+    """Tests for _validate_extension_matches_bytes (the function wired into write_bytes)."""
+
+    def test_matching_extension_passes(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.png", _png_bytes())
+
+    def test_jpg_jpeg_alias_passes(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.jpeg", _jpeg_bytes())
+
+    def test_mismatch_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match=r"\.png"):
+            _validate_extension_matches_bytes("/workspace/out.png", _jpeg_bytes())
+
+    def test_mismatch_message_names_both_extensions(self) -> None:
+        with pytest.raises(ValueError, match=r"\.png") as exc_info:
+            _validate_extension_matches_bytes("/workspace/out.png", _jpeg_bytes())
+        assert ".png" in str(exc_info.value)
+        assert "JPG" in str(exc_info.value)
+
+    def test_unknown_bytes_logs_warning_and_passes(self, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level("WARNING", logger="griptape_nodes"):
+            _validate_extension_matches_bytes("/workspace/out.bin", b"some opaque blob nobody knows")
+        assert any("Could not identify byte content" in r.message for r in caplog.records)
+
+    def test_no_extension_skips_validation(self) -> None:
+        _validate_extension_matches_bytes("/workspace/output", _jpeg_bytes())
+
+    def test_text_content_skipped(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.png", "hello world")
+
+    def test_mp4_to_m4v_alias_passes(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.mp4", _m4v_bytes())
+
+    def test_uppercase_extension_canonicalizes(self) -> None:
+        _validate_extension_matches_bytes("/workspace/out.PNG", _png_bytes())
+
+
+@pytest.mark.usefixtures("_registered_providers")
+class TestFileWriteValidationIntegration:
+    """End-to-end: File.write_bytes should run validation before issuing the request."""
+
+    def test_write_bytes_raises_on_extension_mismatch(self) -> None:
+        with patch(HANDLE_REQUEST_PATH) as mock_handle, pytest.raises(ValueError, match=r"\.png"):
+            File("/workspace/output.png").write_bytes(_jpeg_bytes())
+        mock_handle.assert_not_called()
+
+    def test_write_bytes_passes_on_match(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.png",
+            bytes_written=10,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result):
+            path = File("/workspace/output.png").write_bytes(_png_bytes())
+        assert path == Path("/workspace/output.png")
+
+    def test_write_bytes_warns_on_unknown_bytes_and_proceeds(self, caplog: pytest.LogCaptureFixture) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.bin",
+            bytes_written=5,
+        )
+        with (
+            patch(HANDLE_REQUEST_PATH, return_value=success_result),
+            caplog.at_level("WARNING", logger="griptape_nodes"),
+        ):
+            File("/workspace/output.bin").write_bytes(b"abcde")
+        assert any("Could not identify byte content" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_awrite_bytes_raises_on_extension_mismatch(self) -> None:
+        with patch(AHANDLE_REQUEST_PATH) as mock_handle, pytest.raises(ValueError, match=r"\.png"):
+            await File("/workspace/output.png").awrite_bytes(_jpeg_bytes())
+        mock_handle.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_awrite_bytes_passes_on_match(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.jpg",
+            bytes_written=10,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result):
+            path = await File("/workspace/output.jpg").awrite_bytes(_jpeg_bytes())
+        assert path == Path("/workspace/output.jpg")

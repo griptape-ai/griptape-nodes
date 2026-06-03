@@ -27,6 +27,7 @@ FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION = "project_template_schema_version"
 FIELD_ENVIRONMENT = "environment"
 FIELD_FILE_EXTENSION_DIRECTORIES = "file_extension_directories"
 FIELD_DESCRIPTION = "description"
+FIELD_PARENT_PROJECT_PATH = "parent_project_path"
 
 # Special constants
 ROOT_FIELD_PATH = "<root>"
@@ -79,12 +80,14 @@ class ProjectOverlayData(NamedTuple):
     environment: dict[str, str]
     file_extension_directories: dict[str, str]
     description: str | None
+    parent_project_path: str | None
     line_info: YAMLLineInfo
     removed_situations: frozenset[str] = frozenset()
     removed_directories: frozenset[str] = frozenset()
     removed_environment: frozenset[str] = frozenset()
     removed_file_extension_directories: frozenset[str] = frozenset()
     clears_description: bool = False
+    clears_parent_project_path: bool = False
 
 
 def load_yaml_with_line_tracking(yaml_text: str) -> YAMLParseResult:
@@ -230,7 +233,7 @@ def load_project_template_from_yaml(  # noqa: C901
         return template
 
 
-def load_partial_project_template(  # noqa: C901
+def load_partial_project_template(  # noqa: C901, PLR0915
     yaml_text: str,
     validation_info: ProjectValidationInfo,
 ) -> ProjectOverlayData | None:
@@ -363,6 +366,18 @@ def load_partial_project_template(  # noqa: C901
         )
         description = None
 
+    # Optional field: parent_project_path. Same absent-vs-null semantics as
+    # description: absent = inherit base, explicit null = tombstone the link.
+    clears_parent_project_path = FIELD_PARENT_PROJECT_PATH in data and data.get(FIELD_PARENT_PROJECT_PATH) is None
+    parent_project_path = data.get(FIELD_PARENT_PROJECT_PATH)
+    if parent_project_path is not None and not isinstance(parent_project_path, str):
+        validation_info.add_error(
+            field_path=FIELD_PARENT_PROJECT_PATH,
+            message=f"Must be string, got {type(parent_project_path).__name__}",
+            line_number=line_info.get_line(FIELD_PARENT_PROJECT_PATH),
+        )
+        parent_project_path = None
+
     return ProjectOverlayData(
         name=name,
         project_template_schema_version=schema_version,
@@ -371,12 +386,14 @@ def load_partial_project_template(  # noqa: C901
         environment=environment,
         file_extension_directories=file_extension_directories,
         description=description,
+        parent_project_path=parent_project_path,
         line_info=line_info,
         removed_situations=frozenset(removed_situations),
         removed_directories=frozenset(removed_directories),
         removed_environment=frozenset(removed_environment),
         removed_file_extension_directories=frozenset(removed_file_extension_directories),
         clears_description=clears_description,
+        clears_parent_project_path=clears_parent_project_path,
     )
 
 

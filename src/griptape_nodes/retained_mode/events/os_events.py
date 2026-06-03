@@ -850,3 +850,69 @@ class ResolveMacroPathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
     """
 
     missing_variables: set[str] | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNextVersionIndexRequest(RequestPayload):
+    """Find the next available version index for a versioned path pattern.
+
+    Use when: Allocating a new versioned output slot (e.g. ``v001``, ``v002``) without
+    creating any files. The caller passes a ``MacroPath`` whose template contains an
+    unresolved ``{_index}`` placeholder. The OS manager performs a single glob pass over
+    the parent directory to discover which indices are already taken and returns the
+    lowest unused one (gaps are filled first).
+
+    This is a read-only preview operation — no files or directories are created.
+
+    Args:
+        macro_path: MacroPath whose template contains ``{_index}`` (required or optional).
+            All variables other than ``_index`` must be resolved in ``macro_path.variables``
+            so the manager can build a concrete glob pattern.
+
+    Results: GetNextVersionIndexResultSuccess | GetNextVersionIndexResultFailure
+
+    Examples:
+        MacroPath with required ``{_index:03}``:
+            Template: ``"{outputs}/render_v{_index:03}"``
+            Variables: ``{"outputs": "/abs/path"}``
+            Existing dirs: ``render_v001``, ``render_v002``, ``render_v004``
+            Returns: ``GetNextVersionIndexResultSuccess(index=3)``  # fills the gap
+
+        MacroPath with no existing entries:
+            Returns: ``GetNextVersionIndexResultSuccess(index=1)``
+
+        MacroPath with optional ``{_index?:_}`` and base path free:
+            Returns: ``GetNextVersionIndexResultSuccess(index=None)``
+            (callers that always need an integer should treat ``None`` as ``1``)
+    """
+
+    macro_path: MacroPath
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNextVersionIndexResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Next available version index found (read-only preview — no files created).
+
+    Attributes:
+        index: The lowest unused version index (1-based), or ``None`` when the
+            ``{_index}`` placeholder is optional and the un-indexed base path is
+            still available. Callers that always require an integer (e.g. directory
+            versioning) should treat ``None`` as ``1``.
+    """
+
+    index: int | None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNextVersionIndexResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to determine the next available version index.
+
+    Attributes:
+        failure_reason: Classification of why the operation failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
