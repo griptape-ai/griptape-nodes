@@ -200,6 +200,32 @@ rule. The rule only fires once the framework has entered
 `aprocess_scope()`, which it opens specifically around `process`
 execution, not around the input-hydration pass.
 
+### Parameter `converters`, `validators`, and `traits` do not cross to the orchestrator
+
+When the schema probe exports your library, only the scalar-shaped
+fields of each `Parameter` (name, type, default, tooltip, allowed
+modes) are serialized for the orchestrator's stub copy of the
+class. Custom `converters`, `validators`, and `traits` you attached
+to a `Parameter` are **not** carried across — they live in the
+worker's process and run only when the worker executes the node.
+
+The orchestrator stub still accepts user input on those parameters
+and ships values to the worker, but the orchestrator-side UI cannot
+re-run your `converters` / `validators` / `traits` to massage or
+reject values before they leave the editor. Authors see this as a
+[`parameter-behaviors-dropped-in-schema`](strict_mode.md) warning
+at library load.
+
+Two workable patterns:
+
+- **Move the validation or transform into `process`.** The worker
+  re-runs it on the actual value. The cost is that the editor
+  cannot show the user a validation failure inline; they only see
+  it when the node executes.
+- **Accept the divergence as orchestrator-only UI sugar.** If the
+  converter is purely a display nicety (e.g., title-casing a
+  string), losing it on the orchestrator is harmless.
+
 ## Configuration and secrets propagate automatically
 
 The orchestrator broadcasts `ReloadConfigRequest` and
@@ -229,6 +255,8 @@ logs a `WARNING` so the asymmetry is visible.
       `GriptapeNodes.handle_request(...)` instead
 - [ ] Cross-node / flow state passed in via parameters, not fetched
       from inside `process`
+- [ ] Custom `converters` / `validators` / `traits` either re-run
+      inside `process` or accepted as orchestrator-only UI sugar
 - [ ] `pip_dependencies` pinned to specific versions
 - [ ] `pip_install_flags` set if your install needs a custom index
       URL or other arguments
