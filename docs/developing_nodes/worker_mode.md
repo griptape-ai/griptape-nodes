@@ -51,8 +51,7 @@ heavier library next to yours.
 
 Add a `worker` capability declaration to your library's
 `metadata.declarations` in `griptape-nodes-library.json`. Use
-`REQUIRES_WORKER_MODE` to opt in. `SUPPORTS_WORKER_MODE` reserves the right
-to opt in later via the GUI; `REQUIRES_ORCHESTRATOR_MODE` (or omitting the
+`REQUIRES_WORKER_MODE` to opt in. `SUPPORTS_WORKER_MODE` gives users the ability to opt in (default) or out via the GUI; `REQUIRES_ORCHESTRATOR_MODE` (or omitting the
 declaration entirely) keeps the library in the orchestrator process.
 
 ```json
