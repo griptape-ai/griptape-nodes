@@ -1,19 +1,18 @@
 from dataclasses import dataclass, field
 
-from griptape.memory.structure import Run
-
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    SkipTheLineMixin,
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
-class RunAgentRequestArtifact(dict):
+class RunAgentRequestArtifact:
     type: str
     value: str
 
@@ -53,7 +52,13 @@ class RunAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Agent execution completed successfully.
 
     Args:
-        output: Dictionary containing agent response and execution results
+        output: Dictionary containing agent response and execution results. Keys:
+            ``text`` (the assistant's final text), ``message_count`` (messages in
+            the thread after this turn), ``generated_image_urls`` (URLs of images
+            produced by the ``generate_image`` tool this turn, in call order;
+            empty when none were generated), and ``cancelled`` (``True`` when the
+            run was stopped by a ``CancelAgentRequest`` before completing;
+            ``text`` then holds whatever was streamed before cancellation).
         thread_id: The thread ID used for this conversation
     """
 
@@ -75,6 +80,52 @@ class RunAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class CancelAgentRequest(RequestPayload, SkipTheLineMixin):
+    """Cancel an in-flight agent run for a thread.
+
+    Use when: The user stops a running chat turn. Signals cooperative
+    cancellation to the active :class:`RunAgentRequest` for ``thread_id``; the
+    run unwinds promptly and returns a ``RunAgentResultSuccess`` whose ``output``
+    carries ``cancelled: True`` and any text streamed so far. The cancelled
+    turn is not persisted to the thread.
+
+    ``SkipTheLineMixin`` so the cancel bypasses the event queue and reaches the
+    dispatcher even while the run task is in flight.
+
+    Args:
+        thread_id: ID of the thread whose active run should be cancelled.
+
+    Results: CancelAgentResultSuccess (idempotent; succeeds even when no run is
+        in flight) | CancelAgentResultFailure (cancellation could not be delivered).
+    """
+
+    thread_id: str
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Cancellation was delivered.
+
+    Args:
+        thread_id: ID of the thread the cancellation targeted.
+        was_running: ``True`` when a run was in flight and got signalled;
+            ``False`` when no active run existed (the call is still a success).
+    """
+
+    thread_id: str
+    was_running: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class CancelAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Cancellation could not be delivered. Common causes: invalid thread_id."""
+
+
+@dataclass
+@PayloadRegistry.register
 class GetConversationMemoryRequest(RequestPayload):
     """Get the agent's conversation memory.
 
@@ -84,7 +135,7 @@ class GetConversationMemoryRequest(RequestPayload):
     Args:
         thread_id: Thread ID to retrieve memory from.
 
-    Results: GetConversationMemoryResultSuccess (with runs) | GetConversationMemoryResultFailure (memory error)
+    Results: GetConversationMemoryResultSuccess (with messages) | GetConversationMemoryResultFailure (memory error)
     """
 
     thread_id: str
@@ -96,11 +147,15 @@ class GetConversationMemoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadS
     """Conversation memory retrieved successfully.
 
     Args:
-        runs: List of conversation runs (exchanges between user and agent)
-        thread_id: The thread ID for this conversation memory
+        messages: Pydantic AI ``ModelMessage`` JSON dicts in chronological order. Each
+            entry has a ``kind`` field (``"request"`` or ``"response"``) and a ``parts``
+            list of typed parts (``user-prompt``, ``text``, ``tool-call``, ``tool-return``,
+            etc.). Use ``pydantic_ai.messages.ModelMessagesTypeAdapter.validate_python``
+            to round-trip back into typed objects.
+        thread_id: The thread ID for this conversation memory.
     """
 
-    runs: list[Run]
+    messages: list[dict]
     thread_id: str
 
 
@@ -390,6 +445,64 @@ class AgentStreamEvent(ExecutionPayload):
     """
 
     token: str
+
+
+@dataclass
+@PayloadRegistry.register
+class AgentToolCallEvent(ExecutionPayload):
+    """Agent invoked a tool. Emitted when the model commits a tool call before execution.
+
+    Use when: Rendering tool-call cards in chat UIs, surfacing in-flight tool work,
+    debugging multi-step agent runs.
+
+    Args:
+        tool_call_id: Stable identifier for this call. Pairs with the matching
+            ``AgentToolResultEvent.tool_call_id``.
+        tool_name: Name of the tool the agent invoked.
+        args: JSON-encoded preview of the tool arguments. May be ``"{}"`` when the
+            model produced no arguments.
+    """
+
+    tool_call_id: str
+    tool_name: str
+    args: str
+
+
+@dataclass
+@PayloadRegistry.register
+class AgentToolResultEvent(ExecutionPayload):
+    """Tool call returned. Emitted after the workspace or MCP tool produces a result.
+
+    Use when: Updating tool-call cards with output, showing tool errors inline,
+    chaining UI state off the agent's tool pipeline.
+
+    Args:
+        tool_call_id: Identifier matching the originating ``AgentToolCallEvent``.
+        tool_name: Name of the tool that produced this result.
+        content: Stringified tool output. Non-string returns are JSON-encoded.
+        is_error: ``True`` when the tool raised or returned a retry prompt.
+    """
+
+    tool_call_id: str
+    tool_name: str
+    content: str
+    is_error: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class AgentThinkingEvent(ExecutionPayload):
+    """Streaming reasoning/thinking delta from the underlying model.
+
+    Use when: Showing a "thinking\u2026" indicator or rendering reasoning content
+    parts as the agent works through a problem.
+
+    Args:
+        delta: Incremental thinking text. Concatenate successive deltas to assemble
+            the full reasoning trace for a turn.
+    """
+
+    delta: str
 
 
 @dataclass

@@ -71,6 +71,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     GetNextUnusedFilenameRequest,
     GetNextUnusedFilenameResultFailure,
     GetNextUnusedFilenameResultSuccess,
+    GetNextVersionIndexRequest,
+    GetNextVersionIndexResultFailure,
+    GetNextVersionIndexResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -330,6 +333,14 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=ResolveMacroPathRequest, callback=self.on_handle_resolve_macro_path_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=GetNextUnusedFilenameRequest, callback=self.on_get_next_unused_filename_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=GetNextVersionIndexRequest, callback=self.on_get_next_version_index_request
             )
 
             # Store event_manager for direct access during resource registration
@@ -1757,7 +1768,7 @@ class OSManager:
         try:
             index_info = self._identify_index_variable(parsed_macro, variables)
         except ValueError as e:
-            msg = str(e)
+            msg = f"Failed to identify index variable in path template: {e}"
             logger.error(msg)
             return GetNextUnusedFilenameResultFailure(
                 failure_reason=FileIOFailureReason.INVALID_PATH,
@@ -1800,6 +1811,38 @@ class OSManager:
             result_details=f"Found available filename with index {next_index}"
             if next_index
             else "Found available filename (no index needed)",
+        )
+
+    def on_get_next_version_index_request(self, request: GetNextVersionIndexRequest) -> ResultPayload:
+        """Handle a request to find the next available version index via a single glob pass."""
+        parsed_macro = request.macro_path.parsed_macro
+        variables = request.macro_path.variables
+
+        try:
+            index_info = self._identify_index_variable(parsed_macro, variables)
+        except ValueError as e:
+            msg = f"Attempted to find next version index. Failed: {e}"
+            logger.error(msg)
+            return GetNextVersionIndexResultFailure(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details=msg,
+            )
+
+        if index_info is None:
+            msg = "Attempted to find next version index. Failed because no unresolved {_index} variable was found in the macro template."
+            logger.error(msg)
+            return GetNextVersionIndexResultFailure(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details=msg,
+            )
+
+        next_index = self._scan_for_next_available_index(parsed_macro, variables, index_info)
+
+        return GetNextVersionIndexResultSuccess(
+            index=next_index,
+            result_details=f"Next available version index is {next_index}"
+            if next_index is not None
+            else "Base path is available (no index needed)",
         )
 
     def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
