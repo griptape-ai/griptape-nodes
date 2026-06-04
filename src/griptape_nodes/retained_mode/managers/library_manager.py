@@ -207,7 +207,9 @@ from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import (
     LIBRARIES_TO_DOWNLOAD_KEY,
     LIBRARIES_TO_REGISTER_KEY,
+    LIBRARY_DEPENDENCY_INSTALL_BEHAVIOR_KEY,
     WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
+    LibraryDependencyInstallBehavior,
     LibraryRegistration,
 )
 from griptape_nodes.utils.async_utils import subprocess_run
@@ -1971,18 +1973,37 @@ class LibraryManager:
 
                         # Download and install any griptape libraries this library depends on.
                         if griptape_library_deps:
-                            for dep_url_ref in griptape_library_deps:
-                                parsed = parse_git_url_with_ref(dep_url_ref)
+                            config_mgr = GriptapeNodes.ConfigManager()
+                            install_behavior = config_mgr.get_config_value(
+                                LIBRARY_DEPENDENCY_INSTALL_BEHAVIOR_KEY,
+                                default=LibraryDependencyInstallBehavior.ALWAYS,
+                                cast_type=str,
+                            )
+                            for dep in griptape_library_deps:
+                                parsed = parse_git_url_with_ref(dep.url)
                                 normalized_url = normalize_github_url(parsed.url)
-                                repo_name = normalized_url.rstrip("/").split("/")[-1].removesuffix(".git")
+                                repo_name = extract_repo_name_from_url(normalized_url)
                                 already_registered = any(
-                                    f"/{repo_name}/" in path or path.endswith(f"/{repo_name}")
-                                    for path in self._library_file_path_to_info
+                                    repo_name in Path(str(path)).parts for path in self._library_file_path_to_info
                                 )
                                 if already_registered:
                                     logger.debug(
                                         "Library dependency '%s' is already registered, skipping download",
-                                        dep_url_ref,
+                                        dep.url,
+                                    )
+                                    continue
+                                if install_behavior == LibraryDependencyInstallBehavior.NEVER:
+                                    if dep.required:
+                                        library_info.problems.append(
+                                            LibraryDependencyProblem(
+                                                dependency_name=dep.url,
+                                                error_message="Automatic dependency installation is disabled (dependency_install_behavior=never).",
+                                            )
+                                        )
+                                        library_info.fitness = LibraryManager.LibraryFitness.FLAWED
+                                    logger.debug(
+                                        "Skipping download of library dependency '%s' (dependency_install_behavior=never)",
+                                        dep.url,
                                     )
                                     continue
                                 dep_result = await self.download_library_request(
@@ -1994,17 +2015,23 @@ class LibraryManager:
                                     )
                                 )
                                 if isinstance(dep_result, DownloadLibraryResultFailure):
-                                    library_info.problems.append(
-                                        LibraryDependencyProblem(
-                                            dependency_name=dep_url_ref,
-                                            error_message=str(dep_result.result_details),
+                                    if dep.required:
+                                        library_info.problems.append(
+                                            LibraryDependencyProblem(
+                                                dependency_name=dep.url,
+                                                error_message=str(dep_result.result_details),
+                                            )
                                         )
+                                        library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
+                                        library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
+                                        self._library_file_path_to_info[library_info.library_path] = library_info
+                                        details = f"Attempted to load Library '{library_info.library_name}'. Failed to load required library dependency '{dep.url}': {dep_result.result_details}"
+                                        return RegisterLibraryFromFileResultFailure(result_details=details)
+                                    logger.warning(
+                                        "Optional library dependency '%s' failed to load: %s",
+                                        dep.url,
+                                        dep_result.result_details,
                                     )
-                                    library_info.fitness = LibraryManager.LibraryFitness.UNUSABLE
-                                    library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
-                                    self._library_file_path_to_info[library_info.library_path] = library_info
-                                    details = f"Attempted to load Library '{library_info.library_name}'. Failed to load required library dependency '{dep_url_ref}': {dep_result.result_details}"
-                                    return RegisterLibraryFromFileResultFailure(result_details=details)
 
                     # On the orchestrator (_is_worker is False), skip venv creation and pip
                     # install for libraries that require a dedicated worker. The lifecycle still
