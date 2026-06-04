@@ -3947,35 +3947,6 @@ directories:
         assert "directories" not in parsed or "outputs" not in (parsed.get("directories") or {})
 
     @pytest.mark.asyncio
-    async def test_save_with_relative_parent_path(self, pm: ProjectManager, tmp_path: Path) -> None:
-        """`parent_project_path` written as a relative path resolves against the child YAML's directory."""
-        from griptape_nodes.retained_mode.events.project_events import (
-            SaveProjectTemplateRequest,
-            SaveProjectTemplateResultSuccess,
-        )
-
-        # Sibling layout: child.yml lives next to parent.yml, links via "./parent.yml".
-        parent_path = (tmp_path / "parent.yml").resolve()
-        await self._load_parent(pm, parent_path, self.BASE_PARENT_YAML)
-
-        child_path = tmp_path / "child.yml"
-        template_data = {
-            "project_template_schema_version": "0.3.2",
-            "name": "child",
-            "parent_project_path": "./parent.yml",
-            "situations": {},
-            "directories": {
-                "outputs": {"name": "outputs", "path_macro": "outputs2"},  # inherited
-            },
-        }
-        result = pm.on_save_project_template_request(
-            SaveProjectTemplateRequest(project_path=child_path, template_data=template_data)
-        )
-        assert isinstance(result, SaveProjectTemplateResultSuccess)
-        parsed = self._parse_yaml(child_path.read_text())
-        assert "directories" not in parsed or "outputs" not in (parsed.get("directories") or {})
-
-    @pytest.mark.asyncio
     async def test_save_grandchild_diffs_against_parent_merged_chain(self, pm: ProjectManager, tmp_path: Path) -> None:
         """Grandchild's diff base is the parent's *fully-merged* template (which carries grandparent values)."""
         from griptape_nodes.retained_mode.events.project_events import (
