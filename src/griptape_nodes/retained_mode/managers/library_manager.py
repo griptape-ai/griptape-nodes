@@ -38,7 +38,7 @@ from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io, resolve_workspace_path
-from griptape_nodes.node_library.library_declarations import WorkerLibraryCapability
+from griptape_nodes.node_library.library_declarations import requires_worker_process
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -345,10 +345,11 @@ class LibraryManager:
         library_name: str | None = None
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
-        # True when the library's WorkerLibraryCapability resolves to launching
-        # in a worker process (`support=BOTH` and `default_mode=WORKER`). Set
-        # whenever metadata is first successfully parsed (discovery or lifecycle
-        # progression). Absence of the declaration falls through to False.
+        # True when the library's declarations resolve to launching in a worker
+        # process (compatible per ``WorkerModeCompatibility`` and suggested per
+        # ``SuggestedWorkerMode``). Set whenever metadata is first successfully
+        # parsed (discovery or lifecycle progression). Absence of the relevant
+        # declarations falls through to False.
         requires_worker: bool = False
         # Set when the library enters WORKER_PENDING state. The orchestrator waits on this
         # event before returning RegisterLibraryFromFileResultSuccess so callers see the real
@@ -1776,16 +1777,8 @@ class LibraryManager:
                     # Update library_info with metadata results
                     library_info.library_name = metadata_result.library_schema.name
                     library_info.library_version = metadata_result.library_schema.metadata.library_version
-                    worker_decl = next(
-                        (
-                            d
-                            for d in metadata_result.library_schema.metadata.declarations
-                            if isinstance(d, WorkerLibraryCapability)
-                        ),
-                        None,
-                    )
-                    library_info.requires_worker = (
-                        worker_decl.requires_worker_process() if worker_decl is not None else False
+                    library_info.requires_worker = requires_worker_process(
+                        metadata_result.library_schema.metadata.declarations
                     )
                     library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
@@ -4022,15 +4015,7 @@ class LibraryManager:
         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
             library_name = metadata_result.library_schema.name
             library_version = metadata_result.library_schema.metadata.library_version
-            worker_decl = next(
-                (
-                    d
-                    for d in metadata_result.library_schema.metadata.declarations
-                    if isinstance(d, WorkerLibraryCapability)
-                ),
-                None,
-            )
-            requires_worker = worker_decl.requires_worker_process() if worker_decl is not None else False
+            requires_worker = requires_worker_process(metadata_result.library_schema.metadata.declarations)
             lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
         if not enabled:

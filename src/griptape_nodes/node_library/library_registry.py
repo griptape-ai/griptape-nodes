@@ -5,9 +5,16 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from griptape_nodes.node_library.library_declarations import LibraryDeclaration, NodeDeclaration
+from griptape_nodes.node_library.library_declarations import (
+    LibraryDeclaration,
+    NodeDeclaration,
+    SuggestedWorkerMode,
+    WorkerCompatibility,
+    WorkerMode,
+    WorkerModeCompatibility,
+)
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
 )
@@ -96,8 +103,30 @@ class LibraryMetadata(BaseModel):
     resources: ResourceRequirements | None = None
     # Declarative properties / capabilities for this library. Applies to all nodes in the library.
     # See griptape_nodes.node_library.library_declarations for the supported types,
-    # including WorkerLibraryCapability for orchestrator/worker hosting.
+    # including WorkerModeCompatibility for orchestrator/worker hosting.
     declarations: list[LibraryDeclaration] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _reject_incompatible_with_suggested_worker(self) -> LibraryMetadata:
+        # A library declared INCOMPATIBLE with worker hosting must not also
+        # suggest WORKER as its launch mode. The two declarations live on
+        # the same metadata block, so the cross-axis check belongs here --
+        # the individual declaration models are independent and can't see
+        # each other.
+        capability = next((d for d in self.declarations if isinstance(d, WorkerModeCompatibility)), None)
+        if capability is None or capability.compatibility is not WorkerCompatibility.INCOMPATIBLE:
+            return self
+        suggested = next(
+            (d for d in self.declarations if isinstance(d, SuggestedWorkerMode)),
+            None,
+        )
+        if suggested is not None and suggested.mode is WorkerMode.WORKER:
+            msg = (
+                "Library declares WorkerModeCompatibility(compatibility=INCOMPATIBLE) but also "
+                "declares SuggestedWorkerMode(mode=WORKER); the two are contradictory."
+            )
+            raise ValueError(msg)
+        return self
 
 
 class IconVariant(BaseModel):

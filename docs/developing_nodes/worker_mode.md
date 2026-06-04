@@ -49,25 +49,32 @@ heavier library next to yours.
 
 ## How to opt in
 
-Add a `worker` capability declaration to your library's
-`metadata.declarations` in `griptape-nodes-library.json`. The capability has
-two fields:
+Worker hosting is described by two declarations on your library's
+`metadata.declarations` in `griptape-nodes-library.json`. They live
+side by side because they answer two different questions:
 
-- `support`: what the library is *capable* of running under.
-    - `BOTH` (default): the library can run in either the orchestrator
+- **`worker_mode_compatibility`** — whether the library is *compatible*
+    with worker hosting. One field, `compatibility`:
+    - `COMPATIBLE`: the library can run in either the orchestrator
         process or a dedicated worker subprocess.
-    - `ORCHESTRATOR_ONLY`: the library only works in the orchestrator
+    - `INCOMPATIBLE`: the library only works in the orchestrator
         process and must never be hosted on a worker.
-- `default_mode`: where the library *launches* when nothing else
-    overrides. `ORCHESTRATOR` or `WORKER`. Omit it (or set `null`) to take
-    the engine default, which today is the orchestrator. Once the GUI
-    override ships, users will be able to flip a `BOTH` library between
-    modes; `default_mode` is the author's preferred starting point.
+- **`suggested_worker_mode`** — where the library *launches* when
+    nothing else overrides. One field, `mode`: `ORCHESTRATOR` or
+    `WORKER`. Omit the declaration to take the engine default (today:
+    orchestrator). Once the GUI override ships, users will be able to
+    flip a `COMPATIBLE` library between modes; this declaration is the
+    author's suggested starting point.
 
-Omitting the declaration entirely is equivalent to declaring
-`{"support": "BOTH"}` with no `default_mode` -- the library is capable of
-worker mode but launches in the orchestrator until something asks for the
-flip.
+Omitting both declarations is equivalent to declaring
+`worker_mode_compatibility` with `compatibility=COMPATIBLE` and no
+`suggested_worker_mode` — the library is capable of worker mode but
+launches in the orchestrator until something asks for the flip.
+
+Declaring `worker_mode_compatibility` with
+`compatibility=INCOMPATIBLE` and a `suggested_worker_mode` of `WORKER`
+is contradictory; library metadata validation rejects that
+combination.
 
 ```json
 {
@@ -81,9 +88,12 @@ flip.
         "tags": ["AI", "Custom"],
         "declarations": [
             {
-                "type": "worker_capability",
-                "support": "BOTH",
-                "default_mode": "WORKER"
+                "type": "worker_mode_compatibility",
+                "compatibility": "COMPATIBLE"
+            },
+            {
+                "type": "suggested_worker_mode",
+                "mode": "WORKER"
             }
         ],
         "dependencies": {
@@ -110,8 +120,10 @@ hatch for index URLs and other arguments your install legitimately
 needs.
 
 The schemas:
-[`WorkerLibraryCapability`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_declarations.py)
-in `library_declarations.py` and
+[`WorkerModeCompatibility`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_declarations.py)
+and
+[`SuggestedWorkerMode`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_declarations.py)
+in `library_declarations.py`, and
 [`Dependencies`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py#L39)
 in `library_registry.py`.
 
@@ -268,10 +280,12 @@ logs a `WARNING` so the asymmetry is visible.
 
 ## "Is my library worker-ready?" checklist
 
-- [ ] `worker` capability declared in `metadata.declarations` with
-    `support: BOTH` and `default_mode: WORKER` (or `default_mode` omitted
-    if you want the library to launch in the orchestrator by default and
-    let users opt in via the GUI)
+- [ ] `worker_mode_compatibility` declared in `metadata.declarations`
+    with `compatibility: COMPATIBLE` (or omit the declaration entirely
+    -- absence is treated as `COMPATIBLE`), plus `suggested_worker_mode`
+    with `mode: WORKER` (or omit `suggested_worker_mode` if you want the
+    library to launch in the orchestrator by default and let users opt
+    in via the GUI)
 - [ ] `__init__` does no I/O and issues no event-bus requests
 - [ ] No `add_parameter` / `remove_parameter_element` from inside
     `process`; use `AddParameterToNodeRequest` /

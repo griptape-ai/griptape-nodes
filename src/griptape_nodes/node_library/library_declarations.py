@@ -3,23 +3,29 @@
 Attached to `LibraryMetadata.declarations` and `NodeMetadata.declarations` and
 serialized into `griptape_nodes_library.json`.
 
-Two declaration categories ship today:
+Each declaration carries exactly one value -- multi-knob behavior splits
+into separate declarations rather than wider models. Two categories of
+single-value declaration ship today:
 
-* **Properties** are identity facts ("I am BETA", "I require a customer key").
-* **Capabilities** describe how a library wants to be hosted or executed
-  (e.g. `WorkerLibraryCapability` for orchestrator vs. worker process).
+* **Properties** state an unconditional fact about the library or node
+  ("I am BETA", "I prefer launching in worker mode").
+* **Capabilities** state what the library or node can do in relation to
+  a host constraint ("I am compatible with worker hosting").
 
-The `LibraryDeclaration` and `NodeDeclaration` unions are scaffolded so that
-additional categories (further capabilities, requirements, etc.) can slot in
-additively without churning the schema shape.
+The `LibraryDeclaration` and `NodeDeclaration` unions are scaffolded so
+that additional declarations slot in additively without churning the
+schema shape.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 # ---------- Shared enums ----------
 
@@ -52,26 +58,21 @@ class KeySupport(StrEnum):
     REQUIRES_GRIPTAPE_KEY = "REQUIRES_GRIPTAPE_KEY"
 
 
-class WorkerSupport(StrEnum):
-    """What hosting modes a library is capable of running under.
+class WorkerCompatibility(StrEnum):
+    """Whether a library can run in a worker subprocess at all.
 
-    Capability ("can it run as a worker?"), not configuration ("where does it
-    launch?"). The launch decision lives in `WorkerLibraryCapability.default_mode`
-    and -- once it ships -- the GUI override.
-
-    Absence of a WorkerLibraryCapability is treated as `BOTH` with no
-    `default_mode` set; consumers apply the orchestrator default at the call site.
+    Absence of a ``WorkerModeCompatibility`` declaration is treated as
+    ``COMPATIBLE``.
     """
 
-    BOTH = "BOTH"
-    ORCHESTRATOR_ONLY = "ORCHESTRATOR_ONLY"
+    COMPATIBLE = "COMPATIBLE"
+    INCOMPATIBLE = "INCOMPATIBLE"
 
 
 class WorkerMode(StrEnum):
-    """Where the library actually launches when the engine starts.
+    """Where a worker-compatible library launches by default.
 
-    Configuration ("where do I launch?"), not capability ("can I launch there?").
-    Only meaningful when paired with `WorkerSupport.BOTH`.
+    Only meaningful when the library is also ``WorkerCompatibility.COMPATIBLE``.
     """
 
     ORCHESTRATOR = "ORCHESTRATOR"
@@ -92,43 +93,33 @@ class LifecycleStageLibraryProperty(BaseModel):
     stage: LifecycleStage
 
 
-class WorkerLibraryCapability(BaseModel):
-    """Declares how this library can be hosted (orchestrator vs. worker process).
+class WorkerModeCompatibility(BaseModel):
+    """Declares whether this library is compatible with worker hosting.
 
-    Worker hosting is modeled as a capability (rather than a property) so that
-    additional worker-execution knobs (e.g. concurrency) can attach to this same
-    declaration without inventing a parallel category.
-
-    Two axes:
-
-    * `support` -- what the library is capable of (`BOTH` or `ORCHESTRATOR_ONLY`).
-    * `default_mode` -- where the library launches when nothing else overrides
-      (the future GUI override is the "something else"). `None` means the engine
-      picks: today that's orchestrator.
-
-    Absence of the entire declaration is treated as `support=BOTH` with no
-    `default_mode` -- equivalent to declaring it explicitly with those values.
+    Pair with a ``SuggestedWorkerMode`` to state the author's suggested
+    starting point; absence of this declaration is treated as
+    ``compatibility=COMPATIBLE``.
     """
 
-    type: Literal["worker_capability"] = "worker_capability"
-    support: WorkerSupport = WorkerSupport.BOTH
-    default_mode: WorkerMode | None = None
+    type: Literal["worker_mode_compatibility"] = "worker_mode_compatibility"
+    compatibility: WorkerCompatibility
 
-    @model_validator(mode="after")
-    def _validate_default_mode_against_support(self) -> WorkerLibraryCapability:
-        if self.support is WorkerSupport.ORCHESTRATOR_ONLY and self.default_mode is WorkerMode.WORKER:
-            msg = "WorkerLibraryCapability cannot set default_mode=WORKER when support=ORCHESTRATOR_ONLY."
-            raise ValueError(msg)
-        return self
 
-    def requires_worker_process(self) -> bool:
-        """Map the declared capability and default to today's load-time `requires_worker` bool.
+class SuggestedWorkerMode(BaseModel):
+    """Declares the author's suggested launch mode (orchestrator vs. worker).
 
-        Centralized here so the future GUI flip updates only one site.
-        """
-        if self.support is WorkerSupport.ORCHESTRATOR_ONLY:
-            return False
-        return self.default_mode is WorkerMode.WORKER
+    A starting point, not a hard constraint -- once the GUI override ships,
+    users can flip a worker-compatible library between modes. Absence of
+    this declaration is treated as "no author suggestion"; consumers apply
+    the engine default (today: orchestrator).
+
+    Only meaningful when paired with ``WorkerCompatibility.COMPATIBLE``. A
+    ``LibraryMetadata`` validator rejects the contradictory pairing of
+    ``INCOMPATIBLE`` with ``mode=WORKER``.
+    """
+
+    type: Literal["suggested_worker_mode"] = "suggested_worker_mode"
+    mode: WorkerMode
 
 
 # `Annotated[X | Y, Field(discriminator="type")]` is Pydantic v2's discriminated-union
@@ -141,12 +132,35 @@ class WorkerLibraryCapability(BaseModel):
 #     `type: Literal[...]` attribute with a distinct string. Unknown `type` values raise
 #     ValidationError (strict validation).
 # This is the canonical Pydantic v2 way to round-trip "one of several shapes" through JSON.
-# A single-member union is still wrapped in this idiom because future declaration types
-# (capabilities, requirements) slot in additively without changing the field's shape.
 LibraryDeclaration = Annotated[
-    LifecycleStageLibraryProperty | WorkerLibraryCapability,
+    LifecycleStageLibraryProperty | WorkerModeCompatibility | SuggestedWorkerMode,
     Field(discriminator="type"),
 ]
+
+
+def requires_worker_process(declarations: Sequence[LibraryDeclaration]) -> bool:
+    """Resolve the load-time worker-process decision from a library's declarations.
+
+    A library requires a dedicated worker subprocess when:
+
+    1. It is compatible with worker hosting (``WorkerCompatibility.COMPATIBLE``
+       -- absence of a ``WorkerModeCompatibility`` is treated as ``COMPATIBLE``),
+       AND
+    2. Its suggested launch mode is ``WorkerMode.WORKER``.
+
+    Anything else -- ``INCOMPATIBLE`` capability, no
+    ``SuggestedWorkerMode`` at all, or ``ORCHESTRATOR`` suggestion --
+    means the library runs in the orchestrator process.
+
+    Centralized here so the future GUI flip updates only one site.
+    """
+    capability = next((d for d in declarations if isinstance(d, WorkerModeCompatibility)), None)
+    if capability is not None and capability.compatibility is WorkerCompatibility.INCOMPATIBLE:
+        return False
+    suggested = next((d for d in declarations if isinstance(d, SuggestedWorkerMode)), None)
+    if suggested is None:
+        return False
+    return suggested.mode is WorkerMode.WORKER
 
 
 # ---------- Node-level declarations ----------
