@@ -4776,7 +4776,7 @@ class LibraryManager:
             return DownloadLibraryResultFailure(result_details=details)
 
         try:
-            content = await anyio.Path(library_json_path).read_text()
+            content = await anyio.Path(library_json_path).read_text(encoding="utf-8")
             library_data = json.loads(content)
         except json.JSONDecodeError as e:
             details = f"Failed to parse griptape_nodes_library.json from downloaded library: {e}"

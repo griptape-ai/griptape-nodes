@@ -201,8 +201,8 @@ class ConfigManager:
             logger.debug("No %s config file loaded", label)
             return {}
         try:
-            return json.loads(path.read_text())
-        except json.JSONDecodeError as e:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.error("Error parsing %s config file: %s", label, e)
             return {}
 
