@@ -110,7 +110,7 @@ class WorkerLibraryCapability(BaseModel):
     `default_mode` -- equivalent to declaring it explicitly with those values.
     """
 
-    type: Literal["worker"] = "worker"
+    type: Literal["worker_capability"] = "worker_capability"
     support: WorkerSupport = WorkerSupport.BOTH
     default_mode: WorkerMode | None = None
 

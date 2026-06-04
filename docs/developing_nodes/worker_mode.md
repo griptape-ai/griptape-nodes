@@ -81,7 +81,7 @@ flip.
         "tags": ["AI", "Custom"],
         "declarations": [
             {
-                "type": "worker",
+                "type": "worker_capability",
                 "support": "BOTH",
                 "default_mode": "WORKER"
             }
