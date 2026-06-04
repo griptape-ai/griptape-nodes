@@ -3731,9 +3731,7 @@ class WorkflowManager:
             unique_parameter_dict[uuid] = unique_parameter_byte_str
 
             # Collect import statements for all classes in the object tree
-            self._collect_object_imports(
-                unique_parameter_value, import_recorder, global_modules_set, deferred_imports or {}
-            )
+            self._collect_object_imports(unique_parameter_value, import_recorder, global_modules_set, deferred_imports)
 
         # Comment lines explaining what we're doing. Each line is emitted as its own bare-string
         # statement so that it unparses onto a single source line. A post-process pass in
