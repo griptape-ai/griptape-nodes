@@ -7,14 +7,8 @@ Each declaration carries exactly one value -- multi-knob behavior splits
 into separate declarations rather than wider models. Two categories of
 single-value declaration ship today:
 
-* **Properties** state an unconditional fact about the library or node
-  ("I am BETA", "I prefer launching in worker mode").
-* **Capabilities** state what the library or node can do in relation to
-  a host constraint ("I am compatible with worker hosting").
-
-The `LibraryDeclaration` and `NodeDeclaration` unions are scaffolded so
-that additional declarations slot in additively without churning the
-schema shape.
+* **Properties** state an identity fact about the library or node.
+* **Capabilities** state what the library or node can do.
 """
 
 from __future__ import annotations
