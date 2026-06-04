@@ -36,7 +36,7 @@ from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeClou
 from griptape_nodes.files.drivers.http_file_driver import HttpFileDriver
 from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
 from griptape_nodes.files.drivers.static_server_file_driver import StaticServerFileDriver
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError, canonical_extension
 from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriverRegistry
 from griptape_nodes.files.path_utils import (
     canonicalize_for_identity,
@@ -2105,6 +2105,15 @@ class OSManager:
             msg = "Internal error: success path reached but file path or bytes not set"
             raise RuntimeError(msg)
 
+        # Reconcile the on-disk suffix with the actual byte content. When the
+        # caller passes coerce_extension_to_match_bytes=True (the default) we
+        # rename to match the sniffed format; when False, mismatched bytes are
+        # treated as a hard failure and the just-written file is removed.
+        coercion_result = self._apply_extension_coercion(request, final_file_path)
+        if isinstance(coercion_result, WriteFileResultFailure):
+            return coercion_result
+        final_file_path = coercion_result
+
         # Write sidecar metadata file if caller opted in by providing file_metadata
         if request.file_metadata is not None:
             write_sidecar(final_file_path, request.file_metadata)
@@ -2120,6 +2129,88 @@ class OSManager:
             bytes_written=final_bytes_written,
             result_details=result_details,
         )
+
+    def _apply_extension_coercion(  # noqa: PLR0911
+        self,
+        request: WriteFileRequest,
+        final_file_path: Path,
+    ) -> Path | WriteFileResultFailure:
+        """Reconcile the on-disk suffix with the sniffed byte format.
+
+        Runs only for binary content. Sniffs via the registered artifact
+        providers; when the sniffed canonical extension disagrees with the
+        path's suffix the behavior is controlled by the request flag:
+
+        - ``coerce_extension_to_match_bytes=True`` (default): rename the file
+          to use the sniffed extension and (when present) update the
+          ``file_extension`` variable on the sidecar's situation metadata so
+          provenance reflects the actual on-disk extension.
+        - ``coerce_extension_to_match_bytes=False``: delete the just-written
+          file and return ``WriteFileResultFailure`` with
+          ``EXTENSION_MISMATCH``, preserving the original strict behavior.
+        """
+        content = request.content
+        if not isinstance(content, bytes):
+            return final_file_path
+
+        suffix = final_file_path.suffix.lstrip(".").lower()
+        if not suffix:
+            return final_file_path
+
+        sniffed = GriptapeNodes.ArtifactManager().sniff_extension(content)
+        if sniffed is None:
+            logger.warning(
+                "Could not identify byte content for '%s'; writing through without extension coercion.",
+                final_file_path,
+            )
+            return final_file_path
+
+        if canonical_extension(suffix) == canonical_extension(sniffed):
+            return final_file_path
+
+        if not request.coerce_extension_to_match_bytes:
+            try:
+                final_file_path.unlink(missing_ok=True)
+            except OSError as e:
+                logger.warning(
+                    "Failed to remove '%s' after EXTENSION_MISMATCH: %s",
+                    final_file_path,
+                    e,
+                )
+            msg = (
+                f"Refusing to write {sniffed.upper()} bytes to '{final_file_path}' "
+                f"(extension '.{suffix}'). The file extension must match the byte content; "
+                f"either rename the destination to '.{sniffed}' or supply bytes that match '.{suffix}'."
+            )
+            return WriteFileResultFailure(
+                failure_reason=FileIOFailureReason.EXTENSION_MISMATCH,
+                result_details=msg,
+            )
+
+        coerced_path = final_file_path.with_suffix(f".{sniffed}")
+        try:
+            final_file_path.rename(coerced_path)
+        except OSError as e:
+            logger.warning(
+                "Failed to rename '%s' to '%s' during extension coercion: %s; leaving original suffix.",
+                final_file_path,
+                coerced_path,
+                e,
+            )
+            return final_file_path
+
+        logger.warning(
+            "Coerced file extension to match byte content: '%s' -> '%s'.",
+            final_file_path,
+            coerced_path,
+        )
+
+        if request.file_metadata is not None and request.file_metadata.situation is not None:
+            variables = request.file_metadata.situation.variables
+            if variables is not None and "file_extension" in variables:
+                variables["file_extension"] = sniffed
+
+        return coerced_path
 
     def _ensure_parent_directory_ready(
         self,
