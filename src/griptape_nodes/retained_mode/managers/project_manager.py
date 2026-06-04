@@ -1257,7 +1257,7 @@ class ProjectManager:
             current_parent_raw = parent_info.template.parent_project_path
             current_anchor = parent_info.project_file_path
 
-    def _resolve_parent_path_for_lookup(self, raw_parent: str, anchor: Path | None) -> str | None:
+    def _resolve_parent_path_for_lookup(self, raw_parent: str, anchor: Path | str | None) -> str | None:
         """Resolve a stored parent_project_path to a canonical registry key.
 
         Resolves relative paths against `anchor` (the containing template's
@@ -1265,12 +1265,15 @@ class ProjectManager:
         provided, since we can't form an absolute path without one. Macro
         tokens are rejected by the loader; this resolver only sees absolute
         or anchor-relative paths.
+
+        `anchor` is coerced to `Path` defensively because request payloads
+        deserialized over the wire arrive with `project_path` as a `str`.
         """
         parent_path = Path(raw_parent)
         if not parent_path.is_absolute():
             if anchor is None:
                 return None
-            parent_path = anchor.parent / parent_path
+            parent_path = Path(anchor).parent / parent_path
         return str(canonicalize_for_identity(parent_path))
 
     def on_unregister_project_template_request(
