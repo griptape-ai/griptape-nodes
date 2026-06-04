@@ -19,7 +19,7 @@ EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
 WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
 WORKER_HEARTBEAT_TIMEOUT_KEY = "worker.heartbeat_timeout_s"
 WORKER_HEARTBEAT_STARTUP_GRACE_KEY = "worker.heartbeat_startup_grace_s"
-LIBRARY_DEPENDENCY_INSTALL_BEHAVIOR_KEY = "library.dependency_install_behavior"
+LIBRARY_DEPENDENCY_INSTALL_BEHAVIOR_KEY = "dependency_install_behavior"
 
 
 class Category(BaseModel):
@@ -43,7 +43,7 @@ MCP_SERVERS = Category(name="MCP Servers", description="Model Context Protocol s
 PROJECTS = Category(name="Projects", description="Project template configurations and registrations")
 STATIC_SERVER = Category(name="Static Server", description="Static file server configuration for serving media assets")
 ARTIFACTS = Category(name="Artifacts", description="Settings for artifact providers and preview generation")
-LIBRARIES = Category(name="Libraries", description="Settings for library management and dependency installation")
+LIBRARIES = Category(name="Libraries", description="Library management and dependency installation")
 
 
 def Field(category: str | Category = "General", **kwargs) -> Any:
@@ -228,17 +228,6 @@ class LibraryDependencyInstallBehavior(StrEnum):
     NEVER = "never"
 
 
-class LibrarySettings(BaseModel):
-    dependency_install_behavior: LibraryDependencyInstallBehavior = Field(
-        default=LibraryDependencyInstallBehavior.ALWAYS,
-        description=(
-            "Controls automatic installation of library dependencies declared in library manifests. "
-            "'always' downloads and installs them on registration. "
-            "'never' skips installation and marks the library as degraded if required dependencies are missing."
-        ),
-    )
-
-
 class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -384,7 +373,14 @@ class Settings(BaseModel):
         default_factory=dict,
         description="Mapping of project file paths to workspace directory overrides. When a project is loaded, if its resolved path matches a key here, the corresponding value is used as the workspace directory instead of the project-adjacent config or auto-default.",
     )
-    library: LibrarySettings = Field(
-        category=LIBRARIES,
-        default_factory=LibrarySettings,
+    dependency_install_behavior: LibraryDependencyInstallBehavior = Field(
+        LIBRARIES,
+        title="Dependency Install Behavior",
+        default=LibraryDependencyInstallBehavior.ALWAYS,
+        description=(
+            "Controls automatic installation of other Griptape Node Libraries declared as dependencies "
+            "in library manifests. Does not affect pip package installation, which always runs. "
+            "'always' downloads and registers dependency libraries on load. "
+            "'never' skips installation and marks the library as degraded if required dependencies are missing."
+        ),
     )
