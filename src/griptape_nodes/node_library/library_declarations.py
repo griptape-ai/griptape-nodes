@@ -57,7 +57,7 @@ class KeySupport(StrEnum):
 
 
 class WorkerCompatibility(StrEnum):
-    """Whether a library can run in a worker subprocess at all.
+    """Whether a library can run in a worker subprocess.
 
     Absence of a ``WorkerModeCompatibility`` declaration is treated as
     ``COMPATIBLE``.
@@ -71,6 +71,8 @@ class WorkerMode(StrEnum):
     """Where a worker-compatible library launches by default.
 
     Only meaningful when the library is also ``WorkerCompatibility.COMPATIBLE``.
+    Absence of a ``SuggestedWorkerMode`` declaration is treated as
+    ``ORCHESTRATOR``.
     """
 
     ORCHESTRATOR = "ORCHESTRATOR"
