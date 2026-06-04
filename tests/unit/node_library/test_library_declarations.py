@@ -186,9 +186,7 @@ class TestWorkerLibraryCapability:
             (WorkerSupport.ORCHESTRATOR_ONLY, WorkerMode.ORCHESTRATOR),
         ],
     )
-    def test_round_trips_each_combination(
-        self, support: WorkerSupport, default_mode: WorkerMode | None
-    ) -> None:
+    def test_round_trips_each_combination(self, support: WorkerSupport, default_mode: WorkerMode | None) -> None:
         capability = WorkerLibraryCapability(support=support, default_mode=default_mode)
 
         rebuilt = WorkerLibraryCapability.model_validate(json.loads(capability.model_dump_json()))
@@ -208,15 +206,11 @@ class TestWorkerLibraryCapability:
 
     def test_rejects_unknown_default_mode_value(self) -> None:
         with pytest.raises(ValidationError):
-            WorkerLibraryCapability.model_validate(
-                {"type": "worker", "support": "BOTH", "default_mode": "BOGUS"}
-            )
+            WorkerLibraryCapability.model_validate({"type": "worker", "support": "BOTH", "default_mode": "BOGUS"})
 
     def test_rejects_orchestrator_only_with_default_mode_worker(self) -> None:
         with pytest.raises(ValidationError):
-            WorkerLibraryCapability(
-                support=WorkerSupport.ORCHESTRATOR_ONLY, default_mode=WorkerMode.WORKER
-            )
+            WorkerLibraryCapability(support=WorkerSupport.ORCHESTRATOR_ONLY, default_mode=WorkerMode.WORKER)
 
     @pytest.mark.parametrize(
         ("support", "default_mode", "expected"),
