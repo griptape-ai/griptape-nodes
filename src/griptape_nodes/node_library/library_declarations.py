@@ -9,6 +9,10 @@ single-value declaration ship today:
 
 * **Properties** state an identity fact about the library or node.
 * **Capabilities** state what the library or node can do.
+
+The `LibraryDeclaration` and `NodeDeclaration` unions are scaffolded so
+that additional declarations slot in additively without churning the
+schema shape.
 """
 
 from __future__ import annotations
