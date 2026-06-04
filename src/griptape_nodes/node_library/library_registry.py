@@ -43,6 +43,24 @@ class LibraryNameAndVersion(NamedTuple):
     library_version: str
 
 
+class LibraryDependency(BaseModel):
+    """A single library dependency entry.
+
+    Can be specified as a plain string URL (backwards-compatible) or an object
+    with explicit `url` and `required` fields.
+    """
+
+    url: str
+    required: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_string(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return {"url": v, "required": True}
+        return v
+
+
 class Dependencies(BaseModel):
     """Dependencies for the library.
 
@@ -52,7 +70,7 @@ class Dependencies(BaseModel):
 
     pip_dependencies: list[str] | None = None
     pip_install_flags: list[str] | None = None
-    library_dependencies: list[str] | None = None  # url@ref, same format as libraries_to_download
+    library_dependencies: list[LibraryDependency] | None = None
 
 
 class ResourceRequirements(BaseModel):
