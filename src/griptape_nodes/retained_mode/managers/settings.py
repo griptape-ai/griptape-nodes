@@ -143,12 +143,10 @@ class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str | LibraryRegistration] = Field(
         default_factory=list,
         description=(
-            "Libraries to automatically load when the engine starts. Each entry is either a path "
-            "string (loaded as enabled, with the manifest's default launch mode) or an object with "
-            "`path`, optional `enabled`, and optional `worker_mode_override` fields. Paths may point "
-            "to a griptape_nodes_library.json file or a directory scanned recursively for library "
-            "JSON files. `worker_mode_override` is only honored for libraries whose manifest declares "
-            "WorkerSupport.BOTH; ORCHESTRATOR_ONLY libraries always run inside the orchestrator engine."
+            "Libraries the engine loads on startup. Each entry can be a path to a single "
+            "griptape_nodes_library.json file or a folder containing one or more libraries. "
+            "Use the toggle to enable or skip a library, and pick whether it runs alongside "
+            "the engine or in its own isolated process when the library supports it."
         ),
     )
     workflows_to_register: list[str] = Field(default_factory=list)
