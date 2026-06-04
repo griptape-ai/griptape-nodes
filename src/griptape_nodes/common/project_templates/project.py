@@ -32,10 +32,12 @@ class ProjectTemplate(BaseModel):
         default=None,
         description=(
             "Optional path to a parent project YAML. When set, the parent's merged template is the "
-            "base for this template (instead of system defaults alone). The value may be: "
-            "(1) absolute, (2) relative to the directory of this project's YAML, or "
-            "(3) the macro `{workspace_dir}/...` which expands to the active workspace at load time. "
-            "Macro form is preferred for cross-machine portability."
+            "base for this template (instead of system defaults alone). The value must be: "
+            "(1) absolute, or "
+            "(2) relative to the directory of this project's YAML (e.g. `../base/griptape-nodes-project.yml`). "
+            "Relative paths are preferred for cross-machine portability. "
+            "Macro tokens are not allowed: they would resolve against runtime state (e.g. the active "
+            "workspace) that can change while the project is loaded, which would corrupt parent/child links."
         ),
     )
     situations: dict[str, SituationTemplate] = Field(description="Situation templates (situation_name -> template)")
