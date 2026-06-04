@@ -22,6 +22,8 @@ from griptape_nodes.files.file import File, FileDestination
 from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
+    GetNextVersionIndexRequest,
+    GetNextVersionIndexResultSuccess,
     ScanSequencesRequest,
     ScanSequencesResultSuccess,
 )
@@ -37,7 +39,6 @@ if TYPE_CHECKING:
 
 _ENTRY_VAR_NAME = "entry"
 _ENTRY_MACRO_PATTERN = re.compile(r"\{entry(?::(\d+))?\}")
-_MAX_VERSION_INDEX = 9999
 
 
 class FileSequenceError(Exception):
@@ -272,11 +273,10 @@ def build_versioned_sequence_destination(
     existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
     create_parents: bool = True,
 ) -> FileSequenceDestination:
-    """Find the first available version index and return a locked FileSequenceDestination.
+    """Find the next available version index and return a locked FileSequenceDestination.
 
-    Increments ``_index`` in the entry macro starting at 1 until the corresponding
-    parent directory does not exist. Returns a ``FileSequenceDestination`` with
-    that index locked into the variables dict.
+    Delegates index discovery to GetNextVersionIndexRequest (a single glob pass),
+    then locks the returned index into the entry macro variables.
 
     Args:
         entry_macro: MacroPath template with ``{entry}`` and ``{_index}`` variables.
@@ -287,33 +287,27 @@ def build_versioned_sequence_destination(
         FileSequenceDestination with a locked _index version.
 
     Raises:
-        FileSequenceError: If no available version is found within the limit.
+        FileSequenceError: If the engine cannot determine the next available version index.
     """
-    for index in range(1, _MAX_VERSION_INDEX + 1):
-        probe_variables = {**entry_macro.variables, "_index": index, _ENTRY_VAR_NAME: 0}
-        resolve_result = GriptapeNodes.handle_request(
-            GetPathForMacroRequest(parsed_macro=entry_macro.parsed_macro, variables=probe_variables)
+    dir_template = str(PurePosixPath(entry_macro.parsed_macro.template).parent)
+    dir_variables = {k: v for k, v in entry_macro.variables.items() if k != _ENTRY_VAR_NAME}
+    dir_macro = MacroPath(ParsedMacro(dir_template), dir_variables)
+
+    index_result = GriptapeNodes.handle_request(GetNextVersionIndexRequest(macro_path=dir_macro))
+    if not isinstance(index_result, GetNextVersionIndexResultSuccess):
+        msg = (
+            f"Attempted to find available sequence version. Failed to find version index: {index_result.result_details}"
         )
-        if not isinstance(resolve_result, GetPathForMacroResultSuccess):
-            msg = f"Attempted to find available sequence version. Failed to resolve macro: {resolve_result.result_details}"
-            raise FileSequenceError(msg)
+        raise FileSequenceError(msg)
 
-        parent_dir = resolve_result.absolute_path.parent
-        if not parent_dir.exists():
-            try:
-                parent_dir.mkdir(parents=create_parents, exist_ok=False)
-            except FileExistsError:
-                continue
-            locked_vars = {**entry_macro.variables, "_index": index}
-            locked_macro = MacroPath(entry_macro.parsed_macro, locked_vars)
-            return FileSequenceDestination(
-                locked_macro,
-                existing_file_policy=existing_file_policy,
-                create_parents=create_parents,
-            )
-
-    msg = f"Attempted to find available sequence version. Failed because no path found after {_MAX_VERSION_INDEX} attempts."
-    raise FileSequenceError(msg)
+    index = index_result.index if index_result.index is not None else 1
+    locked_vars = {**entry_macro.variables, "_index": index}
+    locked_macro = MacroPath(entry_macro.parsed_macro, locked_vars)
+    return FileSequenceDestination(
+        locked_macro,
+        existing_file_policy=existing_file_policy,
+        create_parents=create_parents,
+    )
 
 
 def hash_pattern_to_entry_macro(pattern: str) -> str:

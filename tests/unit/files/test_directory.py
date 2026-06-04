@@ -7,7 +7,12 @@ import pytest
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.files.directory import Directory, DirectoryDestination, DirectoryError
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
+    FileIOFailureReason,
+    GetNextVersionIndexResultFailure,
+    GetNextVersionIndexResultSuccess,
+)
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectResultSuccess,
     GetPathForMacroResultFailure,
@@ -206,6 +211,7 @@ class TestDirectoryDestinationCreateVersioning:
     def test_versioning_first_available_used(self, tmp_path: Path) -> None:
         missing_dir = tmp_path / "renders_v001"
 
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=1)
         resolve_result = GetPathForMacroResultSuccess(
             result_details="OK",
             resolved_path=Path("renders_v001"),
@@ -216,25 +222,19 @@ class TestDirectoryDestinationCreateVersioning:
         macro_path = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}"), {})
         dest = DirectoryDestination(macro_path, existing_dir_policy=ExistingFilePolicy.CREATE_NEW)
 
-        with patch(HANDLE_REQUEST_PATH, side_effect=[resolve_result, map_result]):
+        with patch(HANDLE_REQUEST_PATH, side_effect=[index_result, resolve_result, map_result]):
             directory = dest.create()
 
         assert missing_dir.is_dir()
         assert directory.location == "{outputs}/renders_v{_index:03}"
 
-    def test_versioning_increments_index_when_first_taken(self, tmp_path: Path) -> None:
-        existing_dir = tmp_path / "renders_v001"
-        existing_dir.mkdir()
-        missing_dir = tmp_path / "renders_v002"
+    def test_versioning_uses_index_from_engine(self, tmp_path: Path) -> None:
+        missing_dir = tmp_path / "renders_v003"
 
-        resolve_result_1 = GetPathForMacroResultSuccess(
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=3)
+        resolve_result = GetPathForMacroResultSuccess(
             result_details="OK",
-            resolved_path=Path("renders_v001"),
-            absolute_path=existing_dir,
-        )
-        resolve_result_2 = GetPathForMacroResultSuccess(
-            result_details="OK",
-            resolved_path=Path("renders_v002"),
+            resolved_path=Path("renders_v003"),
             absolute_path=missing_dir,
         )
         map_result = AttemptMapAbsolutePathToProjectResultSuccess(result_details="OK", mapped_path=None)
@@ -242,14 +242,46 @@ class TestDirectoryDestinationCreateVersioning:
         macro_path = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}"), {})
         dest = DirectoryDestination(macro_path, existing_dir_policy=ExistingFilePolicy.CREATE_NEW)
 
-        with patch(HANDLE_REQUEST_PATH, side_effect=[resolve_result_1, resolve_result_2, map_result]):
+        with patch(HANDLE_REQUEST_PATH, side_effect=[index_result, resolve_result, map_result]):
             directory = dest.create()
 
         assert missing_dir.is_dir()
         assert directory.location == "{outputs}/renders_v{_index:03}"
 
-    def test_versioning_handle_request_failure_raises_directory_error(self) -> None:
-        failure = GetPathForMacroResultFailure(
+    def test_versioning_none_index_treated_as_one(self, tmp_path: Path) -> None:
+        missing_dir = tmp_path / "renders_v001"
+
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=None)
+        resolve_result = GetPathForMacroResultSuccess(
+            result_details="OK",
+            resolved_path=Path("renders_v001"),
+            absolute_path=missing_dir,
+        )
+        map_result = AttemptMapAbsolutePathToProjectResultSuccess(result_details="OK", mapped_path=None)
+
+        macro_path = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}"), {})
+        dest = DirectoryDestination(macro_path, existing_dir_policy=ExistingFilePolicy.CREATE_NEW)
+
+        with patch(HANDLE_REQUEST_PATH, side_effect=[index_result, resolve_result, map_result]):
+            directory = dest.create()
+
+        assert missing_dir.is_dir()
+        assert directory.location == "{outputs}/renders_v{_index:03}"
+
+    def test_versioning_index_request_failure_raises_directory_error(self) -> None:
+        index_failure = GetNextVersionIndexResultFailure(
+            result_details="Failed to determine next index",
+            failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+        )
+        macro_path = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}"), {})
+        dest = DirectoryDestination(macro_path, existing_dir_policy=ExistingFilePolicy.CREATE_NEW)
+
+        with patch(HANDLE_REQUEST_PATH, return_value=index_failure), pytest.raises(DirectoryError):
+            dest.create()
+
+    def test_versioning_macro_resolve_failure_raises_directory_error(self) -> None:
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=1)
+        resolve_failure = GetPathForMacroResultFailure(
             result_details="Macro resolution failed",
             failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
             missing_variables={"outputs"},
@@ -257,22 +289,25 @@ class TestDirectoryDestinationCreateVersioning:
         macro_path = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}"), {})
         dest = DirectoryDestination(macro_path, existing_dir_policy=ExistingFilePolicy.CREATE_NEW)
 
-        with patch(HANDLE_REQUEST_PATH, return_value=failure), pytest.raises(DirectoryError):
+        with patch(HANDLE_REQUEST_PATH, side_effect=[index_result, resolve_failure]), pytest.raises(DirectoryError):
             dest.create()
 
-    def test_versioning_all_indexes_exhausted_raises(self, tmp_path: Path) -> None:
-        # tmp_path always exists, so every probe returns an already-existing directory.
+    def test_versioning_file_exists_error_raises_directory_error(self, tmp_path: Path) -> None:
+        existing_dir = tmp_path / "renders_v001"
+        existing_dir.mkdir()
+
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=1)
         resolve_result = GetPathForMacroResultSuccess(
             result_details="OK",
             resolved_path=Path("renders_v001"),
-            absolute_path=tmp_path,
+            absolute_path=existing_dir,
         )
+
         macro_path = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}"), {})
         dest = DirectoryDestination(macro_path, existing_dir_policy=ExistingFilePolicy.CREATE_NEW)
 
         with (
-            patch(HANDLE_REQUEST_PATH, return_value=resolve_result),
-            patch("griptape_nodes.files.directory._MAX_VERSION_INDEX", 3),
+            patch(HANDLE_REQUEST_PATH, side_effect=[index_result, resolve_result]),
             pytest.raises(DirectoryError),
         ):
             dest.create()

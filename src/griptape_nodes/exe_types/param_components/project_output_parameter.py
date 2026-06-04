@@ -1,9 +1,4 @@
-"""ProjectOutputParameter - shared base class for project-aware output parameter components.
-
-Handles common wiring: adding a file-path parameter, attaching an open-in-explorer button,
-and emitting the resolved path via node messages. Subclasses supply the destination-building
-logic for their specific output type (file, directory, or sequence).
-"""
+"""ProjectOutputParameter - shared base class for project-aware output parameter components."""
 
 from __future__ import annotations
 

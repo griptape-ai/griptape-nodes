@@ -17,6 +17,10 @@ from griptape_nodes.files.file_sequence import (
 )
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
+    FileIOFailureReason,
+    GetNextVersionIndexRequest,
+    GetNextVersionIndexResultFailure,
+    GetNextVersionIndexResultSuccess,
     ScanSequencesRequest,
     ScanSequencesResultFailure,
     ScanSequencesResultSuccess,
@@ -422,98 +426,71 @@ class TestFileSequenceScan:
 class TestBuildVersionedSequenceDestination:
     """Tests for build_versioned_sequence_destination."""
 
-    def test_first_version_used_when_parent_missing(self, tmp_path: Path) -> None:
-        missing_parent = tmp_path / "renders_v001"
-        entry_path = missing_parent / "frame_0000.exr"
-
-        resolve_result = GetPathForMacroResultSuccess(
-            result_details="OK",
-            resolved_path=Path("renders_v001/frame_0000.exr"),
-            absolute_path=entry_path,
-        )
+    def test_first_version_used_when_engine_returns_index_one(self) -> None:
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=1)
         macro = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}/frame_{entry:04}.exr"), {})
 
-        with patch(HANDLE_REQUEST_PATH, return_value=resolve_result):
+        with patch(HANDLE_REQUEST_PATH, return_value=index_result):
             dest = build_versioned_sequence_destination(macro)
 
         assert dest._entry_macro.variables["_index"] == 1
 
-    def test_second_version_used_when_first_parent_exists(self, tmp_path: Path) -> None:
-        existing_parent = tmp_path / "renders_v001"
-        existing_parent.mkdir()
-        missing_parent = tmp_path / "renders_v002"
-
-        resolve_result_1 = GetPathForMacroResultSuccess(
-            result_details="OK",
-            resolved_path=Path("renders_v001/frame_0000.exr"),
-            absolute_path=existing_parent / "frame_0000.exr",
-        )
-        resolve_result_2 = GetPathForMacroResultSuccess(
-            result_details="OK",
-            resolved_path=Path("renders_v002/frame_0000.exr"),
-            absolute_path=missing_parent / "frame_0000.exr",
-        )
+    def test_uses_index_returned_by_engine(self) -> None:
+        expected_index = 3
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=expected_index)
         macro = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}/frame_{entry:04}.exr"), {})
 
-        expected_index = 2
-        with patch(HANDLE_REQUEST_PATH, side_effect=[resolve_result_1, resolve_result_2]):
+        with patch(HANDLE_REQUEST_PATH, return_value=index_result):
             dest = build_versioned_sequence_destination(macro)
 
         assert dest._entry_macro.variables["_index"] == expected_index
 
-    def test_raises_when_macro_resolution_fails(self) -> None:
-        failure = GetPathForMacroResultFailure(
-            result_details="Missing variables: outputs",
-            failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
-            missing_variables={"outputs"},
+    def test_none_index_treated_as_one(self) -> None:
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=None)
+        macro = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}/frame_{entry:04}.exr"), {})
+
+        with patch(HANDLE_REQUEST_PATH, return_value=index_result):
+            dest = build_versioned_sequence_destination(macro)
+
+        assert dest._entry_macro.variables["_index"] == 1
+
+    def test_raises_when_index_request_fails(self) -> None:
+        failure = GetNextVersionIndexResultFailure(
+            result_details="Failed to determine next index",
+            failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
         )
         macro = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}/frame_{entry:04}.exr"), {})
 
         with patch(HANDLE_REQUEST_PATH, return_value=failure), pytest.raises(FileSequenceError):
             build_versioned_sequence_destination(macro)
 
-    def test_raises_when_all_versions_exhausted(self, tmp_path: Path) -> None:
-        existing_parent = tmp_path
-        resolve_result = GetPathForMacroResultSuccess(
-            result_details="OK",
-            resolved_path=Path("frame_0000.exr"),
-            absolute_path=existing_parent / "frame_0000.exr",
-        )
-        macro = MacroPath(ParsedMacro("{outputs}/renders_v{_index:03}/frame_{entry:04}.exr"), {})
-
-        with (
-            patch(HANDLE_REQUEST_PATH, return_value=resolve_result),
-            patch("griptape_nodes.files.file_sequence._MAX_VERSION_INDEX", 3),
-            pytest.raises(FileSequenceError),
-        ):
-            build_versioned_sequence_destination(macro)
-
-    def test_locks_index_into_returned_destination_variables(self, tmp_path: Path) -> None:
-        missing_parent = tmp_path / "seq_v001"
-        resolve_result = GetPathForMacroResultSuccess(
-            result_details="OK",
-            resolved_path=Path("seq_v001/frame_0000.exr"),
-            absolute_path=missing_parent / "frame_0000.exr",
-        )
+    def test_locks_index_into_returned_destination_variables(self) -> None:
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=1)
         macro = MacroPath(ParsedMacro("{outputs}/seq_v{_index:03}/frame_{entry:04}.exr"), {"extra": "value"})
 
-        with patch(HANDLE_REQUEST_PATH, return_value=resolve_result):
+        with patch(HANDLE_REQUEST_PATH, return_value=index_result):
             dest = build_versioned_sequence_destination(macro)
 
         assert "_index" in dest._entry_macro.variables
         assert "extra" in dest._entry_macro.variables
         assert "entry" not in dest._entry_macro.variables
 
-    def test_existing_file_policy_forwarded(self, tmp_path: Path) -> None:
-        missing_parent = tmp_path / "seq_v001"
-        resolve_result = GetPathForMacroResultSuccess(
-            result_details="OK",
-            resolved_path=Path("seq_v001/frame_0000.exr"),
-            absolute_path=missing_parent / "frame_0000.exr",
-        )
+    def test_existing_file_policy_forwarded(self) -> None:
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=1)
         macro = MacroPath(ParsedMacro("{outputs}/seq_v{_index:03}/frame_{entry:04}.exr"), {})
 
-        with patch(HANDLE_REQUEST_PATH, return_value=resolve_result):
+        with patch(HANDLE_REQUEST_PATH, return_value=index_result):
             dest = build_versioned_sequence_destination(macro, existing_file_policy=ExistingFilePolicy.FAIL)
 
         assert dest._existing_file_policy == ExistingFilePolicy.FAIL
+
+    def test_passes_directory_macro_without_entry_variable(self) -> None:
+        index_result = GetNextVersionIndexResultSuccess(result_details="OK", index=1)
+        macro = MacroPath(ParsedMacro("{outputs}/seq_v{_index:03}/frame_{entry:04}.exr"), {"extra": "val"})
+
+        with patch(HANDLE_REQUEST_PATH, return_value=index_result) as mock_handle:
+            build_versioned_sequence_destination(macro)
+
+        request = mock_handle.call_args[0][0]
+        assert isinstance(request, GetNextVersionIndexRequest)
+        assert "entry" not in request.macro_path.variables

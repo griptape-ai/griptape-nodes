@@ -10,7 +10,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
+    GetNextVersionIndexRequest,
+    GetNextVersionIndexResultSuccess,
+)
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -19,8 +23,6 @@ from griptape_nodes.retained_mode.events.project_events import (
     MacroPath,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-_MAX_VERSION_INDEX = 9999
 
 
 class DirectoryError(Exception):
@@ -159,32 +161,32 @@ class DirectoryDestination:
         return self._create_direct()
 
     def _create_with_versioning(self) -> Directory:
-        """Increment _index until a non-existent directory is found, then create it."""
+        """Use GetNextVersionIndexRequest to find an available version slot, then create it."""
         macro_path: MacroPath = self._dir_path  # type: ignore[assignment]
 
-        for index in range(1, _MAX_VERSION_INDEX + 1):
-            variables = {**macro_path.variables, "_index": index}
-            resolve_result = GriptapeNodes.handle_request(
-                GetPathForMacroRequest(parsed_macro=macro_path.parsed_macro, variables=variables)
-            )
+        index_result = GriptapeNodes.handle_request(GetNextVersionIndexRequest(macro_path=macro_path))
+        if not isinstance(index_result, GetNextVersionIndexResultSuccess):
+            msg = f"Attempted to create versioned directory. Failed to find available version index: {index_result.result_details}"
+            raise DirectoryError(msg)
 
-            if not isinstance(resolve_result, GetPathForMacroResultSuccess):
-                msg = (
-                    f"Attempted to create versioned directory. Failed to resolve macro: {resolve_result.result_details}"
-                )
-                raise DirectoryError(msg)
+        index = index_result.index if index_result.index is not None else 1
+        variables = {**macro_path.variables, "_index": index}
+        resolve_result = GriptapeNodes.handle_request(
+            GetPathForMacroRequest(parsed_macro=macro_path.parsed_macro, variables=variables)
+        )
+        if not isinstance(resolve_result, GetPathForMacroResultSuccess):
+            msg = f"Attempted to create versioned directory. Failed to resolve macro: {resolve_result.result_details}"
+            raise DirectoryError(msg)
 
-            absolute_path = resolve_result.absolute_path
-            if not absolute_path.exists():
-                try:
-                    absolute_path.mkdir(parents=self._create_parents, exist_ok=False)
-                except FileExistsError:
-                    continue
-                locked_macro = MacroPath(macro_path.parsed_macro, variables)
-                return _map_to_macro_directory(absolute_path, locked_macro)
+        absolute_path = resolve_result.absolute_path
+        try:
+            absolute_path.mkdir(parents=self._create_parents, exist_ok=False)
+        except FileExistsError as e:
+            msg = f"Attempted to create versioned directory. Failed because directory '{absolute_path}' already exists."
+            raise DirectoryError(msg) from e
 
-        msg = f"Attempted to create versioned directory. Failed because no available path found after {_MAX_VERSION_INDEX} attempts."
-        raise DirectoryError(msg)
+        locked_macro = MacroPath(macro_path.parsed_macro, variables)
+        return _map_to_macro_directory(absolute_path, locked_macro)
 
     def _create_direct(self) -> Directory:
         """Create the directory without versioning."""
