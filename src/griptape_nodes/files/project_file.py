@@ -83,22 +83,19 @@ class ProjectFileDestination(FileDestination):
         cls,
         filename: str,
         situation: str,
-        *,
-        coerce_extension_to_match_bytes: bool = True,
         **extra_vars: str | int,
     ) -> "ProjectFileDestination":
         """Build a ProjectFileDestination from a project situation template.
 
         Looks up the named situation in the current project to obtain the macro
-        template and write policy, then constructs the destination.
+        template and write policy, then constructs the destination. The
+        resulting destination uses the engine default for extension coercion;
+        callers that need to override (e.g. the FileOutputSettings node) build
+        the destination directly via the constructor.
 
         Args:
             filename: Filename to parse into base and extension components.
             situation: Situation name to look up in the current project.
-            coerce_extension_to_match_bytes: If True (default), the OSManager
-                rewrites the on-disk suffix to match the sniffed bytes when
-                they disagree. If False, the write fails with an
-                ``EXTENSION_MISMATCH`` error.
             **extra_vars: Additional macro variables (e.g., node_name="MyNode", _index=1).
         """
         result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation))
@@ -167,7 +164,6 @@ class ProjectFileDestination(FileDestination):
                 existing_file_policy=existing_file_policy,
                 create_parents=create_dirs,
                 file_metadata=None,
-                coerce_extension_to_match_bytes=coerce_extension_to_match_bytes,
             )
 
         return cls(
@@ -175,5 +171,4 @@ class ProjectFileDestination(FileDestination):
             existing_file_policy=existing_file_policy,
             create_parents=create_dirs,
             file_metadata=file_metadata,
-            coerce_extension_to_match_bytes=coerce_extension_to_match_bytes,
         )
