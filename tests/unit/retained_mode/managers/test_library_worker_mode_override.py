@@ -165,3 +165,23 @@ class TestResolveRequiresWorker:
             _patch_libraries_to_register([LibraryRegistration(path="/other.json")]),
         ):
             assert mgr._resolve_requires_worker("/p.json", decls) is True
+
+    def test_resolver_matches_by_registered_path_not_resolved_path(self) -> None:
+        # Regression: when the user types a workspace-relative or `~`-prefixed path in
+        # libraries_to_register, the engine resolves it to an absolute path for filesystem
+        # operations but keeps the verbatim string as `registered_path`. The resolver must
+        # match against the registered path so the override the user wrote against
+        # `~/dev/lib.json` still applies to the resolved `/Users/me/dev/lib.json` library.
+        mgr = _make_library_manager()
+        decls = _decls(compatibility=WorkerCompatibility.COMPATIBLE, suggested=WorkerMode.ORCHESTRATOR)
+        entry = LibraryRegistration(path="~/dev/lib.json", worker_mode_override=WorkerMode.WORKER)
+
+        with patch(
+            "griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes",
+            _patch_libraries_to_register([entry]),
+        ):
+            # Caller passes the user's `registered_path` (matches the entry verbatim), not
+            # the resolved absolute path the engine would otherwise produce.
+            assert mgr._resolve_requires_worker("~/dev/lib.json", decls) is True
+            # Sanity: the resolved absolute path no longer matches anything in the config.
+            assert mgr._resolve_requires_worker("/Users/me/dev/lib.json", decls) is False
