@@ -15,7 +15,6 @@ from griptape_nodes.files.file import (
     FileDestination,
     FileLoadError,
     FileWriteError,
-    _validate_extension_matches_bytes,
 )
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
@@ -1148,10 +1147,6 @@ def _jpeg_bytes() -> bytes:
     return _pil_bytes("JPEG")
 
 
-def _m4v_bytes() -> bytes:
-    return b"\x00\x00\x00\x18ftypM4V " + b"\x00" * 16
-
-
 @pytest.fixture
 def _registered_providers() -> None:
     """Ensure default artifact providers are registered with the ArtifactManager.
@@ -1177,51 +1172,12 @@ def _registered_providers() -> None:
 
 
 @pytest.mark.usefixtures("_registered_providers")
-class TestValidateExtensionMatchesBytes:
-    """Tests for _validate_extension_matches_bytes (the function wired into write_bytes)."""
+class TestFileWriteForwardsCoercionFlag:
+    """File.write_bytes forwards coerce_extension_to_match_bytes to the WriteFileRequest.
 
-    def test_matching_extension_passes(self) -> None:
-        _validate_extension_matches_bytes("/workspace/out.png", _png_bytes())
-
-    def test_jpg_jpeg_alias_passes(self) -> None:
-        _validate_extension_matches_bytes("/workspace/out.jpeg", _jpeg_bytes())
-
-    def test_mismatch_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match=r"\.png"):
-            _validate_extension_matches_bytes("/workspace/out.png", _jpeg_bytes())
-
-    def test_mismatch_message_names_both_extensions(self) -> None:
-        with pytest.raises(ValueError, match=r"\.png") as exc_info:
-            _validate_extension_matches_bytes("/workspace/out.png", _jpeg_bytes())
-        assert ".png" in str(exc_info.value)
-        assert "JPG" in str(exc_info.value)
-
-    def test_unknown_bytes_logs_warning_and_passes(self, caplog: pytest.LogCaptureFixture) -> None:
-        with caplog.at_level("WARNING", logger="griptape_nodes"):
-            _validate_extension_matches_bytes("/workspace/out.bin", b"some opaque blob nobody knows")
-        assert any("Could not identify byte content" in r.message for r in caplog.records)
-
-    def test_no_extension_skips_validation(self) -> None:
-        _validate_extension_matches_bytes("/workspace/output", _jpeg_bytes())
-
-    def test_text_content_skipped(self) -> None:
-        _validate_extension_matches_bytes("/workspace/out.png", "hello world")
-
-    def test_mp4_to_m4v_alias_passes(self) -> None:
-        _validate_extension_matches_bytes("/workspace/out.mp4", _m4v_bytes())
-
-    def test_uppercase_extension_canonicalizes(self) -> None:
-        _validate_extension_matches_bytes("/workspace/out.PNG", _png_bytes())
-
-
-@pytest.mark.usefixtures("_registered_providers")
-class TestFileWriteValidationIntegration:
-    """End-to-end: File.write_bytes should run validation before issuing the request."""
-
-    def test_write_bytes_raises_on_extension_mismatch(self) -> None:
-        with patch(HANDLE_REQUEST_PATH) as mock_handle, pytest.raises(ValueError, match=r"\.png"):
-            File("/workspace/output.png").write_bytes(_jpeg_bytes())
-        mock_handle.assert_not_called()
+    Extension reconciliation itself lives in OSManager; these tests confirm File correctly
+    propagates the flag and surfaces strict-mode failures as FileWriteError.
+    """
 
     def test_write_bytes_passes_on_match(self) -> None:
         success_result = WriteFileResultSuccess(
@@ -1233,24 +1189,50 @@ class TestFileWriteValidationIntegration:
             path = File("/workspace/output.png").write_bytes(_png_bytes())
         assert path == Path("/workspace/output.png")
 
-    def test_write_bytes_warns_on_unknown_bytes_and_proceeds(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_write_bytes_default_request_coerces(self) -> None:
         success_result = WriteFileResultSuccess(
             result_details="OK",
-            final_file_path="/workspace/output.bin",
-            bytes_written=5,
+            final_file_path="/workspace/output.jpeg",
+            bytes_written=10,
         )
-        with (
-            patch(HANDLE_REQUEST_PATH, return_value=success_result),
-            caplog.at_level("WARNING", logger="griptape_nodes"),
-        ):
-            File("/workspace/output.bin").write_bytes(b"abcde")
-        assert any("Could not identify byte content" in r.message for r in caplog.records)
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            path = File("/workspace/output.png").write_bytes(_jpeg_bytes())
+        request = mock_handle.call_args.args[0]
+        assert request.coerce_extension_to_match_bytes is True
+        assert path == Path("/workspace/output.jpeg")
+
+    def test_write_bytes_strict_mode_propagates_flag(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.png",
+            bytes_written=10,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            File("/workspace/output.png").write_bytes(_png_bytes(), coerce_extension_to_match_bytes=False)
+        request = mock_handle.call_args.args[0]
+        assert request.coerce_extension_to_match_bytes is False
+
+    def test_write_bytes_extension_mismatch_failure_raises_file_write_error(self) -> None:
+        failure_result = WriteFileResultFailure(
+            result_details="Refusing to write JPEG bytes to '/workspace/output.png' (extension '.png').",
+            failure_reason=FileIOFailureReason.EXTENSION_MISMATCH,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=failure_result), pytest.raises(FileWriteError) as exc_info:
+            File("/workspace/output.png").write_bytes(_jpeg_bytes(), coerce_extension_to_match_bytes=False)
+        assert exc_info.value.failure_reason == FileIOFailureReason.EXTENSION_MISMATCH
 
     @pytest.mark.asyncio
-    async def test_awrite_bytes_raises_on_extension_mismatch(self) -> None:
-        with patch(AHANDLE_REQUEST_PATH) as mock_handle, pytest.raises(ValueError, match=r"\.png"):
-            await File("/workspace/output.png").awrite_bytes(_jpeg_bytes())
-        mock_handle.assert_not_called()
+    async def test_awrite_bytes_default_request_coerces(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.jpeg",
+            bytes_written=10,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            path = await File("/workspace/output.png").awrite_bytes(_jpeg_bytes())
+        request = mock_handle.call_args.args[0]
+        assert request.coerce_extension_to_match_bytes is True
+        assert path == Path("/workspace/output.jpeg")
 
     @pytest.mark.asyncio
     async def test_awrite_bytes_passes_on_match(self) -> None:
