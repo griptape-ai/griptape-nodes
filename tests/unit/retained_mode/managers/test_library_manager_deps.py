@@ -27,16 +27,16 @@ class TestDependenciesSchema:
         deps = Dependencies()
         assert deps.library_dependencies is None
 
-    def test_library_dependencies_coerces_string_to_object(self) -> None:
-        # Simulate JSON deserialization where bare strings must be coerced to LibraryDependency
-        deps = Dependencies.model_validate({"library_dependencies": ["griptape-ai/nodes-opencolorio@v1.2.0"]})
+    def test_library_dependencies_required_dep(self) -> None:
+        deps = Dependencies.model_validate(
+            {"library_dependencies": [{"url": "griptape-ai/nodes-opencolorio@v1.2.0", "required": True}]}
+        )
         assert deps.library_dependencies is not None
-        assert len(deps.library_dependencies) == 1
         dep = deps.library_dependencies[0]
         assert dep.url == "griptape-ai/nodes-opencolorio@v1.2.0"
         assert dep.required is True
 
-    def test_library_dependencies_accepts_object_form(self) -> None:
+    def test_library_dependencies_optional_dep(self) -> None:
         deps = Dependencies.model_validate(
             {"library_dependencies": [{"url": "griptape-ai/nodes-opencolorio@v1.2.0", "required": False}]}
         )

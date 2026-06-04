@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from griptape_nodes.node_library.library_declarations import (
     LibraryDeclaration,
@@ -44,21 +44,8 @@ class LibraryNameAndVersion(NamedTuple):
 
 
 class LibraryDependency(BaseModel):
-    """A single library dependency entry.
-
-    Can be specified as a plain string URL (backwards-compatible) or an object
-    with explicit `url` and `required` fields.
-    """
-
     url: str
     required: bool = True
-
-    @model_validator(mode="before")
-    @classmethod
-    def coerce_string(cls, v: Any) -> Any:
-        if isinstance(v, str):
-            return {"url": v, "required": True}
-        return v
 
 
 class Dependencies(BaseModel):
