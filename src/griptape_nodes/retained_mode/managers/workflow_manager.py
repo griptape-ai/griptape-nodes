@@ -2534,12 +2534,21 @@ class WorkflowManager:
         )
         main_body.extend(cast("ast.stmt", node) for node in prereq_code)
 
+        # Collect library-derived imports separately so they can be emitted inside
+        # build_workflow() after the RegisterLibraryFromFileRequest calls — those calls
+        # are what add the library directory and venv site-packages to sys.path, so the
+        # imports must come after them, not at module top level.
+        deferred_imports: dict[str, set[str]] = {}
+
         # Generate unique values code AST node
         unique_values_node = self._generate_unique_values_code(
             unique_parameter_uuid_to_values=serialized_flow_commands.unique_parameter_uuid_to_values,
             prefix="top_level",
             import_recorder=import_recorder,
+            deferred_imports=deferred_imports,
         )
+        # Emit deferred library imports inside build_workflow(), after sys.path is set up.
+        main_body.extend(self._build_deferred_import_statements(deferred_imports))
         # Helper returns an ast.Module; unpack its body into statements.
         main_body.extend(cast("ast.stmt", stmt) for stmt in unique_values_node.body)
 
@@ -3683,6 +3692,7 @@ class WorkflowManager:
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         prefix: str,
         import_recorder: ImportRecorder,
+        deferred_imports: dict[str, set[str]] | None = None,
     ) -> ast.Module:
         if len(unique_parameter_uuid_to_values) == 0:
             return ast.Module(body=[], type_ignores=[])
@@ -3721,7 +3731,9 @@ class WorkflowManager:
             unique_parameter_dict[uuid] = unique_parameter_byte_str
 
             # Collect import statements for all classes in the object tree
-            self._collect_object_imports(unique_parameter_value, import_recorder, global_modules_set)
+            self._collect_object_imports(
+                unique_parameter_value, import_recorder, global_modules_set, deferred_imports or {}
+            )
 
         # Comment lines explaining what we're doing. Each line is emitted as its own bare-string
         # statement so that it unparses onto a single source line. A post-process pass in
@@ -3773,6 +3785,22 @@ class WorkflowManager:
         module_body: list[ast.stmt] = [*comment_exprs, unique_values_ast]
         full_ast = ast.Module(body=module_body, type_ignores=[])
         return full_ast
+
+    def _build_deferred_import_statements(self, deferred_imports: dict[str, set[str]]) -> list[ast.stmt]:
+        """Convert deferred library imports into ast.ImportFrom statements for insertion into build_workflow().
+
+        Sorted by module name (and class names within each module) for deterministic output.
+        """
+        stmts: list[ast.stmt] = []
+        for module, classes in sorted(deferred_imports.items()):
+            node = ast.ImportFrom(
+                module=module,
+                names=[ast.alias(name=cls) for cls in sorted(classes)],
+                level=0,
+            )
+            ast.fix_missing_locations(node)
+            stmts.append(node)
+        return stmts
 
     def _generate_create_flow(
         self,
@@ -5530,7 +5558,13 @@ class WorkflowManager:
             for instance_obj, original_name in patched_instances:
                 instance_obj.module_name = original_name
 
-    def _collect_object_imports(self, obj: Any, import_recorder: Any, global_modules_set: set[str]) -> None:
+    def _collect_object_imports(
+        self,
+        obj: Any,
+        import_recorder: Any,
+        global_modules_set: set[str],
+        deferred_imports: dict[str, set[str]] | None = None,
+    ) -> None:
         """Recursively collect import statements needed for all classes in object tree.
 
         This ensures that generated workflows have all necessary import statements,
@@ -5547,6 +5581,9 @@ class WorkflowManager:
             obj: Object tree to analyze for required imports
             import_recorder: Collector that will generate the import statements
             global_modules_set: Built-in modules that don't need explicit imports
+            deferred_imports: If provided, dynamic library imports are collected here instead
+                of import_recorder so the caller can emit them inside build_workflow() after
+                sys.path has been set up by RegisterLibraryFromFileRequest.
 
         Example:
             Input object tree: [ReferenceImageArtifact(), {"data": ImageUrlArtifact()}]
@@ -5560,12 +5597,17 @@ class WorkflowManager:
             module = getmodule(class_type)
             if module and module.__name__ not in global_modules_set:
                 if GriptapeNodes.LibraryManager().is_dynamic_module(module.__name__):
-                    # Use stable namespace for dynamic modules
+                    # Use stable namespace for dynamic modules. Route into deferred_imports
+                    # so the caller can emit these inside build_workflow() after
+                    # RegisterLibraryFromFileRequest has added the library to sys.path.
                     stable_namespace = GriptapeNodes.LibraryManager().get_stable_namespace_for_dynamic_module(
                         module.__name__
                     )
                     if stable_namespace:
-                        import_recorder.add_from_import(stable_namespace, class_type.__name__)
+                        if deferred_imports is not None:
+                            deferred_imports.setdefault(stable_namespace, set()).add(class_type.__name__)
+                        else:
+                            import_recorder.add_from_import(stable_namespace, class_type.__name__)
                     else:
                         msg = f"Missing stable namespace for {module.__name__} type {class_type.__name__}"
                         logger.error(msg)
