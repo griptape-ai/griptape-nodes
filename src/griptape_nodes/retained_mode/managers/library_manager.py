@@ -38,6 +38,7 @@ from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io, resolve_workspace_path
+from griptape_nodes.node_library.library_declarations import requires_worker_process
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -344,8 +345,11 @@ class LibraryManager:
         library_name: str | None = None
         library_version: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
-        # True when the library declares worker.enabled = True in its metadata.
-        # Set whenever metadata is first successfully parsed (discovery or lifecycle progression).
+        # True when the library's declarations resolve to launching in a worker
+        # process (compatible per ``WorkerModeCompatibility`` and suggested per
+        # ``SuggestedWorkerMode``). Set whenever metadata is first successfully
+        # parsed (discovery or lifecycle progression). Absence of the relevant
+        # declarations falls through to False.
         requires_worker: bool = False
         # Set when the library enters WORKER_PENDING state. The orchestrator waits on this
         # event before returning RegisterLibraryFromFileResultSuccess so callers see the real
@@ -1773,8 +1777,9 @@ class LibraryManager:
                     # Update library_info with metadata results
                     library_info.library_name = metadata_result.library_schema.name
                     library_info.library_version = metadata_result.library_schema.metadata.library_version
-                    worker_cfg = metadata_result.library_schema.metadata.worker
-                    library_info.requires_worker = bool(worker_cfg and worker_cfg.enabled)
+                    library_info.requires_worker = requires_worker_process(
+                        metadata_result.library_schema.metadata.declarations
+                    )
                     library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
                 case LibraryManager.LibraryLifecycleState.METADATA_LOADED:
@@ -4010,8 +4015,7 @@ class LibraryManager:
         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
             library_name = metadata_result.library_schema.name
             library_version = metadata_result.library_schema.metadata.library_version
-            worker_cfg = metadata_result.library_schema.metadata.worker
-            requires_worker = bool(worker_cfg and worker_cfg.enabled)
+            requires_worker = requires_worker_process(metadata_result.library_schema.metadata.declarations)
             lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
 
         if not enabled:
@@ -4757,7 +4761,7 @@ class LibraryManager:
             return DownloadLibraryResultFailure(result_details=details)
 
         try:
-            content = await anyio.Path(library_json_path).read_text()
+            content = await anyio.Path(library_json_path).read_text(encoding="utf-8")
             library_data = json.loads(content)
         except json.JSONDecodeError as e:
             details = f"Failed to parse griptape_nodes_library.json from downloaded library: {e}"

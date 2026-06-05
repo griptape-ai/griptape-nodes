@@ -6,15 +6,18 @@ Tests cover:
 - Blanket exception handling for unexpected errors
 - Match/case error message formatting for parent directory failures
 - On-demand candidate generation (doesn't pre-generate all MAX_INDEXED_CANDIDATES)
+- Extension coercion: rename suffix to match sniffed bytes, or fail when strict
 """
 
 import logging
 import tempfile
 from collections.abc import Generator
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from PIL import Image
 
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
@@ -632,3 +635,144 @@ class TestSidecarMetadata:
         assert sidecar_path.exists(), "Sidecar should be created at the actual indexed fallback path"
         data = _json.loads(sidecar_path.read_text())
         assert data["schema_version"] == "0.1.0"
+
+
+def _png_bytes() -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _jpeg_bytes() -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+class TestExtensionCoercion:
+    """Test extension coercion (rename suffix to match sniffed bytes) inside OSManager."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir).resolve()
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        """Set workspace and register the image artifact provider so sniff_extension works."""
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+
+        griptape_nodes.ArtifactManager().on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        )
+
+        yield
+
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_default_coerce_renames_jpeg_when_destination_is_png(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """JPEG bytes saved to a .png path should be renamed to .jpeg by default."""
+        os_manager = griptape_nodes.OSManager()
+        requested_path = temp_dir / "image.png"
+
+        request = WriteFileRequest(file_path=str(requested_path), content=_jpeg_bytes())
+        with caplog.at_level(logging.WARNING):
+            result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        coerced_path = temp_dir / "image.jpg"
+        assert Path(result.final_file_path) == coerced_path
+        assert coerced_path.exists()
+        assert not requested_path.exists()
+        assert any("Coerced file extension" in r.message for r in caplog.records)
+
+    def test_strict_mode_returns_extension_mismatch_failure(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """With coerce_extension_to_match_bytes=False, mismatched bytes should fail and leave no file."""
+        os_manager = griptape_nodes.OSManager()
+        requested_path = temp_dir / "image.png"
+
+        request = WriteFileRequest(
+            file_path=str(requested_path),
+            content=_jpeg_bytes(),
+            coerce_extension_to_match_bytes=False,
+        )
+        result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultFailure)
+        assert result.failure_reason == FileIOFailureReason.EXTENSION_MISMATCH
+        assert not requested_path.exists()
+        assert not (temp_dir / "image.jpg").exists()
+
+    def test_coerce_no_op_when_bytes_match_suffix(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """No rename, no warning when bytes already match the destination suffix."""
+        os_manager = griptape_nodes.OSManager()
+        requested_path = temp_dir / "image.png"
+
+        request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
+        result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        assert Path(result.final_file_path) == requested_path
+        assert requested_path.exists()
+
+    def test_coerce_no_op_when_sniff_returns_none(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Unrecognized bytes log a 'Could not identify' warning and write through unchanged."""
+        os_manager = griptape_nodes.OSManager()
+        requested_path = temp_dir / "blob.png"
+
+        request = WriteFileRequest(file_path=str(requested_path), content=b"\x00\x01\x02\x03 not a known format")
+        with caplog.at_level(logging.WARNING):
+            result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        assert Path(result.final_file_path) == requested_path
+        assert any("Could not identify byte content" in r.message for r in caplog.records)
+
+    def test_coerce_updates_sidecar_file_extension_variable(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """When coercion fires, the sidecar's situation.variables.file_extension is rewritten to match."""
+        os_manager = griptape_nodes.OSManager()
+        requested_path = temp_dir / "image.png"
+
+        file_metadata = SidecarContent(
+            situation=SituationMetadata(
+                name="save_node_output",
+                macro="{outputs}/{file_name_base}.{file_extension}",
+                variables={"file_name_base": "image", "file_extension": "png"},
+            ),
+        )
+
+        request = WriteFileRequest(
+            file_path=str(requested_path),
+            content=_jpeg_bytes(),
+            file_metadata=file_metadata,
+        )
+        result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        # The mutation happens before write_sidecar runs, so the in-memory metadata
+        # passed in should be updated. Verify by checking the request's metadata.
+        assert request.file_metadata is not None
+        assert request.file_metadata.situation is not None
+        assert request.file_metadata.situation.variables is not None
+        assert request.file_metadata.situation.variables["file_extension"] == "jpg"
+
+    def test_coerce_skipped_for_text_content(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Text writes should never trigger sniffing/rename."""
+        os_manager = griptape_nodes.OSManager()
+        requested_path = temp_dir / "notes.png"
+
+        request = WriteFileRequest(file_path=str(requested_path), content="just some text")
+        result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        assert Path(result.final_file_path) == requested_path

@@ -563,8 +563,8 @@ class WorkerManager:
 
         Must be called from inside a running event loop. Every production
         caller reaches this through EventManager.handle_request /
-        ahandle_request, which itself runs under asyncio.run(astart_app)
-        on the engine side or inside an ``await`` in a CLI subcommand.
+        ahandle_request, which itself runs inside the event loop that the
+        launching application drives the engine on.
         """
         if self._transport is None or not self._workers:
             return
