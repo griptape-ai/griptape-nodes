@@ -6,6 +6,7 @@ import types
 from dataclasses import fields as dc_fields
 from dataclasses import is_dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Union, get_args, get_origin
 
 from cattrs.gen import make_dict_structure_fn, make_dict_unstructure_fn, override
@@ -80,6 +81,11 @@ converter.register_unstructure_hook(type, lambda t: f"{t.__module__}.{t.__qualna
 # The JSON preset strict mode rejects ints for float fields, but JSON has
 # no distinction between int and float, so coerce int -> float on input.
 converter.register_structure_hook(float, lambda v, _: float(v))
+
+# Request payloads declare path-bearing fields as `Path` (e.g. project_path),
+# but the wire form is always a string. Coerce so handlers can call .parent /
+# Path arithmetic without first re-wrapping.
+converter.register_structure_hook(Path, lambda v, _: Path(v))
 
 # Union types composed entirely of JSON-primitive types (str, int, float, bool,
 # dict, list, None). The JSON parser already produces the correct Python type,
