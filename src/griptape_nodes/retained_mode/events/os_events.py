@@ -48,6 +48,9 @@ class FileIOFailureReason(StrEnum):
 
     # Content errors
     ENCODING_ERROR = "encoding_error"  # Text encoding/decoding failed
+    EXTENSION_MISMATCH = (
+        "extension_mismatch"  # Sniffed byte format disagrees with destination suffix and coercion is disabled
+    )
 
     # Generic errors
     IO_ERROR = "io_error"  # Generic I/O error
@@ -556,6 +559,10 @@ class WriteFileRequest(RequestPayload):
             (default: False). Use when the content already contains metadata to avoid double-injection.
         file_metadata: Optional caller-provided situation and variable context to include in the sidecar
             metadata file.
+        coerce_extension_to_match_bytes: If True (default), when the sniffed format of the bytes disagrees
+            with the destination suffix, the on-disk file is renamed to match the sniffed extension and a
+            warning is logged. If False, a WriteFileResultFailure with EXTENSION_MISMATCH is returned and
+            no file is left on disk.
 
     Results: WriteFileResultSuccess | WriteFileResultFailure
 
@@ -571,6 +578,7 @@ class WriteFileRequest(RequestPayload):
     create_parents: bool = True
     skip_metadata_injection: bool = False
     file_metadata: SidecarContent | None = None
+    coerce_extension_to_match_bytes: bool = True
 
 
 @dataclass
