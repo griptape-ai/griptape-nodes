@@ -38,7 +38,7 @@ The application that launches an engine is the `griptape-nodes` package on PyPI,
 To test your engine changes, install the published `griptape-nodes` app and layer your local engine checkout over it as an editable install:
 
 ```shell
-uv tool install griptape-nodes --with-editable /path/to/griptape-nodes-engine --force
+uv tool install griptape-nodes --python 3.12 --with-editable /path/to/griptape-nodes-engine --force
 ```
 
 That creates a persistent tool venv containing the published app, plus a `.pth` file pointing at this checkout's `src` directory. Every subsequent `gtn` (or `griptape-nodes`) invocation imports the engine from your local source, so engine edits are reflected immediately with no reinstall.
