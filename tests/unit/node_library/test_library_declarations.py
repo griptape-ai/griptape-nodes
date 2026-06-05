@@ -14,6 +14,11 @@ from griptape_nodes.node_library.library_declarations import (
     LifecycleStage,
     LifecycleStageLibraryProperty,
     LifecycleStageNodeProperty,
+    SuggestedWorkerMode,
+    WorkerCompatibility,
+    WorkerMode,
+    WorkerModeCompatibility,
+    requires_worker_process,
 )
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
@@ -169,9 +174,181 @@ class TestRoundTripSerialization:
         assert isinstance(node_decls[1], KeySupportNodeProperty)
 
 
+# ---------- WorkerModeCompatibility ----------
+
+
+class TestWorkerModeCompatibility:
+    @pytest.mark.parametrize("compatibility", list(WorkerCompatibility))
+    def test_round_trips_each_value(self, compatibility: WorkerCompatibility) -> None:
+        decl = WorkerModeCompatibility(compatibility=compatibility)
+
+        rebuilt = WorkerModeCompatibility.model_validate(json.loads(decl.model_dump_json()))
+
+        assert rebuilt.compatibility is compatibility
+
+    def test_compatibility_is_required(self) -> None:
+        # Single-value declarations require their value to be set explicitly;
+        # absence of the entire declaration is the only meaningful "default."
+        with pytest.raises(ValidationError):
+            WorkerModeCompatibility()  # type: ignore[call-arg]
+
+    def test_rejects_unknown_compatibility_value(self) -> None:
+        with pytest.raises(ValidationError):
+            WorkerModeCompatibility.model_validate(
+                {"type": "worker_mode_compatibility", "compatibility": "BOGUS"},
+            )
+
+    def test_library_metadata_round_trips_declaration(self) -> None:
+        metadata = _make_library_metadata(
+            declarations=[WorkerModeCompatibility(compatibility=WorkerCompatibility.INCOMPATIBLE)],
+        )
+
+        rebuilt = LibraryMetadata.model_validate(metadata.model_dump())
+
+        decl = rebuilt.declarations[0]
+        assert isinstance(decl, WorkerModeCompatibility)
+        assert decl.compatibility is WorkerCompatibility.INCOMPATIBLE
+
+
+# ---------- SuggestedWorkerMode ----------
+
+
+class TestSuggestedWorkerMode:
+    @pytest.mark.parametrize("mode", list(WorkerMode))
+    def test_round_trips_each_value(self, mode: WorkerMode) -> None:
+        decl = SuggestedWorkerMode(mode=mode)
+
+        rebuilt = SuggestedWorkerMode.model_validate(json.loads(decl.model_dump_json()))
+
+        assert rebuilt.mode is mode
+
+    def test_mode_is_required(self) -> None:
+        with pytest.raises(ValidationError):
+            SuggestedWorkerMode()  # type: ignore[call-arg]
+
+    def test_rejects_unknown_mode_value(self) -> None:
+        with pytest.raises(ValidationError):
+            SuggestedWorkerMode.model_validate({"type": "suggested_worker_mode", "mode": "BOGUS"})
+
+    def test_library_metadata_round_trips_declaration(self) -> None:
+        metadata = _make_library_metadata(
+            declarations=[SuggestedWorkerMode(mode=WorkerMode.WORKER)],
+        )
+
+        rebuilt = LibraryMetadata.model_validate(metadata.model_dump())
+
+        decl = rebuilt.declarations[0]
+        assert isinstance(decl, SuggestedWorkerMode)
+        assert decl.mode is WorkerMode.WORKER
+
+
+# ---------- LibraryMetadata cross-declaration validator ----------
+
+
+class TestLibraryMetadataWorkerValidation:
+    def test_rejects_incompatible_with_suggested_worker_mode(self) -> None:
+        # The two declarations live on the same metadata block and contradict
+        # each other; the cross-axis check belongs on LibraryMetadata.
+        with pytest.raises(ValidationError):
+            _make_library_metadata(
+                declarations=[
+                    WorkerModeCompatibility(compatibility=WorkerCompatibility.INCOMPATIBLE),
+                    SuggestedWorkerMode(mode=WorkerMode.WORKER),
+                ],
+            )
+
+    def test_allows_incompatible_with_suggested_orchestrator(self) -> None:
+        # INCOMPATIBLE + ORCHESTRATOR is consistent (redundant but legal):
+        # the library can only run in the orchestrator, and the suggested
+        # mode agrees.
+        metadata = _make_library_metadata(
+            declarations=[
+                WorkerModeCompatibility(compatibility=WorkerCompatibility.INCOMPATIBLE),
+                SuggestedWorkerMode(mode=WorkerMode.ORCHESTRATOR),
+            ],
+        )
+
+        assert isinstance(metadata.declarations[0], WorkerModeCompatibility)
+        assert isinstance(metadata.declarations[1], SuggestedWorkerMode)
+
+    def test_allows_compatible_with_either_suggested_mode(self) -> None:
+        for suggested in (WorkerMode.ORCHESTRATOR, WorkerMode.WORKER):
+            metadata = _make_library_metadata(
+                declarations=[
+                    WorkerModeCompatibility(compatibility=WorkerCompatibility.COMPATIBLE),
+                    SuggestedWorkerMode(mode=suggested),
+                ],
+            )
+            assert isinstance(metadata.declarations[0], WorkerModeCompatibility)
+            assert isinstance(metadata.declarations[1], SuggestedWorkerMode)
+
+    def test_validator_runs_on_model_validate(self) -> None:
+        # The validator must fire when LibraryMetadata is rebuilt from JSON,
+        # not only when constructed directly. Pydantic's ``model_validate``
+        # is the wire-format entry point; a regression that disables the
+        # validator for that path silently lets bad manifests in.
+        with pytest.raises(ValidationError):
+            LibraryMetadata.model_validate(
+                {
+                    "author": "t",
+                    "description": "t",
+                    "library_version": "1.0.0",
+                    "engine_version": "1.0.0",
+                    "tags": [],
+                    "declarations": [
+                        {"type": "worker_mode_compatibility", "compatibility": "INCOMPATIBLE"},
+                        {"type": "suggested_worker_mode", "mode": "WORKER"},
+                    ],
+                }
+            )
+
+
+# ---------- requires_worker_process free function ----------
+
+
+class TestRequiresWorkerProcess:
+    def test_no_declarations_returns_false(self) -> None:
+        # Absence of both declarations is the orchestrator-default case.
+        assert requires_worker_process([]) is False
+
+    def test_compatible_without_suggested_mode_returns_false(self) -> None:
+        # COMPATIBLE alone is "I can run as a worker"; without a suggested
+        # mode the engine still defaults to orchestrator.
+        decls = [WorkerModeCompatibility(compatibility=WorkerCompatibility.COMPATIBLE)]
+        assert requires_worker_process(decls) is False
+
+    def test_compatible_with_suggested_orchestrator_returns_false(self) -> None:
+        decls = [
+            WorkerModeCompatibility(compatibility=WorkerCompatibility.COMPATIBLE),
+            SuggestedWorkerMode(mode=WorkerMode.ORCHESTRATOR),
+        ]
+        assert requires_worker_process(decls) is False
+
+    def test_compatible_with_suggested_worker_returns_true(self) -> None:
+        decls = [
+            WorkerModeCompatibility(compatibility=WorkerCompatibility.COMPATIBLE),
+            SuggestedWorkerMode(mode=WorkerMode.WORKER),
+        ]
+        assert requires_worker_process(decls) is True
+
+    def test_incompatible_with_suggested_orchestrator_returns_false(self) -> None:
+        decls = [
+            WorkerModeCompatibility(compatibility=WorkerCompatibility.INCOMPATIBLE),
+            SuggestedWorkerMode(mode=WorkerMode.ORCHESTRATOR),
+        ]
+        assert requires_worker_process(decls) is False
+
+    def test_suggested_worker_alone_returns_true(self) -> None:
+        # Absence of WorkerModeCompatibility is treated as COMPATIBLE per
+        # the consumer-site default; a SuggestedWorkerMode of WORKER then
+        # selects worker hosting.
+        decls = [SuggestedWorkerMode(mode=WorkerMode.WORKER)]
+        assert requires_worker_process(decls) is True
+
+
 # ---------- Schema version ----------
 
 
 class TestSchemaVersion:
-    def test_latest_schema_version_is_080(self) -> None:
-        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.8.0"
+    def test_latest_schema_version_is_090(self) -> None:
+        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.9.0"
