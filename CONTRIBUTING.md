@@ -35,6 +35,24 @@ This repository is the open-source Griptape Nodes **engine**, published to PyPI 
 
 The application that launches an engine is the `griptape-nodes` package on PyPI, which owns the CLI and communication layer for connecting clients.
 
+### Provide a license server public key
+
+Installing `griptape-nodes` compiles the native `griptape-license-core` crate, whose build script embeds a license server public key at compile time. If no key is available the build fails with:
+
+```text
+No public key found. Set GRIPTAPE_NODES_LICENSE_SERVER_PUBLIC_KEY or provide keys/dev_public_key.pem
+```
+
+For local development you don't need the production key — generate a throwaway Ed25519 dev keypair and export its public half before installing:
+
+```shell
+openssl genpkey -algorithm ed25519 -out /tmp/dev_private_key.pem
+openssl pkey -in /tmp/dev_private_key.pem -pubout -out /tmp/dev_public_key.pem
+export GRIPTAPE_NODES_LICENSE_SERVER_PUBLIC_KEY=$(base64 < /tmp/dev_public_key.pem | tr -d '\n')
+```
+
+The build script reads `GRIPTAPE_NODES_LICENSE_SERVER_PUBLIC_KEY` (a base64-encoded PEM) first, falling back to a `keys/dev_public_key.pem` file. A self-generated key lets the engine validate licenses you sign with the matching private key; validating real licenses requires the production license server public key.
+
 To test your engine changes, install the published `griptape-nodes` app and layer your local engine checkout over it as an editable install:
 
 ```shell
