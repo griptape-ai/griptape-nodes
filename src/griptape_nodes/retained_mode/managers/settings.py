@@ -373,6 +373,24 @@ class Settings(BaseModel):
         default_factory=dict,
         description="Mapping of project file paths to workspace directory overrides. When a project is loaded, if its resolved path matches a key here, the corresponding value is used as the workspace directory instead of the project-adjacent config or auto-default.",
     )
+
+    @field_validator("library_dependency_install_behavior", mode="before")
+    @classmethod
+    def validate_library_dependency_install_behavior(cls, v: Any) -> LibraryDependencyInstallBehavior:
+        """Coerce unknown/invalid values to ALWAYS.
+
+        A bad persisted value (e.g. a typo) would otherwise fail whole-config
+        validation and reset the user's entire config to defaults.
+        """
+        if isinstance(v, str):
+            try:
+                return LibraryDependencyInstallBehavior(v.lower())
+            except ValueError:
+                return LibraryDependencyInstallBehavior.ALWAYS
+        elif isinstance(v, LibraryDependencyInstallBehavior):
+            return v
+        return LibraryDependencyInstallBehavior.ALWAYS
+
     library_dependency_install_behavior: LibraryDependencyInstallBehavior = Field(
         LIBRARIES,
         title="Library Dependency Install Behavior",
