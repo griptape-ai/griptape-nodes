@@ -94,7 +94,11 @@ def _stub_listing_with_macro(
                 result_details="ok",
             )
         if isinstance(request, ListDirectoryRequest):
-            if request.directory_path == resolved_directory:
+            # Path()-normalize both sides: on Windows the handler emits backslashes
+            # via str(WindowsPath(...)), but the test fixture is POSIX-style.
+            # `directory_path` is `str | None`; the macro tests always supply a
+            # string but we narrow defensively so pyright is happy.
+            if request.directory_path is not None and Path(request.directory_path) == Path(resolved_directory):
                 entries = [
                     FileSystemEntry(name=name, path=str(Path(resolved_directory) / name), is_dir=False)
                     for name in filenames
@@ -292,19 +296,50 @@ class TestFillNearestPolicy:
 
 class TestAbortPolicy:
     @pytest.mark.asyncio
-    async def test_abort_surfaces_failure_at_first_gap(self) -> None:
-        """ABORT surfaces a ScanSequencesResultFailure with the offending number."""
+    async def test_abort_surfaces_all_gaps(self) -> None:
+        """ABORT surfaces a ScanSequencesResultFailure listing every gap.
+
+        With items 1, 2, 4, 5 on disk, the active range 1..5 has exactly one
+        gap (item 3). The failure payload should expose it as a one-element
+        list — no longer the bare integer the previous shape carried.
+        """
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 4, 5]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
             result = await _scan(directory, "render.####.png", policy=MissingItemPolicy.ABORT)
         assert isinstance(result, ScanSequencesResultFailure)
         assert result.failure_reason is SequenceScanFailureReason.ABORTED_AT_GAP
-        assert result.missing_item_number == 3
+        assert result.missing_item_numbers == [3]
+
+    @pytest.mark.asyncio
+    async def test_abort_surfaces_multiple_gaps(self) -> None:
+        """ABORT collects every gap in one pass, sorted ascending.
+
+        Items 1, 2, 5, 7 on disk; active range 1..7. The expected gaps are 3,
+        4, 6 — one continuous range and one singleton, surfaced together so a
+        UI consumer can show the artist all the missing slots in one go
+        instead of fixing them one re-run at a time.
+        """
+        directory = "/work/in"
+        filenames = [f"render.{n:04d}.png" for n in [1, 2, 5, 7]]
+        with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):
+            result = await _scan(directory, "render.####.png", policy=MissingItemPolicy.ABORT)
+        assert isinstance(result, ScanSequencesResultFailure)
+        assert result.failure_reason is SequenceScanFailureReason.ABORTED_AT_GAP
+        assert result.missing_item_numbers == [3, 4, 6]
+        # Sanity: result_details summarises the count and shows the list.
+        details = str(result.result_details or "")
+        assert "3 gaps" in details
+        assert "3, 4, 6" in details
 
     @pytest.mark.asyncio
     async def test_abort_succeeds_when_dense(self) -> None:
-        """ABORT returns one Sequence with all entries when there are no gaps."""
+        """ABORT returns one Sequence with all entries when there are no gaps.
+
+        The all-gaps pre-pass runs but finds nothing, so the scanner falls
+        through to the normal entries-build loop and emits a contiguous
+        sequence the same way SKIP would.
+        """
         directory = "/work/in"
         filenames = [f"render.{n:04d}.png" for n in [1, 2, 3]]
         with patch.object(GriptapeNodes, "handle_request", side_effect=_stub_listing(directory, filenames)):

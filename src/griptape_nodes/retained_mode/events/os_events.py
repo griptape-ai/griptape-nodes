@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from griptape_nodes.common.sequences.models import MissingItemPolicy, NoTokenBehavior, Sequence
@@ -71,7 +71,9 @@ class SequenceScanFailureReason(StrEnum):
 
     INVALID_TEMPLATE = "invalid_template"  # Multi-token templates or fileseq parse errors.
     INVALID_BOUNDS = "invalid_bounds"  # `start_number` < 0, or `end_number` < `start_number`.
-    ABORTED_AT_GAP = "aborted_at_gap"  # `MissingItemPolicy.ABORT` hit a gap; payload carries the offending number.
+    ABORTED_AT_GAP = (
+        "aborted_at_gap"  # `MissingItemPolicy.ABORT` hit at least one gap; payload lists every offending number.
+    )
 
 
 class DeletionBehavior(StrEnum):
@@ -304,14 +306,16 @@ class ScanSequencesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
         failure_reason: Either a sequence-semantic reason (`SequenceScanFailureReason`)
             or an OS-layer reason (`FileIOFailureReason`) when the underlying
             directory listing failed.
-        missing_item_number: Populated only when `failure_reason` is
-            `SequenceScanFailureReason.ABORTED_AT_GAP`. Carries the integer key
-            of the first slot the scan aborted on.
+        missing_item_numbers: Populated only when `failure_reason` is
+            `SequenceScanFailureReason.ABORTED_AT_GAP`. Lists every missing
+            slot inside the active range, sorted ascending — UI consumers
+            can show the artist all the gaps in one pass instead of fixing
+            them one re-run at a time. Empty list for every other failure.
         result_details: Human-readable error message (inherited from ResultPayloadFailure).
     """
 
     failure_reason: SequenceScanFailureReason | FileIOFailureReason
-    missing_item_number: int | None = None
+    missing_item_numbers: list[int] = field(default_factory=list)
 
 
 @dataclass

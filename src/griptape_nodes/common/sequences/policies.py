@@ -94,8 +94,17 @@ def _build_split_sequence(run: list[int], context: PolicyContext) -> Sequence:
 
 
 def _apply_single(context: PolicyContext) -> Sequence:
-    """ABORT / SKIP / FILL_NEAREST: emit one Sequence over [first, last] (or raise on ABORT)."""
+    """SKIP / FILL_NEAREST: emit one Sequence over [first, last]; ABORT raises with every gap."""
     in_range_present = {n: p for n, p in context.present_numbers.items() if context.first <= n <= context.last}
+
+    if context.policy is MissingItemPolicy.ABORT:
+        # Collect all gaps in one pass so the failure payload can surface every
+        # missing item at once. Letting `_gap_entry` raise on the first gap (the
+        # old behavior) made artists fix gaps one-re-run-at-a-time.
+        missing = [n for n in range(context.first, context.last + 1) if n not in in_range_present]
+        if missing:
+            raise MissingItemError(missing)
+
     entries: list[SequenceEntry] = []
     for number in range(context.first, context.last + 1):
         if number in in_range_present:
@@ -128,13 +137,13 @@ def _gap_entry(
 ) -> SequenceEntry | None:
     """Build the SequenceEntry for a missing item, or None to omit it.
 
-    None is returned for the ERROR policy (which drops gaps from `entries`)
-    and for NEAREST when there's no neighbor at all (empty in-range present
-    set).
+    None is returned for SKIP (which drops gaps from `entries`) and for
+    FILL_NEAREST when there's no neighbor at all (empty in-range present set).
+
+    ABORT is not handled here — `_apply_single` collects all gaps in a single
+    pass and raises `MissingItemError` itself before this function is called.
     """
     match policy:
-        case MissingItemPolicy.ABORT:
-            raise MissingItemError(number)
         case MissingItemPolicy.SKIP:
             return None
         case MissingItemPolicy.FILL_NEAREST:

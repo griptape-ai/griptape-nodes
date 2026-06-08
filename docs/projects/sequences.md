@@ -60,6 +60,8 @@ This is what makes scan results portable. A workflow built on a machine where `{
 
 Plain absolute paths (no `{...}` segments) round-trip identically — you put `/work/render.####.png` in, you get `/work/render.0001.png` back.
 
+**Relative paths.** A path with no leading `/` and no macro head — e.g. `shot_a/render.####.png` — is interpreted relative to the project's workspace directory. The engine prepends the workspace path before listing, so `shot_a/render.####.png` and `{workspace_dir}/shot_a/render.####.png` resolve identically. Use whichever form reads more naturally for the workflow.
+
 Macro variables inside `{...}` are completely separate from sequence tokens — they don't share syntax, and they're resolved at different stages.
 
 ## Width matching is strict
@@ -172,7 +174,7 @@ Failure returns `ScanSequencesResultFailure` whose `failure_reason` is either a 
 
 - `INVALID_TEMPLATE` — the path string couldn't be parsed (bad macro syntax, multi-token pattern, missing filename component, unresolvable macro variables, etc.). Also surfaces when the path has zero sequence tokens and `no_token_behavior` is `REJECT`.
 - `INVALID_BOUNDS` — `start_number < 0` or `end_number < start_number`.
-- `ABORTED_AT_GAP` — the `ABORT` policy hit a gap. The failure also populates `missing_item_number` with the offending integer key.
+- `ABORTED_AT_GAP` — the `ABORT` policy hit at least one gap inside the active range. The failure populates `missing_item_numbers: list[int]` with every offending integer key, sorted ascending — UI consumers can show the artist *all* the missing slots in one pass instead of fixing them one re-run at a time.
 - A `FileIOFailureReason` value — the inner directory listing failed (directory not found, permission denied, etc.). These surface via `FileIOFailureReason`, not folded into empty success.
 
 ### Node-level: `fail_on_empty_result`

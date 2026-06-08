@@ -129,6 +129,11 @@ console = Console()
 # Maximum number of indexed candidates to try when CREATE_NEW policy is used
 MAX_INDEXED_CANDIDATES = 1000
 
+# How many gap numbers to show inline in the ABORTED_AT_GAP `result_details`
+# string before truncating the rest with "(+N more)". Larger lists overwhelm
+# the artist's status panel; the full list lives on `missing_item_numbers`.
+ABORTED_AT_GAP_PREVIEW_COUNT = 5
+
 
 @dataclass
 class DiskSpaceInfo:
@@ -1486,7 +1491,7 @@ class OSManager:
         - Macro syntax / resolution / shape problems → `INVALID_TEMPLATE`
           (sequence-semantic).
         - Subset bound problems → `INVALID_BOUNDS`.
-        - ABORT-policy gaps → `ABORTED_AT_GAP` with the offending item number.
+        - ABORT-policy gaps → `ABORTED_AT_GAP` listing every offending item number.
         - OS-layer listing failures (directory not found, permission denied)
           propagate via `DirectoryListingError` and surface their original
           `FileIOFailureReason` so the underlying diagnostic isn't lost.
@@ -1530,12 +1535,21 @@ class OSManager:
                 ),
             )
         except MissingItemError as e:
+            gap_count = len(e.numbers)
+            if gap_count == 1:
+                summary = f"the sequence has a gap at item {e.numbers[0]}"
+            else:
+                sample = ", ".join(str(n) for n in e.numbers[:ABORTED_AT_GAP_PREVIEW_COUNT])
+                if gap_count <= ABORTED_AT_GAP_PREVIEW_COUNT:
+                    suffix = ""
+                else:
+                    suffix = f" (+ {gap_count - ABORTED_AT_GAP_PREVIEW_COUNT} more)"
+                summary = f"the sequence has {gap_count} gaps: items {sample}{suffix}"
             return ScanSequencesResultFailure(
                 failure_reason=SequenceScanFailureReason.ABORTED_AT_GAP,
-                missing_item_number=e.number,
+                missing_item_numbers=e.numbers,
                 result_details=(
-                    f"Attempted to scan sequences with path={request.path!r}, policy=ABORT. "
-                    f"Failed because the sequence has a gap at item {e.number}."
+                    f"Attempted to scan sequences with path={request.path!r}, policy=ABORT. Failed because {summary}."
                 ),
             )
 
