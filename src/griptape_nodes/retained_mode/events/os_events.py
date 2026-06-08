@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from griptape_nodes.common.sequences.models import MissingItemPolicy, Sequence
+from griptape_nodes.common.sequences.models import MissingItemPolicy, NoTokenBehavior, Sequence
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -200,22 +200,37 @@ class ListDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ScanSequencesRequest(RequestPayload):
-    """Scan a directory for files matching a fileseq template; produce typed Sequence(s).
+    """Scan a path or pattern; produce typed Sequence(s) with macro-preserving paths.
 
     Use when: A node or workflow needs to discover frame/item sequences on disk
-    (e.g. a render output, a directory of dialogue takes). Mediates fileseq parsing
-    and the underlying directory listing through the engine's request bus so callers
-    don't import the engine's sequence helpers directly.
+    (e.g. a render output, a directory of dialogue takes). The engine handles
+    macro resolution, the directory listing, and fileseq parsing — callers hand
+    in a path or pattern and get back a Sequence whose paths are in the same
+    macro shape they supplied. That makes scan results portable across machines
+    where `{inputs}` may resolve to different absolute roots.
 
     Args:
-        directory: Absolute directory path to scan. Listed via `ListDirectoryRequest`
-            internally (no direct filesystem access). Macro-form paths must be
-            resolved by the caller before dispatching this request.
-        pattern: A fileseq pattern (e.g. `render.####.exr`, `take_%02d.wav`). Sequence
-            tokens are interpreted in HASH1 mode regardless of pattern syntax. Multi-token
-            templates are rejected up-front with `INVALID_TEMPLATE`.
+        path: A path to a numbered file sequence. Can be:
+            - A macro-form pattern: `{inputs}/render.####.png`. The macro head
+              is preserved on every emitted entry path.
+            - A plain absolute pattern: `/work/render.####.png`. Round-trips
+              identically.
+            - A literal single-file path: `/work/photo.png`. Behavior when the
+              filename has no sequence token is controlled by
+              `no_token_behavior` (see below).
+            Sequence tokens (`####`, `%04d`, `@@@`, `$F4`) may appear at most
+            once and only in the filename component. Multi-token paths are
+            rejected with `INVALID_TEMPLATE`.
         policy: How to handle gaps within the matched range. Defaults to `SPLIT`.
-        start_number: Optional lower bound (inclusive) for the active subset. Items
+        no_token_behavior: How to handle a path with zero sequence tokens.
+            `SINGLE_FILE` (default) treats the whole filename as a literal —
+            one-item sequence if the file exists, empty result otherwise.
+            `EXPLORE_SEQUENCE` lets fileseq read digits in the filename as an
+            implicit sequence — `render.0002.png` becomes one frame of an
+            inferred `render.####.png` sequence and the scan walks every
+            matching sibling. `REJECT` fails with `INVALID_TEMPLATE` for
+            workflows that must not silently widen the artist's intent.
+        start_number: Optional lower bound (inclusive) for the active range. Items
             below this are dropped. Must be >= 0 if supplied; rejected with
             `INVALID_BOUNDS` otherwise.
         end_number: Optional upper bound (inclusive). Items above this are dropped.
@@ -226,9 +241,9 @@ class ScanSequencesRequest(RequestPayload):
     (sequence-semantic or OS-layer failure).
     """
 
-    directory: str
-    pattern: str
+    path: str
     policy: MissingItemPolicy = MissingItemPolicy.SPLIT
+    no_token_behavior: NoTokenBehavior = NoTokenBehavior.SINGLE_FILE
     start_number: int | None = None
     end_number: int | None = None
 
@@ -239,17 +254,21 @@ class ScanSequencesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Sequence scan completed successfully.
 
     A successful scan may legitimately return zero sequences (the directory
-    had no files matching the template, the padding didn't line up, or the
-    active subset clipped them all out). The diagnostic fields let consumers
+    had no files matching the path, the padding didn't line up, or the
+    active range clipped them all out). The diagnostic fields let consumers
     distinguish those cases without inspecting `result_details` strings:
 
-    - `directory_had_matching_files=False` → wrong path / wrong template /
+    - `directory_had_matching_files=False` → wrong path / wrong pattern /
       empty directory: nothing on disk matched the basename + extension.
     - `directory_had_matching_files=True`, `has_entries=False` → right path,
-      but either the padding didn't line up with the template's zfill, or
-      the active subset (`start_number`/`end_number`) clipped everything out.
+      but either the padding didn't line up with the pattern's token, or
+      the active range (`start_number`/`end_number`) clipped everything out.
       `discovered_first`/`discovered_last` give the on-disk range so callers
       can show "asked for 90..100 but disk has 1..7."
+
+    All emitted paths (`Sequence.directory` and `entry.path`) are in the
+    same shape the caller supplied: a macro-form input round-trips with the
+    macro head intact; a plain absolute input round-trips identically.
 
     Attributes:
         sequences: Zero or more `Sequence` objects produced by the scan.
@@ -262,10 +281,10 @@ class ScanSequencesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
             produced ≥1 file matching the target's basename + extension
             (before fileseq parsing or subset clipping).
         discovered_first: Lowest item number actually found on disk that
-            matched the target's full shape (basename + extension + zfill),
+            matched the pattern's full shape (basename + extension + zfill),
             ignoring any subset bounds. None when no sequences were inferred.
         discovered_last: Highest item number actually found on disk that
-            matched the target's full shape, ignoring any subset bounds.
+            matched the pattern's full shape, ignoring any subset bounds.
             None when no sequences were inferred.
     """
 

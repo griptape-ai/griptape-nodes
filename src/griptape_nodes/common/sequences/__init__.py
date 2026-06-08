@@ -30,6 +30,7 @@ from griptape_nodes.common.sequences.models import (
     InvalidTemplateError,
     MissingItemError,
     MissingItemPolicy,
+    NoTokenBehavior,
     Sequence,
     SequenceEntry,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "InvalidTemplateError",
     "MissingItemError",
     "MissingItemPolicy",
+    "NoTokenBehavior",
     "Sequence",
     "SequenceEntry",
 ]

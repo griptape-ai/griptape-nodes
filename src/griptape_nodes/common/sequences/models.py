@@ -1,7 +1,8 @@
 """Data shapes for the sequences module.
 
-Three concepts:
+Four concepts:
     - `MissingItemPolicy`: how to fill gaps inside a sequence's range.
+    - `NoTokenBehavior`: what to do when the input has no sequence token at all.
     - `Sequence`: one contiguous-or-gap-aware sequence with metadata.
     - `SequenceEntry`: one item inside a Sequence (number + path).
 """
@@ -29,6 +30,34 @@ class MissingItemPolicy(StrEnum):
     SPLIT = "split"  # Sparse sequence becomes N contiguous sub-sequences.
     SKIP = "skip"  # Single sequence with only the present items; gaps absent.
     FILL_NEAREST = "fill_nearest"  # Dense sequence; gaps point at the backward-first neighbor.
+
+
+class NoTokenBehavior(StrEnum):
+    """What to do when the caller's path has no sequence token (`####`, `%04d`, etc.).
+
+    A path with zero tokens is ambiguous: the artist may have typed the
+    literal name of one specific file (`render.0002.png`), or they may have
+    meant to scan the surrounding sequence and forgotten the token, or they
+    may have a workflow that should fail loud if the token is missing. This
+    enum picks which interpretation the scanner uses.
+
+    - `SINGLE_FILE` *(default)*: Treat the whole filename as a literal. The
+      result is a 1-item Sequence (`first=last=1, padding=0`) when the file
+      exists, an empty result when it doesn't. Sibling files in the same
+      directory are ignored.
+    - `EXPLORE_SEQUENCE`: Let fileseq parse digits in the filename as an
+      implicit sequence token. `render.0002.png` is treated as one frame of
+      a `render.####.png` sequence; the scan walks every matching sibling
+      and the result reflects the entire on-disk run. Useful when a
+      downstream tool gave you one filename but you want the whole take.
+    - `REJECT`: Fail with `INVALID_TEMPLATE` and tell the artist the path
+      needs an explicit token. Strict mode for workflows that must not
+      silently widen the artist's intent.
+    """
+
+    SINGLE_FILE = "single_file"
+    EXPLORE_SEQUENCE = "explore_sequence"
+    REJECT = "reject"
 
 
 class MissingItemError(Exception):
