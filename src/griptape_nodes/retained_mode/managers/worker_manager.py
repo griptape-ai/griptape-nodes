@@ -448,7 +448,7 @@ class WorkerManager:
         args = [
             sys.executable,
             "-m",
-            "griptape_nodes",
+            "griptape_nodes_app",
             "engine",
             "--session-id",
             session_id,
