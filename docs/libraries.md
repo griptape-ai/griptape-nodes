@@ -52,11 +52,11 @@ with the engine. Each entry shows:
 - The library's name and version.
 - The number of nodes it provides.
 - An **Open** action that opens the library's directory in your
-  file manager.
+    file manager.
 - An **Advanced** disclosure that shows the library's Git remote,
-  ref (branch or tag), and current commit. If you ever need to
-  report a bug, the commit shown there is the precise version to
-  cite.
+    ref (branch or tag), and current commit. If you ever need to
+    report a bug, the commit shown there is the precise version to
+    cite.
 
 You can filter the installed list by **All**, **Needs Update**, or
 **Errors** using the chips above the list. **Errors** is your first
@@ -69,10 +69,10 @@ load-time failures together.
 In the same **Library Management** panel:
 
 - Click **Check All Libraries for Updates** to scan all installed
-  libraries for new versions. Anything with an update available
-  shows up under the **Needs Update** filter.
+    libraries for new versions. Anything with an update available
+    shows up under the **Needs Update** filter.
 - Use **Refresh** to re-read the installed-library list (helpful
-  if you just installed something and want to confirm it took).
+    if you just installed something and want to confirm it took).
 
 For ambient update awareness, **Configuration Editor → Libraries**
 controls how aggressively the engine checks for library updates on
@@ -81,10 +81,10 @@ its own.
 **Update Notifications** options:
 
 - **Enable sidebar notifications** — show a badge on the Libraries
-  tab and per-library buttons when an update is available.
+    tab and per-library buttons when an update is available.
 - **Notification color / animation** — visual style for the badge.
 - **Check on startup** — scan for updates each time the engine
-  loads.
+    loads.
 - **Check periodically** — repeating schedule (Never, Hourly, etc.).
 - **Check Now** — trigger an immediate scan.
 
@@ -99,12 +99,12 @@ that list is a library the engine loads at startup. Three controls
 per entry:
 
 - The toggle (left) — flip off to keep the library on disk but stop
-  loading it on engine start.
+    loading it on engine start.
 - The **Shared / Isolated** dropdown (middle) — choose where the
-  library runs (see below).
+    library runs (see below).
 - The trash icon (right) — remove the entry entirely. The clone on
-  disk stays put; delete its directory manually if you want the
-  disk space back.
+    disk stays put; delete its directory manually if you want the
+    disk space back.
 
 ![Shared/Isolated library mode](assets/img/libraries/worker_mode_toggle.png)
 
@@ -113,10 +113,10 @@ per entry:
 The dropdown picks the process a library runs in:
 
 - **Shared** — the library runs inside the main engine process,
-  alongside the other shared libraries.
+    alongside the other shared libraries.
 - **Isolated** — the library runs in its own separate process, so
-  its Python dependencies are walled off from every other library
-  and a crash in it can't take the rest of the engine down.
+    its Python dependencies are walled off from every other library
+    and a crash in it can't take the rest of the engine down.
 
 The dropdown shows the mode the engine will actually use: the
 library author's suggested mode, unless you override it here. Pick
@@ -163,10 +163,10 @@ Running a library **Isolated** (in its own dedicated process,
 instead of inside the engine's main process) gives you:
 
 - **Fault tolerance.** If the library crashes, only that library
-  goes down — the rest of the engine keeps running.
+    goes down — the rest of the engine keeps running.
 - **Resource isolation.** Anything the library loads into memory
-  (model weights, GPU memory, background threads) lives in the
-  library's own process and can't degrade other libraries.
+    (model weights, GPU memory, background threads) lives in the
+    library's own process and can't degrade other libraries.
 
 Heavy ML libraries (diffusion, transformers, custom CUDA stacks)
 benefit most; lightweight libraries (simple HTTP / data nodes)
@@ -192,7 +192,7 @@ does not warn you at install time.** When you create that node:
 
 - If your workflow names the library explicitly, it works.
 - If it doesn't, the engine raises an error listing both libraries
-  so you can disambiguate.
+    so you can disambiguate.
 
 This is the one coexistence concern the engine doesn't solve for
 you. If you suspect a collision, the safest fix is to remove the
@@ -210,10 +210,10 @@ into the offending library for the specific error message.
 Common causes:
 
 - The library pins a wheel (a pre-built Python package) that
-  doesn't exist for your Python version or platform — for example a
-  `torch` wheel for an unsupported CUDA version.
+    doesn't exist for your Python version or platform — for example a
+    `torch` wheel for an unsupported CUDA version.
 - Your network blocked the install (corporate proxy, or no internet
-  during the install step).
+    during the install step).
 - Disk full (the engine reports this explicitly).
 
 Fix the underlying issue, then re-trigger the install (re-paste the
@@ -241,12 +241,12 @@ If you'd rather use the command line — for automation, headless
 engines, or just preference — the editor's library actions have
 `gtn` equivalents:
 
-| Editor action | CLI equivalent |
-|---|---|
-| Install New Library → Download | `gtn libraries download <git_url>` |
-| Check All Libraries for Updates → install pending updates | `gtn libraries sync` |
-| Sync over local edits | `gtn libraries sync --overwrite` |
-| Re-register Advanced Media Library | `gtn init`, answer `y` |
+| Editor action                                             | CLI equivalent                     |
+| --------------------------------------------------------- | ---------------------------------- |
+| Install New Library → Download                            | `gtn libraries download <git_url>` |
+| Check All Libraries for Updates → install pending updates | `gtn libraries sync`               |
+| Sync over local edits                                     | `gtn libraries sync --overwrite`   |
+| Re-register Advanced Media Library                        | `gtn init`, answer `y`             |
 
 See [Command Line Interface](command_line_interface.md) for the
 full reference.
@@ -254,17 +254,17 @@ full reference.
 ## Where libraries are stored on disk
 
 - **Config**: `~/.config/griptape_nodes/griptape_nodes_config.json`
-  (or the platform equivalent — see
-  [Engine Configuration](configuration.md)). The
-  `app_events.on_app_initialization_complete.libraries_to_register`
-  list inside it is what the editor's Libraries To Register list
-  edits.
+    (or the platform equivalent — see
+    [Engine Configuration](configuration.md)). The
+    `app_events.on_app_initialization_complete.libraries_to_register`
+    list inside it is what the editor's Libraries To Register list
+    edits.
 - **Clones / venvs**: in the directory the editor cloned the
-  library into (the **Download Directory** shown in Library
-  Management); the library's `.venv` lives next to its
-  `griptape_nodes_library.json`.
+    library into (the **Download Directory** shown in Library
+    Management); the library's `.venv` lives next to its
+    `griptape_nodes_library.json`.
 - **Sandbox library**: the sandbox directory is configured
-  separately in your settings; defaults vary by platform.
+    separately in your settings; defaults vary by platform.
 
 For library authors: see [Custom Nodes](developing_nodes/index.md)
 and [Worker Mode](developing_nodes/worker_mode.md).
