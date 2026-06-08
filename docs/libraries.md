@@ -249,12 +249,12 @@ If you'd rather use the command line — for automation, headless
 engines, or just preference — the editor's library actions have
 `gtn` equivalents:
 
-| Editor action                          | CLI equivalent                     |
-| --------------------------------------- | ---------------------------------- |
-| Add Library → Install                   | `gtn libraries download <git_url>` |
-| Check for updates → install pending     | `gtn libraries sync`               |
-| Sync over local edits                   | `gtn libraries sync --overwrite`   |
-| Re-register Advanced Media Library      | `gtn init`, answer `y`             |
+| Editor action                       | CLI equivalent                     |
+| ----------------------------------- | ---------------------------------- |
+| Add Library → Install               | `gtn libraries download <git_url>` |
+| Check for updates → install pending | `gtn libraries sync`               |
+| Sync over local edits               | `gtn libraries sync --overwrite`   |
+| Re-register Advanced Media Library  | `gtn init`, answer `y`             |
 
 See [Command Line Interface](command_line_interface.md) for the
 full reference.
