@@ -19,7 +19,7 @@ EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
 WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
 WORKER_HEARTBEAT_TIMEOUT_KEY = "worker.heartbeat_timeout_s"
 WORKER_HEARTBEAT_STARTUP_GRACE_KEY = "worker.heartbeat_startup_grace_s"
-LIBRARY_DEPENDENCY_INSTALL_BEHAVIOR_KEY = "dependency_install_behavior"
+LIBRARY_DEPENDENCY_INSTALL_BEHAVIOR_KEY = "library_dependency_install_behavior"
 
 
 class Category(BaseModel):
@@ -373,14 +373,15 @@ class Settings(BaseModel):
         default_factory=dict,
         description="Mapping of project file paths to workspace directory overrides. When a project is loaded, if its resolved path matches a key here, the corresponding value is used as the workspace directory instead of the project-adjacent config or auto-default.",
     )
-    dependency_install_behavior: LibraryDependencyInstallBehavior = Field(
+    library_dependency_install_behavior: LibraryDependencyInstallBehavior = Field(
         LIBRARIES,
-        title="Dependency Install Behavior",
+        title="Library Dependency Install Behavior",
         default=LibraryDependencyInstallBehavior.ALWAYS,
         description=(
-            "Controls automatic installation of other Griptape Node Libraries declared as dependencies "
-            "in library manifests. Does not affect pip package installation, which always runs. "
-            "'always' downloads and registers dependency libraries on load. "
-            "'never' skips installation and marks the library as degraded if required dependencies are missing."
+            "Controls whether Griptape Node Libraries declared as library_dependencies in a library manifest "
+            "are automatically downloaded and registered when the declaring library loads. "
+            "Does not affect pip package installation, which always runs regardless of this setting. "
+            "'always': download and register missing library dependencies automatically on load. "
+            "'never': skip installation; required missing dependencies mark the library as degraded."
         ),
     )

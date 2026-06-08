@@ -2004,12 +2004,12 @@ class LibraryManager:
                                         library_info.problems.append(
                                             LibraryDependencyProblem(
                                                 dependency_name=dep.url,
-                                                error_message="Automatic dependency installation is disabled (dependency_install_behavior=never).",
+                                                error_message="Automatic dependency installation is disabled (library_dependency_install_behavior=never).",
                                             )
                                         )
                                         library_info.fitness = LibraryManager.LibraryFitness.FLAWED
                                     logger.debug(
-                                        "Skipping download of library dependency '%s' (dependency_install_behavior=never)",
+                                        "Skipping download of library dependency '%s' (library_dependency_install_behavior=never)",
                                         dep.url,
                                     )
                                     continue
