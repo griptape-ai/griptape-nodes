@@ -56,6 +56,14 @@ install/dev: ## Install dev dependencies.
 install/test: ## Install test dependencies.
 	@uv sync --group test
 
+.PHONY: run
+run: ## Run the engine from this checkout (published app + local editable engine).
+	@uvx --python 3.12 --from griptape-nodes --with-editable . gtn $(ARGS)
+
+.PHONY: run/refresh
+run/refresh: ## Run the engine, pulling the latest published app first.
+	@uvx --refresh --python 3.12 --from griptape-nodes --with-editable . gtn $(ARGS)
+
 .PHONY: lint
 lint: ## Lint project.
 	@uv run ruff check --fix
