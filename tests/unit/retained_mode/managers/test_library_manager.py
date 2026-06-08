@@ -10,6 +10,10 @@ import pytest
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.node_library.library_declarations import (
+    LifecycleStage,
+    LifecycleStageNodeProperty,
+)
 from griptape_nodes.node_library.library_registry import (
     LibraryMetadata,
     LibraryRegistry,
@@ -1604,3 +1608,113 @@ class TestDescribeNodeTypeRequest:
         assert isinstance(result.result_details, ResultDetails)
         assert any(detail.level == logging.WARNING for detail in result.result_details.result_details)
         assert "simulated I/O failure" in str(result.result_details)
+
+
+class _LifecycleProbe(BaseNode):
+    """Concrete BaseNode used to exercise Library.create_node's metadata injection."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name=name, metadata=metadata)
+
+
+class TestLibraryNodeMetadataInjection:
+    """Regression coverage for #4770.
+
+    Before the fix, Library.create_node injected the live Pydantic NodeMetadata
+    instance under metadata["library_node_metadata"]. The workflow serializer
+    then emitted that model's repr (e.g. ``<LifecycleStage.BETA: 'BETA'>``)
+    via ast.Constant -> ast.unparse, producing invalid Python that couldn't
+    reload. Library.create_node now dumps to a JSON-safe dict at the boundary.
+    """
+
+    _LIBRARY_NAME = "lifecycle-probe-test-library"
+
+    @pytest.fixture(autouse=True)
+    def _clean_registry(self) -> Generator[None, None, None]:
+        LibraryRegistry._libraries.clear()
+        LibraryRegistry._node_aliases.clear()
+        LibraryRegistry._collision_node_names_to_library_names.clear()
+        LibraryRegistry._registered_widgets.clear()
+        yield
+        LibraryRegistry._libraries.clear()
+        LibraryRegistry._node_aliases.clear()
+        LibraryRegistry._collision_node_names_to_library_names.clear()
+        LibraryRegistry._registered_widgets.clear()
+
+    def _register_probe_library(self, node_metadata: NodeMetadata) -> None:
+        schema = LibrarySchema(
+            name=self._LIBRARY_NAME,
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=LibraryMetadata(
+                author="test",
+                description="lifecycle probe library",
+                library_version="1.0.0",
+                engine_version="1.0.0",
+                tags=[],
+            ),
+            categories=[],
+            nodes=[],
+        )
+        library = LibraryRegistry.generate_new_library(library_data=schema)
+        library.register_new_node_type(_LifecycleProbe, node_metadata)
+
+    def test_library_node_metadata_is_dict_not_pydantic_model(self) -> None:
+        """The injected value must be a plain dict so the workflow serializer never sees a Pydantic instance."""
+        self._register_probe_library(
+            NodeMetadata(category="test", description="probe", display_name="Probe"),
+        )
+
+        node = LibraryRegistry.create_node(
+            node_type=_LifecycleProbe.__name__,
+            name="probe-1",
+            specific_library_name=self._LIBRARY_NAME,
+        )
+
+        injected = node.metadata["library_node_metadata"]
+        assert isinstance(injected, dict)
+        assert not isinstance(injected, NodeMetadata)
+
+    def test_lifecycle_stage_strenum_dumps_to_plain_string(self) -> None:
+        """The headline #4770 case: a BETA declaration must not survive as a StrEnum member."""
+        self._register_probe_library(
+            NodeMetadata(
+                category="test",
+                description="probe",
+                display_name="Probe",
+                declarations=[LifecycleStageNodeProperty(stage=LifecycleStage.BETA)],
+            ),
+        )
+
+        node = LibraryRegistry.create_node(
+            node_type=_LifecycleProbe.__name__,
+            name="probe-2",
+            specific_library_name=self._LIBRARY_NAME,
+        )
+
+        declarations = node.metadata["library_node_metadata"]["declarations"]
+        assert declarations == [{"type": "lifecycle_stage", "stage": "BETA"}]
+        # Specifically: the stage value is a plain string, not a LifecycleStage member.
+        assert declarations[0]["stage"].__class__ is str
+
+    def test_caller_provided_library_node_metadata_is_overwritten(self) -> None:
+        """Loading an old workflow that emits ``library_node_metadata=NodeMetadata(...)`` still works.
+
+        Library.create_node has always overwritten the caller-supplied value with the
+        registry's authoritative copy; this test pins that behavior so old generated
+        workflows continue to load after the boundary fix.
+        """
+        self._register_probe_library(
+            NodeMetadata(category="test", description="probe", display_name="Probe"),
+        )
+
+        stale_model = NodeMetadata(category="STALE", description="STALE", display_name="STALE")
+        node = LibraryRegistry.create_node(
+            node_type=_LifecycleProbe.__name__,
+            name="probe-3",
+            specific_library_name=self._LIBRARY_NAME,
+            metadata={"library_node_metadata": stale_model},
+        )
+
+        injected = node.metadata["library_node_metadata"]
+        assert injected["category"] == "test"
+        assert injected["description"] == "probe"
