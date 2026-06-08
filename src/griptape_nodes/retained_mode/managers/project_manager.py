@@ -1248,10 +1248,10 @@ class ProjectManager:
         picks a parent that already points back at the project being edited)
         is detected.
 
-        `parent_project_path` values are stored in their portable form (which
-        may include `{workspace_dir}` and may be relative). Each hop expands
-        the macro and resolves relative paths against the *containing*
-        template's file path before looking up the registry key.
+        `parent_project_path` values are stored as absolute or relative paths
+        (macro tokens are rejected by the loader). Each hop resolves relative
+        paths against the *containing* template's file path before looking up
+        the registry key.
         """
         visited: set[str] = set()
         if editing_project_id is not None:
