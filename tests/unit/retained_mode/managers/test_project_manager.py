@@ -4142,3 +4142,386 @@ class TestValidateProjectTemplateParentChain:
         )
         assert isinstance(result, ValidateProjectTemplateResultSuccess)
         assert any(p.field_path == "parent_project_path" and "Cycle" in p.message for p in result.validation.problems)
+
+
+class TestPerPlatformProjectsToRegister:
+    """`projects_to_register` accepts per-platform mappings; behavior matches plain strings on the active platform."""
+
+    VALID_PROJECT_YAML = """\
+project_template_schema_version: "0.1.0"
+name: Per-Platform Project
+situations:
+  save_node_output:
+    macro: "{outputs}/{file_name_base}.{file_extension}"
+    policy:
+      on_collision: create_new
+      create_dirs: true
+"""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    @pytest.mark.asyncio
+    async def test_per_platform_entry_loads_active_platform_path(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A per-platform mapping resolves to the active OS's path and is loaded."""
+        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
+        from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+
+        monkeypatch.setattr("sys.platform", "darwin")
+        active_path = tmp_path / "darwin_project.yml"
+        other_path = tmp_path / "linux_project.yml"
+        entry = {
+            "darwin": str(active_path),
+            "linux": str(other_path),
+            "windows": "Z:\\unused.yml",
+        }
+
+        def get_config_value_side_effect(key: str, **_: object) -> object:
+            if key == PROJECTS_TO_REGISTER_KEY:
+                return [entry]
+            return []
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = AsyncMock(
+                return_value=ReadFileResultSuccess(
+                    content=self.VALID_PROJECT_YAML,
+                    file_size=len(self.VALID_PROJECT_YAML),
+                    mime_type="text/plain",
+                    encoding="utf-8",
+                    result_details="ok",
+                )
+            )
+
+            await pm._load_registered_projects()
+
+        assert str(active_path) in pm._successfully_loaded_project_templates
+        assert str(other_path) not in pm._successfully_loaded_project_templates
+
+    @pytest.mark.asyncio
+    async def test_per_platform_entry_falls_back_to_default(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When no platform key matches, `default` is used."""
+        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
+        from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+
+        monkeypatch.setattr("sys.platform", "linux")
+        default_path = tmp_path / "default_project.yml"
+        entry = {
+            "darwin": "/Volumes/unused.yml",
+            "default": str(default_path),
+        }
+
+        def get_config_value_side_effect(key: str, **_: object) -> object:
+            if key == PROJECTS_TO_REGISTER_KEY:
+                return [entry]
+            return []
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = AsyncMock(
+                return_value=ReadFileResultSuccess(
+                    content=self.VALID_PROJECT_YAML,
+                    file_size=len(self.VALID_PROJECT_YAML),
+                    mime_type="text/plain",
+                    encoding="utf-8",
+                    result_details="ok",
+                )
+            )
+
+            await pm._load_registered_projects()
+
+        assert str(default_path) in pm._successfully_loaded_project_templates
+
+    @pytest.mark.asyncio
+    async def test_per_platform_entry_no_match_no_default_skips_with_warning(
+        self,
+        pm: ProjectManager,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A per-platform entry with no key for the active OS and no `default` is skipped + logged."""
+        from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+
+        # Patch the per-platform selector directly rather than `sys.platform`. The skip
+        # path emits a `logger.warning(...)`, which on first call lazily constructs the
+        # GriptapeNodes singleton; that init reads the *real* `sys.platform` to set up
+        # OS-specific resources, and falls into `os.uname()` on Linux/Mac branches.
+        # On a Windows CI host with `sys.platform` faked to "linux", that crashes.
+        monkeypatch.setattr(
+            "griptape_nodes.common.project_templates.directory._active_platform_key",
+            lambda: "linux",
+        )
+        entry = {
+            "darwin": "/Volumes/unused.yml",
+            "windows": "Z:\\unused.yml",
+        }
+
+        def get_config_value_side_effect(key: str, **_: object) -> object:
+            if key == PROJECTS_TO_REGISTER_KEY:
+                return [entry]
+            return []
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+
+        with (
+            patch.object(pm, "on_load_project_template_request", new=AsyncMock()) as mock_load,
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            await pm._load_registered_projects()
+            mock_load.assert_not_called()
+
+        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("no key for the active platform" in msg for msg in warning_messages)
+
+    @pytest.mark.asyncio
+    async def test_invalid_per_platform_entry_skipped_with_warning(
+        self, pm: ProjectManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A dict with unknown keys (e.g., `osx`) fails validation and is skipped + logged."""
+        from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+
+        entry = {"osx": "/Volumes/unused.yml"}
+
+        def get_config_value_side_effect(key: str, **_: object) -> object:
+            if key == PROJECTS_TO_REGISTER_KEY:
+                return [entry]
+            return []
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+
+        with (
+            patch.object(pm, "on_load_project_template_request", new=AsyncMock()) as mock_load,
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            await pm._load_registered_projects()
+            mock_load.assert_not_called()
+
+        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("invalid per-platform projects_to_register entry" in msg for msg in warning_messages)
+
+    @pytest.mark.asyncio
+    async def test_plain_string_entry_still_loads(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """Regression: plain-string entries continue to load (no per-platform handling needed)."""
+        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
+        from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+
+        project_path = tmp_path / "string_project.yml"
+
+        def get_config_value_side_effect(key: str, **_: object) -> object:
+            if key == PROJECTS_TO_REGISTER_KEY:
+                return [str(project_path)]
+            return []
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = AsyncMock(
+                return_value=ReadFileResultSuccess(
+                    content=self.VALID_PROJECT_YAML,
+                    file_size=len(self.VALID_PROJECT_YAML),
+                    mime_type="text/plain",
+                    encoding="utf-8",
+                    result_details="ok",
+                )
+            )
+
+            await pm._load_registered_projects()
+
+        assert str(project_path) in pm._successfully_loaded_project_templates
+
+
+class TestPerPlatformParentProjectPath:
+    """`parent_project_path` accepts per-platform mappings; selection happens at every read site."""
+
+    BASE_PROJECT_YAML = """\
+project_template_schema_version: "0.3.3"
+name: Base Parent
+directories:
+  shared_outputs:
+    path_macro: "{workspace_dir}/base_outputs"
+"""
+
+    @pytest.fixture
+    def pm(self, tmp_path: Path) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        mock_config_manager.workspace_path = tmp_path
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    @staticmethod
+    def _file_router(files: dict[Path, str]) -> AsyncMock:
+        """Build an `ahandle_request` mock that returns YAML content based on file path."""
+        from griptape_nodes.retained_mode.events.os_events import (
+            FileIOFailureReason,
+            ReadFileResultFailure,
+            ReadFileResultSuccess,
+        )
+
+        async def route(request: object) -> object:
+            file_path = Path(getattr(request, "file_path", ""))
+            content = files.get(file_path)
+            if content is None:
+                return ReadFileResultFailure(
+                    failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
+                    result_details=f"missing: {file_path}",
+                )
+            return ReadFileResultSuccess(
+                content=content,
+                file_size=len(content),
+                mime_type="text/plain",
+                encoding="utf-8",
+                result_details="ok",
+            )
+
+        return AsyncMock(side_effect=route)
+
+    @pytest.mark.asyncio
+    async def test_load_child_with_per_platform_parent_resolves_active_platform(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A child storing parent_project_path as a per-platform mapping resolves correctly at load time."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        monkeypatch.setattr("sys.platform", "darwin")
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+        child_yaml = (
+            'project_template_schema_version: "0.3.3"\n'
+            "name: Child\n"
+            "parent_project_path:\n"
+            f'  darwin: "{base_path.as_posix()}"\n'
+            '  linux: "/mnt/unused.yml"\n'
+            "directories:\n"
+            "  child_outputs:\n"
+            '    path_macro: "{workspace_dir}/child_outputs"\n'
+        )
+        files = {
+            base_path: self.BASE_PROJECT_YAML,
+            child_path: child_yaml,
+        }
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        assert "shared_outputs" in result.template.directories
+        assert "child_outputs" in result.template.directories
+
+    @pytest.mark.asyncio
+    async def test_load_child_with_per_platform_parent_no_match_treats_as_no_parent(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When no platform key matches and no default, the child loads against system defaults instead."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        monkeypatch.setattr("sys.platform", "linux")
+        child_path = (tmp_path / "child.yml").resolve()
+        child_yaml = (
+            'project_template_schema_version: "0.3.3"\n'
+            "name: Child\n"
+            "parent_project_path:\n"
+            '  darwin: "/Volumes/unused.yml"\n'
+            '  windows: "Z:\\\\unused.yml"\n'
+            "directories:\n"
+            "  child_outputs:\n"
+            '    path_macro: "{workspace_dir}/child_outputs"\n'
+        )
+        files = {child_path: child_yaml}
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        # Child's own directory survives.
+        assert "child_outputs" in result.template.directories
+        # System default directories present (default fallback applied).
+        assert "outputs" in result.template.directories
+
+    @pytest.mark.asyncio
+    async def test_load_child_with_per_platform_parent_falls_back_to_default(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A `default` key on the per-platform parent is consulted when the active OS key is missing."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        monkeypatch.setattr("sys.platform", "linux")
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+        child_yaml = (
+            'project_template_schema_version: "0.3.3"\n'
+            "name: Child\n"
+            "parent_project_path:\n"
+            '  darwin: "/Volumes/unused.yml"\n'
+            f'  default: "{base_path.as_posix()}"\n'
+            "directories: {}\n"
+        )
+        files = {base_path: self.BASE_PROJECT_YAML, child_path: child_yaml}
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        assert "shared_outputs" in result.template.directories
+
+    @pytest.mark.asyncio
+    async def test_per_platform_parent_round_trips_through_in_memory_template(
+        self, pm: ProjectManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The merged template preserves the per-platform mapping (not flattened to active-platform string)."""
+        from griptape_nodes.common.project_templates import PerPlatformProjectPath
+        from griptape_nodes.retained_mode.events.project_events import (
+            LoadProjectTemplateRequest,
+            LoadProjectTemplateResultSuccess,
+        )
+
+        monkeypatch.setattr("sys.platform", "darwin")
+        base_path = (tmp_path / "base.yml").resolve()
+        child_path = (tmp_path / "child.yml").resolve()
+        child_yaml = (
+            'project_template_schema_version: "0.3.3"\n'
+            "name: Child\n"
+            "parent_project_path:\n"
+            f'  darwin: "{base_path.as_posix()}"\n'
+            '  linux: "/mnt/base.yml"\n'
+            "directories: {}\n"
+        )
+        files = {base_path: self.BASE_PROJECT_YAML, child_path: child_yaml}
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = self._file_router(files)
+            result = await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=child_path))
+
+        assert isinstance(result, LoadProjectTemplateResultSuccess)
+        # The in-memory `parent_project_path` is the union object, not a single string.
+        assert isinstance(result.template.parent_project_path, PerPlatformProjectPath)
+        assert result.template.parent_project_path.darwin == base_path.as_posix()
+        assert result.template.parent_project_path.linux == "/mnt/base.yml"
