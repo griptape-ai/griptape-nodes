@@ -387,7 +387,14 @@ class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPa
     Args:
         library_schema: The validated LibrarySchema object containing all metadata
                        about the library including nodes, categories, and settings.
-        file_path: The file path from which the library metadata was loaded.
+        file_path: The file path from which the library metadata was loaded (resolved
+                   absolute path on disk).
+        registered_path: The user's verbatim `LibraryRegistration.path` from
+                         `libraries_to_register` before workspace resolution / `~`-expansion
+                         / symlink-following. Surfaced so the GUI can match library metadata
+                         back to its `libraries_to_register` row using the exact key the user
+                         sees in their config. None for libraries registered through other
+                         channels (e.g. sandbox, ad-hoc loads).
         git_remote: The git remote URL if the library is in a git repository, None otherwise.
         git_ref: The current git reference (branch, tag, or commit) if the library is in a git repository, None otherwise.
     """
@@ -396,6 +403,7 @@ class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPa
     file_path: str
     git_remote: str | None
     git_ref: str | None
+    registered_path: str | None = None
 
 
 @dataclass

@@ -545,10 +545,12 @@ class TestConfigManagerEventEmission:
         assert entries[1].enabled is False
 
         # Round-trip: bare strings stay strings, objects stay objects.
+        # Object form serializes every field on LibraryRegistration; `worker_mode_override`
+        # defaults to None when the user didn't set one (added alongside `enabled`).
         dumped = validated.app_events.on_app_initialization_complete.model_dump()
         assert dumped["libraries_to_register"] == [
             "/path/to/enabled.json",
-            {"path": "/path/to/disabled.json", "enabled": False},
+            {"path": "/path/to/disabled.json", "enabled": False, "worker_mode_override": None},
         ]
 
 
