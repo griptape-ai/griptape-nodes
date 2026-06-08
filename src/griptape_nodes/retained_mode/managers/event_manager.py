@@ -131,6 +131,15 @@ class EventManager:
             raise ValueError(msg)
         return self._event_queue
 
+    @property
+    def event_loop(self) -> asyncio.AbstractEventLoop | None:
+        """The event loop that owns request handling, or None before the queue is initialized.
+
+        In-process callers running on another thread (e.g. the bundled MCP server) use this to
+        dispatch coroutines onto the engine loop via asyncio.run_coroutine_threadsafe.
+        """
+        return self._event_loop
+
     def should_suppress_event(self, event: BaseEvent | ProgressEvent) -> bool:
         """Check if events should be suppressed from being sent to websockets.
 

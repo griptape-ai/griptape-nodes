@@ -219,10 +219,9 @@ class AgentManager:
             )
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         sock = bind_free_socket(GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT)
         self._mcp_server_port = sock.getsockname()[1]
-        threading.Thread(target=start_mcp_server, args=(api_key, sock), daemon=True, name="mcp-server").start()
+        threading.Thread(target=start_mcp_server, args=(sock,), daemon=True, name="mcp-server").start()
 
     async def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:

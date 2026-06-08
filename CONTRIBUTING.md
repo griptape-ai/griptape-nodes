@@ -35,13 +35,21 @@ This repository is the open-source Griptape Nodes **engine**, published to PyPI 
 
 The application that launches an engine is the `griptape-nodes` package on PyPI, which owns the CLI and communication layer for connecting clients.
 
-To test your engine changes, install the published `griptape-nodes` app and layer your local engine checkout over it as an editable install:
+To test your engine changes, run the published `griptape-nodes` app with your local engine checkout layered over it as an editable install. The quickest way is the Makefile target, which launches the app from this checkout and overlays your local engine source:
+
+```shell
+make run
+```
+
+This pulls the published app into a cached ephemeral environment and imports the engine from this checkout's `src` directory, so engine edits are reflected immediately with no reinstall. Pass arguments through `ARGS`, e.g. `make run ARGS=init` to trigger the initial setup prompts. Use `make run/refresh` to pull the latest published app first.
+
+For a persistent `gtn` (or `griptape-nodes`) command on your `PATH`, install the app as a `uv` tool with the editable engine layer instead:
 
 ```shell
 uv tool install griptape-nodes --python 3.12 --with-editable /path/to/griptape-nodes-engine --force
 ```
 
-That creates a persistent tool venv containing the published app, plus a `.pth` file pointing at this checkout's `src` directory. Every subsequent `gtn` (or `griptape-nodes`) invocation imports the engine from your local source, so engine edits are reflected immediately with no reinstall.
+That creates a persistent tool venv containing the published app, plus a `.pth` file pointing at this checkout's `src` directory. Every subsequent `gtn` invocation imports the engine from your local source. This variant also guarantees that worker engine subprocesses pick up your local source.
 
 To switch back to the engine bundled with the published app, reinstall without the editable layer:
 
@@ -53,16 +61,16 @@ To upgrade the published app while keeping the local engine layer, re-run the in
 
 **Key Development Commands:**
 
-- **Run the Engine:** Once installed as above, launch via the app's CLI:
+- **Run the Engine:** Launch from this checkout:
 
     ```shell
-    gtn
+    make run
     ```
 
 - **Run Initialization:** To trigger the initial setup prompts (API Key, Workspace Directory):
 
     ```shell
-    gtn init
+    make run ARGS=init
     ```
 
 - **Run Unit Tests:**

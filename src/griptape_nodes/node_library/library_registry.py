@@ -527,8 +527,17 @@ class Library:
         # into the node's metadata blob.
         if metadata is None:
             metadata = {}
-        library_node_metadata = self._node_metadata.get(node_type, {})
-        metadata["library_node_metadata"] = library_node_metadata
+        # Dump to a JSON-safe dict so downstream consumers (and the workflow
+        # serializer in particular) only ever see plain literals — no Pydantic
+        # models, no StrEnum members. Without this, a NodeMetadata carrying a
+        # LifecycleStageNodeProperty would leak through to the generated workflow
+        # as a Python repr (e.g. `<LifecycleStage.BETA: 'BETA'>`), which is not
+        # valid Python.
+        library_node_metadata_model = self._node_metadata.get(node_type)
+        if library_node_metadata_model is None:
+            metadata["library_node_metadata"] = {}
+        else:
+            metadata["library_node_metadata"] = library_node_metadata_model.model_dump(mode="json")
         metadata["library"] = self._library_data.name
         metadata["node_type"] = node_type
         node = node_class(name=name, metadata=metadata)
