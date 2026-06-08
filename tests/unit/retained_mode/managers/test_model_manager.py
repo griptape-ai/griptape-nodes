@@ -3,10 +3,13 @@
 Covers:
 - `on_handle_get_model_info_request` — token guard and HF API delegation
 - `on_handle_search_models_request` — search result handling
+- `_download_model_task` — the spawned subprocess targets a runnable module
 """
 
+import importlib.util
+import sys
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -18,7 +21,7 @@ from griptape_nodes.retained_mode.events.model_events import (
     SearchModelsResultFailure,
     SearchModelsResultSuccess,
 )
-from griptape_nodes.retained_mode.managers.model_manager import ModelManager
+from griptape_nodes.retained_mode.managers.model_manager import DownloadParams, ModelManager
 
 
 @pytest.fixture
@@ -175,3 +178,51 @@ class TestOnHandleSearchModelsRequest:
             result = await model_manager.on_handle_search_models_request(SearchModelsRequest(query="model"))
 
         assert isinstance(result, SearchModelsResultFailure)
+
+
+# ---------------------------------------------------------------------------
+# _download_model_task — subprocess entry point
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadModelTaskSubprocess:
+    @pytest.mark.asyncio
+    async def test_spawns_runnable_module(self, model_manager: ModelManager) -> None:
+        """The download subprocess must target a module with a __main__ entry point.
+
+        Regression guard for PR #4731, which removed the engine's top-level CLI
+        entry point (`python -m griptape_nodes`) and left this subprocess invoking
+        a module that no longer existed, breaking every Model Manager download.
+        """
+        model_manager._download_tasks = {}
+        model_manager._download_processes = {}
+
+        process = SimpleNamespace(
+            stdout=None,
+            stderr=None,
+            returncode=0,
+            wait=AsyncMock(return_value=0),
+        )
+
+        captured_cmd: list[str] = []
+
+        async def fake_create_subprocess_exec(*cmd: str, **_kwargs: object) -> SimpleNamespace:
+            captured_cmd.extend(cmd)
+            return process
+
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=fake_create_subprocess_exec),
+            patch.object(model_manager, "_write_download_status"),
+        ):
+            await model_manager._download_model_task(DownloadParams(model_id="org/model"))
+
+        assert captured_cmd[0] == sys.executable
+        assert captured_cmd[1] == "-m"
+
+        # The spawned module must be importable and expose a runnable __main__.
+        spawned_module = captured_cmd[2]
+        spec = importlib.util.find_spec(spawned_module)
+        assert spec is not None, f"spawned module '{spawned_module}' is not importable"
+
+        assert captured_cmd[3] == "download"
+        assert "org/model" in captured_cmd

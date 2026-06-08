@@ -44,6 +44,8 @@ plugins:
           - developing_nodes/index.md: Developing custom nodes overview
           - developing_nodes/getting_started.md: Beginner-friendly intro to node development
           - developing_nodes/comprehensive_guide.md: Exhaustive node development reference
+          - developing_nodes/worker_mode.md: Applying worker mode to libraries for dependency isolation
+          - developing_nodes/strict_mode.md: Strict-mode rules that identify worker-mode incompatibilities
           - how_to/making_custom_nodes.md: Quick start template for building a custom node
           - how_to/making_custom_scripts.md: Build custom node execution scripts
         Beginner tutorial (FTUE):
@@ -93,7 +95,7 @@ extra:
     - icon: fontawesome/brands/discord
       link: https://discord.gg/gnWRz88eym
     - icon: fontawesome/brands/github
-      link: https://github.com/griptape-ai/griptape-nodes
+      link: https://github.com/griptape-ai/griptape-nodes-engine
 
 theme:
   name: material
@@ -346,6 +348,7 @@ nav:
       - Overview: developing_nodes/index.md
       - Getting Started: developing_nodes/getting_started.md
       - Comprehensive Guide: developing_nodes/comprehensive_guide.md
+      - Worker Mode: developing_nodes/worker_mode.md
       - Strict Mode Reference: developing_nodes/strict_mode.md
       - Example Control Node: developing_nodes/example_control_node.py
   - Glossary: glossary.md

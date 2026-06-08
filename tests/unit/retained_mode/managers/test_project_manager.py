@@ -3339,24 +3339,25 @@ directories:
         assert child_info.parent_project_path == str(base_path)
 
     @pytest.mark.asyncio
-    async def test_parent_project_path_workspace_macro_resolves(self, pm: ProjectManager, tmp_path: Path) -> None:
-        """`parent_project_path` written as `{workspace_dir}/p.yml` resolves to the workspace-anchored parent.
+    async def test_parent_project_path_relative_resolves_against_child_yaml(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """`parent_project_path` written as `./base.yml` resolves against the child YAML's directory.
 
-        Pins the portability contract: a child stored with the macro form must
-        successfully merge its parent in when the engine loads on a different
-        machine where the workspace lives at a different absolute path.
+        Relative encoding is the supported portable form: it doesn't depend on
+        runtime workspace state, so the same string resolves to the same
+        sibling file regardless of which project is currently active.
         """
         from griptape_nodes.retained_mode.events.project_events import (
             LoadProjectTemplateRequest,
             LoadProjectTemplateResultSuccess,
         )
 
-        # pm fixture sets workspace_path = tmp_path, so {workspace_dir} expands to tmp_path.
         base_path = (tmp_path / "base.yml").resolve()
         child_path = (tmp_path / "child.yml").resolve()
         files = {
             base_path: self.BASE_PROJECT_YAML,
-            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent="{workspace_dir}/base.yml"),
+            child_path: self.CHILD_PROJECT_YAML_TEMPLATE.format(parent="./base.yml"),
         }
 
         with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
@@ -3368,83 +3369,6 @@ directories:
         # Merged template carries the parent's contribution, so the child sees both directories.
         assert "shared_outputs" in child_load.template.directories
         assert "child_outputs" in child_load.template.directories
-
-    @pytest.mark.asyncio
-    async def test_parent_project_path_macro_canonical_in_list_response(
-        self, pm: ProjectManager, tmp_path: Path
-    ) -> None:
-        """`project_macro_path` is `{workspace_dir}/<rel>` for templates living under the workspace.
-
-        The GUI parent-picker reads this and stores it into a child's
-        `parent_project_path`, so the value must round-trip cleanly with
-        `_expand_workspace_dir_macro`.
-        """
-        from griptape_nodes.retained_mode.events.project_events import (
-            ListProjectTemplatesRequest,
-            LoadProjectTemplateRequest,
-        )
-
-        base_path = (tmp_path / "base.yml").resolve()
-        files = {base_path: self.BASE_PROJECT_YAML}
-
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_gn.ahandle_request = self._file_router(files)
-            await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=base_path))
-
-        list_result = pm.on_list_project_templates_request(ListProjectTemplatesRequest(include_system_builtins=False))
-        by_id = {info.project_id: info for info in list_result.successfully_loaded}
-        info = by_id[str(base_path)]
-
-        assert info.project_macro_path == "{workspace_dir}/base.yml"
-
-    @pytest.mark.asyncio
-    async def test_parent_project_path_outside_workspace_falls_back_to_absolute(
-        self, pm: ProjectManager, tmp_path: Path
-    ) -> None:
-        """Templates outside the workspace get an absolute `project_macro_path`.
-
-        Decision captured in the plan: silently fall back to the canonicalized
-        absolute path (no warning, no filtering) so the picker still surfaces
-        out-of-workspace projects.
-        """
-        from griptape_nodes.retained_mode.events.project_events import (
-            ListProjectTemplatesRequest,
-            LoadProjectTemplateRequest,
-        )
-
-        # Move the workspace away from tmp_path so the project lives outside it.
-        outside_workspace = tmp_path / "elsewhere"
-        outside_workspace.mkdir()
-        pm._config_manager.workspace_path = outside_workspace
-
-        base_path = (tmp_path / "base.yml").resolve()
-        files = {base_path: self.BASE_PROJECT_YAML}
-
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_gn.ahandle_request = self._file_router(files)
-            await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=base_path))
-
-        list_result = pm.on_list_project_templates_request(ListProjectTemplatesRequest(include_system_builtins=False))
-        info = list_result.successfully_loaded[0]
-
-        assert info.project_macro_path is not None
-        assert info.project_macro_path == str(base_path)
-        assert "{workspace_dir}" not in info.project_macro_path
-
-    def test_expand_workspace_dir_macro_substitutes_token(self, pm: ProjectManager, tmp_path: Path) -> None:
-        """`_expand_workspace_dir_macro` replaces `{workspace_dir}` with the active workspace path string.
-
-        Tested at the helper level (rather than through a YAML round-trip) so
-        the assertion stays cross-platform: the resulting path string is
-        constructed by `str.replace`, separator handling is delegated to
-        `Path()` downstream.
-        """
-        # pm fixture sets workspace_path = tmp_path.
-        expanded = pm._expand_workspace_dir_macro("{workspace_dir}/sub/file.yml")
-        assert expanded == f"{tmp_path}/sub/file.yml"
-
-        # No-op when the token is absent.
-        assert pm._expand_workspace_dir_macro("/literal/path.yml") == "/literal/path.yml"
 
     @pytest.mark.asyncio
     async def test_overlay_round_trip_preserves_parent_project_path(self, pm: ProjectManager, tmp_path: Path) -> None:
@@ -4010,35 +3934,6 @@ directories:
             "project_template_schema_version": "0.3.2",
             "name": "child",
             "parent_project_path": "./parent.yml",
-            "situations": {},
-            "directories": {
-                "outputs": {"name": "outputs", "path_macro": "outputs2"},  # inherited
-            },
-        }
-        result = pm.on_save_project_template_request(
-            SaveProjectTemplateRequest(project_path=child_path, template_data=template_data)
-        )
-        assert isinstance(result, SaveProjectTemplateResultSuccess)
-        parsed = self._parse_yaml(child_path.read_text())
-        assert "directories" not in parsed or "outputs" not in (parsed.get("directories") or {})
-
-    @pytest.mark.asyncio
-    async def test_save_with_workspace_dir_parent_path(self, pm: ProjectManager, tmp_path: Path) -> None:
-        """`parent_project_path` of `{workspace_dir}/parent.yml` must expand against the active workspace."""
-        from griptape_nodes.retained_mode.events.project_events import (
-            SaveProjectTemplateRequest,
-            SaveProjectTemplateResultSuccess,
-        )
-
-        # pm fixture sets workspace_path = tmp_path.
-        parent_path = (tmp_path / "parent.yml").resolve()
-        await self._load_parent(pm, parent_path, self.BASE_PARENT_YAML)
-
-        child_path = tmp_path / "child.yml"
-        template_data = {
-            "project_template_schema_version": "0.3.2",
-            "name": "child",
-            "parent_project_path": "{workspace_dir}/parent.yml",
             "situations": {},
             "directories": {
                 "outputs": {"name": "outputs", "path_macro": "outputs2"},  # inherited

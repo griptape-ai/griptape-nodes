@@ -36,14 +36,6 @@ version/publish: ## Create and push git tags.
 	@git push -f --tags
 	@git push origin HEAD:refs/heads/release/v$$(make version/get | awk -F. '{print $$1 "." $$2}')
 	
-.PHONY: run
-run: ## Run the project.
-	uv run python -m griptape_nodes
-	
-.PHONY: run/watch
-run/watch: ## Run the project in watch mode.
-	uv run src/griptape_nodes/app/watch.py
-	
 .PHONY: install
 install: ## Install all dependencies.
 	@make install/all

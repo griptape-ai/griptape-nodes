@@ -88,7 +88,10 @@ class ProjectFileDestination(FileDestination):
         """Build a ProjectFileDestination from a project situation template.
 
         Looks up the named situation in the current project to obtain the macro
-        template and write policy, then constructs the destination.
+        template and write policy, then constructs the destination. The
+        resulting destination uses the engine default for extension coercion;
+        callers that need to override (e.g. the FileOutputSettings node) build
+        the destination directly via the constructor.
 
         Args:
             filename: Filename to parse into base and extension components.

@@ -1,3 +1,4 @@
+import json
 import os
 import platform
 import tempfile
@@ -544,10 +545,12 @@ class TestConfigManagerEventEmission:
         assert entries[1].enabled is False
 
         # Round-trip: bare strings stay strings, objects stay objects.
+        # Object form serializes every field on LibraryRegistration; `worker_mode_override`
+        # defaults to None when the user didn't set one (added alongside `enabled`).
         dumped = validated.app_events.on_app_initialization_complete.model_dump()
         assert dumped["libraries_to_register"] == [
             "/path/to/enabled.json",
-            {"path": "/path/to/disabled.json", "enabled": False},
+            {"path": "/path/to/disabled.json", "enabled": False, "worker_mode_override": None},
         ]
 
 
@@ -658,3 +661,28 @@ class TestConfigManagerEventGating:
 
         with patch.object(config_manager, "_write_user_config_delta", return_value=False):
             assert config_manager.set_config_value(key="k", value="v") is False
+
+
+class TestConfigManagerUtf8:
+    """_load_config_from_file must read UTF-8 regardless of the platform locale."""
+
+    def test_reads_utf8_config_when_locale_is_cp949(self, tmp_path: Path) -> None:
+        config_data = {"workspace": "C:\\Users\\한국어\\griptape"}
+        config_file = tmp_path / "griptape_nodes_config.json"
+        config_file.write_text(json.dumps(config_data), encoding="utf-8")
+
+        manager = ConfigManager.__new__(ConfigManager)
+
+        with patch("locale.getpreferredencoding", return_value="cp949"):
+            result = manager._load_config_from_file(config_file, "test")
+
+        assert result == config_data
+
+    def test_returns_empty_dict_on_unicode_decode_error(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "griptape_nodes_config.json"
+        config_file.write_bytes(b'{"key": "\xb9\xd9"}')  # cp949-encoded bytes, not valid UTF-8
+
+        manager = ConfigManager.__new__(ConfigManager)
+        result = manager._load_config_from_file(config_file, "test")
+
+        assert result == {}

@@ -526,10 +526,11 @@ class ProjectManager:
 
         Relative `parent_project_path` paths resolve against the directory of
         `project_file_path` so a child project can name its parent with a relative
-        path (e.g. `parent_project_path: ../base/griptape-nodes-project.yml`). The
-        macro `{workspace_dir}` is also expanded against the active workspace so
-        a parent shared between collaborators on different machines remains
-        portable.
+        path (e.g. `parent_project_path: ../base/griptape-nodes-project.yml`).
+        Macro tokens are rejected by the loader; only absolute or relative
+        paths reach this resolver. A per-platform mapping is reduced to the
+        active OS's path first; a mapping with no key for this OS and no
+        `default` is treated as no parent on this platform.
 
         Errors during parent resolution (missing file, unparsable YAML, cycle)
         are recorded on the child's `validation` and surfaced to the caller as
@@ -551,8 +552,7 @@ class ProjectManager:
             )
             return DEFAULT_PROJECT_TEMPLATE
 
-        parent_path_str = self._expand_workspace_dir_macro(selected_parent)
-        parent_path_raw = Path(parent_path_str)
+        parent_path_raw = Path(selected_parent)
         if not parent_path_raw.is_absolute():
             parent_path_raw = project_file_path.parent / parent_path_raw
         parent_file_path = canonicalize_for_identity(parent_path_raw)
@@ -646,30 +646,21 @@ class ProjectManager:
             if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
                 continue
 
-            # Surface the parent_project_path in its stored form (after expanding
-            # the {workspace_dir} macro and resolving relative paths against the
-            # child YAML's directory). The result is a canonical absolute path
-            # that consumers can match against other entries' project_id for
-            # hierarchy reconstruction. The original macro form (if any) lives
-            # on the child template itself; this field is for cross-referencing.
+            # Resolve parent_project_path to a canonical absolute string that
+            # matches another entry's project_id, so consumers can reconstruct
+            # the parent/child hierarchy with a string-equality lookup. Parent
+            # links are either absolute or relative to the child YAML's
+            # directory (the loader rejects macro tokens); both forms canonicalize
+            # to the same result here regardless of which workspace is active.
             # Per-platform mappings are reduced to the active platform's value
             # before resolving so the GUI sees a single resolved string.
             selected_parent = select_project_path(project_info.template.parent_project_path)
             resolved_parent: str | None = None
             if selected_parent is not None:
-                expanded = self._expand_workspace_dir_macro(selected_parent)
-                parent_path = Path(expanded)
+                parent_path = Path(selected_parent)
                 if not parent_path.is_absolute() and project_info.project_file_path is not None:
                     parent_path = project_info.project_file_path.parent / parent_path
                 resolved_parent = str(canonicalize_for_identity(parent_path))
-
-            # Each project's own path expressed in portable macro form. The GUI
-            # parent-picker stores this directly into a child's parent_project_path
-            # so links remain valid across machines and OSes when both projects
-            # live under the workspace.
-            project_macro_path: str | None = None
-            if project_info.project_file_path is not None and project_id != SYSTEM_DEFAULTS_KEY:
-                project_macro_path = self._workspace_relative_macro_path(project_info.project_file_path)
 
             successfully_loaded.append(
                 ProjectTemplateInfo(
@@ -677,7 +668,6 @@ class ProjectManager:
                     validation=project_info.validation,
                     name=project_info.template.name,
                     parent_project_path=resolved_parent,
-                    project_macro_path=project_macro_path,
                 )
             )
 
@@ -1290,51 +1280,24 @@ class ProjectManager:
             current_parent_raw = select_project_path(parent_info.template.parent_project_path)
             current_anchor = parent_info.project_file_path
 
-    def _resolve_parent_path_for_lookup(self, raw_parent: str, anchor: Path | None) -> str | None:
+    def _resolve_parent_path_for_lookup(self, raw_parent: str, anchor: Path | str | None) -> str | None:
         """Resolve a stored parent_project_path to a canonical registry key.
 
-        Expands `{workspace_dir}`, then resolves relative paths against `anchor`
-        (the containing template's file path). Returns None if the path is
-        relative and no anchor was provided, since we can't form an absolute
-        path without one.
+        Resolves relative paths against `anchor` (the containing template's
+        file path). Returns None if the path is relative and no anchor was
+        provided, since we can't form an absolute path without one. Macro
+        tokens are rejected by the loader; this resolver only sees absolute
+        or anchor-relative paths.
+
+        `anchor` is coerced to `Path` defensively because request payloads
+        deserialized over the wire arrive with `project_path` as a `str`.
         """
-        expanded = self._expand_workspace_dir_macro(raw_parent)
-        parent_path = Path(expanded)
+        parent_path = Path(raw_parent)
         if not parent_path.is_absolute():
             if anchor is None:
                 return None
-            parent_path = anchor.parent / parent_path
+            parent_path = Path(anchor).parent / parent_path
         return str(canonicalize_for_identity(parent_path))
-
-    def _expand_workspace_dir_macro(self, value: str) -> str:
-        """Substitute the `{workspace_dir}` token with the active workspace path.
-
-        Other macro tokens are intentionally left untouched here. Path-bearing
-        fields that need full macro resolution (situations, directories) go
-        through the macro parser; `parent_project_path` only honors
-        `{workspace_dir}` to keep the resolution surface narrow.
-        """
-        if "{workspace_dir}" not in value:
-            return value
-        return value.replace("{workspace_dir}", str(self._config_manager.workspace_path))
-
-    def _workspace_relative_macro_path(self, absolute_path: Path) -> str:
-        """Express an absolute path in portable form for cross-machine sharing.
-
-        If the path lives under the active workspace, returns
-        `{workspace_dir}/<rel>` (POSIX-style). Otherwise returns the
-        canonicalized absolute path as a string. Callers persist this value
-        into a child's `parent_project_path` so the link survives moves
-        between machines that share the same workspace layout.
-        """
-        workspace = canonicalize_for_identity(self._config_manager.workspace_path)
-        abs_canon = canonicalize_for_identity(absolute_path)
-        if abs_canon.is_relative_to(workspace):
-            rel = abs_canon.relative_to(workspace).as_posix()
-            if rel == ".":
-                return "{workspace_dir}"
-            return f"{{workspace_dir}}/{rel}"
-        return str(abs_canon)
 
     def on_unregister_project_template_request(
         self, request: UnregisterProjectTemplateRequest

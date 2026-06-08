@@ -34,13 +34,14 @@ class ProjectTemplate(BaseModel):
         description=(
             "Optional path to a parent project YAML. When set, the parent's merged template is the "
             "base for this template (instead of system defaults alone). The value may be: "
-            "(1) a string — absolute, relative to the directory of this project's YAML, or the "
-            "macro `{workspace_dir}/...` which expands to the active workspace at load time; "
-            "or (2) a per-platform mapping with optional `linux`, `darwin`, `windows`, and `default` "
-            "string fields, used when the parent lives at different filesystem paths on different OSes. "
-            "Macro form (single string) is preferred for cross-machine portability when both projects "
-            "live under the same workspace; the per-platform form is preferred when the parent lives "
-            "on shared storage mounted at different paths per OS."
+            "(1) a string — absolute, or relative to the directory of this project's YAML "
+            "(e.g. `../base/griptape-nodes-project.yml`); or (2) a per-platform mapping with optional "
+            "`linux`, `darwin`, `windows`, and `default` string fields, used when the parent lives at "
+            "different filesystem paths on different OSes. Relative paths are preferred for cross-machine "
+            "portability when both projects live under the same workspace; the per-platform form is "
+            "preferred when the parent lives on shared storage mounted at different paths per OS. "
+            "Macro tokens are not allowed: they would resolve against runtime state (e.g. the active "
+            "workspace) that can change while the project is loaded, which would corrupt parent/child links."
         ),
     )
     situations: dict[str, SituationTemplate] = Field(description="Situation templates (situation_name -> template)")

@@ -1,5 +1,14 @@
 # Strict Mode Reference
 
+> For when and how to opt your library into worker mode in the first
+> place, see [Worker Mode](worker_mode.md). This page is the rule
+> catalog that catches worker-mode incompatibilities.
+>
+> Throughout this page, "`aprocess`" refers to the framework's async
+> wrapper around the `process` method you implemented on your node.
+> When a rule says "during `aprocess`," it means "during the node's
+> execute, including from inside the `process` method you wrote."
+
 Strict mode is a runtime contract for what node code is allowed to do
 across the orchestrator and worker subprocess. When a node violates the
 contract, the framework records a named violation and routes it to the
@@ -49,9 +58,12 @@ are not captured in the worker schema. The orchestrator stub cannot
 re-run those behaviors, so UI-side behavior diverges from worker-side
 execution.
 
-**Remediation**: move behavior that needs to run on both sides into
-the worker-side `aprocess`, or accept the divergence as
-orchestrator-only UI sugar.
+**Remediation**: re-run the converter / validator logic inside
+`process` so the worker still applies it to the actual value, or
+accept the divergence as orchestrator-only UI sugar. Note that
+moving the logic into `process` loses the inline editor-side
+validation feedback — the user only sees a failure when the node
+executes.
 
 #### `parameter-mutation-during-aprocess`
 

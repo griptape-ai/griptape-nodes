@@ -36,7 +36,20 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.library_manager import LibraryManager as _LibraryManager
 from griptape_nodes.retained_mode.managers.settings import LibraryRegistration
+
+
+def _discovered(path: str, *, enabled: bool = True) -> _LibraryManager.DiscoveredLibraryEntry:
+    """Test helper: build a DiscoveredLibraryEntry with `registered_path` matching `path`.
+
+    The two paths only diverge in production when the engine resolves a workspace-relative
+    or `~`-prefixed entry; tests that don't exercise resolution can keep them aligned.
+    """
+    return _LibraryManager.DiscoveredLibraryEntry(
+        registration=LibraryRegistration(path=path, enabled=enabled),
+        registered_path=path,
+    )
 
 
 class TestLibraryManagerLoadLibraries:
@@ -67,9 +80,7 @@ class TestLibraryManagerLoadLibraries:
         mock_library.name = "SomeLib"
         with (
             patch.object(library_manager, "_library_file_path_to_info", {"some_lib": mock_lib_info}),
-            patch.object(
-                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="some_lib")]
-            ),
+            patch.object(library_manager, "_discover_library_files", return_value=[_discovered("some_lib")]),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
             patch.object(LibraryRegistry, "get_library", return_value=mock_library),
         ):
@@ -92,9 +103,7 @@ class TestLibraryManagerLoadLibraries:
         mock_load_config = AsyncMock()
         with (
             patch.object(library_manager, "_library_file_path_to_info", {}),
-            patch.object(
-                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="new_lib")]
-            ),
+            patch.object(library_manager, "_discover_library_files", return_value=[_discovered("new_lib")]),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
             request = LoadLibrariesRequest()
@@ -119,9 +128,7 @@ class TestLibraryManagerLoadLibraries:
         mock_load_config = AsyncMock(side_effect=Exception("Config error"))
         with (
             patch.object(library_manager, "_library_file_path_to_info", {}),
-            patch.object(
-                library_manager, "_discover_library_files", return_value=[LibraryRegistration(path="new_lib")]
-            ),
+            patch.object(library_manager, "_discover_library_files", return_value=[_discovered("new_lib")]),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
             request = LoadLibrariesRequest()
@@ -166,7 +173,7 @@ class TestLibraryManagerDisabledEntries:
         with patch.object(griptape_nodes.ConfigManager(), "get_config_value", return_value=config):
             result = library_manager._discover_library_files()
 
-        by_path = {Path(entry.path): entry.enabled for entry in result}
+        by_path = {Path(entry.registration.path): entry.registration.enabled for entry in result}
         assert by_path[enabled_lib] is True
         assert by_path[disabled_lib] is False
 
@@ -181,7 +188,7 @@ class TestLibraryManagerDisabledEntries:
             result = library_manager._discover_library_files()
 
         assert len(result) == 1
-        assert result[0].enabled is True
+        assert result[0].registration.enabled is True
 
     def test_discover_libraries_request_marks_disabled_lifecycle(
         self, griptape_nodes: GriptapeNodes, lib_files: tuple[Path, Path]
