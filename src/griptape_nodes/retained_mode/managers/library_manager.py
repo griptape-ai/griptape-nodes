@@ -1984,7 +1984,14 @@ class LibraryManager:
                                 normalized_url = normalize_github_url(parsed.url)
                                 repo_name = extract_repo_name_from_url(normalized_url)
                                 already_registered = any(
-                                    repo_name in Path(str(path)).parts for path in self._library_file_path_to_info
+                                    (info.library_name == repo_name or repo_name in Path(info.library_path).parts)
+                                    and info.lifecycle_state != LibraryManager.LibraryLifecycleState.FAILURE
+                                    and info.fitness
+                                    not in (
+                                        LibraryManager.LibraryFitness.UNUSABLE,
+                                        LibraryManager.LibraryFitness.MISSING,
+                                    )
+                                    for info in self._library_file_path_to_info.values()
                                 )
                                 if already_registered:
                                     logger.debug(
@@ -5077,13 +5084,10 @@ class LibraryManager:
             register_request = RegisterLibraryFromFileRequest(file_path=str(library_json_path))
             register_result = await GriptapeNodes.ahandle_request(register_request)
             if not register_result.succeeded():
-                logger.warning(
-                    "Library '%s' was downloaded but registration failed: %s",
-                    library_name,
-                    register_result.result_details,
+                return DownloadLibraryResultFailure(
+                    result_details=f"Library '{library_name}' downloaded but failed to register: {register_result.result_details}"
                 )
-            else:
-                logger.info("Library '%s' registered successfully", library_name)
+            logger.info("Library '%s' registered successfully", library_name)
 
         # Add library JSON file path to config so it's registered on future startups
         libraries_to_register = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])

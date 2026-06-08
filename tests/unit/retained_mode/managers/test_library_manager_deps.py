@@ -29,20 +29,28 @@ class TestDependenciesSchema:
 
     def test_library_dependencies_required_dep(self) -> None:
         deps = Dependencies.model_validate(
-            {"library_dependencies": [{"url": "griptape-ai/nodes-opencolorio@v1.2.0", "required": True}]}
+            {
+                "library_dependencies": [
+                    {"url": "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0", "required": True}
+                ]
+            }
         )
         assert deps.library_dependencies is not None
         dep = deps.library_dependencies[0]
-        assert dep.url == "griptape-ai/nodes-opencolorio@v1.2.0"
+        assert dep.url == "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0"
         assert dep.required is True
 
     def test_library_dependencies_optional_dep(self) -> None:
         deps = Dependencies.model_validate(
-            {"library_dependencies": [{"url": "griptape-ai/nodes-opencolorio@v1.2.0", "required": False}]}
+            {
+                "library_dependencies": [
+                    {"url": "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0", "required": False}
+                ]
+            }
         )
         assert deps.library_dependencies is not None
         dep = deps.library_dependencies[0]
-        assert dep.url == "griptape-ai/nodes-opencolorio@v1.2.0"
+        assert dep.url == "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0"
         assert dep.required is False
 
     def test_library_dependencies_empty_list(self) -> None:
@@ -58,11 +66,11 @@ class TestLibraryDependencyProblem:
 
     def test_single_problem_message(self) -> None:
         problem = LibraryDependencyProblem(
-            dependency_name="griptape-ai/nodes-opencolorio@v1.2.0",
+            dependency_name="griptape-ai/griptape-nodes-library-opencolorio@v1.2.0",
             error_message="Clone failed",
         )
         msg = LibraryDependencyProblem.collate_problems_for_display([problem])
-        assert "griptape-ai/nodes-opencolorio@v1.2.0" in msg
+        assert "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0" in msg
         assert "Clone failed" in msg
 
     def test_multiple_problems_message_includes_errors(self) -> None:
@@ -172,13 +180,22 @@ class TestLibraryDependencyResolution:
 
     @pytest.mark.asyncio
     async def test_already_tracked_dependency_skips_download(self, griptape_nodes: GriptapeNodes) -> None:
-        """If the dep repo name appears in an existing tracked path, download is skipped."""
+        """If the dep repo name appears in an existing tracked path with healthy state, download is skipped."""
         mgr = griptape_nodes.LibraryManager()
         lib_info = _make_lib_info()
-        schema = _make_schema_mock(["griptape-ai/nodes-opencolorio@v1.2.0"])
+        schema = _make_schema_mock(["griptape-ai/griptape-nodes-library-opencolorio@v1.2.0"])
 
+        existing_dep_info = LibraryManager.LibraryInfo(
+            lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
+            library_path="/workspace/libraries/griptape-nodes-library-opencolorio/griptape_nodes_library.json",
+            is_sandbox=False,
+            library_name="griptape-nodes-library-opencolorio",
+            library_version="1.2.0",
+            fitness=LibraryManager.LibraryFitness.GOOD,
+            problems=[],
+        )
         existing_paths = {
-            "/workspace/libraries/nodes-opencolorio/griptape_nodes_library.json": MagicMock(),
+            "/workspace/libraries/griptape-nodes-library-opencolorio/griptape_nodes_library.json": existing_dep_info,
             "/mock.json": lib_info,
         }
 
@@ -392,3 +409,117 @@ class TestLibraryDependencyResolution:
         # no dependency problem recorded for an optional dep
         dep_problems = [p for p in lib_info.problems if isinstance(p, LibraryDependencyProblem)]
         assert len(dep_problems) == 0
+
+    @pytest.mark.asyncio
+    async def test_registration_failure_after_download_marks_library_unusable(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """When download_library_request returns failure, the dependent library is marked UNUSABLE and install is not reached."""
+        mgr = griptape_nodes.LibraryManager()
+        lib_info = _make_lib_info()
+        schema = _make_schema_mock(["griptape-ai/nodes-dep@v1.0.0"])
+
+        with (
+            patch.object(mgr, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)),
+            patch.object(mgr, "install_library_dependencies_request") as mock_install,
+            patch.object(
+                mgr,
+                "download_library_request",
+                new_callable=AsyncMock,
+                return_value=DownloadLibraryResultFailure(
+                    result_details="downloaded but failed to register: schema error"
+                ),
+            ),
+            patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
+        ):
+            result = await mgr._progress_library_through_lifecycle(
+                library_info=lib_info,
+                file_path="/mock.json",
+                request=RegisterLibraryFromFileRequest(file_path="/mock.json"),
+            )
+
+        assert isinstance(result, RegisterLibraryFromFileResultFailure)
+        mock_install.assert_not_called()
+        assert lib_info.fitness == LibraryManager.LibraryFitness.UNUSABLE
+        dep_problems = [p for p in lib_info.problems if isinstance(p, LibraryDependencyProblem)]
+        assert len(dep_problems) == 1
+
+    @pytest.mark.asyncio
+    async def test_failed_dep_already_in_tracker_triggers_download(self, griptape_nodes: GriptapeNodes) -> None:
+        """A dep in _library_file_path_to_info but in FAILURE state is not treated as satisfied — download must still be attempted."""
+        mgr = griptape_nodes.LibraryManager()
+        lib_info = _make_lib_info()
+        schema = _make_schema_mock(["griptape-ai/griptape-nodes-library-opencolorio@v1.2.0"])
+
+        failed_dep_info = LibraryManager.LibraryInfo(
+            lifecycle_state=LibraryManager.LibraryLifecycleState.FAILURE,
+            library_path="/workspace/libraries/griptape-nodes-library-opencolorio/griptape_nodes_library.json",
+            is_sandbox=False,
+            library_name="griptape-nodes-library-opencolorio",
+            library_version="1.2.0",
+            fitness=LibraryManager.LibraryFitness.UNUSABLE,
+            problems=[],
+        )
+        existing_paths = {
+            "/workspace/libraries/griptape-nodes-library-opencolorio/griptape_nodes_library.json": failed_dep_info,
+            "/mock.json": lib_info,
+        }
+
+        with (
+            patch.object(mgr, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)),
+            patch.object(mgr, "install_library_dependencies_request", return_value=_INSTALL_STOP),
+            patch.object(
+                mgr,
+                "download_library_request",
+                new_callable=AsyncMock,
+                return_value=DownloadLibraryResultSuccess(
+                    library_name="griptape-nodes-library-opencolorio",
+                    library_path="/workspace/libraries/griptape-nodes-library-opencolorio/griptape_nodes_library.json",
+                    result_details="Downloaded",
+                ),
+            ) as mock_download,
+            patch.object(mgr, "_library_file_path_to_info", existing_paths),
+        ):
+            await mgr._progress_library_through_lifecycle(
+                library_info=lib_info,
+                file_path="/mock.json",
+                request=RegisterLibraryFromFileRequest(file_path="/mock.json"),
+            )
+
+        mock_download.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_dep_recognized_by_library_name_skips_download(self, griptape_nodes: GriptapeNodes) -> None:
+        """A dep whose library_name matches repo name skips download even when its path has no matching component."""
+        mgr = griptape_nodes.LibraryManager()
+        lib_info = _make_lib_info()
+        schema = _make_schema_mock(["griptape-ai/griptape-nodes-library-opencolorio@v1.2.0"])
+
+        # Path parts do not contain 'griptape-nodes-library-opencolorio' — only library_name does.
+        custom_path_dep_info = LibraryManager.LibraryInfo(
+            lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
+            library_path="/custom/monorepo/subdir/griptape_nodes_library.json",
+            is_sandbox=False,
+            library_name="griptape-nodes-library-opencolorio",
+            library_version="1.2.0",
+            fitness=LibraryManager.LibraryFitness.GOOD,
+            problems=[],
+        )
+        existing_paths = {
+            "/custom/monorepo/subdir/griptape_nodes_library.json": custom_path_dep_info,
+            "/mock.json": lib_info,
+        }
+
+        with (
+            patch.object(mgr, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)),
+            patch.object(mgr, "install_library_dependencies_request", return_value=_INSTALL_STOP),
+            patch.object(mgr, "download_library_request") as mock_download,
+            patch.object(mgr, "_library_file_path_to_info", existing_paths),
+        ):
+            await mgr._progress_library_through_lifecycle(
+                library_info=lib_info,
+                file_path="/mock.json",
+                request=RegisterLibraryFromFileRequest(file_path="/mock.json"),
+            )
+
+        mock_download.assert_not_called()
