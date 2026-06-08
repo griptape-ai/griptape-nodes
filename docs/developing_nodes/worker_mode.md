@@ -62,9 +62,11 @@ side by side because they answer two different questions:
 - **`suggested_worker_mode`** — where the library *launches* when
     nothing else overrides. One field, `mode`: `ORCHESTRATOR` or
     `WORKER`. Omit the declaration to take the engine default (today:
-    orchestrator). Once the GUI override ships, users will be able to
-    flip a `COMPATIBLE` library between modes; this declaration is the
-    author's suggested starting point.
+    orchestrator). The editor exposes a per-library **Shared /
+    Isolated** dropdown (Shared = orchestrator, Isolated = worker)
+    that lets users flip a `COMPATIBLE` library between modes; this
+    declaration is the author's suggested starting point for that
+    dropdown.
 
 Omitting both declarations is equivalent to declaring
 `worker_mode_compatibility` with `compatibility=COMPATIBLE` and no

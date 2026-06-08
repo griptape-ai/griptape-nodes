@@ -34,8 +34,6 @@ through the editor.
 The editor's **Library Management** panel is the primary install
 surface. Open it from the sidebar.
 
-![Library Management panel](assets/img/libraries/library_management.png)
-
 The top of the panel is **Install New Library**. Paste a Git URL
 (for example a GitHub repository hosting a community library), pick
 a branch, tag, or commit (the default is `main`), and click
@@ -80,8 +78,6 @@ For ambient update awareness, **Configuration Editor → Libraries**
 controls how aggressively the engine checks for library updates on
 its own.
 
-![Configuration Editor → Libraries](assets/img/libraries/configuration_libraries.png)
-
 **Update Notifications** options:
 
 - **Enable sidebar notifications** — show a badge on the Libraries
@@ -99,14 +95,39 @@ most artists.
 
 The same **Configuration Editor → Libraries** view also shows
 **Library Registration → Libraries To Register**. Each entry in
-that list is a library the engine loads at startup. Two controls
+that list is a library the engine loads at startup. Three controls
 per entry:
 
 - The toggle (left) — flip off to keep the library on disk but stop
   loading it on engine start.
+- The **Shared / Isolated** dropdown (middle) — choose where the
+  library runs (see below).
 - The trash icon (right) — remove the entry entirely. The clone on
   disk stays put; delete its directory manually if you want the
   disk space back.
+
+![Shared/Isolated library mode](assets/img/libraries/worker_mode_toggle.png)
+
+### Shared vs. Isolated
+
+The dropdown picks the process a library runs in:
+
+- **Shared** — the library runs inside the main engine process,
+  alongside the other shared libraries.
+- **Isolated** — the library runs in its own separate process, so
+  its Python dependencies are walled off from every other library
+  and a crash in it can't take the rest of the engine down.
+
+The dropdown shows the mode the engine will actually use: the
+library author's suggested mode, unless you override it here. Pick
+**Isolated** for a heavy library you want walled off, or **Shared**
+to keep it in-process. Some libraries are marked by their author as
+incompatible with isolation; for those the dropdown is **locked to
+Shared**.
+
+The dropdown only appears when your engine version supports it
+(0.86.0 and later). Changes take effect on the next library
+refresh.
 
 The **Add Library** button below lets you point the engine at a
 `griptape_nodes_library.json` you already have on disk (a library
@@ -126,20 +147,20 @@ pin `torch==2.4.1`; library B can pin `torch==2.0.0`. Both are
 installed into separate `.venv` directories, and each library uses
 its own when its nodes run.
 
-For libraries that run in worker mode (see
-[Worker Mode](developing_nodes/worker_mode.md) for the manifest
-shape), the virtual environment lives inside the library's worker
-subprocess instead of next to the manifest on disk. From the
-artist's perspective the isolation is the same.
+For libraries running **Isolated** (see
+[Process isolation](#process-isolation-the-isolated-mode)), the
+virtual environment lives inside the library's own process instead
+of next to the manifest on disk. From the artist's perspective the
+isolation is the same.
 
 **You can install incompatibly-pinned libraries together without
 pip resolution conflicts.** This is the most important guarantee on
 this page.
 
-### Process isolation: opt-in via worker mode
+### Process isolation: the Isolated mode
 
-A library can declare that it runs in its own dedicated subprocess
-instead of inside the engine's main process. That gives you:
+Running a library **Isolated** (in its own dedicated process,
+instead of inside the engine's main process) gives you:
 
 - **Fault tolerance.** If the library crashes, only that library
   goes down — the rest of the engine keeps running.
@@ -148,12 +169,20 @@ instead of inside the engine's main process. That gives you:
   library's own process and can't degrade other libraries.
 
 Heavy ML libraries (diffusion, transformers, custom CUDA stacks)
-typically opt in. Lightweight libraries (simple HTTP / data nodes)
-typically don't.
+benefit most; lightweight libraries (simple HTTP / data nodes)
+usually run fine Shared. You control this per library with the
+**Shared / Isolated** dropdown described in
+[Toggling and removing libraries](#shared-vs-isolated). The library
+author sets the suggested starting mode and whether the library is
+allowed to run Isolated at all; your dropdown choice overrides the
+author's suggestion for any library that permits it.
 
-To check whether a specific library is worker-mode, look at its
-`griptape_nodes_library.json` for a `worker_support` declaration —
-see [Worker Mode](developing_nodes/worker_mode.md) for the schema.
+Library authors declare isolation compatibility and a suggested
+mode in their `griptape_nodes_library.json` (the
+`worker_mode_compatibility` and `suggested_worker_mode`
+declarations) — see [Worker Mode](developing_nodes/worker_mode.md)
+for the schema. As an artist, the Shared / Isolated dropdown is the
+only surface you need.
 
 ### Node-name collisions: not solved
 
@@ -203,8 +232,8 @@ reopening the workflow uses the real node again.
 
 The terminal window where the engine is running (the same window
 you launched the engine from) carries the verbose error log,
-including stack traces. Errors from worker-mode libraries appear
-there with a `Worker-<id>` prefix.
+including stack traces. Errors from libraries running Isolated
+appear there with a `Worker-<id>` prefix.
 
 ## CLI alternatives
 
