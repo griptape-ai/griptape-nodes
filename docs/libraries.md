@@ -15,10 +15,14 @@ and the engine will tell you about it.
 
 ## What you start with
 
-A fresh engine install gives you the **Sandbox Library** — a
-scratchpad library that picks up `.py` node files from the sandbox
-directory configured in your settings. What you see in the editor's
-Sandbox category depends on what's actually in that directory.
+The engine supports a **Sandbox Library** — a scratchpad library
+for quickly developing your own custom nodes without authoring a
+full library. It isn't there until you set one up: under
+**Settings → Library → Sandbox Settings**, point **Sandbox Library
+Directory** at a folder that exists on disk. Once it does, the
+engine picks up `.py` node files from that directory, and what you
+see in the editor's Sandbox category depends on what's actually in
+it.
 
 During `gtn init`, you're offered the **Advanced Media Library**
 (diffusion, image generation, video). You can register it then or
@@ -31,23 +35,24 @@ through the editor.
 
 ## Installing a library (in the editor)
 
-The editor's **Library Management** panel is the primary install
-surface. Open it from the sidebar.
+The editor's **Libraries** panel is the primary install surface.
+Open it from the header's **Manage** menu → **Library
+Management**.
 
-The top of the panel is **Install New Library**. Paste a Git URL
-(for example a GitHub repository hosting a community library), pick
-a branch, tag, or commit (the default is `main`), and click
-**Download**. The editor clones the repo into the **Download
-Directory** shown below the field, reads the library's
-`griptape_nodes_library.json` manifest, installs its dependencies,
-and registers it.
+Click **Add Library** (top right) to open the **Add Library**
+modal. Paste a Git URL (for example a GitHub repository hosting a
+community library) and click **Install**. The editor clones the
+repo, reads the library's `griptape_nodes_library.json` manifest,
+installs its dependencies, and registers it. **Advanced Options**
+in the modal lets you pick a specific branch, tag, or commit
+instead of the repository default.
 
-The **View Community Libraries** link near the field opens a
-curated list of libraries you can install.
+Not sure what to install? The **Browse Community Libraries** button
+at the bottom of the modal opens a curated list of libraries you
+can install.
 
-After a successful install, the new library appears under
-**Installed Libraries**, alongside the Sandbox Library that ships
-with the engine. Each entry shows:
+After a successful install, the new library appears in the panel's
+library list. Each entry shows:
 
 - The library's name and version.
 - The number of nodes it provides.
@@ -58,21 +63,22 @@ with the engine. Each entry shows:
     report a bug, the commit shown there is the precise version to
     cite.
 
-You can filter the installed list by **All**, **Needs Update**, or
-**Errors** using the chips above the list. **Errors** is your first
-stop when something is wrong with one of your libraries — it
-surfaces install failures, dependency-install failures, and
-load-time failures together.
+You can filter the list by **All**, **Updates**, or **Errors**
+using the chips above it. **Errors** is your first stop when
+something is wrong with one of your libraries — it surfaces install
+failures, dependency-install failures, and load-time failures
+together.
 
 ## Updating libraries
 
-In the same **Library Management** panel:
+In the same **Libraries** panel, the icon buttons next to the
+filter chips let you:
 
-- Click **Check All Libraries for Updates** to scan all installed
-    libraries for new versions. Anything with an update available
-    shows up under the **Needs Update** filter.
-- Use **Refresh** to re-read the installed-library list (helpful
-    if you just installed something and want to confirm it took).
+- **Check for updates** — scan all installed libraries for new
+    versions. Anything with an update available shows up under the
+    **Updates** filter.
+- **Refresh** — re-read the library list (helpful if you just
+    installed something and want to confirm it took).
 
 For ambient update awareness, **Configuration Editor → Libraries**
 controls how aggressively the engine checks for library updates on
@@ -147,10 +153,12 @@ pin `torch==2.4.1`; library B can pin `torch==2.0.0`. Both are
 installed into separate `.venv` directories, and each library uses
 its own when its nodes run.
 
-For libraries running **Isolated** (see
-[Process isolation](#process-isolation-the-isolated-mode)), the
-virtual environment lives inside the library's own process instead
-of next to the manifest on disk. From the artist's perspective the
+This holds whether a library runs **Shared** or **Isolated** (see
+[Process isolation](#process-isolation-the-isolated-mode)): the
+`.venv` lives on disk next to the library's manifest either way.
+The difference is only which process loads those packages — the
+main engine process for Shared libraries, the library's own process
+for Isolated ones. From the artist's perspective the dependency
 isolation is the same.
 
 **You can install incompatibly-pinned libraries together without
@@ -202,7 +210,7 @@ library you don't want from the **Libraries To Register** list.
 
 ### "I installed the library but I don't see its nodes"
 
-Open **Library Management** and switch the filter to **Errors**.
+Open the **Libraries** panel and switch the filter to **Errors**.
 That's the consolidated view of every library that failed to
 install, failed to install dependencies, or failed to load. Click
 into the offending library for the specific error message.
@@ -217,15 +225,15 @@ Common causes:
 - Disk full (the engine reports this explicitly).
 
 Fix the underlying issue, then re-trigger the install (re-paste the
-URL in **Install New Library**, or use the CLI alternative below
+URL in the **Add Library** modal, or use the CLI alternative below
 with `--overwrite`).
 
 ### "A node looks broken or red in the editor"
 
 The engine couldn't construct that node — usually because its
 library failed to load. The editor swaps in a placeholder so your
-workflow file isn't corrupted. Check the **Errors** filter in
-Library Management for the underlying load error; once you fix it,
+workflow file isn't corrupted. Check the **Errors** filter in the
+**Libraries** panel for the underlying load error; once you fix it,
 reopening the workflow uses the real node again.
 
 ### Looking for the raw error text
@@ -241,12 +249,12 @@ If you'd rather use the command line — for automation, headless
 engines, or just preference — the editor's library actions have
 `gtn` equivalents:
 
-| Editor action                                             | CLI equivalent                     |
-| --------------------------------------------------------- | ---------------------------------- |
-| Install New Library → Download                            | `gtn libraries download <git_url>` |
-| Check All Libraries for Updates → install pending updates | `gtn libraries sync`               |
-| Sync over local edits                                     | `gtn libraries sync --overwrite`   |
-| Re-register Advanced Media Library                        | `gtn init`, answer `y`             |
+| Editor action                          | CLI equivalent                     |
+| --------------------------------------- | ---------------------------------- |
+| Add Library → Install                   | `gtn libraries download <git_url>` |
+| Check for updates → install pending     | `gtn libraries sync`               |
+| Sync over local edits                   | `gtn libraries sync --overwrite`   |
+| Re-register Advanced Media Library      | `gtn init`, answer `y`             |
 
 See [Command Line Interface](command_line_interface.md) for the
 full reference.
@@ -260,8 +268,7 @@ full reference.
     list inside it is what the editor's Libraries To Register list
     edits.
 - **Clones / venvs**: in the directory the editor cloned the
-    library into (the **Download Directory** shown in Library
-    Management); the library's `.venv` lives next to its
+    library into; the library's `.venv` lives next to its
     `griptape_nodes_library.json`.
 - **Sandbox library**: the sandbox directory is configured
     separately in your settings; defaults vary by platform.
