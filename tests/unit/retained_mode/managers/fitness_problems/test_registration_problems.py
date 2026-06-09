@@ -42,8 +42,10 @@ class TestPreDispatchHookRegistrationProblem:
             PreDispatchHookRegistrationProblem(error_message="err2"),
         ]
         with caplog.at_level("ERROR"):
-            PreDispatchHookRegistrationProblem.collate_problems_for_display(problems)
+            result = PreDispatchHookRegistrationProblem.collate_problems_for_display(problems)
         assert caplog.records
+        assert "err1" in result
+        assert "err2" in result
 
 
 class TestRequestHandlerRegistrationProblem:

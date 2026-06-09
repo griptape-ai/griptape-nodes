@@ -440,7 +440,7 @@ class LibraryManager:
         #    Used by publishing libraries registering PublishWorkflowRequest handlers.
         #    Libraries call on_register_event_handler() in after_library_nodes_loaded().
         #
-        # The two systems coexist without conflict. Unification is tracked as future work.
+        # The two systems coexist without conflict. TODO(GH#4785): https://github.com/griptape-ai/griptape-nodes-engine/issues/4785
         self._library_event_handler_mappings: dict[
             type[Payload], dict[str, LibraryManager.RegisteredEventHandler[Any]]
         ] = {}

@@ -21,4 +21,5 @@ class PreDispatchHookRegistrationProblem(LibraryProblem):
                 "PreDispatchHookRegistrationProblem: Expected 1 instance but got %s.",
                 len(instances),
             )
-        return f"Error registering pre-dispatch hooks: {instances[0].error_message}"
+        messages = "; ".join(p.error_message for p in instances)
+        return f"Error registering pre-dispatch hooks: {messages}"
