@@ -3,37 +3,44 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 if TYPE_CHECKING:
     from griptape_nodes.common.project_templates.loader import YAMLLineInfo
     from griptape_nodes.common.project_templates.validation import ProjectValidationInfo
 
 
-class PerPlatformPathMacro(BaseModel):
-    """Per-platform path macro mapping for directory definitions.
+class PerPlatformPathBase(BaseModel):
+    """Shared base for per-platform string mappings (path macros and project paths).
 
     At least one of `linux`, `darwin`, `windows`, or `default` must be set.
-    `default` is consulted when the active platform's key is absent. Field
-    names mirror the `Platform` StrEnum values used elsewhere in the engine.
+    `default` is consulted when the active platform's key is absent. Unknown
+    keys are rejected so a typo like `osx:` surfaces as a validation error
+    instead of silently falling through to `default`.
+
+    Subclasses exist purely to give callers distinct types for two different
+    semantic uses (a directory path macro vs. a project YAML path); they share
+    every field, validator, and the `select()` body.
     """
 
-    linux: str | None = Field(default=None, description="Path macro used on Linux")
-    darwin: str | None = Field(default=None, description="Path macro used on macOS")
-    windows: str | None = Field(default=None, description="Path macro used on Windows")
-    default: str | None = Field(default=None, description="Fallback path macro when the active platform's key is unset")
+    model_config = ConfigDict(extra="forbid")
+
+    linux: str | None = Field(default=None, description="Value used on Linux")
+    darwin: str | None = Field(default=None, description="Value used on macOS")
+    windows: str | None = Field(default=None, description="Value used on Windows")
+    default: str | None = Field(default=None, description="Fallback when the active platform's key is unset")
 
     @model_validator(mode="after")
-    def _at_least_one_key(self) -> PerPlatformPathMacro:
+    def _at_least_one_key(self) -> Self:
         if self.linux is None and self.darwin is None and self.windows is None and self.default is None:
-            msg = "PerPlatformPathMacro requires at least one of 'linux', 'darwin', 'windows', or 'default'"
+            msg = f"{type(self).__name__} requires at least one of 'linux', 'darwin', 'windows', or 'default'"
             raise ValueError(msg)
         return self
 
     def select(self) -> str | None:
-        """Return the path macro for the active platform, falling back to `default`."""
+        """Return the value for the active platform, falling back to `default`."""
         active = _active_platform_key()
         if active == "linux" and self.linux is not None:
             return self.linux
@@ -44,8 +51,12 @@ class PerPlatformPathMacro(BaseModel):
         return self.default
 
 
+class PerPlatformPathMacro(PerPlatformPathBase):
+    """Per-platform path macro mapping for directory definitions."""
+
+
 def _active_platform_key() -> str:
-    """Map sys.platform to one of the PerPlatformPathMacro keys."""
+    """Map sys.platform to one of the per-platform mapping keys."""
     if sys.platform.startswith("win"):
         return "windows"
     if sys.platform.startswith("darwin"):

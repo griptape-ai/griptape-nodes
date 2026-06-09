@@ -52,6 +52,8 @@ from griptape_nodes.retained_mode.events.flow_events import (
 )
 from griptape_nodes.retained_mode.events.library_events import (
     DescribeNodeTypeRequest,
+    GetEngineSourceInfoRequest,
+    GetLibrarySourceInfoRequest,
     ListCategoriesInLibraryRequest,
     ListNodeTypesInLibraryRequest,
     ListRegisteredLibrariesRequest,
@@ -60,6 +62,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     DeleteNodeRequest,
+    GetAllNodeInfoRequest,
     GetNodeMetadataRequest,
     GetNodeResolutionStateRequest,
     ListParametersOnNodeRequest,
@@ -72,6 +75,7 @@ from griptape_nodes.retained_mode.events.object_events import (
     RenameObjectRequest,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
     GetConnectionsForParameterRequest,
     GetParameterDetailsRequest,
     GetParameterValueRequest,
@@ -80,6 +84,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.events.workflow_events import (
     ListAllWorkflowsRequest,
     RunWorkflowWithCurrentStateRequest,
+    SaveWorkflowRequest,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -134,6 +139,17 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "SetParameterValueRequest": SetParameterValueRequest,
     "GetParameterDetailsRequest": GetParameterDetailsRequest,
     "GetConnectionsForParameterRequest": GetConnectionsForParameterRequest,
+    # Expander-style ParameterList parameters (e.g. input_images on OpenAiImageGeneration) require
+    # a slot to be created before a connection can be made. AddParameterToNodeRequest creates that
+    # slot and returns its UUID name, which can then be used as the target of CreateConnectionRequest.
+    "AddParameterToNodeRequest": AddParameterToNodeRequest,
+    # Batch node info (metadata + state + connections + params in one call)
+    "GetAllNodeInfoRequest": GetAllNodeInfoRequest,
+    # Workflow persistence
+    "SaveWorkflowRequest": SaveWorkflowRequest,
+    # Library / engine source discovery (read-only)
+    "GetLibrarySourceInfoRequest": GetLibrarySourceInfoRequest,
+    "GetEngineSourceInfoRequest": GetEngineSourceInfoRequest,
 }
 
 # Synthetic MCP tool name for the batch envelope. Not a request payload (and so not a member of

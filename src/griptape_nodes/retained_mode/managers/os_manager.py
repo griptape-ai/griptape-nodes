@@ -19,7 +19,13 @@ import send2trash
 from fileseq.exceptions import FileSeqException
 from rich.console import Console
 
-from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, MacroVariables, ParsedMacro
+from griptape_nodes.common.macro_parser import (
+    MacroResolutionError,
+    MacroResolutionFailure,
+    MacroSyntaxError,
+    MacroVariables,
+    ParsedMacro,
+)
 from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailureReason
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
@@ -29,7 +35,7 @@ from griptape_nodes.common.sequences import (
     InvalidTemplateError,
     MissingItemError,
 )
-from griptape_nodes.common.sequences.scan import DirectoryListingError, scan_sequences
+from griptape_nodes.common.sequences.scan import DirectoryListingError, PathMapping, scan_sequences
 from griptape_nodes.files.drivers.base64_file_driver import Base64FileDriver
 from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
 from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
@@ -97,7 +103,11 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileResultFailure,
     WriteFileResultSuccess,
 )
-from griptape_nodes.retained_mode.events.project_events import MacroPath
+from griptape_nodes.retained_mode.events.project_events import (
+    GetPathForMacroRequest,
+    GetPathForMacroResultSuccess,
+    MacroPath,
+)
 from griptape_nodes.retained_mode.events.resource_events import (
     CreateResourceInstanceRequest,
     CreateResourceInstanceResultSuccess,
@@ -118,6 +128,11 @@ console = Console()
 
 # Maximum number of indexed candidates to try when CREATE_NEW policy is used
 MAX_INDEXED_CANDIDATES = 1000
+
+# How many gap numbers to show inline in the ABORTED_AT_GAP `result_details`
+# string before truncating the rest with "(+N more)". Larger lists overwhelm
+# the artist's status panel; the full list lives on `missing_item_numbers`.
+ABORTED_AT_GAP_PREVIEW_COUNT = 5
 
 
 @dataclass
@@ -1464,25 +1479,35 @@ class OSManager:
             logger.error(msg)
             return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
 
-    async def on_scan_sequences_request(self, request: ScanSequencesRequest) -> ResultPayload:
-        """Handle a request to scan a directory for sequences matching a fileseq template.
+    async def on_scan_sequences_request(self, request: ScanSequencesRequest) -> ResultPayload:  # noqa: PLR0911
+        """Handle a request to scan a path or pattern for file sequences.
 
-        The handler runs `scan_sequences` in a worker thread (`asyncio.to_thread`)
-        so neither the directory listing (via `ListDirectoryRequest`, performed
+        The handler does macro resolution itself, builds a `PathMapping`, and
+        runs `scan_sequences` in a worker thread (`asyncio.to_thread`) so
+        neither the directory listing (via `ListDirectoryRequest`, performed
         inside `scan_sequences`) nor fileseq parsing blocks the event loop.
 
-        Routes failures to the appropriate taxonomy: typed exceptions raised by
-        the scanner map to `SequenceScanFailureReason`; OS-layer listing
-        failures (directory not found, permission denied) propagate via
-        `DirectoryListingError` and map to `FileIOFailureReason` so the
-        underlying OS diagnostic isn't lost.
+        Routes failures to the appropriate taxonomy:
+        - Macro syntax / resolution / shape problems → `INVALID_TEMPLATE`
+          (sequence-semantic).
+        - Subset bound problems → `INVALID_BOUNDS`.
+        - ABORT-policy gaps → `ABORTED_AT_GAP` listing every offending item number.
+        - OS-layer listing failures (directory not found, permission denied)
+          propagate via `DirectoryListingError` and surface their original
+          `FileIOFailureReason` so the underlying diagnostic isn't lost.
         """
+        mapping_or_failure = self._build_scan_path_mapping(request.path)
+        if isinstance(mapping_or_failure, ScanSequencesResultFailure):
+            return mapping_or_failure
+        mapping = mapping_or_failure
+
         try:
             outcome = await asyncio.to_thread(
                 scan_sequences,
-                request.directory,
-                request.pattern,
+                mapping,
+                mapping.filename_pattern,
                 policy=request.policy,
+                no_token_behavior=request.no_token_behavior,
                 start=request.start_number,
                 end=request.end_number,
             )
@@ -1505,17 +1530,26 @@ class OSManager:
             return ScanSequencesResultFailure(
                 failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
                 result_details=(
-                    f"Attempted to scan sequences with pattern={request.pattern!r}. "
-                    f"Failed because fileseq could not parse the template: {e}"
+                    f"Attempted to scan sequences with path={request.path!r}. "
+                    f"Failed because fileseq could not parse the path: {e}"
                 ),
             )
         except MissingItemError as e:
+            gap_count = len(e.numbers)
+            if gap_count == 1:
+                summary = f"the sequence has a gap at item {e.numbers[0]}"
+            else:
+                sample = ", ".join(str(n) for n in e.numbers[:ABORTED_AT_GAP_PREVIEW_COUNT])
+                if gap_count <= ABORTED_AT_GAP_PREVIEW_COUNT:
+                    suffix = ""
+                else:
+                    suffix = f" (+ {gap_count - ABORTED_AT_GAP_PREVIEW_COUNT} more)"
+                summary = f"the sequence has {gap_count} gaps: items {sample}{suffix}"
             return ScanSequencesResultFailure(
                 failure_reason=SequenceScanFailureReason.ABORTED_AT_GAP,
-                missing_item_number=e.number,
+                missing_item_numbers=e.numbers,
                 result_details=(
-                    f"Attempted to scan sequences with pattern={request.pattern!r}, policy=ABORT. "
-                    f"Failed because the sequence has a gap at item {e.number}."
+                    f"Attempted to scan sequences with path={request.path!r}, policy=ABORT. Failed because {summary}."
                 ),
             )
 
@@ -1525,10 +1559,7 @@ class OSManager:
         if has_entries:
             details = f"Found {len(outcome.sequences)} sequence(s)."
         else:
-            details = (
-                f"Scanned directory={request.directory!r} with pattern={request.pattern!r}; "
-                f"no matching sequence entries found."
-            )
+            details = f"Scanned path={request.path!r}; no matching sequence entries found."
         return ScanSequencesResultSuccess(
             sequences=outcome.sequences,
             has_entries=has_entries,
@@ -1536,6 +1567,72 @@ class OSManager:
             discovered_first=outcome.discovered_first,
             discovered_last=outcome.discovered_last,
             result_details=details,
+        )
+
+    def _build_scan_path_mapping(self, path: str) -> PathMapping | ScanSequencesResultFailure:  # noqa: PLR0911
+        """Parse `path`, resolve any macro head, and build a `PathMapping`.
+
+        The path is split into a directory portion and a filename portion at
+        the last separator. The directory portion is resolved through
+        `GetPathForMacroRequest` if it carries macros; the filename portion
+        (which holds any sequence token) is preserved verbatim so the macro
+        head survives the round trip.
+
+        Returns either the assembled `PathMapping` or a `ScanSequencesResultFailure`
+        ready to return up the stack.
+        """
+        if not path:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details="No path or pattern provided.",
+            )
+
+        sep_index = max(path.rfind("/"), path.rfind("\\"))
+        if sep_index < 0:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=(
+                    f"`{path}` has no directory portion — point at a file or pattern "
+                    "(e.g. `/work/render.####.png` or `{inputs}/render.####.png`)."
+                ),
+            )
+        original_directory = path[:sep_index]
+        filename_pattern = path[sep_index + 1 :]
+        if not filename_pattern:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=(f"`{path}` has no filename to scan — point at a file or pattern, not a directory."),
+            )
+
+        try:
+            parsed_directory = ParsedMacro(original_directory)
+        except MacroSyntaxError as e:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=f"Invalid path or pattern `{path}`: {e}",
+            )
+
+        if not parsed_directory.get_variables():
+            # No macros in the directory portion — treat it as a plain
+            # absolute (or relative) path. Round-trip is a no-op.
+            return PathMapping(
+                original_directory=original_directory,
+                resolved_directory=original_directory,
+                filename_pattern=filename_pattern,
+            )
+
+        resolve_result = GriptapeNodes.handle_request(
+            GetPathForMacroRequest(parsed_macro=parsed_directory, variables={})
+        )
+        if not isinstance(resolve_result, GetPathForMacroResultSuccess):
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=(f"Couldn't resolve project variables in `{path}`: {resolve_result.result_details}"),
+            )
+        return PathMapping(
+            original_directory=original_directory,
+            resolved_directory=str(resolve_result.absolute_path),
+            filename_pattern=filename_pattern,
         )
 
     def _detect_mime_type_from_location(self, location: str) -> str:
