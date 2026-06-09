@@ -1,10 +1,14 @@
-# Worker Mode
+# Node Isolation with Workers
 
-This page is the operational guide for running your library in
-**worker mode**: a dedicated Python subprocess so your library's
+This page is the operational guide for running your library
+**isolated**: in a dedicated Python subprocess so your library's
 pinned dependencies (`torch`, `transformers`, `diffusers`) cannot
-collide with another library's. For the rule catalog that catches
-worker-mode mistakes, see
+collide with another library's. Artists pick this with the
+**Shared / Isolated** dropdown in the editor (see
+[Libraries](../libraries.md#shared-vs-isolated)); under the hood,
+an isolated library runs on a **worker** subprocess. This page is
+the author's side of that mechanism. For the rule catalog that
+catches isolation mistakes, see
 [Strict Mode Reference](strict_mode.md).
 
 ## Vocabulary
@@ -62,9 +66,11 @@ side by side because they answer two different questions:
 - **`suggested_worker_mode`** — where the library *launches* when
     nothing else overrides. One field, `mode`: `ORCHESTRATOR` or
     `WORKER`. Omit the declaration to take the engine default (today:
-    orchestrator). Once the GUI override ships, users will be able to
-    flip a `COMPATIBLE` library between modes; this declaration is the
-    author's suggested starting point.
+    orchestrator). The editor exposes a per-library **Shared /
+    Isolated** dropdown (Shared = orchestrator, Isolated = worker)
+    that lets users flip a `COMPATIBLE` library between modes; this
+    declaration is the author's suggested starting point for that
+    dropdown.
 
 Omitting both declarations is equivalent to declaring
 `worker_mode_compatibility` with `compatibility=COMPATIBLE` and no
@@ -278,7 +284,7 @@ var.
 value, because it represents the user's stated intent. The engine
 logs a `WARNING` so the asymmetry is visible.
 
-## "Is my library worker-ready?" checklist
+## "Is my library isolation-ready?" checklist
 
 - [ ] `worker_mode_compatibility` declared in `metadata.declarations`
     with `compatibility: COMPATIBLE` (or omit the declaration entirely
@@ -321,4 +327,4 @@ If a strict-mode line fires, the rule's remediation message names
 exactly which guideline above was violated and how to fix it. A
 worker log free of strict-mode WARNING and ERROR entries (apart from
 the explicitly-fine-to-ignore writes flagged by
-`worker-reach-into-orchestrator`) is the bar for "worker-ready."
+`worker-reach-into-orchestrator`) is the bar for "isolation-ready."
