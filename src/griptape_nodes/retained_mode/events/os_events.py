@@ -916,3 +916,53 @@ class GetNextVersionIndexResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
     """
 
     failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class MakeDirectoryRequest(RequestPayload):
+    """Create a directory, optionally including intermediate parent directories.
+
+    Use when: Creating output directories, setting up workspace folder structures,
+    ensuring a directory exists before writing files into it. Prefer this over
+    CreateFileRequest when the goal is purely directory creation.
+
+    Args:
+        path: Absolute path to the directory to create
+        create_parents: If True, create intermediate directories as needed (default: True)
+        exist_ok: If True, succeed silently when the directory already exists (default: True).
+                  Set to False to get a POLICY_NO_OVERWRITE failure if the directory exists.
+
+    Results: MakeDirectoryResultSuccess | MakeDirectoryResultFailure
+    """
+
+    path: str
+    create_parents: bool = True
+    exist_ok: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class MakeDirectoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Directory created (or already existed) successfully.
+
+    Attributes:
+        created_path: Absolute path of the directory
+        already_existed: True when the directory already existed and exist_ok=True
+    """
+
+    created_path: str
+    already_existed: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class MakeDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Directory creation failed.
+
+    Attributes:
+        failure_reason: Classification of why the creation failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
