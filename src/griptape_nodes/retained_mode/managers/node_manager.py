@@ -4312,19 +4312,25 @@ class NodeManager:
         # Update connections that reference this parameter
         if node_name in connections.incoming_index:
             incoming_connections = connections.incoming_index[node_name]
-            for connection_ids in incoming_connections.values():
+            if request.parameter_name in incoming_connections:
+                connection_ids = incoming_connections[request.parameter_name]
                 for connection_id in connection_ids:
                     connection = connections.connections[connection_id]
                     if connection.target_parameter.name == request.parameter_name:
                         connection.target_parameter.name = request.new_parameter_name
+                # Update the index key from old name to new name
+                incoming_connections[request.new_parameter_name] = incoming_connections.pop(request.parameter_name)
 
         if node_name in connections.outgoing_index:
             outgoing_connections = connections.outgoing_index[node_name]
-            for connection_ids in outgoing_connections.values():
+            if request.parameter_name in outgoing_connections:
+                connection_ids = outgoing_connections[request.parameter_name]
                 for connection_id in connection_ids:
                     connection = connections.connections[connection_id]
                     if connection.source_parameter.name == request.parameter_name:
                         connection.source_parameter.name = request.new_parameter_name
+                # Update the index key from old name to new name
+                outgoing_connections[request.new_parameter_name] = outgoing_connections.pop(request.parameter_name)
 
         # Update parameter name
         old_name = parameter.name
