@@ -43,6 +43,24 @@ make run
 
 This pulls the published app into a cached ephemeral environment and imports the engine from this checkout's `src` directory, so engine edits are reflected immediately with no reinstall. Pass arguments through `ARGS`, e.g. `make run ARGS=init` to trigger the initial setup prompts. Use `make run/refresh` to pull the latest published app first.
 
+### Debugging in VS Code
+
+VS Code's debugger needs a stable Python interpreter path on disk to inject `debugpy` into. The `make run` / `uvx` flow above creates an ephemeral environment per invocation and is not suitable; use the **persistent** `uv tool install` flow described below instead.
+
+1. From the repo root, install the published app with this checkout layered as the editable engine (one time):
+
+    ```shell
+    uv tool install griptape-nodes --python 3.12 --with-editable . --force
+    ```
+
+    This populates `~/.local/share/uv/tools/griptape-nodes/` with the app and a `.pth` file pointing back at this checkout's `src/`. Both the `gtn` command and the VS Code debug configuration reuse that interpreter, so breakpoints in `src/griptape_nodes/...` bind against your local source.
+
+1. Open the **Run and Debug** panel in VS Code, select **Python Debugger: Run Griptape Nodes Engine (persistent gtn tool)**, and press F5. The configuration in `.vscode/launch.json` invokes `python -m griptape_nodes` against the tool venv's interpreter and sets `cwd` to the workspace root so the local `griptape_nodes_config.json` (see [Configuration for Development](#configuration-for-development)) is picked up — without it, local libraries will not register under the debugger.
+
+The configuration assumes the default `uv` tools location. If you've set `UV_TOOL_DIR` to a non-default path, edit the `python` field in `.vscode/launch.json` to match.
+
+### Persistent `gtn` on your `PATH`
+
 For a persistent `gtn` (or `griptape-nodes`) command on your `PATH`, install the app as a `uv` tool with the editable engine layer instead:
 
 ```shell
