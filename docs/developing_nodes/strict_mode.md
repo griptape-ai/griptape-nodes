@@ -1,8 +1,9 @@
 # Strict Mode Reference
 
-> For when and how to opt your library into worker mode in the first
-> place, see [Worker Mode](worker_mode.md). This page is the rule
-> catalog that catches worker-mode incompatibilities.
+> For when and how to run your library isolated in a worker
+> subprocess in the first place, see
+> [Node Isolation with Workers](node_isolation_with_workers.md). This
+> page is the rule catalog that catches isolation incompatibilities.
 >
 > Throughout this page, "`aprocess`" refers to the framework's async
 > wrapper around the `process` method you implemented on your node.

@@ -5,7 +5,7 @@ ship with the engine, some you install from a Git URL, some you write
 yourself. This page is for the artist installing and using libraries
 — not the developer authoring them. (Library authors: see the
 [Custom Nodes guide](developing_nodes/index.md) and
-[Worker Mode](developing_nodes/worker_mode.md).)
+[Node Isolation with Workers](developing_nodes/node_isolation_with_workers.md).)
 
 If you're worried about installing two libraries that conflict, jump
 to [Coexistence guarantees](#coexistence-guarantees) — the short
@@ -188,7 +188,7 @@ author's suggestion for any library that permits it.
 Library authors declare isolation compatibility and a suggested
 mode in their `griptape_nodes_library.json` (the
 `worker_mode_compatibility` and `suggested_worker_mode`
-declarations) — see [Worker Mode](developing_nodes/worker_mode.md)
+declarations) — see [Node Isolation with Workers](developing_nodes/node_isolation_with_workers.md)
 for the schema. As an artist, the Shared / Isolated dropdown is the
 only surface you need.
 
@@ -274,4 +274,4 @@ full reference.
     separately in your settings; defaults vary by platform.
 
 For library authors: see [Custom Nodes](developing_nodes/index.md)
-and [Worker Mode](developing_nodes/worker_mode.md).
+and [Node Isolation with Workers](developing_nodes/node_isolation_with_workers.md).
