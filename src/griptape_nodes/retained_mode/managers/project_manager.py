@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
 from pydantic import ValidationError
 
 from griptape_nodes.common.macro_parser import (
@@ -21,6 +23,7 @@ from griptape_nodes.common.macro_parser import (
 from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_TEMPLATE,
     DirectoryDefinition,
+    LibraryPin,
     PerPlatformProjectPath,
     ProjectOverlayData,
     ProjectTemplate,
@@ -33,9 +36,14 @@ from griptape_nodes.common.project_templates import (
 from griptape_nodes.files.derivation import DERIVATION_RULES, apply_derivation_rules
 from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_file_path, resolve_path_safely
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.library_events import (
+    DownloadLibraryRequest,
+    DownloadLibraryResultSuccess,
+    RegisterLibraryFromRequirementSpecifierRequest,
+    RegisterLibraryFromRequirementSpecifierResultSuccess,
     ReloadAllLibrariesRequest,
     ReloadAllLibrariesResultFailure,
 )
@@ -87,6 +95,8 @@ from griptape_nodes.retained_mode.events.project_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import PROJECTS_TO_REGISTER_KEY
+from griptape_nodes.utils.git_utils import parse_git_url_with_ref
+from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -413,6 +423,12 @@ class ProjectManager:
             )
 
         template = ProjectTemplate.merge(base_template, overlay, validation)
+
+        # The project is the source of truth for its engine: a pinned engine
+        # version that the running engine does not satisfy is a hard block.
+        # Recording an error flips validation to UNUSABLE so the is_usable()
+        # gate below returns the failure - no new return path needed here.
+        self._check_engine_version_pin(template, overlay, validation)
 
         project_id = str(project_file_path)
         project_base_dir = project_file_path.parent
@@ -979,11 +995,18 @@ class ProjectManager:
     ) -> SetCurrentProjectResultFailure | None:
         """Reload libraries and optionally re-register workflows after a project switch.
 
-        Always reloads libraries (project config can affect env vars and library behavior).
-        Only re-registers workflows when the workspace directory actually changed.
+        Provisions the project's pinned libraries first so the reload below
+        re-registers them, then always reloads libraries (project config can
+        affect env vars and library behavior). Only re-registers workflows when
+        the workspace directory actually changed.
 
-        Returns a failure result if library reload fails, otherwise None.
+        Returns a failure result if provisioning or library reload fails,
+        otherwise None.
         """
+        provision_failure = await self._provision_pinned_libraries(project_id)
+        if provision_failure is not None:
+            return provision_failure
+
         reload_result = await GriptapeNodes.ahandle_request(ReloadAllLibrariesRequest())
         if isinstance(reload_result, ReloadAllLibrariesResultFailure):
             return SetCurrentProjectResultFailure(
@@ -993,6 +1016,154 @@ class ProjectManager:
         if workspace_changed:
             await GriptapeNodes.WorkflowManager().refresh_workflow_registry()
         return None
+
+    async def _provision_pinned_libraries(self, project_id: str) -> SetCurrentProjectResultFailure | None:
+        """Install the project's pinned libraries at their declared versions.
+
+        The project is the source of truth for its libraries: each pin is
+        provisioned to match. A pin whose installed version already satisfies
+        the spec is skipped, so libraries downloaded by a prior project are not
+        re-downloaded. A pin that cannot be provisioned blocks the switch.
+
+        Returns a failure naming the offending library, or None when every pin
+        is satisfied (or there are no pins).
+        """
+        project_info = self._successfully_loaded_project_templates.get(project_id)
+        if project_info is None:
+            return None
+        if project_info.template.version_pins is None:
+            return None
+
+        for pin in project_info.template.version_pins.libraries:
+            failure = await self._provision_one_pinned_library(project_id, pin)
+            if failure is not None:
+                return failure
+
+        return None
+
+    async def _provision_one_pinned_library(
+        self, project_id: str, pin: LibraryPin
+    ) -> SetCurrentProjectResultFailure | None:
+        """Provision a single pinned library, skipping when already satisfied.
+
+        Decides skip-vs-(re)install by comparing the installed version to the
+        pin spec, because the download/register handlers themselves skip only
+        on directory existence and are not version-aware. Delegates the actual
+        clone/venv work to the existing handlers once that decision is made.
+        """
+        installed_version = self._installed_library_version(pin.name)
+        satisfied = self._pin_satisfied_by_installed(pin, installed_version)
+        if satisfied:
+            return None
+
+        if pin.git_url is not None:
+            return await self._provision_git_pin(
+                project_id, pin, git_url=pin.git_url, installed_version=installed_version
+            )
+
+        if pin.requirement_specifier is not None:
+            return await self._provision_requirement_pin(
+                project_id, pin, requirement_specifier=pin.requirement_specifier
+            )
+
+        # The LibraryPin validator guarantees at least one source, so this is
+        # unreachable; kept as a defensive failure rather than a silent skip.
+        return SetCurrentProjectResultFailure(
+            result_details=f"Attempted to set project '{project_id}'. "
+            f"Pinned library '{pin.name}' declares no install source",
+        )
+
+    async def _provision_git_pin(
+        self, project_id: str, pin: LibraryPin, *, git_url: str, installed_version: str | None
+    ) -> SetCurrentProjectResultFailure | None:
+        """Download a git-sourced pin, overwriting only a wrong installed version.
+
+        The download handler skips its clone when the target directory exists,
+        which would silently keep a stale checkout. So overwrite_existing is set
+        only when a wrong version is already installed; a fresh install lets the
+        handler land the library normally.
+        """
+        parsed = parse_git_url_with_ref(git_url)
+        overwrite_existing = installed_version is not None
+
+        download_request = DownloadLibraryRequest(
+            git_url=parsed.url,
+            branch_tag_commit=parsed.ref,
+            auto_register=False,
+            overwrite_existing=overwrite_existing,
+            fail_on_exists=False,
+        )
+        download_result = await GriptapeNodes.ahandle_request(download_request)
+        if not isinstance(download_result, DownloadLibraryResultSuccess):
+            return SetCurrentProjectResultFailure(
+                result_details=f"Attempted to set project '{project_id}'. "
+                f"Failed to provision pinned library '{pin.name}' from '{git_url}': "
+                f"{download_result.result_details}",
+            )
+        return None
+
+    async def _provision_requirement_pin(
+        self, project_id: str, pin: LibraryPin, *, requirement_specifier: str
+    ) -> SetCurrentProjectResultFailure | None:
+        """Install a PyPI-sourced pin into its own venv via the register handler.
+
+        The venv-reuse guard in the handler is not version-aware, so the pinned
+        version is folded into the requirement specifier (e.g. 'name==2.0') when
+        a separate version spec is declared and the specifier does not already
+        carry one.
+        """
+        composed_specifier = self._compose_requirement_specifier(pin.version, requirement_specifier)
+
+        register_request = RegisterLibraryFromRequirementSpecifierRequest(requirement_specifier=composed_specifier)
+        register_result = await GriptapeNodes.ahandle_request(register_request)
+        if not isinstance(register_result, RegisterLibraryFromRequirementSpecifierResultSuccess):
+            return SetCurrentProjectResultFailure(
+                result_details=f"Attempted to set project '{project_id}'. "
+                f"Failed to provision pinned library '{pin.name}' from requirement "
+                f"'{composed_specifier}': {register_result.result_details}",
+            )
+        return None
+
+    @staticmethod
+    def _installed_library_version(library_name: str) -> str | None:
+        """Return the registered library's version, or None when not registered."""
+        if library_name not in LibraryRegistry.list_libraries():
+            return None
+        library = LibraryRegistry.get_library(library_name)
+        return library.get_library_data().metadata.library_version
+
+    @staticmethod
+    def _pin_satisfied_by_installed(pin: LibraryPin, installed_version: str | None) -> bool:
+        """Decide whether the installed library already satisfies the pin.
+
+        Nothing installed is never satisfied. A pin without a version spec is
+        satisfied by any installed version (source-only pin). Otherwise the
+        installed version must fall within the PEP 440 specifier; a malformed
+        spec or version is treated as unsatisfied so provisioning re-runs.
+        """
+        if installed_version is None:
+            return False
+        if pin.version is None:
+            return True
+        try:
+            specifier_set = SpecifierSet(pin.version)
+            return Version(installed_version) in specifier_set
+        except (InvalidSpecifier, InvalidVersion):
+            return False
+
+    @staticmethod
+    def _compose_requirement_specifier(version: str | None, requirement_specifier: str) -> str:
+        """Fold the pinned version into the requirement specifier when needed.
+
+        Returns the declared specifier unchanged when it already carries a
+        version constraint or when the pin has no separate version; otherwise
+        appends the pin's PEP 440 version so uv resolves the pinned release.
+        """
+        if version is None:
+            return requirement_specifier
+        if any(operator in requirement_specifier for operator in ("==", ">=", "<=", "~=", ">", "<", "!=", "===")):
+            return requirement_specifier
+        return f"{requirement_specifier}{version}"
 
     async def on_set_current_project_request(  # noqa: C901
         self, request: SetCurrentProjectRequest
@@ -1571,6 +1742,65 @@ class ProjectManager:
         )
 
     # Helper methods (private)
+
+    @staticmethod
+    def _check_engine_version_pin(
+        template: ProjectTemplate,
+        overlay: ProjectOverlayData,
+        validation: ProjectValidationInfo,
+    ) -> None:
+        """Hard-block the load when the running engine fails the project's pin.
+
+        The project is the source of truth: if it pins an engine version the
+        running engine does not satisfy, an error is recorded (flipping
+        validation to UNUSABLE) so the caller's is_usable() gate returns a
+        failure. A malformed pin spec is itself an error rather than a raise.
+        Adds nothing when there is no pin to enforce.
+        """
+        field_path = "version_pins.engine_version"
+
+        if template.version_pins is None:
+            return
+        if template.version_pins.engine_version is None:
+            return
+
+        spec_string = template.version_pins.engine_version
+        line_number = overlay.line_info.get_line(field_path)
+
+        try:
+            specifier_set = SpecifierSet(spec_string)
+        except InvalidSpecifier:
+            validation.add_error(
+                field_path=field_path,
+                message=(
+                    f"Project pins engine version '{spec_string}', which is not a valid "
+                    f"PEP 440 specifier (e.g. '>=0.5,<0.6')"
+                ),
+                line_number=line_number,
+            )
+            return
+
+        try:
+            current_version = Version(engine_version)
+        except InvalidVersion:
+            validation.add_error(
+                field_path=field_path,
+                message=(
+                    f"Project pins engine version '{spec_string}' but the running engine "
+                    f"version '{engine_version}' is not a valid PEP 440 version"
+                ),
+                line_number=line_number,
+            )
+            return
+
+        if current_version not in specifier_set:
+            validation.add_error(
+                field_path=field_path,
+                message=(
+                    f"Project requires engine version '{spec_string}' but the running engine is '{engine_version}'"
+                ),
+                line_number=line_number,
+            )
 
     @staticmethod
     def _parse_situation_macros(

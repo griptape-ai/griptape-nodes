@@ -2,11 +2,13 @@
 
 from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_TEMPLATE,
+    LibraryPin,
     ProjectOverrideAction,
     ProjectOverrideCategory,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
+    VersionPins,
     load_partial_project_template,
     load_project_template_from_yaml,
 )
@@ -895,3 +897,162 @@ class TestOverlayDeletions:
             and o.action == ProjectOverrideAction.REMOVED
         ]
         assert len(removed) == 1
+
+
+class TestVersionPins:
+    """Schema, loader, merge, and round-trip behavior for version_pins (#63)."""
+
+    def test_overlay_parses_engine_and_library_pins(self) -> None:
+        yaml_text = """
+project_template_schema_version: "0.4.0"
+name: "Pinned Project"
+version_pins:
+  engine_version: ">=0.5,<0.6"
+  libraries:
+    - name: "my-git-lib"
+      version: ">=2.0,<3"
+      git_url: "griptape-ai/my-git-lib@v2.0"
+    - name: "my-pypi-lib"
+      version: "==1.2.3"
+      requirement_specifier: "my-pypi-lib"
+"""
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay = load_partial_project_template(yaml_text, validation)
+
+        assert overlay is not None
+        assert validation.status == ProjectValidationStatus.GOOD
+        assert overlay.version_pins is not None
+        assert overlay.version_pins.engine_version == ">=0.5,<0.6"
+        assert [lib.name for lib in overlay.version_pins.libraries] == ["my-git-lib", "my-pypi-lib"]
+        assert overlay.version_pins.libraries[0].git_url == "griptape-ai/my-git-lib@v2.0"
+        assert overlay.version_pins.libraries[1].requirement_specifier == "my-pypi-lib"
+
+    def test_library_pin_requires_a_source(self) -> None:
+        yaml_text = """
+project_template_schema_version: "0.4.0"
+name: "Pinned Project"
+version_pins:
+  libraries:
+    - name: "sourceless-lib"
+      version: ">=1.0"
+"""
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        load_partial_project_template(yaml_text, validation)
+
+        assert validation.status == ProjectValidationStatus.UNUSABLE
+        assert any("version_pins" in p.field_path for p in validation.problems)
+
+    def test_merge_inherits_base_pins_when_overlay_absent(self) -> None:
+        base = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"version_pins": VersionPins(engine_version=">=0.5,<0.6")})
+        yaml_text = """
+project_template_schema_version: "0.4.0"
+name: "Child"
+"""
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay = load_partial_project_template(yaml_text, validation)
+        assert overlay is not None
+
+        merged = ProjectTemplate.merge(base=base, overlay=overlay, validation_info=validation)
+
+        assert merged.version_pins is not None
+        assert merged.version_pins.engine_version == ">=0.5,<0.6"
+
+    def test_merge_overlay_pins_replace_base_atomically(self) -> None:
+        base = DEFAULT_PROJECT_TEMPLATE.model_copy(
+            update={
+                "version_pins": VersionPins(
+                    engine_version=">=0.5,<0.6",
+                    libraries=[LibraryPin(name="old", git_url="griptape-ai/old@v1")],
+                )
+            }
+        )
+        yaml_text = """
+project_template_schema_version: "0.4.0"
+name: "Child"
+version_pins:
+  engine_version: ">=0.6,<0.7"
+  libraries:
+    - name: "new"
+      requirement_specifier: "new==2.0"
+"""
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay = load_partial_project_template(yaml_text, validation)
+        assert overlay is not None
+
+        merged = ProjectTemplate.merge(base=base, overlay=overlay, validation_info=validation)
+
+        assert merged.version_pins is not None
+        assert merged.version_pins.engine_version == ">=0.6,<0.7"
+        # Whole-object replace: the base's "old" library is gone, not merged.
+        assert [lib.name for lib in merged.version_pins.libraries] == ["new"]
+
+    def test_merge_records_version_pin_override(self) -> None:
+        base = DEFAULT_PROJECT_TEMPLATE
+        yaml_text = """
+project_template_schema_version: "0.4.0"
+name: "Child"
+version_pins:
+  engine_version: ">=0.5,<0.6"
+"""
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay = load_partial_project_template(yaml_text, validation)
+        assert overlay is not None
+
+        ProjectTemplate.merge(base=base, overlay=overlay, validation_info=validation)
+
+        version_pin_overrides = [o for o in validation.overrides if o.category == ProjectOverrideCategory.VERSION_PIN]
+        assert len(version_pin_overrides) == 1
+        assert version_pin_overrides[0].action == ProjectOverrideAction.MODIFIED
+
+    def test_cleared_pins_stay_cleared(self) -> None:
+        seeded = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"version_pins": VersionPins(engine_version=">=0.5,<0.6")})
+        cleared = seeded.model_copy(update={"version_pins": None})
+
+        overlay_yaml = cleared.to_overlay_yaml(seeded)
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay_data = load_partial_project_template(overlay_yaml, validation)
+        assert overlay_data is not None
+        assert overlay_data.clears_version_pins is True
+
+        merged = ProjectTemplate.merge(base=seeded, overlay=overlay_data, validation_info=validation)
+
+        assert merged.version_pins is None
+
+    def test_overlay_round_trip_preserves_pins(self) -> None:
+        modified = DEFAULT_PROJECT_TEMPLATE.model_copy(
+            update={
+                "version_pins": VersionPins(
+                    engine_version=">=0.5,<0.6",
+                    libraries=[
+                        LibraryPin(name="git-lib", version=">=2.0", git_url="griptape-ai/git-lib@v2.0"),
+                        LibraryPin(name="pypi-lib", requirement_specifier="pypi-lib==1.0"),
+                    ],
+                )
+            }
+        )
+        overlay_yaml = modified.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay_data = load_partial_project_template(overlay_yaml, validation)
+        assert overlay_data is not None
+        assert validation.status == ProjectValidationStatus.GOOD
+
+        merged = ProjectTemplate.merge(base=DEFAULT_PROJECT_TEMPLATE, overlay=overlay_data, validation_info=validation)
+
+        assert merged.version_pins == modified.version_pins
+
+    def test_old_project_without_pins_still_loads(self) -> None:
+        # A 0.3.3-era project predates version_pins. It must load (with the
+        # existing schema-version warning), not error.
+        yaml_text = """
+project_template_schema_version: "0.3.3"
+name: "Legacy Project"
+situations: {}
+directories: {}
+"""
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        loaded = load_project_template_from_yaml(yaml_text, validation)
+
+        assert loaded is not None
+        assert loaded.version_pins is None
+        # Schema mismatch is a warning (FLAWED), never UNUSABLE.
+        assert validation.status != ProjectValidationStatus.UNUSABLE

@@ -15,6 +15,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.error import YAMLError
 
+from griptape_nodes.common.project_templates.pins import VersionPins
 from griptape_nodes.common.project_templates.project_path import PerPlatformProjectPath
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ FIELD_ENVIRONMENT = "environment"
 FIELD_FILE_EXTENSION_DIRECTORIES = "file_extension_directories"
 FIELD_DESCRIPTION = "description"
 FIELD_PARENT_PROJECT_PATH = "parent_project_path"
+FIELD_VERSION_PINS = "version_pins"
 
 # Special constants
 ROOT_FIELD_PATH = "<root>"
@@ -83,6 +85,7 @@ class ProjectOverlayData(NamedTuple):
     file_extension_directories: dict[str, str]
     description: str | None
     parent_project_path: str | PerPlatformProjectPath | None
+    version_pins: VersionPins | None
     line_info: YAMLLineInfo
     removed_situations: frozenset[str] = frozenset()
     removed_directories: frozenset[str] = frozenset()
@@ -90,6 +93,7 @@ class ProjectOverlayData(NamedTuple):
     removed_file_extension_directories: frozenset[str] = frozenset()
     clears_description: bool = False
     clears_parent_project_path: bool = False
+    clears_version_pins: bool = False
 
 
 def load_yaml_with_line_tracking(yaml_text: str) -> YAMLParseResult:
@@ -403,6 +407,34 @@ def load_partial_project_template(  # noqa: C901, PLR0912, PLR0915
                 line_number=line_info.get_line(FIELD_PARENT_PROJECT_PATH),
             )
 
+    # Optional field: version_pins. Same absent-vs-null semantics as
+    # parent_project_path: absent = inherit base, explicit null = tombstone the
+    # inherited pins. Whole-object (atomic), validated by VersionPins.
+    clears_version_pins = FIELD_VERSION_PINS in data and data.get(FIELD_VERSION_PINS) is None
+    raw_version_pins = data.get(FIELD_VERSION_PINS)
+    version_pins: VersionPins | None = None
+    if raw_version_pins is not None:
+        if isinstance(raw_version_pins, dict):
+            try:
+                version_pins = VersionPins.model_validate(raw_version_pins)
+            except ValidationError as e:
+                for error in e.errors():
+                    error_field_path = ".".join(str(loc) for loc in error["loc"])
+                    full_field_path = (
+                        f"{FIELD_VERSION_PINS}.{error_field_path}" if error_field_path else FIELD_VERSION_PINS
+                    )
+                    validation_info.add_error(
+                        field_path=full_field_path,
+                        message=error["msg"],
+                        line_number=line_info.get_line(full_field_path) or line_info.get_line(FIELD_VERSION_PINS),
+                    )
+        else:
+            validation_info.add_error(
+                field_path=FIELD_VERSION_PINS,
+                message=f"Must be a mapping, got {type(raw_version_pins).__name__}",
+                line_number=line_info.get_line(FIELD_VERSION_PINS),
+            )
+
     return ProjectOverlayData(
         name=name,
         project_template_schema_version=schema_version,
@@ -412,6 +444,7 @@ def load_partial_project_template(  # noqa: C901, PLR0912, PLR0915
         file_extension_directories=file_extension_directories,
         description=description,
         parent_project_path=parent_project_path,
+        version_pins=version_pins,
         line_info=line_info,
         removed_situations=frozenset(removed_situations),
         removed_directories=frozenset(removed_directories),
@@ -419,6 +452,7 @@ def load_partial_project_template(  # noqa: C901, PLR0912, PLR0915
         removed_file_extension_directories=frozenset(removed_file_extension_directories),
         clears_description=clears_description,
         clears_parent_project_path=clears_parent_project_path,
+        clears_version_pins=clears_version_pins,
     )
 
 
