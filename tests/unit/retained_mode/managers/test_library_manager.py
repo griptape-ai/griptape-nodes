@@ -654,6 +654,7 @@ class TestLibraryManagerRegisterLibraryFromFile:
                 file_path="/mock.json",
                 git_remote=None,
                 git_ref=None,
+                enabled=True,
                 result_details=ResultDetails(message="Success", level=20),
             )
             mock_venv.return_value.exists.return_value = True
@@ -692,6 +693,7 @@ class TestLibraryManagerRegisterLibraryFromFile:
                     file_path="/f",
                     git_remote=None,
                     git_ref=None,
+                    enabled=True,
                     result_details=ResultDetails(message="OK", level=20),
                 ),
             ),
@@ -719,6 +721,7 @@ class TestLibraryManagerInstallLibraryDependencies:
             file_path="/mock.json",
             git_remote=None,
             git_ref=None,
+            enabled=True,
             result_details=ResultDetails(message="OK", level=20),
         )
 

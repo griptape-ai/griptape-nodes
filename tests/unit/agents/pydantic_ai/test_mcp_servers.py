@@ -9,6 +9,7 @@ These cover two concerns without spinning up a real MCP server:
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from typing import Any
 
@@ -59,7 +60,12 @@ def test_websocket_transport_returns_none() -> None:
 
 
 def test_stdio_maps_command_args_env_cwd() -> None:
-    """Stdio config fields land on the FastMCP StdioTransport."""
+    """Stdio config fields land on the FastMCP StdioTransport.
+
+    The subprocess inherits the engine's environment with the configured ``env``
+    layered on top, so the launcher (e.g. ``uv``) keeps the toolchain variables
+    it needs to resolve its target command.
+    """
     composed = mcp_server_from_config(
         "svc",
         {"transport": "stdio", "command": "uvx", "args": ["server"], "env": {"K": "V"}, "cwd": "/srv/app"},
@@ -68,8 +74,22 @@ def test_stdio_maps_command_args_env_cwd() -> None:
     assert isinstance(transport, StdioTransport)
     assert transport.command == "uvx"
     assert transport.args == ["server"]
-    assert transport.env == {"K": "V"}
+    assert transport.env is not None
+    assert transport.env == {**os.environ, "K": "V"}
     assert transport.cwd == "/srv/app"
+
+
+def test_stdio_inherits_parent_env_when_config_env_empty() -> None:
+    """An empty config ``env`` still inherits the parent environment.
+
+    Regression guard: forwarding only the MCP SDK allowlist stripped the PATH and
+    toolchain variables a launcher like ``uv`` needs, so stdio servers failed to
+    spawn while HTTP servers (no subprocess) worked.
+    """
+    composed = mcp_server_from_config("svc", {"transport": "stdio", "command": "uv", "env": {}})
+    transport = _mcp_toolset(composed).client.transport
+    assert isinstance(transport, StdioTransport)
+    assert transport.env == dict(os.environ)
 
 
 def test_sse_maps_url_and_headers() -> None:

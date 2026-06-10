@@ -22,6 +22,7 @@ run fails. Graceful per-server degradation can be layered on later.
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.client.transports import SSETransport, StdioTransport, StreamableHttpTransport
@@ -76,7 +77,7 @@ def mcp_server_from_config(name: str, config: Mapping[str, Any]) -> AbstractTool
         client = StdioTransport(
             command=command,
             args=list(config.get("args") or []),
-            env=config.get("env"),
+            env=_stdio_env(config.get("env")),
             cwd=config.get("cwd"),
         )
         return _compose(name, MCPToolset(client, max_retries=DEFAULT_TOOL_MAX_RETRIES))
@@ -119,6 +120,21 @@ def streamable_http_local(url: str, *, name: str | None = None) -> AbstractTools
 
 def _connect_timeout(config: Mapping[str, Any]) -> float:
     return float(config.get("timeout") or DEFAULT_CONNECT_TIMEOUT)
+
+
+def _stdio_env(config_env: Mapping[str, str] | None) -> dict[str, str]:
+    """Build the environment for an stdio MCP subprocess.
+
+    The subprocess inherits the engine's full environment, with the server's
+    configured ``env`` layered on top. Without this the MCP SDK forwards only a
+    tiny allowlist (``HOME``/``LOGNAME``/``PATH``/``SHELL``/``TERM``/``USER``),
+    which strips the toolchain variables a launcher like ``uv`` needs to resolve
+    its target command. A launcher that survives but can't find its entry point
+    then fails with ``Failed to spawn: <command>`` and the agent sees the MCP
+    connection close. Inheriting the parent environment matches both the engine's
+    other subprocess spawns and how desktop MCP clients launch stdio servers.
+    """
+    return {**os.environ, **(config_env or {})}
 
 
 def _compose(

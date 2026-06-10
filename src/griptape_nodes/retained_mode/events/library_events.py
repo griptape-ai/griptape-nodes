@@ -397,12 +397,14 @@ class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPa
                          channels (e.g. sandbox, ad-hoc loads).
         git_remote: The git remote URL if the library is in a git repository, None otherwise.
         git_ref: The current git reference (branch, tag, or commit) if the library is in a git repository, None otherwise.
+        enabled: If the current library is enabled or disabled by the user at the time of the request.
     """
 
     library_schema: LibrarySchema
     file_path: str
     git_remote: str | None
     git_ref: str | None
+    enabled: bool
     registered_path: str | None = None
 
 

@@ -365,6 +365,10 @@ class LibraryManager:
         # (registered through workspace discovery, not via `libraries_to_register`).
         registered_path: str | None = None
         problems: list[LibraryProblem] = field(default_factory=list)
+        # Mirrors LibraryRegistration.enabled from the user's libraries_to_register config.
+        # True for sandbox, ad-hoc, and bare-string entries; False only when the user
+        # explicitly set enabled=false on the config object form.
+        enabled: bool = True
         # True when the library's declarations resolve to launching in a worker
         # process (compatible per ``WorkerModeCompatibility`` and suggested per
         # ``SuggestedWorkerMode``). Set whenever metadata is first successfully
@@ -1011,12 +1015,15 @@ class LibraryManager:
             logger.debug("Failed to get git ref for %s: %s", library_dir, e)
             git_ref = None
 
+        existing_info = self._library_file_path_to_info.get(file_path)
+        enabled = existing_info.enabled if existing_info is not None else True
         details = f"Successfully loaded library metadata from JSON file at {json_path}"
         return LoadLibraryMetadataFromFileResultSuccess(
             library_schema=library_data,
             file_path=file_path,
             git_remote=git_remote,
             git_ref=git_ref,
+            enabled=enabled,
             result_details=details,
         )
 
@@ -1068,6 +1075,7 @@ class LibraryManager:
                         file_path=str(sandbox_json_path),
                         git_remote=None,
                         git_ref=None,
+                        enabled=True,
                         result_details=scan_result.result_details,
                     )
                 # else: Keep the load failure result
@@ -1228,6 +1236,7 @@ class LibraryManager:
             file_path=str(sandbox_directory),
             git_remote=git_remote,
             git_ref=git_ref,
+            enabled=True,
             result_details=details,
         )
 
@@ -4204,6 +4213,7 @@ class LibraryManager:
             fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
             library_path=file_path_str,
             is_sandbox=is_sandbox,
+            enabled=enabled,
             library_name=library_name,
             library_version=library_version,
             registered_path=registered_path,
