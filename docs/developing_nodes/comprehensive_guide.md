@@ -828,6 +828,10 @@ ParameterTransitionComponent(
 - You only need to **update a dropdown's options** — use the [Dynamic Options Updates](#dynamic-options-updates) pattern.
 - The parameter set is fixed; only values change.
 
+#### Working with ParameterGroups
+
+The component manages individual parameters by name. If your dynamic surface uses groups, pass `parent_element_name` in your `add_request_factory` so newly-added parameters land in the right group; group creation and cleanup are handled by the caller.
+
 ### Advanced ParameterList Usage
 
 Include both individual and list types for maximum flexibility:

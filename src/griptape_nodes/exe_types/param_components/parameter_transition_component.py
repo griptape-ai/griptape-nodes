@@ -70,6 +70,17 @@ def _signatures_match(current: Parameter, desired: TransitionParameter) -> bool:
     return current.output_type == desired.output_type
 
 
+# TODO: https://github.com/griptape-ai/griptape-nodes-engine/issues/4793 — support
+# nested ParameterGroup lifecycle and parent-driven identity. This component
+# currently manages flat Parameter lists only. Callers needing grouped or
+# nested-grouped dynamic parameters must manage ParameterGroup creation and
+# cleanup outside the component (see the openassetio library for the established
+# workaround pattern). Two distinct gaps tracked together:
+#   1. ParameterGroup lifecycle is not part of the transition (no engine event
+#      exists today to remove a ParameterGroup).
+#   2. Parent membership is not part of identity comparison, so a parameter
+#      "moved" between groups (same name + signature, different parent) is
+#      silently treated as preserved instead of relocated.
 class ParameterTransitionComponent:
     """Reusable component for diff-based parameter schema transitions.
 
@@ -83,6 +94,16 @@ class ParameterTransitionComponent:
     type-compatible survive (and their values re-flow via the normal
     connection mechanism). Parameters that no longer exist in the desired
     set are removed; genuinely new parameters are added.
+
+    Compatibility contract:
+        The public API of this component is extensible. Future enhancements
+        will append new fields to ``TransitionParameter`` and
+        ``TransitionPlan`` with defaults, add new keyword-only arguments to
+        ``transition_to`` and ``compute_plan`` with defaults, and preserve
+        the zero-arg shape of ``add_request_factory``. Existing field types
+        and bucket names will not change in incompatible ways. Callers
+        building on this component today can rely on these guarantees when
+        nested-group support lands in a follow-up.
     """
 
     def __init__(
