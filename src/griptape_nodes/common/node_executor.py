@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import asyncio
 import logging
 import pickle
@@ -41,7 +40,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
-from griptape_nodes.retained_mode.events.base_events import EventRequest, ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import ForwardedException, ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -54,7 +53,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
     ExecuteNodeRequest,
-    ExecuteNodeResultFailure,
     ExecuteNodeResultSuccess,
     GriptapeEvent,
     InvolvedNodesEvent,
@@ -120,7 +118,6 @@ if TYPE_CHECKING:
 
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-    from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -210,47 +207,6 @@ class LoopBodyNodes(NamedTuple):
     node_group_name: str | None
 
 
-async def _execute_node_on_worker(
-    wm: WorkerManager,
-    node: BaseNode,
-    worker: tuple[str, str],
-) -> None:
-    """Execute a node on a worker and copy its outputs back onto the node.
-
-    Sends a single ExecuteNodeRequest carrying node_metadata. The worker creates
-    the node on first call (idempotent — no-op if already present) then executes it.
-
-    On success, copies parameter_output_values back onto the in-memory node so
-    that NodeManager's side-effect handling of set_parameter_value can propagate
-    the outputs to downstream connections. The local (in-process) branch must
-    not do this copy-back, because aprocess() already populated outputs in
-    place and propagation already fired during that write.
-
-    Raises RuntimeError if the worker reports failure.
-    """
-    worker_engine_id, worker_request_topic = worker
-    execute_raw = await wm.route_to_worker(
-        EventRequest(
-            request=ExecuteNodeRequest(
-                node_name=node.name,
-                parameter_values=dict(node.parameter_values),
-                node_metadata=cast("NodeMetadata", dict(node.metadata)),
-            )
-        ),
-        worker_engine_id,
-        worker_request_topic,
-    )
-    result_type_name = execute_raw.get("result_type", "")
-    result_data = execute_raw.get("result", {})
-    if result_type_name != ExecuteNodeResultSuccess.__name__:
-        failure = ExecuteNodeResultFailure(**result_data)
-        msg = f"Node '{node.name}' execution failed on worker: {failure.result_details}"
-        raise RuntimeError(msg)
-    result = ExecuteNodeResultSuccess(**result_data)
-    for name, value in result.parameter_output_values.items():
-        node.set_parameter_value(name, value)
-
-
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
@@ -305,25 +261,59 @@ class NodeExecutor:
                 await self.handle_loop_execution(node)
                 return
 
-            wm = GriptapeNodes.WorkerManager()
-            library_name = node.metadata.get("library")
-            worker = GriptapeNodes.LibraryManager().get_worker_for_library(library_name) if library_name else None
-            if wm and worker:
-                # Worker runs in a different process; _execute_node_on_worker
-                # copies outputs back onto the in-memory node so NodeManager's
-                # side-effect path can propagate them to downstream connections.
-                await _execute_node_on_worker(wm, node, worker)
-            else:
-                # Orchestrator-only path: behave identically to pre-workers.
-                # Run aprocess() directly on this node instance. NodeManager's
-                # on_set_parameter_value_request side-effect path propagates
-                # any new outputs to downstream connections in-process.
-                # Routing through ExecuteNodeRequest here would re-hydrate
-                # inputs via set_parameter_value and was observed to break
-                # single-node flows (e.g. LoadImage / drag-to-load-image).
-                await node.aprocess()
+            # Single entry point for both local and worker execution. The
+            # ExecuteNodeRequest handler routes to a worker subprocess when the
+            # node's library requires it, otherwise runs aprocess in-process.
+            result = await GriptapeNodes.ahandle_request(
+                ExecuteNodeRequest(
+                    node_name=node.name,
+                    parameter_values=dict(node.parameter_values),
+                    node_metadata=cast("NodeMetadata", dict(node.metadata)),
+                )
+            )
+            if not isinstance(result, ExecuteNodeResultSuccess):
+                exc = getattr(result, "exception", None)
+                msg = self._format_node_failure_message(node.name, result, exc)
+                raise RuntimeError(msg) from exc  # noqa: TRY004
+            # Copy outputs back onto the in-memory node. Write directly into
+            # parameter_output_values (not through set_parameter_value, which
+            # targets parameter_values and re-fires before/after_value_set and
+            # lifecycle events). TrackedParameterOutputValues.__setitem__
+            # guards with old_value != value, so on the local/in-process path
+            # -- where aprocess already wrote these entries in place -- the
+            # write is idempotent and emits no duplicate AlterElementEvent.
+            # Downstream delivery is handled later by
+            # parallel_resolution.collect_values_from_upstream_nodes, which
+            # reads from parameter_output_values.
+            for name, value in result.parameter_output_values.items():
+                node.parameter_output_values[name] = value
         finally:
             current_executing_node_name.reset(token)
+
+    @staticmethod
+    def _format_node_failure_message(node_name: str, result: Any, exc: BaseException | None) -> str:
+        """Compose the RuntimeError message for a failed node execution.
+
+        When the worker rebuilt a ``ForwardedException``, surface its
+        ``original_type`` and ``original_traceback`` directly in the
+        message. Chaining via ``from exc`` is not enough on its own:
+        a ForwardedException is constructed (not raised) on the
+        receiving side, so its ``__traceback__`` is None and Python's
+        chained-exception display prints only the cause's
+        ``Type: message`` line with no frames. Interpolating
+        ``original_traceback`` here is what actually puts the worker
+        frames in front of the user.
+        """
+        type_prefix = ""
+        tb_suffix = ""
+        if isinstance(exc, ForwardedException):
+            if exc.original_type:
+                type_prefix = f"[{exc.original_type}] "
+            if exc.original_traceback:
+                tb_suffix = f"\nWorker traceback:\n{exc.original_traceback}"
+        return (
+            f"Node '{node_name}' execution failed: {type_prefix}{getattr(result, 'result_details', result)}{tb_suffix}"
+        )
 
     async def _execute_and_apply_workflow(
         self,
@@ -2042,6 +2032,33 @@ class NodeExecutor:
 
         return sources
 
+    def _resolve_on_each_entry(self, node: SubflowNodeGroup) -> tuple[str | None, str | None]:
+        """Return (entry_node_name, entry_param_name) from on_each connection, or (None, None)."""
+        # on_each only exists on iterative groups; non-iterative subflows fall back to implicit child-discovery.
+        if not isinstance(node, BaseIterativeNodeGroup):
+            return None, None
+        flow_manager = GriptapeNodes.FlowManager()
+        connections = flow_manager.get_connections()
+        # Use node.on_each.name instead of a literal so renames stay in sync.
+        # Control outputs are single-target (enforced in connections.py), so index 0 is the only connection.
+        on_each_conns = connections.outgoing_index.get(node.name, {}).get(node.on_each.name, [])
+        if not on_each_conns:
+            return None, None
+        first_conn = connections.connections[on_each_conns[0]]
+        if first_conn.target_node.name == node.name:
+            # on_each is a proxy port on the group boundary. When the user wires on_each → a child node,
+            # two hops are stored: group→proxy (boundary edge) then proxy→child (internal edge).
+            # Follow both to find the actual entry node inside the group.
+            proxy_param = first_conn.target_parameter
+            proxy_conns = connections.outgoing_index.get(node.name, {}).get(proxy_param.name, [])
+            if proxy_conns:
+                # Control outputs are single-target, so index 0 is the only connection.
+                internal_conn = connections.connections[proxy_conns[0]]
+                if internal_conn.is_node_group_internal:
+                    return internal_conn.target_node.name, internal_conn.target_parameter.name
+            return None, None
+        return first_conn.target_node.name, first_conn.target_parameter.name
+
     async def _package_subflow_group_body(
         self, node: SubflowNodeGroup, label: str
     ) -> PackageNodesAsSerializedFlowResultSuccess | None:
@@ -2075,6 +2092,8 @@ class NodeExecutor:
         sanitized_node_name = node.name.replace(" ", "_")
         output_parameter_prefix = f"{sanitized_node_name}_{label}_"
 
+        entry_control_node_name, entry_control_parameter_name = self._resolve_on_each_entry(node)
+
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
             start_node_type=workflow_start_end_nodes.start_flow_node_type,
@@ -2082,8 +2101,8 @@ class NodeExecutor:
             start_node_library_name=workflow_start_end_nodes.start_flow_node_library_name,
             end_node_library_name=workflow_start_end_nodes.end_flow_node_library_name,
             output_parameter_prefix=output_parameter_prefix,
-            entry_control_node_name=None,
-            entry_control_parameter_name=None,
+            entry_control_node_name=entry_control_node_name,
+            entry_control_parameter_name=entry_control_parameter_name,
             node_group_name=node.name,
         )
 
@@ -3624,24 +3643,15 @@ class NodeExecutor:
             return param_value
 
         stored_value = unique_uuid_to_values[param_value]
-
-        # Non-string stored values are used directly
-        if not isinstance(stored_value, str):
-            return stored_value
-
-        # Attempt to unpickle string-represented bytes
         try:
-            actual_bytes = ast.literal_eval(stored_value)
-            if isinstance(actual_bytes, bytes):
-                return pickle.loads(actual_bytes)  # noqa: S301
-        except (ValueError, SyntaxError, pickle.UnpicklingError) as e:
+            return pickle.loads(stored_value)  # noqa: S301
+        except pickle.UnpicklingError as e:
             logger.warning(
-                "Failed to unpickle string-represented bytes for parameter '%s': %s",
+                "Attempted to unpickle stored value for parameter '%s'. Failed because: %s",
                 param_name,
                 e,
             )
-            return stored_value
-        return stored_value
+            raise
 
     def _apply_parameter_values_to_node(
         self,
@@ -3806,7 +3816,7 @@ class NodeExecutor:
             # Register the workflow so DeleteWorkflowRequest can find and remove it.
             # A subprocess may have registered it in its own process but not in the main process.
             load_workflow_metadata_request = LoadWorkflowMetadata(file_name=workflow_path.name)
-            result = GriptapeNodes.handle_request(load_workflow_metadata_request)
+            result = await GriptapeNodes.ahandle_request(load_workflow_metadata_request)
             if isinstance(result, LoadWorkflowMetadataResultSuccess):
                 WorkflowRegistry.generate_new_workflow(
                     registry_key=workflow_name, metadata=result.metadata, file_path=path_for_key

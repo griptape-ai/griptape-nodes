@@ -1,18 +1,18 @@
 [project]
-name = "griptape-nodes"
-version = "0.83.0"
+name = "griptape-nodes-engine"
+version = "0.86.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
 dependencies = [
-  "griptape>=1.10.0",
+  "griptape>=1.10.2",
   "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
   "httpx>=0.28.0,<1.0.0",
   "websockets>=15.0.1,<17.0.0",
   "tomlkit>=0.13.2",
-  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/833
+  # TODO: https://github.com/griptape-ai/griptape-nodes-engine/issues/833
   "uv>=0.6.16",
   "fastapi>=0.115.12",
   "uvicorn>=0.34.2",
@@ -37,6 +37,9 @@ dependencies = [
   "tenacity>=9.0.0",
   "truststore>=0.10.1",
   "cattrs>=26.1.0",
+  "fileseq>=3.2.0",
+  "pydantic-ai-slim[mcp,openai]>=1.95.1",
+  "pydantic-ai-skills>=0.11.0",
 ]
 
 [project.optional-dependencies]
@@ -59,6 +62,7 @@ docs = [
   "mkdocs>=1.5.2",
   "mkdocstrings[python]>=0.29.1",
   "mkdocs-mermaid2-plugin>=1.2.2",
+  "mkdocs-llmstxt>=0.5.0",
   "pymdown-extensions>=10.17",
 ]
 test = [
@@ -70,13 +74,12 @@ test = [
   "coverage>=7.0.0",
 ]
 
-[project.scripts]
-griptape-nodes = "griptape_nodes:main"
-gtn = "griptape_nodes:main"
-
 [build-system]
 requires = ["uv_build>=0.7.2,<0.12"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "griptape_nodes"
 
 [tool.uv.sources]
 griptape-cloud-client = { git = "https://github.com/griptape-ai/griptape-cloud-python-client", rev = "main" }
@@ -102,14 +105,14 @@ ignore = [
   "ANN003",  # Intentional
   "ANN401",  # Intentional
   "COM812",  # Intentional
-  "E501",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/834 
-  "D100",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/835 
-  "BLE001",  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/839
-  "SLF001",  # TODO :https://github.com/griptape-ai/griptape-nodes/issues/838 
+  "E501",    # TODO: https://github.com/griptape-ai/griptape-nodes-engine/issues/834 
+  "D100",    # TODO: https://github.com/griptape-ai/griptape-nodes-engine/issues/835 
+  "BLE001",  # TODO: https://github.com/griptape-ai/griptape-nodes-engine/issues/839
+  "SLF001",  # TODO :https://github.com/griptape-ai/griptape-nodes-engine/issues/838 
   "SIM108",  # Intentional
   "SIM110",  # Intentional
   "D105",    # Intentional
-  "N802",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/840
+  "N802",    # TODO: https://github.com/griptape-ai/griptape-nodes-engine/issues/840
   "TRY400",  # Intentional
   "FBT003",  # Intentional
   "RET504",  # Intentional

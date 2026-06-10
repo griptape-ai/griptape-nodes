@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 from ruamel.yaml import YAML
 
 from griptape_nodes.common.project_templates.directory import DirectoryDefinition
+from griptape_nodes.common.project_templates.project_path import PerPlatformProjectPath
 from griptape_nodes.common.project_templates.situation import SituationTemplate
 from griptape_nodes.common.project_templates.validation import (
     ProjectOverrideAction,
@@ -23,11 +24,26 @@ if TYPE_CHECKING:
 class ProjectTemplate(BaseModel):
     """Complete project template loaded from project.yml."""
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.3"
 
     project_template_schema_version: str = Field(description="Schema version for the project template")
     name: str = Field(description="Name of the project")
     description: str | None = Field(default=None, description="Description of the project")
+    parent_project_path: str | PerPlatformProjectPath | None = Field(
+        default=None,
+        description=(
+            "Optional path to a parent project YAML. When set, the parent's merged template is the "
+            "base for this template (instead of system defaults alone). The value may be: "
+            "(1) a string — absolute, or relative to the directory of this project's YAML "
+            "(e.g. `../base/griptape-nodes-project.yml`); or (2) a per-platform mapping with optional "
+            "`linux`, `darwin`, `windows`, and `default` string fields, used when the parent lives at "
+            "different filesystem paths on different OSes. Relative paths are preferred for cross-machine "
+            "portability when both projects live under the same workspace; the per-platform form is "
+            "preferred when the parent lives on shared storage mounted at different paths per OS. "
+            "Macro tokens are not allowed: they would resolve against runtime state (e.g. the active "
+            "workspace) that can change while the project is loaded, which would corrupt parent/child links."
+        ),
+    )
     situations: dict[str, SituationTemplate] = Field(description="Situation templates (situation_name -> template)")
     directories: dict[str, DirectoryDefinition] = Field(
         description="Directory definitions (logical_name -> definition)",
@@ -73,6 +89,11 @@ class ProjectTemplate(BaseModel):
         # tombstones a previously-set base description.
         if self_dump.get("description") != base_dump.get("description"):
             output["description"] = self_dump.get("description")
+
+        # parent_project_path: emit only when it diverges from base. Explicit null
+        # tombstones an inherited link.
+        if self_dump.get("parent_project_path") != base_dump.get("parent_project_path"):
+            output["parent_project_path"] = self_dump.get("parent_project_path")
 
         situations_overlay = self._diff_named_items(self_dump["situations"], base_dump["situations"])
         if situations_overlay:
@@ -373,9 +394,22 @@ class ProjectTemplate(BaseModel):
         else:
             merged_description = base.description
 
+        # parent_project_path: overlay wins; absent inherits base. Explicit null in
+        # overlay clears the inherited value (treated like a tombstone). The
+        # parent has already been merged into `base` by the time we get here, but
+        # the field is preserved on the result so the saved YAML round-trips the
+        # child's declared inheritance link.
+        if overlay.clears_parent_project_path:
+            merged_parent_project_path = None
+        elif overlay.parent_project_path is not None:
+            merged_parent_project_path = overlay.parent_project_path
+        else:
+            merged_parent_project_path = base.parent_project_path
+
         return ProjectTemplate(
             project_template_schema_version=overlay.project_template_schema_version,
             name=overlay.name,
+            parent_project_path=merged_parent_project_path,
             situations=merged_situations,
             directories=merged_directories,
             environment=merged_environment,

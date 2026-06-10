@@ -87,6 +87,58 @@ The runtime node parameters are dynamically generated based on the connected pip
 - **Real-time Previews**: Optional intermediate image previews during generation (may slow inference)
 - **Connection Preservation**: Runtime node preserves parameter connections when pipeline changes
 
+## Manual Memory Settings
+
+The Diffusion Pipeline Builder ships with `memory_optimization_strategy` set to **Manual** by default. Manual mode is the default because the Automatic strategy is conservative — it enables every optimization needed to fit the model, which bottlenecks powerful GPUs and slows generation on capable hardware. The tradeoff is that manual mode exposes a row of toggles that assume some familiarity with [🤗 Diffusers memory optimization concepts](https://huggingface.co/docs/diffusers/main/en/optimization/memory).
+
+This section explains each manual-mode parameter: what it does, the tradeoff it makes, and a heuristic for when to enable it.
+
+### `attention_slicing`
+
+- **What it does**: Computes the attention operation in sequential slices instead of all at once, lowering peak VRAM during attention.
+- **Tradeoff**: Lower memory at the cost of speed (often 5–20% slower).
+- **When to enable**: When you hit out-of-memory errors during generation, particularly on GPUs with less than 8 GB VRAM, on Apple Silicon (MPS) with less than 64 GB unified memory, or on CPU. Leave off when you have headroom.
+
+### `vae_slicing`
+
+- **What it does**: Decodes the VAE latent in batched slices rather than as a single tensor.
+- **Tradeoff**: Lower peak memory during the VAE decode step, with negligible speed cost.
+- **When to enable**: When generating multiple images in a single batch, or when decoding at higher resolutions exhausts VRAM in the final step. Cheap to leave on; effectively free for batch sizes of 1.
+
+### `transformer_layerwise_casting`
+
+- **What it does**: Stores the transformer (or UNet) weights in fp8 (`float8_e4m3fn`) and upcasts each layer to bfloat16 only while it is computing.
+- **Tradeoff**: Roughly halves transformer weight memory vs. bfloat16, with a small speed cost from per-layer casting and a small quality hit on some models.
+- **When to enable**: When the model fits in VRAM only after weight compression, but you don't want a full quantization pass. Skip if the pipeline is pre-quantized or doesn't support layerwise casting — the node logs a notice and ignores the toggle in those cases.
+
+### `cpu_offload_strategy`
+
+- **What it does**: Moves pipeline components between CPU RAM and GPU VRAM to reduce GPU memory residency.
+- **Choices**:
+    - **None** — All components stay on the GPU. Fastest, requires the most VRAM.
+    - **Model** — One full submodel (e.g. text encoder, transformer, VAE) is on the GPU at a time; others live in CPU RAM and swap in as needed. Moderate VRAM savings, modest speed penalty.
+    - **Sequential** — Even finer-grained: individual `nn.Module` layers are streamed to GPU on demand. Largest VRAM savings, largest speed penalty (often several times slower).
+- **When to use which**:
+    - **None** if the pipeline already fits with room to spare.
+    - **Model** if you're a few GB short of fitting everything resident.
+    - **Sequential** as a last resort to run a model that wouldn't otherwise load.
+
+### `quantization_mode`
+
+- **What it does**: Quantizes pipeline weights via `optimum-quanto` to `fp8`, `int8`, or `int4` before inference.
+- **Tradeoff**: Significant memory savings (`int4` ≈ 1/4 the size of bfloat16) at increasing risk of quality loss as the bit width drops. The first run also pays a one-time quantization cost.
+- **When to enable**: When even with offloading the model won't fit, or when you want to free VRAM for other work (larger batch, longer context, additional LoRAs). `fp8` is usually a safe starting point; drop to `int8`/`int4` only if needed.
+
+### If you run out of memory
+
+Escalate one knob at a time in this order: enable `vae_slicing` → enable `attention_slicing` → switch `cpu_offload_strategy` to `Model` → enable `transformer_layerwise_casting` → step `quantization_mode` down (`fp8` → `int8` → `int4`) → switch `cpu_offload_strategy` to `Sequential`.
+
+### When in doubt: switch to Automatic
+
+Automatic mode runs the pipeline through a memory-aware decision tree (see `_automatic_optimize_diffusion_pipeline` in `pipeline_utils.py`) that enables only the optimizations needed to fit the model on the detected device. It's slower than a hand-tuned manual configuration on capable hardware, but it's a safe fallback when you don't want to hand-pick settings.
+
+For a deeper treatment of the underlying concepts, see the upstream [🤗 Diffusers memory optimization guide](https://huggingface.co/docs/diffusers/main/en/optimization/memory).
+
 ## Performance Optimization
 
 - **Reuse Pipelines**: Build once, generate many times by connecting multiple runtime nodes to one builder

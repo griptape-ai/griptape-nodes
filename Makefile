@@ -34,15 +34,7 @@ version/publish: ## Create and push git tags.
 	@git tag v$$(make version/get)
 	@git tag stable -f
 	@git push -f --tags
-	@git push -u origin HEAD:refs/heads/release/v$$(make version/get | awk -F. '{print $$1 "." $$2}')
-	
-.PHONY: run
-run: ## Run the project.
-	uv run griptape-nodes
-	
-.PHONY: run/watch
-run/watch: ## Run the project in watch mode.
-	uv run src/griptape_nodes/app/watch.py
+	@git push origin HEAD:refs/heads/release/v$$(make version/get | awk -F. '{print $$1 "." $$2}')
 	
 .PHONY: install
 install: ## Install all dependencies.
@@ -63,6 +55,14 @@ install/dev: ## Install dev dependencies.
 .PHONY: install/test
 install/test: ## Install test dependencies.
 	@uv sync --group test
+
+.PHONY: run
+run: ## Run the engine from this checkout (published app + local editable engine).
+	@uvx --python 3.12 --from griptape-nodes --with-editable . gtn $(ARGS)
+
+.PHONY: run/refresh
+run/refresh: ## Run the engine, pulling the latest published app first.
+	@uvx --refresh --python 3.12 --from griptape-nodes --with-editable . gtn $(ARGS)
 
 .PHONY: lint
 lint: ## Lint project.
@@ -99,7 +99,7 @@ check/spell:
 	@uv run typos 
 
 .PHONY: test  ## Run all tests.
-test: test/unit test/integration
+test: test/unit test/integration test/e2e
 
 .PHONY: test/unit
 test/unit: ## Run unit tests.
@@ -116,6 +116,10 @@ test/coverage: ## Run all tests with coverage.
 .PHONY: test/integration
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration
+
+.PHONY: test/e2e
+test/e2e: ## Run end-to-end tests (spawns subprocesses; slower than unit/integration).
+	@uv run pytest tests/e2e
 
 .PHONY: docs
 docs: ## Build documentation.

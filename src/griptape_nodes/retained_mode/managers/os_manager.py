@@ -16,20 +16,33 @@ from typing import Any, ClassVar, NamedTuple
 import anyio
 import portalocker
 import send2trash
+from fileseq.exceptions import FileSeqException
 from rich.console import Console
 
-from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, MacroVariables, ParsedMacro
+from griptape_nodes.common.macro_parser import (
+    MacroResolutionError,
+    MacroResolutionFailure,
+    MacroSyntaxError,
+    MacroVariables,
+    ParsedMacro,
+)
 from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailureReason
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
+from griptape_nodes.common.sequences import (
+    InvalidSubsetBoundsError,
+    InvalidTemplateError,
+    MissingItemError,
+)
+from griptape_nodes.common.sequences.scan import DirectoryListingError, PathMapping, scan_sequences
 from griptape_nodes.files.drivers.base64_file_driver import Base64FileDriver
 from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
 from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
 from griptape_nodes.files.drivers.http_file_driver import HttpFileDriver
 from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
 from griptape_nodes.files.drivers.static_server_file_driver import StaticServerFileDriver
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError, canonical_extension
 from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriverRegistry
 from griptape_nodes.files.path_utils import (
     canonicalize_for_identity,
@@ -64,6 +77,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     GetNextUnusedFilenameRequest,
     GetNextUnusedFilenameResultFailure,
     GetNextUnusedFilenameResultSuccess,
+    GetNextVersionIndexRequest,
+    GetNextVersionIndexResultFailure,
+    GetNextVersionIndexResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -79,11 +95,19 @@ from griptape_nodes.retained_mode.events.os_events import (
     ResolveMacroPathRequest,
     ResolveMacroPathResultFailure,
     ResolveMacroPathResultSuccess,
+    ScanSequencesRequest,
+    ScanSequencesResultFailure,
+    ScanSequencesResultSuccess,
+    SequenceScanFailureReason,
     WriteFileRequest,
     WriteFileResultFailure,
     WriteFileResultSuccess,
 )
-from griptape_nodes.retained_mode.events.project_events import MacroPath
+from griptape_nodes.retained_mode.events.project_events import (
+    GetPathForMacroRequest,
+    GetPathForMacroResultSuccess,
+    MacroPath,
+)
 from griptape_nodes.retained_mode.events.resource_events import (
     CreateResourceInstanceRequest,
     CreateResourceInstanceResultSuccess,
@@ -104,6 +128,11 @@ console = Console()
 
 # Maximum number of indexed candidates to try when CREATE_NEW policy is used
 MAX_INDEXED_CANDIDATES = 1000
+
+# How many gap numbers to show inline in the ABORTED_AT_GAP `result_details`
+# string before truncating the rest with "(+N more)". Larger lists overwhelm
+# the artist's status panel; the full list lives on `missing_item_numbers`.
+ABORTED_AT_GAP_PREVIEW_COUNT = 5
 
 
 @dataclass
@@ -282,6 +311,10 @@ class OSManager:
             )
 
             event_manager.assign_manager_to_request_type(
+                request_type=ScanSequencesRequest, callback=self.on_scan_sequences_request
+            )
+
+            event_manager.assign_manager_to_request_type(
                 request_type=ReadFileRequest, callback=self.on_read_file_request
             )
 
@@ -315,6 +348,14 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=ResolveMacroPathRequest, callback=self.on_handle_resolve_macro_path_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=GetNextUnusedFilenameRequest, callback=self.on_get_next_unused_filename_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=GetNextVersionIndexRequest, callback=self.on_get_next_version_index_request
             )
 
             # Store event_manager for direct access during resource registration
@@ -836,6 +877,9 @@ class OSManager:
                     # This shouldn't happen - all non-index variables should be resolved
                     msg = f"Unexpected unresolved variable '{segment.info.name}' when building glob pattern"
                     raise ValueError(msg)
+            else:
+                msg = f"Unexpected segment type '{type(segment).__name__}' when building glob pattern"
+                raise TypeError(msg)
 
         return "".join(pattern_parts)
 
@@ -1435,6 +1479,162 @@ class OSManager:
             logger.error(msg)
             return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
 
+    async def on_scan_sequences_request(self, request: ScanSequencesRequest) -> ResultPayload:  # noqa: PLR0911
+        """Handle a request to scan a path or pattern for file sequences.
+
+        The handler does macro resolution itself, builds a `PathMapping`, and
+        runs `scan_sequences` in a worker thread (`asyncio.to_thread`) so
+        neither the directory listing (via `ListDirectoryRequest`, performed
+        inside `scan_sequences`) nor fileseq parsing blocks the event loop.
+
+        Routes failures to the appropriate taxonomy:
+        - Macro syntax / resolution / shape problems → `INVALID_TEMPLATE`
+          (sequence-semantic).
+        - Subset bound problems → `INVALID_BOUNDS`.
+        - ABORT-policy gaps → `ABORTED_AT_GAP` listing every offending item number.
+        - OS-layer listing failures (directory not found, permission denied)
+          propagate via `DirectoryListingError` and surface their original
+          `FileIOFailureReason` so the underlying diagnostic isn't lost.
+        """
+        mapping_or_failure = self._build_scan_path_mapping(request.path)
+        if isinstance(mapping_or_failure, ScanSequencesResultFailure):
+            return mapping_or_failure
+        mapping = mapping_or_failure
+
+        try:
+            outcome = await asyncio.to_thread(
+                scan_sequences,
+                mapping,
+                mapping.filename_pattern,
+                policy=request.policy,
+                no_token_behavior=request.no_token_behavior,
+                start=request.start_number,
+                end=request.end_number,
+            )
+        except DirectoryListingError as e:
+            return ScanSequencesResultFailure(
+                failure_reason=e.failure_reason,
+                result_details=e.result_details,
+            )
+        except InvalidSubsetBoundsError as e:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_BOUNDS,
+                result_details=str(e),
+            )
+        except InvalidTemplateError as e:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=str(e),
+            )
+        except FileSeqException as e:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=(
+                    f"Attempted to scan sequences with path={request.path!r}. "
+                    f"Failed because fileseq could not parse the path: {e}"
+                ),
+            )
+        except MissingItemError as e:
+            gap_count = len(e.numbers)
+            if gap_count == 1:
+                summary = f"the sequence has a gap at item {e.numbers[0]}"
+            else:
+                sample = ", ".join(str(n) for n in e.numbers[:ABORTED_AT_GAP_PREVIEW_COUNT])
+                if gap_count <= ABORTED_AT_GAP_PREVIEW_COUNT:
+                    suffix = ""
+                else:
+                    suffix = f" (+ {gap_count - ABORTED_AT_GAP_PREVIEW_COUNT} more)"
+                summary = f"the sequence has {gap_count} gaps: items {sample}{suffix}"
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.ABORTED_AT_GAP,
+                missing_item_numbers=e.numbers,
+                result_details=(
+                    f"Attempted to scan sequences with path={request.path!r}, policy=ABORT. Failed because {summary}."
+                ),
+            )
+
+        # An empty result is a successful scan that simply found nothing —
+        # not a failure. Callers that need to fail-fast can check `has_entries`.
+        has_entries = any(seq.entries for seq in outcome.sequences)
+        if has_entries:
+            details = f"Found {len(outcome.sequences)} sequence(s)."
+        else:
+            details = f"Scanned path={request.path!r}; no matching sequence entries found."
+        return ScanSequencesResultSuccess(
+            sequences=outcome.sequences,
+            has_entries=has_entries,
+            directory_had_matching_files=outcome.directory_had_matching_files,
+            discovered_first=outcome.discovered_first,
+            discovered_last=outcome.discovered_last,
+            result_details=details,
+        )
+
+    def _build_scan_path_mapping(self, path: str) -> PathMapping | ScanSequencesResultFailure:  # noqa: PLR0911
+        """Parse `path`, resolve any macro head, and build a `PathMapping`.
+
+        The path is split into a directory portion and a filename portion at
+        the last separator. The directory portion is resolved through
+        `GetPathForMacroRequest` if it carries macros; the filename portion
+        (which holds any sequence token) is preserved verbatim so the macro
+        head survives the round trip.
+
+        Returns either the assembled `PathMapping` or a `ScanSequencesResultFailure`
+        ready to return up the stack.
+        """
+        if not path:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details="No path or pattern provided.",
+            )
+
+        sep_index = max(path.rfind("/"), path.rfind("\\"))
+        if sep_index < 0:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=(
+                    f"`{path}` has no directory portion — point at a file or pattern "
+                    "(e.g. `/work/render.####.png` or `{inputs}/render.####.png`)."
+                ),
+            )
+        original_directory = path[:sep_index]
+        filename_pattern = path[sep_index + 1 :]
+        if not filename_pattern:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=(f"`{path}` has no filename to scan — point at a file or pattern, not a directory."),
+            )
+
+        try:
+            parsed_directory = ParsedMacro(original_directory)
+        except MacroSyntaxError as e:
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=f"Invalid path or pattern `{path}`: {e}",
+            )
+
+        if not parsed_directory.get_variables():
+            # No macros in the directory portion — treat it as a plain
+            # absolute (or relative) path. Round-trip is a no-op.
+            return PathMapping(
+                original_directory=original_directory,
+                resolved_directory=original_directory,
+                filename_pattern=filename_pattern,
+            )
+
+        resolve_result = GriptapeNodes.handle_request(
+            GetPathForMacroRequest(parsed_macro=parsed_directory, variables={})
+        )
+        if not isinstance(resolve_result, GetPathForMacroResultSuccess):
+            return ScanSequencesResultFailure(
+                failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
+                result_details=(f"Couldn't resolve project variables in `{path}`: {resolve_result.result_details}"),
+            )
+        return PathMapping(
+            original_directory=original_directory,
+            resolved_directory=str(resolve_result.absolute_path),
+            filename_pattern=filename_pattern,
+        )
+
     def _detect_mime_type_from_location(self, location: str) -> str:
         """Detect MIME type from location string.
 
@@ -1665,7 +1865,7 @@ class OSManager:
         try:
             index_info = self._identify_index_variable(parsed_macro, variables)
         except ValueError as e:
-            msg = str(e)
+            msg = f"Failed to identify index variable in path template: {e}"
             logger.error(msg)
             return GetNextUnusedFilenameResultFailure(
                 failure_reason=FileIOFailureReason.INVALID_PATH,
@@ -1708,6 +1908,38 @@ class OSManager:
             result_details=f"Found available filename with index {next_index}"
             if next_index
             else "Found available filename (no index needed)",
+        )
+
+    def on_get_next_version_index_request(self, request: GetNextVersionIndexRequest) -> ResultPayload:
+        """Handle a request to find the next available version index via a single glob pass."""
+        parsed_macro = request.macro_path.parsed_macro
+        variables = request.macro_path.variables
+
+        try:
+            index_info = self._identify_index_variable(parsed_macro, variables)
+        except ValueError as e:
+            msg = f"Attempted to find next version index. Failed: {e}"
+            logger.error(msg)
+            return GetNextVersionIndexResultFailure(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details=msg,
+            )
+
+        if index_info is None:
+            msg = "Attempted to find next version index. Failed because no unresolved {_index} variable was found in the macro template."
+            logger.error(msg)
+            return GetNextVersionIndexResultFailure(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details=msg,
+            )
+
+        next_index = self._scan_for_next_available_index(parsed_macro, variables, index_info)
+
+        return GetNextVersionIndexResultSuccess(
+            index=next_index,
+            result_details=f"Next available version index is {next_index}"
+            if next_index is not None
+            else "Base path is available (no index needed)",
         )
 
     def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
@@ -1970,6 +2202,15 @@ class OSManager:
             msg = "Internal error: success path reached but file path or bytes not set"
             raise RuntimeError(msg)
 
+        # Reconcile the on-disk suffix with the actual byte content. When the
+        # caller passes coerce_extension_to_match_bytes=True (the default) we
+        # rename to match the sniffed format; when False, mismatched bytes are
+        # treated as a hard failure and the just-written file is removed.
+        coercion_result = self._apply_extension_coercion(request, final_file_path)
+        if isinstance(coercion_result, WriteFileResultFailure):
+            return coercion_result
+        final_file_path = coercion_result
+
         # Write sidecar metadata file if caller opted in by providing file_metadata
         if request.file_metadata is not None:
             write_sidecar(final_file_path, request.file_metadata)
@@ -1985,6 +2226,88 @@ class OSManager:
             bytes_written=final_bytes_written,
             result_details=result_details,
         )
+
+    def _apply_extension_coercion(  # noqa: PLR0911
+        self,
+        request: WriteFileRequest,
+        final_file_path: Path,
+    ) -> Path | WriteFileResultFailure:
+        """Reconcile the on-disk suffix with the sniffed byte format.
+
+        Runs only for binary content. Sniffs via the registered artifact
+        providers; when the sniffed canonical extension disagrees with the
+        path's suffix the behavior is controlled by the request flag:
+
+        - ``coerce_extension_to_match_bytes=True`` (default): rename the file
+          to use the sniffed extension and (when present) update the
+          ``file_extension`` variable on the sidecar's situation metadata so
+          provenance reflects the actual on-disk extension.
+        - ``coerce_extension_to_match_bytes=False``: delete the just-written
+          file and return ``WriteFileResultFailure`` with
+          ``EXTENSION_MISMATCH``, preserving the original strict behavior.
+        """
+        content = request.content
+        if not isinstance(content, bytes):
+            return final_file_path
+
+        suffix = final_file_path.suffix.lstrip(".").lower()
+        if not suffix:
+            return final_file_path
+
+        sniffed = GriptapeNodes.ArtifactManager().sniff_extension(content)
+        if sniffed is None:
+            logger.warning(
+                "Could not identify byte content for '%s'; writing through without extension coercion.",
+                final_file_path,
+            )
+            return final_file_path
+
+        if canonical_extension(suffix) == canonical_extension(sniffed):
+            return final_file_path
+
+        if not request.coerce_extension_to_match_bytes:
+            try:
+                final_file_path.unlink(missing_ok=True)
+            except OSError as e:
+                logger.warning(
+                    "Failed to remove '%s' after EXTENSION_MISMATCH: %s",
+                    final_file_path,
+                    e,
+                )
+            msg = (
+                f"Refusing to write {sniffed.upper()} bytes to '{final_file_path}' "
+                f"(extension '.{suffix}'). The file extension must match the byte content; "
+                f"either rename the destination to '.{sniffed}' or supply bytes that match '.{suffix}'."
+            )
+            return WriteFileResultFailure(
+                failure_reason=FileIOFailureReason.EXTENSION_MISMATCH,
+                result_details=msg,
+            )
+
+        coerced_path = final_file_path.with_suffix(f".{sniffed}")
+        try:
+            final_file_path.rename(coerced_path)
+        except OSError as e:
+            logger.warning(
+                "Failed to rename '%s' to '%s' during extension coercion: %s; leaving original suffix.",
+                final_file_path,
+                coerced_path,
+                e,
+            )
+            return final_file_path
+
+        logger.warning(
+            "Coerced file extension to match byte content: '%s' -> '%s'.",
+            final_file_path,
+            coerced_path,
+        )
+
+        if request.file_metadata is not None and request.file_metadata.situation is not None:
+            variables = request.file_metadata.situation.variables
+            if variables is not None and "file_extension" in variables:
+                variables["file_extension"] = sniffed
+
+        return coerced_path
 
     def _ensure_parent_directory_ready(
         self,

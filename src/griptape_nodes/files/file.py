@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from pathlib import Path
 from typing import NamedTuple, Protocol, cast, runtime_checkable
 
@@ -28,6 +29,8 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SituationMetadata,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class FileLoadError(Exception):
@@ -152,6 +155,28 @@ async def _aresolve_file_path(file_path: str | MacroPath) -> str:
     return str(resolve_result.absolute_path)  # type: ignore[union-attr]
 
 
+# Pairs of suffixes that should be treated as equivalent when comparing a
+# user-supplied filename extension against the canonical extension reported
+# by ArtifactManager.sniff_extension. Keys and values are lowercase, no
+# leading dot.
+_EXTENSION_ALIASES: dict[str, str] = {
+    "jpg": "jpeg",
+    "jpeg": "jpeg",
+    "tif": "tiff",
+    "tiff": "tiff",
+    "m4v": "mp4",
+    "mp4": "mp4",
+    "m4a": "m4a",
+    "m4b": "m4a",
+}
+
+
+def canonical_extension(ext: str) -> str:
+    """Return the canonical form of an on-disk extension for equivalence checks."""
+    lowered = ext.lstrip(".").lower()
+    return _EXTENSION_ALIASES.get(lowered, lowered)
+
+
 class File:
     """Path-like object for reading and writing files via the retained mode API.
 
@@ -240,8 +265,17 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
+        coerce_extension_to_match_bytes: bool = True,
     ) -> Path:
         """Write bytes to the file.
+
+        After the write, the bytes are sniffed for a known media format. If
+        the sniffed format disagrees with the file's extension and
+        ``coerce_extension_to_match_bytes`` is True (the default), the
+        on-disk file is renamed so its suffix matches the sniffed format
+        and a single warning is logged. If the flag is False, the write
+        fails with ``FileWriteError(failure_reason=EXTENSION_MISMATCH)`` and
+        no file is left on disk.
 
         Args:
             content: The bytes to write.
@@ -250,18 +284,23 @@ class File:
             append: If True, append to an existing file. Defaults to False.
             create_parents: If True, create parent directories if missing.
                 Defaults to True.
+            coerce_extension_to_match_bytes: If True, rewrite the suffix to
+                match the sniffed bytes; if False, fail on mismatch. Defaults
+                to True.
 
         Returns:
             The actual path where the file was written.
 
         Raises:
-            FileWriteError: If the file cannot be written.
+            FileWriteError: If the file cannot be written, including the
+                ``EXTENSION_MISMATCH`` failure when coercion is disabled.
         """
         return self._write_content(
             content,
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
+            coerce_extension_to_match_bytes=coerce_extension_to_match_bytes,
         )
 
     async def awrite_bytes(
@@ -271,6 +310,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
+        coerce_extension_to_match_bytes: bool = True,
     ) -> Path:
         """Async version of write_bytes().
 
@@ -281,18 +321,23 @@ class File:
             append: If True, append to an existing file. Defaults to False.
             create_parents: If True, create parent directories if missing.
                 Defaults to True.
+            coerce_extension_to_match_bytes: If True, rewrite the suffix to
+                match the sniffed bytes; if False, fail on mismatch. Defaults
+                to True.
 
         Returns:
             The actual path where the file was written.
 
         Raises:
-            FileWriteError: If the file cannot be written.
+            FileWriteError: If the file cannot be written, including the
+                ``EXTENSION_MISMATCH`` failure when coercion is disabled.
         """
         return await self._awrite_content(
             content,
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
+            coerce_extension_to_match_bytes=coerce_extension_to_match_bytes,
         )
 
     def write_text(
@@ -540,7 +585,7 @@ class File:
             size=success.file_size,
         )
 
-    def _write_content(
+    def _write_content(  # noqa: PLR0913
         self,
         content: str | bytes,
         encoding: str = "utf-8",
@@ -548,6 +593,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
+        coerce_extension_to_match_bytes: bool = True,
     ) -> Path:
         """Perform the sync file write.
 
@@ -557,22 +603,28 @@ class File:
             existing_file_policy: How to handle an existing file.
             append: If True, append to an existing file.
             create_parents: If True, create parent directories if missing.
+            coerce_extension_to_match_bytes: If True, the OSManager rewrites
+                the on-disk suffix to match the sniffed bytes; if False, an
+                ``EXTENSION_MISMATCH`` failure is returned on mismatch.
 
         Returns:
             The actual path where the file was written (may differ from the
-            requested path if CREATE_NEW policy is in effect).
+            requested path if CREATE_NEW policy is in effect, or if the
+            extension was coerced to match the byte content).
 
         Raises:
             FileWriteError: If the file cannot be written.
         """
+        resolved_path = _resolve_file_path(self._file_path)
         request = WriteFileRequest(
-            file_path=_resolve_file_path(self._file_path),
+            file_path=resolved_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
             file_metadata=self._build_file_metadata(),
+            coerce_extension_to_match_bytes=coerce_extension_to_match_bytes,
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -585,7 +637,7 @@ class File:
 
         return Path(cast("WriteFileResultSuccess", result).final_file_path)
 
-    async def _awrite_content(
+    async def _awrite_content(  # noqa: PLR0913
         self,
         content: str | bytes,
         encoding: str = "utf-8",
@@ -593,6 +645,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
+        coerce_extension_to_match_bytes: bool = True,
     ) -> Path:
         """Async version of _write_content.
 
@@ -602,22 +655,28 @@ class File:
             existing_file_policy: How to handle an existing file.
             append: If True, append to an existing file.
             create_parents: If True, create parent directories if missing.
+            coerce_extension_to_match_bytes: If True, the OSManager rewrites
+                the on-disk suffix to match the sniffed bytes; if False, an
+                ``EXTENSION_MISMATCH`` failure is returned on mismatch.
 
         Returns:
             The actual path where the file was written (may differ from the
-            requested path if CREATE_NEW policy is in effect).
+            requested path if CREATE_NEW policy is in effect, or if the
+            extension was coerced to match the byte content).
 
         Raises:
             FileWriteError: If the file cannot be written.
         """
+        resolved_path = await _aresolve_file_path(self._file_path)
         request = WriteFileRequest(
-            file_path=await _aresolve_file_path(self._file_path),
+            file_path=resolved_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,
             append=append,
             create_parents=create_parents,
             file_metadata=self._build_file_metadata(),
+            coerce_extension_to_match_bytes=coerce_extension_to_match_bytes,
         )
         result = await GriptapeNodes.ahandle_request(request)
 
@@ -659,7 +718,7 @@ class FileDestination:
     For a lean path reference that also supports reading, use ``File`` instead.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         file_path: str | MacroPath,
         *,
@@ -667,6 +726,7 @@ class FileDestination:
         append: bool = False,
         create_parents: bool = True,
         file_metadata: SidecarContent | None = None,
+        coerce_extension_to_match_bytes: bool = True,
     ) -> None:
         """Store file path and write configuration. No I/O is performed.
 
@@ -680,11 +740,16 @@ class FileDestination:
                 Defaults to True.
             file_metadata: Optional caller-provided context to include in the sidecar
                 metadata file alongside auto-collected workflow metadata.
+            coerce_extension_to_match_bytes: If True (default), the OSManager
+                rewrites the on-disk suffix to match the sniffed bytes when
+                they disagree. If False, the write fails with an
+                ``EXTENSION_MISMATCH`` error and no file is left on disk.
         """
         self._file = File(file_path, file_metadata=file_metadata)
         self._existing_file_policy = existing_file_policy
         self._append = append
         self._create_parents = create_parents
+        self._coerce_extension_to_match_bytes = coerce_extension_to_match_bytes
 
     def resolve(self) -> str:
         """Resolve and return the absolute path string for this destination.
@@ -722,6 +787,7 @@ class FileDestination:
             existing_file_policy=self._existing_file_policy,
             append=self._append,
             create_parents=self._create_parents,
+            coerce_extension_to_match_bytes=self._coerce_extension_to_match_bytes,
         )
         return File(str(path))
 
@@ -742,6 +808,7 @@ class FileDestination:
             existing_file_policy=self._existing_file_policy,
             append=self._append,
             create_parents=self._create_parents,
+            coerce_extension_to_match_bytes=self._coerce_extension_to_match_bytes,
         )
         return File(str(path))
 

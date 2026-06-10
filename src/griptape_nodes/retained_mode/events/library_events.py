@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, NamedTuple
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from griptape_nodes.node_library.library_registry import (
     LibraryMetadata,
@@ -20,6 +20,8 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from griptape_nodes.exe_types.core_types import Parameter
+
     # Circular import: library_events -> library_manager -> library_events
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -31,10 +33,13 @@ class DiscoveredLibrary(NamedTuple):
     Attributes:
         path: Absolute path to the library JSON file or sandbox directory
         is_sandbox: True if this is a sandbox library (user-created nodes in workspace), False for regular libraries
+        enabled: False when the entry is present in libraries_to_register but explicitly disabled.
+            Disabled libraries are still discovered (so they appear in status output) but are not loaded.
     """
 
     path: Path
     is_sandbox: bool
+    enabled: bool = True
 
 
 @dataclass
@@ -172,6 +177,189 @@ class GetNodeMetadataFromLibraryResultFailure(WorkflowNotAlteredMixin, ResultPay
 
 
 @dataclass
+class ParameterDescription:
+    """Schema of a single parameter on a node type, surfaced without instantiating the node into a flow.
+
+    Args:
+        name: Parameter name, used when wiring connections and setting values
+        type: Canonical parameter type
+        input_types: Accepted input types when used as an input
+        output_type: Type produced when used as an output
+        default_value: Default value for the parameter (may be None)
+        tooltip: General tooltip text (string or structured list)
+        tooltip_as_input/property/output: Mode-specific tooltips (None if unset)
+        mode_allowed_input/property/output: Whether the parameter supports each mode
+        settable: Whether the parameter can be set directly by the user
+        ui_options: UI configuration options (includes display_name when set)
+        parent_container_name: Name of the parent ParameterGroup, if any
+    """
+
+    name: str
+    type: str
+    input_types: list[str]
+    output_type: str
+    default_value: Any | None
+    tooltip: str | list[dict]
+    tooltip_as_input: str | list[dict] | None
+    tooltip_as_property: str | list[dict] | None
+    tooltip_as_output: str | list[dict] | None
+    mode_allowed_input: bool
+    mode_allowed_property: bool
+    mode_allowed_output: bool
+    settable: bool
+    ui_options: dict | None
+    parent_container_name: str | None
+
+    @classmethod
+    def from_parameter(cls, param: Parameter) -> ParameterDescription:
+        """Build a ParameterDescription from a live Parameter instance.
+
+        Projects from `Parameter.to_dict()` so this view stays in sync with the canonical
+        serialization used elsewhere (e.g. workflow shape extraction).
+        """
+        param_dict = param.to_dict()
+
+        return cls(
+            name=param_dict["name"],
+            type=param_dict["type"],
+            input_types=list(param_dict["input_types"] or []),
+            output_type=param_dict["output_type"] or "",
+            default_value=param_dict["default_value"],
+            tooltip=param_dict["tooltip"],
+            tooltip_as_input=param_dict["tooltip_as_input"],
+            tooltip_as_property=param_dict["tooltip_as_property"],
+            tooltip_as_output=param_dict["tooltip_as_output"],
+            mode_allowed_input=param_dict["mode_allowed_input"],
+            mode_allowed_property=param_dict["mode_allowed_property"],
+            mode_allowed_output=param_dict["mode_allowed_output"],
+            settable=param_dict["settable"],
+            ui_options=param_dict["ui_options"],
+            parent_container_name=param_dict["parent_container_name"],
+        )
+
+
+@dataclass
+@PayloadRegistry.register
+class DescribeNodeTypeRequest(RequestPayload):
+    """Describe a node type's metadata and parameter schema without adding a node to a flow.
+
+    Use when: choosing between similar node types, building a node-creation UI, or inspecting
+    parameter defaults, tooltips, and ui_options before committing to CreateNode. Avoids the
+    create/inspect/delete cycle otherwise required to learn a node type's surface area.
+
+    Note: the engine instantiates a throwaway node to read its parameters. Node types whose
+    __init__ performs network or disk I/O will incur that cost here as well.
+
+    Args:
+        node_type: Name of the node type to describe
+        library: Name of the library providing the node type. If omitted and exactly one
+            library registers this node type, that library is used; otherwise the request fails.
+
+    Results: DescribeNodeTypeResultSuccess | DescribeNodeTypeResultFailure
+    """
+
+    node_type: str
+    library: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class DescribeNodeTypeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node type described successfully.
+
+    Args:
+        library: Library that provided the node type
+        node_type: Name of the node type
+        metadata: Library-level node metadata (category, description, display_name, tags, icon, color, group)
+        parameters: Parameter schemas in declaration order. Empty when the engine could not
+            instantiate the probe node used to read parameter declarations (typically because the
+            node's `__init__` performed I/O that failed). When that happens, the node-level
+            `metadata` is still valid and `result_details` carries a WARNING-level entry naming
+            the cause, so callers can distinguish a probe failure from a node that legitimately
+            declares no parameters.
+    """
+
+    library: str
+    node_type: str
+    metadata: NodeMetadata
+    parameters: list[ParameterDescription] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class DescribeNodeTypeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node type description failed. Common causes: library not registered, node type not found, node instantiation raised."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterSandboxNodeFromSourceRequest(RequestPayload):
+    """Register the BaseNode subclasses declared in a Python source file already on disk inside the sandbox library directory.
+
+    Use when: An agent has just written a `.py` file into the configured sandbox directory
+    (via `WriteFileRequest` or any other means) and wants the engine to import it and
+    register its `BaseNode` subclasses without restarting. The engine never writes anything
+    itself; it only imports and registers what is already at `file_path`. The new node types
+    are immediately usable via `CreateNodeRequest` / `CreateNodesRequest`.
+
+    The file persists on disk, so subsequent engine startups pick it up through the normal
+    sandbox scan-and-load pipeline. Auto-generated metadata follows the same conventions the
+    engine applies to files placed in the sandbox directory through the UI.
+
+    Security note: the imported source runs inside the engine process with no isolation.
+    Anyone who can reach this request, or who can write into the sandbox directory, can
+    execute arbitrary Python. This mirrors the existing sandbox-directory behaviour, but
+    makes that surface reachable via MCP.
+
+    Args:
+        file_path: Path to a `.py` file inside the configured sandbox library directory.
+            Absolute paths must resolve under the sandbox directory; relative paths are
+            resolved against it. The file must already exist on disk.
+        replace_if_exists: When True, any node type of the same class name already registered
+            in the Sandbox Library is unregistered before registering the new class. Existing
+            node instances of that class in a running workflow are NOT migrated.
+
+    Results: RegisterSandboxNodeFromSourceResultSuccess | RegisterSandboxNodeFromSourceResultFailure
+    """
+
+    file_path: str
+    replace_if_exists: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterSandboxNodeFromSourceResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Source file imported and at least one BaseNode subclass registered.
+
+    Args:
+        file_path: Absolute path to the .py file that was imported.
+        library_name: Name of the library the class(es) were registered with (always the
+            Sandbox Library for now).
+        registered_class_names: Node class names that were registered by this call, in module
+            declaration order.
+        replaced_class_names: Subset of registered_class_names for which an existing
+            registration was unregistered first (only meaningful when replace_if_exists=True).
+    """
+
+    file_path: str
+    library_name: str
+    registered_class_names: list[str] = field(default_factory=list)
+    replaced_class_names: list[str] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterSandboxNodeFromSourceResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Sandbox node registration failed.
+
+    Common causes: sandbox_library_directory not configured, file_path resolves outside the
+    sandbox directory or has the wrong extension, file does not exist, Python import error
+    (syntax error, missing dependency), no BaseNode subclass found in the file, or name
+    collision when replace_if_exists=False.
+    """
+
+
+@dataclass
 @PayloadRegistry.register
 class LoadLibraryMetadataFromFileRequest(RequestPayload):
     """Request to load library metadata from a JSON file without loading node modules.
@@ -199,15 +387,25 @@ class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPa
     Args:
         library_schema: The validated LibrarySchema object containing all metadata
                        about the library including nodes, categories, and settings.
-        file_path: The file path from which the library metadata was loaded.
+        file_path: The file path from which the library metadata was loaded (resolved
+                   absolute path on disk).
+        registered_path: The user's verbatim `LibraryRegistration.path` from
+                         `libraries_to_register` before workspace resolution / `~`-expansion
+                         / symlink-following. Surfaced so the GUI can match library metadata
+                         back to its `libraries_to_register` row using the exact key the user
+                         sees in their config. None for libraries registered through other
+                         channels (e.g. sandbox, ad-hoc loads).
         git_remote: The git remote URL if the library is in a git repository, None otherwise.
         git_ref: The current git reference (branch, tag, or commit) if the library is in a git repository, None otherwise.
+        enabled: If the current library is enabled or disabled by the user at the time of the request.
     """
 
     library_schema: LibrarySchema
     file_path: str
     git_remote: str | None
     git_ref: str | None
+    enabled: bool
+    registered_path: str | None = None
 
 
 @dataclass
@@ -808,9 +1006,14 @@ class UpdateLibraryResultFailure(ResultPayloadFailure):
 
     Args:
         retryable: If True, the operation can be retried with overwrite_existing=True
+        existing_path: When the failure is caused by uncommitted changes in the library directory,
+            the absolute path of that directory. Provided as a structured field so clients do not
+            have to parse it out of the human-readable error message (which is unreliable for paths
+            containing ``:``, e.g. Windows drive letters).
     """
 
     retryable: bool = False
+    existing_path: str | None = None
 
 
 @dataclass
@@ -909,9 +1112,13 @@ class DownloadLibraryResultFailure(ResultPayloadFailure):
 
     Args:
         retryable: If True, the operation can be retried with overwrite_existing=True
+        existing_path: When the failure is caused by an existing target directory, the absolute
+            path of that directory. Provided as a structured field so clients do not have to
+            parse it out of the human-readable error message.
     """
 
     retryable: bool = False
+    existing_path: str | None = None
 
 
 @dataclass
@@ -1053,3 +1260,71 @@ class InspectLibraryRepoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 @PayloadRegistry.register
 class InspectLibraryRepoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Library repository inspection failed. Common causes: invalid git URL, network error, no library JSON found, invalid JSON format."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetLibrarySourceInfoRequest(RequestPayload):
+    """Get filesystem paths for a registered library's source code.
+
+    Use when: Locating library source files on disk, reading node source code.
+
+    Args:
+        library: Name of the registered library (e.g. "Griptape Nodes Library")
+
+    Results: GetLibrarySourceInfoResultSuccess (with paths) | GetLibrarySourceInfoResultFailure (library not found)
+    """
+
+    library: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetLibrarySourceInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library source info retrieved successfully.
+
+    Args:
+        library_name: Echo of the requested library name
+        library_json_path: Absolute path to the library's griptape_nodes_library.json
+        library_directory: Absolute path to the directory containing the JSON file
+    """
+
+    library_name: str
+    library_json_path: str
+    library_directory: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetLibrarySourceInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library source info retrieval failed. Common causes: library not found, library not yet loaded."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetEngineSourceInfoRequest(RequestPayload):
+    """Get the filesystem path of the griptape_nodes engine source tree.
+
+    Use when: Reading engine base class definitions (e.g. exe_types/node_types.py),
+    inspecting engine internals, locating engine source code on disk.
+
+    Results: GetEngineSourceInfoResultSuccess (with path) | GetEngineSourceInfoResultFailure (resolution error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class GetEngineSourceInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Engine source info retrieved successfully.
+
+    Args:
+        package_directory: Absolute path to the griptape_nodes package root
+    """
+
+    package_directory: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetEngineSourceInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Engine source info retrieval failed. Common causes: package path could not be resolved."""

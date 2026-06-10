@@ -1,3 +1,4 @@
+import contextlib
 import logging
 
 import pytest
@@ -157,3 +158,172 @@ class TestNodeManagerAlterParameterDetailsClearDefaultValue:
         assert "clear_default_value takes precedence" in caplog.records[0].message
         assert "test_param" in caplog.records[0].message
         assert "test_node" in caplog.records[0].message
+
+
+class TestGetParameterValueOutputPriority:
+    """Output values must take priority over input/property values in GetParameterValueRequest."""
+
+    def test_output_value_takes_priority_over_parameter_value(self, griptape_nodes: GriptapeNodes) -> None:
+        """When both parameter_values and parameter_output_values contain a key, the output value wins."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes.retained_mode.events.parameter_events import (
+            GetParameterValueRequest,
+            GetParameterValueResultSuccess,
+        )
+
+        input_value: float = 0.0
+        output_value: float = 42.0
+
+        param = Parameter(name="result", type="float", default_value=input_value)
+        mock_node = MagicMock(spec=BaseNode)
+        mock_node.name = "test_node"
+        mock_node.parameter_values = {"result": input_value}
+        mock_node.parameter_output_values = {"result": output_value}
+        mock_node.get_parameter_by_name.return_value = param
+
+        obj_mgr = griptape_nodes.ObjectManager()
+        obj_mgr.add_object_by_name("test_node", mock_node)
+
+        node_manager = griptape_nodes.NodeManager()
+        request = GetParameterValueRequest(parameter_name="result", node_name="test_node")
+        result = node_manager.on_get_parameter_value_request(request)
+
+        assert isinstance(result, GetParameterValueResultSuccess)
+        assert result.value == output_value
+
+    def test_falls_back_to_parameter_value_when_no_output(self, griptape_nodes: GriptapeNodes) -> None:
+        """When parameter_output_values is empty, parameter_values is used."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes.retained_mode.events.parameter_events import (
+            GetParameterValueRequest,
+            GetParameterValueResultSuccess,
+        )
+
+        input_value: float = 3.0
+
+        param = Parameter(name="a", type="float", default_value=0.0)
+        mock_node = MagicMock(spec=BaseNode)
+        mock_node.name = "test_node"
+        mock_node.parameter_values = {"a": input_value}
+        mock_node.parameter_output_values = {}
+        mock_node.get_parameter_by_name.return_value = param
+
+        obj_mgr = griptape_nodes.ObjectManager()
+        obj_mgr.add_object_by_name("test_node", mock_node)
+
+        node_manager = griptape_nodes.NodeManager()
+        request = GetParameterValueRequest(parameter_name="a", node_name="test_node")
+        result = node_manager.on_get_parameter_value_request(request)
+
+        assert isinstance(result, GetParameterValueResultSuccess)
+        assert result.value == input_value
+
+    def test_falls_back_to_default_when_no_values(self, griptape_nodes: GriptapeNodes) -> None:
+        """When neither dict contains the key, the parameter default is returned."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes.retained_mode.events.parameter_events import (
+            GetParameterValueRequest,
+            GetParameterValueResultSuccess,
+        )
+
+        default_value: float = 99.0
+
+        param = Parameter(name="x", type="float", default_value=default_value)
+        mock_node = MagicMock(spec=BaseNode)
+        mock_node.name = "test_node"
+        mock_node.parameter_values = {}
+        mock_node.parameter_output_values = {}
+        mock_node.get_parameter_by_name.return_value = param
+
+        obj_mgr = griptape_nodes.ObjectManager()
+        obj_mgr.add_object_by_name("test_node", mock_node)
+
+        node_manager = griptape_nodes.NodeManager()
+        request = GetParameterValueRequest(parameter_name="x", node_name="test_node")
+        result = node_manager.on_get_parameter_value_request(request)
+
+        assert isinstance(result, GetParameterValueResultSuccess)
+        assert result.value == default_value
+
+
+class TestNodeManagerCancelExecuteNode:
+    """Tests for the CancelExecuteNodeRequest handler and cancel_worker_execution dispatch."""
+
+    @pytest.mark.asyncio
+    async def test_handler_no_inflight_returns_success(self, griptape_nodes: GriptapeNodes) -> None:
+        """Cancelling a request_id that isn't tracked is idempotent success."""
+        from griptape_nodes.retained_mode.events.execution_events import (
+            CancelExecuteNodeRequest,
+            CancelExecuteNodeResultSuccess,
+        )
+
+        node_manager = griptape_nodes.NodeManager()
+        request = CancelExecuteNodeRequest(target_request_id="not-tracked")
+
+        result = await node_manager.on_cancel_execute_node_request(request)
+
+        assert isinstance(result, CancelExecuteNodeResultSuccess)
+
+    @pytest.mark.asyncio
+    async def test_handler_cancels_tracked_task_and_sets_flag(self, griptape_nodes: GriptapeNodes) -> None:
+        """With an in-flight task registered, the handler sets the node's cancel flag and cancels the task."""
+        import asyncio
+
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes.retained_mode.events.execution_events import (
+            CancelExecuteNodeRequest,
+            CancelExecuteNodeResultSuccess,
+        )
+
+        node_manager = griptape_nodes.NodeManager()
+
+        cancellation_seen = {"value": False}
+
+        async def long_running() -> None:
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                cancellation_seen["value"] = True
+                raise
+
+        task = asyncio.create_task(long_running())
+        # Give the task a chance to start
+        await asyncio.sleep(0)
+
+        node = BaseNode(name="n1")
+        try:
+            node_manager._worker_inflight_aprocesses["req-1"] = (task, node)
+
+            result = await node_manager.on_cancel_execute_node_request(
+                CancelExecuteNodeRequest(target_request_id="req-1")
+            )
+
+            assert isinstance(result, CancelExecuteNodeResultSuccess)
+            assert node.is_cancellation_requested is True
+
+            # Let the cancellation propagate
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            assert cancellation_seen["value"] is True
+        finally:
+            node_manager._worker_inflight_aprocesses.pop("req-1", None)
+            if not task.done():
+                task.cancel()
+
+    @pytest.mark.asyncio
+    async def test_cancel_worker_execution_noop_when_not_tracked(self, griptape_nodes: GriptapeNodes) -> None:
+        """cancel_worker_execution is a no-op when the node isn't routed to a worker."""
+        node_manager = griptape_nodes.NodeManager()
+
+        # Should not raise; there is no entry for "ghost_node" and
+        # WorkerManager.forward_event_to_worker should not be invoked.
+        await node_manager.cancel_worker_execution("ghost_node")

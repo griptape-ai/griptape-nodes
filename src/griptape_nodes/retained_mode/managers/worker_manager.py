@@ -14,18 +14,20 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.retained_mode.events import worker_events
+from griptape_nodes.retained_mode.events.app_events import ConfigChanged, SecretChanged
 from griptape_nodes.retained_mode.events.base_events import EventRequest
 from griptape_nodes.retained_mode.managers.settings import (
     WORKER_HEARTBEAT_INTERVAL_KEY,
     WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
     WORKER_HEARTBEAT_TIMEOUT_KEY,
-    WORKER_NODE_EXECUTION_TIMEOUT_KEY,
 )
+from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.api_client.request_client import RequestClient
+    from griptape_nodes.retained_mode.events.base_events import RequestPayload
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -73,12 +75,11 @@ class WorkerManager:
 
     DEFAULT_HEARTBEAT_INTERVAL_S: float = 5.0
     DEFAULT_HEARTBEAT_TIMEOUT_S: float = 15.0
-    DEFAULT_NODE_EXECUTION_TIMEOUT_S: float = 1800.0
     # How long after spawn to wait before enforcing heartbeat timeout.
     # Workers install venv deps and import modules before receiving heartbeats;
     # this matches the _await_pending_workers() ceiling so a worker never kills
     # itself before the orchestrator gives up waiting for it.
-    DEFAULT_HEARTBEAT_STARTUP_GRACE_S: float = 120.0
+    DEFAULT_HEARTBEAT_STARTUP_GRACE_S: float = 600.0
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
 
@@ -107,6 +108,10 @@ class WorkerManager:
         # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
         self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
 
+        # Fire-and-forget broadcast tasks scheduled from sync callers; held here so
+        # the event loop's weak-ref to tasks does not GC them before completion.
+        self._inflight_broadcast_tasks: set[asyncio.Task] = set()
+
         # Set when an active session becomes available; gates worker spawning.
         self._session_ready_event: asyncio.Event = asyncio.Event()
 
@@ -116,9 +121,6 @@ class WorkerManager:
         )
         self.heartbeat_timeout_s: float = config.get_config_value(
             WORKER_HEARTBEAT_TIMEOUT_KEY, default=WorkerManager.DEFAULT_HEARTBEAT_TIMEOUT_S, cast_type=float
-        )
-        self.node_execution_timeout_s: float = config.get_config_value(
-            WORKER_NODE_EXECUTION_TIMEOUT_KEY, default=WorkerManager.DEFAULT_NODE_EXECUTION_TIMEOUT_S, cast_type=float
         )
         self.heartbeat_startup_grace_s: float = config.get_config_value(
             WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
@@ -136,6 +138,13 @@ class WorkerManager:
             worker_events.UnregisterWorkerRequest, self.handle_unregister_worker_request
         )
         event_manager.assign_manager_to_request_type(worker_events.StartWorkerRequest, self.handle_start_worker_request)
+
+        # Subscribe to domain events from ConfigManager / SecretsManager so
+        # those managers don't have to know workers exist. The listeners are
+        # the single place that translates a "something changed" signal into
+        # a worker fan-out.
+        event_manager.add_listener_to_app_event(ConfigChanged, self._on_config_changed)
+        event_manager.add_listener_to_app_event(SecretChanged, self._on_secret_changed)
 
     @property
     def _tx(self) -> _WorkerTransport:
@@ -172,6 +181,16 @@ class WorkerManager:
     ) -> worker_events.RegisterWorkerResultSuccess | worker_events.RegisterWorkerResultFailure:
         """Handle a worker registration request from a worker engine."""
         wid = request.worker_engine_id
+        if request.engine_version != engine_version:
+            details = (
+                f"Worker {wid} reported engine_version '{request.engine_version}' "
+                f"but orchestrator is running engine_version '{engine_version}'. "
+                "Workers and orchestrators must share an engine version because the "
+                "wire shape of every event is tied to the engine build."
+            )
+            logger.error(details)
+            return worker_events.RegisterWorkerResultFailure(result_details=details)
+
         session_id = self._griptape_nodes.get_session_id()
         request_topic = f"sessions/{session_id}/workers/{wid}/request"
         self._workers[wid] = WorkerRegistration(request_topic=request_topic, worker_key=request.library_name)
@@ -250,15 +269,13 @@ class WorkerManager:
     async def worker_heartbeat_monitor(self) -> None:
         """Shut down the worker if orchestrator heartbeats stop arriving.
 
-        A startup grace period is added to the initial seed so the worker does not
-        time out during library loading (venv creation, pip install, module import).
-        Once the first heartbeat arrives the timer resets to normal operation.
+        Waits out a startup grace period before enforcing the timeout, so
+        library loading (venv creation, pip install, module import) cannot kill
+        the worker before the orchestrator has a chance to start sending
+        challenges. Does not mutate `_worker_heartbeat_last_received_at`; that
+        attribute is owned by `handle_worker_heartbeat_request`.
         """
-        # Seed with extra time so the first timeout cannot fire until after the
-        # startup grace period.  Library loading can take tens of seconds; we do
-        # not want the worker to kill itself before the orchestrator even has a
-        # chance to start sending challenges.
-        self._worker_heartbeat_last_received_at = time.monotonic() + self.heartbeat_startup_grace_s
+        await asyncio.sleep(self.heartbeat_startup_grace_s)
         while True:
             await asyncio.sleep(self.heartbeat_interval_s)
             elapsed = time.monotonic() - self._worker_heartbeat_last_received_at
@@ -335,18 +352,29 @@ class WorkerManager:
         returned dict into the appropriate result type.
         """
         request_id = event_request.request_id or str(uuid.uuid4())
-        future = await self._tx.request_client.track_request(request_id, tag=worker_engine_id)
+        # Opt into structured-failure delivery so a worker-side
+        # ResultPayloadFailure arrives as the raw payload dict rather
+        # than being collapsed to a bare ``Exception(error_msg)`` by
+        # ``_try_match``. ``_execute_node_via_worker`` then runs the
+        # dict through ``converter.structure(...)``, which rebuilds
+        # ``self.exception`` into a ForwardedException carrying the
+        # worker-side type name and traceback string.
+        future = await self._tx.request_client.track_request(
+            request_id, tag=worker_engine_id, resolve_failures_as_payload=True
+        )
 
         await self.forward_event_to_worker(
             event_request.model_copy(update={"request_id": request_id}),
             worker_engine_id=worker_engine_id,
             worker_request_topic=worker_request_topic,
         )
-        try:
-            return await asyncio.wait_for(future, timeout=self.node_execution_timeout_s)
-        except TimeoutError:
-            msg = f"Worker request timed out after {self.node_execution_timeout_s:.0f}s."
-            raise RuntimeError(msg) from None
+        # No wall-clock timeout here: long-running AI workloads (diffusion,
+        # multi-pass refinement) routinely exceed any sensible default. Worker
+        # liveness is enforced by the heartbeat loop, which evicts silent
+        # workers and cancels their in-flight requests via
+        # RequestClient.cancel_requests_by_tag, so a dead worker still surfaces
+        # to the caller without a per-request ceiling.
+        return await future
 
     async def evict_worker(self, worker_engine_id: str) -> None:
         """Remove a worker from the registry and unsubscribe from its response topic."""
@@ -406,7 +434,13 @@ class WorkerManager:
         """Wait for an active session then spawn a worker subprocess for the given library."""
         # If a session is already active, skip the wait entirely.
         if not self._griptape_nodes.get_session_id():
+            logger.info(
+                "Worker for library '%s' is waiting for a session to start before spawning. "
+                "Start a session (via the Griptape Nodes GUI or AppStartSessionRequest) to proceed.",
+                library_name,
+            )
             await self._session_ready_event.wait()
+            logger.info("Session started; spawning worker for library '%s'.", library_name)
         session_id = self._griptape_nodes.get_session_id()
         if not session_id:
             logger.error("Session event set but no session ID available for library '%s'.", library_name)
@@ -414,7 +448,7 @@ class WorkerManager:
         args = [
             sys.executable,
             "-m",
-            "griptape_nodes",
+            "griptape_nodes_app",
             "engine",
             "--session-id",
             session_id,
@@ -478,6 +512,84 @@ class WorkerManager:
         forwarded = event.model_copy(update={"response_topic": worker_response_topic})
         logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
         await self._tx.send_message("EventRequest", forwarded.json(), worker_request_topic)
+
+    async def _on_config_changed(self, _event: ConfigChanged) -> None:
+        """Fan out a ReloadConfigRequest after the orchestrator's config mutation succeeded.
+
+        ConfigManager only emits ``ConfigChanged`` after the disk write
+        succeeded, so receiving the event is sufficient evidence that
+        workers should re-read the file.
+
+        Listener is async and awaits the broadcast directly so the work
+        is owned by the listener's own task. ``broadcast_app_event``
+        invokes listeners on a transient ``ThreadRunner`` side loop when
+        called from sync code (the production path); a fire-and-forget
+        ``asyncio.create_task`` from inside the listener would land on
+        that side loop and be killed when ``ThreadRunner.__exit__``
+        stops the loop, so the broadcast must be awaited inline.
+
+        Lazy import breaks a cycle between this module and
+        ``griptape_nodes.app.worker_routing``, which itself imports
+        ``EventManager`` from the retained_mode managers package.
+        """
+        from griptape_nodes.app.worker_routing import ReloadConfigRequest
+
+        if self._transport is None or not self._workers:
+            return
+        await self.broadcast_to_workers(EventRequest(request=ReloadConfigRequest()))
+
+    async def _on_secret_changed(self, _event: SecretChanged) -> None:
+        """Fan out a RefreshSecretsRequest after the orchestrator's secret mutation succeeded.
+
+        SecretsManager raises if the .env write fails, so reaching the
+        event broadcast means disk is up to date. Workers re-read the
+        shared file via ``refresh_from_env_file``. Awaited inline for
+        the same side-loop reason documented on ``_on_config_changed``;
+        lazy import for the same circular-dependency reason.
+        """
+        from griptape_nodes.app.worker_routing import RefreshSecretsRequest
+
+        if self._transport is None or not self._workers:
+            return
+        await self.broadcast_to_workers(EventRequest(request=RefreshSecretsRequest()))
+
+    def schedule_broadcast(self, request_type: type[RequestPayload]) -> None:
+        """Tell every registered worker to handle ``request_type`` locally.
+
+        Wraps ``request_type`` in an EventRequest and fans it out to every
+        registered worker as a fire-and-forget background task on the
+        caller's running event loop. On a worker process (no registered
+        workers, or no transport configured) this is a cheap no-op.
+
+        Must be called from inside a running event loop. Every production
+        caller reaches this through EventManager.handle_request /
+        ahandle_request, which itself runs inside the event loop that the
+        launching application drives the engine on.
+        """
+        if self._transport is None or not self._workers:
+            return
+        event = EventRequest(request=request_type())
+        task = asyncio.create_task(self.broadcast_to_workers(event))
+        self._inflight_broadcast_tasks.add(task)
+        task.add_done_callback(self._inflight_broadcast_tasks.discard)
+
+    async def broadcast_to_workers(self, event: EventRequest) -> None:
+        """Fire-and-forget fan out of an EventRequest to every registered worker.
+
+        Used for orchestrator-originated notifications that every worker must
+        act on locally (e.g. reload config, refresh secrets). The request is
+        sent to each worker's dedicated request topic; no response is awaited.
+
+        Safe to call with zero registered workers -- it is a no-op.
+        """
+        if not self._workers:
+            return
+        for wid, registration in list(self._workers.items()):
+            await self.forward_event_to_worker(
+                event,
+                worker_engine_id=wid,
+                worker_request_topic=registration.request_topic,
+            )
 
     async def relay_worker_result(self, payload: dict) -> None:
         """Relay an unmatched worker result to the GUI session response topic.

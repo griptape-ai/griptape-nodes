@@ -268,7 +268,7 @@ class WorkflowPackager:
 
     @staticmethod
     def find_griptape_nodes_distribution() -> importlib.metadata.Distribution | None:
-        """Find the griptape_nodes distribution from the current executable's venv."""
+        """Find the griptape-nodes-engine distribution from the current executable's venv."""
         import sys
 
         exe_path = Path(sys.executable)
@@ -278,21 +278,21 @@ class WorkflowPackager:
         if not site_packages.exists():
             logger.info("Venv site-packages not found at %s, falling back to default lookup", site_packages)
             try:
-                return importlib.metadata.distribution("griptape_nodes")
+                return importlib.metadata.distribution("griptape-nodes-engine")
             except importlib.metadata.PackageNotFoundError:
                 return None
 
         for dist in importlib.metadata.distributions(path=[str(site_packages)]):
-            if dist.metadata["Name"] == "griptape-nodes":
+            if dist.metadata["Name"] == "griptape-nodes-engine":
                 return dist
 
         try:
-            return importlib.metadata.distribution("griptape_nodes")
+            return importlib.metadata.distribution("griptape-nodes-engine")
         except importlib.metadata.PackageNotFoundError:
             return None
 
     def get_install_source(self) -> tuple[Literal["git", "file", "pypi"], str | None]:  # noqa: PLR0911
-        """Detect whether griptape-nodes was installed from git, file, or pypi."""
+        """Detect whether griptape-nodes-engine was installed from git, file, or pypi."""
         dist = self.find_griptape_nodes_distribution()
         if dist is None:
             return "pypi", None
@@ -337,7 +337,7 @@ class WorkflowPackager:
             engine_version = commit_id
 
         dependencies: list[str] = [
-            f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}",
+            f"griptape-nodes-engine @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}",
         ]
 
         for library_ref in workflow.metadata.node_libraries_referenced:

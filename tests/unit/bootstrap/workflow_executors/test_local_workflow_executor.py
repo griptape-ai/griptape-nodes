@@ -1,5 +1,6 @@
 """Unit tests for LocalWorkflowExecutor._load_project."""
 
+from argparse import ArgumentParser
 from pathlib import Path, PureWindowsPath
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +10,7 @@ from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import 
     LocalExecutorError,
     LocalWorkflowExecutor,
 )
+from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.retained_mode.events.project_events import (
     LoadProjectTemplateResultSuccess,
     SetCurrentProjectResultSuccess,
@@ -100,3 +102,110 @@ class TestLoadProject:
 
         # Verify both requests were made
         assert mock_gn.ahandle_request.call_count == EXPECTED_REQUEST_COUNT
+
+
+class TestLocalWorkflowExecutorCli:
+    """Tests for LocalWorkflowExecutor's CLI surface (issue #4599)."""
+
+    def test_add_cli_arguments_includes_base_flags(self) -> None:
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args([])
+
+        # Base-class flags carry through.
+        assert args.storage_backend == StorageBackend.LOCAL.value
+        assert args.project_file_path is None
+
+    def test_save_on_failure_absent_is_none(self) -> None:
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args([])
+
+        assert args.save_on_failure is None
+
+    def test_save_on_failure_bare_flag_is_empty_string(self) -> None:
+        # `--save-on-failure` with no value should hit the `const=""` default,
+        # which downstream treats as "use the project's save_failed_workflow situation".
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args(["--save-on-failure"])
+
+        assert args.save_on_failure == ""
+
+    def test_save_on_failure_with_value(self) -> None:
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser)
+
+        args = parser.parse_args(["--save-on-failure", "/var/dump.py"])
+
+        assert args.save_on_failure == "/var/dump.py"
+
+    def test_cli_constructor_kwargs_maps_save_on_failure_to_save_on_failure_path(self) -> None:
+        # Inspect the constructor kwargs derived from CLI args directly, since the
+        # constructor itself reaches into ConfigManager which is awkward to set up here.
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser)
+        args = parser.parse_args(["--save-on-failure", "/var/dump.py"])
+
+        kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
+
+        assert kwargs["save_on_failure_path"] == "/var/dump.py"
+
+    def test_cli_constructor_kwargs_storage_backend_default_is_local_enum(self) -> None:
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser)
+        args = parser.parse_args([])
+
+        kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
+
+        assert kwargs["storage_backend"] == StorageBackend.LOCAL
+
+    def test_cli_constructor_kwargs_with_gtc_storage_backend(self) -> None:
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser)
+        args = parser.parse_args(["--storage-backend", StorageBackend.GTC.value])
+
+        kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
+
+        assert kwargs["storage_backend"] == StorageBackend.GTC
+
+    def test_cli_constructor_kwargs_project_file_path_is_none_when_omitted(self) -> None:
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser)
+        args = parser.parse_args([])
+
+        kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
+
+        assert kwargs["project_file_path"] is None
+
+    def test_cli_constructor_kwargs_project_file_path_converted_to_path(self) -> None:
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser)
+        args = parser.parse_args(["--project-file-path", "/some/project.yaml"])
+
+        kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
+
+        assert kwargs["project_file_path"] == Path("/some/project.yaml")
+
+    def test_cli_constructor_kwargs_pickle_inherits_argparse_default(self) -> None:
+        # When `add_cli_arguments` was seeded with the save-time default, that
+        # value flows through `_cli_constructor_kwargs` into the constructor.
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=True)
+        args = parser.parse_args([])
+
+        kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
+
+        assert kwargs["pickle_control_flow_result"] is True
+
+    def test_cli_constructor_kwargs_pickle_flag_overrides_seeded_default(self) -> None:
+        parser = ArgumentParser()
+        LocalWorkflowExecutor.add_cli_arguments(parser, pickle_control_flow_result_default=False)
+        args = parser.parse_args(["--pickle-control-flow-result"])
+
+        kwargs = LocalWorkflowExecutor._cli_constructor_kwargs(args)
+
+        assert kwargs["pickle_control_flow_result"] is True

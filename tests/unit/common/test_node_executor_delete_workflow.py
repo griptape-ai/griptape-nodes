@@ -124,8 +124,8 @@ class TestDeleteWorkflowRegistrationFallback:
 
             mock_gn = MagicMock()
             mock_gn.ConfigManager.return_value.workspace_path = workspace
-            mock_gn.handle_request.return_value = mock_metadata_result
-            mock_gn.ahandle_request = AsyncMock(return_value=_make_delete_success())
+            # First ahandle_request call loads metadata; second issues DeleteWorkflowRequest.
+            mock_gn.ahandle_request = AsyncMock(side_effect=[mock_metadata_result, _make_delete_success()])
 
             with (
                 patch(f"{MODULE_PATH}.GriptapeNodes", mock_gn),

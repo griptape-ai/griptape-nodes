@@ -112,7 +112,7 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
             workspace_only=False,
             should_transform_image_content_to_thumbnail=False,
         )
-        read_result = GriptapeNodes.handle_request(read_request)
+        read_result = await GriptapeNodes.ahandle_request(read_request)
 
         if not isinstance(read_result, ReadFileResultSuccess):
             msg = f"Failed to read source image: {read_result.result_details}"
@@ -146,7 +146,7 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
             create_parents=True,
             existing_file_policy=ExistingFilePolicy.OVERWRITE,
         )
-        write_result = GriptapeNodes.handle_request(write_request)
+        write_result = await GriptapeNodes.ahandle_request(write_request)
 
         if not isinstance(write_result, WriteFileResultSuccess):
             msg = f"Failed to write preview image: {write_result.result_details}"

@@ -9,7 +9,12 @@ from unittest.mock import patch
 
 import pytest
 
-from griptape_nodes.utils.file_utils import find_all_files_in_directory, find_file_in_directory, find_files_recursive
+from griptape_nodes.utils.file_utils import (
+    atomic_write_bytes,
+    find_all_files_in_directory,
+    find_file_in_directory,
+    find_files_recursive,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -372,3 +377,45 @@ class TestFindFilesRecursive:
 
         # Should be sorted: a_dir/nested/config.json, b_dir/nested/config.json, root.json
         assert result == [file1, file2, file3]
+
+
+class TestAtomicWriteBytes:
+    """Test atomic_write_bytes function."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    def test_writes_new_file(self, temp_dir: Path) -> None:
+        """A new file is created with the given bytes."""
+        target = temp_dir / "data.bin"
+        atomic_write_bytes(target, b"hello")
+        assert target.read_bytes() == b"hello"
+
+    def test_overwrites_existing_file(self, temp_dir: Path) -> None:
+        """An existing file is replaced with the new contents."""
+        target = temp_dir / "data.bin"
+        target.write_bytes(b"old")
+        atomic_write_bytes(target, b"new")
+        assert target.read_bytes() == b"new"
+
+    def test_leaves_no_temp_files_behind(self, temp_dir: Path) -> None:
+        """The temp file is renamed into place, not left in the directory."""
+        target = temp_dir / "data.bin"
+        atomic_write_bytes(target, b"payload")
+        assert [p.name for p in temp_dir.iterdir()] == ["data.bin"]
+
+    def test_failed_rename_removes_temp_and_preserves_original(self, temp_dir: Path) -> None:
+        """A rename failure cleans up the temp file and leaves the original intact."""
+        target = temp_dir / "data.bin"
+        target.write_bytes(b"original")
+        with (
+            patch("griptape_nodes.utils.file_utils.Path.replace", side_effect=OSError("boom")),
+            pytest.raises(OSError, match="boom"),
+        ):
+            atomic_write_bytes(target, b"new")
+        assert target.read_bytes() == b"original"
+        # No stray temp file survives the failure.
+        assert sorted(p.name for p in temp_dir.iterdir()) == ["data.bin"]

@@ -1,10 +1,24 @@
+from __future__ import annotations
+
+import asyncio
+import contextlib
 import copy
 import logging
 import pickle
 from dataclasses import dataclass
-from typing import Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
 
+from griptape_nodes.common.parameter_hydration import hydrate_parameter_values
+from griptape_nodes.common.strict_mode import (
+    STRICT_MODE,
+    StrictModeScopeKind,
+    StrictModeSeverity,
+)
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
     BaseIterativeStartNode,
@@ -31,9 +45,12 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeResolutionState,
     TransformedParameterValue,
+    aprocess_scope,
+    sanctioned_parameter_mutation,
 )
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
+    EventRequest,
     ResultDetails,
     ResultPayload,
     ResultPayloadFailure,
@@ -50,8 +67,10 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeResultSuccess,
     OutgoingConnection,
 )
-from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
+from griptape_nodes.retained_mode.events.event_converter import converter, safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
+    CancelExecuteNodeRequest,
+    CancelExecuteNodeResultSuccess,
     CancelFlowRequest,
     ExecuteNodeRequest,
     ExecuteNodeResultFailure,
@@ -193,10 +212,13 @@ from griptape_nodes.retained_mode.events.validation_events import (
     ValidateNodeDependenciesResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 
 logger = logging.getLogger("griptape_nodes")
+
+# Sentinel for "key not present in node.parameter_values". Distinct from None
+# so a legitimately-stored None does not collide with "missing".
+_PARAM_MISSING = object()
 
 
 class SerializedParameterValues(NamedTuple):
@@ -253,6 +275,20 @@ class NodeManager:
 
     def __init__(self, event_manager: EventManager) -> None:
         self._name_to_parent_flow_name = {}
+
+        # Orchestrator-side: node_name → (target_request_id, worker_engine_id, worker_request_topic)
+        # for ExecuteNodeRequests currently routed to a worker. Populated in
+        # _execute_node_via_worker, cleared in its finally. Used by
+        # cancel_worker_execution to dispatch a CancelExecuteNodeRequest to the
+        # correct worker.
+        self._orch_worker_requests: dict[str, tuple[str, str, str]] = {}
+
+        # Worker-side: request_id → (asyncio.Task, BaseNode) for the aprocess
+        # task currently handling an ExecuteNodeRequest. Populated in
+        # _hydrate_and_run_node (which captures asyncio.current_task), cleared
+        # in its finally. Used by on_cancel_execute_node_request to locate the
+        # task to cancel.
+        self._worker_inflight_aprocesses: dict[str, tuple[asyncio.Task, BaseNode]] = {}
 
         event_manager.assign_manager_to_request_type(CreateNodeRequest, self.on_create_node_request)
         event_manager.assign_manager_to_request_type(
@@ -334,6 +370,7 @@ class NodeManager:
             BatchSetNodeLockStateRequest, self.on_batch_set_lock_node_state_request
         )
         event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
+        event_manager.assign_manager_to_request_type(CancelExecuteNodeRequest, self.on_cancel_execute_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -1511,14 +1548,15 @@ class NodeManager:
             settable=request.settable,
         )
         try:
-            if request.parent_container_name and request.initial_setup:
-                parameter_parent = node.get_parameter_by_name(request.parent_container_name)
-                if parameter_parent is not None:
-                    parameter_parent.add_child(new_param)
-            elif parent_group is not None:
-                parent_group.add_child(new_param)
-            else:
-                node.add_parameter(new_param)
+            with sanctioned_parameter_mutation():
+                if request.parent_container_name and request.initial_setup:
+                    parameter_parent = node.get_parameter_by_name(request.parent_container_name)
+                    if parameter_parent is not None:
+                        parameter_parent.add_child(new_param)
+                elif parent_group is not None:
+                    parent_group.add_child(new_param)
+                else:
+                    node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to Node '{node_name}'. Error: {e}"
             return AddParameterToNodeResultFailure(result_details=details)
@@ -1709,7 +1747,8 @@ class NodeManager:
 
         # Delete the Element itself.
         if element is not None:
-            node.remove_parameter_element(element)
+            with sanctioned_parameter_mutation():
+                node.remove_parameter_element(element)
         else:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because element didn't exist."
 
@@ -2121,16 +2160,13 @@ class NodeManager:
             details = f'"{node_name}.{param_name}" not found'
             return GetParameterValueResultFailure(result_details=details)
 
-        # Values are actually stored on the NODE, so let's ask them.
-        if param_name not in node.parameter_values:
-            # Check if it might be in output values (for output parameters)
-            if param_name in node.parameter_output_values:
-                data_value = node.parameter_output_values[param_name]
-            else:
-                # Use the default if not found in either place
-                data_value = parameter.default_value
-        else:
+        # Output values take priority (they represent the result of execution).
+        if param_name in node.parameter_output_values:
+            data_value = node.parameter_output_values[param_name]
+        elif param_name in node.parameter_values:
             data_value = node.parameter_values[param_name]
+        else:
+            data_value = parameter.default_value
 
         # Cool.
         details = f"{node_name}.{request.parameter_name} = {data_value}"
@@ -2690,60 +2726,303 @@ class NodeManager:
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4532 - support
+        # wait_for_completion / completion_timeout_ms here, mirroring StartFlowRequest so
+        # callers do not have to poll check_for_existing_running_flow() themselves.
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         return ResolveNodeResultSuccess(result_details=details)
 
     async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
-        """Execute a node, creating it first if it does not yet exist.
+        """Execute a node. Orchestrator path is lookup-only; worker path is a pure RPC.
 
-        Idempotent: if the node already exists in ObjectManager it is reused.
-        When the node is absent and node_metadata is provided, the node is created
-        from the metadata (which must contain "node_type" and "library" keys).
+        On the orchestrator the node must already live in ObjectManager (created by
+        prior CreateNodeRequest). A miss is a hard failure -- we never fabricate
+        a fresh node from metadata on the orchestrator, because that would mask a
+        real "node dropped from the live map" bug with a stub that has no
+        connections and no flow parentage.
+
+        On the worker (is_worker=True) the node is constructed from
+        request.node_metadata on every call, hydrated, executed, and discarded.
+        Nothing persists between ExecuteNodeRequests on the worker side -- the
+        orchestrator is the single source of truth for node identity and
+        parameter values.
+
+        If the orchestrator's lookup succeeds and the node's library is owned by
+        a worker, the request is forwarded over the wire to that worker.
+        """
+        library_manager = GriptapeNodes.LibraryManager()
+        is_worker = library_manager.is_worker
+
+        if is_worker:
+            worker_node = self._materialize_transient_node_from_metadata(request)
+            if isinstance(worker_node, ExecuteNodeResultFailure):
+                return worker_node
+            node = worker_node
+        else:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            orchestrator_node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+            if orchestrator_node is None:
+                return ExecuteNodeResultFailure(
+                    result_details=(
+                        f"Node '{request.node_name}' not found in ObjectManager on orchestrator. "
+                        "Refusing to fabricate a fresh node from metadata; the node was dropped "
+                        "from the live map and must be re-created via CreateNodeRequest."
+                    ),
+                )
+            node = orchestrator_node
+
+        library_name = node.metadata.get("library")
+
+        # Forwarding to a worker exits the orchestrator's local code path before
+        # the node runs, so strict-mode attribution belongs to the worker's
+        # scope, not ours. Decide forwarding first; only open a local scope when
+        # this process is actually going to execute the node.
+        if not is_worker:
+            worker = library_manager.get_worker_for_library(library_name) if library_name else None
+            wm = GriptapeNodes.WorkerManager()
+            if wm is not None and worker is not None:
+                return await self._execute_node_via_worker(request, wm, worker)
+
+        async with STRICT_MODE.scoped_execution(
+            kind=StrictModeScopeKind.RUNTIME_EXECUTE,
+            subject=request.node_name,
+            library_name=library_name,
+            is_worker=is_worker,
+        ) as (ctx, scope):
+            ctx.result = await self._hydrate_and_run_node(node, request)
+            # Worker-side correctness policy: an ExecuteNodeResultSuccess that
+            # carries an ERROR-severity violation must be promoted to a
+            # failure. Worker output gets shipped back to the orchestrator,
+            # so a "success" that violated correctness would silently corrupt
+            # downstream state. The orchestrator already has the violation
+            # log; the elevated failure forces the editor to surface it.
+            errors = [v for v in scope.violations if v.severity is StrictModeSeverity.ERROR]
+            if is_worker and errors and isinstance(ctx.result, ExecuteNodeResultSuccess):
+                rules = ", ".join(sorted({v.rule_id for v in errors}))
+                ctx.result = ExecuteNodeResultFailure(
+                    result_details=f"Node '{request.node_name}' violated strict-mode rule(s) [{rules}].",
+                )
+        return ctx.result
+
+    def _materialize_transient_node_from_metadata(
+        self, request: ExecuteNodeRequest
+    ) -> BaseNode | ExecuteNodeResultFailure:
+        """Construct a fresh node from request.node_metadata for worker-side execution.
+
+        The returned node is transient: it is NOT added to ObjectManager. It
+        exists only for the duration of _hydrate_and_run_node and is released to
+        GC when that call returns. Called only on the worker path.
         """
         node_name = request.node_name
-        obj_mgr = GriptapeNodes.ObjectManager()
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
-        if node is None:
-            if not request.node_metadata:
-                return ExecuteNodeResultFailure(
-                    result_details=f"Node '{node_name}' not found and no node_metadata provided to create it.",
-                )
-            node_type = request.node_metadata.get("node_type")
-            library_name = request.node_metadata.get("library")
-            if not node_type:
-                return ExecuteNodeResultFailure(
-                    result_details=f"Node '{node_name}' not found and node_metadata is missing 'node_type'.",
-                )
-            try:
-                node = LibraryRegistry.create_node(
-                    node_type=node_type,
-                    name=node_name,
-                    metadata=dict(request.node_metadata),
-                    specific_library_name=library_name,
-                )
-            except Exception as e:
-                return ExecuteNodeResultFailure(
-                    result_details=f"Failed to create node '{node_name}' of type '{node_type}': {e}",
-                )
-            obj_mgr.add_object_by_name(node.name, node)
-        return await self._hydrate_and_run_node(node, request)
-
-    async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
-        """Hydrate a node's input parameters and execute it."""
-        node_name = request.node_name
-        for param_name, value in request.parameter_values.items():
-            try:
-                node.set_parameter_value(param_name, value)
-            except Exception as e:
-                return ExecuteNodeResultFailure(
-                    result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
-                )
+        if not request.node_metadata:
+            return ExecuteNodeResultFailure(
+                result_details=f"Node '{node_name}' requires node_metadata on worker path.",
+            )
+        node_type = request.node_metadata.get("node_type")
+        library_name = request.node_metadata.get("library")
+        if not node_type:
+            return ExecuteNodeResultFailure(
+                result_details=f"Node '{node_name}' node_metadata is missing 'node_type'.",
+            )
         try:
-            await node.aprocess()
+            return LibraryRegistry.create_node(
+                node_type=node_type,
+                name=node_name,
+                metadata=dict(request.node_metadata),
+                specific_library_name=library_name,
+            )
         except Exception as e:
             return ExecuteNodeResultFailure(
-                result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
+                result_details=f"Failed to create node '{node_name}' of type '{node_type}': {e}",
             )
+
+    async def _execute_node_via_worker(
+        self,
+        request: ExecuteNodeRequest,
+        wm: WorkerManager,
+        worker: tuple[str, str],
+    ) -> ResultPayload:
+        """Dispatch ExecuteNodeRequest to a worker and return its result.
+
+        The worker constructs a fresh transient node from request.node_metadata
+        on every call and discards it after aprocess returns (see #4476);
+        ExecuteNodeRequest is a pure RPC from the orchestrator's perspective.
+        Output copy-back onto the orchestrator's live node happens in the caller
+        (NodeExecutor.execute) so the write path is identical for local and
+        worker routes.
+        """
+        worker_engine_id, worker_request_topic = worker
+        # Assign the request_id on the payload itself so the worker handler can
+        # read it from request.request_id. WorkerManager.route_to_worker will
+        # re-use this id on the outer EventRequest and on its pending-future
+        # registration, keeping both sides in sync. The id is what
+        # cancel_worker_execution dispatches as CancelExecuteNodeRequest.target_request_id.
+        if not request.request_id:
+            request.request_id = str(uuid4())
+        target_request_id = request.request_id
+        self._orch_worker_requests[request.node_name] = (
+            target_request_id,
+            worker_engine_id,
+            worker_request_topic,
+        )
+        try:
+            event_request = EventRequest(request=request)
+            event_request.request_id = target_request_id
+            execute_raw = await wm.route_to_worker(
+                event_request,
+                worker_engine_id,
+                worker_request_topic,
+            )
+        finally:
+            # Drop the tracking entry regardless of success, failure, or cancellation
+            # so a subsequent execute on the same node doesn't see a stale record.
+            self._orch_worker_requests.pop(request.node_name, None)
+        result_type_name = execute_raw.get("result_type", "")
+        result_data = execute_raw.get("result", {})
+        # Route through cattrs structure (not ``**result_data`` spread)
+        # so the registered exception hook rebuilds ``self.exception``
+        # into a ``ForwardedException`` carrying the worker-side type
+        # name and traceback. A bare spread would leave ``exception``
+        # as the raw {type, message, traceback} dict, breaking the
+        # worker-frame surfacing in
+        # ``NodeExecutor._format_node_failure_message``.
+        if result_type_name == ExecuteNodeResultSuccess.__name__:
+            return cast("ExecuteNodeResultSuccess", converter.structure(result_data, ExecuteNodeResultSuccess))
+        return cast("ExecuteNodeResultFailure", converter.structure(result_data, ExecuteNodeResultFailure))
+
+    async def cancel_worker_execution(self, node_name: str) -> None:
+        """Dispatch CancelExecuteNodeRequest to the worker running node_name.
+
+        No-op when the node is not currently routed to a worker (either because
+        it runs locally or because no ExecuteNodeRequest is in flight). The
+        cancel is fire-and-forget: the worker's handler runs under SkipTheLine
+        and returns quickly, but the orchestrator does not await the ack --
+        cooperative cancellation is signalled via task.cancel() on the
+        orchestrator's own route_to_worker await, which unblocks here as soon
+        as the cancel event has been put on the wire.
+        """
+        entry = self._orch_worker_requests.get(node_name)
+        if entry is None:
+            return
+        target_request_id, worker_engine_id, worker_request_topic = entry
+        wm = GriptapeNodes.WorkerManager()
+        cancel_request = CancelExecuteNodeRequest(target_request_id=target_request_id)
+        await wm.forward_event_to_worker(
+            EventRequest(request=cancel_request),
+            worker_engine_id=worker_engine_id,
+            worker_request_topic=worker_request_topic,
+        )
+
+    async def on_cancel_execute_node_request(self, request: CancelExecuteNodeRequest) -> ResultPayload:
+        """Worker-side handler: cancel an in-flight aprocess task by request_id.
+
+        Sets the node's cooperative cancellation flag (so aprocess that checks
+        is_cancellation_requested can exit cleanly) and cancels the asyncio task
+        running aprocess (matches parallel_resolution.cancel_all_nodes semantics
+        for local execution). Returns success even when the target request is
+        not in flight so the cancel path is idempotent.
+        """
+        entry = self._worker_inflight_aprocesses.get(request.target_request_id)
+        if entry is None:
+            return CancelExecuteNodeResultSuccess(
+                result_details=f"No in-flight ExecuteNodeRequest for request_id '{request.target_request_id}'.",
+            )
+        task, node = entry
+        node.request_cancellation()
+        if not task.done():
+            task.cancel()
+        return CancelExecuteNodeResultSuccess(
+            result_details=f"Cancellation delivered for request_id '{request.target_request_id}'.",
+        )
+
+    async def _hydrate_and_run_node(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
+        """Hydrate a node's input parameters and execute it.
+
+        On a worker, hydration and node.aprocess() both run inside
+        worker_node_execution_scope so that any nested handle_request calls
+        originated from node code forward to the orchestrator. Hydration calls
+        set_parameter_value, which cascades into ListConnectionsForNodeRequest
+        and similar cross-node lookups; those must forward because the worker
+        only owns its single node copy and cannot resolve parent-flow or peer-
+        node state locally. On the orchestrator we skip the scope entirely --
+        there is no RemoteHandler to read the flag, so opening it there would
+        only bump a refcount nothing observes.
+        """
+        # Register this aprocess task under its request_id so
+        # CancelExecuteNodeRequest can locate it. Only populated when the caller
+        # supplied a request_id (set by _execute_node_via_worker on the
+        # orchestrator; absent on the orchestrator-local path where the
+        # resolution machine already owns the task).
+        current_task = asyncio.current_task()
+        tracked_request_id = request.request_id if current_task is not None else None
+        if tracked_request_id and current_task is not None:
+            self._worker_inflight_aprocesses[tracked_request_id] = (current_task, node)
+        try:
+            return await self._hydrate_and_run_node_inner(node, request)
+        finally:
+            if tracked_request_id:
+                self._worker_inflight_aprocesses.pop(tracked_request_id, None)
+
+    async def _hydrate_and_run_node_inner(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
+        node_name = request.node_name
+        # The node-execution scope only has meaning on a worker: it is what
+        # RemoteHandler consults to decide whether to forward a request to the
+        # orchestrator. On the orchestrator itself there is no RemoteHandler
+        # installed (register_remote_handlers is worker-only), so opening the
+        # scope there would just bump a refcount that nothing reads. Skip it
+        # to keep the depth counter accurate to its name.
+        is_worker = GriptapeNodes.LibraryManager()._is_worker
+        scope_cm = GriptapeNodes.EventManager().worker_node_execution_scope() if is_worker else contextlib.nullcontext()
+        with scope_cm:
+            # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.
+            parameter_values = hydrate_parameter_values(request.parameter_values)
+            for param_name, value in parameter_values.items():
+                # Skip when the node already holds this value. The local path
+                # calls ExecuteNodeRequest with dict(node.parameter_values) on
+                # the same in-memory instance, so every iteration would be a
+                # no-op mutation that still ran before/after_value_set hooks
+                # and emitted a lifecycle event -- observably breaking nodes
+                # like LoadImage. On the worker the node is fresh, so current
+                # is _PARAM_MISSING and the normal set path runs.
+                current = node.parameter_values.get(param_name, _PARAM_MISSING)
+                if current is value or current == value:
+                    continue
+                try:
+                    node.set_parameter_value(param_name, value)
+                except Exception as e:
+                    return ExecuteNodeResultFailure(
+                        result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
+                        exception=e,
+                    )
+            # Materialize parameter defaults into parameter_values so that user
+            # process() code reading self.parameter_values[name] directly (rather
+            # than via get_parameter_value) sees the default. Newly-dropped nodes
+            # never receive a SetParameterValueRequest for still-default values,
+            # so without this pass those params are absent from the dict on the
+            # worker-side fresh node.
+            for param in node.parameters:
+                if param.name in node.parameter_values:
+                    continue
+                if param.default_value is None:
+                    continue
+                node.parameter_values[param.name] = param.default_value
+            try:
+                with aprocess_scope():
+                    await node.aprocess()
+            except Exception as e:
+                # Pass the live exception through ``exception=`` so the
+                # converter can capture worker-side frames into a
+                # ForwardedException on the orchestrator. Without this
+                # the orchestrator only sees the type and message --
+                # PR06's whole reason for the dict wire-format -- and
+                # NodeExecutor._format_node_failure_message would have
+                # nothing to surface. ``__traceback__`` is populated
+                # because ``e`` was actually raised, so the strict-mode
+                # tripwire stays quiet for raise-in-process.
+                return ExecuteNodeResultFailure(
+                    result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
+                    exception=e,
+                )
         return ExecuteNodeResultSuccess(
             parameter_output_values=dict(node.parameter_output_values),
             result_details=f"Node '{node_name}' executed successfully.",
@@ -2782,7 +3061,7 @@ class NodeManager:
         self,
         group_node: BaseNodeGroup,
         unique_uuid_to_values: dict,
-        serialized_parameter_value_tracker: "SerializedParameterValueTracker",
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
     ) -> SerializedGroupResult:
         """Serialize a group node and its children for copy/paste operations.
 
@@ -2976,11 +3255,15 @@ class NodeManager:
                 )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
-            # For ErrorProxyNode, we can't create a reference node, so skip comparison
+            # For ErrorProxyNode, we can't create a reference node, so skip comparison.
+            # Wrap in ``LibraryRegistry.constructing_node()`` so the parameter-mutation
+            # detector skips this ephemeral instance's declarative ``add_parameter``
+            # calls (this construction bypasses ``LibraryRegistry.create_node``).
             if isinstance(node, ErrorProxyNode):
                 reference_node = None
             else:
-                reference_node = type(node)(name="REFERENCE NODE")
+                with LibraryRegistry.constructing_node():
+                    reference_node = type(node)(name="REFERENCE NODE")
 
             # Now creation or alteration of all of the elements.
             element_modification_commands = []
@@ -4029,19 +4312,25 @@ class NodeManager:
         # Update connections that reference this parameter
         if node_name in connections.incoming_index:
             incoming_connections = connections.incoming_index[node_name]
-            for connection_ids in incoming_connections.values():
+            if request.parameter_name in incoming_connections:
+                connection_ids = incoming_connections[request.parameter_name]
                 for connection_id in connection_ids:
                     connection = connections.connections[connection_id]
                     if connection.target_parameter.name == request.parameter_name:
                         connection.target_parameter.name = request.new_parameter_name
+                # Update the index key from old name to new name
+                incoming_connections[request.new_parameter_name] = incoming_connections.pop(request.parameter_name)
 
         if node_name in connections.outgoing_index:
             outgoing_connections = connections.outgoing_index[node_name]
-            for connection_ids in outgoing_connections.values():
+            if request.parameter_name in outgoing_connections:
+                connection_ids = outgoing_connections[request.parameter_name]
                 for connection_id in connection_ids:
                     connection = connections.connections[connection_id]
                     if connection.source_parameter.name == request.parameter_name:
                         connection.source_parameter.name = request.new_parameter_name
+                # Update the index key from old name to new name
+                outgoing_connections[request.new_parameter_name] = outgoing_connections.pop(request.parameter_name)
 
         # Update parameter name
         old_name = parameter.name
@@ -4629,6 +4918,9 @@ class NodeManager:
             return ResetNodeToDefaultsResultFailure(result_details=details)
         parent_flow_name = self._name_to_parent_flow_name[node_name]
 
+        # Preserve parent group membership
+        parent_group_name = node.parent_group.name if node.parent_group else None
+
         # FAILURE CHECK: Create new node with temporary name
         temp_node_name = f"{node_name}_temp"
         create_node_request = CreateNodeRequest(
@@ -4636,6 +4928,7 @@ class NodeManager:
             specific_library_name=library_name,
             node_name=temp_node_name,
             override_parent_flow_name=parent_flow_name,
+            parent_group_name=parent_group_name,
             create_error_proxy_on_failure=False,
         )
         create_result = self.on_create_node_request(create_node_request)

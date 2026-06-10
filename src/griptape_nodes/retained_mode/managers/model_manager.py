@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from huggingface_hub import get_token, list_models, scan_cache_dir, snapshot_download
+from huggingface_hub import model_info as hf_model_info
 from huggingface_hub.utils.tqdm import tqdm
 from xdg_base_dirs import xdg_data_home
 
@@ -28,6 +29,9 @@ from griptape_nodes.retained_mode.events.model_events import (
     DownloadModelRequest,
     DownloadModelResultFailure,
     DownloadModelResultSuccess,
+    GetModelInfoRequest,
+    GetModelInfoResultFailure,
+    GetModelInfoResultSuccess,
     ListModelDownloadsRequest,
     ListModelDownloadsResultFailure,
     ListModelDownloadsResultSuccess,
@@ -234,6 +238,7 @@ class ModelManager:
             event_manager.assign_manager_to_request_type(ListModelsRequest, self.on_handle_list_models_request)
             event_manager.assign_manager_to_request_type(DeleteModelRequest, self.on_handle_delete_model_request)
             event_manager.assign_manager_to_request_type(SearchModelsRequest, self.on_handle_search_models_request)
+            event_manager.assign_manager_to_request_type(GetModelInfoRequest, self.on_handle_get_model_info_request)
             event_manager.assign_manager_to_request_type(
                 ListModelDownloadsRequest, self.on_handle_list_model_downloads_request
             )
@@ -485,7 +490,13 @@ class ModelManager:
         await asyncio.to_thread(self._write_download_status, status_file, initial_data)
 
         # Build CLI command
-        cmd = [sys.executable, "-m", "griptape_nodes", "models", "download", download_params.model_id]
+        cmd = [
+            sys.executable,
+            "-m",
+            "griptape_nodes.cli.commands.models",
+            "download",
+            download_params.model_id,
+        ]
 
         if download_params.local_dir:
             cmd.extend(["--local-dir", download_params.local_dir])
@@ -666,6 +677,47 @@ class ModelManager:
                 result_details=result_details,
             )
 
+    async def on_handle_get_model_info_request(self, request: GetModelInfoRequest) -> ResultPayload:
+        """Fetch detailed info for a specific model from Hugging Face Hub.
+
+        Args:
+            request: The request containing the model_id to look up
+
+        Returns:
+            ResultPayload: Success with exact size and metadata, or failure with error details
+        """
+        if get_token() is None:
+            error_msg = (
+                "No Hugging Face token found. Fetching info for gated models requires authentication. "
+                "Set your HF_TOKEN environment variable or log in with `huggingface-cli login`."
+            )
+            return GetModelInfoResultFailure(result_details=error_msg)
+
+        try:
+            info = await asyncio.to_thread(hf_model_info, request.model_id)
+        except Exception as e:
+            error_msg = f"Attempted to get model info for '{request.model_id}'. Failed because: {e}"
+            return GetModelInfoResultFailure(
+                result_details=error_msg,
+                exception=e,
+            )
+
+        safetensors = getattr(info, "safetensors", None)
+        safetensors_parameters = dict(safetensors.parameters) if safetensors else None
+
+        return GetModelInfoResultSuccess(
+            model_id=request.model_id,
+            size_bytes=getattr(info, "used_storage", None),
+            safetensors_parameters=safetensors_parameters,
+            author=getattr(info, "author", None),
+            task=getattr(info, "pipeline_tag", None),
+            library=getattr(info, "library_name", None),
+            tags=getattr(info, "tags", None),
+            downloads=getattr(info, "downloads", None),
+            likes=getattr(info, "likes", None),
+            result_details=f"Retrieved info for '{request.model_id}'",
+        )
+
     def _search_models(self, request: SearchModelsRequest) -> SearchResultsData:
         """Synchronous model search implementation.
 
@@ -833,7 +885,7 @@ class ModelManager:
             return None
 
         try:
-            with status_file.open() as f:
+            with status_file.open(encoding="utf-8") as f:
                 data = json.load(f)
 
             # Get byte counts from status file
@@ -877,7 +929,7 @@ class ModelManager:
         statuses = []
         for status_file in status_dir.glob("*.json"):
             try:
-                with status_file.open() as f:
+                with status_file.open(encoding="utf-8") as f:
                     data = json.load(f)
 
                 model_id = data.get("model_id", "")
@@ -906,7 +958,7 @@ class ModelManager:
         unfinished_models = []
         for status_file in status_dir.glob("*.json"):
             try:
-                with status_file.open() as f:
+                with status_file.open(encoding="utf-8") as f:
                     data = json.load(f)
 
                 status = data.get("status", "")

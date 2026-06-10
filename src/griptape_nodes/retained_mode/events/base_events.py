@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from griptape_nodes.retained_mode.events.event_converter import converter, safe_unstructure
+from griptape_nodes.retained_mode.events.event_converter import (
+    converter,
+    register_polymorphic_dataclass,
+    safe_unstructure,
+)
 
 if TYPE_CHECKING:
     import builtins
@@ -49,6 +53,21 @@ class ResultDetail:
 
     level: int
     message: str
+
+
+@dataclass
+class StrictModeViolationDetail(ResultDetail):
+    """A ResultDetail that carries structured strict-mode violation metadata.
+
+    Editor renders ``ResultDetail`` today, so this subclass surfaces on
+    the result payload for free. The extra fields let future tooling
+    filter or group violations without parsing ``message``.
+    """
+
+    rule_id: str
+    severity: str
+    subject: str
+    library_name: str | None
 
 
 @dataclass
@@ -203,10 +222,48 @@ class ResultPayloadSuccess(ResultPayload, ABC):
         return True
 
 
+class ForwardedException(Exception):  # noqa: N818
+    """Placeholder for an exception that crossed the worker boundary.
+
+    The converter's Exception hook emits worker-side exceptions as a
+    ``{type, message, traceback}`` dict, then rebuilds them into a
+    ``ForwardedException`` on the receiving side. The placeholder is
+    still an ``Exception`` (so ``raise ... from result.exception``
+    chains) and carries the worker-side class name and formatted
+    traceback so the orchestrator can show both.
+
+    ``NodeExecutor._format_node_failure_message`` is the consumer:
+    it reads ``original_type`` for the ``[builtins.ValueError]``
+    prefix on the user-visible ``RuntimeError`` message, and
+    ``original_traceback`` for the ``Worker traceback:`` block.
+    Without these attributes the chained exception would print only
+    ``Type: message`` with no frames, because the placeholder is
+    constructed (not raised) and so its ``__traceback__`` is ``None``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        original_type: str | None = None,
+        original_traceback: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.original_type = original_type
+        self.original_traceback = original_traceback
+
+
 # Failure result payload abstract base class
 @dataclass(kw_only=True)
 class ResultPayloadFailure(ResultPayload, ABC):
-    """Abstract base class for failure result payloads."""
+    """Abstract base class for failure result payloads.
+
+    ``exception`` is the single source of truth. On the local path it
+    is the live ``Exception``. Across the worker -> orchestrator wire
+    the converter emits it as a structured dict and rebuilds it as a
+    ``ForwardedException`` carrying the original type name and
+    traceback as attributes, so callers can read both paths uniformly.
+    """
 
     result_details: ResultDetails | str
     exception: Exception | None = None
@@ -324,6 +381,42 @@ class EventRequest[P: Payload](BaseEvent):
 
         request_payload = converter.structure(request_data, resolved_type)
         return cls(request=request_payload, **event_data)
+
+
+class EventRequestBatch(BaseEvent):
+    """Wire-only envelope that fans out into N individual EventRequests on ingest.
+
+    Each inner EventRequest carries its own request_id and response_topic, so the
+    engine does not need a batch-aware handler: results come back as individual
+    EventResultSuccess/Failure messages and the caller correlates them by request_id.
+    Use this to dispatch many requests in a single WebSocket frame without paying
+    per-request envelope overhead.
+
+    The envelope intentionally does not carry its own request_id/response_topic.
+    Identity and routing live on the inner requests, which keeps the engine path
+    identical to a stream of individual EventRequest frames.
+    """
+
+    requests: list[EventRequest] = Field(default_factory=list)
+
+    def dict(self, *args, **kwargs) -> dict[str, Any]:
+        """Serialize the envelope, recursing into each inner request's own serializer."""
+        result = super().dict(*args, **kwargs)
+        result["requests"] = [inner.dict() for inner in self.requests]
+        return result
+
+    def get_request(self) -> Payload:
+        """EventRequestBatch is a transport envelope; inspect .requests instead."""
+        msg = "EventRequestBatch is a transport envelope; inspect .requests instead."
+        raise NotImplementedError(msg)
+
+    @classmethod
+    def from_dict(cls, data: builtins.dict[str, Any]) -> EventRequestBatch:  # pyright: ignore[reportIncompatibleMethodOverride]
+        """Create a batch envelope by deserializing each inner request individually."""
+        event_data = data.copy()
+        raw_requests = event_data.pop("requests", [])
+        requests = [EventRequest.from_dict(raw) for raw in raw_requests]
+        return cls(requests=requests, **event_data)
 
 
 class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
@@ -501,3 +594,11 @@ class ProgressEvent:
     value: Any = field()
     node_name: str = field()
     parameter_name: str = field()
+
+
+# Register ResultDetail subclasses (e.g. StrictModeViolationDetail) with the
+# converter so a ``list[ResultDetail]`` round-trip preserves subclass identity
+# and subclass-only fields (rule_id, severity, subject, library_name) instead
+# of degrading every entry to a bare ResultDetail. Must run after every
+# subclass is defined.
+register_polymorphic_dataclass(ResultDetail)

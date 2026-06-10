@@ -5,6 +5,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PydanticField
 
+from griptape_nodes.common.project_templates import PerPlatformProjectPath
+from griptape_nodes.node_library.library_declarations import WorkerMode
+
 LIBRARIES_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.libraries_to_register"
 LIBRARIES_TO_DOWNLOAD_KEY = "app_events.on_app_initialization_complete.libraries_to_download"
 WORKFLOWS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.workflows_to_register"
@@ -15,7 +18,6 @@ PROJECT_WORKSPACES_KEY = "project_workspaces"
 EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
 WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
 WORKER_HEARTBEAT_TIMEOUT_KEY = "worker.heartbeat_timeout_s"
-WORKER_NODE_EXECUTION_TIMEOUT_KEY = "worker.node_execution_timeout_s"
 WORKER_HEARTBEAT_STARTUP_GRACE_KEY = "worker.heartbeat_startup_grace_s"
 
 
@@ -108,14 +110,45 @@ class MCPServerConfig(BaseModel):
         return f"{self.name} ({'enabled' if self.enabled else 'disabled'})"
 
 
+class LibraryRegistration(BaseModel):
+    """A library entry in libraries_to_register with optional metadata.
+
+    Bare path strings remain valid in the config; this object form is used when
+    additional fields (such as `enabled` or `worker_mode_override`) need to be
+    set per entry.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(description="Path to a griptape_nodes_library.json file or a directory scanned recursively.")
+    enabled: bool = Field(
+        default=True,
+        description="When False, the library remains in config but is not loaded on startup.",
+    )
+    worker_mode_override: WorkerMode | None = Field(
+        default=None,
+        description=(
+            "Per-library override of the launch mode declared in the library's manifest. "
+            "ORCHESTRATOR or WORKER. Only honored when the manifest declares "
+            "WorkerModeCompatibility.COMPATIBLE; ignored for INCOMPATIBLE libraries. "
+            "None reverts to the manifest's SuggestedWorkerMode."
+        ),
+    )
+
+
 class AppInitializationComplete(BaseModel):
     libraries_to_download: list[str] = Field(
         default_factory=list,
         description="Git URLs of libraries to automatically download when the engine starts. Downloaded into libraries_directory. Supports full URLs or GitHub shorthand (e.g., 'user/repo'). Optionally specify a branch, tag, or commit with @ref syntax (e.g., 'user/repo@stable' or 'https://github.com/user/repo@v1.0.0'). If no ref is specified, uses the repository's default branch.",
     )
-    libraries_to_register: list[str] = Field(
+    libraries_to_register: list[str | LibraryRegistration] = Field(
         default_factory=list,
-        description="Libraries to automatically load when the engine starts. Can contain paths to individual griptape_nodes_library.json files or directory paths (scanned recursively for library JSON files).",
+        description=(
+            "Libraries the engine loads on startup. Each entry can be a path to a single "
+            "griptape_nodes_library.json file or a folder containing one or more libraries. "
+            "Use the toggle to enable or skip a library, and pick whether it runs alongside "
+            "the engine or in its own isolated process when the library supports it."
+        ),
     )
     workflows_to_register: list[str] = Field(default_factory=list)
     secrets_to_register: list[str] | dict[str, str] = Field(
@@ -123,10 +156,17 @@ class AppInitializationComplete(BaseModel):
         description="Core secrets to register. Can be a list of secret names (default to empty values) or a dict mapping names to default values. Library-specific secrets are registered automatically from library settings.",
     )
     models_to_download: list[str] = Field(default_factory=list)
-    projects_to_register: list[str] = Field(
+    projects_to_register: list[str | PerPlatformProjectPath] = Field(
         category=PROJECTS,
         default_factory=list,
-        description="List of griptape-nodes-project.yml file paths to load at startup",
+        description=(
+            "List of griptape-nodes-project.yml file paths to load at startup. "
+            "Each entry may be either: "
+            "(1) a single path string (supports `${ENV_VAR}` and `~` expansion), or "
+            "(2) a per-platform mapping with optional `linux`, `darwin`, `windows`, and `default` keys "
+            "for cross-platform deployments where the same project resolves to different paths on each OS. "
+            "Per-platform entries with no key matching the active platform and no `default` are skipped with a warning."
+        ),
     )
 
 
@@ -169,15 +209,14 @@ class WorkerSettings(BaseModel):
         default=15.0,
         description="Seconds without a heartbeat response before a worker is evicted.",
     )
-    node_execution_timeout_s: float = Field(
-        default=300.0,
-        description="Maximum seconds to wait for a node execution response from a worker before timing out.",
-    )
     heartbeat_startup_grace_s: float = Field(
-        default=120.0,
+        default=600.0,
         description=(
             "Grace period in seconds after worker spawn before heartbeat timeouts are enforced. "
-            "Workers need time to install venv deps and import modules before they can respond."
+            "Workers need time to install venv deps and import modules before they can respond. "
+            "First-time installs of large libraries (e.g. torch, diffusers) can easily exceed "
+            "two minutes; this also bounds how long the orchestrator waits for worker libraries "
+            "to load before marking them as FAILURE."
         ),
     )
 
@@ -277,11 +316,26 @@ class Settings(BaseModel):
         default="synced_workflows",
         description="Path to the synced workflows directory, relative to the workspace directory.",
     )
-    thread_storage_backend: Literal["local", "gtc"] = Field(
+    thread_storage_backend: Literal["local"] = Field(
         category=STORAGE,
         default="local",
-        description="Storage backend for conversation threads: 'local' for filesystem or 'gtc' for Griptape Cloud",
+        description="Storage backend for conversation threads. Only 'local' (filesystem) is supported; "
+        "Griptape Cloud support was removed in the Pydantic AI migration.",
     )
+
+    @field_validator("thread_storage_backend", mode="before")
+    @classmethod
+    def validate_thread_storage_backend(cls, v: Any) -> str:
+        """Coerce legacy/unknown backends (e.g. the removed 'gtc') to 'local'.
+
+        Persisted configs from before Griptape Cloud thread storage was removed
+        carry ``thread_storage_backend: "gtc"``. Without this, validating the
+        whole config fails and the user's entire config is reset to defaults.
+        """
+        if v == "local":
+            return v
+        return "local"
+
     enable_workspace_file_watching: bool = Field(
         category=FILE_SYSTEM,
         default=True,
