@@ -49,6 +49,7 @@ from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
     LibraryMetadata,
+    LibraryNameAndVersion,
     LibraryRegistry,
     LibrarySchema,
     NodeDefinition,
@@ -724,6 +725,59 @@ class LibraryManager:
             if library_info.library_name == library_name:
                 return library_info
         return None
+
+    def resolve_transitive_library_deps(
+        self,
+        initial: list[LibraryNameAndVersion],
+    ) -> list[LibraryNameAndVersion]:
+        """Expand an initial library set by following each library's library_dependencies.
+
+        BFS walks declared library_dependencies until no new libraries are found.
+        Unregistered deps are logged and skipped. Cycle-safe via a visited set.
+        """
+        resolved: dict[str, LibraryNameAndVersion] = {ref.library_name: ref for ref in initial}
+        queue = list(initial)
+
+        while queue:
+            library_ref = queue.pop(0)
+            try:
+                library_data = LibraryRegistry.get_library(library_ref.library_name).get_library_data()
+            except KeyError:
+                logger.warning(
+                    "Library '%s' not found in registry during transitive dep resolution, skipping",
+                    library_ref.library_name,
+                )
+                continue
+
+            if not (library_data.metadata and library_data.metadata.dependencies):
+                continue
+            lib_deps = library_data.metadata.dependencies.library_dependencies
+            if not lib_deps:
+                continue
+
+            for dep in lib_deps:
+                repo_name = extract_repo_name_from_url(dep.url)
+                dep_info = self.get_library_info_by_library_name(repo_name)
+                if dep_info is None:
+                    logger.warning(
+                        "Library dependency '%s' (resolved as '%s') is not registered; skipping",
+                        dep.url,
+                        repo_name,
+                    )
+                    continue
+                dep_library_name = dep_info.library_name
+                if dep_library_name is None:
+                    logger.warning("Library dependency '%s' has no library_name; skipping", dep.url)
+                    continue
+                if dep_library_name not in resolved:
+                    lib_nav = LibraryNameAndVersion(
+                        library_name=dep_library_name,
+                        library_version=dep_info.library_version or "unknown",
+                    )
+                    resolved[dep_library_name] = lib_nav
+                    queue.append(lib_nav)
+
+        return list(resolved.values())
 
     def collate_problems_for_lib_info(self, lib_info: LibraryInfo) -> str | None:
         """Return a collated display string for a LibraryInfo's problems, or None if there are none."""

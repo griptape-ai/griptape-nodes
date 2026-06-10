@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from griptape_nodes.node_library.library_registry import Dependencies, LibraryDependency, LibrarySchema
+from griptape_nodes.node_library.library_registry import (
+    Dependencies,
+    LibraryDependency,
+    LibraryNameAndVersion,
+    LibrarySchema,
+)
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
     DownloadLibraryResultFailure,
@@ -523,3 +528,124 @@ class TestLibraryDependencyResolution:
             )
 
         mock_download.assert_not_called()
+
+
+def _make_lib_info_for_resolve(name: str, version: str = "1.0.0") -> LibraryManager.LibraryInfo:
+    return LibraryManager.LibraryInfo(
+        lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
+        library_path=f"/workspace/libraries/{name}/griptape_nodes_library.json",
+        is_sandbox=False,
+        library_name=name,
+        library_version=version,
+        fitness=LibraryManager.LibraryFitness.GOOD,
+        problems=[],
+    )
+
+
+def _make_lib_registry_mock(
+    library_dependencies: list[LibraryDependency] | None,
+) -> MagicMock:
+    """Return a mock object as returned by LibraryRegistry.get_library(name)."""
+    lib_mock = MagicMock()
+    lib_mock.get_library_data.return_value.metadata.dependencies.library_dependencies = library_dependencies
+    return lib_mock
+
+
+class TestResolveTransitiveLibraryDeps:
+    """Tests for LibraryManager.resolve_transitive_library_deps()."""
+
+    def test_no_deps_returns_initial(self, griptape_nodes: GriptapeNodes) -> None:
+        """A library with no library_dependencies returns just the initial set."""
+        mgr = griptape_nodes.LibraryManager()
+        lib_a = _make_lib_registry_mock(library_dependencies=None)
+
+        with patch(
+            "griptape_nodes.node_library.library_registry.LibraryRegistry.get_library",
+            side_effect=lambda name: lib_a if name == "lib-a" else (_ for _ in ()).throw(KeyError(name)),
+        ):
+            result = mgr.resolve_transitive_library_deps([LibraryNameAndVersion("lib-a", "1.0.0")])
+
+        assert [r.library_name for r in result] == ["lib-a"]
+
+    def test_direct_dep_added(self, griptape_nodes: GriptapeNodes) -> None:
+        """Library A declaring a library_dependency on Library B includes B in the result."""
+        mgr = griptape_nodes.LibraryManager()
+        dep_b = LibraryDependency(url="griptape-ai/lib-b@v1.0.0", required=True)
+        lib_a = _make_lib_registry_mock(library_dependencies=[dep_b])
+        lib_b = _make_lib_registry_mock(library_dependencies=None)
+        info_b = _make_lib_info_for_resolve("lib-b")
+
+        with (
+            patch(
+                "griptape_nodes.node_library.library_registry.LibraryRegistry.get_library",
+                side_effect=lambda name: {"lib-a": lib_a, "lib-b": lib_b}[name],
+            ),
+            patch.object(
+                mgr, "get_library_info_by_library_name", side_effect=lambda n: info_b if n == "lib-b" else None
+            ),
+        ):
+            result = mgr.resolve_transitive_library_deps([LibraryNameAndVersion("lib-a", "1.0.0")])
+
+        names = {r.library_name for r in result}
+        assert "lib-a" in names
+        assert "lib-b" in names
+
+    def test_transitive_dep_added(self, griptape_nodes: GriptapeNodes) -> None:
+        """A→B→C chain results in all three libraries being included."""
+        mgr = griptape_nodes.LibraryManager()
+        dep_b = LibraryDependency(url="griptape-ai/lib-b@v1.0.0", required=True)
+        dep_c = LibraryDependency(url="griptape-ai/lib-c@v1.0.0", required=True)
+        lib_a = _make_lib_registry_mock(library_dependencies=[dep_b])
+        lib_b = _make_lib_registry_mock(library_dependencies=[dep_c])
+        lib_c = _make_lib_registry_mock(library_dependencies=None)
+        info_b = _make_lib_info_for_resolve("lib-b")
+        info_c = _make_lib_info_for_resolve("lib-c")
+
+        with (
+            patch(
+                "griptape_nodes.node_library.library_registry.LibraryRegistry.get_library",
+                side_effect=lambda name: {"lib-a": lib_a, "lib-b": lib_b, "lib-c": lib_c}[name],
+            ),
+            patch.object(mgr, "get_library_info_by_library_name", side_effect={"lib-b": info_b, "lib-c": info_c}.get),
+        ):
+            result = mgr.resolve_transitive_library_deps([LibraryNameAndVersion("lib-a", "1.0.0")])
+
+        assert {r.library_name for r in result} == {"lib-a", "lib-b", "lib-c"}
+
+    def test_cycle_does_not_loop(self, griptape_nodes: GriptapeNodes) -> None:
+        """A→B→A cycle terminates and includes both libraries exactly once."""
+        mgr = griptape_nodes.LibraryManager()
+        dep_b = LibraryDependency(url="griptape-ai/lib-b@v1.0.0", required=True)
+        dep_a = LibraryDependency(url="griptape-ai/lib-a@v1.0.0", required=True)
+        lib_a = _make_lib_registry_mock(library_dependencies=[dep_b])
+        lib_b = _make_lib_registry_mock(library_dependencies=[dep_a])
+        info_a = _make_lib_info_for_resolve("lib-a")
+        info_b = _make_lib_info_for_resolve("lib-b")
+
+        with (
+            patch(
+                "griptape_nodes.node_library.library_registry.LibraryRegistry.get_library",
+                side_effect=lambda name: {"lib-a": lib_a, "lib-b": lib_b}[name],
+            ),
+            patch.object(mgr, "get_library_info_by_library_name", side_effect={"lib-a": info_a, "lib-b": info_b}.get),
+        ):
+            result = mgr.resolve_transitive_library_deps([LibraryNameAndVersion("lib-a", "1.0.0")])
+
+        assert {r.library_name for r in result} == {"lib-a", "lib-b"}
+
+    def test_unregistered_dep_skipped(self, griptape_nodes: GriptapeNodes) -> None:
+        """A dep that has no LibraryInfo is skipped without raising."""
+        mgr = griptape_nodes.LibraryManager()
+        dep_missing = LibraryDependency(url="griptape-ai/lib-missing@v1.0.0", required=True)
+        lib_a = _make_lib_registry_mock(library_dependencies=[dep_missing])
+
+        with (
+            patch(
+                "griptape_nodes.node_library.library_registry.LibraryRegistry.get_library",
+                return_value=lib_a,
+            ),
+            patch.object(mgr, "get_library_info_by_library_name", return_value=None),
+        ):
+            result = mgr.resolve_transitive_library_deps([LibraryNameAndVersion("lib-a", "1.0.0")])
+
+        assert [r.library_name for r in result] == ["lib-a"]

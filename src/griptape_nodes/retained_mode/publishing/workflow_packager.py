@@ -56,7 +56,6 @@ from griptape_nodes.retained_mode.events.secrets_events import (
 )
 from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowProgressEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils.git_utils import extract_repo_name_from_url
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -137,58 +136,8 @@ class WorkflowPackager:
         self,
         initial: list[LibraryNameAndVersion],
     ) -> list[LibraryNameAndVersion]:
-        """Expand the initial library set to include all transitive library_dependencies.
-
-        Walks each library's declared library_dependencies fixed-point until no new
-        libraries are discovered. Unregistered deps are logged and skipped so a missing
-        optional dependency does not abort packaging.
-        """
-        resolved: dict[str, LibraryNameAndVersion] = {ref.library_name: ref for ref in initial}
-        queue = list(initial)
-
-        while queue:
-            library_ref = queue.pop(0)
-            try:
-                library_data = LibraryRegistry.get_library(library_ref.library_name).get_library_data()
-            except KeyError:
-                logger.warning(
-                    "Library '%s' not found in registry, skipping transitive dep resolution",
-                    library_ref.library_name,
-                )
-                continue
-
-            if not (library_data.metadata and library_data.metadata.dependencies):
-                continue
-            lib_deps = library_data.metadata.dependencies.library_dependencies
-            if not lib_deps:
-                continue
-
-            for dep in lib_deps:
-                repo_name = extract_repo_name_from_url(dep.url)
-                dep_info = GriptapeNodes.LibraryManager().get_library_info_by_library_name(repo_name)
-                if dep_info is None:
-                    logger.warning(
-                        "Library dependency '%s' (resolved as '%s') is not registered; skipping in package",
-                        dep.url,
-                        repo_name,
-                    )
-                    continue
-                dep_library_name = dep_info.library_name
-                if dep_library_name is None:
-                    logger.warning(
-                        "Library dependency '%s' has no library_name; skipping in package",
-                        dep.url,
-                    )
-                    continue
-                if dep_library_name not in resolved:
-                    lib_nav = LibraryNameAndVersion(
-                        library_name=dep_library_name,
-                        library_version=dep_info.library_version or "unknown",
-                    )
-                    resolved[dep_library_name] = lib_nav
-                    queue.append(lib_nav)
-
-        return list(resolved.values())
+        """Expand the initial library set to include all transitive library_dependencies."""
+        return GriptapeNodes.LibraryManager().resolve_transitive_library_deps(initial)
 
     def copy_libraries(
         self,
