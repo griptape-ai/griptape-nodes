@@ -353,5 +353,5 @@ class TestRequiresWorkerProcess:
 
 
 class TestSchemaVersion:
-    def test_latest_schema_version_is_090(self) -> None:
-        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.9.0"
+    def test_latest_schema_version_is_0100(self) -> None:
+        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.10.0"

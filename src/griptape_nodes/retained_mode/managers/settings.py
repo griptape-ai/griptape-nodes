@@ -19,6 +19,7 @@ EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
 WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
 WORKER_HEARTBEAT_TIMEOUT_KEY = "worker.heartbeat_timeout_s"
 WORKER_HEARTBEAT_STARTUP_GRACE_KEY = "worker.heartbeat_startup_grace_s"
+LIBRARY_DEPENDENCY_INSTALL_BEHAVIOR_KEY = "library_dependency_install_behavior"
 
 
 class Category(BaseModel):
@@ -42,6 +43,7 @@ MCP_SERVERS = Category(name="MCP Servers", description="Model Context Protocol s
 PROJECTS = Category(name="Projects", description="Project template configurations and registrations")
 STATIC_SERVER = Category(name="Static Server", description="Static file server configuration for serving media assets")
 ARTIFACTS = Category(name="Artifacts", description="Settings for artifact providers and preview generation")
+LIBRARIES = Category(name="Libraries", description="Library management and dependency installation")
 
 
 def Field(category: str | Category = "General", **kwargs) -> Any:
@@ -221,6 +223,11 @@ class WorkerSettings(BaseModel):
     )
 
 
+class LibraryDependencyInstallBehavior(StrEnum):
+    ALWAYS = "always"
+    NEVER = "never"
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -365,4 +372,34 @@ class Settings(BaseModel):
         category=PROJECTS,
         default_factory=dict,
         description="Mapping of project file paths to workspace directory overrides. When a project is loaded, if its resolved path matches a key here, the corresponding value is used as the workspace directory instead of the project-adjacent config or auto-default.",
+    )
+
+    @field_validator("library_dependency_install_behavior", mode="before")
+    @classmethod
+    def validate_library_dependency_install_behavior(cls, v: Any) -> LibraryDependencyInstallBehavior:
+        """Coerce unknown/invalid values to ALWAYS.
+
+        A bad persisted value (e.g. a typo) would otherwise fail whole-config
+        validation and reset the user's entire config to defaults.
+        """
+        if isinstance(v, str):
+            try:
+                return LibraryDependencyInstallBehavior(v.lower())
+            except ValueError:
+                return LibraryDependencyInstallBehavior.ALWAYS
+        elif isinstance(v, LibraryDependencyInstallBehavior):
+            return v
+        return LibraryDependencyInstallBehavior.ALWAYS
+
+    library_dependency_install_behavior: LibraryDependencyInstallBehavior = Field(
+        LIBRARIES,
+        title="Library Dependency Install Behavior",
+        default=LibraryDependencyInstallBehavior.ALWAYS,
+        description=(
+            "Controls whether Griptape Node Libraries declared as library_dependencies in a library manifest "
+            "are automatically downloaded and registered when the declaring library loads. "
+            "Does not affect pip package installation, which always runs regardless of this setting. "
+            "'always': download and register missing library dependencies automatically on load. "
+            "'never': skip installation; required missing dependencies mark the library as degraded."
+        ),
     )
