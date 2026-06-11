@@ -111,7 +111,7 @@ policy:   overwrite, create_dirs: true
 fallback: save_file
 ```
 
-Used when a node needs to write an intermediate or scratch file during processing (for example, a temporary EXR written between color-space conversion steps). Files go into the `temp` directory and are overwritten on re-run rather than versioned.
+Used when a node needs to write an intermediate or scratch file during processing (for example, a temporary EXR written between color-space conversion steps). Files go into the `temp` directory and should be deleted by the node after use.
 
 ## How nodes use situations
 
