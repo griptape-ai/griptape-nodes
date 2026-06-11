@@ -35,6 +35,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
+    MakeDirectoryRequest,
+    MakeDirectoryResultFailure,
+    MakeDirectoryResultSuccess,
     ReadFileRequest,
     ReadFileResultFailure,
     ReadFileResultSuccess,
@@ -1576,3 +1579,105 @@ class TestGetNextVersionIndexRequest:
 
         assert isinstance(result, GetNextVersionIndexResultFailure)
         assert result.failure_reason == FileIOFailureReason.INVALID_PATH
+
+
+class TestMakeDirectoryRequest:
+    """Test MakeDirectoryRequest handler."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+        yield
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_create_new_directory_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Creating a directory that does not yet exist returns success with already_existed=False."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "new_dir"
+
+        result = os_manager.on_make_directory_request(MakeDirectoryRequest(path=str(dir_path)))
+
+        assert isinstance(result, MakeDirectoryResultSuccess)
+        assert dir_path.is_dir()
+        assert not result.already_existed
+        assert Path(result.created_path).resolve() == dir_path.resolve()
+
+    def test_directory_already_exists_exist_ok_true(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """When the directory already exists and exist_ok=True, returns success with already_existed=True."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "existing_dir"
+        dir_path.mkdir()
+
+        result = os_manager.on_make_directory_request(MakeDirectoryRequest(path=str(dir_path), exist_ok=True))
+
+        assert isinstance(result, MakeDirectoryResultSuccess)
+        assert result.already_existed
+
+    def test_directory_already_exists_exist_ok_false(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """When the directory already exists and exist_ok=False, returns POLICY_NO_OVERWRITE failure."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "existing_dir"
+        dir_path.mkdir()
+
+        result = os_manager.on_make_directory_request(MakeDirectoryRequest(path=str(dir_path), exist_ok=False))
+
+        assert isinstance(result, MakeDirectoryResultFailure)
+        assert result.failure_reason == FileIOFailureReason.POLICY_NO_OVERWRITE
+
+    def test_file_at_path_returns_invalid_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """When a file already exists at the requested path, returns INVALID_PATH failure."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "not_a_dir.txt"
+        file_path.write_text("content")
+
+        result = os_manager.on_make_directory_request(MakeDirectoryRequest(path=str(file_path)))
+
+        assert isinstance(result, MakeDirectoryResultFailure)
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
+
+    def test_create_parents_true(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """With create_parents=True, missing intermediate directories are created."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "a" / "b" / "c"
+
+        result = os_manager.on_make_directory_request(MakeDirectoryRequest(path=str(dir_path), create_parents=True))
+
+        assert isinstance(result, MakeDirectoryResultSuccess)
+        assert dir_path.is_dir()
+
+    def test_create_parents_false_missing_parent(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """With create_parents=False and a missing parent, returns POLICY_NO_CREATE_PARENT_DIRS failure."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "missing_parent" / "child"
+
+        result = os_manager.on_make_directory_request(MakeDirectoryRequest(path=str(dir_path), create_parents=False))
+
+        assert isinstance(result, MakeDirectoryResultFailure)
+        assert result.failure_reason == FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS
+
+    def test_invalid_path_returns_failure(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """A path that cannot be resolved returns INVALID_PATH before any filesystem operation."""
+        os_manager = griptape_nodes.OSManager()
+
+        with patch.object(OSManager, "_resolve_file_path", side_effect=ValueError("bad path")):
+            result = os_manager.on_make_directory_request(MakeDirectoryRequest(path=str(temp_dir / "any")))
+
+        assert isinstance(result, MakeDirectoryResultFailure)
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
+
+    def test_permission_denied_returns_failure(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """A PermissionError from mkdir is surfaced as a PERMISSION_DENIED failure."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "protected_dir"
+
+        with patch.object(Path, "mkdir", side_effect=PermissionError("Permission denied")):
+            result = os_manager.on_make_directory_request(MakeDirectoryRequest(path=str(dir_path)))
+
+        assert isinstance(result, MakeDirectoryResultFailure)
+        assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED

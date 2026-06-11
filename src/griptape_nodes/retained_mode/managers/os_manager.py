@@ -83,6 +83,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
+    MakeDirectoryRequest,
+    MakeDirectoryResultFailure,
+    MakeDirectoryResultSuccess,
     OpenAssociatedFileRequest,
     OpenAssociatedFileResultFailure,
     OpenAssociatedFileResultSuccess,
@@ -356,6 +359,10 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=GetNextVersionIndexRequest, callback=self.on_get_next_version_index_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=MakeDirectoryRequest, callback=self.on_make_directory_request
             )
 
             # Store event_manager for direct access during resource registration
@@ -2729,6 +2736,56 @@ class OSManager:
             logger.error("Attempted to clean up old files from %s, but no files could be deleted.")
 
         return removed_count > 0
+
+    def on_make_directory_request(self, request: MakeDirectoryRequest) -> ResultPayload:  # noqa: PLR0911
+        """Handle a request to create a directory."""
+        sanitized = sanitize_path_string(request.path)
+        try:
+            dir_path = self._resolve_file_path(sanitized, workspace_only=False)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Attempted to create directory '{sanitized}'. Failed due to invalid path: {e}"
+            return MakeDirectoryResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        if dir_path.is_file():
+            msg = f"Attempted to create directory '{dir_path}'. Failed because a file already exists at that path."
+            return MakeDirectoryResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        if dir_path.is_dir() and not request.exist_ok:
+            msg = f"Attempted to create directory '{dir_path}'. Failed because directory already exists."
+            return MakeDirectoryResultFailure(
+                failure_reason=FileIOFailureReason.POLICY_NO_OVERWRITE, result_details=msg
+            )
+
+        if dir_path.is_dir():
+            return MakeDirectoryResultSuccess(
+                created_path=str(dir_path),
+                already_existed=True,
+                result_details=f"Directory already exists at {dir_path}",
+            )
+
+        normalized = normalize_path_for_platform(dir_path)
+        try:
+            Path(normalized).mkdir(parents=request.create_parents, exist_ok=request.exist_ok)
+        except FileNotFoundError as e:
+            msg = f"Attempted to create directory '{dir_path}'. Failed because parent directory does not exist and create_parents is False: {e}"
+            return MakeDirectoryResultFailure(
+                failure_reason=FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS, result_details=msg
+            )
+        except PermissionError as e:
+            msg = f"Attempted to create directory '{dir_path}'. Failed due to permission denied: {e}"
+            return MakeDirectoryResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            if "No space left" in str(e) or "Disk full" in str(e):
+                msg = f"Attempted to create directory '{dir_path}'. Failed due to disk full: {e}"
+                return MakeDirectoryResultFailure(failure_reason=FileIOFailureReason.DISK_FULL, result_details=msg)
+            msg = f"Attempted to create directory '{dir_path}'. Failed due to I/O error: {e}"
+            return MakeDirectoryResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+
+        return MakeDirectoryResultSuccess(
+            created_path=str(dir_path),
+            already_existed=False,
+            result_details=f"Directory created successfully at {dir_path}",
+        )
 
     def on_create_file_request(self, request: CreateFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
         """Handle a request to create a file or directory."""
