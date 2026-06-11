@@ -90,6 +90,12 @@ class AdvancedNodeLibrary:
 
         Both sync and async handler callables are supported.
 
+        **Orchestrator process only.** Handlers registered via this method run in
+        the orchestrator process. Libraries loaded in worker processes will not have
+        their handlers forwarded to the orchestrator, so requests dispatched there
+        will result in "No manager found". Cross-worker handler support is tracked
+        in GH#4748.
+
         **Singleton handlers only.** This mechanism is for services where exactly
         one library is the provider (e.g. colour conversion, ML inference). For
         competing-provider scenarios — where multiple libraries can each handle the

@@ -282,20 +282,19 @@ class LibraryRegistry(metaclass=SingletonMeta):
             GriptapeNodes,
         )  # circular: griptape_nodes → workflow_registry → library_registry
 
+        event_manager = GriptapeNodes.EventManager()
+
         if library._registered_app_event_listeners:
-            event_manager = GriptapeNodes.EventManager()
             for event_type, listener in library._registered_app_event_listeners:
                 event_manager.remove_listener_for_app_event(event_type, listener)
             library._registered_app_event_listeners.clear()
 
         if library._registered_pre_dispatch_hooks:
-            event_manager = GriptapeNodes.EventManager()
             for hook in library._registered_pre_dispatch_hooks:
                 event_manager.remove_pre_dispatch_hook(hook)
             library._registered_pre_dispatch_hooks.clear()
 
         if library._registered_request_handler_types:
-            event_manager = GriptapeNodes.EventManager()
             for request_type in library._registered_request_handler_types:
                 event_manager.remove_manager_from_request_type(request_type)
             library._registered_request_handler_types.clear()
