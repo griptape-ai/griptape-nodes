@@ -2310,7 +2310,8 @@ class TestWorkflowMetadataTransitiveDeps:
         """When lib-a has library_dependency on lib-b, generated metadata lists both in node_libraries_referenced."""
         from datetime import UTC, datetime
 
-        from griptape_nodes.node_library.library_registry import LibraryDependency, LibraryNameAndVersion
+        from griptape_nodes.node_library.library_declarations import LibraryDependency
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
         workflow_manager = griptape_nodes.WorkflowManager()

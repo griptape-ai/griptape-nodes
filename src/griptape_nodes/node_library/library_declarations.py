@@ -79,6 +79,14 @@ class WorkerMode(StrEnum):
     WORKER = "WORKER"
 
 
+# ---------- Shared models ----------
+
+
+class LibraryDependency(BaseModel):
+    url: str
+    required: bool = True
+
+
 # ---------- Library-level declarations ----------
 
 

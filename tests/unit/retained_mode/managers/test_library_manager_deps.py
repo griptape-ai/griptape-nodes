@@ -4,14 +4,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from griptape_nodes.node_library.library_declarations import LibraryDependency
 from griptape_nodes.node_library.library_registry import (
     Dependencies,
-    LibraryDependency,
     LibraryNameAndVersion,
     LibrarySchema,
 )
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
+    DownloadLibraryRequest,
     DownloadLibraryResultFailure,
     DownloadLibraryResultSuccess,
     InstallLibraryDependenciesResultFailure,
@@ -122,6 +123,7 @@ def _metadata_success(schema: MagicMock) -> LoadLibraryMetadataFromFileResultSuc
         file_path="/mock.json",
         git_remote=None,
         git_ref=None,
+        enabled=True,
         result_details=ResultDetails(message="OK", level=20),
     )
 
@@ -649,3 +651,65 @@ class TestResolveTransitiveLibraryDeps:
             result = mgr.resolve_transitive_library_deps([LibraryNameAndVersion("lib-a", "1.0.0")])
 
         assert [r.library_name for r in result] == ["lib-a"]
+
+
+class TestDownloadLibraryRequestAutoRegister:
+    """Regression guard for silent-registration-failure bug (collindutter, PR #4752).
+
+    Old code only logged a warning when auto-registration failed and returned
+    DownloadLibraryResultSuccess anyway. The fix at lines 5139-5143 of library_manager.py
+    propagates registration failure as DownloadLibraryResultFailure.
+    """
+
+    @pytest.mark.asyncio
+    async def test_auto_register_failure_returns_download_failure(self, griptape_nodes: GriptapeNodes) -> None:
+        """When RegisterLibraryFromFileRequest fails, download_library_request must return DownloadLibraryResultFailure.
+
+        Regression guard: old code only logged a warning on registration failure and fell through to
+        DownloadLibraryResultSuccess.
+        """
+        import json as _json
+        import tempfile
+
+        mgr = griptape_nodes.LibraryManager()
+        tracked: dict = {}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_json_path = f"{tmpdir}/fake-library/griptape_nodes_library.json"
+            fake_json_content = _json.dumps({"name": "fake-library"})
+
+            mock_path_instance = AsyncMock()
+            mock_path_instance.mkdir = AsyncMock(return_value=None)
+            # exists() → True forces skip_clone path, avoiding actual git clone
+            mock_path_instance.exists = AsyncMock(return_value=True)
+            mock_path_instance.read_text = AsyncMock(return_value=fake_json_content)
+
+            with (
+                patch(
+                    "griptape_nodes.retained_mode.managers.library_manager.anyio.Path",
+                    return_value=mock_path_instance,
+                ),
+                patch(
+                    "griptape_nodes.retained_mode.managers.library_manager.find_file_in_directory",
+                    return_value=fake_json_path,
+                ),
+                patch.object(
+                    GriptapeNodes,
+                    "ahandle_request",
+                    new_callable=AsyncMock,
+                    return_value=RegisterLibraryFromFileResultFailure(result_details="schema validation error"),
+                ),
+                patch.object(mgr, "_library_file_path_to_info", tracked),
+            ):
+                result = await mgr.download_library_request(
+                    DownloadLibraryRequest(
+                        git_url="https://github.com/griptape-ai/fake-library.git",
+                        download_directory=tmpdir,
+                        auto_register=True,
+                        fail_on_exists=False,
+                    )
+                )
+
+        assert isinstance(result, DownloadLibraryResultFailure)
+        assert "downloaded but failed to register" in str(result.result_details)
+        assert "fake-library" in str(result.result_details)

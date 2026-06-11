@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from griptape_nodes.node_library.library_declarations import (
     LibraryDeclaration,
+    LibraryDependency,
     NodeDeclaration,
     SuggestedWorkerMode,
     WorkerCompatibility,
@@ -41,11 +42,6 @@ _constructing_node: ContextVar[bool] = ContextVar("_library_registry_constructin
 class LibraryNameAndVersion(NamedTuple):
     library_name: str
     library_version: str
-
-
-class LibraryDependency(BaseModel):
-    url: str
-    required: bool = True
 
 
 class Dependencies(BaseModel):
