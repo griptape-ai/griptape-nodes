@@ -325,8 +325,12 @@ class WorkerManager:
             len(self._managed_worker_processes),
             list(self._managed_worker_processes.keys()),
         )
-        for library_name, proc in list(self._managed_worker_processes.items()):
-            await self._terminate_managed_process(library_name, proc)
+        await asyncio.gather(
+            *(
+                self._terminate_managed_process(library_name, proc)
+                for library_name, proc in list(self._managed_worker_processes.items())
+            )
+        )
         session_id = self._griptape_nodes.get_session_id()
         if session_id and self._transport is not None:
             for wid in list(self._workers):
