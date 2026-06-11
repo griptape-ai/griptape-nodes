@@ -126,7 +126,7 @@ def _build_sequence_destination_from_situation(
     """Build a FileSequenceDestination from a project situation template.
 
     Parses the filename (or #### pattern) into parts, looks up the situation,
-    and builds a versioned destination by finding the first available ``_index``.
+    and builds a versioned destination by updating all available ``_index`` variables.
 
     Args:
         filename: Filename or #### pattern (e.g., ``"render.exr"`` or ``"render_####.exr"``).
@@ -134,7 +134,7 @@ def _build_sequence_destination_from_situation(
         **extra_vars: Additional macro variables.
 
     Returns:
-        FileSequenceDestination with a locked version index.
+        FileSequenceDestination with a locked version index but unresolved element token.
     """
     resolved = resolve_situation(situation, _FALLBACK_SEQUENCE_MACRO, ExistingFilePolicy.OVERWRITE)
     parts = FilenameParts.from_filename(filename)
