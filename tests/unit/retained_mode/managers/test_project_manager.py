@@ -4819,3 +4819,211 @@ class TestPinnedLibraryProvisioning:
 
         assert failure is None
         ahandle.assert_not_awaited()
+
+
+class TestPlanOnePinnedLibrary:
+    """The pure plan function decides SKIP/INSTALL/OVERWRITE from a registry read + PEP 440 compare (#63)."""
+
+    @pytest.fixture
+    def pm(self, tmp_path: Path) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        mock_config_manager.workspace_path = tmp_path
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def test_git_satisfied_is_skip(self, pm: ProjectManager) -> None:
+        from griptape_nodes.common.project_templates import LibraryPin
+        from griptape_nodes.retained_mode.events.project_events import (
+            LibraryProvisioningActionKind,
+            LibraryProvisioningSource,
+        )
+
+        pin = LibraryPin(name="git-lib", version=">=2.0,<3", git_url="griptape-ai/git-lib@v2")
+        with patch.object(pm, "_installed_library_version", return_value="2.1.0"):
+            action = pm._plan_one_pinned_library(pin)
+
+        assert action.kind == LibraryProvisioningActionKind.SKIP
+        assert action.source == LibraryProvisioningSource.GIT
+        assert action.installed_version == "2.1.0"
+        assert action.destructive is False
+
+    def test_git_not_installed_is_nondestructive_install(self, pm: ProjectManager) -> None:
+        from griptape_nodes.common.project_templates import LibraryPin
+        from griptape_nodes.retained_mode.events.project_events import (
+            LibraryProvisioningActionKind,
+            LibraryProvisioningSource,
+        )
+
+        pin = LibraryPin(name="git-lib", version=">=2.0", git_url="griptape-ai/git-lib@v2.0")
+        with patch.object(pm, "_installed_library_version", return_value=None):
+            action = pm._plan_one_pinned_library(pin)
+
+        assert action.kind == LibraryProvisioningActionKind.INSTALL
+        assert action.source == LibraryProvisioningSource.GIT
+        assert action.destructive is False
+        # url@ref is parsed apart so the UI can show the ref.
+        assert action.git_url == "griptape-ai/git-lib"
+        assert action.git_ref == "v2.0"
+
+    def test_git_wrong_version_is_destructive_overwrite(self, pm: ProjectManager) -> None:
+        from griptape_nodes.common.project_templates import LibraryPin
+        from griptape_nodes.retained_mode.events.project_events import (
+            LibraryProvisioningActionKind,
+            LibraryProvisioningSource,
+        )
+
+        pin = LibraryPin(name="git-lib", version=">=2.0", git_url="griptape-ai/git-lib@v2.0")
+        with patch.object(pm, "_installed_library_version", return_value="1.0.0"):
+            action = pm._plan_one_pinned_library(pin)
+
+        # The key assertion: a git OVERWRITE deletes the local dir and so is destructive.
+        assert action.kind == LibraryProvisioningActionKind.OVERWRITE
+        assert action.source == LibraryProvisioningSource.GIT
+        assert action.installed_version == "1.0.0"
+        assert action.destructive is True
+
+    def test_pypi_not_installed_is_nondestructive_install(self, pm: ProjectManager) -> None:
+        from griptape_nodes.common.project_templates import LibraryPin
+        from griptape_nodes.retained_mode.events.project_events import (
+            LibraryProvisioningActionKind,
+            LibraryProvisioningSource,
+        )
+
+        pin = LibraryPin(name="pypi-lib", version="2.0", requirement_specifier="pypi-lib")
+        with patch.object(pm, "_installed_library_version", return_value=None):
+            action = pm._plan_one_pinned_library(pin)
+
+        assert action.kind == LibraryProvisioningActionKind.INSTALL
+        assert action.source == LibraryProvisioningSource.PYPI
+        assert action.destructive is False
+        # The pin version is folded into the specifier the install will use.
+        assert action.requirement_specifier == "pypi-lib2.0"
+
+    def test_pypi_wrong_version_overwrite_is_nondestructive(self, pm: ProjectManager) -> None:
+        from griptape_nodes.common.project_templates import LibraryPin
+        from griptape_nodes.retained_mode.events.project_events import (
+            LibraryProvisioningActionKind,
+            LibraryProvisioningSource,
+        )
+
+        pin = LibraryPin(name="pypi-lib", version="2.0", requirement_specifier="pypi-lib")
+        with patch.object(pm, "_installed_library_version", return_value="1.0.0"):
+            action = pm._plan_one_pinned_library(pin)
+
+        # A PyPI overwrite installs into a per-library venv; it never deletes a local lib dir.
+        assert action.kind == LibraryProvisioningActionKind.OVERWRITE
+        assert action.source == LibraryProvisioningSource.PYPI
+        assert action.destructive is False
+
+
+class TestPreviewProjectProvisioning:
+    """The read-only preview handler lists the plan without touching disk (#63)."""
+
+    @pytest.fixture
+    def pm(self, tmp_path: Path) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = []
+        mock_config_manager.workspace_path = tmp_path
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    @staticmethod
+    def _seed_project(pm: ProjectManager, tmp_path: Path, pins: "VersionPins | None") -> str:
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        template = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"version_pins": pins})
+        project_id = str((tmp_path / "project.yml").resolve())
+        pm._successfully_loaded_project_templates[project_id] = ProjectInfo(
+            project_id=project_id,
+            project_file_path=Path(project_id),
+            project_base_dir=tmp_path,
+            template=template,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas={},
+        )
+        return project_id
+
+    def test_not_loaded_project_is_failure(self, pm: ProjectManager) -> None:
+        from griptape_nodes.retained_mode.events.project_events import (
+            PreviewProjectProvisioningRequest,
+            PreviewProjectProvisioningResultFailure,
+        )
+
+        result = pm.on_preview_project_provisioning_request(
+            PreviewProjectProvisioningRequest(project_id="/nope/project.yml")
+        )
+
+        assert isinstance(result, PreviewProjectProvisioningResultFailure)
+
+    def test_no_pins_is_empty_success(self, pm: ProjectManager, tmp_path: Path) -> None:
+        from griptape_nodes.retained_mode.events.project_events import (
+            PreviewProjectProvisioningRequest,
+            PreviewProjectProvisioningResultSuccess,
+        )
+
+        project_id = self._seed_project(pm, tmp_path, None)
+        result = pm.on_preview_project_provisioning_request(PreviewProjectProvisioningRequest(project_id=project_id))
+
+        assert isinstance(result, PreviewProjectProvisioningResultSuccess)
+        assert result.actions == []
+
+    def test_mixed_pins_preserve_order_and_flags(self, pm: ProjectManager, tmp_path: Path) -> None:
+        from griptape_nodes.common.project_templates import LibraryPin, VersionPins
+        from griptape_nodes.retained_mode.events.project_events import (
+            LibraryProvisioningActionKind,
+            PreviewProjectProvisioningRequest,
+            PreviewProjectProvisioningResultSuccess,
+        )
+
+        pins = VersionPins(
+            libraries=[
+                LibraryPin(name="skip-lib", version=">=2.0", git_url="griptape-ai/skip-lib@v2"),
+                LibraryPin(name="install-lib", version=">=2.0", git_url="griptape-ai/install-lib@v2"),
+                LibraryPin(name="overwrite-lib", version=">=2.0", git_url="griptape-ai/overwrite-lib@v2"),
+            ]
+        )
+        project_id = self._seed_project(pm, tmp_path, pins)
+
+        installed = {"skip-lib": "2.1.0", "install-lib": None, "overwrite-lib": "1.0.0"}
+        with patch.object(pm, "_installed_library_version", side_effect=lambda name: installed[name]):
+            result = pm.on_preview_project_provisioning_request(
+                PreviewProjectProvisioningRequest(project_id=project_id)
+            )
+
+        assert isinstance(result, PreviewProjectProvisioningResultSuccess)
+        # Order matches the template's libraries list.
+        assert [a.library_name for a in result.actions] == ["skip-lib", "install-lib", "overwrite-lib"]
+        assert [a.kind for a in result.actions] == [
+            LibraryProvisioningActionKind.SKIP,
+            LibraryProvisioningActionKind.INSTALL,
+            LibraryProvisioningActionKind.OVERWRITE,
+        ]
+        # Only the git OVERWRITE is destructive.
+        assert [a.destructive for a in result.actions] == [False, False, True]
+
+    def test_handler_is_read_only(self, pm: ProjectManager, tmp_path: Path) -> None:
+        from griptape_nodes.common.project_templates import LibraryPin, VersionPins
+        from griptape_nodes.retained_mode.events.project_events import PreviewProjectProvisioningRequest
+
+        pins = VersionPins(libraries=[LibraryPin(name="git-lib", version=">=2.0", git_url="griptape-ai/git-lib@v2.0")])
+        project_id = self._seed_project(pm, tmp_path, pins)
+
+        ahandle = AsyncMock()
+        with (
+            patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn,
+            patch.object(pm, "_installed_library_version", return_value="1.0.0"),
+        ):
+            mock_gn.ahandle_request = ahandle
+            pm.on_preview_project_provisioning_request(PreviewProjectProvisioningRequest(project_id=project_id))
+
+        # Read-only: it must never dispatch the clone/venv/delete work.
+        ahandle.assert_not_awaited()

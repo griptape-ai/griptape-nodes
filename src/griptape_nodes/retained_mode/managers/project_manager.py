@@ -73,6 +73,9 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetStateForMacroRequest,
     GetStateForMacroResultFailure,
     GetStateForMacroResultSuccess,
+    LibraryProvisioningAction,
+    LibraryProvisioningActionKind,
+    LibraryProvisioningSource,
     ListProjectTemplatesRequest,
     ListProjectTemplatesResultSuccess,
     LoadProjectTemplateRequest,
@@ -80,6 +83,9 @@ from griptape_nodes.retained_mode.events.project_events import (
     LoadProjectTemplateResultSuccess,
     MacroPath,
     PathResolutionFailureReason,
+    PreviewProjectProvisioningRequest,
+    PreviewProjectProvisioningResultFailure,
+    PreviewProjectProvisioningResultSuccess,
     ProjectTemplateInfo,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
@@ -365,6 +371,9 @@ class ProjectManager:
         )
         event_manager.assign_manager_to_request_type(
             ValidateProjectTemplateRequest, self.on_validate_project_template_request
+        )
+        event_manager.assign_manager_to_request_type(
+            PreviewProjectProvisioningRequest, self.on_preview_project_provisioning_request
         )
 
         # Register app initialization listener
@@ -1041,27 +1050,120 @@ class ProjectManager:
 
         return None
 
+    def _plan_one_pinned_library(self, pin: LibraryPin) -> LibraryProvisioningAction:
+        """Decide, without touching disk, what provisioning will do to one pin.
+
+        Pure: a registry read (installed version) plus a PEP 440 compare. The
+        preview lists this output and the real provisioning path re-runs it at
+        execution time, so the two cannot drift. Branch order mirrors
+        `_provision_one_pinned_library`: failure/edge cases first, the
+        already-satisfied SKIP and then the source dispatch.
+
+        `destructive` is True ONLY for a git OVERWRITE, matching the
+        `overwrite_existing = installed_version is not None` decision in
+        `_provision_git_pin` that triggers the local directory delete.
+        """
+        installed_version = self._installed_library_version(pin.name)
+        satisfied = self._pin_satisfied_by_installed(pin, installed_version)
+        if satisfied:
+            source = LibraryProvisioningSource.GIT if pin.git_url is not None else LibraryProvisioningSource.PYPI
+            return LibraryProvisioningAction(
+                library_name=pin.name,
+                kind=LibraryProvisioningActionKind.SKIP,
+                source=source,
+                installed_version=installed_version,
+                pinned_version=pin.version,
+                git_url=pin.git_url,
+                git_ref=None,
+                requirement_specifier=pin.requirement_specifier,
+                destructive=False,
+                reason=f"Installed version {installed_version} already satisfies the pin",
+            )
+
+        if pin.git_url is not None:
+            parsed = parse_git_url_with_ref(pin.git_url)
+            if installed_version is None:
+                kind = LibraryProvisioningActionKind.INSTALL
+                reason = f"Not installed; will clone from {pin.git_url}"
+            else:
+                kind = LibraryProvisioningActionKind.OVERWRITE
+                reason = (
+                    f"Installed version {installed_version} does not satisfy the pin; "
+                    f"will delete the local library directory and re-clone from {pin.git_url}"
+                )
+            return LibraryProvisioningAction(
+                library_name=pin.name,
+                kind=kind,
+                source=LibraryProvisioningSource.GIT,
+                installed_version=installed_version,
+                pinned_version=pin.version,
+                git_url=parsed.url,
+                git_ref=parsed.ref,
+                requirement_specifier=None,
+                destructive=kind == LibraryProvisioningActionKind.OVERWRITE,
+                reason=reason,
+            )
+
+        if pin.requirement_specifier is not None:
+            composed_specifier = self._compose_requirement_specifier(pin.version, pin.requirement_specifier)
+            if installed_version is None:
+                kind = LibraryProvisioningActionKind.INSTALL
+                reason = f"Not installed; will install '{composed_specifier}' into its own venv"
+            else:
+                kind = LibraryProvisioningActionKind.OVERWRITE
+                reason = (
+                    f"Installed version {installed_version} does not satisfy the pin; "
+                    f"will reinstall '{composed_specifier}' into its own venv"
+                )
+            return LibraryProvisioningAction(
+                library_name=pin.name,
+                kind=kind,
+                source=LibraryProvisioningSource.PYPI,
+                installed_version=installed_version,
+                pinned_version=pin.version,
+                git_url=None,
+                git_ref=None,
+                requirement_specifier=composed_specifier,
+                destructive=False,
+                reason=reason,
+            )
+
+        # The LibraryPin validator guarantees at least one source, so this is
+        # unreachable; kept as a defensive SKIP rather than risking a destructive op.
+        return LibraryProvisioningAction(
+            library_name=pin.name,
+            kind=LibraryProvisioningActionKind.SKIP,
+            source=LibraryProvisioningSource.GIT,
+            installed_version=installed_version,
+            pinned_version=pin.version,
+            git_url=None,
+            git_ref=None,
+            requirement_specifier=None,
+            destructive=False,
+            reason="Pin declares no install source; nothing to provision",
+        )
+
     async def _provision_one_pinned_library(
         self, project_id: str, pin: LibraryPin
     ) -> SetCurrentProjectResultFailure | None:
         """Provision a single pinned library, skipping when already satisfied.
 
-        Decides skip-vs-(re)install by comparing the installed version to the
-        pin spec, because the download/register handlers themselves skip only
-        on directory existence and are not version-aware. Delegates the actual
-        clone/venv work to the existing handlers once that decision is made.
+        Computes the plan with the same pure decision function the preview uses
+        (`_plan_one_pinned_library`), then dispatches on the result. Delegates
+        the actual clone/venv work to the existing handlers, which recompute
+        their own `overwrite_existing`/specifier so the wire payloads are
+        unchanged.
         """
-        installed_version = self._installed_library_version(pin.name)
-        satisfied = self._pin_satisfied_by_installed(pin, installed_version)
-        if satisfied:
+        action = self._plan_one_pinned_library(pin)
+        if action.kind == LibraryProvisioningActionKind.SKIP:
             return None
 
-        if pin.git_url is not None:
+        if action.source == LibraryProvisioningSource.GIT and pin.git_url is not None:
             return await self._provision_git_pin(
-                project_id, pin, git_url=pin.git_url, installed_version=installed_version
+                project_id, pin, git_url=pin.git_url, installed_version=action.installed_version
             )
 
-        if pin.requirement_specifier is not None:
+        if action.source == LibraryProvisioningSource.PYPI and pin.requirement_specifier is not None:
             return await self._provision_requirement_pin(
                 project_id, pin, requirement_specifier=pin.requirement_specifier
             )
@@ -1399,6 +1501,40 @@ class ProjectManager:
         else:
             details = f"Template validation found {len(validation.problems)} problem(s) (status: {validation.status})"
         return ValidateProjectTemplateResultSuccess(validation=validation, result_details=details)
+
+    def on_preview_project_provisioning_request(
+        self, request: PreviewProjectProvisioningRequest
+    ) -> PreviewProjectProvisioningResultSuccess | PreviewProjectProvisioningResultFailure:
+        """Compute the library provisioning plan for a loaded project, read-only.
+
+        Sync and side-effect-free: it only reads the registry and runs the pure
+        `_plan_one_pinned_library` decision per pin (no `ahandle_request`, no
+        clone/venv/delete). The GUI calls this before committing to a switch so
+        the user can approve or refuse the changes. Only an already-loaded
+        project can be previewed; unlike ValidateProjectTemplate, a project that
+        is not loaded is a Failure rather than a degraded Success.
+        """
+        project_info = self._successfully_loaded_project_templates.get(request.project_id)
+        if project_info is None:
+            return PreviewProjectProvisioningResultFailure(
+                result_details=f"Attempted to preview provisioning for project '{request.project_id}'. "
+                f"Failed because the project is not loaded",
+            )
+
+        if project_info.template.version_pins is None:
+            return PreviewProjectProvisioningResultSuccess(
+                actions=[],
+                result_details=f"Project '{request.project_id}' declares no version pins; nothing to provision",
+            )
+
+        actions = [self._plan_one_pinned_library(pin) for pin in project_info.template.version_pins.libraries]
+        destructive_count = sum(1 for action in actions if action.destructive)
+        change_count = sum(1 for action in actions if action.kind != LibraryProvisioningActionKind.SKIP)
+        return PreviewProjectProvisioningResultSuccess(
+            actions=actions,
+            result_details=f"Computed provisioning plan for project '{request.project_id}': "
+            f"{change_count} change(s), {destructive_count} destructive",
+        )
 
     def _check_parent_chain_cycles(
         self,
