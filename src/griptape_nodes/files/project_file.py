@@ -2,9 +2,10 @@
 
 import logging
 from pathlib import Path
+from typing import NamedTuple
 
 from griptape_nodes.common.macro_parser import ParsedMacro
-from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+from griptape_nodes.common.project_templates.situation import SituationFilePolicy, SituationTemplate
 from griptape_nodes.files.file import File, FileDestination
 from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
@@ -33,6 +34,67 @@ SITUATION_TO_FILE_POLICY: dict[str, ExistingFilePolicy] = {
     SituationFilePolicy.FAIL: ExistingFilePolicy.FAIL,
     SituationFilePolicy.PROMPT: ExistingFilePolicy.CREATE_NEW,  # PROMPT has no direct mapping; fall back to CREATE_NEW
 }
+
+
+class ResolvedSituation(NamedTuple):
+    """Result of looking up a project situation by name.
+
+    Attributes:
+        macro_template: The macro template string for the situation.
+        existing_file_policy: Mapped file collision policy.
+        create_parents: Whether to create intermediate directories.
+        situation_obj: Raw situation template, or None when the lookup failed and
+            fallback values are in use.
+    """
+
+    macro_template: str
+    existing_file_policy: ExistingFilePolicy
+    create_parents: bool
+    situation_obj: SituationTemplate | None
+
+
+def resolve_situation(
+    situation_name: str,
+    fallback_macro: str,
+    default_policy: ExistingFilePolicy = ExistingFilePolicy.CREATE_NEW,
+) -> ResolvedSituation:
+    """Look up a situation by name and return its resolved configuration.
+
+    Falls back to fallback_macro and default_policy when the situation cannot be loaded.
+
+    Args:
+        situation_name: Situation name to look up in the current project.
+        fallback_macro: Macro template to use when the situation cannot be found.
+        default_policy: ExistingFilePolicy to use in the fallback case.
+
+    Returns:
+        ResolvedSituation with macro_template, existing_file_policy, create_parents,
+        and situation_obj (None when falling back).
+    """
+    result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation_name))
+    if isinstance(result, GetSituationResultSuccess):
+        situation_obj = result.situation
+        return ResolvedSituation(
+            macro_template=situation_obj.macro,
+            existing_file_policy=SITUATION_TO_FILE_POLICY.get(situation_obj.policy.on_collision, default_policy),
+            create_parents=situation_obj.policy.create_dirs,
+            situation_obj=situation_obj,
+        )
+    logger.error("Failed to load situation '%s', using fallback macro template", situation_name)
+    return ResolvedSituation(
+        macro_template=fallback_macro,
+        existing_file_policy=default_policy,
+        create_parents=True,
+        situation_obj=None,
+    )
+
+
+def _attempt_map_to_project(absolute_path: Path) -> str | None:
+    """Fire AttemptMapAbsolutePathToProjectRequest; return the mapped macro path string or None."""
+    map_result = GriptapeNodes.handle_request(AttemptMapAbsolutePathToProjectRequest(absolute_path=absolute_path))
+    if isinstance(map_result, AttemptMapAbsolutePathToProjectResultSuccess) and map_result.mapped_path is not None:
+        return map_result.mapped_path
+    return None
 
 
 class ProjectFileDestination(FileDestination):
@@ -71,11 +133,9 @@ class ProjectFileDestination(FileDestination):
         portable reference via ``file.as_macro()``.  Falls back to the original
         File (absolute path) if mapping is not possible.
         """
-        map_result = GriptapeNodes.handle_request(
-            AttemptMapAbsolutePathToProjectRequest(absolute_path=Path(result_file.resolve()))
-        )
-        if isinstance(map_result, AttemptMapAbsolutePathToProjectResultSuccess) and map_result.mapped_path is not None:
-            return File(map_result.mapped_path)
+        mapped = _attempt_map_to_project(Path(result_file.resolve()))
+        if mapped is not None:
+            return File(mapped)
         return result_file
 
     @classmethod
@@ -95,20 +155,10 @@ class ProjectFileDestination(FileDestination):
             situation: Situation name to look up in the current project.
             **extra_vars: Additional macro variables (e.g., node_name="MyNode", _index=1).
         """
-        result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation))
-
-        if isinstance(result, GetSituationResultSuccess):
-            situation_obj = result.situation
-            macro_template = situation_obj.macro
-            on_collision = situation_obj.policy.on_collision
-            existing_file_policy = SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.CREATE_NEW)
-            create_dirs = situation_obj.policy.create_dirs
-        else:
-            logger.error("Failed to load situation '%s', using fallback macro template", situation)
-            situation_obj = None
-            macro_template = FALLBACK_MACRO_TEMPLATE
-            existing_file_policy = ExistingFilePolicy.CREATE_NEW
-            create_dirs = True
+        resolved = resolve_situation(situation, FALLBACK_MACRO_TEMPLATE)
+        situation_obj = resolved.situation_obj
+        existing_file_policy = resolved.existing_file_policy
+        create_dirs = resolved.create_parents
 
         parts = FilenameParts.from_filename(filename)
         variables: dict[str, str | int] = {
@@ -131,7 +181,7 @@ class ProjectFileDestination(FileDestination):
         # caller-supplied variables here. The sidecar records the raw inputs;
         # anyone re-resolving the path against the current project gets the
         # same derived values the write used.
-        macro_path = MacroPath(ParsedMacro(macro_template), variables)
+        macro_path = MacroPath(ParsedMacro(resolved.macro_template), variables)
 
         file_metadata = (
             SidecarContent(

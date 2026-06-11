@@ -5,8 +5,6 @@ method returns a per-frame FileDestination. Situation-based macro routing determ
 directory layout; falls back to a sensible default when no situation is configured.
 """
 
-import logging
-
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -16,16 +14,9 @@ from griptape_nodes.files.file_sequence import (
     build_versioned_sequence_destination,
 )
 from griptape_nodes.files.path_utils import FilenameParts
-from griptape_nodes.files.project_file import SITUATION_TO_FILE_POLICY
+from griptape_nodes.files.project_file import resolve_situation
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
-from griptape_nodes.retained_mode.events.project_events import (
-    GetSituationRequest,
-    GetSituationResultSuccess,
-    MacroPath,
-)
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-logger = logging.getLogger("griptape_nodes")
+from griptape_nodes.retained_mode.events.project_events import MacroPath
 
 _FALLBACK_SEQUENCE_MACRO = (
     "{outputs}/{node_name?:_}{file_name_base}_v{_index:03}/{file_name_base}_v{_index:03}_{entry:04}.{file_extension}"
@@ -145,31 +136,16 @@ def _build_sequence_destination_from_situation(
     Returns:
         FileSequenceDestination with a locked version index.
     """
-    situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation))
-
-    if isinstance(situation_result, GetSituationResultSuccess):
-        situation_obj = situation_result.situation
-        macro_template = situation_obj.macro
-        on_collision = situation_obj.policy.on_collision
-        existing_file_policy = SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.OVERWRITE)
-        create_parents = situation_obj.policy.create_dirs
-    else:
-        logger.error("Failed to load situation '%s', using fallback sequence macro template", situation)
-        macro_template = _FALLBACK_SEQUENCE_MACRO
-        existing_file_policy = ExistingFilePolicy.OVERWRITE
-        create_parents = True
-
+    resolved = resolve_situation(situation, _FALLBACK_SEQUENCE_MACRO, ExistingFilePolicy.OVERWRITE)
     parts = FilenameParts.from_filename(filename)
-
     variables: dict[str, str | int] = {
         "file_name_base": parts.stem,
         "file_extension": parts.extension,
         **extra_vars,
     }
-
-    macro_path = MacroPath(ParsedMacro(macro_template), variables)
+    macro_path = MacroPath(ParsedMacro(resolved.macro_template), variables)
     return build_versioned_sequence_destination(
         macro_path,
-        existing_file_policy=existing_file_policy,
-        create_parents=create_parents,
+        existing_file_policy=resolved.existing_file_policy,
+        create_parents=resolved.create_parents,
     )

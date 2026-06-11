@@ -18,9 +18,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetSituationResultSuccess,
 )
 
-HANDLE_REQUEST_PATH = (
-    "griptape_nodes.exe_types.param_components.project_file_sequence_parameter.GriptapeNodes.handle_request"
-)
+HANDLE_REQUEST_PATH = "griptape_nodes.files.project_file.GriptapeNodes.handle_request"
 BUILD_VERSIONED_PATH = (
     "griptape_nodes.exe_types.param_components.project_file_sequence_parameter.build_versioned_sequence_destination"
 )

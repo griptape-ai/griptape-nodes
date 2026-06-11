@@ -4,24 +4,14 @@ Provisions a versioned output directory via situation-based macro routing and ex
 DirectoryDestination. Falls back to a sensible default when no situation is configured.
 """
 
-import logging
-
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.project_output_parameter import ProjectOutputParameter
 from griptape_nodes.files.directory import DirectoryDestination
-from griptape_nodes.files.project_file import SITUATION_TO_FILE_POLICY
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
-from griptape_nodes.retained_mode.events.project_events import (
-    GetSituationRequest,
-    GetSituationResultSuccess,
-    MacroPath,
-)
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.files.project_file import resolve_situation
+from griptape_nodes.retained_mode.events.project_events import MacroPath
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-
-logger = logging.getLogger("griptape_nodes")
 
 _FALLBACK_DIRECTORY_MACRO = "{outputs}/{node_name?:_}{dir_name}_v{_index:03}"
 
@@ -137,28 +127,14 @@ def _build_directory_destination_from_situation(
     Returns:
         DirectoryDestination with a MacroPath and baked-in creation policy.
     """
-    situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation))
-
-    if isinstance(situation_result, GetSituationResultSuccess):
-        situation_obj = situation_result.situation
-        macro_template = situation_obj.macro
-        on_collision = situation_obj.policy.on_collision
-        existing_dir_policy = SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.CREATE_NEW)
-        create_parents = situation_obj.policy.create_dirs
-    else:
-        logger.error("Failed to load situation '%s', using fallback directory macro template", situation)
-        macro_template = _FALLBACK_DIRECTORY_MACRO
-        existing_dir_policy = ExistingFilePolicy.CREATE_NEW
-        create_parents = True
-
+    resolved = resolve_situation(situation, _FALLBACK_DIRECTORY_MACRO)
     variables: dict[str, str | int] = {
         "dir_name": dirname,
         **extra_vars,
     }
-
-    macro_path = MacroPath(ParsedMacro(macro_template), variables)
+    macro_path = MacroPath(ParsedMacro(resolved.macro_template), variables)
     return DirectoryDestination(
         macro_path,
-        existing_dir_policy=existing_dir_policy,
-        create_parents=create_parents,
+        existing_dir_policy=resolved.existing_file_policy,
+        create_parents=resolved.create_parents,
     )

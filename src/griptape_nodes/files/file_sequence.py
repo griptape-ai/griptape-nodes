@@ -52,7 +52,7 @@ class FileSequenceError(Exception):
 class FileSequence:
     """A collection of files identified by an entry-number pattern.
 
-    Internally stores a MacroPath template with a ``{entry:04}`` variable slot.
+    Internally stores a MacroPath template with a ``{entry:XX}`` variable slot.
     Exposes the industry-standard ``####`` notation at property boundaries for
     DCC software interop.
 

@@ -8,6 +8,8 @@ from __future__ import annotations
 import pathlib
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
+from griptape_nodes.files.file import _resolve_macro_path
+from griptape_nodes.files.project_file import _attempt_map_to_project
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     GetNextVersionIndexRequest,
@@ -16,8 +18,6 @@ from griptape_nodes.retained_mode.events.os_events import (
     MakeDirectoryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.project_events import (
-    AttemptMapAbsolutePathToProjectRequest,
-    AttemptMapAbsolutePathToProjectResultSuccess,
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
     MacroPath,
@@ -242,16 +242,10 @@ def _resolve_dir_path(dir_path: str | MacroPath) -> str:
     """
     if isinstance(dir_path, str):
         return dir_path
-
-    resolve_result = GriptapeNodes.handle_request(
-        GetPathForMacroRequest(parsed_macro=dir_path.parsed_macro, variables=dir_path.variables)
+    return _resolve_macro_path(
+        dir_path,
+        lambda r: DirectoryError(f"Attempted to resolve directory path. Failed: {r.result_details}"),
     )
-
-    if not isinstance(resolve_result, GetPathForMacroResultSuccess):
-        msg = f"Attempted to resolve directory path. Failed: {resolve_result.result_details}"
-        raise DirectoryError(msg)
-
-    return str(resolve_result.absolute_path)
 
 
 def _map_to_macro_directory(absolute_path: pathlib.Path, fallback_path: str | MacroPath) -> Directory:
@@ -261,9 +255,9 @@ def _map_to_macro_directory(absolute_path: pathlib.Path, fallback_path: str | Ma
     a project directory, so callers can store a portable reference.
     Falls back to the locked MacroPath or absolute path string if mapping fails.
     """
-    map_result = GriptapeNodes.handle_request(AttemptMapAbsolutePathToProjectRequest(absolute_path=absolute_path))
-    if isinstance(map_result, AttemptMapAbsolutePathToProjectResultSuccess) and map_result.mapped_path is not None:
-        return Directory(map_result.mapped_path)
+    mapped = _attempt_map_to_project(absolute_path)
+    if mapped is not None:
+        return Directory(mapped)
     if isinstance(fallback_path, MacroPath):
         return Directory(fallback_path)
     return Directory(str(absolute_path))
