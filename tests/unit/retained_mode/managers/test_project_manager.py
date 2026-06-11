@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 if TYPE_CHECKING:
-    from griptape_nodes.common.project_templates import VersionPins
     from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
 
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
@@ -956,7 +955,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test mapping an absolute path that's inside a project directory."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1009,7 +1007,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test mapping an absolute path that's outside all project directories."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1078,7 +1075,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test that longest prefix matching works correctly for nested directories."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1131,7 +1127,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test mapping a path that's exactly at a directory root (no subdirectories)."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1184,7 +1179,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test that paths not in defined directories fall back to {project_dir}."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1721,6 +1715,40 @@ class TestLoadSystemDefaults:
 class TestProjectManagerProjectWorkspaces:
     """Test ProjectManager project_workspaces lookup in on_set_current_project_request."""
 
+    @staticmethod
+    def _simulate_library_config_change_on_project_load(mock_config: Mock) -> None:
+        """Make activating the project change its merged library config.
+
+        Library reload is now gated on `library_config_changed`: loading the
+        project-adjacent config layer is what changes the merged
+        `libraries_to_register`, so tests that want the reload to fire must model
+        that. `get_config_value` returns a base library list that grows once
+        `load_project_config` runs, and passes other keys through with their
+        default.
+        """
+        from griptape_nodes.retained_mode.managers.settings import (
+            ENGINE_VERSION_KEY,
+            LIBRARIES_TO_DOWNLOAD_KEY,
+            LIBRARIES_TO_REGISTER_KEY,
+        )
+
+        state = {"libraries": ["base-lib"]}
+
+        def get_config_value(key: str, *_args: object, default: object = None, **_kwargs: object) -> object:
+            if key == LIBRARIES_TO_REGISTER_KEY:
+                return list(state["libraries"])
+            if key == LIBRARIES_TO_DOWNLOAD_KEY:
+                return []
+            if key == ENGINE_VERSION_KEY:
+                return None
+            return default if default is not None else {}
+
+        def load_project_config(_project_dir: object) -> None:
+            state["libraries"] = ["base-lib", "project-lib"]
+
+        mock_config.get_config_value.side_effect = get_config_value
+        mock_config.load_project_config.side_effect = load_project_config
+
     def _make_project_manager_with_project(self, project_file_path: Path, mock_config: Mock) -> ProjectManager:
         """Create a ProjectManager with a loaded project template at the given path."""
         from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
@@ -1866,7 +1894,7 @@ class TestProjectManagerProjectWorkspaces:
 
     @pytest.mark.asyncio
     async def test_initialization_complete_same_workspace_reloads_libraries_only(self, tmp_path: Path) -> None:
-        """When workspace is unchanged, libraries are reloaded but workflows are NOT re-registered."""
+        """When workspace is unchanged but library config changed, libraries reload without workflow re-registration."""
         from unittest.mock import AsyncMock, patch
 
         from griptape_nodes.retained_mode.events.library_events import (
@@ -1880,7 +1908,7 @@ class TestProjectManagerProjectWorkspaces:
         mock_config.project_config = {}
         mock_config.env_config = {}
         mock_config.merged_config = {}
-        mock_config.get_config_value.return_value = {}
+        self._simulate_library_config_change_on_project_load(mock_config)
         # Same workspace before and after
         mock_config.workspace_path = str(tmp_path)
 
@@ -1918,7 +1946,7 @@ class TestProjectManagerProjectWorkspaces:
         mock_config.project_config = {}
         mock_config.env_config = {}
         mock_config.merged_config = {}
-        mock_config.get_config_value.return_value = {}
+        self._simulate_library_config_change_on_project_load(mock_config)
 
         pm = self._make_project_manager_with_project(project_file, mock_config)
         pm._initialization_complete = True
@@ -1964,7 +1992,7 @@ class TestProjectManagerProjectWorkspaces:
         mock_config.project_config = {}
         mock_config.env_config = {}
         mock_config.merged_config = {}
-        mock_config.get_config_value.return_value = {}
+        self._simulate_library_config_change_on_project_load(mock_config)
         mock_config.workspace_path = str(tmp_path)
 
         pm = self._make_project_manager_with_project(project_file, mock_config)
@@ -3400,7 +3428,6 @@ directories:
         # Re-emit the child as overlay YAML against the base parent it was loaded with.
         # The merged result template should still serialize parent_project_path when
         # diffed against a base that doesn't declare one.
-        from griptape_nodes.common.project_templates import DEFAULT_PROJECT_TEMPLATE
 
         overlay_yaml = result.template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
         # YAML may quote the key; match on the substring, not a strict prefix.
@@ -4529,501 +4556,37 @@ directories:
         assert result.template.parent_project_path.linux == "/mnt/base.yml"
 
 
-class TestEngineVersionPinBlock:
-    """The project is the source of truth for its engine: a failing pin blocks the load (#63)."""
-
-    @pytest.fixture
-    def pm(self, tmp_path: Path) -> ProjectManager:
-        mock_event_manager = Mock()
-        mock_config_manager = Mock()
-        mock_config_manager.project_config = {}
-        mock_config_manager.env_config = {}
-        mock_config_manager.merged_config = {}
-        mock_config_manager.get_config_value.return_value = []
-        mock_config_manager.workspace_path = tmp_path
-        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+class TestSnapshotLibraryConfig:
+    """`_snapshot_library_config` powers conditional reload: same config skips the deep reset."""
 
     @staticmethod
-    def _file_router(content: str) -> AsyncMock:
-        from griptape_nodes.retained_mode.events.os_events import ReadFileResultSuccess
-
-        async def route(_request: object) -> object:
-            return ReadFileResultSuccess(
-                content=content,
-                file_size=len(content),
-                mime_type="text/plain",
-                encoding="utf-8",
-                result_details="ok",
-            )
-
-        return AsyncMock(side_effect=route)
-
-    async def _load(self, pm: ProjectManager, tmp_path: Path, yaml_text: str) -> object:
-        from griptape_nodes.retained_mode.events.project_events import LoadProjectTemplateRequest
-
-        project_path = (tmp_path / "project.yml").resolve()
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_gn.ahandle_request = self._file_router(yaml_text)
-            return await pm.on_load_project_template_request(LoadProjectTemplateRequest(project_path=project_path))
-
-    @pytest.mark.asyncio
-    async def test_satisfiable_engine_pin_loads(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.retained_mode.events.project_events import LoadProjectTemplateResultSuccess
-
-        yaml_text = (
-            'project_template_schema_version: "0.4.0"\n'
-            "name: Pinned\n"
-            "directories: {}\n"
-            "version_pins:\n"
-            '  engine_version: ">=0.5,<1.0"\n'
-        )
-        with patch("griptape_nodes.retained_mode.managers.project_manager.engine_version", "0.5.3"):
-            result = await self._load(pm, tmp_path, yaml_text)
-
-        assert isinstance(result, LoadProjectTemplateResultSuccess)
-
-    @pytest.mark.asyncio
-    async def test_unsatisfiable_engine_pin_blocks_load(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import ProjectValidationStatus
-        from griptape_nodes.retained_mode.events.project_events import LoadProjectTemplateResultFailure
-
-        yaml_text = (
-            'project_template_schema_version: "0.4.0"\n'
-            "name: Pinned\n"
-            "directories: {}\n"
-            "version_pins:\n"
-            '  engine_version: ">=2.0,<3.0"\n'
-        )
-        with patch("griptape_nodes.retained_mode.managers.project_manager.engine_version", "0.5.3"):
-            result = await self._load(pm, tmp_path, yaml_text)
-
-        assert isinstance(result, LoadProjectTemplateResultFailure)
-        assert result.validation.status == ProjectValidationStatus.UNUSABLE
-        assert any("version_pins.engine_version" in p.field_path for p in result.validation.problems)
-        assert any("0.5.3" in p.message for p in result.validation.problems)
-
-    @pytest.mark.asyncio
-    async def test_malformed_engine_specifier_blocks_load(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import ProjectValidationStatus
-        from griptape_nodes.retained_mode.events.project_events import LoadProjectTemplateResultFailure
-
-        yaml_text = (
-            'project_template_schema_version: "0.4.0"\n'
-            "name: Pinned\n"
-            "directories: {}\n"
-            "version_pins:\n"
-            '  engine_version: "not-a-specifier"\n'
-        )
-        with patch("griptape_nodes.retained_mode.managers.project_manager.engine_version", "0.5.3"):
-            result = await self._load(pm, tmp_path, yaml_text)
-
-        assert isinstance(result, LoadProjectTemplateResultFailure)
-        assert result.validation.status == ProjectValidationStatus.UNUSABLE
-        assert any("not a valid" in p.message.lower() for p in result.validation.problems)
-
-    @pytest.mark.asyncio
-    async def test_no_engine_pin_loads(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.retained_mode.events.project_events import LoadProjectTemplateResultSuccess
-
-        yaml_text = (
-            'project_template_schema_version: "0.4.0"\n'
-            "name: Unpinned\n"
-            "directories: {}\n"
-            "version_pins:\n"
-            "  libraries: []\n"
-        )
-        with patch("griptape_nodes.retained_mode.managers.project_manager.engine_version", "0.5.3"):
-            result = await self._load(pm, tmp_path, yaml_text)
-
-        assert isinstance(result, LoadProjectTemplateResultSuccess)
-
-
-class TestPinnedLibraryProvisioning:
-    """Provisioning installs pinned libraries to match, skipping already-satisfied versions (#63)."""
-
-    @pytest.fixture
-    def pm(self, tmp_path: Path) -> ProjectManager:
-        mock_event_manager = Mock()
+    def _pm_reading(values: dict[str, object]) -> ProjectManager:
         mock_config_manager = Mock()
-        mock_config_manager.project_config = {}
-        mock_config_manager.env_config = {}
-        mock_config_manager.merged_config = {}
-        mock_config_manager.get_config_value.return_value = []
-        mock_config_manager.workspace_path = tmp_path
-        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+        mock_config_manager.get_config_value.side_effect = lambda key, default=None: values.get(key, default)
+        return ProjectManager(Mock(), mock_config_manager, Mock())
 
-    @staticmethod
-    def _seed_project(pm: ProjectManager, tmp_path: Path, pins: "VersionPins") -> str:
-        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
-
-        template = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"version_pins": pins})
-        project_id = str((tmp_path / "project.yml").resolve())
-        pm._successfully_loaded_project_templates[project_id] = ProjectInfo(
-            project_id=project_id,
-            project_file_path=Path(project_id),
-            project_base_dir=tmp_path,
-            template=template,
-            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
-            parsed_situation_schemas={},
-            parsed_directory_schemas={},
-        )
-        return project_id
-
-    @pytest.mark.asyncio
-    async def test_git_pin_not_installed_issues_download(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin, VersionPins
-        from griptape_nodes.retained_mode.events.library_events import (
-            DownloadLibraryRequest,
-            DownloadLibraryResultSuccess,
+    def test_identical_config_snapshots_are_equal(self) -> None:
+        from griptape_nodes.retained_mode.managers.settings import (
+            ENGINE_VERSION_KEY,
+            LIBRARIES_TO_REGISTER_KEY,
         )
 
-        pins = VersionPins(libraries=[LibraryPin(name="git-lib", version=">=2.0", git_url="griptape-ai/git-lib@v2.0")])
-        project_id = self._seed_project(pm, tmp_path, pins)
+        pm = self._pm_reading({LIBRARIES_TO_REGISTER_KEY: ["a", "b"], ENGINE_VERSION_KEY: ">=0.5,<0.6"})
 
-        ahandle = AsyncMock(
-            return_value=DownloadLibraryResultSuccess(
-                library_name="git-lib", library_path="/x/lib.json", result_details="ok"
-            )
-        )
-        with (
-            patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn,
-            patch(
-                "griptape_nodes.retained_mode.managers.project_manager.LibraryRegistry.list_libraries",
-                return_value=[],
-            ),
-        ):
-            mock_gn.ahandle_request = ahandle
-            failure = await pm._provision_pinned_libraries(project_id)
+        assert pm._snapshot_library_config() == pm._snapshot_library_config()
 
-        assert failure is None
-        assert ahandle.await_count == 1
-        assert ahandle.await_args is not None
-        sent = ahandle.await_args.args[0]
-        assert isinstance(sent, DownloadLibraryRequest)
-        # url@ref form is parsed apart before issuing the request.
-        assert sent.git_url == "griptape-ai/git-lib"
-        assert sent.branch_tag_commit == "v2.0"
-        # Nothing installed -> a fresh install, not an overwrite.
-        assert sent.overwrite_existing is False
-        assert sent.auto_register is False
+    def test_changed_library_list_changes_snapshot(self) -> None:
+        from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
 
-    @pytest.mark.asyncio
-    async def test_satisfied_version_skips_download(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin, VersionPins
+        before = self._pm_reading({LIBRARIES_TO_REGISTER_KEY: ["a"]})._snapshot_library_config()
+        after = self._pm_reading({LIBRARIES_TO_REGISTER_KEY: ["a", "b"]})._snapshot_library_config()
 
-        pins = VersionPins(libraries=[LibraryPin(name="git-lib", version=">=2.0,<3", git_url="griptape-ai/git-lib@v2")])
-        project_id = self._seed_project(pm, tmp_path, pins)
+        assert before != after
 
-        ahandle = AsyncMock()
-        with (
-            patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn,
-            patch.object(pm, "_installed_library_version", return_value="2.1.0"),
-        ):
-            mock_gn.ahandle_request = ahandle
-            failure = await pm._provision_pinned_libraries(project_id)
+    def test_engine_version_only_change_changes_snapshot(self) -> None:
+        from griptape_nodes.retained_mode.managers.settings import ENGINE_VERSION_KEY
 
-        assert failure is None
-        ahandle.assert_not_awaited()
+        before = self._pm_reading({ENGINE_VERSION_KEY: ">=0.5,<0.6"})._snapshot_library_config()
+        after = self._pm_reading({ENGINE_VERSION_KEY: ">=0.6,<0.7"})._snapshot_library_config()
 
-    @pytest.mark.asyncio
-    async def test_wrong_version_overwrites_on_download(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin, VersionPins
-        from griptape_nodes.retained_mode.events.library_events import (
-            DownloadLibraryRequest,
-            DownloadLibraryResultSuccess,
-        )
-
-        pins = VersionPins(libraries=[LibraryPin(name="git-lib", version=">=2.0", git_url="griptape-ai/git-lib@v2.0")])
-        project_id = self._seed_project(pm, tmp_path, pins)
-
-        ahandle = AsyncMock(
-            return_value=DownloadLibraryResultSuccess(
-                library_name="git-lib", library_path="/x/lib.json", result_details="ok"
-            )
-        )
-        with (
-            patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn,
-            patch.object(pm, "_installed_library_version", return_value="1.0.0"),
-        ):
-            mock_gn.ahandle_request = ahandle
-            failure = await pm._provision_pinned_libraries(project_id)
-
-        assert failure is None
-        assert ahandle.await_args is not None
-        sent = ahandle.await_args.args[0]
-        assert isinstance(sent, DownloadLibraryRequest)
-        # A wrong installed version is replaced rather than silently kept.
-        assert sent.overwrite_existing is True
-
-    @pytest.mark.asyncio
-    async def test_requirement_pin_folds_version_into_specifier(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin, VersionPins
-        from griptape_nodes.retained_mode.events.library_events import (
-            RegisterLibraryFromRequirementSpecifierRequest,
-            RegisterLibraryFromRequirementSpecifierResultSuccess,
-        )
-
-        pins = VersionPins(libraries=[LibraryPin(name="pypi-lib", version="2.0", requirement_specifier="pypi-lib")])
-        project_id = self._seed_project(pm, tmp_path, pins)
-
-        ahandle = AsyncMock(
-            return_value=RegisterLibraryFromRequirementSpecifierResultSuccess(
-                library_name="pypi-lib", result_details="ok"
-            )
-        )
-        with (
-            patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn,
-            patch.object(pm, "_installed_library_version", return_value=None),
-        ):
-            mock_gn.ahandle_request = ahandle
-            failure = await pm._provision_pinned_libraries(project_id)
-
-        assert failure is None
-        assert ahandle.await_args is not None
-        sent = ahandle.await_args.args[0]
-        assert isinstance(sent, RegisterLibraryFromRequirementSpecifierRequest)
-        assert sent.requirement_specifier == "pypi-lib2.0"
-
-    @pytest.mark.asyncio
-    async def test_provisioning_failure_blocks_switch(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin, VersionPins
-        from griptape_nodes.retained_mode.events.library_events import DownloadLibraryResultFailure
-        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectResultFailure
-
-        pins = VersionPins(libraries=[LibraryPin(name="git-lib", git_url="griptape-ai/git-lib@v2.0")])
-        project_id = self._seed_project(pm, tmp_path, pins)
-
-        ahandle = AsyncMock(return_value=DownloadLibraryResultFailure(result_details="clone exploded"))
-        with (
-            patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn,
-            patch.object(pm, "_installed_library_version", return_value=None),
-        ):
-            mock_gn.ahandle_request = ahandle
-            failure = await pm._provision_pinned_libraries(project_id)
-
-        assert isinstance(failure, SetCurrentProjectResultFailure)
-        assert "git-lib" in str(failure.result_details)
-        assert "clone exploded" in str(failure.result_details)
-
-    @pytest.mark.asyncio
-    async def test_no_pins_is_a_noop(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import VersionPins
-
-        project_id = self._seed_project(pm, tmp_path, VersionPins())
-
-        ahandle = AsyncMock()
-        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
-            mock_gn.ahandle_request = ahandle
-            failure = await pm._provision_pinned_libraries(project_id)
-
-        assert failure is None
-        ahandle.assert_not_awaited()
-
-
-class TestPlanOnePinnedLibrary:
-    """The pure plan function decides SKIP/INSTALL/OVERWRITE from a registry read + PEP 440 compare (#63)."""
-
-    @pytest.fixture
-    def pm(self, tmp_path: Path) -> ProjectManager:
-        mock_event_manager = Mock()
-        mock_config_manager = Mock()
-        mock_config_manager.project_config = {}
-        mock_config_manager.env_config = {}
-        mock_config_manager.merged_config = {}
-        mock_config_manager.get_config_value.return_value = []
-        mock_config_manager.workspace_path = tmp_path
-        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
-
-    def test_git_satisfied_is_skip(self, pm: ProjectManager) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin
-        from griptape_nodes.retained_mode.events.project_events import (
-            LibraryProvisioningActionKind,
-            LibraryProvisioningSource,
-        )
-
-        pin = LibraryPin(name="git-lib", version=">=2.0,<3", git_url="griptape-ai/git-lib@v2")
-        with patch.object(pm, "_installed_library_version", return_value="2.1.0"):
-            action = pm._plan_one_pinned_library(pin)
-
-        assert action.kind == LibraryProvisioningActionKind.SKIP
-        assert action.source == LibraryProvisioningSource.GIT
-        assert action.installed_version == "2.1.0"
-        assert action.destructive is False
-
-    def test_git_not_installed_is_nondestructive_install(self, pm: ProjectManager) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin
-        from griptape_nodes.retained_mode.events.project_events import (
-            LibraryProvisioningActionKind,
-            LibraryProvisioningSource,
-        )
-
-        pin = LibraryPin(name="git-lib", version=">=2.0", git_url="griptape-ai/git-lib@v2.0")
-        with patch.object(pm, "_installed_library_version", return_value=None):
-            action = pm._plan_one_pinned_library(pin)
-
-        assert action.kind == LibraryProvisioningActionKind.INSTALL
-        assert action.source == LibraryProvisioningSource.GIT
-        assert action.destructive is False
-        # url@ref is parsed apart so the UI can show the ref.
-        assert action.git_url == "griptape-ai/git-lib"
-        assert action.git_ref == "v2.0"
-
-    def test_git_wrong_version_is_destructive_overwrite(self, pm: ProjectManager) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin
-        from griptape_nodes.retained_mode.events.project_events import (
-            LibraryProvisioningActionKind,
-            LibraryProvisioningSource,
-        )
-
-        pin = LibraryPin(name="git-lib", version=">=2.0", git_url="griptape-ai/git-lib@v2.0")
-        with patch.object(pm, "_installed_library_version", return_value="1.0.0"):
-            action = pm._plan_one_pinned_library(pin)
-
-        # The key assertion: a git OVERWRITE deletes the local dir and so is destructive.
-        assert action.kind == LibraryProvisioningActionKind.OVERWRITE
-        assert action.source == LibraryProvisioningSource.GIT
-        assert action.installed_version == "1.0.0"
-        assert action.destructive is True
-
-    def test_pypi_not_installed_is_nondestructive_install(self, pm: ProjectManager) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin
-        from griptape_nodes.retained_mode.events.project_events import (
-            LibraryProvisioningActionKind,
-            LibraryProvisioningSource,
-        )
-
-        pin = LibraryPin(name="pypi-lib", version="2.0", requirement_specifier="pypi-lib")
-        with patch.object(pm, "_installed_library_version", return_value=None):
-            action = pm._plan_one_pinned_library(pin)
-
-        assert action.kind == LibraryProvisioningActionKind.INSTALL
-        assert action.source == LibraryProvisioningSource.PYPI
-        assert action.destructive is False
-        # The pin version is folded into the specifier the install will use.
-        assert action.requirement_specifier == "pypi-lib2.0"
-
-    def test_pypi_wrong_version_overwrite_is_nondestructive(self, pm: ProjectManager) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin
-        from griptape_nodes.retained_mode.events.project_events import (
-            LibraryProvisioningActionKind,
-            LibraryProvisioningSource,
-        )
-
-        pin = LibraryPin(name="pypi-lib", version="2.0", requirement_specifier="pypi-lib")
-        with patch.object(pm, "_installed_library_version", return_value="1.0.0"):
-            action = pm._plan_one_pinned_library(pin)
-
-        # A PyPI overwrite installs into a per-library venv; it never deletes a local lib dir.
-        assert action.kind == LibraryProvisioningActionKind.OVERWRITE
-        assert action.source == LibraryProvisioningSource.PYPI
-        assert action.destructive is False
-
-
-class TestPreviewProjectProvisioning:
-    """The read-only preview handler lists the plan without touching disk (#63)."""
-
-    @pytest.fixture
-    def pm(self, tmp_path: Path) -> ProjectManager:
-        mock_event_manager = Mock()
-        mock_config_manager = Mock()
-        mock_config_manager.project_config = {}
-        mock_config_manager.env_config = {}
-        mock_config_manager.merged_config = {}
-        mock_config_manager.get_config_value.return_value = []
-        mock_config_manager.workspace_path = tmp_path
-        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
-
-    @staticmethod
-    def _seed_project(pm: ProjectManager, tmp_path: Path, pins: "VersionPins | None") -> str:
-        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
-
-        template = DEFAULT_PROJECT_TEMPLATE.model_copy(update={"version_pins": pins})
-        project_id = str((tmp_path / "project.yml").resolve())
-        pm._successfully_loaded_project_templates[project_id] = ProjectInfo(
-            project_id=project_id,
-            project_file_path=Path(project_id),
-            project_base_dir=tmp_path,
-            template=template,
-            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
-            parsed_situation_schemas={},
-            parsed_directory_schemas={},
-        )
-        return project_id
-
-    def test_not_loaded_project_is_failure(self, pm: ProjectManager) -> None:
-        from griptape_nodes.retained_mode.events.project_events import (
-            PreviewProjectProvisioningRequest,
-            PreviewProjectProvisioningResultFailure,
-        )
-
-        result = pm.on_preview_project_provisioning_request(
-            PreviewProjectProvisioningRequest(project_id="/nope/project.yml")
-        )
-
-        assert isinstance(result, PreviewProjectProvisioningResultFailure)
-
-    def test_no_pins_is_empty_success(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.retained_mode.events.project_events import (
-            PreviewProjectProvisioningRequest,
-            PreviewProjectProvisioningResultSuccess,
-        )
-
-        project_id = self._seed_project(pm, tmp_path, None)
-        result = pm.on_preview_project_provisioning_request(PreviewProjectProvisioningRequest(project_id=project_id))
-
-        assert isinstance(result, PreviewProjectProvisioningResultSuccess)
-        assert result.actions == []
-
-    def test_mixed_pins_preserve_order_and_flags(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin, VersionPins
-        from griptape_nodes.retained_mode.events.project_events import (
-            LibraryProvisioningActionKind,
-            PreviewProjectProvisioningRequest,
-            PreviewProjectProvisioningResultSuccess,
-        )
-
-        pins = VersionPins(
-            libraries=[
-                LibraryPin(name="skip-lib", version=">=2.0", git_url="griptape-ai/skip-lib@v2"),
-                LibraryPin(name="install-lib", version=">=2.0", git_url="griptape-ai/install-lib@v2"),
-                LibraryPin(name="overwrite-lib", version=">=2.0", git_url="griptape-ai/overwrite-lib@v2"),
-            ]
-        )
-        project_id = self._seed_project(pm, tmp_path, pins)
-
-        installed = {"skip-lib": "2.1.0", "install-lib": None, "overwrite-lib": "1.0.0"}
-        with patch.object(pm, "_installed_library_version", side_effect=lambda name: installed[name]):
-            result = pm.on_preview_project_provisioning_request(
-                PreviewProjectProvisioningRequest(project_id=project_id)
-            )
-
-        assert isinstance(result, PreviewProjectProvisioningResultSuccess)
-        # Order matches the template's libraries list.
-        assert [a.library_name for a in result.actions] == ["skip-lib", "install-lib", "overwrite-lib"]
-        assert [a.kind for a in result.actions] == [
-            LibraryProvisioningActionKind.SKIP,
-            LibraryProvisioningActionKind.INSTALL,
-            LibraryProvisioningActionKind.OVERWRITE,
-        ]
-        # Only the git OVERWRITE is destructive.
-        assert [a.destructive for a in result.actions] == [False, False, True]
-
-    def test_handler_is_read_only(self, pm: ProjectManager, tmp_path: Path) -> None:
-        from griptape_nodes.common.project_templates import LibraryPin, VersionPins
-        from griptape_nodes.retained_mode.events.project_events import PreviewProjectProvisioningRequest
-
-        pins = VersionPins(libraries=[LibraryPin(name="git-lib", version=">=2.0", git_url="griptape-ai/git-lib@v2.0")])
-        project_id = self._seed_project(pm, tmp_path, pins)
-
-        ahandle = AsyncMock()
-        with (
-            patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn,
-            patch.object(pm, "_installed_library_version", return_value="1.0.0"),
-        ):
-            mock_gn.ahandle_request = ahandle
-            pm.on_preview_project_provisioning_request(PreviewProjectProvisioningRequest(project_id=project_id))
-
-        # Read-only: it must never dispatch the clone/venv/delete work.
-        ahandle.assert_not_awaited()
+        assert before != after

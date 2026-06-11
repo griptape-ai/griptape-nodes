@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, ValidationError
 from ruamel.yaml import YAML
 
 from griptape_nodes.common.project_templates.directory import DirectoryDefinition
-from griptape_nodes.common.project_templates.pins import VersionPins
 from griptape_nodes.common.project_templates.project_path import PerPlatformProjectPath
 from griptape_nodes.common.project_templates.situation import SituationTemplate
 from griptape_nodes.common.project_templates.validation import (
@@ -53,15 +52,6 @@ class ProjectTemplate(BaseModel):
     file_extension_directories: dict[str, str] = Field(
         default_factory=dict,
         description="Mapping of file extension (without leading dot) to a macro (plain name or `{...}` template) used to populate the {file_extension_directory} macro variable",
-    )
-    version_pins: VersionPins | None = Field(
-        default=None,
-        description=(
-            "Optional engine and library version pins. When set, the project becomes the source "
-            "of truth for its runtime: an engine version that does not satisfy the pin blocks the "
-            "load, and pinned libraries are provisioned to match when the project is activated. "
-            "Omitted (null) means no pinning, so older projects without this field load unchanged."
-        ),
     )
 
     def get_situation(self, situation_name: str) -> SituationTemplate | None:
@@ -123,11 +113,6 @@ class ProjectTemplate(BaseModel):
         )
         if file_extension_directories_overlay:
             output["file_extension_directories"] = file_extension_directories_overlay
-
-        # version_pins: emit only when it diverges from base. Explicit null
-        # tombstones inherited pins. Atomic (whole-object), like parent_project_path.
-        if self_dump.get("version_pins") != base_dump.get("version_pins"):
-            output["version_pins"] = self_dump.get("version_pins")
 
         return self._dump_yaml(output)
 
@@ -421,22 +406,6 @@ class ProjectTemplate(BaseModel):
         else:
             merged_parent_project_path = base.parent_project_path
 
-        # version_pins: atomic (whole-object) replace, like parent_project_path.
-        # Overlay wins; explicit null clears inherited pins; absent inherits base.
-        if overlay.clears_version_pins:
-            merged_version_pins = None
-        elif overlay.version_pins is not None:
-            merged_version_pins = overlay.version_pins
-        else:
-            merged_version_pins = base.version_pins
-
-        if merged_version_pins != base.version_pins:
-            validation_info.add_override(
-                category=ProjectOverrideCategory.VERSION_PIN,
-                name="version_pins",
-                action=ProjectOverrideAction.MODIFIED,
-            )
-
         return ProjectTemplate(
             project_template_schema_version=overlay.project_template_schema_version,
             name=overlay.name,
@@ -446,5 +415,4 @@ class ProjectTemplate(BaseModel):
             environment=merged_environment,
             file_extension_directories=merged_file_extension_directories,
             description=merged_description,
-            version_pins=merged_version_pins,
         )

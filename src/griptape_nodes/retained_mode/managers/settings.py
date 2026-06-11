@@ -1,8 +1,8 @@
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic import Field as PydanticField
 
 from griptape_nodes.common.project_templates import PerPlatformProjectPath
@@ -14,6 +14,7 @@ WORKFLOWS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.workflows
 SECRETS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.secrets_to_register"
 MODELS_TO_DOWNLOAD_KEY = "app_events.on_app_initialization_complete.models_to_download"
 PROJECTS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.projects_to_register"
+ENGINE_VERSION_KEY = "app_events.on_app_initialization_complete.engine_version"
 PROJECT_WORKSPACES_KEY = "project_workspaces"
 EVENTS_TO_ECHO_KEY = "app_events.events_to_echo_as_retained_mode"
 WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
@@ -115,12 +116,20 @@ class LibraryRegistration(BaseModel):
 
     Bare path strings remain valid in the config; this object form is used when
     additional fields (such as `enabled` or `worker_mode_override`) need to be
-    set per entry.
+    set per entry. An entry may describe a local library (via `path`) and/or a
+    remote, version-pinned source (via `git_url` / `requirement_specifier`),
+    which the engine provisions to match when the owning project is activated.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    path: str = Field(description="Path to a griptape_nodes_library.json file or a directory scanned recursively.")
+    path: str | None = Field(
+        default=None,
+        description=(
+            "Path to a griptape_nodes_library.json file or a directory scanned recursively. "
+            "Optional when git_url/requirement_specifier provide a remote source."
+        ),
+    )
     enabled: bool = Field(
         default=True,
         description="When False, the library remains in config but is not loaded on startup.",
@@ -134,6 +143,41 @@ class LibraryRegistration(BaseModel):
             "None reverts to the manifest's SuggestedWorkerMode."
         ),
     )
+    name: str | None = Field(
+        default=None,
+        description=(
+            "Library name, matching the library's manifest `name`. Required for sourced "
+            "entries (git_url/requirement_specifier) so the installed version can be matched."
+        ),
+    )
+    version: str | None = Field(
+        default=None,
+        description=(
+            "PEP 440 version specifier the installed library must satisfy (e.g. '>=1.2,<2'). None pins by source only."
+        ),
+    )
+    git_url: str | None = Field(
+        default=None,
+        description=(
+            "Git source in the engine's `url@ref` form (same as `libraries_to_download`): "
+            "a full URL or `user/repo` shorthand, with an optional `@branch|tag|commit` suffix "
+            "(e.g. 'griptape-ai/griptape-nodes-library-standard@v2.0')."
+        ),
+    )
+    requirement_specifier: str | None = Field(
+        default=None,
+        description="PyPI requirement specifier used to install the library into its own venv (e.g. 'my-lib==2.0').",
+    )
+
+    @model_validator(mode="after")
+    def _validate_sources(self) -> Self:
+        if self.path is None and self.git_url is None and self.requirement_specifier is None:
+            msg = "LibraryRegistration requires at least one of 'path', 'git_url', or 'requirement_specifier'"
+            raise ValueError(msg)
+        if (self.git_url is not None or self.requirement_specifier is not None) and self.name is None:
+            msg = "LibraryRegistration with a 'git_url' or 'requirement_specifier' source requires 'name'"
+            raise ValueError(msg)
+        return self
 
 
 class AppInitializationComplete(BaseModel):
@@ -166,6 +210,15 @@ class AppInitializationComplete(BaseModel):
             "(2) a per-platform mapping with optional `linux`, `darwin`, `windows`, and `default` keys "
             "for cross-platform deployments where the same project resolves to different paths on each OS. "
             "Per-platform entries with no key matching the active platform and no `default` are skipped with a warning."
+        ),
+    )
+    engine_version: str | None = Field(
+        category=PROJECTS,
+        default=None,
+        description=(
+            "PEP 440 version specifier the running engine must satisfy (e.g. '>=0.5,<0.6'). "
+            "A mismatch blocks project activation. Typically set in a project-adjacent config so the "
+            "project becomes the source of truth for the engine version it runs against."
         ),
     )
 

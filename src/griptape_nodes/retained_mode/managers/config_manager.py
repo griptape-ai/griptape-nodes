@@ -409,6 +409,22 @@ class ConfigManager:
 
         return value
 
+    def read_config_file_value(self, path: Path, key: str, *, default: Any | None = None) -> Any:
+        """Read a single dot-notation key from a config file without merging it into the live config.
+
+        Reads and parses the JSON at `path` in isolation, then pulls `key` from it.
+        Used to inspect a project-adjacent config (e.g. for a provisioning preview)
+        without disturbing the active config layers. Returns `default` when the
+        file is missing/unparsable or the key is absent.
+
+        Args:
+            path: The config file to read.
+            key: Dot-notation key (e.g. 'category.subcategory.key').
+            default: Value to return when the key is not present.
+        """
+        config = self._load_config_from_file(path, label=str(path))
+        return get_dot_value(config, key, default)
+
     def set_config_value(self, key: str, value: Any, *, should_set_env_var_if_detected: bool = True) -> bool:
         """Set a value in the configuration.
 

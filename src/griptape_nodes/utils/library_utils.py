@@ -136,7 +136,7 @@ def extract_library_path(entry: Any) -> str:
     if isinstance(entry, str):
         return entry
     if isinstance(entry, LibraryRegistration):
-        return entry.path
+        return entry.path if entry.path is not None else ""
     if isinstance(entry, dict):
         path = entry.get("path")
         return path if isinstance(path, str) else ""

@@ -20,6 +20,9 @@ from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, cast
 
 import anyio
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion
+from packaging.version import Version as PackagingVersion
 from pydantic import ValidationError
 from rich.align import Align
 from rich.box import HEAVY_EDGE
@@ -116,6 +119,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     InstallLibraryDependenciesRequest,
     InstallLibraryDependenciesResultFailure,
     InstallLibraryDependenciesResultSuccess,
+    LibraryProvisioningAction,
+    LibraryProvisioningActionKind,
+    LibraryProvisioningSource,
     ListCapableLibraryEventHandlersRequest,
     ListCapableLibraryEventHandlersResultFailure,
     ListCapableLibraryEventHandlersResultSuccess,
@@ -136,6 +142,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     LoadMetadataForAllLibrariesRequest,
     LoadMetadataForAllLibrariesResultSuccess,
     ParameterDescription,
+    PreviewProjectProvisioningRequest,
+    PreviewProjectProvisioningResultFailure,
+    PreviewProjectProvisioningResultSuccess,
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
@@ -204,6 +213,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import (
+    ENGINE_VERSION_KEY,
     LIBRARIES_TO_DOWNLOAD_KEY,
     LIBRARIES_TO_REGISTER_KEY,
     WORKER_HEARTBEAT_STARTUP_GRACE_KEY,
@@ -239,7 +249,7 @@ from griptape_nodes.utils.library_utils import (
     normalize_library_registrations,
 )
 from griptape_nodes.utils.uv_utils import find_uv_bin, is_venv_functional, venv_python_path
-from griptape_nodes.utils.version_utils import get_complete_version_string
+from griptape_nodes.utils.version_utils import engine_version, get_complete_version_string
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -504,6 +514,9 @@ class LibraryManager:
             GetLibrarySourceInfoRequest, self.on_get_library_source_info_request
         )
         event_manager.assign_manager_to_request_type(GetEngineSourceInfoRequest, self.on_get_engine_source_info_request)
+        event_manager.assign_manager_to_request_type(
+            PreviewProjectProvisioningRequest, self.on_preview_project_provisioning_request
+        )
 
         event_manager.add_listener_to_app_event(
             LibraryLoadedNotification,
@@ -1042,6 +1055,8 @@ class LibraryManager:
         # Load metadata for all discovered library files (including disabled ones,
         # so their names/versions can be displayed in status output).
         for discovered in library_files:
+            if discovered.registration.path is None:
+                continue
             metadata_request = LoadLibraryMetadataFromFileRequest(file_path=discovered.registration.path)
             metadata_result = self.load_library_metadata_from_file_request(metadata_request)
 
@@ -2983,18 +2998,32 @@ class LibraryManager:
                 )
             )
 
-    async def load_all_libraries_from_config(self, target_library_names: list[str] | None = None) -> None:
+    async def load_all_libraries_from_config(self, target_library_names: list[str] | None = None) -> list[str]:
+        """Reconcile sourced libraries, then discover and load every enabled library.
+
+        Reconcile runs first (engine_version gate + provision of git/PyPI-sourced
+        entries) so freshly provisioned libraries are present on disk for the
+        discovery pass below. Reconcile failure details are returned, not raised:
+        the boot caller logs and continues so a bad pin cannot brick startup,
+        while the interactive reload caller turns non-empty details into a
+        failure result. Library discovery/loading always proceeds regardless so
+        the engine comes up with whatever libraries it can.
+
+        Returns the reconcile failure details (empty list on success).
+        """
         # Recreate the event bound to the current event loop. Calling .clear() on an event
         # created by a previous asyncio.run() call raises RuntimeError when awaited from
         # the new loop (asyncio.Event objects are bound to the loop they were created on).
         self._libraries_loading_complete = asyncio.Event()
+
+        reconcile_failures = await self._reconcile_libraries_from_config()
 
         # Discover all available libraries (config + sandbox)
         discover_result = self.discover_libraries_request(DiscoverLibrariesRequest())
         if isinstance(discover_result, DiscoverLibrariesResultFailure):
             logger.error("Failed to discover libraries: %s", discover_result.result_details)
             self._libraries_loading_complete.set()
-            return
+            return reconcile_failures
 
         # Build list of library paths to load
         libraries_to_load = []
@@ -3008,7 +3037,7 @@ class LibraryManager:
         if not libraries_to_load:
             logger.info("No libraries found in configuration.")
             self._libraries_loading_complete.set()
-            return
+            return reconcile_failures
 
         # Calculate total libraries for progress tracking
         total_libraries = len(libraries_to_load)
@@ -3029,6 +3058,337 @@ class LibraryManager:
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
         self._libraries_loading_complete.set()
+        return reconcile_failures
+
+    def on_preview_project_provisioning_request(
+        self, request: PreviewProjectProvisioningRequest
+    ) -> PreviewProjectProvisioningResultSuccess | PreviewProjectProvisioningResultFailure:
+        """Compute the library provisioning plan for a loaded project, read-only.
+
+        Sync and side-effect-free: it reads the target project's adjacent
+        griptape_nodes_config.json directly (without mutating the live config
+        layers) and runs the pure `_plan_one_library_provisioning` decision per
+        sourced entry. The GUI calls this before committing to a switch so the
+        user can approve or refuse the changes. Only an already-loaded,
+        file-backed project can be previewed; a project that is not loaded (or
+        has no adjacent config dir) is a Failure.
+        """
+        project_dir = GriptapeNodes.ProjectManager().get_loaded_project_dir(request.project_id)
+        if project_dir is None:
+            return PreviewProjectProvisioningResultFailure(
+                result_details=f"Attempted to preview provisioning for project '{request.project_id}'. "
+                f"Failed because the project is not loaded or has no project-adjacent config directory",
+            )
+
+        config_path = project_dir / "griptape_nodes_config.json"
+        raw_libraries = GriptapeNodes.ConfigManager().read_config_file_value(
+            config_path, LIBRARIES_TO_REGISTER_KEY, default=[]
+        )
+        registrations = normalize_library_registrations(raw_libraries)
+        sourced = [reg for reg in registrations if reg.git_url is not None or reg.requirement_specifier is not None]
+
+        actions = [self._plan_one_library_provisioning(reg) for reg in sourced]
+        destructive_count = sum(1 for action in actions if action.destructive)
+        change_count = sum(1 for action in actions if action.kind != LibraryProvisioningActionKind.SKIP)
+        return PreviewProjectProvisioningResultSuccess(
+            actions=actions,
+            result_details=f"Computed provisioning plan for project '{request.project_id}': "
+            f"{change_count} change(s), {destructive_count} destructive",
+        )
+
+    async def _reconcile_libraries_from_config(self) -> list[str]:
+        """Enforce the engine_version gate and provision sourced libraries from config.
+
+        The project (its adjacent config, already merged into the live config by
+        the time this runs) is the source of truth for the libraries it needs:
+        each git/PyPI-sourced entry is provisioned to match its version. A path-only
+        entry is left to normal discovery. The engine_version gate runs first,
+        before any disk mutation, so a version mismatch blocks provisioning
+        entirely rather than half-applying it.
+
+        Returns a list of failure detail strings (empty on success). Callers
+        decide whether to log-and-continue (boot) or fail (interactive reload).
+        """
+        engine_version_failure = self._check_engine_version()
+        if engine_version_failure is not None:
+            return [engine_version_failure]
+
+        config_mgr = GriptapeNodes.ConfigManager()
+        raw_libraries = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])
+        registrations = normalize_library_registrations(raw_libraries)
+
+        failures: list[str] = []
+        for registration in registrations:
+            if registration.git_url is None and registration.requirement_specifier is None:
+                continue
+            failure = await self._provision_one_library(registration)
+            if failure is not None:
+                failures.append(failure)
+
+        return failures
+
+    def _check_engine_version(self) -> str | None:
+        """Return a failure detail when the running engine fails the configured spec.
+
+        Reads the merged `engine_version` config key. No key means no constraint.
+        A malformed spec or engine version is itself a failure detail rather than
+        a raise, so the caller can surface it without crashing.
+        """
+        spec_string = GriptapeNodes.ConfigManager().get_config_value(ENGINE_VERSION_KEY, default=None)
+        if spec_string is None:
+            return None
+
+        try:
+            specifier_set = SpecifierSet(spec_string)
+        except InvalidSpecifier:
+            return (
+                f"Config pins engine version '{spec_string}', which is not a valid "
+                f"PEP 440 specifier (e.g. '>=0.5,<0.6')"
+            )
+
+        try:
+            current_version = PackagingVersion(engine_version)
+        except InvalidVersion:
+            return (
+                f"Config pins engine version '{spec_string}' but the running engine "
+                f"version '{engine_version}' is not a valid PEP 440 version"
+            )
+
+        if current_version not in specifier_set:
+            return f"Config requires engine version '{spec_string}' but the running engine is '{engine_version}'"
+
+        return None
+
+    def _plan_one_library_provisioning(self, registration: LibraryRegistration) -> LibraryProvisioningAction:
+        """Decide what provisioning will do to one entry, reading only.
+
+        A manifest read for the installed version (under `libraries_directory`)
+        plus a PEP 440 compare. The preview lists this output and the real
+        provisioning path re-runs it at execution time; both read the same
+        on-disk state, which survives the reload's registry unload, so the two
+        cannot drift. Branch order mirrors `_provision_one_library`: the
+        already-satisfied SKIP first, then the source dispatch.
+
+        `destructive` is True ONLY for a git OVERWRITE, matching the
+        `overwrite_existing = installed_version is not None` decision in
+        `_provision_git_library` that triggers the local directory delete.
+
+        The LibraryRegistration validator guarantees a sourced entry carries a
+        `name`, so `registration.name` is non-None here.
+        """
+        library_name = registration.name if registration.name is not None else ""
+        installed_version = self._installed_library_version(library_name)
+        satisfied = self._registration_satisfied_by_installed(registration, installed_version)
+        if satisfied:
+            source = (
+                LibraryProvisioningSource.GIT if registration.git_url is not None else LibraryProvisioningSource.PYPI
+            )
+            return LibraryProvisioningAction(
+                library_name=library_name,
+                kind=LibraryProvisioningActionKind.SKIP,
+                source=source,
+                installed_version=installed_version,
+                pinned_version=registration.version,
+                git_url=registration.git_url,
+                git_ref=None,
+                requirement_specifier=registration.requirement_specifier,
+                destructive=False,
+                reason=f"Installed version {installed_version} already satisfies the entry",
+            )
+
+        if registration.git_url is not None:
+            parsed = parse_git_url_with_ref(registration.git_url)
+            if installed_version is None:
+                kind = LibraryProvisioningActionKind.INSTALL
+                reason = f"Not installed; will clone from {registration.git_url}"
+            else:
+                kind = LibraryProvisioningActionKind.OVERWRITE
+                reason = (
+                    f"Installed version {installed_version} does not satisfy the entry; "
+                    f"will delete the local library directory and re-clone from {registration.git_url}"
+                )
+            return LibraryProvisioningAction(
+                library_name=library_name,
+                kind=kind,
+                source=LibraryProvisioningSource.GIT,
+                installed_version=installed_version,
+                pinned_version=registration.version,
+                git_url=parsed.url,
+                git_ref=parsed.ref,
+                requirement_specifier=None,
+                destructive=kind == LibraryProvisioningActionKind.OVERWRITE,
+                reason=reason,
+            )
+
+        requirement_specifier = registration.requirement_specifier
+        if requirement_specifier is None:
+            msg = (
+                f"Attempted to plan provisioning for library '{library_name}'. "
+                f"Failed because the registration has no git_url or requirement_specifier source."
+            )
+            raise ValueError(msg)
+
+        composed_specifier = self._compose_requirement_specifier(registration.version, requirement_specifier)
+        if installed_version is None:
+            kind = LibraryProvisioningActionKind.INSTALL
+            reason = f"Not installed; will install '{composed_specifier}' into its own venv"
+        else:
+            kind = LibraryProvisioningActionKind.OVERWRITE
+            reason = (
+                f"Installed version {installed_version} does not satisfy the entry; "
+                f"will reinstall '{composed_specifier}' into its own venv"
+            )
+        return LibraryProvisioningAction(
+            library_name=library_name,
+            kind=kind,
+            source=LibraryProvisioningSource.PYPI,
+            installed_version=installed_version,
+            pinned_version=registration.version,
+            git_url=None,
+            git_ref=None,
+            requirement_specifier=composed_specifier,
+            destructive=False,
+            reason=reason,
+        )
+
+    async def _provision_one_library(self, registration: LibraryRegistration) -> str | None:
+        """Provision a single sourced library, skipping when already satisfied.
+
+        Computes the plan with the same pure decision function the preview uses
+        (`_plan_one_library_provisioning`), then dispatches on the result.
+        Delegates the actual clone/venv work to the existing handlers, which
+        recompute their own `overwrite_existing`/specifier so the wire payloads
+        are unchanged. Returns a failure detail string, or None on success/skip.
+        """
+        action = self._plan_one_library_provisioning(registration)
+        if action.kind == LibraryProvisioningActionKind.SKIP:
+            return None
+
+        if action.source == LibraryProvisioningSource.GIT and registration.git_url is not None:
+            return await self._provision_git_library(
+                registration, git_url=registration.git_url, installed_version=action.installed_version
+            )
+
+        return await self._provision_requirement_library(
+            registration, requirement_specifier=registration.requirement_specifier
+        )
+
+    async def _provision_git_library(
+        self, registration: LibraryRegistration, *, git_url: str, installed_version: str | None
+    ) -> str | None:
+        """Download a git-sourced entry, overwriting only a wrong installed version.
+
+        The download handler skips its clone when the target directory exists,
+        which would silently keep a stale checkout. So overwrite_existing is set
+        only when a wrong version is already installed; a fresh install lets the
+        handler land the library normally.
+        """
+        parsed = parse_git_url_with_ref(git_url)
+        overwrite_existing = installed_version is not None
+
+        download_request = DownloadLibraryRequest(
+            git_url=parsed.url,
+            branch_tag_commit=parsed.ref,
+            auto_register=False,
+            overwrite_existing=overwrite_existing,
+            fail_on_exists=False,
+        )
+        download_result = await GriptapeNodes.ahandle_request(download_request)
+        if not isinstance(download_result, DownloadLibraryResultSuccess):
+            return (
+                f"Failed to provision library '{registration.name}' from '{git_url}': {download_result.result_details}"
+            )
+        return None
+
+    async def _provision_requirement_library(
+        self, registration: LibraryRegistration, *, requirement_specifier: str | None
+    ) -> str | None:
+        """Install a PyPI-sourced entry into its own venv via the register handler.
+
+        The venv-reuse guard in the handler is not version-aware, so the entry's
+        version is folded into the requirement specifier (e.g. 'name==2.0') when
+        a separate version spec is declared and the specifier does not already
+        carry one.
+        """
+        if requirement_specifier is None:
+            return None
+        composed_specifier = self._compose_requirement_specifier(registration.version, requirement_specifier)
+
+        register_request = RegisterLibraryFromRequirementSpecifierRequest(requirement_specifier=composed_specifier)
+        register_result = await GriptapeNodes.ahandle_request(register_request)
+        if not isinstance(register_result, RegisterLibraryFromRequirementSpecifierResultSuccess):
+            return (
+                f"Failed to provision library '{registration.name}' from requirement "
+                f"'{composed_specifier}': {register_result.result_details}"
+            )
+        return None
+
+    @staticmethod
+    def _installed_library_version(library_name: str) -> str | None:
+        """Return the on-disk version of a library by manifest name, or None when absent.
+
+        Reads the manifests under `libraries_directory` rather than the in-memory
+        `LibraryRegistry`, because the reload path unregisters every library
+        before reconcile runs (see `reload_libraries_request`). Sourced libraries
+        are provisioned into `libraries_directory`, so a wrong-version or
+        already-satisfied install stays visible on disk even when nothing is
+        registered. Returns the first manifest whose `name` matches; None when the
+        directory is unconfigured or missing, or no manifest matches.
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
+        if not libraries_dir_setting:
+            return None
+
+        libraries_path = resolve_workspace_path(Path(libraries_dir_setting), config_mgr.workspace_path)
+        for manifest_path in find_files_recursive(libraries_path, LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN):
+            try:
+                content = manifest_path.read_text(encoding="utf-8")
+                manifest = json.loads(content)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if manifest.get("name") != library_name:
+                continue
+            metadata = manifest.get("metadata")
+            if not isinstance(metadata, dict):
+                return None
+            version = metadata.get("library_version")
+            return str(version) if version is not None else None
+
+        return None
+
+    @staticmethod
+    def _registration_satisfied_by_installed(registration: LibraryRegistration, installed_version: str | None) -> bool:
+        """Decide whether the installed library already satisfies the entry.
+
+        Nothing installed is never satisfied. An entry without a version spec is
+        satisfied by any installed version (source-only entry). Otherwise the
+        installed version must fall within the PEP 440 specifier; a malformed
+        spec or version is treated as unsatisfied so provisioning re-runs.
+        """
+        if installed_version is None:
+            return False
+        if registration.version is None:
+            return True
+        try:
+            specifier_set = SpecifierSet(registration.version)
+            return PackagingVersion(installed_version) in specifier_set
+        except (InvalidSpecifier, InvalidVersion):
+            return False
+
+    @staticmethod
+    def _compose_requirement_specifier(version: str | None, requirement_specifier: str) -> str:
+        """Fold the entry's version into the requirement specifier when needed.
+
+        Returns the declared specifier unchanged when it already carries a
+        version constraint or when the entry has no separate version; otherwise
+        appends the entry's PEP 440 version so uv resolves the pinned release.
+        """
+        if version is None:
+            return requirement_specifier
+        if any(operator in requirement_specifier for operator in ("==", ">=", "<=", "~=", ">", "<", "!=", "===")):
+            return requirement_specifier
+        return f"{requirement_specifier}{version}"
 
     async def _ensure_libraries_from_config(self) -> None:
         """Ensure libraries from git URLs specified in config are downloaded.
@@ -3174,7 +3534,16 @@ class LibraryManager:
         # When running as a dedicated library worker, restrict loading to those libraries.
         self._is_worker = payload.is_worker
         self._target_library_names = payload.libraries_to_register if payload.is_worker else None
-        await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
+        reconcile_failures = await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
+        # Soft boot: log reconcile failures and continue so the engine still starts and the
+        # user can switch to a working project. Interactive activation hard-fails instead
+        # (see reload_libraries_request).
+        if reconcile_failures:
+            logger.warning(
+                "Library reconcile reported %d problem(s) at startup; continuing so the engine can start:\n%s",
+                len(reconcile_failures),
+                "\n".join(reconcile_failures),
+            )
 
         # When the orchestrator restarts into an already-active session, the GUI will not
         # send AppStartSessionRequest again, so workers must be started here.
@@ -4133,7 +4502,7 @@ class LibraryManager:
 
         # Load (or reload, which should trigger a hot reload) all libraries.
         # Pass _target_library_names so workers reload only their designated libraries.
-        await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
+        reconcile_failures = await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
 
         # Re-spawn workers for libraries that require them; reset_workers terminated them above.
         await self._maybe_start_workers_for_existing_session()
@@ -4145,6 +4514,14 @@ class LibraryManager:
 
         # Print after workers have reported back so their real fitness is shown.
         self.print_library_load_status()
+
+        # Hard activation: a reload is interactive (project switch / explicit reload), so a
+        # reconcile failure (bad engine_version gate or a sourced library that could not be
+        # provisioned) surfaces to the caller. ProjectManager turns this into a
+        # SetCurrentProjectResultFailure the GUI can show.
+        if reconcile_failures:
+            details = "Reloaded libraries but reconcile reported problem(s): " + "; ".join(reconcile_failures)
+            return ReloadAllLibrariesResultFailure(result_details=details)
 
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
@@ -4277,6 +4654,10 @@ class LibraryManager:
         # Add all regular libraries from config
         for discovered in config_library_entries:
             entry = discovered.registration
+            # _discover_library_files only yields path-backed entries; sourced-only entries
+            # are provisioned, not discovered from disk.
+            if entry.path is None:
+                continue
             file_path = Path(entry.path)
             file_path_str = entry.path
 
@@ -4495,6 +4876,10 @@ class LibraryManager:
         # Add from config
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
         for entry in normalize_library_registrations(config_libraries):
+            # Sourced-only entries (git_url/requirement_specifier with no local path) are
+            # provisioned by reconcile, not discovered from disk here.
+            if entry.path is None:
+                continue
             # TODO: Update to check on project manager for workspace path. https://github.com/griptape-ai/griptape-nodes/issues/4396
             library_path = resolve_workspace_path(Path(entry.path), Path(config_mgr.workspace_path))
             if library_path.exists():
