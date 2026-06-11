@@ -80,6 +80,10 @@ class WorkerManager:
     # this matches the _await_pending_workers() ceiling so a worker never kills
     # itself before the orchestrator gives up waiting for it.
     DEFAULT_HEARTBEAT_STARTUP_GRACE_S: float = 600.0
+    # How long to wait for a worker to exit after SIGTERM before escalating to
+    # SIGKILL. Workers convert SIGTERM into a cooperative shutdown on their event
+    # loop; a wedged loop never services it, so SIGTERM alone can leak the process.
+    DEFAULT_TERMINATE_GRACE_S: float = 10.0
 
     _WORKER_RESPONSE_TOPIC_RE: re.Pattern = re.compile(r"sessions/[^/]+/workers/(?P<worker_engine_id>[^/]+)/response$")
 
@@ -321,12 +325,12 @@ class WorkerManager:
             len(self._managed_worker_processes),
             list(self._managed_worker_processes.keys()),
         )
-        for library_name, proc in list(self._managed_worker_processes.items()):
-            try:
-                proc.terminate()
-                logger.info("Terminated worker for key '%s' (pid %s)", library_name, proc.pid)
-            except ProcessLookupError:
-                logger.debug("Worker for key '%s' already exited before termination", library_name)
+        await asyncio.gather(
+            *(
+                self._terminate_managed_process(library_name, proc)
+                for library_name, proc in list(self._managed_worker_processes.items())
+            )
+        )
         session_id = self._griptape_nodes.get_session_id()
         if session_id and self._transport is not None:
             for wid in list(self._workers):
@@ -389,8 +393,7 @@ class WorkerManager:
         if lib_name:
             proc = self._managed_worker_processes.pop(lib_name, None)
             if proc is not None:
-                proc.terminate()
-                logger.info("Eviction: terminated managed process for key '%s' (pid %s)", lib_name, proc.pid)
+                await self._terminate_managed_process(lib_name, proc)
         # Cancel any requests that were awaiting a result from this worker.
         await self._tx.request_client.cancel_requests_by_tag(worker_engine_id)
 
@@ -400,6 +403,35 @@ class WorkerManager:
                 cb(worker_engine_id, lib_name)
             except Exception:
                 logger.warning("Worker-evicted callback raised an exception for worker '%s'", worker_engine_id)
+
+    async def _terminate_managed_process(self, library_name: str, proc: asyncio.subprocess.Process) -> None:
+        """Terminate a managed worker, escalating to SIGKILL if it does not exit.
+
+        SIGTERM is converted by the worker into a cooperative shutdown on its
+        event loop; a wedged loop never services it. After DEFAULT_TERMINATE_GRACE_S
+        we send SIGKILL, which the kernel delivers regardless of loop state, so a
+        hung worker can never leak.
+        """
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            logger.debug("Worker for key '%s' already exited before termination", library_name)
+            return
+        logger.info("Terminated worker for key '%s' (pid %s)", library_name, proc.pid)
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=WorkerManager.DEFAULT_TERMINATE_GRACE_S)
+        except TimeoutError:
+            logger.warning(
+                "Worker for key '%s' (pid %s) did not exit within %.0fs of SIGTERM; sending SIGKILL",
+                library_name,
+                proc.pid,
+                WorkerManager.DEFAULT_TERMINATE_GRACE_S,
+            )
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                return
+            await proc.wait()
 
     def register_worker_evicted_callback(self, callback: Callable[[str, str | None], None]) -> None:
         """Register a callback invoked when a worker is evicted.

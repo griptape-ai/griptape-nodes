@@ -77,6 +77,17 @@ def worker_manager() -> WorkerManager:
     return wm
 
 
+def _managed_proc_mock() -> MagicMock:
+    """Build a mock worker process whose ``wait()`` is awaitable.
+
+    ``_terminate_managed_process`` awaits ``proc.wait()`` after SIGTERM; a bare
+    MagicMock returns a non-awaitable, so stand in an AsyncMock for ``wait``.
+    """
+    proc = MagicMock()
+    proc.wait = AsyncMock()
+    return proc
+
+
 class TestHandleRegisterWorkerRequest:
     @pytest.mark.asyncio
     async def test_adds_worker_to_registered_workers(self, worker_manager: WorkerManager) -> None:
@@ -331,7 +342,7 @@ class TestEvictWorker:
 
     @pytest.mark.asyncio
     async def test_terminates_managed_subprocess_for_library(self, worker_manager: WorkerManager) -> None:
-        proc = MagicMock()
+        proc = _managed_proc_mock()
         worker_manager._workers[_ENGINE] = WorkerRegistration(
             request_topic=_WORKER_REQUEST_TOPIC, worker_key="My Library"
         )
@@ -451,7 +462,7 @@ class TestSpawnWorker:
 class TestResetWorkers:
     @pytest.mark.asyncio
     async def test_terminates_all_processes(self, worker_manager: WorkerManager) -> None:
-        proc_a, proc_b = MagicMock(), MagicMock()
+        proc_a, proc_b = _managed_proc_mock(), _managed_proc_mock()
         worker_manager._managed_worker_processes["Lib A"] = proc_a
         worker_manager._managed_worker_processes["Lib B"] = proc_b
 
@@ -462,7 +473,7 @@ class TestResetWorkers:
 
     @pytest.mark.asyncio
     async def test_clears_all_tracking_state(self, worker_manager: WorkerManager) -> None:
-        worker_manager._managed_worker_processes["Lib A"] = MagicMock()
+        worker_manager._managed_worker_processes["Lib A"] = _managed_proc_mock()
         worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key="Lib A")
         worker_manager._worker_last_seen[_ENGINE] = 999.0
 
@@ -489,6 +500,24 @@ class TestResetWorkers:
         await worker_manager.reset_workers()
 
         assert worker_manager._managed_worker_processes == {}
+
+    @pytest.mark.asyncio
+    async def test_escalates_to_sigkill_when_terminate_times_out(self, worker_manager: WorkerManager) -> None:
+        """A worker that ignores SIGTERM must be SIGKILLed after the grace period."""
+        proc = _managed_proc_mock()
+        worker_manager._managed_worker_processes["Lib A"] = proc
+
+        def _close_and_timeout(awaitable: object, *_args: object, **_kwargs: object) -> None:
+            # Close the proc.wait() coroutine we are bypassing so it is not
+            # reported as never-awaited, then simulate the SIGTERM grace expiring.
+            awaitable.close()  # type: ignore[attr-defined]
+            raise TimeoutError
+
+        with patch("asyncio.wait_for", side_effect=_close_and_timeout):
+            await worker_manager.reset_workers()
+
+        proc.terminate.assert_called_once()
+        proc.kill.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_unsubscribes_response_topic_for_each_registered_worker(self, worker_manager: WorkerManager) -> None:
