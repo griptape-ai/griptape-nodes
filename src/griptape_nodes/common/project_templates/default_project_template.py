@@ -174,5 +174,15 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             ),
             fallback="save_workflow",
         ),
+        "save_temp_file": SituationTemplate(
+            name="save_temp_file",
+            description="Save a temporary scratch file (e.g. intermediate processing artifacts)",
+            macro="{temp}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.OVERWRITE,
+                create_dirs=True,
+            ),
+            fallback="save_file",
+        ),
     },
 )
