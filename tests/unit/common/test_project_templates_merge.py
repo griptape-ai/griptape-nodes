@@ -817,6 +817,31 @@ class TestProjectTemplateToYaml:
         assert merged.situations["save_file"].policy.on_collision == base_sit.policy.on_collision
 
 
+class TestDefaultProjectTemplate:
+    """Tests for the content of the default project template."""
+
+    def test_save_temp_file_situation_exists(self) -> None:
+        assert "save_temp_file" in DEFAULT_PROJECT_TEMPLATE.situations
+
+    def test_save_temp_file_situation_uses_overwrite_policy(self) -> None:
+        from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+
+        situation = DEFAULT_PROJECT_TEMPLATE.situations["save_temp_file"]
+        assert situation.policy.on_collision == SituationFilePolicy.OVERWRITE
+
+    def test_save_temp_file_situation_creates_dirs(self) -> None:
+        situation = DEFAULT_PROJECT_TEMPLATE.situations["save_temp_file"]
+        assert situation.policy.create_dirs is True
+
+    def test_save_temp_file_situation_falls_back_to_save_file(self) -> None:
+        situation = DEFAULT_PROJECT_TEMPLATE.situations["save_temp_file"]
+        assert situation.fallback == "save_file"
+
+    def test_save_temp_file_macro_uses_temp_directory(self) -> None:
+        situation = DEFAULT_PROJECT_TEMPLATE.situations["save_temp_file"]
+        assert situation.macro.startswith("{temp}/")
+
+
 class TestOverlayDeletions:
     """Overlay/merge symmetry for deletions: removed base items must stay removed on reload."""
 
