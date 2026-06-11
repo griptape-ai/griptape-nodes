@@ -2310,7 +2310,7 @@ class TestWorkflowMetadataTransitiveDeps:
         """When lib-a has library_dependency on lib-b, generated metadata lists both in node_libraries_referenced."""
         from datetime import UTC, datetime
 
-        from griptape_nodes.node_library.library_declarations import LibraryDependency
+        from griptape_nodes.node_library.library_declarations import LibraryDependencyDeclaration
         from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -2330,11 +2330,11 @@ class TestWorkflowMetadataTransitiveDeps:
         )
         commands.node_dependencies.libraries.add(LibraryNameAndVersion("lib-a", "1.0.0"))
 
-        dep_b = LibraryDependency(url="griptape-ai/lib-b@v1.0.0", required=True)
+        dep_b = LibraryDependencyDeclaration(url="griptape-ai/lib-b@v1.0.0", required=True)
         lib_a_mock = MagicMock()
-        lib_a_mock.get_library_data.return_value.metadata.dependencies.library_dependencies = [dep_b]
+        lib_a_mock.get_library_data.return_value.metadata.declarations = [dep_b]
         lib_b_mock = MagicMock()
-        lib_b_mock.get_library_data.return_value.metadata.dependencies.library_dependencies = None
+        lib_b_mock.get_library_data.return_value.metadata.declarations = []
         info_b = LibraryManager.LibraryInfo(
             lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
             library_path="/workspace/libraries/lib-b/griptape_nodes_library.json",

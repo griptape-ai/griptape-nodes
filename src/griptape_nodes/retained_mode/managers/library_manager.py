@@ -40,6 +40,7 @@ from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io, resolve_workspace_path
 from griptape_nodes.node_library.library_declarations import (
     LibraryDeclaration,
+    LibraryDependencyDeclaration,
     WorkerCompatibility,
     WorkerMode,
     WorkerModeCompatibility,
@@ -749,9 +750,11 @@ class LibraryManager:
                 )
                 continue
 
-            if not (library_data.metadata and library_data.metadata.dependencies):
+            if not library_data.metadata:
                 continue
-            lib_deps = library_data.metadata.dependencies.library_dependencies
+            lib_deps = [
+                d for d in (library_data.metadata.declarations or []) if isinstance(d, LibraryDependencyDeclaration)
+            ]
             if not lib_deps:
                 continue
 
@@ -2019,11 +2022,11 @@ class LibraryManager:
                     )
                     if not isinstance(dep_metadata_result, LoadLibraryMetadataFromFileResultFailure):
                         dep_schema = dep_metadata_result.library_schema
-                        griptape_library_deps = (
-                            dep_schema.metadata.dependencies.library_dependencies
-                            if dep_schema.metadata.dependencies is not None
-                            else None
-                        )
+                        griptape_library_deps = [
+                            d
+                            for d in (dep_schema.metadata.declarations or [])
+                            if isinstance(d, LibraryDependencyDeclaration)
+                        ] or None
 
                         # Download and install any griptape libraries this library depends on.
                         if griptape_library_deps:

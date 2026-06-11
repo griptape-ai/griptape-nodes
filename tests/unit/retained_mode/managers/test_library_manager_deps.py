@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from griptape_nodes.node_library.library_declarations import LibraryDependency
+from griptape_nodes.node_library.library_declarations import LibraryDependencyDeclaration
 from griptape_nodes.node_library.library_registry import (
     Dependencies,
     LibraryNameAndVersion,
@@ -26,45 +26,46 @@ from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.managers.settings import LibraryDependencyInstallBehavior
 
 
-class TestDependenciesSchema:
-    """Tests for the Dependencies model schema changes."""
+class TestLibraryDependencyDeclaration:
+    """Tests for the LibraryDependencyDeclaration declaration type."""
 
-    def test_library_dependencies_field_exists(self) -> None:
+    def test_required_dep(self) -> None:
+        decl = LibraryDependencyDeclaration(url="griptape-ai/griptape-nodes-library-opencolorio@v1.2.0")
+        assert decl.url == "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0"
+        assert decl.required is True
+
+    def test_optional_dep(self) -> None:
+        decl = LibraryDependencyDeclaration(url="griptape-ai/griptape-nodes-library-opencolorio@v1.2.0", required=False)
+        assert decl.required is False
+
+    def test_round_trips_as_library_declaration(self) -> None:
+        """LibraryDependencyDeclaration serializes/deserializes correctly via the discriminated union."""
+        from griptape_nodes.node_library.library_registry import LibraryMetadata
+
+        meta = LibraryMetadata.model_validate(
+            {
+                "author": "test",
+                "description": "test",
+                "library_version": "1.0.0",
+                "engine_version": "0.10.0",
+                "tags": [],
+                "declarations": [
+                    {"type": "library_dependency", "url": "griptape-ai/lib-a@v1.0.0", "required": True},
+                    {"type": "library_dependency", "url": "griptape-ai/lib-b@v2.0.0", "required": False},
+                ],
+            }
+        )
+        lib_deps = [d for d in meta.declarations if isinstance(d, LibraryDependencyDeclaration)]
+        assert lib_deps[0].url == "griptape-ai/lib-a@v1.0.0"
+        assert lib_deps[0].required is True
+        assert lib_deps[1].required is False
+
+    def test_dependencies_has_no_library_dependencies_field(self) -> None:
         deps = Dependencies()
-        assert deps.library_dependencies is None
-
-    def test_library_dependencies_required_dep(self) -> None:
-        deps = Dependencies.model_validate(
-            {
-                "library_dependencies": [
-                    {"url": "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0", "required": True}
-                ]
-            }
-        )
-        assert deps.library_dependencies is not None
-        dep = deps.library_dependencies[0]
-        assert dep.url == "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0"
-        assert dep.required is True
-
-    def test_library_dependencies_optional_dep(self) -> None:
-        deps = Dependencies.model_validate(
-            {
-                "library_dependencies": [
-                    {"url": "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0", "required": False}
-                ]
-            }
-        )
-        assert deps.library_dependencies is not None
-        dep = deps.library_dependencies[0]
-        assert dep.url == "griptape-ai/griptape-nodes-library-opencolorio@v1.2.0"
-        assert dep.required is False
-
-    def test_library_dependencies_empty_list(self) -> None:
-        deps = Dependencies(library_dependencies=[])
-        assert deps.library_dependencies == []
+        assert not hasattr(deps, "library_dependencies")
 
     def test_schema_version_bumped(self) -> None:
-        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.9.0"
+        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.10.0"
 
 
 class TestLibraryDependencyProblem:
@@ -108,12 +109,11 @@ def _make_schema_mock(library_dependencies: list[str] | None, *, optional: bool 
     schema = MagicMock()
     schema.name = "test_lib"
     schema.metadata.library_version = "1.0.0"
-    if library_dependencies is None:
-        schema.metadata.dependencies.library_dependencies = None
-    else:
-        schema.metadata.dependencies.library_dependencies = [
-            LibraryDependency(url=url, required=not optional) for url in library_dependencies
-        ]
+    schema.metadata.declarations = (
+        [LibraryDependencyDeclaration(url=url, required=not optional) for url in library_dependencies]
+        if library_dependencies is not None
+        else []
+    )
     return schema
 
 
@@ -545,11 +545,11 @@ def _make_lib_info_for_resolve(name: str, version: str = "1.0.0") -> LibraryMana
 
 
 def _make_lib_registry_mock(
-    library_dependencies: list[LibraryDependency] | None,
+    library_dependencies: list[LibraryDependencyDeclaration] | None,
 ) -> MagicMock:
     """Return a mock object as returned by LibraryRegistry.get_library(name)."""
     lib_mock = MagicMock()
-    lib_mock.get_library_data.return_value.metadata.dependencies.library_dependencies = library_dependencies
+    lib_mock.get_library_data.return_value.metadata.declarations = library_dependencies or []
     return lib_mock
 
 
@@ -572,7 +572,7 @@ class TestResolveTransitiveLibraryDeps:
     def test_direct_dep_added(self, griptape_nodes: GriptapeNodes) -> None:
         """Library A declaring a library_dependency on Library B includes B in the result."""
         mgr = griptape_nodes.LibraryManager()
-        dep_b = LibraryDependency(url="griptape-ai/lib-b@v1.0.0", required=True)
+        dep_b = LibraryDependencyDeclaration(url="griptape-ai/lib-b@v1.0.0", required=True)
         lib_a = _make_lib_registry_mock(library_dependencies=[dep_b])
         lib_b = _make_lib_registry_mock(library_dependencies=None)
         info_b = _make_lib_info_for_resolve("lib-b")
@@ -595,8 +595,8 @@ class TestResolveTransitiveLibraryDeps:
     def test_transitive_dep_added(self, griptape_nodes: GriptapeNodes) -> None:
         """A→B→C chain results in all three libraries being included."""
         mgr = griptape_nodes.LibraryManager()
-        dep_b = LibraryDependency(url="griptape-ai/lib-b@v1.0.0", required=True)
-        dep_c = LibraryDependency(url="griptape-ai/lib-c@v1.0.0", required=True)
+        dep_b = LibraryDependencyDeclaration(url="griptape-ai/lib-b@v1.0.0", required=True)
+        dep_c = LibraryDependencyDeclaration(url="griptape-ai/lib-c@v1.0.0", required=True)
         lib_a = _make_lib_registry_mock(library_dependencies=[dep_b])
         lib_b = _make_lib_registry_mock(library_dependencies=[dep_c])
         lib_c = _make_lib_registry_mock(library_dependencies=None)
@@ -617,8 +617,8 @@ class TestResolveTransitiveLibraryDeps:
     def test_cycle_does_not_loop(self, griptape_nodes: GriptapeNodes) -> None:
         """A→B→A cycle terminates and includes both libraries exactly once."""
         mgr = griptape_nodes.LibraryManager()
-        dep_b = LibraryDependency(url="griptape-ai/lib-b@v1.0.0", required=True)
-        dep_a = LibraryDependency(url="griptape-ai/lib-a@v1.0.0", required=True)
+        dep_b = LibraryDependencyDeclaration(url="griptape-ai/lib-b@v1.0.0", required=True)
+        dep_a = LibraryDependencyDeclaration(url="griptape-ai/lib-a@v1.0.0", required=True)
         lib_a = _make_lib_registry_mock(library_dependencies=[dep_b])
         lib_b = _make_lib_registry_mock(library_dependencies=[dep_a])
         info_a = _make_lib_info_for_resolve("lib-a")
@@ -638,7 +638,7 @@ class TestResolveTransitiveLibraryDeps:
     def test_unregistered_dep_skipped(self, griptape_nodes: GriptapeNodes) -> None:
         """A dep that has no LibraryInfo is skipped without raising."""
         mgr = griptape_nodes.LibraryManager()
-        dep_missing = LibraryDependency(url="griptape-ai/lib-missing@v1.0.0", required=True)
+        dep_missing = LibraryDependencyDeclaration(url="griptape-ai/lib-missing@v1.0.0", required=True)
         lib_a = _make_lib_registry_mock(library_dependencies=[dep_missing])
 
         with (

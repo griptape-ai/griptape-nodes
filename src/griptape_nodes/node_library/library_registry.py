@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from griptape_nodes.node_library.library_declarations import (
     LibraryDeclaration,
-    LibraryDependency,
     NodeDeclaration,
     SuggestedWorkerMode,
     WorkerCompatibility,
@@ -45,15 +44,10 @@ class LibraryNameAndVersion(NamedTuple):
 
 
 class Dependencies(BaseModel):
-    """Dependencies for the library.
-
-    This can include other libraries, as well as external packages that need to
-    be installed with pip.
-    """
+    """Pip packages that need to be installed for this library."""
 
     pip_dependencies: list[str] | None = None
     pip_install_flags: list[str] | None = None
-    library_dependencies: list[LibraryDependency] | None = None
 
 
 class ResourceRequirements(BaseModel):
@@ -211,7 +205,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.9.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.10.0"
 
     name: str
     library_schema_version: str
