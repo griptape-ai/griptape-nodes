@@ -103,6 +103,16 @@ fallback: save_file
 
 Used by the static files manager to save static assets. Files go into the `static_files_dir` subdirectory of the current workflow's directory. These files are overwritten when regenerated.
 
+### `save_temp_file`
+
+```
+macro:    {temp}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}
+policy:   overwrite, create_dirs: true
+fallback: save_file
+```
+
+Used when a node needs to write an intermediate or scratch file during processing (for example, a temporary EXR written between color-space conversion steps). Files go into the `temp` directory and are overwritten on re-run rather than versioned.
+
 ## How nodes use situations
 
 Nodes that save files use a `ProjectFileParameter` to declare which situation they operate in. The node provides its situation-specific variables (like `file_name_base` and `file_extension`), and the project system supplies everything else (directory paths, builtin variables).
