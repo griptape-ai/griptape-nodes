@@ -29,6 +29,8 @@ from .old_xdg_location_warning_problem import OldXdgLocationWarningProblem
 from .sandbox_directory_missing_problem import SandboxDirectoryMissingProblem
 from .ui_options_field_modified_incompatible_problem import UiOptionsFieldModifiedIncompatibleProblem
 from .ui_options_field_modified_warning_problem import UiOptionsFieldModifiedWarningProblem
+from .unresolved_model_family_usage_reference_problem import UnresolvedModelFamilyUsageReferenceProblem
+from .unresolved_model_provider_usage_reference_problem import UnresolvedModelProviderUsageReferenceProblem
 from .unresolved_model_usage_reference_problem import UnresolvedModelUsageReferenceProblem
 from .update_config_category_problem import UpdateConfigCategoryProblem
 from .venv_creation_failed_problem import VenvCreationFailedProblem
@@ -63,6 +65,8 @@ __all__ = [
     "SandboxDirectoryMissingProblem",
     "UiOptionsFieldModifiedIncompatibleProblem",
     "UiOptionsFieldModifiedWarningProblem",
+    "UnresolvedModelFamilyUsageReferenceProblem",
+    "UnresolvedModelProviderUsageReferenceProblem",
     "UnresolvedModelUsageReferenceProblem",
     "UpdateConfigCategoryProblem",
     "VenvCreationFailedProblem",

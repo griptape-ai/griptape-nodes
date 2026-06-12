@@ -9,14 +9,17 @@ import pytest
 from pydantic import ValidationError
 
 from griptape_nodes.node_library.library_declarations import (
+    FamilyReference,
     KeySupport,
     LifecycleStage,
     LifecycleStageLibraryProperty,
     LifecycleStageNodeProperty,
     ModelCatalogLibraryProperty,
     ModelFamily,
+    ModelFamilyUsageNodeProperty,
     ModelOffering,
     ModelProvider,
+    ModelProviderUsageNodeProperty,
     ModelUsageNodeProperty,
     SuggestedWorkerMode,
     WorkerCompatibility,
@@ -24,6 +27,7 @@ from griptape_nodes.node_library.library_declarations import (
     WorkerModeCompatibility,
     iter_catalog_offerings,
     requires_worker_process,
+    resolve_key_support,
     resolve_terms_url,
 )
 from griptape_nodes.node_library.library_registry import (
@@ -360,8 +364,8 @@ class TestRequiresWorkerProcess:
 
 
 class TestSchemaVersion:
-    def test_latest_schema_version_is_090(self) -> None:
-        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.9.0"
+    def test_latest_schema_version_is_0_10_0(self) -> None:
+        assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.10.0"
 
 
 # ---------- Model catalog ----------
@@ -485,3 +489,161 @@ class TestResolveTermsUrl:
         )
 
         assert resolve_terms_url(catalog, "o") is None
+
+
+class TestKeySupportEnum:
+    def test_no_key_required_is_a_legal_value(self) -> None:
+        # Models that run locally (e.g. Ollama-hosted) declare NO_KEY_REQUIRED
+        # so admin tooling can distinguish them from Griptape-key / BYOK models.
+        offering = ModelOffering(
+            display_name="Local Llama",
+            key_support=KeySupport.NO_KEY_REQUIRED,
+        )
+
+        rebuilt = ModelOffering.model_validate(json.loads(offering.model_dump_json()))
+
+        assert rebuilt.key_support is KeySupport.NO_KEY_REQUIRED
+
+
+class TestCatalogNotesField:
+    def test_provider_family_offering_each_carry_notes(self) -> None:
+        catalog = ModelCatalogLibraryProperty(
+            providers={
+                "p": ModelProvider(
+                    display_name="Provider",
+                    notes="provider-level note",
+                    families={
+                        "f": ModelFamily(
+                            display_name="Family",
+                            notes="family-level note",
+                            offerings={
+                                "o": ModelOffering(
+                                    display_name="Offering",
+                                    key_support=KeySupport.REQUIRES_CUSTOMER_KEY,
+                                    notes="offering-level note",
+                                ),
+                            },
+                        ),
+                    },
+                ),
+            },
+        )
+
+        rebuilt = ModelCatalogLibraryProperty.model_validate(json.loads(catalog.model_dump_json()))
+
+        provider = rebuilt.providers["p"]
+        family = provider.families["f"]
+        offering = family.offerings["o"]
+        assert provider.notes == "provider-level note"
+        assert family.notes == "family-level note"
+        assert offering.notes == "offering-level note"
+
+    def test_notes_default_to_none(self) -> None:
+        offering = ModelOffering(display_name="X", key_support=KeySupport.REQUIRES_GRIPTAPE_KEY)
+
+        assert offering.notes is None
+
+
+class TestProviderLevelKeySupport:
+    def test_provider_key_support_is_optional(self) -> None:
+        # Most providers omit key_support at the provider level (offerings carry it).
+        provider = ModelProvider(display_name="P")
+
+        assert provider.key_support is None
+
+    def test_provider_can_declare_no_key_required(self) -> None:
+        # The Ollama-style case: provider declares NO_KEY_REQUIRED with no offerings.
+        provider = ModelProvider(
+            display_name="Ollama (local)",
+            key_support=KeySupport.NO_KEY_REQUIRED,
+        )
+
+        rebuilt = ModelProvider.model_validate(json.loads(provider.model_dump_json()))
+
+        assert rebuilt.key_support is KeySupport.NO_KEY_REQUIRED
+
+    def test_family_key_support_is_optional(self) -> None:
+        family = ModelFamily(display_name="F")
+
+        assert family.key_support is None
+
+    def test_family_can_declare_key_support(self) -> None:
+        family = ModelFamily(display_name="F", key_support=KeySupport.REQUIRES_GRIPTAPE_KEY)
+
+        rebuilt = ModelFamily.model_validate(json.loads(family.model_dump_json()))
+
+        assert rebuilt.key_support is KeySupport.REQUIRES_GRIPTAPE_KEY
+
+
+class TestResolveKeySupport:
+    def test_returns_offering_key_support(self) -> None:
+        catalog = ModelCatalogLibraryProperty(
+            providers={
+                "p": ModelProvider(
+                    display_name="P",
+                    offerings={
+                        "o": ModelOffering(
+                            display_name="O",
+                            key_support=KeySupport.REQUIRES_CUSTOMER_KEY,
+                        ),
+                    },
+                ),
+            },
+        )
+
+        assert resolve_key_support(catalog, "o") is KeySupport.REQUIRES_CUSTOMER_KEY
+
+    def test_unknown_offering_returns_none(self) -> None:
+        catalog = ModelCatalogLibraryProperty(providers={})
+
+        assert resolve_key_support(catalog, "nonexistent") is None
+
+
+class TestModelFamilyUsageRoundTrip:
+    def test_round_trip(self) -> None:
+        decl = ModelFamilyUsageNodeProperty(
+            families=[
+                FamilyReference(provider_id="openai", family_id="gpt_5"),
+                FamilyReference(provider_id="anthropic", family_id="claude_4_6"),
+            ],
+        )
+
+        rebuilt = ModelFamilyUsageNodeProperty.model_validate(json.loads(decl.model_dump_json()))
+
+        assert rebuilt == decl
+
+    def test_inside_node_metadata(self) -> None:
+        metadata = _make_node_metadata(
+            declarations=[
+                ModelFamilyUsageNodeProperty(
+                    families=[FamilyReference(provider_id="openai", family_id="gpt_5")],
+                ),
+            ],
+        )
+
+        rebuilt = NodeMetadata.model_validate(metadata.model_dump())
+
+        decl = rebuilt.declarations[0]
+        assert isinstance(decl, ModelFamilyUsageNodeProperty)
+        assert decl.families[0].provider_id == "openai"
+        assert decl.families[0].family_id == "gpt_5"
+
+
+class TestModelProviderUsageRoundTrip:
+    def test_round_trip(self) -> None:
+        decl = ModelProviderUsageNodeProperty(provider_ids=["anthropic", "openai"])
+
+        rebuilt = ModelProviderUsageNodeProperty.model_validate(json.loads(decl.model_dump_json()))
+
+        assert rebuilt == decl
+
+    def test_inside_node_metadata(self) -> None:
+        metadata = _make_node_metadata(
+            declarations=[ModelProviderUsageNodeProperty(provider_ids=["anthropic"])],
+        )
+
+        rebuilt = NodeMetadata.model_validate(metadata.model_dump())
+
+        decl = rebuilt.declarations[0]
+        assert isinstance(decl, ModelProviderUsageNodeProperty)
+        assert decl.provider_ids == ["anthropic"]

@@ -21,12 +21,16 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.node_library.library_declarations import (
     ModelCatalogLibraryProperty,
+    ModelFamilyUsageNodeProperty,
+    ModelProviderUsageNodeProperty,
     ModelUsageNodeProperty,
     iter_catalog_offerings,
 )
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     DuplicateModelOfferingIdProblem,
     LibraryProblem,
+    UnresolvedModelFamilyUsageReferenceProblem,
+    UnresolvedModelProviderUsageReferenceProblem,
     UnresolvedModelUsageReferenceProblem,
 )
 
@@ -38,8 +42,8 @@ class LibraryDeclarationValidationResult(NamedTuple):
     """Outcome of `validate_library_declarations`.
 
     - `fatal`: problems that must block library load. Cross-parent duplicate
-      offering ids and unresolved `ModelUsageNodeProperty.offering_ids`
-      references go here.
+      offering ids and any unresolved node-side reference (`ModelUsageNodeProperty`,
+      `ModelFamilyUsageNodeProperty`, `ModelProviderUsageNodeProperty`) go here.
     - `warnings`: problems that should be surfaced but do not block load.
       Currently empty by construction; the slot stays in case future
       validation surfaces hygiene-only issues.
@@ -60,10 +64,23 @@ def validate_library_declarations(library_data: LibrarySchema) -> LibraryDeclara
 
     catalog = _find_model_catalog(library_data)
     declared_offering_ids: set[str] = set()
+    declared_provider_ids: set[str] = set()
+    declared_families: set[tuple[str, str]] = set()
     if catalog is not None:
         declared_offering_ids = _check_duplicate_offering_ids(library_name, catalog, fatal)
+        declared_provider_ids = set(catalog.providers.keys())
+        for provider_id, provider in catalog.providers.items():
+            for family_id in provider.families:
+                declared_families.add((provider_id, family_id))
 
-    _check_unresolved_model_usage(library_name, library_data, declared_offering_ids, fatal)
+    _check_unresolved_node_references(
+        library_name=library_name,
+        library_data=library_data,
+        declared_offering_ids=declared_offering_ids,
+        declared_provider_ids=declared_provider_ids,
+        declared_families=declared_families,
+        fatal=fatal,
+    )
 
     return LibraryDeclarationValidationResult(fatal=fatal, warnings=warnings)
 
@@ -105,23 +122,49 @@ def _check_duplicate_offering_ids(
     return set(parents_by_id.keys())
 
 
-def _check_unresolved_model_usage(
+def _check_unresolved_node_references(  # noqa: C901, PLR0913  -- one branch per declaration kind; explicit kwargs are clearer than packing
+    *,
     library_name: str,
     library_data: LibrarySchema,
     declared_offering_ids: set[str],
+    declared_provider_ids: set[str],
+    declared_families: set[tuple[str, str]],
     fatal: list[LibraryProblem],
 ) -> None:
+    """Walk every node and validate each model_usage / family / provider reference."""
     for node_def in library_data.nodes:
         for node_decl in node_def.metadata.declarations:
-            if not isinstance(node_decl, ModelUsageNodeProperty):
-                continue
-            for offering_id in node_decl.offering_ids:
-                if offering_id in declared_offering_ids:
-                    continue
-                fatal.append(
-                    UnresolvedModelUsageReferenceProblem(
-                        library_name=library_name,
-                        node_name=node_def.class_name,
-                        offering_id=offering_id,
+            if isinstance(node_decl, ModelUsageNodeProperty):
+                for offering_id in node_decl.offering_ids:
+                    if offering_id in declared_offering_ids:
+                        continue
+                    fatal.append(
+                        UnresolvedModelUsageReferenceProblem(
+                            library_name=library_name,
+                            node_name=node_def.class_name,
+                            offering_id=offering_id,
+                        )
                     )
-                )
+            elif isinstance(node_decl, ModelFamilyUsageNodeProperty):
+                for ref in node_decl.families:
+                    if (ref.provider_id, ref.family_id) in declared_families:
+                        continue
+                    fatal.append(
+                        UnresolvedModelFamilyUsageReferenceProblem(
+                            library_name=library_name,
+                            node_name=node_def.class_name,
+                            provider_id=ref.provider_id,
+                            family_id=ref.family_id,
+                        )
+                    )
+            elif isinstance(node_decl, ModelProviderUsageNodeProperty):
+                for provider_id in node_decl.provider_ids:
+                    if provider_id in declared_provider_ids:
+                        continue
+                    fatal.append(
+                        UnresolvedModelProviderUsageReferenceProblem(
+                            library_name=library_name,
+                            node_name=node_def.class_name,
+                            provider_id=provider_id,
+                        )
+                    )

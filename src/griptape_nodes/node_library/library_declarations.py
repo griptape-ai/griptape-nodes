@@ -54,6 +54,7 @@ class KeySupport(StrEnum):
     REQUIRES_CUSTOMER_KEY = "REQUIRES_CUSTOMER_KEY"
     SUPPORTS_CUSTOMER_KEY_OR_GRIPTAPE_KEY = "SUPPORTS_CUSTOMER_KEY_OR_GRIPTAPE_KEY"
     REQUIRES_GRIPTAPE_KEY = "REQUIRES_GRIPTAPE_KEY"
+    NO_KEY_REQUIRED = "NO_KEY_REQUIRED"
 
 
 class WorkerCompatibility(StrEnum):
@@ -132,12 +133,17 @@ class ModelOffering(BaseModel):
     key is the stable handle that admin policies and node references use.
     Multiple offerings can describe the same upstream `model` value with
     different `key_support`; they appear as two dict entries with two keys.
+
+    `notes` is free-form author guidance surfaced alongside the offering in
+    UIs and admin tooling (e.g. "BYOK requires injecting a provider-specific
+    prompt driver"). Use it for caveats that don't fit other fields.
     """
 
     display_name: str
     model: str | None = None
     key_support: KeySupport
     terms_url: str | None = None
+    notes: str | None = None
 
 
 class ModelFamily(BaseModel):
@@ -145,18 +151,41 @@ class ModelFamily(BaseModel):
 
     Providers without meaningful families put their offerings directly under
     the provider's `offerings` dict.
+
+    `notes` is free-form author guidance applying to every offering in the
+    family (e.g. an explanation of how the family is positioned vs. the
+    provider's other families). Per-offering `notes` are additive.
+
+    `key_support` declared here describes a default for the family. Per-offering
+    `key_support` is required and overrides the family value; the family value is
+    informational (admin-policy hint, default for future offerings).
     """
 
     display_name: str
     terms_url: str | None = None
+    notes: str | None = None
+    key_support: KeySupport | None = None
     offerings: dict[str, ModelOffering] = Field(default_factory=dict)
 
 
 class ModelProvider(BaseModel):
-    """A model provider (e.g. 'Anthropic', 'OpenAI', 'Kling')."""
+    """A model provider (e.g. 'Anthropic', 'OpenAI', 'Kling').
+
+    `notes` is free-form author guidance applying to every family/offering
+    under the provider (e.g. "BYOK requires injecting a provider-specific
+    prompt driver"). Lower-level `notes` are additive.
+
+    `key_support` declared here describes a default for everything under the
+    provider. It is most useful when the provider has no offerings at all
+    (e.g. a dynamic-runtime provider like Ollama where `key_support=NO_KEY_REQUIRED`
+    is the only meaningful signal); it also carries through as a default for
+    any family or offering that doesn't override.
+    """
 
     display_name: str
     terms_url: str | None = None
+    notes: str | None = None
+    key_support: KeySupport | None = None
     families: dict[str, ModelFamily] = Field(default_factory=dict)
     offerings: dict[str, ModelOffering] = Field(default_factory=dict)
 
@@ -279,6 +308,28 @@ def resolve_terms_url(catalog: ModelCatalogLibraryProperty, offering_id: str) ->
     return None
 
 
+def resolve_key_support(catalog: ModelCatalogLibraryProperty, offering_id: str) -> KeySupport | None:
+    """Resolve an offering's effective key_support, cascading most-specific-wins.
+
+    Resolution order:
+      1. The offering's own `key_support` (always set on offerings).
+      2. The parent family's `key_support`, if set.
+      3. The parent provider's `key_support`, if set.
+      4. None -- only reachable for an unknown offering id.
+
+    Returns None if the offering id does not resolve to any offering in the
+    catalog. Use validation (`validate_library_declarations`) to detect that
+    case at library load.
+    """
+    for resolved in iter_catalog_offerings(catalog):
+        if resolved.offering_id != offering_id:
+            continue
+        # Offerings always declare key_support; the cascade exists for
+        # provider-only declarations (e.g. Ollama with no offerings).
+        return resolved.offering.key_support
+    return None
+
+
 # ---------- Node-level declarations ----------
 
 
@@ -295,18 +346,58 @@ class LifecycleStageNodeProperty(BaseModel):
 
 
 class ModelUsageNodeProperty(BaseModel):
-    """References model offerings the node uses, by their catalog dict keys.
+    """References specific model offerings the node uses, by their catalog dict keys.
 
     Each entry must resolve to an offering somewhere in the library's
     `ModelCatalogLibraryProperty` (validated at library load).
+
+    Use this when the node binds to a specific, named set of offerings. For
+    nodes that dynamically enumerate everything in a family or provider at
+    runtime, see `ModelFamilyUsageNodeProperty` and `ModelProviderUsageNodeProperty`.
     """
 
     type: Literal["model_usage"] = "model_usage"
     offering_ids: list[str]
 
 
+class FamilyReference(BaseModel):
+    """A reference to a single family within a provider.
+
+    Family ids are scoped within a provider (the same family id can appear under
+    different providers), so a reference must carry both pieces.
+    """
+
+    provider_id: str
+    family_id: str
+
+
+class ModelFamilyUsageNodeProperty(BaseModel):
+    """References whole model families the node uses.
+
+    Use this when a node dynamically enumerates every offering in one or more
+    families at runtime. Each entry must resolve to a family that exists under
+    its named provider in the library's `ModelCatalogLibraryProperty`
+    (validated at library load).
+    """
+
+    type: Literal["model_family_usage"] = "model_family_usage"
+    families: list[FamilyReference]
+
+
+class ModelProviderUsageNodeProperty(BaseModel):
+    """References whole providers the node uses.
+
+    Use this when a node dynamically enumerates every offering across an
+    entire provider at runtime. Each entry must resolve to a provider declared
+    in the library's `ModelCatalogLibraryProperty` (validated at library load).
+    """
+
+    type: Literal["model_provider_usage"] = "model_provider_usage"
+    provider_ids: list[str]
+
+
 # See the comment above `LibraryDeclaration` for how `Annotated[... discriminator ...]` works.
 NodeDeclaration = Annotated[
-    LifecycleStageNodeProperty | ModelUsageNodeProperty,
+    LifecycleStageNodeProperty | ModelUsageNodeProperty | ModelFamilyUsageNodeProperty | ModelProviderUsageNodeProperty,
     Field(discriminator="type"),
 ]

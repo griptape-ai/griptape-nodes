@@ -5,11 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from griptape_nodes.node_library.library_declarations import (
+    FamilyReference,
     KeySupport,
     ModelCatalogLibraryProperty,
     ModelFamily,
+    ModelFamilyUsageNodeProperty,
     ModelOffering,
     ModelProvider,
+    ModelProviderUsageNodeProperty,
     ModelUsageNodeProperty,
 )
 from griptape_nodes.node_library.library_registry import (
@@ -22,6 +25,8 @@ from griptape_nodes.node_library.library_registry import (
 from griptape_nodes.node_library.library_validation import validate_library_declarations
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     DuplicateModelOfferingIdProblem,
+    UnresolvedModelFamilyUsageReferenceProblem,
+    UnresolvedModelProviderUsageReferenceProblem,
     UnresolvedModelUsageReferenceProblem,
 )
 
@@ -267,3 +272,157 @@ class TestUnresolvedModelUsageReferences:
 
         ids = [p.offering_id for p in result.fatal if isinstance(p, UnresolvedModelUsageReferenceProblem)]
         assert sorted(ids) == ["a", "b"]
+
+
+# ---------- Unresolved family-usage references ----------
+
+
+def _catalog_with_one_family() -> ModelCatalogLibraryProperty:
+    return ModelCatalogLibraryProperty(
+        providers={
+            "openai": ModelProvider(
+                display_name="OpenAI",
+                families={
+                    "gpt_5": ModelFamily(
+                        display_name="GPT-5",
+                        offerings={"openai_gpt_5": _offering()},
+                    ),
+                },
+            ),
+        },
+    )
+
+
+class TestUnresolvedFamilyUsageReferences:
+    def test_node_referencing_existing_family_passes(self) -> None:
+        schema = _make_schema(
+            library_declarations=[_catalog_with_one_family()],
+            nodes=[
+                NodeDefinition(
+                    class_name="UsesGpt5",
+                    file_path="x.py",
+                    metadata=_make_node_metadata(
+                        declarations=[
+                            ModelFamilyUsageNodeProperty(
+                                families=[FamilyReference(provider_id="openai", family_id="gpt_5")],
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+        )
+
+        result = validate_library_declarations(schema)
+
+        assert result.fatal == []
+
+    def test_node_referencing_missing_family_is_fatal(self) -> None:
+        schema = _make_schema(
+            library_declarations=[_catalog_with_one_family()],
+            nodes=[
+                NodeDefinition(
+                    class_name="UsesNonexistent",
+                    file_path="x.py",
+                    metadata=_make_node_metadata(
+                        declarations=[
+                            ModelFamilyUsageNodeProperty(
+                                families=[FamilyReference(provider_id="openai", family_id="gpt_99")],
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+        )
+
+        result = validate_library_declarations(schema)
+
+        unresolved = [p for p in result.fatal if isinstance(p, UnresolvedModelFamilyUsageReferenceProblem)]
+        assert len(unresolved) == 1
+        assert unresolved[0].provider_id == "openai"
+        assert unresolved[0].family_id == "gpt_99"
+
+    def test_family_under_unknown_provider_is_fatal(self) -> None:
+        schema = _make_schema(
+            library_declarations=[_catalog_with_one_family()],
+            nodes=[
+                NodeDefinition(
+                    class_name="UsesUnknownProvider",
+                    file_path="x.py",
+                    metadata=_make_node_metadata(
+                        declarations=[
+                            ModelFamilyUsageNodeProperty(
+                                families=[FamilyReference(provider_id="acme", family_id="gpt_5")],
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+        )
+
+        result = validate_library_declarations(schema)
+
+        unresolved = [p for p in result.fatal if isinstance(p, UnresolvedModelFamilyUsageReferenceProblem)]
+        assert len(unresolved) == 1
+        assert unresolved[0].provider_id == "acme"
+
+
+# ---------- Unresolved provider-usage references ----------
+
+
+class TestUnresolvedProviderUsageReferences:
+    def test_node_referencing_existing_provider_passes(self) -> None:
+        schema = _make_schema(
+            library_declarations=[_catalog_with_one_family()],
+            nodes=[
+                NodeDefinition(
+                    class_name="UsesOpenai",
+                    file_path="x.py",
+                    metadata=_make_node_metadata(
+                        declarations=[ModelProviderUsageNodeProperty(provider_ids=["openai"])],
+                    ),
+                ),
+            ],
+        )
+
+        result = validate_library_declarations(schema)
+
+        assert result.fatal == []
+
+    def test_node_referencing_missing_provider_is_fatal(self) -> None:
+        schema = _make_schema(
+            library_declarations=[_catalog_with_one_family()],
+            nodes=[
+                NodeDefinition(
+                    class_name="UsesAcme",
+                    file_path="x.py",
+                    metadata=_make_node_metadata(
+                        declarations=[ModelProviderUsageNodeProperty(provider_ids=["acme"])],
+                    ),
+                ),
+            ],
+        )
+
+        result = validate_library_declarations(schema)
+
+        unresolved = [p for p in result.fatal if isinstance(p, UnresolvedModelProviderUsageReferenceProblem)]
+        assert len(unresolved) == 1
+        assert unresolved[0].provider_id == "acme"
+
+    def test_multiple_unresolved_providers_all_reported(self) -> None:
+        schema = _make_schema(
+            library_declarations=[_catalog_with_one_family()],
+            nodes=[
+                NodeDefinition(
+                    class_name="N",
+                    file_path="x.py",
+                    metadata=_make_node_metadata(
+                        declarations=[ModelProviderUsageNodeProperty(provider_ids=["acme", "wile_e"])],
+                    ),
+                ),
+            ],
+        )
+
+        result = validate_library_declarations(schema)
+
+        ids = [p.provider_id for p in result.fatal if isinstance(p, UnresolvedModelProviderUsageReferenceProblem)]
+        assert sorted(ids) == ["acme", "wile_e"]
