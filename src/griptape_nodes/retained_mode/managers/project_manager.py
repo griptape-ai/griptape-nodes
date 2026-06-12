@@ -282,6 +282,18 @@ class ProjectInfo:
     parsed_directory_schemas: dict[str, ParsedMacro]  # directory_name -> ParsedMacro
 
 
+class _ProjectActivationOutcome(NamedTuple):
+    """Result of establishing a project's config/workspace/env layers and reloading.
+
+    `failure` is the reload failure (None on success). `workspace_changed` reports
+    whether the workspace directory changed, so the caller can flag
+    `altered_workflow_state` on the success result.
+    """
+
+    failure: SetCurrentProjectResultFailure | None
+    workspace_changed: bool
+
+
 class ProjectManager:
     """Manages project templates, validation, and file path resolution.
 
@@ -1037,25 +1049,21 @@ class ProjectManager:
             await GriptapeNodes.WorkflowManager().refresh_workflow_registry()
         return None
 
-    async def on_set_current_project_request(  # noqa: C901
+    async def on_set_current_project_request(
         self, request: SetCurrentProjectRequest
     ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
         """Set which project user has selected.
 
-        Captures workspace path before and after config layer changes. If the
-        workspace actually changed and startup is complete, performs an expensive
-        workspace switch: reloads all libraries and re-registers workflows.
-        During startup, LibraryManager handles library loading concurrently, so
-        the workspace switch is skipped.
+        Establishes the target project's config/workspace/env layers and reloads
+        libraries. When the reload fails (e.g. an engine_version mismatch or a
+        failed provisioning), the previously active project is re-established so
+        the engine is never left adopting a broken project: the user can keep
+        working in the project they had. Re-establishment runs only after startup
+        (interactive switches); during boot the failure is returned as-is.
         """
-        # Restore os.environ entries mutated by the outgoing project before any config
-        # layer changes. Workspace resolution below may consult env vars, so the old
-        # project's values must not leak into the new project's workspace decision.
-        self._restore_project_env()
-
-        # Capture workspace and library-affecting config BEFORE config changes for comparison after
-        old_workspace = self._config_manager.workspace_path
-        old_library_config = self._snapshot_library_config()
+        # Remember the project that was active before this switch so a failed
+        # activation can roll back to it. SYSTEM_DEFAULTS_KEY is a valid target.
+        previous_project_id = self._current_project_id
 
         # `None` is the wire-level "no project specified" signal -- normalize to
         # SYSTEM_DEFAULTS_KEY so the engine lands on system defaults instead of
@@ -1072,6 +1080,54 @@ class ProjectManager:
         resolved_project_id: ProjectID = request.project_id if request.project_id is not None else SYSTEM_DEFAULTS_KEY
         if resolved_project_id != SYSTEM_DEFAULTS_KEY:
             resolved_project_id = str(canonicalize_for_identity(resolved_project_id))
+
+        outcome = await self._activate_project(resolved_project_id)
+        if outcome.failure is not None:
+            # During boot, leave the failure to the caller (soft handling); there is
+            # no prior interactive project to fall back to. After startup, restore the
+            # previously active project so the engine stays in a working state, then
+            # surface the original failure to the GUI.
+            if self._initialization_complete and previous_project_id != resolved_project_id:
+                rollback = await self._activate_project(previous_project_id)
+                if rollback.failure is not None:
+                    logger.error(
+                        "Attempted to roll back to previous project '%s' after activation of '%s' failed. "
+                        "Rollback also failed: %s",
+                        previous_project_id,
+                        resolved_project_id,
+                        rollback.failure.result_details,
+                    )
+            return outcome.failure
+
+        result = SetCurrentProjectResultSuccess(
+            result_details=f"Successfully set current project. ID: {resolved_project_id}",
+        )
+        if outcome.workspace_changed and self._initialization_complete:
+            result.altered_workflow_state = True
+        return result
+
+    async def _activate_project(self, resolved_project_id: ProjectID) -> _ProjectActivationOutcome:
+        """Establish a project's config/workspace/env layers and reload libraries.
+
+        Captures workspace path before and after config layer changes. If the
+        workspace actually changed and startup is complete, performs an expensive
+        workspace switch: reloads all libraries and re-registers workflows.
+        During startup, LibraryManager handles library loading concurrently, so
+        the workspace switch is skipped.
+
+        `resolved_project_id` is already canonicalized. Returns the reload failure
+        (None on success) and whether the workspace changed. This is the shared
+        body used both for the requested switch and for rolling back to the
+        previously active project when a switch fails.
+        """
+        # Restore os.environ entries mutated by the outgoing project before any config
+        # layer changes. Workspace resolution below may consult env vars, so the old
+        # project's values must not leak into the new project's workspace decision.
+        self._restore_project_env()
+
+        # Capture workspace and library-affecting config BEFORE config changes for comparison after
+        old_workspace = self._config_manager.workspace_path
+        old_library_config = self._snapshot_library_config()
 
         self._current_project_id = resolved_project_id
 
@@ -1144,14 +1200,9 @@ class ProjectManager:
                 library_config_changed=library_config_changed,
             )
             if failure is not None:
-                return failure
+                return _ProjectActivationOutcome(failure=failure, workspace_changed=workspace_changed)
 
-        result = SetCurrentProjectResultSuccess(
-            result_details=f"Successfully set current project. ID: {resolved_project_id}",
-        )
-        if workspace_changed and self._initialization_complete:
-            result.altered_workflow_state = True
-        return result
+        return _ProjectActivationOutcome(failure=None, workspace_changed=workspace_changed)
 
     def on_get_current_project_request(
         self, _request: GetCurrentProjectRequest

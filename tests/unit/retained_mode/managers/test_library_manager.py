@@ -1996,6 +1996,28 @@ class TestReconcileLibrariesFromConfig:
 class TestPreviewProjectProvisioning:
     """The read-only preview handler lists the plan without touching disk."""
 
+    @staticmethod
+    def _config_manager_for(libraries: object, engine_version: str | None = None) -> MagicMock:
+        """A ConfigManager whose read_config_file_value returns per-key values.
+
+        The preview handler reads two keys from the project's config file:
+        `libraries_to_register` and `engine_version`. Keying the side_effect on
+        the requested key keeps the two reads independent.
+        """
+        from griptape_nodes.retained_mode.managers.settings import ENGINE_VERSION_KEY, LIBRARIES_TO_REGISTER_KEY
+
+        config_manager = MagicMock()
+
+        def read_config_file_value(_path: object, key: str, *, default: object = None) -> object:
+            if key == LIBRARIES_TO_REGISTER_KEY:
+                return libraries
+            if key == ENGINE_VERSION_KEY:
+                return engine_version
+            return default
+
+        config_manager.read_config_file_value.side_effect = read_config_file_value
+        return config_manager
+
     def test_not_loaded_project_is_failure(self, griptape_nodes: GriptapeNodes) -> None:
         from griptape_nodes.retained_mode.events.library_events import (
             PreviewProjectProvisioningRequest,
@@ -2018,8 +2040,7 @@ class TestPreviewProjectProvisioning:
         )
 
         library_manager = griptape_nodes.LibraryManager()
-        config_manager = MagicMock()
-        config_manager.read_config_file_value.return_value = ["griptape_nodes_library.json", {"path": "../shared/lib"}]
+        config_manager = self._config_manager_for(["griptape_nodes_library.json", {"path": "../shared/lib"}])
         with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn:
             mock_gn.ProjectManager.return_value.get_loaded_project_dir.return_value = tmp_path
             mock_gn.ConfigManager.return_value = config_manager
@@ -2029,6 +2050,7 @@ class TestPreviewProjectProvisioning:
 
         assert isinstance(result, PreviewProjectProvisioningResultSuccess)
         assert result.actions == []
+        assert result.engine_version_compatible is True
 
     def test_sourced_entries_preserve_order_and_flags(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
         from griptape_nodes.retained_mode.events.library_events import (
@@ -2038,12 +2060,13 @@ class TestPreviewProjectProvisioning:
         )
 
         library_manager = griptape_nodes.LibraryManager()
-        config_manager = MagicMock()
-        config_manager.read_config_file_value.return_value = [
-            {"name": "skip-lib", "git_url": "griptape-ai/skip-lib@v2", "version": ">=2.0"},
-            {"name": "install-lib", "git_url": "griptape-ai/install-lib@v2", "version": ">=2.0"},
-            {"name": "overwrite-lib", "git_url": "griptape-ai/overwrite-lib@v2", "version": ">=2.0"},
-        ]
+        config_manager = self._config_manager_for(
+            [
+                {"name": "skip-lib", "git_url": "griptape-ai/skip-lib@v2", "version": ">=2.0"},
+                {"name": "install-lib", "git_url": "griptape-ai/install-lib@v2", "version": ">=2.0"},
+                {"name": "overwrite-lib", "git_url": "griptape-ai/overwrite-lib@v2", "version": ">=2.0"},
+            ]
+        )
         installed = {"skip-lib": "2.1.0", "install-lib": None, "overwrite-lib": "1.0.0"}
         with (
             patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn,
@@ -2064,3 +2087,54 @@ class TestPreviewProjectProvisioning:
         ]
         # Only the git OVERWRITE is destructive.
         assert [a.destructive for a in result.actions] == [False, False, True]
+
+    def test_compatible_engine_version_is_compatible(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            PreviewProjectProvisioningRequest,
+            PreviewProjectProvisioningResultSuccess,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        config_manager = self._config_manager_for([], engine_version=">=0.5,<1.0")
+        with (
+            patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn,
+            patch("griptape_nodes.retained_mode.managers.library_manager.engine_version", "0.5.3"),
+        ):
+            mock_gn.ProjectManager.return_value.get_loaded_project_dir.return_value = tmp_path
+            mock_gn.ConfigManager.return_value = config_manager
+            result = library_manager.on_preview_project_provisioning_request(
+                PreviewProjectProvisioningRequest(project_id=str(tmp_path / "project.yml"))
+            )
+
+        assert isinstance(result, PreviewProjectProvisioningResultSuccess)
+        assert result.engine_version_compatible is True
+        assert result.required_engine_version == ">=0.5,<1.0"
+        assert result.current_engine_version == "0.5.3"
+        assert result.engine_version_reason is None
+
+    def test_incompatible_engine_version_blocks_with_reason(
+        self, griptape_nodes: GriptapeNodes, tmp_path: Path
+    ) -> None:
+        from griptape_nodes.retained_mode.events.library_events import (
+            PreviewProjectProvisioningRequest,
+            PreviewProjectProvisioningResultSuccess,
+        )
+
+        library_manager = griptape_nodes.LibraryManager()
+        config_manager = self._config_manager_for([], engine_version=">=2.0,<3.0")
+        with (
+            patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn,
+            patch("griptape_nodes.retained_mode.managers.library_manager.engine_version", "0.5.3"),
+        ):
+            mock_gn.ProjectManager.return_value.get_loaded_project_dir.return_value = tmp_path
+            mock_gn.ConfigManager.return_value = config_manager
+            result = library_manager.on_preview_project_provisioning_request(
+                PreviewProjectProvisioningRequest(project_id=str(tmp_path / "project.yml"))
+            )
+
+        assert isinstance(result, PreviewProjectProvisioningResultSuccess)
+        assert result.engine_version_compatible is False
+        assert result.required_engine_version == ">=2.0,<3.0"
+        assert result.current_engine_version == "0.5.3"
+        assert result.engine_version_reason is not None
+        assert "0.5.3" in result.engine_version_reason

@@ -2013,6 +2013,93 @@ class TestProjectManagerProjectWorkspaces:
         assert isinstance(result, SetCurrentProjectResultFailure)
         assert "reload failed" in str(result.result_details)
 
+    @pytest.mark.asyncio
+    async def test_failed_activation_rolls_back_to_previous_project(self, tmp_path: Path) -> None:
+        """A failed interactive switch re-activates the previously active project."""
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.events.project_events import (
+            SetCurrentProjectRequest,
+            SetCurrentProjectResultFailure,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import _ProjectActivationOutcome
+
+        target_file = tmp_path / "target.yml"
+        target_file.touch()
+        previous_file = tmp_path / "previous.yml"
+        previous_file.touch()
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(target_file, mock_config)
+        pm._initialization_complete = True
+        # A previously active interactive project to roll back to.
+        previous_id = str(canonicalize_for_identity(str(previous_file)))
+        pm._current_project_id = previous_id
+
+        failure = SetCurrentProjectResultFailure(result_details="engine_version mismatch")
+        calls: list[str] = []
+
+        async def fake_activate(project_id: str) -> _ProjectActivationOutcome:
+            calls.append(project_id)
+            # First call (the requested target) fails; the rollback to previous succeeds.
+            if len(calls) == 1:
+                return _ProjectActivationOutcome(failure=failure, workspace_changed=False)
+            return _ProjectActivationOutcome(failure=None, workspace_changed=False)
+
+        with patch.object(pm, "_activate_project", side_effect=fake_activate):
+            result = await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(target_file)))
+
+        target_id = str(canonicalize_for_identity(str(target_file)))
+        assert calls == [target_id, previous_id]
+        assert isinstance(result, SetCurrentProjectResultFailure)
+        assert "engine_version mismatch" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_failed_activation_during_boot_does_not_roll_back(self, tmp_path: Path) -> None:
+        """A failure before startup completes returns as-is without re-activating anything."""
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.events.project_events import (
+            SetCurrentProjectRequest,
+            SetCurrentProjectResultFailure,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import (
+            SYSTEM_DEFAULTS_KEY,
+            _ProjectActivationOutcome,
+        )
+
+        target_file = tmp_path / "target.yml"
+        target_file.touch()
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(target_file, mock_config)
+        # _initialization_complete stays False (boot).
+        pm._current_project_id = SYSTEM_DEFAULTS_KEY
+
+        failure = SetCurrentProjectResultFailure(result_details="boot failure")
+        calls: list[str] = []
+
+        async def fake_activate(project_id: str) -> _ProjectActivationOutcome:
+            calls.append(project_id)
+            return _ProjectActivationOutcome(failure=failure, workspace_changed=False)
+
+        with patch.object(pm, "_activate_project", side_effect=fake_activate):
+            result = await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(target_file)))
+
+        # Only the target activation runs; no rollback during boot.
+        assert len(calls) == 1
+        assert isinstance(result, SetCurrentProjectResultFailure)
+
 
 class TestRegisterProjectPath:
     """Test ProjectManager._register_project_path."""

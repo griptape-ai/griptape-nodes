@@ -3081,17 +3081,27 @@ class LibraryManager:
             )
 
         config_path = project_dir / "griptape_nodes_config.json"
-        raw_libraries = GriptapeNodes.ConfigManager().read_config_file_value(
-            config_path, LIBRARIES_TO_REGISTER_KEY, default=[]
-        )
+        config_mgr = GriptapeNodes.ConfigManager()
+        raw_libraries = config_mgr.read_config_file_value(config_path, LIBRARIES_TO_REGISTER_KEY, default=[])
         registrations = normalize_library_registrations(raw_libraries)
         sourced = [reg for reg in registrations if reg.git_url is not None or reg.requirement_specifier is not None]
+
+        # Engine-version preflight: read the project's own declared engine_version
+        # from its config file (not the merged config) and compare against the running
+        # engine. The GUI hard-blocks activation on incompatibility so the user never
+        # opens a project that the engine-version gate would later reject and roll back.
+        required_engine_version = config_mgr.read_config_file_value(config_path, ENGINE_VERSION_KEY, default=None)
+        engine_version_reason = self._engine_version_failure_detail(required_engine_version)
 
         actions = [self._plan_one_library_provisioning(reg) for reg in sourced]
         destructive_count = sum(1 for action in actions if action.destructive)
         change_count = sum(1 for action in actions if action.kind != LibraryProvisioningActionKind.SKIP)
         return PreviewProjectProvisioningResultSuccess(
             actions=actions,
+            engine_version_compatible=engine_version_reason is None,
+            required_engine_version=required_engine_version,
+            current_engine_version=engine_version,
+            engine_version_reason=engine_version_reason,
             result_details=f"Computed provisioning plan for project '{request.project_id}': "
             f"{change_count} change(s), {destructive_count} destructive",
         )
@@ -3135,6 +3145,17 @@ class LibraryManager:
         a raise, so the caller can surface it without crashing.
         """
         spec_string = GriptapeNodes.ConfigManager().get_config_value(ENGINE_VERSION_KEY, default=None)
+        return self._engine_version_failure_detail(spec_string)
+
+    @staticmethod
+    def _engine_version_failure_detail(spec_string: str | None) -> str | None:
+        """Return a failure detail when the running engine fails `spec_string`, else None.
+
+        Pure: a PEP 440 compare of the running engine against the given specifier.
+        `None` means no constraint. A malformed spec or engine version is itself a
+        failure detail rather than a raise, so callers (the merged-config gate and
+        the read-only preflight) can surface it identically without crashing.
+        """
         if spec_string is None:
             return None
 
