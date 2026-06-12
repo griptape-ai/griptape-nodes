@@ -93,6 +93,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     LIBRARIES_TO_REGISTER_KEY,
     PROJECTS_TO_REGISTER_KEY,
 )
+from griptape_nodes.utils.version_utils import engine_version, engine_version_failure_detail
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -695,12 +696,28 @@ class ProjectManager:
                     parent_path = project_info.project_file_path.parent / parent_path
                 resolved_parent = str(canonicalize_for_identity(parent_path))
 
+            # Read the project-adjacent config's engine_version specifier without
+            # merging it into the live config, so the GUI can disable activation
+            # for a project the running engine can't satisfy. A project with no
+            # backing file (or no specifier) is compatible by default.
+            required_engine_version: str | None = None
+            if project_info.project_file_path is not None:
+                config_path = project_info.project_file_path.parent / "griptape_nodes_config.json"
+                required_engine_version = self._config_manager.read_config_file_value(
+                    config_path, ENGINE_VERSION_KEY, default=None
+                )
+            engine_version_reason = engine_version_failure_detail(required_engine_version)
+
             successfully_loaded.append(
                 ProjectTemplateInfo(
                     project_id=project_id,
                     validation=project_info.validation,
                     name=project_info.template.name,
                     parent_project_path=resolved_parent,
+                    engine_version_compatible=engine_version_reason is None,
+                    required_engine_version=required_engine_version,
+                    current_engine_version=engine_version,
+                    engine_version_reason=engine_version_reason,
                 )
             )
 

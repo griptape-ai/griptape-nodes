@@ -1408,21 +1408,9 @@ class PreviewProjectProvisioningResultSuccess(WorkflowNotAlteredMixin, ResultPay
     Args:
         actions: One action per sourced library, in config order. Empty when the
             project declares no library sources to provision.
-        engine_version_compatible: False when the project's declared engine_version
-            specifier excludes the running engine (or is itself malformed). True
-            when compatible or when the project declares no engine_version. The GUI
-            hard-blocks activation on False so an incompatible project is never opened.
-        required_engine_version: The project's declared engine_version specifier, or
-            None when it declares none.
-        current_engine_version: The running engine's version string.
-        engine_version_reason: Human-readable explanation when incompatible, else None.
     """
 
     actions: list[LibraryProvisioningAction]
-    engine_version_compatible: bool = True
-    required_engine_version: str | None = None
-    current_engine_version: str | None = None
-    engine_version_reason: str | None = None
 
 
 @dataclass

@@ -761,6 +761,7 @@ class TestProjectManagerListProjectTemplates:
 
         mock_config = Mock()
         mock_config.workspace_path = Path("/workspace")
+        mock_config.read_config_file_value.return_value = None
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -899,6 +900,7 @@ class TestProjectManagerListProjectTemplates:
 
         mock_config = Mock()
         mock_config.workspace_path = Path("/workspace")
+        mock_config.read_config_file_value.return_value = None
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -938,6 +940,48 @@ class TestProjectManagerListProjectTemplates:
         assert len(result.failed_to_load) == 1
         assert result.successfully_loaded[0].project_id == success_id
         assert result.failed_to_load[0].project_id == str(failed_path)
+
+    def test_list_marks_incompatible_engine_version(self) -> None:
+        """A project whose adjacent config pins an unsatisfiable engine_version is flagged incompatible."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import (
+            ListProjectTemplatesRequest,
+            ListProjectTemplatesResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_config = Mock()
+        mock_config.workspace_path = Path("/workspace")
+        # The running engine cannot satisfy this pin, so the verdict must be incompatible.
+        mock_config.read_config_file_value.return_value = ">=99"
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        project_path = Path("/test/pinned.yml")
+        project_id = str(project_path)
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        pm._successfully_loaded_project_templates[project_id] = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        result = pm.on_list_project_templates_request(ListProjectTemplatesRequest(include_system_builtins=False))
+
+        assert isinstance(result, ListProjectTemplatesResultSuccess)
+        info = result.successfully_loaded[0]
+        assert info.engine_version_compatible is False
+        assert info.required_engine_version == ">=99"
+        assert info.engine_version_reason is not None
 
 
 class TestProjectManagerAttemptMapAbsolutePathToProject:
@@ -3182,6 +3226,7 @@ directories:
         mock_config_manager.env_config = {}
         mock_config_manager.merged_config = {}
         mock_config_manager.get_config_value.return_value = []
+        mock_config_manager.read_config_file_value.return_value = None
         mock_config_manager.workspace_path = tmp_path
         return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
@@ -3723,6 +3768,7 @@ directories:
         mock_config_manager.env_config = {}
         mock_config_manager.merged_config = {}
         mock_config_manager.get_config_value.return_value = []
+        mock_config_manager.read_config_file_value.return_value = None
         mock_config_manager.workspace_path = tmp_path
         return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
@@ -4478,6 +4524,7 @@ directories:
         mock_config_manager.env_config = {}
         mock_config_manager.merged_config = {}
         mock_config_manager.get_config_value.return_value = []
+        mock_config_manager.read_config_file_value.return_value = None
         mock_config_manager.workspace_path = tmp_path
         return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 

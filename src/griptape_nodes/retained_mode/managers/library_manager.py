@@ -249,7 +249,10 @@ from griptape_nodes.utils.library_utils import (
     normalize_library_registrations,
 )
 from griptape_nodes.utils.uv_utils import find_uv_bin, is_venv_functional, venv_python_path
-from griptape_nodes.utils.version_utils import engine_version, get_complete_version_string
+from griptape_nodes.utils.version_utils import (
+    engine_version_failure_detail,
+    get_complete_version_string,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -3081,27 +3084,17 @@ class LibraryManager:
             )
 
         config_path = project_dir / "griptape_nodes_config.json"
-        config_mgr = GriptapeNodes.ConfigManager()
-        raw_libraries = config_mgr.read_config_file_value(config_path, LIBRARIES_TO_REGISTER_KEY, default=[])
+        raw_libraries = GriptapeNodes.ConfigManager().read_config_file_value(
+            config_path, LIBRARIES_TO_REGISTER_KEY, default=[]
+        )
         registrations = normalize_library_registrations(raw_libraries)
         sourced = [reg for reg in registrations if reg.git_url is not None or reg.requirement_specifier is not None]
-
-        # Engine-version preflight: read the project's own declared engine_version
-        # from its config file (not the merged config) and compare against the running
-        # engine. The GUI hard-blocks activation on incompatibility so the user never
-        # opens a project that the engine-version gate would later reject and roll back.
-        required_engine_version = config_mgr.read_config_file_value(config_path, ENGINE_VERSION_KEY, default=None)
-        engine_version_reason = self._engine_version_failure_detail(required_engine_version)
 
         actions = [self._plan_one_library_provisioning(reg) for reg in sourced]
         destructive_count = sum(1 for action in actions if action.destructive)
         change_count = sum(1 for action in actions if action.kind != LibraryProvisioningActionKind.SKIP)
         return PreviewProjectProvisioningResultSuccess(
             actions=actions,
-            engine_version_compatible=engine_version_reason is None,
-            required_engine_version=required_engine_version,
-            current_engine_version=engine_version,
-            engine_version_reason=engine_version_reason,
             result_details=f"Computed provisioning plan for project '{request.project_id}': "
             f"{change_count} change(s), {destructive_count} destructive",
         )
@@ -3140,45 +3133,11 @@ class LibraryManager:
     def _check_engine_version(self) -> str | None:
         """Return a failure detail when the running engine fails the configured spec.
 
-        Reads the merged `engine_version` config key. No key means no constraint.
-        A malformed spec or engine version is itself a failure detail rather than
-        a raise, so the caller can surface it without crashing.
+        Reads the merged `engine_version` config key and delegates the PEP 440
+        compare to `engine_version_failure_detail`. No key means no constraint.
         """
         spec_string = GriptapeNodes.ConfigManager().get_config_value(ENGINE_VERSION_KEY, default=None)
-        return self._engine_version_failure_detail(spec_string)
-
-    @staticmethod
-    def _engine_version_failure_detail(spec_string: str | None) -> str | None:
-        """Return a failure detail when the running engine fails `spec_string`, else None.
-
-        Pure: a PEP 440 compare of the running engine against the given specifier.
-        `None` means no constraint. A malformed spec or engine version is itself a
-        failure detail rather than a raise, so callers (the merged-config gate and
-        the read-only preflight) can surface it identically without crashing.
-        """
-        if spec_string is None:
-            return None
-
-        try:
-            specifier_set = SpecifierSet(spec_string)
-        except InvalidSpecifier:
-            return (
-                f"Config pins engine version '{spec_string}', which is not a valid "
-                f"PEP 440 specifier (e.g. '>=0.5,<0.6')"
-            )
-
-        try:
-            current_version = PackagingVersion(engine_version)
-        except InvalidVersion:
-            return (
-                f"Config pins engine version '{spec_string}' but the running engine "
-                f"version '{engine_version}' is not a valid PEP 440 version"
-            )
-
-        if current_version not in specifier_set:
-            return f"Config requires engine version '{spec_string}' but the running engine is '{engine_version}'"
-
-        return None
+        return engine_version_failure_detail(spec_string)
 
     def _plan_one_library_provisioning(self, registration: LibraryRegistration) -> LibraryProvisioningAction:
         """Decide what provisioning will do to one entry, reading only.
