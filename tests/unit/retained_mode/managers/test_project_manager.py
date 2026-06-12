@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from unittest.mock import AsyncMock, Mock, call, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -1841,8 +1841,9 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        # Activation first clears any stale override, then applies the mapped value.
-        mock_config.set_workspace_override.assert_has_calls([call(None), call(Path(str(workspace_dir)))])
+        # Activation first clears all per-activation layers, then applies the mapped value.
+        mock_config.clear_project_layers.assert_called_once()
+        mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
         mock_config.load_workspace_config.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1867,8 +1868,9 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        # Activation first clears any stale override, then applies the mapped value.
-        mock_config.set_workspace_override.assert_has_calls([call(None), call(Path(str(workspace_dir)))])
+        # Activation first clears all per-activation layers, then applies the mapped value.
+        mock_config.clear_project_layers.assert_called_once()
+        mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
         mock_config.load_workspace_config.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1889,16 +1891,17 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        # Activation first clears any stale override, then defaults to the project dir.
-        mock_config.set_workspace_override.assert_has_calls([call(None), call(project_file.parent)])
+        # Activation first clears all per-activation layers, then defaults to the project dir.
+        mock_config.clear_project_layers.assert_called_once()
+        mock_config.set_workspace_override.assert_called_once_with(project_file.parent)
         mock_config.load_workspace_config.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_project_workspaces_project_adjacent_config_not_overridden_when_set(self, tmp_path: Path) -> None:
         """Test that no override path is applied when project-adjacent config sets workspace_directory.
 
-        Activation still clears any stale override first (the single `None` call), but
-        because the project-adjacent config supplies workspace_directory, no override
+        Activation still clears all per-activation layers first (via clear_project_layers),
+        but because the project-adjacent config supplies workspace_directory, no override
         path is layered on top of it.
         """
         project_file = tmp_path / "project.yml"
@@ -1916,7 +1919,8 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        mock_config.set_workspace_override.assert_called_once_with(None)
+        mock_config.clear_project_layers.assert_called_once()
+        mock_config.set_workspace_override.assert_not_called()
         mock_config.load_workspace_config.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1962,19 +1966,107 @@ class TestProjectManagerProjectWorkspaces:
             parsed_directory_schemas=pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation),
         )
 
-        # Activate the auto-default project: clears, then sets the override to its own dir.
+        # Activate the auto-default project: clears all layers, then sets the override to its own dir.
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(auto_default_file)))
-        mock_config.set_workspace_override.assert_has_calls([call(None), call(auto_default_file.parent)])
+        mock_config.clear_project_layers.assert_called_once()
+        mock_config.set_workspace_override.assert_called_once_with(auto_default_file.parent)
 
         # Now the second project supplies its own workspace_directory.
         mock_config.project_config = {"workspace_directory": str(pinned_workspace_file.parent)}
+        mock_config.clear_project_layers.reset_mock()
         mock_config.set_workspace_override.reset_mock()
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(pinned_workspace_file)))
 
-        # The stale auto-default override is cleared and no path override is re-applied,
-        # so the pinned project's own workspace config layer is the one that loads.
-        mock_config.set_workspace_override.assert_called_once_with(None)
+        # The stale auto-default override is dropped by clear_project_layers and no path
+        # override is re-applied, so the pinned project's own workspace config layer loads.
+        mock_config.clear_project_layers.assert_called_once()
+        mock_config.set_workspace_override.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_switch_to_system_defaults_drops_prior_project_library_pins(self, tmp_path: Path) -> None:
+        """Switching from a pinned project to system defaults unloads the project's library pins.
+
+        Regression for the config-layer leak: the project-adjacent config layer (which
+        carries the pinned `libraries_to_register`) must be dropped on the switch, so the
+        merged library config returns to defaults and the reload fires to unload the pins.
+        Modeled by tying the pinned library to the project layer: clear_project_layers()
+        drops it, load_project_config() adds it. If the unconditional clear regresses, the
+        snapshot would still carry the pin, library_config_changed would be False, and the
+        reload that unloads it would never fire (the original bug).
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesResultSuccess
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.managers.settings import (
+            ENGINE_VERSION_KEY,
+            LIBRARIES_TO_DOWNLOAD_KEY,
+            LIBRARIES_TO_REGISTER_KEY,
+        )
+
+        pinned_file = tmp_path / "pinned" / "project.yml"
+        pinned_file.parent.mkdir()
+        pinned_file.touch()
+
+        # The pinned library is present only while the project layer is active. clear_project_layers
+        # drops it; load_project_config (re)adds it. Models the project-adjacent config layer.
+        state = {"project_layer_active": False}
+
+        def get_config_value(key: str, *_args: object, default: object = None, **_kwargs: object) -> object:
+            if key == LIBRARIES_TO_REGISTER_KEY:
+                return ["base-lib", "pinned-lib"] if state["project_layer_active"] else ["base-lib"]
+            if key == LIBRARIES_TO_DOWNLOAD_KEY:
+                return []
+            if key == ENGINE_VERSION_KEY:
+                return None
+            return default if default is not None else {}
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.workspace_path = str(tmp_path)
+        mock_config.get_config_value.side_effect = get_config_value
+        mock_config.load_project_config.side_effect = lambda _dir: state.update(project_layer_active=True)
+        mock_config.clear_project_layers.side_effect = lambda: state.update(project_layer_active=False)
+
+        pm = self._make_project_manager_with_project(pinned_file, mock_config)
+        pm._initialization_complete = True
+
+        # Register system defaults (no project file) as a switch target.
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        pm._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=None,
+            project_base_dir=tmp_path,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation),
+            parsed_directory_schemas=pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation),
+        )
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = AsyncMock(return_value=ReloadAllLibrariesResultSuccess(result_details="ok"))
+            mock_gn.WorkflowManager.return_value = Mock()
+
+            # Activate the pinned project: the project layer adds pinned-lib, firing a reload.
+            await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(pinned_file)))
+            assert state["project_layer_active"] is True
+
+            mock_gn.ahandle_request.reset_mock()
+
+            # Switch to system defaults: clear_project_layers drops the pinned-lib layer.
+            await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY))
+
+        # The prior project's library layer is gone (back to defaults only)...
+        assert state["project_layer_active"] is False
+        assert mock_config.get_config_value(LIBRARIES_TO_REGISTER_KEY) == ["base-lib"]
+        # ...and the reload fired on the switch to actually unload the pinned library.
+        mock_gn.ahandle_request.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_initialization_incomplete_skips_reload(self, tmp_path: Path) -> None:
@@ -4937,3 +5029,46 @@ situations:
 
         assert isinstance(result, ActivateWorkspaceProjectResultFailure)
         assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
+
+    @pytest.mark.asyncio
+    async def test_malformed_yaml_workspace_project_is_failure_with_detail(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """A project file whose YAML can't be parsed returns Failure carrying the detail, never raises.
+
+        Exercises the reworked failure signaling: _load_workspace_project returns a detail
+        string (rather than the handler inferring failure from a current-project read-back),
+        and the handler surfaces it in the result_details. The read-back inference is gone,
+        so this path must not depend on _current_project_id staying on system defaults.
+        """
+        from griptape_nodes.retained_mode.events.project_events import (
+            ActivateWorkspaceProjectRequest,
+            ActivateWorkspaceProjectResultFailure,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
+
+        self._setup_system_defaults(pm, str(tmp_path))
+
+        workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
+        workspace_project_path.write_text("not: valid: yaml: : :\n  - broken")
+
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
+            if key == "project_file":
+                return None
+            if "project_workspaces" in key:
+                return {}
+            return str(tmp_path)
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.aread_text = AsyncMock(return_value="not: valid: yaml: : :\n  - broken")
+            mock_file_cls.return_value = mock_file_instance
+
+            result = await pm.on_activate_workspace_project_request(ActivateWorkspaceProjectRequest())
+
+        assert isinstance(result, ActivateWorkspaceProjectResultFailure)
+        assert str(workspace_project_path) in str(result.result_details)
+        assert "Failed because" in str(result.result_details)

@@ -1154,12 +1154,14 @@ class ProjectManager:
 
         self._current_project_id = resolved_project_id
 
-        # Each activation re-decides its workspace from scratch. Clear any override the
-        # previous project set (auto-default-to-project-dir) so it cannot leak into a
-        # project that resolves its workspace from config/env. Without this, a rollback
-        # to a project whose config supplies workspace_directory keeps the failed
-        # project's override, loading the wrong workspace config layer.
-        self._config_manager.set_workspace_override(None)
+        # Each activation re-decides its config layers from scratch. Drop the prior
+        # project's per-activation state (workspace override + project-adjacent and
+        # workspace config-file paths) so none of it leaks into the new project. Without
+        # this, a rollback to a project whose config supplies workspace_directory keeps
+        # the failed project's override, and switching to system defaults re-merges the
+        # prior project's griptape_nodes_config.json (re-applying its pins). The branches
+        # below remerge via load_project_config()/load_workspace_config()/load_configs().
+        self._config_manager.clear_project_layers()
 
         project_info = self._successfully_loaded_project_templates.get(resolved_project_id)
         if project_info is not None and project_info.project_file_path is not None:
@@ -1192,9 +1194,9 @@ class ProjectManager:
             # Load workspace config layer from the resolved workspace directory.
             self._config_manager.load_workspace_config(self._config_manager.workspace_path)
         elif project_info is not None and project_info.project_file_path is None:
-            # Switching to system defaults: clear any project-specific workspace override
-            # and reload configs so workspace_path resolves from default config layers.
-            self._config_manager.set_workspace_override(None)
+            # Switching to system defaults: clear_project_layers() above already dropped
+            # the prior project's override and config-file paths, so reloading configs now
+            # resolves workspace_path and all config layers from defaults only.
             self._config_manager.load_configs()
 
         # Apply the new project's environment variables to os.environ. Happens after
@@ -1608,7 +1610,10 @@ class ProjectManager:
         establishes config/workspace/env layers but skips the in-handler library
         reload (LibraryManager performs the correctly-scoped load on init). A boot
         with no workspace project is a no-op success; a project that resolves but
-        fails to activate is a failure (logged details live in `_load_workspace_project`).
+        fails to load or activate is a failure (the detail comes from
+        `_load_workspace_project`). The engine_version gate is intentionally deferred to
+        LibraryManager at boot (soft-log); this handler reports load/activation failure
+        only, not gate failure.
         """
         workspace_project_path = self._resolve_project_file_path()
         if workspace_project_path is None:
@@ -1616,15 +1621,11 @@ class ProjectManager:
                 result_details="No workspace project found; system defaults remain active",
             )
 
-        await self._load_workspace_project()
-
-        # `_load_workspace_project` logs and returns on any internal failure without
-        # changing the current project. Boot starts on system defaults, so still
-        # being on system defaults after a path resolved means activation did not take.
-        if self._current_project_id == SYSTEM_DEFAULTS_KEY:
+        failure_detail = await self._load_workspace_project()
+        if failure_detail is not None:
             return ActivateWorkspaceProjectResultFailure(
                 result_details=f"Attempted to activate workspace project at '{workspace_project_path}'. "
-                f"Failed because the project could not be loaded or activated; see prior log entries",
+                f"Failed because {failure_detail}",
             )
 
         return ActivateWorkspaceProjectResultSuccess(
@@ -2033,16 +2034,21 @@ class ProjectManager:
 
         return workspace_project_path
 
-    async def _load_workspace_project(self) -> None:
+    async def _load_workspace_project(self) -> str | None:
         """Load workspace-level project template overlay if present.
 
         Checks for a project file using _resolve_project_file_path. If found, loads
         it as an overlay on top of system defaults and sets it as the current project.
         If no file is found, the system defaults remain current.
+
+        Returns a failure-detail string when a resolved project file fails to load or
+        activate (the same text that is logged), or None on success or when no project
+        file is present. Callers that report activation outcome use this signal directly
+        rather than inferring failure from current-project read-back.
         """
         workspace_project_path = self._resolve_project_file_path()
         if workspace_project_path is None:
-            return
+            return None
 
         workspace_project_path = workspace_project_path.resolve()
         logger.debug("Found workspace project file at '%s', loading", workspace_project_path)
@@ -2055,7 +2061,7 @@ class ProjectManager:
                 workspace_project_path,
                 e.result_details,
             )
-            return
+            return f"the project file could not be read: {e.result_details}"
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, validation)
@@ -2065,7 +2071,7 @@ class ProjectManager:
                 "Attempted to load workspace project from '%s'. Failed because YAML could not be parsed",
                 workspace_project_path,
             )
-            return
+            return "the project YAML could not be parsed"
 
         template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
 
@@ -2082,7 +2088,7 @@ class ProjectManager:
                 validation.status,
                 problem_details,
             )
-            return
+            return f"the project template is not usable (status: {validation.status}). Problems: {problem_details}"
 
         project_id = str(workspace_project_path)
         situation_schemas = self._parse_situation_macros(template.situations, validation)
@@ -2109,9 +2115,10 @@ class ProjectManager:
                 workspace_project_path,
                 set_result.result_details,
             )
-            return
+            return f"setting it as the current project failed: {set_result.result_details}"
 
         logger.debug("Successfully loaded workspace project from '%s'", workspace_project_path)
+        return None
 
     async def _load_registered_projects(self) -> None:
         """Load project templates from paths persisted in user config.

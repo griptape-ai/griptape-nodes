@@ -155,6 +155,18 @@ class ConfigManager:
             self._workspace_dir_override = resolved
             self._workspace_path = resolved
 
+    def clear_project_layers(self) -> None:
+        """Drop all per-activation config state so the next activation starts clean.
+
+        Resets the workspace override and the project-adjacent / workspace config-file
+        paths. Without this, switching projects (or rolling back to one) inherits the
+        prior project's config-file layer and workspace override. Callers remerge via
+        load_configs()/load_project_config()/load_workspace_config() right after.
+        """
+        self._workspace_dir_override = None
+        self._project_config_path = None
+        self._workspace_config_path = None
+
     @property
     def config_files(self) -> list[Path]:
         """Get a list of config files in ascending order of priority.

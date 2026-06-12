@@ -366,6 +366,35 @@ class TestConfigManager:
                 manager.load_configs()
                 assert manager.workspace_path == default_workspace
 
+    def test_clear_project_layers_resets_override_and_config_paths(self) -> None:
+        """clear_project_layers() drops the override and both config-file paths to None.
+
+        Regression guard for the per-activation state-leak: switching projects (or rolling
+        back to one) must not inherit the prior project's workspace override or its
+        project-adjacent/workspace config-file layers.
+        """
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir) / "project"
+            project_dir.mkdir()
+            workspace_dir = Path(temp_dir) / "workspace"
+            workspace_dir.mkdir()
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                manager.set_workspace_override(project_dir)
+                manager.load_project_config(project_dir)
+                manager.load_workspace_config(workspace_dir)
+
+                assert manager._workspace_dir_override is not None
+                assert manager._project_config_path is not None
+                assert manager._workspace_config_path is not None
+
+                manager.clear_project_layers()
+
+                assert manager._workspace_dir_override is None
+                assert manager._project_config_path is None
+                assert manager._workspace_config_path is None
+
 
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="xdg_base_dirs cannot find XDG_CONFIG_HOME on Windows on GitHub Actions"
