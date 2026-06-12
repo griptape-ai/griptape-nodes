@@ -155,6 +155,18 @@ class ConfigManager:
             self._workspace_dir_override = resolved
             self._workspace_path = resolved
 
+    def clear_project_layers(self) -> None:
+        """Drop all per-activation config state so the next activation starts clean.
+
+        Resets the workspace override and the project-adjacent / workspace config-file
+        paths. Without this, switching projects (or rolling back to one) inherits the
+        prior project's config-file layer and workspace override. Callers remerge via
+        load_configs()/load_project_config()/load_workspace_config() right after.
+        """
+        self._workspace_dir_override = None
+        self._project_config_path = None
+        self._workspace_config_path = None
+
     @property
     def config_files(self) -> list[Path]:
         """Get a list of config files in ascending order of priority.
@@ -288,6 +300,50 @@ class ConfigManager:
         self._workspace_config_path = workspace_dir / "griptape_nodes_config.json"
         self.load_configs()
 
+    def compute_project_provisioning_config(self, project_dir: Path, workspace_dir: Path) -> dict:
+        """Return the merged config a project WOULD activate with, mutating nothing.
+
+        Mirrors load_configs()'s layer order (defaults -> user -> project-adjacent ->
+        workspace -> workspace override -> env vars) for the given project and
+        workspace directories, reading files fresh into a local dict. The
+        provisioning preview uses this so its plan reflects the same effective
+        `libraries_to_register` / `engine_version` that _reconcile_libraries_from_config
+        reads from the live merged config after activation - instead of the
+        project-adjacent file alone, which diverges when a higher-priority layer
+        (a separate-dir workspace config, env vars, or the user config) sets those keys.
+
+        `workspace_dir` is the directory the project would resolve to (decided by
+        ProjectManager.resolve_project_workspace_dir, the same decision the live
+        activation applies); its griptape_nodes_config.json is the workspace layer.
+
+        Args:
+            project_dir: Directory holding the project YAML and its adjacent config.
+            workspace_dir: The resolved workspace directory for this project.
+        """
+        merged = Settings().model_dump()
+
+        if USER_CONFIG_PATH.exists():
+            merged = merge_dicts(merged, self._load_config_from_file(USER_CONFIG_PATH, "user"))
+
+        project_config_path = project_dir / "griptape_nodes_config.json"
+        merged = merge_dicts(merged, self._load_config_from_file(project_config_path, "project-adjacent"))
+
+        # Skip the workspace layer when it resolves to the project-adjacent file
+        # (workspace dir == project dir for self-contained projects), matching load_configs.
+        workspace_config_path = workspace_dir / "griptape_nodes_config.json"
+        if workspace_config_path != project_config_path:
+            merged = merge_dicts(merged, self._load_config_from_file(workspace_config_path, "workspace"))
+
+        # The resolved workspace dir is the runtime override the live path would apply;
+        # it sits above config files but below env vars (GTN_CONFIG_WORKSPACE_DIRECTORY).
+        merged["workspace_directory"] = str(workspace_dir)
+
+        env_config = self._load_config_from_env_vars()
+        if env_config:
+            merged = merge_dicts(merged, env_config)
+
+        return merged
+
     def reset_user_config(self) -> None:
         """Reset the user configuration to the default values.
 
@@ -408,6 +464,44 @@ class ConfigManager:
             value = self._coerce_to_type(value, cast_type)
 
         return value
+
+    def read_config_file(self, path: Path) -> dict:
+        """Read and parse a single JSON config file in isolation, mutating nothing.
+
+        Returns the raw parsed dict (empty when the file is missing or unparsable),
+        without merging it into the live config layers. Used to inspect a
+        project-adjacent config (e.g. for a provisioning preview or a read-only
+        workspace-dir decision) for a project other than the active one.
+
+        Args:
+            path: The config file to read.
+        """
+        return self._load_config_from_file(path, label=str(path))
+
+    def read_env_config(self) -> dict[str, Any]:
+        """Return the config layer derived from GTN_CONFIG_ environment variables, mutating nothing.
+
+        Public read-only view of the env-var layer for callers (e.g. a provisioning
+        preview's read-only workspace-dir decision) that need to inspect it without
+        triggering a full load_configs().
+        """
+        return self._load_config_from_env_vars()
+
+    def read_config_file_value(self, path: Path, key: str, *, default: Any | None = None) -> Any:
+        """Read a single dot-notation key from a config file without merging it into the live config.
+
+        Reads and parses the JSON at `path` in isolation, then pulls `key` from it.
+        Used to inspect a project-adjacent config (e.g. for a provisioning preview)
+        without disturbing the active config layers. Returns `default` when the
+        file is missing/unparsable or the key is absent.
+
+        Args:
+            path: The config file to read.
+            key: Dot-notation key (e.g. 'category.subcategory.key').
+            default: Value to return when the key is not present.
+        """
+        config = self.read_config_file(path)
+        return get_dot_value(config, key, default)
 
     def set_config_value(self, key: str, value: Any, *, should_set_env_var_if_detected: bool = True) -> bool:
         """Set a value in the configuration.

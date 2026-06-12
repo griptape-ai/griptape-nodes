@@ -366,6 +366,35 @@ class TestConfigManager:
                 manager.load_configs()
                 assert manager.workspace_path == default_workspace
 
+    def test_clear_project_layers_resets_override_and_config_paths(self) -> None:
+        """clear_project_layers() drops the override and both config-file paths to None.
+
+        Regression guard for the per-activation state-leak: switching projects (or rolling
+        back to one) must not inherit the prior project's workspace override or its
+        project-adjacent/workspace config-file layers.
+        """
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir) / "project"
+            project_dir.mkdir()
+            workspace_dir = Path(temp_dir) / "workspace"
+            workspace_dir.mkdir()
+
+            with patch.dict(os.environ, {}, clear=True):
+                manager = ConfigManager()
+                manager.set_workspace_override(project_dir)
+                manager.load_project_config(project_dir)
+                manager.load_workspace_config(workspace_dir)
+
+                assert manager._workspace_dir_override is not None
+                assert manager._project_config_path is not None
+                assert manager._workspace_config_path is not None
+
+                manager.clear_project_layers()
+
+                assert manager._workspace_dir_override is None
+                assert manager._project_config_path is None
+                assert manager._workspace_config_path is None
+
 
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="xdg_base_dirs cannot find XDG_CONFIG_HOME on Windows on GitHub Actions"
@@ -545,12 +574,20 @@ class TestConfigManagerEventEmission:
         assert entries[1].enabled is False
 
         # Round-trip: bare strings stay strings, objects stay objects.
-        # Object form serializes every field on LibraryRegistration; `worker_mode_override`
-        # defaults to None when the user didn't set one (added alongside `enabled`).
+        # Object form serializes every field on LibraryRegistration; the source/version
+        # fields default to None when the user didn't set one.
         dumped = validated.app_events.on_app_initialization_complete.model_dump()
         assert dumped["libraries_to_register"] == [
             "/path/to/enabled.json",
-            {"path": "/path/to/disabled.json", "enabled": False, "worker_mode_override": None},
+            {
+                "path": "/path/to/disabled.json",
+                "enabled": False,
+                "worker_mode_override": None,
+                "name": None,
+                "version": None,
+                "git_url": None,
+                "requirement_specifier": None,
+            },
         ]
 
 
@@ -686,3 +723,96 @@ class TestConfigManagerUtf8:
         result = manager._load_config_from_file(config_file, "test")
 
         assert result == {}
+
+
+class TestComputeProjectProvisioningConfig:
+    """`compute_project_provisioning_config` builds a project's merged config read-only.
+
+    The provisioning preview uses it so its plan reflects the same effective
+    `libraries_to_register` / `engine_version` the live reconcile reads after
+    activation, instead of the project-adjacent file alone.
+    """
+
+    @staticmethod
+    def _write_config(path: Path, dot_key: str, value: object) -> None:
+        from griptape_nodes.utils.dict_utils import set_dot_value
+
+        path.write_text(json.dumps(set_dot_value({}, dot_key, value)), encoding="utf-8")
+
+    def test_workspace_layer_overrides_project_adjacent_libraries(self, tmp_path: Path) -> None:
+        """A separate-dir workspace config's libraries_to_register wins over the project file.
+
+        Mirrors load_configs's last-writer-wins replacement (merge_lists=False), so the
+        preview must read the merged value, not the project-adjacent one.
+        """
+        from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
+        from griptape_nodes.utils.dict_utils import get_dot_value
+
+        project_dir = tmp_path / "project"
+        workspace_dir = tmp_path / "workspace"
+        project_dir.mkdir()
+        workspace_dir.mkdir()
+        self._write_config(project_dir / "griptape_nodes_config.json", LIBRARIES_TO_REGISTER_KEY, ["project-lib"])
+        self._write_config(workspace_dir / "griptape_nodes_config.json", LIBRARIES_TO_REGISTER_KEY, ["workspace-lib"])
+
+        with patch.dict(os.environ, {}, clear=True):
+            manager = ConfigManager()
+            merged = manager.compute_project_provisioning_config(project_dir, workspace_dir)
+
+        assert get_dot_value(merged, LIBRARIES_TO_REGISTER_KEY) == ["workspace-lib"]
+
+    def test_env_var_overrides_all_file_layers(self, tmp_path: Path) -> None:
+        """A GTN_CONFIG_ env var sits above every config-file layer, matching load_configs."""
+        from griptape_nodes.utils.dict_utils import get_dot_value
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        self._write_config(project_dir / "griptape_nodes_config.json", "storage_backend", "from-project")
+
+        with patch.dict(os.environ, {"GTN_CONFIG_STORAGE_BACKEND": "from-env"}, clear=True):
+            manager = ConfigManager()
+            merged = manager.compute_project_provisioning_config(project_dir, project_dir)
+
+        assert get_dot_value(merged, "storage_backend") == "from-env"
+
+    def test_self_contained_project_skips_duplicate_workspace_layer(self, tmp_path: Path) -> None:
+        """When workspace dir == project dir, the project-adjacent file is the only file layer.
+
+        Matches load_configs's guard that skips loading the same file twice; the single
+        file's value still lands in the merged config.
+        """
+        from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
+        from griptape_nodes.utils.dict_utils import get_dot_value
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        self._write_config(project_dir / "griptape_nodes_config.json", LIBRARIES_TO_REGISTER_KEY, ["only-lib"])
+
+        with patch.dict(os.environ, {}, clear=True):
+            manager = ConfigManager()
+            merged = manager.compute_project_provisioning_config(project_dir, project_dir)
+
+        assert get_dot_value(merged, LIBRARIES_TO_REGISTER_KEY) == ["only-lib"]
+        assert merged["workspace_directory"] == str(project_dir)
+
+    def test_does_not_mutate_live_config_state(self, tmp_path: Path) -> None:
+        """The computation is read-only: it leaves the live merged config and layer paths intact."""
+        project_dir = tmp_path / "project"
+        workspace_dir = tmp_path / "workspace"
+        project_dir.mkdir()
+        workspace_dir.mkdir()
+        self._write_config(project_dir / "griptape_nodes_config.json", "storage_backend", "from-project")
+
+        with patch.dict(os.environ, {}, clear=True):
+            manager = ConfigManager()
+            merged_before = manager.merged_config.copy()
+            project_path_before = manager._project_config_path
+            workspace_path_before = manager._workspace_config_path
+            override_before = manager._workspace_dir_override
+
+            manager.compute_project_provisioning_config(project_dir, workspace_dir)
+
+        assert manager.merged_config == merged_before
+        assert manager._project_config_path == project_path_before
+        assert manager._workspace_config_path == workspace_path_before
+        assert manager._workspace_dir_override == override_before

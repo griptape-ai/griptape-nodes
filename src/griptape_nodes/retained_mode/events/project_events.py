@@ -137,12 +137,24 @@ class ProjectTemplateInfo:
             direct equality matching against another entry's project_id when
             reconstructing the parent/child hierarchy. None means no parent
             (system defaults are the only base).
+        engine_version_compatible: False when the project's project-adjacent
+            config declares an `engine_version` specifier the running engine
+            fails (or that is malformed). The GUI disables activation for such a
+            project. True when compatible or when no engine_version is declared.
+        required_engine_version: The declared `engine_version` specifier, when any.
+        current_engine_version: The running engine version, for display.
+        engine_version_reason: Human-readable detail explaining an incompatibility,
+            None when compatible.
     """
 
     project_id: ProjectID
     validation: ProjectValidationInfo
     name: str | None = None
     parent_project_path: str | None = None
+    engine_version_compatible: bool = True
+    required_engine_version: str | None = None
+    current_engine_version: str | None = None
+    engine_version_reason: str | None = None
 
 
 @dataclass
@@ -642,3 +654,33 @@ class GetAllSituationsForProjectResultSuccess(WorkflowNotAlteredMixin, ResultPay
 @PayloadRegistry.register
 class GetAllSituationsForProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Failure result when cannot get situations."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ActivateWorkspaceProjectRequest(RequestPayload):
+    """Resolve and activate the workspace project before app initialization completes.
+
+    Emitted by the app orchestrator after role setup but before the
+    AppInitializationComplete broadcast, mirroring the CLI executor which loads
+    its --project-file-path before broadcasting. Establishing the project's
+    config/workspace/env layers first ensures LibraryManager loads libraries
+    against the correct workspace (and enforces the project's engine_version and
+    library pins) instead of the default workspace.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ActivateWorkspaceProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workspace project activated, or no workspace project found (a no-op is success)."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ActivateWorkspaceProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workspace project activation failed.
+
+    Boot is soft: the app logs this and continues so the engine still starts and
+    the user can switch to a working project.
+    """

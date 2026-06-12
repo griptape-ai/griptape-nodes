@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
 
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
+from griptape_nodes.common.project_templates import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.files.path_utils import canonicalize_for_identity
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
@@ -760,6 +761,7 @@ class TestProjectManagerListProjectTemplates:
 
         mock_config = Mock()
         mock_config.workspace_path = Path("/workspace")
+        mock_config.read_config_file_value.return_value = None
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -898,6 +900,7 @@ class TestProjectManagerListProjectTemplates:
 
         mock_config = Mock()
         mock_config.workspace_path = Path("/workspace")
+        mock_config.read_config_file_value.return_value = None
         mock_secrets = Mock()
         mock_event_manager = Mock()
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
@@ -938,6 +941,48 @@ class TestProjectManagerListProjectTemplates:
         assert result.successfully_loaded[0].project_id == success_id
         assert result.failed_to_load[0].project_id == str(failed_path)
 
+    def test_list_marks_incompatible_engine_version(self) -> None:
+        """A project whose adjacent config pins an unsatisfiable engine_version is flagged incompatible."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import (
+            ListProjectTemplatesRequest,
+            ListProjectTemplatesResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_config = Mock()
+        mock_config.workspace_path = Path("/workspace")
+        # The running engine cannot satisfy this pin, so the verdict must be incompatible.
+        mock_config.read_config_file_value.return_value = ">=99"
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        project_path = Path("/test/pinned.yml")
+        project_id = str(project_path)
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        pm._successfully_loaded_project_templates[project_id] = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        result = pm.on_list_project_templates_request(ListProjectTemplatesRequest(include_system_builtins=False))
+
+        assert isinstance(result, ListProjectTemplatesResultSuccess)
+        info = result.successfully_loaded[0]
+        assert info.engine_version_compatible is False
+        assert info.required_engine_version == ">=99"
+        assert info.engine_version_reason is not None
+
 
 class TestProjectManagerAttemptMapAbsolutePathToProject:
     """Test ProjectManager AttemptMapAbsolutePathToProject event handler."""
@@ -954,7 +999,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test mapping an absolute path that's inside a project directory."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1007,7 +1051,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test mapping an absolute path that's outside all project directories."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1076,7 +1119,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test that longest prefix matching works correctly for nested directories."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1129,7 +1171,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test mapping a path that's exactly at a directory root (no subdirectories)."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1182,7 +1223,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         """Test that paths not in defined directories fall back to {project_dir}."""
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
             ProjectValidationInfo,
             ProjectValidationStatus,
         )
@@ -1716,8 +1756,108 @@ class TestLoadSystemDefaults:
         assert str(project_info.project_base_dir) != "~/GriptapeNodes"
 
 
+class TestResolveProjectWorkspaceDir:
+    """`resolve_project_workspace_dir` decides a project's workspace-layer dir read-only.
+
+    The provisioning preview feeds the result into
+    ConfigManager.compute_project_provisioning_config so its plan reads the same
+    workspace layer the live activation would. The priority must stay in lockstep
+    with _activate_project's inline decision (the TestProjectManagerProjectWorkspaces
+    matrix guards the live path).
+    """
+
+    @staticmethod
+    def _pm_with_project_workspaces(project_workspaces: dict[str, str]) -> ProjectManager:
+        mock_config = Mock()
+        mock_config.get_config_value.return_value = project_workspaces
+        return ProjectManager(Mock(), mock_config, Mock())
+
+    def test_project_workspaces_override_wins(self, tmp_path: Path) -> None:
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+        mapped_workspace = tmp_path / "mapped"
+
+        pm = self._pm_with_project_workspaces({str(project_file): str(mapped_workspace)})
+        resolved = pm.resolve_project_workspace_dir(
+            project_file,
+            project_config={"workspace_directory": "/ignored/project"},
+            env_config={"workspace_directory": "/ignored/env"},
+        )
+
+        assert resolved == Path(str(mapped_workspace))
+
+    def test_env_workspace_wins_over_project_adjacent(self, tmp_path: Path) -> None:
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        pm = self._pm_with_project_workspaces({})
+        resolved = pm.resolve_project_workspace_dir(
+            project_file,
+            project_config={"workspace_directory": "/from/project"},
+            env_config={"workspace_directory": "/from/env"},
+        )
+
+        assert resolved == Path("/from/env")
+
+    def test_project_adjacent_workspace_used_when_no_override_or_env(self, tmp_path: Path) -> None:
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        pm = self._pm_with_project_workspaces({})
+        resolved = pm.resolve_project_workspace_dir(
+            project_file,
+            project_config={"workspace_directory": "/from/project"},
+            env_config={},
+        )
+
+        assert resolved == Path("/from/project")
+
+    def test_auto_defaults_to_project_dir(self, tmp_path: Path) -> None:
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        pm = self._pm_with_project_workspaces({})
+        resolved = pm.resolve_project_workspace_dir(project_file, project_config={}, env_config={})
+
+        assert resolved == project_file.parent
+
+
 class TestProjectManagerProjectWorkspaces:
     """Test ProjectManager project_workspaces lookup in on_set_current_project_request."""
+
+    @staticmethod
+    def _simulate_library_config_change_on_project_load(mock_config: Mock) -> None:
+        """Make activating the project change its merged library config.
+
+        Library reload is now gated on `library_config_changed`: loading the
+        project-adjacent config layer is what changes the merged
+        `libraries_to_register`, so tests that want the reload to fire must model
+        that. `get_config_value` returns a base library list that grows once
+        `load_project_config` runs, and passes other keys through with their
+        default.
+        """
+        from griptape_nodes.retained_mode.managers.settings import (
+            ENGINE_VERSION_KEY,
+            LIBRARIES_TO_DOWNLOAD_KEY,
+            LIBRARIES_TO_REGISTER_KEY,
+        )
+
+        state = {"libraries": ["base-lib"]}
+
+        def get_config_value(key: str, *_args: object, default: object = None, **_kwargs: object) -> object:
+            if key == LIBRARIES_TO_REGISTER_KEY:
+                return list(state["libraries"])
+            if key == LIBRARIES_TO_DOWNLOAD_KEY:
+                return []
+            if key == ENGINE_VERSION_KEY:
+                return None
+            return default if default is not None else {}
+
+        def load_project_config(_project_dir: object) -> None:
+            state["libraries"] = ["base-lib", "project-lib"]
+
+        mock_config.get_config_value.side_effect = get_config_value
+        mock_config.load_project_config.side_effect = load_project_config
 
     def _make_project_manager_with_project(self, project_file_path: Path, mock_config: Mock) -> ProjectManager:
         """Create a ProjectManager with a loaded project template at the given path."""
@@ -1767,6 +1907,8 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
+        # Activation first clears all per-activation layers, then applies the mapped value.
+        mock_config.clear_project_layers.assert_called_once()
         mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
         mock_config.load_workspace_config.assert_called_once()
 
@@ -1792,6 +1934,8 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
+        # Activation first clears all per-activation layers, then applies the mapped value.
+        mock_config.clear_project_layers.assert_called_once()
         mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
         mock_config.load_workspace_config.assert_called_once()
 
@@ -1813,12 +1957,19 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
+        # Activation first clears all per-activation layers, then defaults to the project dir.
+        mock_config.clear_project_layers.assert_called_once()
         mock_config.set_workspace_override.assert_called_once_with(project_file.parent)
         mock_config.load_workspace_config.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_project_workspaces_project_adjacent_config_not_overridden_when_set(self, tmp_path: Path) -> None:
-        """Test that set_workspace_override is not called when project-adjacent config sets workspace_directory."""
+        """Test that no override path is applied when project-adjacent config sets workspace_directory.
+
+        Activation still clears all per-activation layers first (via clear_project_layers),
+        but because the project-adjacent config supplies workspace_directory, no override
+        path is layered on top of it.
+        """
         project_file = tmp_path / "project.yml"
         project_file.touch()
 
@@ -1834,8 +1985,154 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
+        mock_config.clear_project_layers.assert_called_once()
         mock_config.set_workspace_override.assert_not_called()
         mock_config.load_workspace_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_activation_clears_stale_workspace_override_from_previous_project(self, tmp_path: Path) -> None:
+        """Activating a project clears the override a prior activation set via auto-default.
+
+        Regression: a project with no workspace_directory in its config auto-defaults
+        the override to its own directory. Switching (or rolling back) to a project
+        whose config DOES supply workspace_directory must not inherit that override,
+        otherwise the second project loads the first project's workspace config layer.
+        Models the lib-fail -> rollback-to-pinned-project sequence.
+        """
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        auto_default_file = tmp_path / "auto_default" / "project.yml"
+        auto_default_file.parent.mkdir()
+        auto_default_file.touch()
+        pinned_workspace_file = tmp_path / "pinned" / "project.yml"
+        pinned_workspace_file.parent.mkdir()
+        pinned_workspace_file.touch()
+
+        mock_config = Mock()
+        # First activation: no workspace_directory in project config -> auto-defaults.
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(auto_default_file, mock_config)
+        # Register the second project (which supplies its own workspace_directory).
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        pinned_id = str(pinned_workspace_file)
+        pm._successfully_loaded_project_templates[pinned_id] = ProjectInfo(
+            project_id=pinned_id,
+            project_file_path=pinned_workspace_file,
+            project_base_dir=pinned_workspace_file.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation),
+            parsed_directory_schemas=pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation),
+        )
+
+        # Activate the auto-default project: clears all layers, then sets the override to its own dir.
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(auto_default_file)))
+        mock_config.clear_project_layers.assert_called_once()
+        mock_config.set_workspace_override.assert_called_once_with(auto_default_file.parent)
+
+        # Now the second project supplies its own workspace_directory.
+        mock_config.project_config = {"workspace_directory": str(pinned_workspace_file.parent)}
+        mock_config.clear_project_layers.reset_mock()
+        mock_config.set_workspace_override.reset_mock()
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(pinned_workspace_file)))
+
+        # The stale auto-default override is dropped by clear_project_layers and no path
+        # override is re-applied, so the pinned project's own workspace config layer loads.
+        mock_config.clear_project_layers.assert_called_once()
+        mock_config.set_workspace_override.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_switch_to_system_defaults_drops_prior_project_library_pins(self, tmp_path: Path) -> None:
+        """Switching from a pinned project to system defaults unloads the project's library pins.
+
+        Regression for the config-layer leak: the project-adjacent config layer (which
+        carries the pinned `libraries_to_register`) must be dropped on the switch, so the
+        merged library config returns to defaults and the reload fires to unload the pins.
+        Modeled by tying the pinned library to the project layer: clear_project_layers()
+        drops it, load_project_config() adds it. If the unconditional clear regresses, the
+        snapshot would still carry the pin, library_config_changed would be False, and the
+        reload that unloads it would never fire (the original bug).
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesResultSuccess
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+        from griptape_nodes.retained_mode.managers.settings import (
+            ENGINE_VERSION_KEY,
+            LIBRARIES_TO_DOWNLOAD_KEY,
+            LIBRARIES_TO_REGISTER_KEY,
+        )
+
+        pinned_file = tmp_path / "pinned" / "project.yml"
+        pinned_file.parent.mkdir()
+        pinned_file.touch()
+
+        # The pinned library is present only while the project layer is active. clear_project_layers
+        # drops it; load_project_config (re)adds it. Models the project-adjacent config layer.
+        state = {"project_layer_active": False}
+
+        def get_config_value(key: str, *_args: object, default: object = None, **_kwargs: object) -> object:
+            if key == LIBRARIES_TO_REGISTER_KEY:
+                return ["base-lib", "pinned-lib"] if state["project_layer_active"] else ["base-lib"]
+            if key == LIBRARIES_TO_DOWNLOAD_KEY:
+                return []
+            if key == ENGINE_VERSION_KEY:
+                return None
+            return default if default is not None else {}
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.workspace_path = str(tmp_path)
+        mock_config.get_config_value.side_effect = get_config_value
+        mock_config.load_project_config.side_effect = lambda _dir: state.update(project_layer_active=True)
+        mock_config.clear_project_layers.side_effect = lambda: state.update(project_layer_active=False)
+
+        pm = self._make_project_manager_with_project(pinned_file, mock_config)
+        pm._initialization_complete = True
+
+        # Register system defaults (no project file) as a switch target.
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        pm._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=None,
+            project_base_dir=tmp_path,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation),
+            parsed_directory_schemas=pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation),
+        )
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ahandle_request = AsyncMock(return_value=ReloadAllLibrariesResultSuccess(result_details="ok"))
+            mock_gn.WorkflowManager.return_value = Mock()
+
+            # Activate the pinned project: the project layer adds pinned-lib, firing a reload.
+            await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(pinned_file)))
+            assert state["project_layer_active"] is True
+
+            mock_gn.ahandle_request.reset_mock()
+
+            # Switch to system defaults: clear_project_layers drops the pinned-lib layer.
+            await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY))
+
+        # The prior project's library layer is gone (back to defaults only)...
+        assert state["project_layer_active"] is False
+        assert mock_config.get_config_value(LIBRARIES_TO_REGISTER_KEY) == ["base-lib"]
+        # ...and the reload fired on the switch to actually unload the pinned library.
+        mock_gn.ahandle_request.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_initialization_incomplete_skips_reload(self, tmp_path: Path) -> None:
@@ -1864,7 +2161,7 @@ class TestProjectManagerProjectWorkspaces:
 
     @pytest.mark.asyncio
     async def test_initialization_complete_same_workspace_reloads_libraries_only(self, tmp_path: Path) -> None:
-        """When workspace is unchanged, libraries are reloaded but workflows are NOT re-registered."""
+        """When workspace is unchanged but library config changed, libraries reload without workflow re-registration."""
         from unittest.mock import AsyncMock, patch
 
         from griptape_nodes.retained_mode.events.library_events import (
@@ -1878,7 +2175,7 @@ class TestProjectManagerProjectWorkspaces:
         mock_config.project_config = {}
         mock_config.env_config = {}
         mock_config.merged_config = {}
-        mock_config.get_config_value.return_value = {}
+        self._simulate_library_config_change_on_project_load(mock_config)
         # Same workspace before and after
         mock_config.workspace_path = str(tmp_path)
 
@@ -1916,7 +2213,7 @@ class TestProjectManagerProjectWorkspaces:
         mock_config.project_config = {}
         mock_config.env_config = {}
         mock_config.merged_config = {}
-        mock_config.get_config_value.return_value = {}
+        self._simulate_library_config_change_on_project_load(mock_config)
 
         pm = self._make_project_manager_with_project(project_file, mock_config)
         pm._initialization_complete = True
@@ -1962,7 +2259,7 @@ class TestProjectManagerProjectWorkspaces:
         mock_config.project_config = {}
         mock_config.env_config = {}
         mock_config.merged_config = {}
-        mock_config.get_config_value.return_value = {}
+        self._simulate_library_config_change_on_project_load(mock_config)
         mock_config.workspace_path = str(tmp_path)
 
         pm = self._make_project_manager_with_project(project_file, mock_config)
@@ -1982,6 +2279,93 @@ class TestProjectManagerProjectWorkspaces:
 
         assert isinstance(result, SetCurrentProjectResultFailure)
         assert "reload failed" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_failed_activation_rolls_back_to_previous_project(self, tmp_path: Path) -> None:
+        """A failed interactive switch re-activates the previously active project."""
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.events.project_events import (
+            SetCurrentProjectRequest,
+            SetCurrentProjectResultFailure,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import _ProjectActivationOutcome
+
+        target_file = tmp_path / "target.yml"
+        target_file.touch()
+        previous_file = tmp_path / "previous.yml"
+        previous_file.touch()
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(target_file, mock_config)
+        pm._initialization_complete = True
+        # A previously active interactive project to roll back to.
+        previous_id = str(canonicalize_for_identity(str(previous_file)))
+        pm._current_project_id = previous_id
+
+        failure = SetCurrentProjectResultFailure(result_details="engine_version mismatch")
+        calls: list[str] = []
+
+        async def fake_activate(project_id: str) -> _ProjectActivationOutcome:
+            calls.append(project_id)
+            # First call (the requested target) fails; the rollback to previous succeeds.
+            if len(calls) == 1:
+                return _ProjectActivationOutcome(failure=failure, workspace_changed=False)
+            return _ProjectActivationOutcome(failure=None, workspace_changed=False)
+
+        with patch.object(pm, "_activate_project", side_effect=fake_activate):
+            result = await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(target_file)))
+
+        target_id = str(canonicalize_for_identity(str(target_file)))
+        assert calls == [target_id, previous_id]
+        assert isinstance(result, SetCurrentProjectResultFailure)
+        assert "engine_version mismatch" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_failed_activation_during_boot_does_not_roll_back(self, tmp_path: Path) -> None:
+        """A failure before startup completes returns as-is without re-activating anything."""
+        from unittest.mock import patch
+
+        from griptape_nodes.retained_mode.events.project_events import (
+            SetCurrentProjectRequest,
+            SetCurrentProjectResultFailure,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import (
+            SYSTEM_DEFAULTS_KEY,
+            _ProjectActivationOutcome,
+        )
+
+        target_file = tmp_path / "target.yml"
+        target_file.touch()
+
+        mock_config = Mock()
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(target_file, mock_config)
+        # _initialization_complete stays False (boot).
+        pm._current_project_id = SYSTEM_DEFAULTS_KEY
+
+        failure = SetCurrentProjectResultFailure(result_details="boot failure")
+        calls: list[str] = []
+
+        async def fake_activate(project_id: str) -> _ProjectActivationOutcome:
+            calls.append(project_id)
+            return _ProjectActivationOutcome(failure=failure, workspace_changed=False)
+
+        with patch.object(pm, "_activate_project", side_effect=fake_activate):
+            result = await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(target_file)))
+
+        # Only the target activation runs; no rollback during boot.
+        assert len(calls) == 1
+        assert isinstance(result, SetCurrentProjectResultFailure)
 
 
 class TestRegisterProjectPath:
@@ -3065,6 +3449,7 @@ directories:
         mock_config_manager.env_config = {}
         mock_config_manager.merged_config = {}
         mock_config_manager.get_config_value.return_value = []
+        mock_config_manager.read_config_file_value.return_value = None
         mock_config_manager.workspace_path = tmp_path
         return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
@@ -3398,7 +3783,6 @@ directories:
         # Re-emit the child as overlay YAML against the base parent it was loaded with.
         # The merged result template should still serialize parent_project_path when
         # diffed against a base that doesn't declare one.
-        from griptape_nodes.common.project_templates import DEFAULT_PROJECT_TEMPLATE
 
         overlay_yaml = result.template.to_overlay_yaml(DEFAULT_PROJECT_TEMPLATE)
         # YAML may quote the key; match on the substring, not a strict prefix.
@@ -3607,6 +3991,7 @@ directories:
         mock_config_manager.env_config = {}
         mock_config_manager.merged_config = {}
         mock_config_manager.get_config_value.return_value = []
+        mock_config_manager.read_config_file_value.return_value = None
         mock_config_manager.workspace_path = tmp_path
         return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
@@ -4362,6 +4747,7 @@ directories:
         mock_config_manager.env_config = {}
         mock_config_manager.merged_config = {}
         mock_config_manager.get_config_value.return_value = []
+        mock_config_manager.read_config_file_value.return_value = None
         mock_config_manager.workspace_path = tmp_path
         return ProjectManager(mock_event_manager, mock_config_manager, Mock())
 
@@ -4525,3 +4911,230 @@ directories:
         assert isinstance(result.template.parent_project_path, PerPlatformProjectPath)
         assert result.template.parent_project_path.darwin == base_path.as_posix()
         assert result.template.parent_project_path.linux == "/mnt/base.yml"
+
+
+class TestSnapshotLibraryConfig:
+    """`_snapshot_library_config` powers conditional reload: same config skips the deep reset."""
+
+    @staticmethod
+    def _pm_reading(values: dict[str, object]) -> ProjectManager:
+        mock_config_manager = Mock()
+        mock_config_manager.get_config_value.side_effect = lambda key, default=None: values.get(key, default)
+        return ProjectManager(Mock(), mock_config_manager, Mock())
+
+    def test_identical_config_snapshots_are_equal(self) -> None:
+        from griptape_nodes.retained_mode.managers.settings import (
+            ENGINE_VERSION_KEY,
+            LIBRARIES_TO_REGISTER_KEY,
+        )
+
+        pm = self._pm_reading({LIBRARIES_TO_REGISTER_KEY: ["a", "b"], ENGINE_VERSION_KEY: ">=0.5,<0.6"})
+
+        assert pm._snapshot_library_config() == pm._snapshot_library_config()
+
+    def test_changed_library_list_changes_snapshot(self) -> None:
+        from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
+
+        before = self._pm_reading({LIBRARIES_TO_REGISTER_KEY: ["a"]})._snapshot_library_config()
+        after = self._pm_reading({LIBRARIES_TO_REGISTER_KEY: ["a", "b"]})._snapshot_library_config()
+
+        assert before != after
+
+    def test_engine_version_only_change_changes_snapshot(self) -> None:
+        from griptape_nodes.retained_mode.managers.settings import ENGINE_VERSION_KEY
+
+        before = self._pm_reading({ENGINE_VERSION_KEY: ">=0.5,<0.6"})._snapshot_library_config()
+        after = self._pm_reading({ENGINE_VERSION_KEY: ">=0.6,<0.7"})._snapshot_library_config()
+
+        assert before != after
+
+
+class TestActivateWorkspaceProject:
+    """`on_activate_workspace_project_request`: the app's boot-time pre-activation seam."""
+
+    VALID_PROJECT_YAML = """\
+project_template_schema_version: "0.1.0"
+name: Workspace Project
+situations:
+  save_node_output:
+    macro: "{outputs}/custom/{file_name_base}.{file_extension}"
+    policy:
+      on_collision: create_new
+      create_dirs: true
+"""
+
+    @pytest.fixture
+    def pm(self) -> ProjectManager:
+        mock_event_manager = Mock()
+        mock_config_manager = Mock()
+        mock_config_manager.project_config = {}
+        mock_config_manager.env_config = {}
+        mock_config_manager.merged_config = {}
+        mock_config_manager.get_config_value.return_value = {}
+        return ProjectManager(mock_event_manager, mock_config_manager, Mock())
+
+    def _setup_system_defaults(self, pm: ProjectManager, workspace_dir: str = "/workspace") -> None:
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=None,
+            project_base_dir=Path(workspace_dir),
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        pm._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
+        pm._current_project_id = SYSTEM_DEFAULTS_KEY
+
+    @pytest.mark.asyncio
+    async def test_no_workspace_project_is_success_noop(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """No resolvable project file: Success, system defaults stay active (a no-op is not a failure)."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            ActivateWorkspaceProjectRequest,
+            ActivateWorkspaceProjectResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
+
+        self._setup_system_defaults(pm, str(tmp_path))
+
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
+            if key == "project_file":
+                return None
+            if "project_workspaces" in key:
+                return {}
+            return str(tmp_path)
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
+
+        result = await pm.on_activate_workspace_project_request(ActivateWorkspaceProjectRequest())
+
+        assert isinstance(result, ActivateWorkspaceProjectResultSuccess)
+        assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
+
+    @pytest.mark.asyncio
+    async def test_resolvable_workspace_project_activates(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A resolvable workspace project is activated and returns Success."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            ActivateWorkspaceProjectRequest,
+            ActivateWorkspaceProjectResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
+
+        self._setup_system_defaults(pm, str(tmp_path))
+
+        workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
+        workspace_project_path.write_text(self.VALID_PROJECT_YAML)
+
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
+            if key == "project_file":
+                return None
+            if "project_workspaces" in key:
+                return {}
+            return str(tmp_path)
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.aread_text = AsyncMock(return_value=self.VALID_PROJECT_YAML)
+            mock_file_cls.return_value = mock_file_instance
+
+            result = await pm.on_activate_workspace_project_request(ActivateWorkspaceProjectRequest())
+
+        assert isinstance(result, ActivateWorkspaceProjectResultSuccess)
+        assert pm._current_project_id == str(workspace_project_path)
+
+    @pytest.mark.asyncio
+    async def test_unloadable_workspace_project_is_failure(self, pm: ProjectManager, tmp_path: Path) -> None:
+        """A project file that resolves but fails to load returns Failure (still on system defaults)."""
+        from griptape_nodes.files.file import FileLoadError
+        from griptape_nodes.retained_mode.events.os_events import FileIOFailureReason
+        from griptape_nodes.retained_mode.events.project_events import (
+            ActivateWorkspaceProjectRequest,
+            ActivateWorkspaceProjectResultFailure,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, WORKSPACE_PROJECT_FILE
+
+        self._setup_system_defaults(pm, str(tmp_path))
+
+        # File exists so the path resolves, but the read fails so activation cannot take.
+        workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
+        workspace_project_path.write_text(self.VALID_PROJECT_YAML)
+
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
+            if key == "project_file":
+                return None
+            if "project_workspaces" in key:
+                return {}
+            return str(tmp_path)
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.aread_text = AsyncMock(
+                side_effect=FileLoadError(
+                    failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
+                    result_details="permission denied",
+                )
+            )
+            mock_file_cls.return_value = mock_file_instance
+
+            result = await pm.on_activate_workspace_project_request(ActivateWorkspaceProjectRequest())
+
+        assert isinstance(result, ActivateWorkspaceProjectResultFailure)
+        assert pm._current_project_id == SYSTEM_DEFAULTS_KEY
+
+    @pytest.mark.asyncio
+    async def test_malformed_yaml_workspace_project_is_failure_with_detail(
+        self, pm: ProjectManager, tmp_path: Path
+    ) -> None:
+        """A project file whose YAML can't be parsed returns Failure carrying the detail, never raises.
+
+        Exercises the reworked failure signaling: _load_workspace_project returns a detail
+        string (rather than the handler inferring failure from a current-project read-back),
+        and the handler surfaces it in the result_details. The read-back inference is gone,
+        so this path must not depend on _current_project_id staying on system defaults.
+        """
+        from griptape_nodes.retained_mode.events.project_events import (
+            ActivateWorkspaceProjectRequest,
+            ActivateWorkspaceProjectResultFailure,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import WORKSPACE_PROJECT_FILE
+
+        self._setup_system_defaults(pm, str(tmp_path))
+
+        workspace_project_path = tmp_path / WORKSPACE_PROJECT_FILE
+        workspace_project_path.write_text("not: valid: yaml: : :\n  - broken")
+
+        def get_config_value_side_effect(key: str, **_: object) -> str | dict | None:
+            if key == "project_file":
+                return None
+            if "project_workspaces" in key:
+                return {}
+            return str(tmp_path)
+
+        cast("Mock", pm._config_manager).get_config_value.side_effect = get_config_value_side_effect
+        cast("Mock", pm._config_manager).workspace_path = tmp_path
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.File") as mock_file_cls:
+            mock_file_instance = Mock()
+            mock_file_instance.aread_text = AsyncMock(return_value="not: valid: yaml: : :\n  - broken")
+            mock_file_cls.return_value = mock_file_instance
+
+            result = await pm.on_activate_workspace_project_request(ActivateWorkspaceProjectRequest())
+
+        assert isinstance(result, ActivateWorkspaceProjectResultFailure)
+        assert str(workspace_project_path) in str(result.result_details)
+        assert "Failed because" in str(result.result_details)
