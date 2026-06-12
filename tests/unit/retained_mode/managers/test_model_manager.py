@@ -3,6 +3,7 @@
 Covers:
 - `on_handle_get_model_info_request` — token guard and HF API delegation
 - `on_handle_search_models_request` — search result handling
+- `on_handle_invoke_model_request` — invoker lookup, selection, and dispatch-boundary failures
 - `_download_model_task` — the spawned subprocess targets a runnable module
 """
 
@@ -13,14 +14,21 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.model_events import (
+    CheckModelAccessRequest,
+    CheckModelAccessResultSuccess,
     GetModelInfoRequest,
     GetModelInfoResultFailure,
     GetModelInfoResultSuccess,
+    InvokeModelRequest,
+    InvokeModelResultFailure,
+    InvokeModelResultSuccess,
     SearchModelsRequest,
     SearchModelsResultFailure,
     SearchModelsResultSuccess,
 )
+from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.model_manager import DownloadParams, ModelManager
 
 
@@ -182,6 +190,135 @@ class TestOnHandleSearchModelsRequest:
 
 # ---------------------------------------------------------------------------
 # _download_model_task — subprocess entry point
+# ---------------------------------------------------------------------------
+
+
+class TestOnHandleInvokeModelRequest:
+    def test_clears_the_node_to_proceed(self, model_manager: ModelManager) -> None:
+        # Reaching the handler means the pre-dispatch chain did not deny the
+        # declaration, so the node is cleared to invoke the model itself.
+        result = model_manager.on_handle_invoke_model_request(
+            InvokeModelRequest(model_id="microsoft/phi-2", task="text-generation", node_name="Agent_1")
+        )
+
+        assert isinstance(result, InvokeModelResultSuccess)
+        assert result.model_id == "microsoft/phi-2"
+
+    def test_a_denying_pre_dispatch_hook_short_circuits_before_the_handler(self) -> None:
+        # End to end: enforcement lives in the pre-dispatch chain, not the
+        # handler. A hook that denies the declaration short-circuits with its
+        # own failure; an allowed declaration reaches the handler and comes
+        # back as a clear-to-proceed success.
+        event_manager = EventManager()
+        ModelManager(event_manager)
+
+        def deny(request: RequestPayload, _context: object) -> InvokeModelResultFailure | None:
+            if isinstance(request, InvokeModelRequest) and request.model_id == "blocked/model":
+                return InvokeModelResultFailure(result_details="This model is blocked by your license.")
+            return None
+
+        event_manager.add_pre_dispatch_hook(deny)
+
+        denied = event_manager.handle_request(InvokeModelRequest(model_id="blocked/model"))
+        allowed = event_manager.handle_request(InvokeModelRequest(model_id="openai/ok"))
+
+        assert isinstance(denied.result, InvokeModelResultFailure)
+        assert "blocked by your license" in str(denied.result.result_details)
+        # The allowed declaration reached the handler, which cleared it.
+        assert isinstance(allowed.result, InvokeModelResultSuccess)
+        assert allowed.result.model_id == "openai/ok"
+
+
+# ---------------------------------------------------------------------------
+# on_handle_check_model_access_request
+# ---------------------------------------------------------------------------
+
+
+class TestOnHandleCheckModelAccessRequest:
+    def _model_manager(self, event_manager: EventManager) -> ModelManager:
+        """Bare manager wired to the given event manager for preflight evaluation."""
+        manager = ModelManager.__new__(ModelManager)
+        manager._event_manager = event_manager
+        return manager
+
+    def test_allows_models_when_chain_falls_through(self) -> None:
+        manager = self._model_manager(EventManager())
+
+        result = manager.on_handle_check_model_access_request(
+            CheckModelAccessRequest(model_ids=["openai/a", "openai/b"])
+        )
+
+        assert isinstance(result, CheckModelAccessResultSuccess)
+        assert [(v.model_id, v.allowed) for v in result.verdicts] == [("openai/a", True), ("openai/b", True)]
+        assert all(v.reason is None for v in result.verdicts)
+
+    def test_denies_model_when_a_hook_short_circuits_with_failure(self) -> None:
+        event_manager = EventManager()
+
+        def hook(request: RequestPayload, _context: object) -> InvokeModelResultFailure | None:
+            if isinstance(request, InvokeModelRequest) and request.model_id == "blocked/model":
+                return InvokeModelResultFailure(result_details="This model is blocked by your license.")
+            return None
+
+        event_manager.add_pre_dispatch_hook(hook)
+        manager = self._model_manager(event_manager)
+
+        result = manager.on_handle_check_model_access_request(
+            CheckModelAccessRequest(model_ids=["openai/ok", "blocked/model"])
+        )
+
+        assert isinstance(result, CheckModelAccessResultSuccess)
+        verdicts = {v.model_id: v for v in result.verdicts}
+        assert verdicts["openai/ok"].allowed is True
+        assert verdicts["blocked/model"].allowed is False
+        assert "blocked by your license" in str(verdicts["blocked/model"].reason)
+
+    def test_treats_succeeding_short_circuit_as_allowed(self) -> None:
+        # A hook that resolves the request outright (rather than denying) still
+        # means the invocation would be permitted.
+        event_manager = EventManager()
+
+        def hook(request: RequestPayload, _context: object) -> InvokeModelResultSuccess | None:
+            if isinstance(request, InvokeModelRequest):
+                return InvokeModelResultSuccess(model_id=request.model_id, result_details="resolved")
+            return None
+
+        event_manager.add_pre_dispatch_hook(hook)
+        manager = self._model_manager(event_manager)
+
+        result = manager.on_handle_check_model_access_request(CheckModelAccessRequest(model_ids=["openai/a"]))
+
+        assert isinstance(result, CheckModelAccessResultSuccess)
+        assert result.verdicts[0].allowed is True
+
+    def test_preserves_order_and_duplicates_and_forwards_task(self) -> None:
+        event_manager = EventManager()
+        seen_tasks: list[str | None] = []
+
+        def hook(request: RequestPayload, _context: object) -> None:
+            if isinstance(request, InvokeModelRequest):
+                seen_tasks.append(request.task)
+
+        event_manager.add_pre_dispatch_hook(hook)
+        manager = self._model_manager(event_manager)
+
+        result = manager.on_handle_check_model_access_request(
+            CheckModelAccessRequest(model_ids=["a", "a", "b"], task="image-to-image")
+        )
+
+        assert isinstance(result, CheckModelAccessResultSuccess)
+        assert [v.model_id for v in result.verdicts] == ["a", "a", "b"]
+        assert seen_tasks == ["image-to-image", "image-to-image", "image-to-image"]
+
+    def test_returns_empty_verdicts_for_no_models(self) -> None:
+        manager = self._model_manager(EventManager())
+
+        result = manager.on_handle_check_model_access_request(CheckModelAccessRequest(model_ids=[]))
+
+        assert isinstance(result, CheckModelAccessResultSuccess)
+        assert result.verdicts == []
+
+
 # ---------------------------------------------------------------------------
 
 

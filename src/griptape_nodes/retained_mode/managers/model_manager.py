@@ -20,6 +20,9 @@ from xdg_base_dirs import xdg_data_home
 from griptape_nodes.files.file import File, FileWriteError
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.model_events import (
+    CheckModelAccessRequest,
+    CheckModelAccessResultFailure,
+    CheckModelAccessResultSuccess,
     DeleteModelDownloadRequest,
     DeleteModelDownloadResultFailure,
     DeleteModelDownloadResultSuccess,
@@ -32,12 +35,15 @@ from griptape_nodes.retained_mode.events.model_events import (
     GetModelInfoRequest,
     GetModelInfoResultFailure,
     GetModelInfoResultSuccess,
+    InvokeModelRequest,
+    InvokeModelResultSuccess,
     ListModelDownloadsRequest,
     ListModelDownloadsResultFailure,
     ListModelDownloadsResultSuccess,
     ListModelsRequest,
     ListModelsResultFailure,
     ListModelsResultSuccess,
+    ModelAccessVerdict,
     ModelDownloadStatus,
     ModelInfo,
     QueryInfo,
@@ -232,6 +238,7 @@ class ModelManager:
         """
         self._download_tasks = {}
         self._download_processes = {}
+        self._event_manager = event_manager
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(DownloadModelRequest, self.on_handle_download_model_request)
@@ -239,6 +246,10 @@ class ModelManager:
             event_manager.assign_manager_to_request_type(DeleteModelRequest, self.on_handle_delete_model_request)
             event_manager.assign_manager_to_request_type(SearchModelsRequest, self.on_handle_search_models_request)
             event_manager.assign_manager_to_request_type(GetModelInfoRequest, self.on_handle_get_model_info_request)
+            event_manager.assign_manager_to_request_type(InvokeModelRequest, self.on_handle_invoke_model_request)
+            event_manager.assign_manager_to_request_type(
+                CheckModelAccessRequest, self.on_handle_check_model_access_request
+            )
             event_manager.assign_manager_to_request_type(
                 ListModelDownloadsRequest, self.on_handle_list_model_downloads_request
             )
@@ -717,6 +728,67 @@ class ModelManager:
             likes=getattr(info, "likes", None),
             result_details=f"Retrieved info for '{request.model_id}'",
         )
+
+    def on_handle_invoke_model_request(self, request: InvokeModelRequest) -> ResultPayload:
+        """Acknowledge a node's declaration that it is about to invoke a model.
+
+        This request is how a well-intentioned node opts into the permission
+        system: it declares the invocation and the engine decides whether it is
+        permitted. Enforcement runs entirely in the event manager's
+        pre-dispatch hook chain before this handler is reached, so arriving here
+        means the invocation is sanctioned. The node performs the actual
+        inference itself; this handler does not run any backend.
+
+        Args:
+            request: The declared invocation, identifying the model and task
+
+        Returns:
+            ResultPayload: Success, meaning the node is cleared to proceed
+        """
+        return InvokeModelResultSuccess(
+            model_id=request.model_id,
+            result_details=f"Model invocation permitted for '{request.model_id}'.",
+        )
+
+    def on_handle_check_model_access_request(self, request: CheckModelAccessRequest) -> ResultPayload:
+        """Preflight which of the requested models the current permissions would allow invoking.
+
+        Each model id is evaluated as a hypothetical InvokeModelRequest run
+        through the enforcement chain only — no invoker is called and nothing is
+        mutated. A model is allowed when the chain falls through (no hook
+        short-circuits); a short-circuiting failure denies it and its details
+        become the verdict's reason.
+
+        Args:
+            request: The models (and optional task) to evaluate
+
+        Returns:
+            ResultPayload: Success with one verdict per requested model, in request order
+        """
+        if self._event_manager is None:
+            error_msg = "Attempted to check model access. Failed because the ModelManager has no event manager to evaluate enforcement against."
+            return CheckModelAccessResultFailure(result_details=error_msg)
+
+        verdicts = [
+            self._evaluate_model_access(self._event_manager, model_id, request.task) for model_id in request.model_ids
+        ]
+        allowed_count = sum(1 for verdict in verdicts if verdict.allowed)
+        return CheckModelAccessResultSuccess(
+            verdicts=verdicts,
+            result_details=f"Evaluated access for {len(verdicts)} models: {allowed_count} allowed.",
+        )
+
+    def _evaluate_model_access(
+        self, event_manager: EventManager, model_id: str, task: str | None
+    ) -> ModelAccessVerdict:
+        """Run the enforcement chain for a hypothetical invocation of one model."""
+        probe = InvokeModelRequest(model_id=model_id, task=task)
+        short_circuit = event_manager.evaluate_pre_dispatch_hooks(probe)
+        if short_circuit is None:
+            return ModelAccessVerdict(model_id=model_id, allowed=True)
+        if short_circuit.succeeded():
+            return ModelAccessVerdict(model_id=model_id, allowed=True)
+        return ModelAccessVerdict(model_id=model_id, allowed=False, reason=str(short_circuit.result_details))
 
     def _search_models(self, request: SearchModelsRequest) -> SearchResultsData:
         """Synchronous model search implementation.

@@ -317,6 +317,20 @@ class EventManager:
         finally:
             self._hook_evaluation.active = False
 
+    def evaluate_pre_dispatch_hooks(self, request: RequestPayload) -> ResultPayload | None:
+        """Run the pre-dispatch hook chain for a request without dispatching it.
+
+        A preflight / dry run: the request's manager callback is never invoked,
+        so nothing is executed or mutated. Callers use this to ask "what would
+        happen if I sent this?" — e.g. greying out models a policy would deny
+        before the user attempts to invoke one.
+
+        Returns the short-circuit result a hook produced (a denial, or a hook
+        that resolves the request outright), or None when every hook fell
+        through, meaning dispatch would proceed to the handler.
+        """
+        return self._run_pre_dispatch_hooks(request, ResultContext())
+
     def assign_manager_to_request_type(
         self,
         request_type: type[RP],
