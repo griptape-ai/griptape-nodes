@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import sys
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -43,6 +43,25 @@ from griptape_nodes.retained_mode.events.library_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager as _LibraryManager
 from griptape_nodes.retained_mode.managers.settings import LibraryRegistration
+
+
+def _config_value_dispatcher(libraries_dir: Path, libraries: object) -> Callable[..., object]:
+    """A `get_config_value` side_effect that dispatches by key.
+
+    `_discover_library_files` reads `libraries_to_register`, but resolving a
+    sourced entry to its provisioned manifest reads `libraries_directory` too,
+    so a single return_value mock no longer suffices.
+    """
+    from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
+
+    def get_config_value(key: str, **_: object) -> object:
+        if key == LIBRARIES_TO_REGISTER_KEY:
+            return libraries
+        if key == "libraries_directory":
+            return str(libraries_dir)
+        return None
+
+    return get_config_value
 
 
 def _discovered(path: str, *, enabled: bool = True) -> _LibraryManager.DiscoveredLibraryEntry:
@@ -1898,6 +1917,94 @@ class TestInstalledLibraryVersion:
         with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn:
             mock_gn.ConfigManager.return_value = self._config_manager_for(libraries_dir)
             assert library_manager._installed_library_version("Griptape Nodes Library") is None
+
+
+class TestInstalledLibraryManifestPath:
+    """The shared resolver behind both planner and loader.
+
+    `_installed_library_manifest_path` backs both the provisioning planner
+    (`_installed_library_version`) and the loader (`_discover_library_files`), so the
+    file the planner reasons about is exactly the file discovery loads.
+    """
+
+    def test_returns_manifest_path_for_matching_name(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        libraries_dir = tmp_path / "libraries"
+        TestInstalledLibraryVersion._write_manifest(libraries_dir / "git-lib", "Griptape Nodes Library", "0.78.0")
+        with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ConfigManager.return_value = TestInstalledLibraryVersion._config_manager_for(libraries_dir)
+            result = library_manager._installed_library_manifest_path("Griptape Nodes Library")
+        assert result == libraries_dir / "git-lib" / "griptape_nodes_library.json"
+
+    def test_returns_none_when_no_manifest_matches(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        libraries_dir = tmp_path / "libraries"
+        TestInstalledLibraryVersion._write_manifest(libraries_dir / "other", "Some Other Library", "1.0.0")
+        with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ConfigManager.return_value = TestInstalledLibraryVersion._config_manager_for(libraries_dir)
+            assert library_manager._installed_library_manifest_path("Griptape Nodes Library") is None
+
+    def test_returns_none_when_libraries_directory_unconfigured(self, griptape_nodes: GriptapeNodes) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        config_manager = MagicMock()
+        config_manager.get_config_value.return_value = None
+        with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn:
+            mock_gn.ConfigManager.return_value = config_manager
+            assert library_manager._installed_library_manifest_path("Griptape Nodes Library") is None
+
+
+class TestDiscoverSourcedLibraries:
+    """Discovery resolves sourced-only entries to their provisioned manifest.
+
+    Sourced-only entries (git_url/requirement_specifier, no path) are cloned by reconcile, so
+    discovery must resolve them to their provisioned on-disk manifest. Without this, a sourced
+    library is on disk but never loaded -- the bug where a pinned standard library showed up in
+    neither the engine nor the editor after a project switch.
+    """
+
+    def test_sourced_entry_is_discovered_from_provisioned_manifest(
+        self, griptape_nodes: GriptapeNodes, tmp_path: Path
+    ) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        libraries_dir = tmp_path / "libraries"
+        manifest_dir = libraries_dir / "griptape-nodes-library-standard"
+        TestInstalledLibraryVersion._write_manifest(manifest_dir, "Griptape Nodes Library", "0.78.0")
+        expected_manifest = manifest_dir / "griptape_nodes_library.json"
+
+        # A git-sourced entry exactly as it lands in the project-adjacent config: name + git_url,
+        # and no local path.
+        config = [
+            {
+                "name": "Griptape Nodes Library",
+                "version": "==0.78.0",
+                "git_url": "griptape-ai/griptape-nodes-library-standard@v0.78.0",
+            }
+        ]
+
+        with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn:
+            config_manager = TestInstalledLibraryVersion._config_manager_for(libraries_dir)
+            config_manager.get_config_value.side_effect = _config_value_dispatcher(libraries_dir, config)
+            mock_gn.ConfigManager.return_value = config_manager
+            result = library_manager._discover_library_files()
+
+        discovered_paths = [Path(entry.registration.path) for entry in result if entry.registration.path is not None]
+        assert expected_manifest in discovered_paths
+
+    def test_sourced_entry_not_yet_provisioned_is_skipped(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+        library_manager = griptape_nodes.LibraryManager()
+        libraries_dir = tmp_path / "libraries"
+        libraries_dir.mkdir(parents=True, exist_ok=True)
+
+        # Sourced entry whose clone has not landed on disk yet: nothing to discover.
+        config = [{"name": "Not Provisioned Yet", "git_url": "griptape-ai/missing@main"}]
+
+        with patch("griptape_nodes.retained_mode.managers.library_manager.GriptapeNodes") as mock_gn:
+            config_manager = TestInstalledLibraryVersion._config_manager_for(libraries_dir)
+            config_manager.get_config_value.side_effect = _config_value_dispatcher(libraries_dir, config)
+            mock_gn.ConfigManager.return_value = config_manager
+            result = library_manager._discover_library_files()
+
+        assert result == []
 
 
 class TestRegistrationSatisfiedByInstalled:

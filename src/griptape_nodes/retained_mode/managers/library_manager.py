@@ -415,6 +415,18 @@ class LibraryManager:
         registration: LibraryRegistration
         registered_path: str
 
+    class ResolvedDiscoveryPath(NamedTuple):
+        """A config `libraries_to_register` entry resolved to a concrete on-disk path.
+
+        `path` is the file or directory to scan for manifests: the
+        workspace-resolved path for a path-backed entry, or the provisioned
+        manifest located by name for a sourced (git/PyPI) entry. `registered_path`
+        is the key the GUI uses to map metadata back to the user's config row.
+        """
+
+        path: Path
+        registered_path: str
+
     # Stable module namespace mappings for workflow serialization
     # These mappings ensure that dynamically loaded modules can be reliably imported
     # in generated workflow code by providing stable, predictable import paths.
@@ -3304,16 +3316,22 @@ class LibraryManager:
         return None
 
     @staticmethod
-    def _installed_library_version(library_name: str) -> str | None:
-        """Return the on-disk version of a library by manifest name, or None when absent.
+    def _installed_library_manifest_path(library_name: str) -> Path | None:
+        """Return the on-disk manifest path for a provisioned library by name, or None.
 
-        Reads the manifests under `libraries_directory` rather than the in-memory
-        `LibraryRegistry`, because the reload path unregisters every library
-        before reconcile runs (see `reload_libraries_request`). Sourced libraries
-        are provisioned into `libraries_directory`, so a wrong-version or
-        already-satisfied install stays visible on disk even when nothing is
-        registered. Returns the first manifest whose `name` matches; None when the
-        directory is unconfigured or missing, or no manifest matches.
+        Scans the manifests under `libraries_directory` (where reconcile clones
+        git-sourced libraries and where PyPI-sourced libraries land in their venv)
+        rather than the in-memory `LibraryRegistry`, because the reload path
+        unregisters every library before reconcile runs (see
+        `reload_libraries_request`). Returns the first manifest whose `name`
+        matches; None when the directory is unconfigured or missing, or no
+        manifest matches.
+
+        This is the single source of truth shared by the provisioning planner
+        (`_installed_library_version`, which decides SKIP/INSTALL/OVERWRITE) and
+        the loader (`_discover_library_files`, which turns a sourced entry into a
+        loadable path). Routing both through one resolver guarantees the file the
+        planner reasoned about is exactly the file that gets loaded.
         """
         config_mgr = GriptapeNodes.ConfigManager()
         libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
@@ -3327,15 +3345,34 @@ class LibraryManager:
                 manifest = json.loads(content)
             except (OSError, json.JSONDecodeError):
                 continue
-            if manifest.get("name") != library_name:
-                continue
-            metadata = manifest.get("metadata")
-            if not isinstance(metadata, dict):
-                return None
-            version = metadata.get("library_version")
-            return str(version) if version is not None else None
+            if manifest.get("name") == library_name:
+                return manifest_path
 
         return None
+
+    @staticmethod
+    def _installed_library_version(library_name: str) -> str | None:
+        """Return the on-disk version of a library by manifest name, or None when absent.
+
+        Locates the provisioned manifest via `_installed_library_manifest_path`
+        (the shared resolver), then reads `metadata.library_version`. None when no
+        manifest matches or the version is absent/unreadable.
+        """
+        manifest_path = LibraryManager._installed_library_manifest_path(library_name)
+        if manifest_path is None:
+            return None
+
+        try:
+            content = manifest_path.read_text(encoding="utf-8")
+            manifest = json.loads(content)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        metadata = manifest.get("metadata")
+        if not isinstance(metadata, dict):
+            return None
+        version = metadata.get("library_version")
+        return str(version) if version is not None else None
 
     @staticmethod
     def _registration_satisfied_by_installed(registration: LibraryRegistration, installed_version: str | None) -> bool:
@@ -4634,8 +4671,9 @@ class LibraryManager:
         # Add all regular libraries from config
         for discovered in config_library_entries:
             entry = discovered.registration
-            # _discover_library_files only yields path-backed entries; sourced-only entries
-            # are provisioned, not discovered from disk.
+            # _discover_library_files yields path-backed entries directly and
+            # resolves sourced-only entries to their provisioned on-disk manifest,
+            # so every entry here carries a concrete path. Guard defensively.
             if entry.path is None:
                 continue
             file_path = Path(entry.path)
@@ -4856,16 +4894,38 @@ class LibraryManager:
         # Add from config
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
         for entry in normalize_library_registrations(config_libraries):
-            # Sourced-only entries (git_url/requirement_specifier with no local path) are
-            # provisioned by reconcile, not discovered from disk here.
-            if entry.path is None:
-                continue
-            # TODO: Update to check on project manager for workspace path. https://github.com/griptape-ai/griptape-nodes/issues/4396
-            library_path = resolve_workspace_path(Path(entry.path), Path(config_mgr.workspace_path))
-            if library_path.exists():
-                process_path(library_path, enabled=entry.enabled, registered_path=entry.path)
+            resolved = self._resolve_discovery_path(entry, config_mgr.workspace_path)
+            if resolved is not None:
+                process_path(resolved.path, enabled=entry.enabled, registered_path=resolved.registered_path)
 
         return discovered_entries
+
+    @staticmethod
+    def _resolve_discovery_path(entry: LibraryRegistration, workspace_path: Path) -> ResolvedDiscoveryPath | None:
+        """Resolve a `libraries_to_register` entry to a concrete on-disk path to scan.
+
+        A path-backed entry resolves against the workspace; a sourced-only
+        (git/PyPI) entry has no local path, so its provisioned manifest is located
+        by name through `_installed_library_manifest_path` -- the same resolver the
+        provisioning planner uses, so the file the planner reasoned about is
+        exactly the file discovery loads. Returns None when nothing resolves on
+        disk (path missing, or sourced entry not yet provisioned).
+        """
+        if entry.path is not None:
+            # TODO: Update to check on project manager for workspace path. https://github.com/griptape-ai/griptape-nodes/issues/4396
+            library_path = resolve_workspace_path(Path(entry.path), workspace_path)
+            if not library_path.exists():
+                return None
+            return LibraryManager.ResolvedDiscoveryPath(path=library_path, registered_path=entry.path)
+
+        # The LibraryRegistration validator guarantees a sourced entry carries a
+        # name, so entry.name is non-None here; guard defensively regardless.
+        if entry.name is None:
+            return None
+        manifest_path = LibraryManager._installed_library_manifest_path(entry.name)
+        if manifest_path is None:
+            return None
+        return LibraryManager.ResolvedDiscoveryPath(path=manifest_path, registered_path=str(manifest_path))
 
     async def check_library_update_request(self, request: CheckLibraryUpdateRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Check if a library has updates available via git."""

@@ -42,6 +42,9 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
+    ActivateWorkspaceProjectRequest,
+    ActivateWorkspaceProjectResultFailure,
+    ActivateWorkspaceProjectResultSuccess,
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultFailure,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -374,6 +377,9 @@ class ProjectManager:
         )
         event_manager.assign_manager_to_request_type(
             ValidateProjectTemplateRequest, self.on_validate_project_template_request
+        )
+        event_manager.assign_manager_to_request_type(
+            ActivateWorkspaceProjectRequest, self.on_activate_workspace_project_request
         )
 
         # Register app initialization listener
@@ -1577,6 +1583,45 @@ class ProjectManager:
             conflicting_variables=conflicting_variables,
             can_resolve=can_resolve,
             result_details=f"Analyzed macro with {len(all_variables)} variables: {len(satisfied_variables)} satisfied, {len(missing_required_variables)} missing, {len(conflicting_variables)} conflicting",
+        )
+
+    async def on_activate_workspace_project_request(
+        self, _request: ActivateWorkspaceProjectRequest
+    ) -> ActivateWorkspaceProjectResultSuccess | ActivateWorkspaceProjectResultFailure:
+        """Resolve and activate the workspace project before initialization completes.
+
+        Called by the app orchestrator after role setup but before the
+        AppInitializationComplete broadcast, mirroring the CLI executor which loads
+        its project file first. Establishing the project's config/workspace/env
+        layers now means LibraryManager loads libraries against the correct
+        workspace (enforcing the project's engine_version and library pins) when the
+        init event fires, instead of against the default workspace.
+
+        Runs before `_initialization_complete` is set, so the activation it triggers
+        establishes config/workspace/env layers but skips the in-handler library
+        reload (LibraryManager performs the correctly-scoped load on init). A boot
+        with no workspace project is a no-op success; a project that resolves but
+        fails to activate is a failure (logged details live in `_load_workspace_project`).
+        """
+        workspace_project_path = self._resolve_project_file_path()
+        if workspace_project_path is None:
+            return ActivateWorkspaceProjectResultSuccess(
+                result_details="No workspace project found; system defaults remain active",
+            )
+
+        await self._load_workspace_project()
+
+        # `_load_workspace_project` logs and returns on any internal failure without
+        # changing the current project. Boot starts on system defaults, so still
+        # being on system defaults after a path resolved means activation did not take.
+        if self._current_project_id == SYSTEM_DEFAULTS_KEY:
+            return ActivateWorkspaceProjectResultFailure(
+                result_details=f"Attempted to activate workspace project at '{workspace_project_path}'. "
+                f"Failed because the project could not be loaded or activated; see prior log entries",
+            )
+
+        return ActivateWorkspaceProjectResultSuccess(
+            result_details=f"Activated workspace project: {self._current_project_id}",
         )
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
