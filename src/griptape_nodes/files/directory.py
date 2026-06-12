@@ -156,6 +156,9 @@ class DirectoryDestination:
                     msg = f"Attempted to create directory. Failed because directory already exists: {resolved}"
                     raise DirectoryError(msg)
                 return self._create_direct()
+            case _:
+                msg = f"Unsupported existing directory policy: {self._existing_dir_policy!r}"
+                raise DirectoryError(msg)
 
     def _create_with_versioning(self) -> Directory:
         """Use GetNextVersionIndexRequest to find an available version slot, then create it.
