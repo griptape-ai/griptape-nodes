@@ -58,7 +58,7 @@ class TestBuildSequenceDestinationFromSituation:
             patch(HANDLE_REQUEST_PATH, return_value=success),
             patch(BUILD_VERSIONED_PATH, return_value=mock_dest) as mock_build,
         ):
-            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence_entry")
+            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence")
 
         call_args = mock_build.call_args
         macro_path = call_args.args[0]
@@ -87,7 +87,7 @@ class TestBuildSequenceDestinationFromSituation:
             patch(HANDLE_REQUEST_PATH, return_value=success),
             patch(BUILD_VERSIONED_PATH, return_value=mock_dest) as mock_build,
         ):
-            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence_entry")
+            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence")
 
         macro_path = mock_build.call_args.args[0]
         assert macro_path.variables["file_name_base"] == "frame"
@@ -102,7 +102,7 @@ class TestBuildSequenceDestinationFromSituation:
             patch(HANDLE_REQUEST_PATH, return_value=success),
             patch(BUILD_VERSIONED_PATH, return_value=mock_dest) as mock_build,
         ):
-            _build_sequence_destination_from_situation("frame_####.exr", "save_file_sequence_entry")
+            _build_sequence_destination_from_situation("frame_####.exr", "save_file_sequence")
 
         macro_path = mock_build.call_args.args[0]
         assert macro_path.variables["file_extension"] == "exr"
@@ -116,7 +116,7 @@ class TestBuildSequenceDestinationFromSituation:
             patch(HANDLE_REQUEST_PATH, return_value=success),
             patch(BUILD_VERSIONED_PATH, return_value=mock_dest) as mock_build,
         ):
-            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence_entry", node_name="MyNode")
+            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence", node_name="MyNode")
 
         macro_path = mock_build.call_args.args[0]
         assert macro_path.variables["node_name"] == "MyNode"
@@ -130,7 +130,7 @@ class TestBuildSequenceDestinationFromSituation:
             patch(HANDLE_REQUEST_PATH, return_value=success),
             patch(BUILD_VERSIONED_PATH, return_value=mock_dest) as mock_build,
         ):
-            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence_entry")
+            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence")
 
         call_kwargs = mock_build.call_args.kwargs
         assert call_kwargs["existing_file_policy"] == ExistingFilePolicy.OVERWRITE
@@ -144,7 +144,7 @@ class TestBuildSequenceDestinationFromSituation:
             patch(HANDLE_REQUEST_PATH, return_value=success),
             patch(BUILD_VERSIONED_PATH, return_value=mock_dest) as mock_build,
         ):
-            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence_entry")
+            _build_sequence_destination_from_situation("frame.exr", "save_file_sequence")
 
         call_kwargs = mock_build.call_args.kwargs
         assert call_kwargs["create_parents"] is False
@@ -168,7 +168,7 @@ class TestBuildSequenceDestinationFromSituation:
         mock_dest = MagicMock(spec=FileSequenceDestination)
 
         with patch(HANDLE_REQUEST_PATH, return_value=success), patch(BUILD_VERSIONED_PATH, return_value=mock_dest):
-            result = _build_sequence_destination_from_situation("frame.exr", "save_file_sequence_entry")
+            result = _build_sequence_destination_from_situation("frame.exr", "save_file_sequence")
 
         assert result is mock_dest
 
@@ -183,7 +183,7 @@ class TestBuildSequenceDestinationFromSituation:
         ):
             _build_sequence_destination_from_situation(
                 "render.exr",
-                "save_file_sequence_entry",
+                "save_file_sequence",
                 node_name="Renderer",
                 sub_dirs="pass_1",
             )

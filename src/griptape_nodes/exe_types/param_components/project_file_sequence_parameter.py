@@ -6,6 +6,7 @@ directory layout; falls back to a sensible default when no situation is configur
 """
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.project_templates.situation_resolver import resolve_situation
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.project_output_parameter import ProjectOutputParameter
@@ -14,7 +15,6 @@ from griptape_nodes.files.file_sequence import (
     build_versioned_sequence_destination,
 )
 from griptape_nodes.files.path_utils import FilenameParts
-from griptape_nodes.files.project_file import resolve_situation
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import MacroPath
 
@@ -50,7 +50,7 @@ class ProjectFileSequenceParameter(ProjectOutputParameter):
             self.set_parameter_value("output_sequence", seq.location)
     """
 
-    DEFAULT_SITUATION = "save_file_sequence_entry"
+    DEFAULT_SITUATION = "save_file_sequence"
 
     def __init__(  # noqa: PLR0913
         self,

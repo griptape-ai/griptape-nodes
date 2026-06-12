@@ -5,11 +5,11 @@ DirectoryDestination. Falls back to a sensible default when no situation is conf
 """
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.project_templates.situation_resolver import resolve_situation
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.project_output_parameter import ProjectOutputParameter
 from griptape_nodes.files.directory import DirectoryDestination
-from griptape_nodes.files.project_file import resolve_situation
 from griptape_nodes.retained_mode.events.project_events import MacroPath
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
