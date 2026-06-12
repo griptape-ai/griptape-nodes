@@ -723,3 +723,96 @@ class TestConfigManagerUtf8:
         result = manager._load_config_from_file(config_file, "test")
 
         assert result == {}
+
+
+class TestComputeProjectProvisioningConfig:
+    """`compute_project_provisioning_config` builds a project's merged config read-only.
+
+    The provisioning preview uses it so its plan reflects the same effective
+    `libraries_to_register` / `engine_version` the live reconcile reads after
+    activation, instead of the project-adjacent file alone.
+    """
+
+    @staticmethod
+    def _write_config(path: Path, dot_key: str, value: object) -> None:
+        from griptape_nodes.utils.dict_utils import set_dot_value
+
+        path.write_text(json.dumps(set_dot_value({}, dot_key, value)), encoding="utf-8")
+
+    def test_workspace_layer_overrides_project_adjacent_libraries(self, tmp_path: Path) -> None:
+        """A separate-dir workspace config's libraries_to_register wins over the project file.
+
+        Mirrors load_configs's last-writer-wins replacement (merge_lists=False), so the
+        preview must read the merged value, not the project-adjacent one.
+        """
+        from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
+        from griptape_nodes.utils.dict_utils import get_dot_value
+
+        project_dir = tmp_path / "project"
+        workspace_dir = tmp_path / "workspace"
+        project_dir.mkdir()
+        workspace_dir.mkdir()
+        self._write_config(project_dir / "griptape_nodes_config.json", LIBRARIES_TO_REGISTER_KEY, ["project-lib"])
+        self._write_config(workspace_dir / "griptape_nodes_config.json", LIBRARIES_TO_REGISTER_KEY, ["workspace-lib"])
+
+        with patch.dict(os.environ, {}, clear=True):
+            manager = ConfigManager()
+            merged = manager.compute_project_provisioning_config(project_dir, workspace_dir)
+
+        assert get_dot_value(merged, LIBRARIES_TO_REGISTER_KEY) == ["workspace-lib"]
+
+    def test_env_var_overrides_all_file_layers(self, tmp_path: Path) -> None:
+        """A GTN_CONFIG_ env var sits above every config-file layer, matching load_configs."""
+        from griptape_nodes.utils.dict_utils import get_dot_value
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        self._write_config(project_dir / "griptape_nodes_config.json", "storage_backend", "from-project")
+
+        with patch.dict(os.environ, {"GTN_CONFIG_STORAGE_BACKEND": "from-env"}, clear=True):
+            manager = ConfigManager()
+            merged = manager.compute_project_provisioning_config(project_dir, project_dir)
+
+        assert get_dot_value(merged, "storage_backend") == "from-env"
+
+    def test_self_contained_project_skips_duplicate_workspace_layer(self, tmp_path: Path) -> None:
+        """When workspace dir == project dir, the project-adjacent file is the only file layer.
+
+        Matches load_configs's guard that skips loading the same file twice; the single
+        file's value still lands in the merged config.
+        """
+        from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
+        from griptape_nodes.utils.dict_utils import get_dot_value
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        self._write_config(project_dir / "griptape_nodes_config.json", LIBRARIES_TO_REGISTER_KEY, ["only-lib"])
+
+        with patch.dict(os.environ, {}, clear=True):
+            manager = ConfigManager()
+            merged = manager.compute_project_provisioning_config(project_dir, project_dir)
+
+        assert get_dot_value(merged, LIBRARIES_TO_REGISTER_KEY) == ["only-lib"]
+        assert merged["workspace_directory"] == str(project_dir)
+
+    def test_does_not_mutate_live_config_state(self, tmp_path: Path) -> None:
+        """The computation is read-only: it leaves the live merged config and layer paths intact."""
+        project_dir = tmp_path / "project"
+        workspace_dir = tmp_path / "workspace"
+        project_dir.mkdir()
+        workspace_dir.mkdir()
+        self._write_config(project_dir / "griptape_nodes_config.json", "storage_backend", "from-project")
+
+        with patch.dict(os.environ, {}, clear=True):
+            manager = ConfigManager()
+            merged_before = manager.merged_config.copy()
+            project_path_before = manager._project_config_path
+            workspace_path_before = manager._workspace_config_path
+            override_before = manager._workspace_dir_override
+
+            manager.compute_project_provisioning_config(project_dir, workspace_dir)
+
+        assert manager.merged_config == merged_before
+        assert manager._project_config_path == project_path_before
+        assert manager._workspace_config_path == workspace_path_before
+        assert manager._workspace_dir_override == override_before

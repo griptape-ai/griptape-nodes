@@ -298,6 +298,20 @@ class _ProjectActivationOutcome(NamedTuple):
     workspace_changed: bool
 
 
+class _ProvisioningConfigDirs(NamedTuple):
+    """The two directories that determine a project's merged provisioning config.
+
+    `project_dir` holds the project-adjacent griptape_nodes_config.json;
+    `workspace_dir` is the directory whose config supplies the workspace layer
+    (decided read-only by resolve_project_workspace_dir). The provisioning preview
+    feeds both into ConfigManager.compute_project_provisioning_config so the plan it
+    shows matches what activation would reconcile.
+    """
+
+    project_dir: Path
+    workspace_dir: Path
+
+
 class ProjectManager:
     """Manages project templates, validation, and file path resolution.
 
@@ -1021,6 +1035,75 @@ class ProjectManager:
             get_builtin=lambda name: self._get_builtin_variable_value(name, project_info),
             secrets_manager=self._secrets_manager,
         )
+
+    def resolve_provisioning_config_dirs(self, project_id: str) -> _ProvisioningConfigDirs | None:
+        """Resolve the project-adjacent and workspace dirs for a provisioning preview.
+
+        Canonicalizes `project_id` the same way on_set_current_project_request does
+        (so a raw path - unexpanded `~`, symlinked, or relative - resolves to the
+        registry key it was loaded under, instead of missing the lookup), finds the
+        loaded file-backed project, then decides its workspace dir read-only via
+        resolve_project_workspace_dir. Returns None when the project is not loaded or
+        has no backing file, mirroring get_loaded_project_dir's "nothing to preview"
+        contract. Mutates no config state.
+        """
+        resolved_project_id = str(canonicalize_for_identity(project_id))
+        project_info = self._successfully_loaded_project_templates.get(resolved_project_id)
+        if project_info is None:
+            return None
+        if project_info.project_file_path is None:
+            return None
+
+        project_file_path = project_info.project_file_path
+        project_dir = project_file_path.parent
+        project_config = self._config_manager.read_config_file(project_dir / "griptape_nodes_config.json")
+        env_config = self._config_manager.read_env_config()
+        workspace_dir = self.resolve_project_workspace_dir(project_file_path, project_config, env_config)
+        return _ProvisioningConfigDirs(project_dir=project_dir, workspace_dir=workspace_dir)
+
+    def resolve_project_workspace_dir(
+        self, project_file_path: Path, project_config: dict, env_config: dict
+    ) -> Path:
+        """Decide which directory supplies a project's workspace config layer, read-only.
+
+        Returns the directory whose griptape_nodes_config.json `_activate_project`
+        loads as the workspace layer (the argument it passes to load_workspace_config),
+        without mutating any config state. Priority, highest first:
+
+        1. project_workspaces user-config override mapped to this project file
+        2. workspace_directory from env vars (GTN_CONFIG_WORKSPACE_DIRECTORY)
+        3. workspace_directory from the project-adjacent config
+        4. the project's own directory (auto-default)
+
+        The provisioning preview feeds the result into
+        ConfigManager.compute_project_provisioning_config so its merged config reads
+        the same workspace layer the live activation would, keeping the previewed
+        library/engine_version plan in sync with what _reconcile_libraries_from_config
+        actually does. `_activate_project` itself is NOT routed through this helper: it
+        must additionally decide whether to apply set_workspace_override (it leaves the
+        override unset when the config supplies workspace_directory, so a workspace-layer
+        config can re-point the final workspace_path), which a plain Path return can't
+        express. Keep this priority in lockstep with _activate_project's block so the
+        preview and the live path cannot drift.
+        """
+        project_workspaces = self._config_manager.get_config_value(
+            "project_workspaces",
+            config_source="user_config",
+            default={},
+        )
+        workspace_override = self._find_workspace_override(project_file_path, project_workspaces)
+        if workspace_override is not None:
+            return Path(workspace_override)
+
+        env_workspace = env_config.get("workspace_directory")
+        if env_workspace is not None:
+            return Path(env_workspace)
+
+        project_workspace = project_config.get("workspace_directory")
+        if project_workspace is not None:
+            return Path(project_workspace)
+
+        return project_file_path.parent
 
     def _find_workspace_override(self, project_file_path: Path, project_workspaces: dict[str, str]) -> str | None:
         """Return the user-configured workspace override for a project file, or None if not mapped."""

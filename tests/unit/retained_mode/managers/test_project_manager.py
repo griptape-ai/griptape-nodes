@@ -1756,6 +1756,72 @@ class TestLoadSystemDefaults:
         assert str(project_info.project_base_dir) != "~/GriptapeNodes"
 
 
+class TestResolveProjectWorkspaceDir:
+    """`resolve_project_workspace_dir` decides a project's workspace-layer dir read-only.
+
+    The provisioning preview feeds the result into
+    ConfigManager.compute_project_provisioning_config so its plan reads the same
+    workspace layer the live activation would. The priority must stay in lockstep
+    with _activate_project's inline decision (the TestProjectManagerProjectWorkspaces
+    matrix guards the live path).
+    """
+
+    @staticmethod
+    def _pm_with_project_workspaces(project_workspaces: dict[str, str]) -> ProjectManager:
+        mock_config = Mock()
+        mock_config.get_config_value.return_value = project_workspaces
+        return ProjectManager(Mock(), mock_config, Mock())
+
+    def test_project_workspaces_override_wins(self, tmp_path: Path) -> None:
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+        mapped_workspace = tmp_path / "mapped"
+
+        pm = self._pm_with_project_workspaces({str(project_file): str(mapped_workspace)})
+        resolved = pm.resolve_project_workspace_dir(
+            project_file,
+            project_config={"workspace_directory": "/ignored/project"},
+            env_config={"workspace_directory": "/ignored/env"},
+        )
+
+        assert resolved == Path(str(mapped_workspace))
+
+    def test_env_workspace_wins_over_project_adjacent(self, tmp_path: Path) -> None:
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        pm = self._pm_with_project_workspaces({})
+        resolved = pm.resolve_project_workspace_dir(
+            project_file,
+            project_config={"workspace_directory": "/from/project"},
+            env_config={"workspace_directory": "/from/env"},
+        )
+
+        assert resolved == Path("/from/env")
+
+    def test_project_adjacent_workspace_used_when_no_override_or_env(self, tmp_path: Path) -> None:
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        pm = self._pm_with_project_workspaces({})
+        resolved = pm.resolve_project_workspace_dir(
+            project_file,
+            project_config={"workspace_directory": "/from/project"},
+            env_config={},
+        )
+
+        assert resolved == Path("/from/project")
+
+    def test_auto_defaults_to_project_dir(self, tmp_path: Path) -> None:
+        project_file = tmp_path / "project.yml"
+        project_file.touch()
+
+        pm = self._pm_with_project_workspaces({})
+        resolved = pm.resolve_project_workspace_dir(project_file, project_config={}, env_config={})
+
+        assert resolved == project_file.parent
+
+
 class TestProjectManagerProjectWorkspaces:
     """Test ProjectManager project_workspaces lookup in on_set_current_project_request."""
 

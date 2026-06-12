@@ -220,7 +220,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     LibraryRegistration,
 )
 from griptape_nodes.utils.async_utils import subprocess_run
-from griptape_nodes.utils.dict_utils import merge_dicts, normalize_secrets_to_register
+from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, normalize_secrets_to_register
 from griptape_nodes.utils.file_utils import find_file_in_directory, find_files_recursive
 from griptape_nodes.utils.git_utils import (
     GitCloneError,
@@ -3080,25 +3080,32 @@ class LibraryManager:
     ) -> PreviewProjectProvisioningResultSuccess | PreviewProjectProvisioningResultFailure:
         """Compute the library provisioning plan for a loaded project, read-only.
 
-        Sync and side-effect-free: it reads the target project's adjacent
-        griptape_nodes_config.json directly (without mutating the live config
-        layers) and runs the pure `_plan_one_library_provisioning` decision per
-        sourced entry. The GUI calls this before committing to a switch so the
-        user can approve or refuse the changes. Only an already-loaded,
-        file-backed project can be previewed; a project that is not loaded (or
-        has no adjacent config dir) is a Failure.
+        Sync and side-effect-free. To match what activation will actually do, it
+        reconstructs the same effective config the live reconcile reads:
+        ProjectManager resolves the project (canonically, like
+        on_set_current_project_request) plus its workspace dir, then ConfigManager
+        merges every layer (defaults -> user -> project-adjacent -> workspace ->
+        override -> env) without mutating live state. Reading the project-adjacent
+        file alone diverges whenever a higher-priority layer sets
+        `libraries_to_register`/`engine_version`. It also runs the same
+        engine_version gate (`engine_version_failure_detail`) on that merged config
+        so the preview can warn before the user approves a plan that activation
+        would reject. The GUI calls this before committing to a switch so the user
+        can approve or refuse the changes. Only an already-loaded, file-backed
+        project can be previewed; a project that is not loaded (or has no adjacent
+        config dir) is a Failure.
         """
-        project_dir = GriptapeNodes.ProjectManager().get_loaded_project_dir(request.project_id)
-        if project_dir is None:
+        dirs = GriptapeNodes.ProjectManager().resolve_provisioning_config_dirs(request.project_id)
+        if dirs is None:
             return PreviewProjectProvisioningResultFailure(
                 result_details=f"Attempted to preview provisioning for project '{request.project_id}'. "
                 f"Failed because the project is not loaded or has no project-adjacent config directory",
             )
 
-        config_path = project_dir / "griptape_nodes_config.json"
-        raw_libraries = GriptapeNodes.ConfigManager().read_config_file_value(
-            config_path, LIBRARIES_TO_REGISTER_KEY, default=[]
-        )
+        merged = GriptapeNodes.ConfigManager().compute_project_provisioning_config(dirs.project_dir, dirs.workspace_dir)
+        engine_version_failure = engine_version_failure_detail(get_dot_value(merged, ENGINE_VERSION_KEY, default=None))
+
+        raw_libraries = get_dot_value(merged, LIBRARIES_TO_REGISTER_KEY, default=[])
         registrations = normalize_library_registrations(raw_libraries)
         sourced = [reg for reg in registrations if reg.git_url is not None or reg.requirement_specifier is not None]
 
@@ -3107,6 +3114,7 @@ class LibraryManager:
         change_count = sum(1 for action in actions if action.kind != LibraryProvisioningActionKind.SKIP)
         return PreviewProjectProvisioningResultSuccess(
             actions=actions,
+            engine_version_failure=engine_version_failure,
             result_details=f"Computed provisioning plan for project '{request.project_id}': "
             f"{change_count} change(s), {destructive_count} destructive",
         )
@@ -3274,9 +3282,27 @@ class LibraryManager:
         which would silently keep a stale checkout. So overwrite_existing is set
         only when a wrong version is already installed; a fresh install lets the
         handler land the library normally.
+
+        When overwriting, the destructive delete must target the directory the
+        installed manifest actually lives in, which is not necessarily
+        `libraries_path/<git-repo-name>` (the handler's default guess): a library
+        can be installed under a differently-named directory. So the installed
+        manifest is resolved via the same `_installed_library_manifest_path` the
+        planner used, and its parent directory is passed explicitly. Without this
+        the delete misses the stale dir and the re-clone lands elsewhere, orphaning
+        the old copy. A fresh install (installed_version is None) leaves both hints
+        None and keeps the handler's repo-name default.
         """
         parsed = parse_git_url_with_ref(git_url)
         overwrite_existing = installed_version is not None
+
+        download_directory: str | None = None
+        target_directory_name: str | None = None
+        if overwrite_existing and registration.name is not None:
+            manifest_path = self._installed_library_manifest_path(registration.name)
+            if manifest_path is not None:
+                download_directory = str(manifest_path.parent.parent)
+                target_directory_name = manifest_path.parent.name
 
         download_request = DownloadLibraryRequest(
             git_url=parsed.url,
@@ -3284,6 +3310,8 @@ class LibraryManager:
             auto_register=False,
             overwrite_existing=overwrite_existing,
             fail_on_exists=False,
+            download_directory=download_directory,
+            target_directory_name=target_directory_name,
         )
         download_result = await GriptapeNodes.ahandle_request(download_request)
         if not isinstance(download_result, DownloadLibraryResultSuccess):

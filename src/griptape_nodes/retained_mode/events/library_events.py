@@ -1408,9 +1408,15 @@ class PreviewProjectProvisioningResultSuccess(WorkflowNotAlteredMixin, ResultPay
     Args:
         actions: One action per sourced library, in config order. Empty when the
             project declares no library sources to provision.
+        engine_version_failure: Non-None when the project's pinned engine_version
+            cannot be satisfied by the running engine. The same text the live
+            reconcile would surface, computed on the same merged config the preview
+            reads, so the UI can warn before the user approves a plan that would
+            fail the engine_version gate on activation.
     """
 
     actions: list[LibraryProvisioningAction]
+    engine_version_failure: str | None = None
 
 
 @dataclass
