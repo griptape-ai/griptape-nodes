@@ -32,6 +32,8 @@ from griptape_nodes.retained_mode.events.model_events import (
     GetModelInfoRequest,
     GetModelInfoResultFailure,
     GetModelInfoResultSuccess,
+    InvokeModelRequest,
+    InvokeModelResultFailure,
     ListModelDownloadsRequest,
     ListModelDownloadsResultFailure,
     ListModelDownloadsResultSuccess,
@@ -239,6 +241,7 @@ class ModelManager:
             event_manager.assign_manager_to_request_type(DeleteModelRequest, self.on_handle_delete_model_request)
             event_manager.assign_manager_to_request_type(SearchModelsRequest, self.on_handle_search_models_request)
             event_manager.assign_manager_to_request_type(GetModelInfoRequest, self.on_handle_get_model_info_request)
+            event_manager.assign_manager_to_request_type(InvokeModelRequest, self.on_handle_invoke_model_request)
             event_manager.assign_manager_to_request_type(
                 ListModelDownloadsRequest, self.on_handle_list_model_downloads_request
             )
@@ -717,6 +720,62 @@ class ModelManager:
             likes=getattr(info, "likes", None),
             result_details=f"Retrieved info for '{request.model_id}'",
         )
+
+    async def on_handle_invoke_model_request(self, request: InvokeModelRequest) -> ResultPayload:
+        """Handle model invocation requests.
+
+        The handler is deliberately thin: enforcement runs in the event
+        manager's pre-dispatch hook chain before this point, so by the time it
+        executes the invocation is sanctioned. The actual inference is
+        delegated to a library-registered event handler for InvokeModelRequest
+        (the same mechanism workflow publishing uses for publishers).
+
+        Args:
+            request: The invocation request identifying the model and invoker
+
+        Returns:
+            ResultPayload: The invoker's result, or failure when no invoker can service the call
+        """
+        handler_mappings = GriptapeNodes.LibraryManager().get_registered_event_handlers(InvokeModelRequest)
+        if not handler_mappings:
+            error_msg = (
+                f"Attempted to invoke model '{request.model_id}'. Failed because no library has registered "
+                "an event handler for InvokeModelRequest."
+            )
+            return InvokeModelResultFailure(result_details=error_msg)
+
+        if request.invoker_name is None and len(handler_mappings) > 1:
+            error_msg = (
+                f"Attempted to invoke model '{request.model_id}'. Failed because multiple libraries have "
+                f"registered invocation handlers ({sorted(handler_mappings)}) and the request did not set "
+                "invoker_name to choose one."
+            )
+            return InvokeModelResultFailure(result_details=error_msg)
+
+        if request.invoker_name is None:
+            invocation_handler = next(iter(handler_mappings.values()))
+        else:
+            named_handler = handler_mappings.get(request.invoker_name)
+            if named_handler is None:
+                error_msg = (
+                    f"Attempted to invoke model '{request.model_id}' with invoker '{request.invoker_name}'. "
+                    f"Failed because no library by that name has registered an invocation handler. "
+                    f"Registered invokers: {sorted(handler_mappings)}."
+                )
+                return InvokeModelResultFailure(result_details=error_msg)
+            invocation_handler = named_handler
+
+        try:
+            return await asyncio.to_thread(invocation_handler.handler, request)
+        except Exception as e:
+            # The invoker is library code; this is the dispatch boundary, so an
+            # escaping exception becomes a failure result rather than a crash.
+            error_msg = (
+                f"Attempted to invoke model '{request.model_id}'. Failed because the invocation handler "
+                f"raised {type(e).__name__}: {e}"
+            )
+            logger.exception(error_msg)
+            return InvokeModelResultFailure(exception=e, result_details=error_msg)
 
     def _search_models(self, request: SearchModelsRequest) -> SearchResultsData:
         """Synchronous model search implementation.

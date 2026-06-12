@@ -345,3 +345,56 @@ class GetModelInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class GetModelInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Model info retrieval failed. Common causes: invalid model ID, network error, authentication required."""
+
+
+@dataclass
+@PayloadRegistry.register
+class InvokeModelRequest(RequestPayload):
+    """Invoke a model through the engine's model invocation chokepoint.
+
+    Routing inference through a single request gives enforcement one place to
+    bind: pre-dispatch hooks see this request's attributes (model_id, task)
+    before any backend runs. The actual inference is performed by a library
+    that registered an event handler for this request type (see
+    LibraryManager.on_register_event_handler), mirroring how workflow
+    publishing delegates to library-registered publishers.
+
+    Use when: Invoking a model from a node or service so the call is subject
+    to model entitlements, rather than calling an inference backend directly.
+
+    Args:
+        model_id: Model identifier to invoke (e.g., "black-forest-labs/FLUX.1-dev")
+        task: What the invocation does (e.g., "text-generation", "image-to-image")
+        invoker_name: Library whose registered invocation handler should service the
+            call. Optional when exactly one library has registered a handler.
+        node_name: Name of the node instance making the call, when invoked from a node
+        parameters: Backend-specific invocation payload
+
+    Results: InvokeModelResultSuccess (with output) | InvokeModelResultFailure (no invoker registered, ambiguous invoker, invocation error)
+    """
+
+    model_id: str
+    task: str | None = None
+    invoker_name: str | None = None
+    node_name: str | None = None
+    parameters: dict | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class InvokeModelResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Model invocation completed successfully.
+
+    Args:
+        model_id: The model that was invoked
+        output: Backend-specific invocation output
+    """
+
+    model_id: str
+    output: dict | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class InvokeModelResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Model invocation failed. Common causes: no invoker registered, ambiguous invoker, denied by policy, backend error."""

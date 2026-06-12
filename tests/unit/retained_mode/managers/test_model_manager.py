@@ -3,6 +3,7 @@
 Covers:
 - `on_handle_get_model_info_request` — token guard and HF API delegation
 - `on_handle_search_models_request` — search result handling
+- `on_handle_invoke_model_request` — invoker lookup, selection, and dispatch-boundary failures
 - `_download_model_task` — the spawned subprocess targets a runnable module
 """
 
@@ -17,6 +18,9 @@ from griptape_nodes.retained_mode.events.model_events import (
     GetModelInfoRequest,
     GetModelInfoResultFailure,
     GetModelInfoResultSuccess,
+    InvokeModelRequest,
+    InvokeModelResultFailure,
+    InvokeModelResultSuccess,
     SearchModelsRequest,
     SearchModelsResultFailure,
     SearchModelsResultSuccess,
@@ -182,6 +186,97 @@ class TestOnHandleSearchModelsRequest:
 
 # ---------------------------------------------------------------------------
 # _download_model_task — subprocess entry point
+# ---------------------------------------------------------------------------
+
+
+class TestOnHandleInvokeModelRequest:
+    def _patch_registered_handlers(self, handler_mappings: dict[str, SimpleNamespace]):  # noqa: ANN202
+        """Patch the library-registered InvokeModelRequest handlers the manager looks up."""
+        library_manager = SimpleNamespace(get_registered_event_handlers=lambda _request_type: handler_mappings)
+        return patch(
+            "griptape_nodes.retained_mode.managers.model_manager.GriptapeNodes.LibraryManager",
+            return_value=library_manager,
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_failure_when_no_invoker_registered(self, model_manager: ModelManager) -> None:
+        with self._patch_registered_handlers({}):
+            result = await model_manager.on_handle_invoke_model_request(InvokeModelRequest(model_id="microsoft/phi-2"))
+
+        assert isinstance(result, InvokeModelResultFailure)
+        assert "no library has registered" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_delegates_to_sole_invoker_when_unnamed(self, model_manager: ModelManager) -> None:
+        received: list[InvokeModelRequest] = []
+        success = InvokeModelResultSuccess(model_id="microsoft/phi-2", result_details="ok")
+
+        def invoker(request: InvokeModelRequest) -> InvokeModelResultSuccess:
+            received.append(request)
+            return success
+
+        handlers = {"Some Library": SimpleNamespace(handler=invoker)}
+        with self._patch_registered_handlers(handlers):
+            result = await model_manager.on_handle_invoke_model_request(InvokeModelRequest(model_id="microsoft/phi-2"))
+
+        assert result is success
+        assert len(received) == 1
+        assert received[0].model_id == "microsoft/phi-2"
+
+    @pytest.mark.asyncio
+    async def test_returns_failure_when_unnamed_and_ambiguous(self, model_manager: ModelManager) -> None:
+        handlers = {
+            "Library A": SimpleNamespace(handler=lambda _request: None),
+            "Library B": SimpleNamespace(handler=lambda _request: None),
+        }
+        with self._patch_registered_handlers(handlers):
+            result = await model_manager.on_handle_invoke_model_request(InvokeModelRequest(model_id="microsoft/phi-2"))
+
+        assert isinstance(result, InvokeModelResultFailure)
+        assert "multiple libraries" in str(result.result_details)
+        assert "Library A" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_selects_invoker_by_name(self, model_manager: ModelManager) -> None:
+        success = InvokeModelResultSuccess(model_id="microsoft/phi-2", result_details="ok")
+        handlers = {
+            "Library A": SimpleNamespace(handler=lambda _request: None),
+            "Library B": SimpleNamespace(handler=lambda _request: success),
+        }
+        with self._patch_registered_handlers(handlers):
+            result = await model_manager.on_handle_invoke_model_request(
+                InvokeModelRequest(model_id="microsoft/phi-2", invoker_name="Library B")
+            )
+
+        assert result is success
+
+    @pytest.mark.asyncio
+    async def test_returns_failure_when_named_invoker_missing(self, model_manager: ModelManager) -> None:
+        handlers = {"Library A": SimpleNamespace(handler=lambda _request: None)}
+        with self._patch_registered_handlers(handlers):
+            result = await model_manager.on_handle_invoke_model_request(
+                InvokeModelRequest(model_id="microsoft/phi-2", invoker_name="Library B")
+            )
+
+        assert isinstance(result, InvokeModelResultFailure)
+        assert "no library by that name" in str(result.result_details)
+        assert "Library A" in str(result.result_details)
+
+    @pytest.mark.asyncio
+    async def test_invoker_exception_becomes_failure_result(self, model_manager: ModelManager) -> None:
+        def invoker(_request: InvokeModelRequest) -> InvokeModelResultSuccess:
+            msg = "backend exploded"
+            raise RuntimeError(msg)
+
+        handlers = {"Some Library": SimpleNamespace(handler=invoker)}
+        with self._patch_registered_handlers(handlers):
+            result = await model_manager.on_handle_invoke_model_request(InvokeModelRequest(model_id="microsoft/phi-2"))
+
+        assert isinstance(result, InvokeModelResultFailure)
+        assert "backend exploded" in str(result.result_details)
+        assert isinstance(result.exception, RuntimeError)
+
+
 # ---------------------------------------------------------------------------
 
 
