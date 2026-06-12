@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 
 import pytest
 
@@ -1841,7 +1841,8 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
+        # Activation first clears any stale override, then applies the mapped value.
+        mock_config.set_workspace_override.assert_has_calls([call(None), call(Path(str(workspace_dir)))])
         mock_config.load_workspace_config.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1866,7 +1867,8 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        mock_config.set_workspace_override.assert_called_once_with(Path(str(workspace_dir)))
+        # Activation first clears any stale override, then applies the mapped value.
+        mock_config.set_workspace_override.assert_has_calls([call(None), call(Path(str(workspace_dir)))])
         mock_config.load_workspace_config.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1887,12 +1889,18 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        mock_config.set_workspace_override.assert_called_once_with(project_file.parent)
+        # Activation first clears any stale override, then defaults to the project dir.
+        mock_config.set_workspace_override.assert_has_calls([call(None), call(project_file.parent)])
         mock_config.load_workspace_config.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_project_workspaces_project_adjacent_config_not_overridden_when_set(self, tmp_path: Path) -> None:
-        """Test that set_workspace_override is not called when project-adjacent config sets workspace_directory."""
+        """Test that no override path is applied when project-adjacent config sets workspace_directory.
+
+        Activation still clears any stale override first (the single `None` call), but
+        because the project-adjacent config supplies workspace_directory, no override
+        path is layered on top of it.
+        """
         project_file = tmp_path / "project.yml"
         project_file.touch()
 
@@ -1908,8 +1916,65 @@ class TestProjectManagerProjectWorkspaces:
 
         await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(project_file)))
 
-        mock_config.set_workspace_override.assert_not_called()
+        mock_config.set_workspace_override.assert_called_once_with(None)
         mock_config.load_workspace_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_activation_clears_stale_workspace_override_from_previous_project(self, tmp_path: Path) -> None:
+        """Activating a project clears the override a prior activation set via auto-default.
+
+        Regression: a project with no workspace_directory in its config auto-defaults
+        the override to its own directory. Switching (or rolling back) to a project
+        whose config DOES supply workspace_directory must not inherit that override,
+        otherwise the second project loads the first project's workspace config layer.
+        Models the lib-fail -> rollback-to-pinned-project sequence.
+        """
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import SetCurrentProjectRequest
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        auto_default_file = tmp_path / "auto_default" / "project.yml"
+        auto_default_file.parent.mkdir()
+        auto_default_file.touch()
+        pinned_workspace_file = tmp_path / "pinned" / "project.yml"
+        pinned_workspace_file.parent.mkdir()
+        pinned_workspace_file.touch()
+
+        mock_config = Mock()
+        # First activation: no workspace_directory in project config -> auto-defaults.
+        mock_config.project_config = {}
+        mock_config.env_config = {}
+        mock_config.merged_config = {}
+        mock_config.get_config_value.return_value = {}
+
+        pm = self._make_project_manager_with_project(auto_default_file, mock_config)
+        # Register the second project (which supplies its own workspace_directory).
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        pinned_id = str(pinned_workspace_file)
+        pm._successfully_loaded_project_templates[pinned_id] = ProjectInfo(
+            project_id=pinned_id,
+            project_file_path=pinned_workspace_file,
+            project_base_dir=pinned_workspace_file.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation),
+            parsed_directory_schemas=pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation),
+        )
+
+        # Activate the auto-default project: clears, then sets the override to its own dir.
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(auto_default_file)))
+        mock_config.set_workspace_override.assert_has_calls([call(None), call(auto_default_file.parent)])
+
+        # Now the second project supplies its own workspace_directory.
+        mock_config.project_config = {"workspace_directory": str(pinned_workspace_file.parent)}
+        mock_config.set_workspace_override.reset_mock()
+
+        await pm.on_set_current_project_request(SetCurrentProjectRequest(project_id=str(pinned_workspace_file)))
+
+        # The stale auto-default override is cleared and no path override is re-applied,
+        # so the pinned project's own workspace config layer is the one that loads.
+        mock_config.set_workspace_override.assert_called_once_with(None)
 
     @pytest.mark.asyncio
     async def test_initialization_incomplete_skips_reload(self, tmp_path: Path) -> None:

@@ -1154,6 +1154,13 @@ class ProjectManager:
 
         self._current_project_id = resolved_project_id
 
+        # Each activation re-decides its workspace from scratch. Clear any override the
+        # previous project set (auto-default-to-project-dir) so it cannot leak into a
+        # project that resolves its workspace from config/env. Without this, a rollback
+        # to a project whose config supplies workspace_directory keeps the failed
+        # project's override, loading the wrong workspace config layer.
+        self._config_manager.set_workspace_override(None)
+
         project_info = self._successfully_loaded_project_templates.get(resolved_project_id)
         if project_info is not None and project_info.project_file_path is not None:
             project_file_path = project_info.project_file_path
