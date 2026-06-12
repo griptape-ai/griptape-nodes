@@ -131,7 +131,6 @@ class FileSequence:
         )
         if not isinstance(resolve_result, project_events.GetPathForMacroResultSuccess):
             return []
-        resolved_dir = str(resolve_result.absolute_path.parent)
         filename_template = pathlib.PurePosixPath(self.location).name
         entry_match = _ENTRY_MACRO_PATTERN.search(filename_template)
         entry_width = int(entry_match.group(1)) if entry_match and entry_match.group(1) else 4
@@ -139,8 +138,7 @@ class FileSequence:
         filename_pattern = resolve_result.absolute_path.name.replace(entry_zero_str, "#" * entry_width, 1)
         scan_result = griptape_nodes_mod.GriptapeNodes.handle_request(
             os_events.ScanSequencesRequest(
-                directory=resolved_dir,
-                pattern=filename_pattern,
+                path=str(resolve_result.absolute_path.parent / filename_pattern),
                 policy=policy,
                 start_number=start,
                 end_number=end,
