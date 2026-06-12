@@ -16,6 +16,7 @@ The **[Blender MCP Server](https://www.blender.org/lab/mcp-server/)** is the off
 The Blender MCP server is distributed as a Blender Extension through the official Blender Extensions platform.
 
 1. Visit [blender.org/lab/mcp-server](https://www.blender.org/lab/mcp-server/#addon) and scroll down to the **Add-on** section
+
 1. Choose one of the two installation methods:
 
     **Option A — Drag and Drop**
@@ -31,7 +32,9 @@ The Blender MCP server is distributed as a Blender Extension through the officia
     Click **download** on the page, then in Blender go to **Edit** → **Preferences** → **Get Extensions** → dropdown → **Install from Disk...** and select the downloaded file.
 
 1. In Blender, go to **Edit** → **Preferences** → **Get Extensions**
+
 1. Search for `mcp` — you should see the **MCP** extension listed as Available
+
 1. Click **Install**
 
 ![Blender MCP Extension in Get Extensions](../images/blender_mcp_extension.png)
