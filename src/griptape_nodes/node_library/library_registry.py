@@ -209,7 +209,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.9.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.10.0"
 
     name: str
     library_schema_version: str

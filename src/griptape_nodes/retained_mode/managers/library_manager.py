@@ -54,6 +54,7 @@ from griptape_nodes.node_library.library_registry import (
     NodeDefinition,
     NodeMetadata,
 )
+from griptape_nodes.node_library.library_validation import validate_library_declarations
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
     AppSessionStartedEvent,
@@ -909,7 +910,7 @@ class LibraryManager:
         result = GetLibraryMetadataResultSuccess(metadata=metadata, result_details=details)
         return result
 
-    def load_library_metadata_from_file_request(  # noqa: PLR0911
+    def load_library_metadata_from_file_request(  # noqa: PLR0911, C901
         self, request: LoadLibraryMetadataFromFileRequest
     ) -> LoadLibraryMetadataFromFileResultSuccess | LoadLibraryMetadataFromFileResultFailure:
         """Load library metadata from a JSON file without loading the actual node modules.
@@ -998,6 +999,23 @@ class LibraryManager:
                 library_name=library_data.name,
                 status=LibraryManager.LibraryFitness.UNUSABLE,
                 problems=[InvalidVersionStringProblem(version_string=str(library_data.metadata.library_version))],
+                result_details=details,
+            )
+
+        # Resolve cross-references between declarations (catalog offering ids,
+        # node-level model_usage references, etc.). Fatal problems block the load.
+        declaration_validation = validate_library_declarations(library_data)
+        if declaration_validation.fatal:
+            details = (
+                f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. "
+                f"Failed because declarative references did not resolve. "
+                f"Count: {len(declaration_validation.fatal)}."
+            )
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=library_data.name,
+                status=LibraryManager.LibraryFitness.UNUSABLE,
+                problems=list(declaration_validation.fatal),
                 result_details=details,
             )
 
