@@ -138,6 +138,8 @@ directories:
 
 Setting `parent_project_path: null` explicitly clears an inherited link, falling the project back to the system defaults as its base. Omitting the field entirely inherits the parent's link (which is rarely what you want — typically you set `parent_project_path` on each child explicitly).
 
+A project whose base *is* the system defaults should leave `parent_project_path` out entirely — absence already means "system defaults are the base," so there is nothing to point at. Only set the field when the parent is a *different* project file. This matters for sharing: writing a parent path into a project saved to shared or synced storage bakes in a machine-specific link that will not resolve on another person's machine, so a default-derived project should carry no path at all.
+
 ### Cycles and missing parents
 
 The engine refuses to load a project whose parent chain contains a cycle. A direct self-reference, A → B → A, and longer cycles are all caught and reported as a validation error on the child being loaded.
