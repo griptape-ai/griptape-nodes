@@ -7,22 +7,11 @@ from __future__ import annotations
 
 import pathlib
 
-from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
-from griptape_nodes.files.file import _resolve_macro_path
-from griptape_nodes.files.project_file import _attempt_map_to_project
-from griptape_nodes.retained_mode.events.os_events import (
-    ExistingFilePolicy,
-    GetNextVersionIndexRequest,
-    GetNextVersionIndexResultSuccess,
-    MakeDirectoryRequest,
-    MakeDirectoryResultSuccess,
-)
-from griptape_nodes.retained_mode.events.project_events import (
-    GetPathForMacroRequest,
-    GetPathForMacroResultSuccess,
-    MacroPath,
-)
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.common import macro_parser
+from griptape_nodes.files import file as file_mod
+from griptape_nodes.files import project_file
+from griptape_nodes.retained_mode import griptape_nodes as griptape_nodes_mod
+from griptape_nodes.retained_mode.events import os_events, project_events
 
 
 class DirectoryError(Exception):
@@ -44,7 +33,7 @@ class Directory:
     automatically wrapped in a MacroPath.
     """
 
-    def __init__(self, dir_path: str | MacroPath) -> None:
+    def __init__(self, dir_path: str | project_events.MacroPath) -> None:
         """Store directory reference. No I/O is performed.
 
         Args:
@@ -52,12 +41,12 @@ class Directory:
         """
         if isinstance(dir_path, str):
             try:
-                parsed = ParsedMacro(dir_path)
-            except MacroSyntaxError:
-                self._dir_path: str | MacroPath = dir_path
+                parsed = macro_parser.ParsedMacro(dir_path)
+            except macro_parser.MacroSyntaxError:
+                self._dir_path: str | project_events.MacroPath = dir_path
             else:
                 if parsed.get_variables():
-                    self._dir_path = MacroPath(parsed, {})
+                    self._dir_path = project_events.MacroPath(parsed, {})
                 else:
                     self._dir_path = dir_path
         else:
@@ -81,7 +70,7 @@ class Directory:
         Returns the macro template when the directory holds a macro path,
         otherwise the plain path string. No I/O is performed.
         """
-        if isinstance(self._dir_path, MacroPath):
+        if isinstance(self._dir_path, project_events.MacroPath):
             return self._dir_path.parsed_macro.template
         return self._dir_path
 
@@ -106,9 +95,9 @@ class DirectoryDestination:
 
     def __init__(
         self,
-        dir_path: str | MacroPath,
+        dir_path: str | project_events.MacroPath,
         *,
-        existing_dir_policy: ExistingFilePolicy = ExistingFilePolicy.CREATE_NEW,
+        existing_dir_policy: os_events.ExistingFilePolicy = os_events.ExistingFilePolicy.CREATE_NEW,
         create_parents: bool = True,
     ) -> None:
         """Store directory path and creation configuration. No I/O is performed.
@@ -139,7 +128,7 @@ class DirectoryDestination:
     @property
     def location(self) -> str:
         """Return the most portable string representation of this destination's location."""
-        if isinstance(self._dir_path, MacroPath):
+        if isinstance(self._dir_path, project_events.MacroPath):
             return self._dir_path.parsed_macro.template
         return self._dir_path
 
@@ -157,11 +146,11 @@ class DirectoryDestination:
             DirectoryError: If the directory cannot be created.
         """
         match self._existing_dir_policy:
-            case ExistingFilePolicy.CREATE_NEW:
+            case os_events.ExistingFilePolicy.CREATE_NEW:
                 return self._create_with_versioning()
-            case ExistingFilePolicy.OVERWRITE:
+            case os_events.ExistingFilePolicy.OVERWRITE:
                 return self._create_direct()
-            case ExistingFilePolicy.FAIL:
+            case os_events.ExistingFilePolicy.FAIL:
                 resolved = pathlib.Path(_resolve_dir_path(self._dir_path))
                 if resolved.exists():
                     msg = f"Attempted to create directory. Failed because directory already exists: {resolved}"
@@ -173,62 +162,64 @@ class DirectoryDestination:
 
         If the path is a MacroPath with an ``_index`` variable, we can use it directly, if it's a string, we just add index in the end.
         """
-        if isinstance(self._dir_path, MacroPath):
+        if isinstance(self._dir_path, project_events.MacroPath):
             macro_path = self._dir_path
         else:
             try:
-                parsed = ParsedMacro(self._dir_path)
+                parsed = macro_parser.ParsedMacro(self._dir_path)
                 has_variables = bool(parsed.get_variables())
-            except MacroSyntaxError as exc:
+            except macro_parser.MacroSyntaxError as exc:
                 msg = f"Attempted to create versioned directory. Failed because path is not a valid macro: {self._dir_path}"
                 raise DirectoryError(msg) from exc
 
             if has_variables:
-                macro_path = MacroPath(parsed, {})
+                macro_path = project_events.MacroPath(parsed, {})
             else:
-                macro_path = MacroPath(ParsedMacro(self._dir_path + "_{_index}"), {})
+                macro_path = project_events.MacroPath(macro_parser.ParsedMacro(self._dir_path + "_{_index}"), {})
 
         # Get the next available version index for this macro path.
         # The macro is expected to contain an {_index} variable, which is used to find the next available version.
-        index_result = GriptapeNodes.handle_request(GetNextVersionIndexRequest(macro_path=macro_path))
-        if not isinstance(index_result, GetNextVersionIndexResultSuccess):
+        index_result = griptape_nodes_mod.GriptapeNodes.handle_request(
+            os_events.GetNextVersionIndexRequest(macro_path=macro_path)
+        )
+        if not isinstance(index_result, os_events.GetNextVersionIndexResultSuccess):
             msg = f"Attempted to create versioned directory. Failed to find available version index: {index_result.result_details}"
             raise DirectoryError(msg)
 
         index = index_result.index if index_result.index is not None else 1
         variables = macro_path.variables | {"_index": index}
-        resolve_result = GriptapeNodes.handle_request(
-            GetPathForMacroRequest(parsed_macro=macro_path.parsed_macro, variables=variables)
+        resolve_result = griptape_nodes_mod.GriptapeNodes.handle_request(
+            project_events.GetPathForMacroRequest(parsed_macro=macro_path.parsed_macro, variables=variables)
         )
-        if not isinstance(resolve_result, GetPathForMacroResultSuccess):
+        if not isinstance(resolve_result, project_events.GetPathForMacroResultSuccess):
             msg = f"Attempted to create versioned directory. Failed to resolve macro: {resolve_result.result_details}"
             raise DirectoryError(msg)
 
         absolute_path = resolve_result.absolute_path
-        mkdir_result = GriptapeNodes.handle_request(
-            MakeDirectoryRequest(path=str(absolute_path), create_parents=self._create_parents, exist_ok=False)
+        mkdir_result = griptape_nodes_mod.GriptapeNodes.handle_request(
+            os_events.MakeDirectoryRequest(path=str(absolute_path), create_parents=self._create_parents, exist_ok=False)
         )
-        if not isinstance(mkdir_result, MakeDirectoryResultSuccess):
+        if not isinstance(mkdir_result, os_events.MakeDirectoryResultSuccess):
             msg = f"Attempted to create versioned directory. Failed to create '{absolute_path}': {mkdir_result.result_details}"
             raise DirectoryError(msg)
 
-        locked_macro = MacroPath(macro_path.parsed_macro, variables)
+        locked_macro = project_events.MacroPath(macro_path.parsed_macro, variables)
         return _map_to_macro_directory(absolute_path, locked_macro)
 
     def _create_direct(self) -> Directory:
         """Create the directory without versioning."""
         resolved = pathlib.Path(_resolve_dir_path(self._dir_path))
-        mkdir_result = GriptapeNodes.handle_request(
-            MakeDirectoryRequest(path=str(resolved), create_parents=self._create_parents, exist_ok=True)
+        mkdir_result = griptape_nodes_mod.GriptapeNodes.handle_request(
+            os_events.MakeDirectoryRequest(path=str(resolved), create_parents=self._create_parents, exist_ok=True)
         )
-        if not isinstance(mkdir_result, MakeDirectoryResultSuccess):
+        if not isinstance(mkdir_result, os_events.MakeDirectoryResultSuccess):
             msg = f"Attempted to create directory. Failed to create '{resolved}': {mkdir_result.result_details}"
             raise DirectoryError(msg)
 
         return _map_to_macro_directory(resolved, self._dir_path)
 
 
-def _resolve_dir_path(dir_path: str | MacroPath) -> str:
+def _resolve_dir_path(dir_path: str | project_events.MacroPath) -> str:
     """Resolve a directory path, handling MacroPath resolution if needed.
 
     Args:
@@ -242,22 +233,22 @@ def _resolve_dir_path(dir_path: str | MacroPath) -> str:
     """
     if isinstance(dir_path, str):
         return dir_path
-    return _resolve_macro_path(
+    return file_mod._resolve_macro_path(
         dir_path,
         lambda r: DirectoryError(f"Attempted to resolve directory path. Failed: {r.result_details}"),
     )
 
 
-def _map_to_macro_directory(absolute_path: pathlib.Path, fallback_path: str | MacroPath) -> Directory:
+def _map_to_macro_directory(absolute_path: pathlib.Path, fallback_path: str | project_events.MacroPath) -> Directory:
     """Attempt to map the created directory path to a portable macro form.
 
     Returns a Directory holding the macro template when the path is inside
     a project directory, so callers can store a portable reference.
     Falls back to the locked MacroPath or absolute path string if mapping fails.
     """
-    mapped = _attempt_map_to_project(absolute_path)
+    mapped = project_file._attempt_map_to_project(absolute_path)
     if mapped is not None:
         return Directory(mapped)
-    if isinstance(fallback_path, MacroPath):
+    if isinstance(fallback_path, project_events.MacroPath):
         return Directory(fallback_path)
     return Directory(str(absolute_path))

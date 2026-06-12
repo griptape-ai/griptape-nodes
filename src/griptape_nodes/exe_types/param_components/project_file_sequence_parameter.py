@@ -5,25 +5,19 @@ method returns a per-frame FileDestination. Situation-based macro routing determ
 directory layout; falls back to a sensible default when no situation is configured.
 """
 
-from griptape_nodes.common.macro_parser import ParsedMacro
-from griptape_nodes.common.project_templates.situation_resolver import resolve_situation
-from griptape_nodes.exe_types.core_types import ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.exe_types.param_components.project_output_parameter import ProjectOutputParameter
-from griptape_nodes.files.file_sequence import (
-    FileSequenceDestination,
-    build_versioned_sequence_destination,
-)
-from griptape_nodes.files.path_utils import FilenameParts
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
-from griptape_nodes.retained_mode.events.project_events import MacroPath
+from griptape_nodes.common import macro_parser
+from griptape_nodes.common.project_templates import situation_resolver
+from griptape_nodes.exe_types import core_types, node_types
+from griptape_nodes.exe_types.param_components import project_output_parameter
+from griptape_nodes.files import file_sequence, path_utils
+from griptape_nodes.retained_mode.events import os_events, project_events
 
 _FALLBACK_SEQUENCE_MACRO = (
     "{outputs}/{node_name?:_}{file_name_base}_v{_index:03}/{file_name_base}_v{_index:03}_{entry:04}.{file_extension}"
 )
 
 
-class ProjectFileSequenceParameter(ProjectOutputParameter):
+class ProjectFileSequenceParameter(project_output_parameter.ProjectOutputParameter):
     """Parameter component for project-aware file sequence output.
 
     Adds a filename-pattern parameter to a node that, when processed, returns a
@@ -54,12 +48,12 @@ class ProjectFileSequenceParameter(ProjectOutputParameter):
 
     def __init__(  # noqa: PLR0913
         self,
-        node: BaseNode,
+        node: node_types.BaseNode,
         name: str,
         *,
         default_filename: str,
         situation: str = DEFAULT_SITUATION,
-        allowed_modes: set[ParameterMode] | None = None,
+        allowed_modes: set[core_types.ParameterMode] | None = None,
         ui_options: dict | None = None,
     ) -> None:
         super().__init__(
@@ -87,7 +81,7 @@ class ProjectFileSequenceParameter(ProjectOutputParameter):
     def _parameter_output_type(self) -> str:
         return "FileSequence"
 
-    def build_sequence(self, **extra_vars: str | int) -> FileSequenceDestination:
+    def build_sequence(self, **extra_vars: str | int) -> file_sequence.FileSequenceDestination:
         """Build a FileSequenceDestination from the parameter's current value.
 
         If an upstream node exposes a ``file_sequence_destination`` attribute, its
@@ -122,7 +116,7 @@ def _build_sequence_destination_from_situation(
     filename: str,
     situation: str,
     **extra_vars: str | int,
-) -> FileSequenceDestination:
+) -> file_sequence.FileSequenceDestination:
     """Build a FileSequenceDestination from a project situation template.
 
     Parses the filename (or #### pattern) into parts, looks up the situation,
@@ -136,15 +130,17 @@ def _build_sequence_destination_from_situation(
     Returns:
         FileSequenceDestination with a locked version index but unresolved element token.
     """
-    resolved = resolve_situation(situation, _FALLBACK_SEQUENCE_MACRO, ExistingFilePolicy.OVERWRITE)
-    parts = FilenameParts.from_filename(filename)
+    resolved = situation_resolver.resolve_situation(
+        situation, _FALLBACK_SEQUENCE_MACRO, os_events.ExistingFilePolicy.OVERWRITE
+    )
+    parts = path_utils.FilenameParts.from_filename(filename)
     variables: dict[str, str | int] = {
         "file_name_base": parts.stem,
         "file_extension": parts.extension,
         **extra_vars,
     }
-    macro_path = MacroPath(ParsedMacro(resolved.macro_template), variables)
-    return build_versioned_sequence_destination(
+    macro_path = project_events.MacroPath(macro_parser.ParsedMacro(resolved.macro_template), variables)
+    return file_sequence.build_versioned_sequence_destination(
         macro_path,
         existing_file_policy=resolved.existing_file_policy,
         create_parents=resolved.create_parents,

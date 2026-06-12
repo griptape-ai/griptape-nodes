@@ -1,24 +1,23 @@
 """Resolve a project situation name into file-write configuration."""
 
 import logging
-from typing import NamedTuple
+import typing
 
-from griptape_nodes.common.project_templates.situation import SituationFilePolicy, SituationTemplate
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
-from griptape_nodes.retained_mode.events.project_events import GetSituationRequest, GetSituationResultSuccess
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.common.project_templates import situation as situation_mod
+from griptape_nodes.retained_mode import griptape_nodes as griptape_nodes_mod
+from griptape_nodes.retained_mode.events import os_events, project_events
 
 logger = logging.getLogger("griptape_nodes")
 
-SITUATION_TO_FILE_POLICY: dict[str, ExistingFilePolicy] = {
-    SituationFilePolicy.CREATE_NEW: ExistingFilePolicy.CREATE_NEW,
-    SituationFilePolicy.OVERWRITE: ExistingFilePolicy.OVERWRITE,
-    SituationFilePolicy.FAIL: ExistingFilePolicy.FAIL,
-    SituationFilePolicy.PROMPT: ExistingFilePolicy.CREATE_NEW,  # PROMPT has no direct mapping; fall back to CREATE_NEW
+SITUATION_TO_FILE_POLICY: dict[str, os_events.ExistingFilePolicy] = {
+    situation_mod.SituationFilePolicy.CREATE_NEW: os_events.ExistingFilePolicy.CREATE_NEW,
+    situation_mod.SituationFilePolicy.OVERWRITE: os_events.ExistingFilePolicy.OVERWRITE,
+    situation_mod.SituationFilePolicy.FAIL: os_events.ExistingFilePolicy.FAIL,
+    situation_mod.SituationFilePolicy.PROMPT: os_events.ExistingFilePolicy.CREATE_NEW,  # PROMPT has no direct mapping; fall back to CREATE_NEW
 }
 
 
-class ResolvedSituation(NamedTuple):
+class ResolvedSituation(typing.NamedTuple):
     """Result of looking up a project situation by name.
 
     Attributes:
@@ -30,15 +29,15 @@ class ResolvedSituation(NamedTuple):
     """
 
     macro_template: str
-    existing_file_policy: ExistingFilePolicy
+    existing_file_policy: os_events.ExistingFilePolicy
     create_parents: bool
-    situation_obj: SituationTemplate | None
+    situation_obj: situation_mod.SituationTemplate | None
 
 
 def resolve_situation(
     situation_name: str,
     fallback_macro: str,
-    default_policy: ExistingFilePolicy = ExistingFilePolicy.CREATE_NEW,
+    default_policy: os_events.ExistingFilePolicy = os_events.ExistingFilePolicy.CREATE_NEW,
 ) -> ResolvedSituation:
     """Look up a situation by name and return its resolved configuration.
 
@@ -53,8 +52,10 @@ def resolve_situation(
         ResolvedSituation with macro_template, existing_file_policy, create_parents,
         and situation_obj (None when falling back).
     """
-    result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation_name))
-    if isinstance(result, GetSituationResultSuccess):
+    result = griptape_nodes_mod.GriptapeNodes.handle_request(
+        project_events.GetSituationRequest(situation_name=situation_name)
+    )
+    if isinstance(result, project_events.GetSituationResultSuccess):
         situation_obj = result.situation
         return ResolvedSituation(
             macro_template=situation_obj.macro,

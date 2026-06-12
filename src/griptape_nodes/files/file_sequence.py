@@ -8,34 +8,22 @@ build_versioned_sequence_destination.
 
 from __future__ import annotations
 
+import pathlib
 import re
-from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+import typing
 
-from fileseq.constants import PAD_STYLE_HASH1
-from fileseq.filesequence import FileSequence as _FSeq
+from fileseq import constants as fileseq_constants
+from fileseq import filesequence as fileseq_filesequence
 
-from griptape_nodes.common.macro_parser import ParsedMacro
-from griptape_nodes.common.sequences import MissingItemPolicy, Sequence
-from griptape_nodes.files.directory import Directory
-from griptape_nodes.files.file import File, FileDestination
-from griptape_nodes.files.project_file import ProjectFileDestination
-from griptape_nodes.retained_mode.events.os_events import (
-    ExistingFilePolicy,
-    GetNextVersionIndexRequest,
-    GetNextVersionIndexResultSuccess,
-    ScanSequencesRequest,
-    ScanSequencesResultSuccess,
-)
-from griptape_nodes.retained_mode.events.project_events import (
-    GetPathForMacroRequest,
-    GetPathForMacroResultSuccess,
-    MacroPath,
-)
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.common import macro_parser, sequences
+from griptape_nodes.files import directory as directory_mod
+from griptape_nodes.files import file as file_mod
+from griptape_nodes.files import project_file
+from griptape_nodes.retained_mode import griptape_nodes as griptape_nodes_mod
+from griptape_nodes.retained_mode.events import os_events, project_events
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
+if typing.TYPE_CHECKING:
+    import collections.abc
 
 _ENTRY_VAR_NAME = "entry"
 _ENTRY_MACRO_PATTERN = re.compile(r"\{entry(?::(\d+))?\}")
@@ -60,7 +48,7 @@ class FileSequence:
     ``directory`` to get the containing folder.
     """
 
-    def __init__(self, entry_macro: MacroPath) -> None:
+    def __init__(self, entry_macro: project_events.MacroPath) -> None:
         """Store the entry macro. No I/O is performed.
 
         Args:
@@ -96,18 +84,18 @@ class FileSequence:
         return entry_macro_to_hash_pattern(self.location)
 
     @property
-    def directory(self) -> Directory:
+    def directory(self) -> directory_mod.Directory:
         """Return the containing directory as a Directory.
 
         No I/O is performed; the directory path is derived from the macro
         template by stripping the filename component. The locked variables
         (e.g. ``_index``) are preserved so the returned Directory can be resolved.
         """
-        dir_template = str(PurePosixPath(self.location).parent)
+        dir_template = str(pathlib.PurePosixPath(self.location).parent)
         dir_variables = {k: v for k, v in self._entry_macro.variables.items() if k != _ENTRY_VAR_NAME}
-        return Directory(MacroPath(ParsedMacro(dir_template), dir_variables))
+        return directory_mod.Directory(project_events.MacroPath(macro_parser.ParsedMacro(dir_template), dir_variables))
 
-    def entry(self, entry_number: int) -> File:
+    def entry(self, entry_number: int) -> file_mod.File:
         """Return a File for reading a specific entry.
 
         Args:
@@ -117,15 +105,15 @@ class FileSequence:
             File that resolves to the absolute path of that entry.
         """
         variables = {**self._entry_macro.variables, _ENTRY_VAR_NAME: entry_number}
-        return File(MacroPath(self._entry_macro.parsed_macro, variables))
+        return file_mod.File(project_events.MacroPath(self._entry_macro.parsed_macro, variables))
 
     def scan(
         self,
         *,
-        policy: MissingItemPolicy = MissingItemPolicy.SPLIT,
+        policy: sequences.MissingItemPolicy = sequences.MissingItemPolicy.SPLIT,
         start: int | None = None,
         end: int | None = None,
-    ) -> list[Sequence]:
+    ) -> list[sequences.Sequence]:
         """Scan the sequence directory and return what's on disk.
 
         Args:
@@ -138,19 +126,19 @@ class FileSequence:
             or contains no matching files.
         """
         probe_vars = {**self._entry_macro.variables, _ENTRY_VAR_NAME: 0}
-        resolve_result = GriptapeNodes.handle_request(
-            GetPathForMacroRequest(parsed_macro=self._entry_macro.parsed_macro, variables=probe_vars)
+        resolve_result = griptape_nodes_mod.GriptapeNodes.handle_request(
+            project_events.GetPathForMacroRequest(parsed_macro=self._entry_macro.parsed_macro, variables=probe_vars)
         )
-        if not isinstance(resolve_result, GetPathForMacroResultSuccess):
+        if not isinstance(resolve_result, project_events.GetPathForMacroResultSuccess):
             return []
         resolved_dir = str(resolve_result.absolute_path.parent)
-        filename_template = PurePosixPath(self.location).name
+        filename_template = pathlib.PurePosixPath(self.location).name
         entry_match = _ENTRY_MACRO_PATTERN.search(filename_template)
         entry_width = int(entry_match.group(1)) if entry_match and entry_match.group(1) else 4
         entry_zero_str = format(0, f"0{entry_width}d")
         filename_pattern = resolve_result.absolute_path.name.replace(entry_zero_str, "#" * entry_width, 1)
-        scan_result = GriptapeNodes.handle_request(
-            ScanSequencesRequest(
+        scan_result = griptape_nodes_mod.GriptapeNodes.handle_request(
+            os_events.ScanSequencesRequest(
                 directory=resolved_dir,
                 pattern=filename_pattern,
                 policy=policy,
@@ -158,21 +146,21 @@ class FileSequence:
                 end_number=end,
             )
         )
-        if not isinstance(scan_result, ScanSequencesResultSuccess):
+        if not isinstance(scan_result, os_events.ScanSequencesResultSuccess):
             return []
         return scan_result.sequences
 
 
-class _EntryWriteDestination(ProjectFileDestination):
+class _EntryWriteDestination(project_file.ProjectFileDestination):
     """FileDestination subclass that fires a callback after each successful write."""
 
     def __init__(
         self,
-        entry_path: MacroPath,
+        entry_path: project_events.MacroPath,
         *,
-        existing_file_policy: ExistingFilePolicy,
+        existing_file_policy: os_events.ExistingFilePolicy,
         create_parents: bool,
-        on_written: Callable[[File], None],
+        on_written: collections.abc.Callable[[file_mod.File], None],
     ) -> None:
         super().__init__(
             entry_path,
@@ -181,22 +169,22 @@ class _EntryWriteDestination(ProjectFileDestination):
         )
         self._on_written = on_written
 
-    def write_bytes(self, content: bytes) -> File:
+    def write_bytes(self, content: bytes) -> file_mod.File:
         result = super().write_bytes(content)
         self._on_written(result)
         return result
 
-    async def awrite_bytes(self, content: bytes) -> File:
+    async def awrite_bytes(self, content: bytes) -> file_mod.File:
         result = await super().awrite_bytes(content)
         self._on_written(result)
         return result
 
-    def write_text(self, content: str, encoding: str = "utf-8") -> File:
+    def write_text(self, content: str, encoding: str = "utf-8") -> file_mod.File:
         result = super().write_text(content, encoding)
         self._on_written(result)
         return result
 
-    async def awrite_text(self, content: str, encoding: str = "utf-8") -> File:
+    async def awrite_text(self, content: str, encoding: str = "utf-8") -> file_mod.File:
         result = await super().awrite_text(content, encoding)
         self._on_written(result)
         return result
@@ -214,9 +202,9 @@ class FileSequenceDestination:
 
     def __init__(
         self,
-        entry_macro: MacroPath,
+        entry_macro: project_events.MacroPath,
         *,
-        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        existing_file_policy: os_events.ExistingFilePolicy = os_events.ExistingFilePolicy.OVERWRITE,
         create_parents: bool = True,
     ) -> None:
         """Store entry macro and write configuration. No I/O is performed.
@@ -240,7 +228,7 @@ class FileSequenceDestination:
         """
         return self._written_sequence
 
-    def entry(self, entry_number: int) -> FileDestination:
+    def entry(self, entry_number: int) -> file_mod.FileDestination:
         """Return a FileDestination for writing a specific entry.
 
         After the returned destination is used to write, the ``file_sequence``
@@ -253,7 +241,7 @@ class FileSequenceDestination:
             FileDestination pre-configured with the resolved entry path and policy.
         """
         variables = {**self._entry_macro.variables, _ENTRY_VAR_NAME: entry_number}
-        entry_path = MacroPath(self._entry_macro.parsed_macro, variables)
+        entry_path = project_events.MacroPath(self._entry_macro.parsed_macro, variables)
         return _EntryWriteDestination(
             entry_path,
             existing_file_policy=self._existing_file_policy,
@@ -261,16 +249,16 @@ class FileSequenceDestination:
             on_written=self._on_entry_written,
         )
 
-    def _on_entry_written(self, written_file: File) -> None:  # noqa: ARG002
+    def _on_entry_written(self, written_file: file_mod.File) -> None:  # noqa: ARG002
         """Record that an entry was written to expose the FileSequence descriptor."""
         if self._written_sequence is None:
             self._written_sequence = FileSequence(self._entry_macro)
 
 
 def build_versioned_sequence_destination(
-    entry_macro: MacroPath,
+    entry_macro: project_events.MacroPath,
     *,
-    existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+    existing_file_policy: os_events.ExistingFilePolicy = os_events.ExistingFilePolicy.OVERWRITE,
     create_parents: bool = True,
 ) -> FileSequenceDestination:
     """Find the next available version index and return a locked FileSequenceDestination.
@@ -289,12 +277,14 @@ def build_versioned_sequence_destination(
     Raises:
         FileSequenceError: If the engine cannot determine the next available version index.
     """
-    dir_template = str(PurePosixPath(entry_macro.parsed_macro.template).parent)
+    dir_template = str(pathlib.PurePosixPath(entry_macro.parsed_macro.template).parent)
     dir_variables = {k: v for k, v in entry_macro.variables.items() if k != _ENTRY_VAR_NAME}
-    dir_macro = MacroPath(ParsedMacro(dir_template), dir_variables)
+    dir_macro = project_events.MacroPath(macro_parser.ParsedMacro(dir_template), dir_variables)
 
-    index_result = GriptapeNodes.handle_request(GetNextVersionIndexRequest(macro_path=dir_macro))
-    if not isinstance(index_result, GetNextVersionIndexResultSuccess):
+    index_result = griptape_nodes_mod.GriptapeNodes.handle_request(
+        os_events.GetNextVersionIndexRequest(macro_path=dir_macro)
+    )
+    if not isinstance(index_result, os_events.GetNextVersionIndexResultSuccess):
         msg = (
             f"Attempted to find available sequence version. Failed to find version index: {index_result.result_details}"
         )
@@ -302,7 +292,7 @@ def build_versioned_sequence_destination(
 
     index = index_result.index if index_result.index is not None else 1
     locked_vars = {**entry_macro.variables, "_index": index}
-    locked_macro = MacroPath(entry_macro.parsed_macro, locked_vars)
+    locked_macro = project_events.MacroPath(entry_macro.parsed_macro, locked_vars)
     return FileSequenceDestination(
         locked_macro,
         existing_file_policy=existing_file_policy,
@@ -323,8 +313,8 @@ def hash_pattern_to_entry_macro(pattern: str) -> str:
         Macro template string with the token replaced by ``{entry:NN}``. Returns
         the input unchanged if no sequence token is found.
     """
-    path = PurePosixPath(pattern)
-    fseq = _FSeq(path.name, pad_style=PAD_STYLE_HASH1)
+    path = pathlib.PurePosixPath(pattern)
+    fseq = fileseq_filesequence.FileSequence(path.name, pad_style=fileseq_constants.PAD_STYLE_HASH1)
     width = fseq.zfill()
     if width == 0:
         return pattern

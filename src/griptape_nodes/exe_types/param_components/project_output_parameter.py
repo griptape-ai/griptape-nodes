@@ -2,26 +2,23 @@
 
 from __future__ import annotations
 
+import abc
 import logging
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+import typing
 
-from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMode
-from griptape_nodes.retained_mode.events.connection_events import (
-    ListConnectionsForNodeRequest,
-    ListConnectionsForNodeResultSuccess,
-)
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.retained_mode import RetainedMode
-from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
+from griptape_nodes.exe_types import core_types
+from griptape_nodes.retained_mode import griptape_nodes as griptape_nodes_mod
+from griptape_nodes.retained_mode import retained_mode as retained_mode_mod
+from griptape_nodes.retained_mode.events import connection_events
+from griptape_nodes.traits import button as button_mod
 
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.node_types import BaseNode
+if typing.TYPE_CHECKING:
+    from griptape_nodes.exe_types import node_types
 
 logger = logging.getLogger("griptape_nodes")
 
 
-class ProjectOutputParameter(ABC):
+class ProjectOutputParameter(abc.ABC):
     """Shared base for project-aware output parameter components.
 
     Handles the cog-button pattern (create + connect a settings node) and
@@ -32,12 +29,12 @@ class ProjectOutputParameter(ABC):
 
     def __init__(  # noqa: PLR0913
         self,
-        node: BaseNode,
+        node: node_types.BaseNode,
         name: str,
         *,
         default_value: str,
         situation: str,
-        allowed_modes: set[ParameterMode] | None = None,
+        allowed_modes: set[core_types.ParameterMode] | None = None,
         ui_options: dict | None = None,
     ) -> None:
         """Initialise with situation context.
@@ -54,28 +51,28 @@ class ProjectOutputParameter(ABC):
         self._name = name
         self._situation_name = situation
         self._default_value = default_value
-        self._allowed_modes = allowed_modes or {ParameterMode.INPUT, ParameterMode.PROPERTY}
+        self._allowed_modes = allowed_modes or {core_types.ParameterMode.INPUT, core_types.ParameterMode.PROPERTY}
         self._ui_options = ui_options
 
     # ---- Abstract pieces each subclass must supply ----
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def _settings_node_type(self) -> str:
         """Node type to create when the cog button is clicked (e.g. 'FileOutputSettings')."""
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def _settings_value_param_name(self) -> str:
         """Parameter name on the settings node that holds the filename/dirname (e.g. 'filename')."""
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def _settings_source_param_name(self) -> str:
         """Output parameter on the settings node to wire to this parameter (e.g. 'file_destination')."""
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def _parameter_output_type(self) -> str:
         """The output_type string for the generated parameter (e.g. 'str', 'Directory')."""
 
@@ -95,9 +92,9 @@ class ProjectOutputParameter(ABC):
         tooltip = f"Output path (uses '{self._situation_name}' situation template)"
 
         traits = self._make_parameter_traits()
-        if ParameterMode.INPUT in self._allowed_modes:
+        if core_types.ParameterMode.INPUT in self._allowed_modes:
             traits.add(
-                Button(
+                button_mod.Button(
                     icon="cog",
                     size="icon",
                     variant="secondary",
@@ -106,7 +103,7 @@ class ProjectOutputParameter(ABC):
                 )
             )
 
-        parameter = Parameter(
+        parameter = core_types.Parameter(
             name=self._name,
             type="str",
             default_value=self._default_value,
@@ -123,7 +120,7 @@ class ProjectOutputParameter(ABC):
 
     def _reset_to_default(
         self,
-        parameter: Parameter,  # noqa: ARG002
+        parameter: core_types.Parameter,  # noqa: ARG002
         source_node_name: str,  # noqa: ARG002
         source_parameter_name: str,  # noqa: ARG002
     ) -> None:
@@ -148,14 +145,18 @@ class ProjectOutputParameter(ABC):
         Raises:
             ValueError: If a connected node exposes ``destination_attr`` but returns None.
         """
-        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self._node.name))
-        if not isinstance(result, ListConnectionsForNodeResultSuccess):
+        result = griptape_nodes_mod.GriptapeNodes.handle_request(
+            connection_events.ListConnectionsForNodeRequest(node_name=self._node.name)
+        )
+        if not isinstance(result, connection_events.ListConnectionsForNodeResultSuccess):
             return None
 
         for conn in result.incoming_connections:
             if conn.target_parameter_name != self._name:
                 continue
-            source_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(conn.source_node_name)
+            source_node = griptape_nodes_mod.GriptapeNodes.ObjectManager().attempt_get_object_by_name(
+                conn.source_node_name
+            )
             if source_node is None or not hasattr(source_node, destination_attr):
                 continue
             destination = getattr(source_node, destination_attr)
@@ -172,19 +173,21 @@ class ProjectOutputParameter(ABC):
 
     def _on_configure_button_clicked(
         self,
-        button: Button,  # noqa: ARG002
-        button_details: ButtonDetailsMessagePayload,
-    ) -> NodeMessageResult:
+        button: button_mod.Button,  # noqa: ARG002
+        button_details: button_mod.ButtonDetailsMessagePayload,
+    ) -> core_types.NodeMessageResult:
         """Create and connect the appropriate settings node to this parameter."""
         node_name = self._node.name
 
         has_incoming = False
-        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=node_name))
-        if isinstance(result, ListConnectionsForNodeResultSuccess):
+        result = griptape_nodes_mod.GriptapeNodes.handle_request(
+            connection_events.ListConnectionsForNodeRequest(node_name=node_name)
+        )
+        if isinstance(result, connection_events.ListConnectionsForNodeResultSuccess):
             has_incoming = any(conn.target_parameter_name == self._name for conn in result.incoming_connections)
 
         if has_incoming:
-            return NodeMessageResult(
+            return core_types.NodeMessageResult(
                 success=False,
                 details=f"{node_name}: {self._name} parameter already has an incoming connection",
                 response=button_details,
@@ -193,7 +196,7 @@ class ProjectOutputParameter(ABC):
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4097
         # Replace with a non-RM utility for creating sibling nodes relative to a given node.
-        create_result = RetainedMode.create_node_relative_to(
+        create_result = retained_mode_mod.RetainedMode.create_node_relative_to(
             reference_node_name=node_name,
             new_node_type=self._settings_node_type,
             offset_side="left",
@@ -203,7 +206,7 @@ class ProjectOutputParameter(ABC):
         )
 
         if not isinstance(create_result, str):
-            return NodeMessageResult(
+            return core_types.NodeMessageResult(
                 success=False,
                 details=f"{node_name}: Failed to create {self._settings_node_type} node",
                 response=button_details,
@@ -212,7 +215,9 @@ class ProjectOutputParameter(ABC):
 
         configure_node_name = create_result
 
-        configure_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(configure_node_name)
+        configure_node = griptape_nodes_mod.GriptapeNodes.ObjectManager().attempt_get_object_by_name(
+            configure_node_name
+        )
         if configure_node is not None:
             configure_node.set_parameter_value("situation", self._situation_name)
             configure_node.publish_update_to_parameter("situation", self._situation_name)
@@ -222,20 +227,20 @@ class ProjectOutputParameter(ABC):
                 configure_node.set_parameter_value(self._settings_value_param_name, current_value)
                 configure_node.publish_update_to_parameter(self._settings_value_param_name, current_value)
 
-        connection_result = RetainedMode.connect(
+        connection_result = retained_mode_mod.RetainedMode.connect(
             source=f"{configure_node_name}.{self._settings_source_param_name}",
             destination=f"{node_name}.{self._name}",
         )
 
         if not connection_result.succeeded():
-            return NodeMessageResult(
+            return core_types.NodeMessageResult(
                 success=False,
                 details=f"{node_name}: Failed to connect {configure_node_name}.{self._settings_source_param_name} to {self._name}",
                 response=button_details,
                 altered_workflow_state=True,
             )
 
-        return NodeMessageResult(
+        return core_types.NodeMessageResult(
             success=True,
             details=f"{node_name}: Created and connected {configure_node_name}",
             response=button_details,

@@ -4,19 +4,18 @@ Provisions a versioned output directory via situation-based macro routing and ex
 DirectoryDestination. Falls back to a sensible default when no situation is configured.
 """
 
-from griptape_nodes.common.macro_parser import ParsedMacro
-from griptape_nodes.common.project_templates.situation_resolver import resolve_situation
-from griptape_nodes.exe_types.core_types import ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.exe_types.param_components.project_output_parameter import ProjectOutputParameter
-from griptape_nodes.files.directory import DirectoryDestination
-from griptape_nodes.retained_mode.events.project_events import MacroPath
-from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes.common import macro_parser
+from griptape_nodes.common.project_templates import situation_resolver
+from griptape_nodes.exe_types import core_types, node_types
+from griptape_nodes.exe_types.param_components import project_output_parameter
+from griptape_nodes.files import directory as directory_mod
+from griptape_nodes.retained_mode.events import project_events
+from griptape_nodes.traits import file_system_picker
 
 _FALLBACK_DIRECTORY_MACRO = "{outputs}/{node_name?:_}{dir_name}_v{_index:03}"
 
 
-class ProjectDirectoryParameter(ProjectOutputParameter):
+class ProjectDirectoryParameter(project_output_parameter.ProjectOutputParameter):
     """Parameter component for project-aware directory creation.
 
     Adds a directory name parameter to a node that, when processed, returns a
@@ -41,12 +40,12 @@ class ProjectDirectoryParameter(ProjectOutputParameter):
 
     def __init__(  # noqa: PLR0913
         self,
-        node: BaseNode,
+        node: node_types.BaseNode,
         name: str,
         *,
         default_dirname: str,
         situation: str = DEFAULT_SITUATION,
-        allowed_modes: set[ParameterMode] | None = None,
+        allowed_modes: set[core_types.ParameterMode] | None = None,
         ui_options: dict | None = None,
     ) -> None:
         super().__init__(
@@ -76,14 +75,14 @@ class ProjectDirectoryParameter(ProjectOutputParameter):
 
     def _make_parameter_traits(self) -> set:
         return {
-            FileSystemPicker(
+            file_system_picker.FileSystemPicker(
                 allow_files=False,
                 allow_directories=True,
                 allow_create=True,
             )
         }
 
-    def build_directory(self, **extra_vars: str | int) -> DirectoryDestination:
+    def build_directory(self, **extra_vars: str | int) -> directory_mod.DirectoryDestination:
         """Build a DirectoryDestination from the parameter's current value.
 
         If an upstream node exposes a ``directory_destination`` attribute, its
@@ -116,7 +115,7 @@ def _build_directory_destination_from_situation(
     dirname: str,
     situation: str,
     **extra_vars: str | int,
-) -> DirectoryDestination:
+) -> directory_mod.DirectoryDestination:
     """Build a DirectoryDestination from a project situation template.
 
     Args:
@@ -127,13 +126,13 @@ def _build_directory_destination_from_situation(
     Returns:
         DirectoryDestination with a MacroPath and baked-in creation policy.
     """
-    resolved = resolve_situation(situation, _FALLBACK_DIRECTORY_MACRO)
+    resolved = situation_resolver.resolve_situation(situation, _FALLBACK_DIRECTORY_MACRO)
     variables: dict[str, str | int] = {
         "dir_name": dirname,
         **extra_vars,
     }
-    macro_path = MacroPath(ParsedMacro(resolved.macro_template), variables)
-    return DirectoryDestination(
+    macro_path = project_events.MacroPath(macro_parser.ParsedMacro(resolved.macro_template), variables)
+    return directory_mod.DirectoryDestination(
         macro_path,
         existing_dir_policy=resolved.existing_file_policy,
         create_parents=resolved.create_parents,
