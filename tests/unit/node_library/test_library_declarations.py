@@ -10,15 +10,21 @@ from pydantic import ValidationError
 
 from griptape_nodes.node_library.library_declarations import (
     KeySupport,
-    KeySupportNodeProperty,
     LifecycleStage,
     LifecycleStageLibraryProperty,
     LifecycleStageNodeProperty,
+    ModelCatalogLibraryProperty,
+    ModelFamily,
+    ModelOffering,
+    ModelProvider,
+    ModelUsageNodeProperty,
     SuggestedWorkerMode,
     WorkerCompatibility,
     WorkerMode,
     WorkerModeCompatibility,
+    iter_catalog_offerings,
     requires_worker_process,
+    resolve_terms_url,
 )
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
@@ -75,14 +81,14 @@ class TestDeclarationDiscriminator:
         assert isinstance(rebuilt.declarations[0], LifecycleStageNodeProperty)
         assert rebuilt.declarations[0].stage is LifecycleStage.BETA
 
-    def test_node_key_support_round_trips(self) -> None:
-        metadata = _make_node_metadata(declarations=[KeySupportNodeProperty(support=KeySupport.REQUIRES_CUSTOMER_KEY)])
+    def test_node_model_usage_round_trips(self) -> None:
+        metadata = _make_node_metadata(declarations=[ModelUsageNodeProperty(offering_ids=["claude_opus_byok"])])
 
         rebuilt = NodeMetadata.model_validate(metadata.model_dump())
 
         decl = rebuilt.declarations[0]
-        assert isinstance(decl, KeySupportNodeProperty)
-        assert decl.support is KeySupport.REQUIRES_CUSTOMER_KEY
+        assert isinstance(decl, ModelUsageNodeProperty)
+        assert decl.offering_ids == ["claude_opus_byok"]
 
     def test_library_lifecycle_stage_round_trips(self) -> None:
         metadata = _make_library_metadata(
@@ -161,7 +167,7 @@ class TestRoundTripSerialization:
                     metadata=_make_node_metadata(
                         declarations=[
                             LifecycleStageNodeProperty(stage=LifecycleStage.ALPHA),
-                            KeySupportNodeProperty(support=KeySupport.REQUIRES_CUSTOMER_KEY),
+                            ModelUsageNodeProperty(offering_ids=["claude_opus_byok"]),
                         ],
                     ),
                 ),
@@ -174,7 +180,8 @@ class TestRoundTripSerialization:
         node_decls = rebuilt.nodes[0].metadata.declarations
         assert isinstance(node_decls[0], LifecycleStageNodeProperty)
         assert node_decls[0].stage is LifecycleStage.ALPHA
-        assert isinstance(node_decls[1], KeySupportNodeProperty)
+        assert isinstance(node_decls[1], ModelUsageNodeProperty)
+        assert node_decls[1].offering_ids == ["claude_opus_byok"]
 
 
 # ---------- WorkerModeCompatibility ----------
@@ -355,3 +362,126 @@ class TestRequiresWorkerProcess:
 class TestSchemaVersion:
     def test_latest_schema_version_is_090(self) -> None:
         assert LibrarySchema.LATEST_SCHEMA_VERSION == "0.9.0"
+
+
+# ---------- Model catalog ----------
+
+
+def _build_catalog() -> ModelCatalogLibraryProperty:
+    """Build a catalog that exercises both family-nested and provider-direct paths.
+
+    Different `terms_url` placements at each level let the cascade tests verify
+    most-specific-wins resolution.
+    """
+    return ModelCatalogLibraryProperty(
+        providers={
+            "anthropic": ModelProvider(
+                display_name="Anthropic",
+                terms_url="https://example.com/anthropic/terms",
+                families={
+                    "claude_4": ModelFamily(
+                        display_name="Claude 4",
+                        terms_url="https://example.com/anthropic/claude_4/terms",
+                        offerings={
+                            "claude_opus_byok": ModelOffering(
+                                display_name="Claude Opus 4 (BYOK)",
+                                model="claude-opus-4",
+                                key_support=KeySupport.REQUIRES_CUSTOMER_KEY,
+                                terms_url="https://example.com/anthropic/claude_4/opus/terms",
+                            ),
+                            "claude_opus_griptape": ModelOffering(
+                                display_name="Claude Opus 4 (Griptape Key)",
+                                model="claude-opus-4",
+                                key_support=KeySupport.REQUIRES_GRIPTAPE_KEY,
+                                # No terms_url -- should cascade up to family.
+                            ),
+                        },
+                    ),
+                },
+            ),
+            "kling": ModelProvider(
+                display_name="Kling",
+                terms_url="https://example.com/kling/terms",
+                offerings={
+                    "kling_v2": ModelOffering(
+                        display_name="Kling v2",
+                        model="kling-v2-master",
+                        key_support=KeySupport.REQUIRES_GRIPTAPE_KEY,
+                        # No family, no offering terms_url -- should cascade up to provider.
+                    ),
+                },
+            ),
+        },
+    )
+
+
+class TestModelCatalogRoundTrip:
+    def test_full_catalog_round_trips(self) -> None:
+        catalog = _build_catalog()
+
+        rebuilt = ModelCatalogLibraryProperty.model_validate(json.loads(catalog.model_dump_json()))
+
+        assert rebuilt == catalog
+
+    def test_catalog_inside_library_metadata(self) -> None:
+        metadata = _make_library_metadata(declarations=[_build_catalog()])
+
+        rebuilt = LibraryMetadata.model_validate(metadata.model_dump())
+
+        catalogs = [d for d in rebuilt.declarations if isinstance(d, ModelCatalogLibraryProperty)]
+        assert len(catalogs) == 1
+        assert "anthropic" in catalogs[0].providers
+        assert "claude_opus_byok" in catalogs[0].providers["anthropic"].families["claude_4"].offerings
+
+
+class TestIterCatalogOfferings:
+    def test_iterates_family_nested_and_provider_direct(self) -> None:
+        catalog = _build_catalog()
+
+        offerings = list(iter_catalog_offerings(catalog))
+
+        ids = [r.offering_id for r in offerings]
+        assert sorted(ids) == ["claude_opus_byok", "claude_opus_griptape", "kling_v2"]
+        kling = next(r for r in offerings if r.offering_id == "kling_v2")
+        assert kling.family_id is None
+        anthropic = next(r for r in offerings if r.offering_id == "claude_opus_byok")
+        assert anthropic.family_id == "claude_4"
+
+
+class TestResolveTermsUrl:
+    def test_offering_level_url_wins(self) -> None:
+        catalog = _build_catalog()
+
+        assert resolve_terms_url(catalog, "claude_opus_byok") == "https://example.com/anthropic/claude_4/opus/terms"
+
+    def test_falls_back_to_family_url(self) -> None:
+        catalog = _build_catalog()
+
+        assert resolve_terms_url(catalog, "claude_opus_griptape") == "https://example.com/anthropic/claude_4/terms"
+
+    def test_falls_back_to_provider_url(self) -> None:
+        catalog = _build_catalog()
+
+        assert resolve_terms_url(catalog, "kling_v2") == "https://example.com/kling/terms"
+
+    def test_unknown_offering_returns_none(self) -> None:
+        catalog = _build_catalog()
+
+        assert resolve_terms_url(catalog, "nonexistent") is None
+
+    def test_returns_none_when_nothing_set_anywhere(self) -> None:
+        catalog = ModelCatalogLibraryProperty(
+            providers={
+                "p": ModelProvider(
+                    display_name="P",
+                    offerings={
+                        "o": ModelOffering(
+                            display_name="O",
+                            key_support=KeySupport.REQUIRES_CUSTOMER_KEY,
+                        ),
+                    },
+                ),
+            },
+        )
+
+        assert resolve_terms_url(catalog, "o") is None

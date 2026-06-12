@@ -2306,7 +2306,7 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
 ```json
 {
   "name": "Library Name",
-  "library_schema_version": "0.8.0",
+  "library_schema_version": "0.9.0",
   "settings": [
     {
       "description": "API keys required by nodes in this library",
@@ -2327,7 +2327,28 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
       "pip_install_flags": ["--upgrade"]
     },
     "declarations": [
-      { "type": "lifecycle_stage", "stage": "STABLE" }
+      { "type": "lifecycle_stage", "stage": "STABLE" },
+      {
+        "type": "model_catalog",
+        "providers": {
+          "anthropic": {
+            "display_name": "Anthropic",
+            "terms_url": "https://www.anthropic.com/legal/commercial-terms",
+            "families": {
+              "claude_4": {
+                "display_name": "Claude 4",
+                "offerings": {
+                  "claude_opus_byok": {
+                    "display_name": "Claude Opus 4 (BYOK)",
+                    "model": "claude-opus-4",
+                    "key_support": "REQUIRES_CUSTOMER_KEY"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     ]
   },
   "widgets": [
@@ -2358,7 +2379,7 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
         "icon": "image",
         "group": "processing",
         "declarations": [
-          { "type": "key_support", "support": "REQUIRES_CUSTOMER_KEY" }
+          { "type": "model_usage", "offering_ids": ["claude_opus_byok"] }
         ]
       }
     }
@@ -2375,7 +2396,7 @@ Bundle nodes into libraries for sharing. Create `griptape_nodes_library.json`:
     - Category should be `app_events.on_app_initialization_complete`
     - Secrets are accessed via `GriptapeNodes.SecretsManager().get_secret()`
 - **metadata.dependencies**: PIP packages installed on library load
-- **metadata.declarations** / per-node **metadata.declarations**: typed identity properties (lifecycle stage, key support). See [Library and Node Declarations](#library-and-node-declarations) below.
+- **metadata.declarations** / per-node **metadata.declarations**: typed identity properties (lifecycle stage) and a library-level model catalog plus per-node references into it. See [Library and Node Declarations](#library-and-node-declarations) below.
 - **widgets**: Register custom JS widget components (see [Custom Widget Components](#custom-widget-components))
 - **categories**: Group nodes in UI with colors and icons
 - **nodes**: List node classes, file paths, and metadata
@@ -2387,7 +2408,7 @@ Use flat directory structures. The engine automatically registers and loads libr
 
 ### Library and Node Declarations
 
-Declarations attach typed metadata to a library or to an individual node. Each entry in a `declarations` array is an object with a `type` discriminator that selects a declaration class. Today's vocabulary covers identity properties (lifecycle stage and key support); future engine releases add more declaration types under the same field.
+Declarations attach typed metadata to a library or to an individual node. Each entry in a `declarations` array is an object with a `type` discriminator that selects a declaration class. Today's vocabulary covers a lifecycle-stage property and a library-level model catalog with per-node references; future engine releases add more declaration types under the same field.
 
 Both `metadata.declarations` (library-level) and per-node `metadata.declarations` accept a list. Order in the list does not matter. The field defaults to `[]`, so libraries on older schema versions (`0.6.0`, `0.4.0`, `0.1.0`) load unchanged.
 
@@ -2408,19 +2429,68 @@ Semantics:
 - **Library-level absence is intentionally distinct from `STABLE`.** A library with no `lifecycle_stage` declaration is "unstated" — consumers should surface that explicitly (`<No lifecycle stage provided by library author>`) rather than silently assume `STABLE`.
 - **Node-level absence means "inherit the library's stage."** A node-level `lifecycle_stage` overrides the library's value.
 
-#### `key_support`
+#### `model_catalog`
 
-How a node consumes API keys. Node-level only. Values:
+A library-level declaration of the third-party models nodes in the library can use, organized as a `provider → family → offering` hierarchy. Identifiers at every level are dict keys (the key *is* the stable handle used by node references and admin policies); each entry carries a `display_name` for UI plus optional `terms_url`. Leaf `ModelOffering`s additionally declare `key_support` (required) and an optional upstream `model` identifier.
 
-| Value                                   | Meaning                                                        |
-| --------------------------------------- | -------------------------------------------------------------- |
-| `REQUIRES_CUSTOMER_KEY`                 | Node needs a customer-supplied API key.                        |
-| `SUPPORTS_CUSTOMER_KEY_OR_GRIPTAPE_KEY` | Node accepts either a customer key or a Griptape-provided key. |
-| `REQUIRES_GRIPTAPE_KEY`                 | Node only operates with a Griptape-provided key.               |
+```jsonc
+{
+  "type": "model_catalog",
+  "providers": {
+    "anthropic": {
+      "display_name": "Anthropic",
+      "terms_url": "https://www.anthropic.com/legal/commercial-terms",
+      "families": {
+        "claude_4": {
+          "display_name": "Claude 4",
+          "offerings": {
+            "claude_opus_byok": {
+              "display_name": "Claude Opus 4 (BYOK)",
+              "model": "claude-opus-4",
+              "key_support": "REQUIRES_CUSTOMER_KEY"
+            },
+            "claude_opus_griptape": {
+              "display_name": "Claude Opus 4 (Griptape Key)",
+              "model": "claude-opus-4",
+              "key_support": "REQUIRES_GRIPTAPE_KEY"
+            }
+          }
+        }
+      }
+    },
+    "kling": {
+      "display_name": "Kling",
+      "terms_url": "https://app.klingai.com/global/about/terms",
+      "offerings": {
+        "kling_v2": {
+          "display_name": "Kling v2",
+          "model": "kling-v2-master",
+          "key_support": "REQUIRES_GRIPTAPE_KEY"
+        }
+      }
+    }
+  }
+}
+```
+
+A few rules worth knowing:
+
+- **Family is optional.** Providers without meaningful families (Kling above) put offerings directly under `provider.offerings`. Providers with meaningful families (Anthropic above) put offerings under `provider.families.<family_id>.offerings`.
+- **`terms_url` cascades most-specific-wins.** If a `ModelOffering` sets `terms_url`, that wins. Otherwise the parent family's `terms_url` is used; otherwise the parent provider's. Absence at every level is reported as "no TOS declared" rather than silently defaulting.
+- **`key_support` does NOT cascade.** Every `ModelOffering` declares its own value. The same upstream model with two different key requirements becomes two offerings under two distinct dict keys (see `claude_opus_byok` and `claude_opus_griptape` above).
+- **Offering IDs must be unique across the entire library.** Pydantic enforces sibling-uniqueness within each `offerings` dict for free; cross-parent collisions are caught at library-load time as `DuplicateModelOfferingIdProblem`.
+
+##### `model_usage`
+
+A node references one or more catalog offerings by their dict keys. Each entry must resolve to an offering somewhere in the catalog at library-load time; unresolved references surface as `UnresolvedModelUsageReferenceProblem`.
+
+```jsonc
+{ "type": "model_usage", "offering_ids": ["claude_opus_byok", "kling_v2"] }
+```
 
 #### Combining declarations
 
-A node can carry any combination of declarations. For example, a Labs node that requires a Griptape key:
+A node can carry any combination of declarations. For example, a Labs node that supports two model offerings:
 
 ```jsonc
 "metadata": {
@@ -2429,7 +2499,7 @@ A node can carry any combination of declarations. For example, a Labs node that 
   "display_name": "Labs Node",
   "declarations": [
     { "type": "lifecycle_stage", "stage": "LABS" },
-    { "type": "key_support", "support": "REQUIRES_GRIPTAPE_KEY" }
+    { "type": "model_usage", "offering_ids": ["claude_opus_byok", "kling_v2"] }
   ]
 }
 ```
