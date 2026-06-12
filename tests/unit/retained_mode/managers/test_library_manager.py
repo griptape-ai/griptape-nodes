@@ -2231,7 +2231,9 @@ class TestPreviewProjectProvisioning:
         assert [a.library_name for a in result.actions] == ["merged-lib"]
         assert result.actions[0].kind == LibraryProvisioningActionKind.INSTALL
 
-    def test_unsatisfiable_engine_version_populates_failure(self, griptape_nodes: GriptapeNodes, tmp_path: Path) -> None:
+    def test_unsatisfiable_engine_version_populates_failure(
+        self, griptape_nodes: GriptapeNodes, tmp_path: Path
+    ) -> None:
         from griptape_nodes.retained_mode.events.library_events import (
             PreviewProjectProvisioningRequest,
             PreviewProjectProvisioningResultSuccess,
@@ -2283,12 +2285,11 @@ class TestProvisionGitLibraryOverwriteDir:
     async def test_overwrite_targets_installed_manifest_dir(
         self, griptape_nodes: GriptapeNodes, tmp_path: Path
     ) -> None:
-        """Defect #3: when the installed dir name != git repo name, the overwrite must
-        delete the dir the manifest actually lives in, not libraries_path/<repo-name>.
+        """Defect #3: the overwrite deletes the manifest's dir, not libraries_path/<repo-name>.
 
-        `_provision_git_library` resolves the installed manifest and passes its parent
-        as download_directory + target_directory_name so the handler's delete lands on
-        that exact dir.
+        When the installed dir name != git repo name, `_provision_git_library` resolves the
+        installed manifest and passes its parent as download_directory + target_directory_name
+        so the handler's delete lands on that exact dir.
         """
         from griptape_nodes.retained_mode.events.library_events import (
             DownloadLibraryRequest,
@@ -2296,9 +2297,7 @@ class TestProvisionGitLibraryOverwriteDir:
         )
 
         library_manager = griptape_nodes.LibraryManager()
-        registration = LibraryRegistration(
-            name="my-lib", version=">=2.0", git_url="griptape-ai/repo-name@v2.0"
-        )
+        registration = LibraryRegistration(name="my-lib", version=">=2.0", git_url="griptape-ai/repo-name@v2.0")
         # Installed under a directory whose name ("custom-install-dir") differs from the
         # git repo name ("repo-name") the handler would otherwise guess.
         installed_dir = tmp_path / "libraries" / "custom-install-dir"
@@ -2318,6 +2317,7 @@ class TestProvisionGitLibraryOverwriteDir:
             )
 
         assert failure is None
+        assert ahandle.await_args is not None
         sent_request = ahandle.await_args.args[0]
         assert isinstance(sent_request, DownloadLibraryRequest)
         assert sent_request.overwrite_existing is True
@@ -2328,8 +2328,11 @@ class TestProvisionGitLibraryOverwriteDir:
 
     @pytest.mark.asyncio
     async def test_fresh_install_leaves_dir_hints_none(self, griptape_nodes: GriptapeNodes) -> None:
-        """A fresh install (installed_version is None) passes no dir hints, keeping the
-        handler's repo-name default and never resolving a manifest."""
+        """A fresh install passes no dir hints, keeping the handler's repo-name default.
+
+        When installed_version is None there is nothing to overwrite, so the manifest is
+        never resolved and both directory hints stay None.
+        """
         from griptape_nodes.retained_mode.events.library_events import (
             DownloadLibraryRequest,
             DownloadLibraryResultSuccess,
@@ -2351,6 +2354,7 @@ class TestProvisionGitLibraryOverwriteDir:
 
         assert failure is None
         mock_resolve.assert_not_called()
+        assert ahandle.await_args is not None
         sent_request = ahandle.await_args.args[0]
         assert isinstance(sent_request, DownloadLibraryRequest)
         assert sent_request.overwrite_existing is False

@@ -1061,9 +1061,7 @@ class ProjectManager:
         workspace_dir = self.resolve_project_workspace_dir(project_file_path, project_config, env_config)
         return _ProvisioningConfigDirs(project_dir=project_dir, workspace_dir=workspace_dir)
 
-    def resolve_project_workspace_dir(
-        self, project_file_path: Path, project_config: dict, env_config: dict
-    ) -> Path:
+    def resolve_project_workspace_dir(self, project_file_path: Path, project_config: dict, env_config: dict) -> Path:
         """Decide which directory supplies a project's workspace config layer, read-only.
 
         Returns the directory whose griptape_nodes_config.json `_activate_project`
