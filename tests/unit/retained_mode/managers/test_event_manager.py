@@ -647,3 +647,47 @@ class TestPreDispatchHooks:
 
         assert event.result.failed()
         assert handler_calls == []
+
+    def test_evaluate_pre_dispatch_hooks_returns_none_when_chain_falls_through(self) -> None:
+        event_manager = EventManager()
+        handler_calls: list[RequestPayload] = []
+
+        def handler(request: _ProbeRequest) -> _ProbeResult:
+            handler_calls.append(request)
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
+
+        def hook(_request: RequestPayload, _context: object) -> None:
+            return None
+
+        event_manager.add_pre_dispatch_hook(hook)
+
+        result = event_manager.evaluate_pre_dispatch_hooks(_ProbeRequest())
+
+        # Falling through returns None, and the handler never runs (dry run).
+        assert result is None
+        assert handler_calls == []
+
+    def test_evaluate_pre_dispatch_hooks_returns_short_circuit_without_dispatching(self) -> None:
+        event_manager = EventManager()
+        handler_calls: list[RequestPayload] = []
+
+        def handler(request: _ProbeRequest) -> _ProbeResult:
+            handler_calls.append(request)
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
+
+        def hook(_request: RequestPayload, _context: object) -> _DeniedResult:
+            return _DeniedResult(result_details="denied")
+
+        event_manager.add_pre_dispatch_hook(hook)
+
+        result = event_manager.evaluate_pre_dispatch_hooks(_ProbeRequest())
+
+        assert result is not None
+        assert result.failed()
+        assert "denied" in str(result.result_details)
+        # Preflight only: the callback is never invoked.
+        assert handler_calls == []

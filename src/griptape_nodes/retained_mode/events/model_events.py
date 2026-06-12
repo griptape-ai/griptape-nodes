@@ -345,3 +345,109 @@ class GetModelInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class GetModelInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Model info retrieval failed. Common causes: invalid model ID, network error, authentication required."""
+
+
+@dataclass
+@PayloadRegistry.register
+class InvokeModelRequest(RequestPayload):
+    """Declare intent to invoke a model so the call is subject to entitlements.
+
+    This is how a well-intentioned node opts into the permission system: before
+    invoking a model it announces the invocation, and the pre-dispatch hook
+    chain decides whether it is permitted (matching on model_id and task). The
+    node performs the actual inference itself, in its own code; this request
+    does not run any backend. A success result means "cleared to proceed"; a
+    failure means the invocation is not permitted and the node should not run it.
+
+    Enforcement is advisory in the sense that it relies on the node to ask. It
+    is the local-execution counterpart to the proxy's hard enforcement of
+    remote calls, and also the point where an invocation can be metered or
+    audited.
+
+    Use when: A node is about to invoke a model and wants the call gated by
+    (and visible to) the permission system.
+
+    Args:
+        model_id: Model identifier to be invoked (e.g., "black-forest-labs/FLUX.1-dev")
+        task: What the invocation does (e.g., "text-generation", "image-to-image")
+        node_name: Name of the node instance declaring the invocation, when invoked from a node
+
+    Results: InvokeModelResultSuccess (cleared to proceed) | InvokeModelResultFailure (not permitted)
+    """
+
+    model_id: str
+    task: str | None = None
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class InvokeModelResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """The declared model invocation is permitted; the node may proceed.
+
+    Args:
+        model_id: The model cleared for invocation
+    """
+
+    model_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class InvokeModelResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """The declared model invocation is not permitted. The node should not invoke the model."""
+
+
+@dataclass
+class ModelAccessVerdict:
+    """Whether invoking one model would be permitted, and why not when denied.
+
+    Args:
+        model_id: The model the verdict is for
+        allowed: True when an invocation would not be blocked by enforcement
+        reason: Human-readable denial explanation when allowed is False
+    """
+
+    model_id: str
+    allowed: bool
+    reason: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckModelAccessRequest(RequestPayload):
+    """Preflight which models the current permissions would allow invoking.
+
+    Evaluates each model id as if an InvokeModelRequest were dispatched for it,
+    running the enforcement chain without invoking anything. Lets a multi-model
+    selector grey out models a policy would deny instead of surfacing the denial
+    only after the user picks one.
+
+    Args:
+        model_ids: Model identifiers to evaluate. Order and duplicates are preserved.
+        task: Task the hypothetical invocations would perform, matched by policies
+            that scope on task
+
+    Results: CheckModelAccessResultSuccess (with per-model verdicts) | CheckModelAccessResultFailure (evaluation error)
+    """
+
+    model_ids: list[str]
+    task: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckModelAccessResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Model access evaluated successfully.
+
+    Args:
+        verdicts: One verdict per requested model id, in request order
+    """
+
+    verdicts: list[ModelAccessVerdict]
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckModelAccessResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Model access evaluation failed."""
