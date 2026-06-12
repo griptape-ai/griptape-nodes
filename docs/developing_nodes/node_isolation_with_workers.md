@@ -1,10 +1,14 @@
-# Worker Mode
+# Node Isolation with Workers
 
-This page is the operational guide for running your library in
-**worker mode**: a dedicated Python subprocess so your library's
+This page is the operational guide for running your library
+**isolated**: in a dedicated Python subprocess so your library's
 pinned dependencies (`torch`, `transformers`, `diffusers`) cannot
-collide with another library's. For the rule catalog that catches
-worker-mode mistakes, see
+collide with another library's. Artists pick this with the
+**Shared / Isolated** dropdown in the editor (see
+[Libraries](../libraries.md#shared-vs-isolated)); under the hood,
+an isolated library runs on a **worker** subprocess. This page is
+the author's side of that mechanism. For the rule catalog that
+catches isolation mistakes, see
 [Strict Mode Reference](strict_mode.md).
 
 ## Vocabulary
@@ -49,22 +53,55 @@ heavier library next to yours.
 
 ## How to opt in
 
-Add a `worker.enabled = true` block to your library's metadata in
-`griptape-nodes-library.json`:
+Worker hosting is described by two declarations on your library's
+`metadata.declarations` in `griptape-nodes-library.json`. They live
+side by side because they answer two different questions:
+
+- **`worker_mode_compatibility`** — whether the library is *compatible*
+    with worker hosting. One field, `compatibility`:
+    - `COMPATIBLE`: the library can run in either the orchestrator
+        process or a dedicated worker subprocess.
+    - `INCOMPATIBLE`: the library only works in the orchestrator
+        process and must never be hosted on a worker.
+- **`suggested_worker_mode`** — where the library *launches* when
+    nothing else overrides. One field, `mode`: `ORCHESTRATOR` or
+    `WORKER`. Omit the declaration to take the engine default (today:
+    orchestrator). The editor exposes a per-library **Shared /
+    Isolated** dropdown (Shared = orchestrator, Isolated = worker)
+    that lets users flip a `COMPATIBLE` library between modes; this
+    declaration is the author's suggested starting point for that
+    dropdown.
+
+Omitting both declarations is equivalent to declaring
+`worker_mode_compatibility` with `compatibility=COMPATIBLE` and no
+`suggested_worker_mode` — the library is capable of worker mode but
+launches in the orchestrator until something asks for the flip.
+
+Declaring `worker_mode_compatibility` with
+`compatibility=INCOMPATIBLE` and a `suggested_worker_mode` of `WORKER`
+is contradictory; library metadata validation rejects that
+combination.
 
 ```json
 {
     "name": "My Library",
-    "library_schema_version": "0.8.0",
+    "library_schema_version": "0.9.0",
     "metadata": {
         "author": "<Your Name>",
         "description": "<Description>",
         "library_version": "0.1.0",
         "engine_version": "0.85.0",
         "tags": ["AI", "Custom"],
-        "worker": {
-            "enabled": true
-        },
+        "declarations": [
+            {
+                "type": "worker_mode_compatibility",
+                "compatibility": "COMPATIBLE"
+            },
+            {
+                "type": "suggested_worker_mode",
+                "mode": "WORKER"
+            }
+        ],
         "dependencies": {
             "pip_dependencies": [
                 "torch==2.4.1",
@@ -81,7 +118,7 @@ Add a `worker.enabled = true` block to your library's metadata in
 }
 ```
 
-Worker mode only delivers isolation if you actually pin specific
+Worker mode only delivers specific environment control if you pin specific
 wheels. A loose `torch>=2.0` resolves to whatever pip finds, which
 drifts between developers' machines and users' machines. Pin
 `torch==2.4.1`, not `torch>=2.0`. `pip_install_flags` is the escape
@@ -89,8 +126,10 @@ hatch for index URLs and other arguments your install legitimately
 needs.
 
 The schemas:
-[`WorkerConfig`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py#L84)
+[`WorkerModeCompatibility`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_declarations.py)
 and
+[`SuggestedWorkerMode`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_declarations.py)
+in `library_declarations.py`, and
 [`Dependencies`](https://github.com/griptape-ai/griptape-nodes/blob/main/src/griptape_nodes/node_library/library_registry.py#L39)
 in `library_registry.py`.
 
@@ -245,9 +284,14 @@ var.
 value, because it represents the user's stated intent. The engine
 logs a `WARNING` so the asymmetry is visible.
 
-## "Is my library worker-ready?" checklist
+## "Is my library isolation-ready?" checklist
 
-- [ ] `metadata.worker.enabled = true` in the manifest
+- [ ] `worker_mode_compatibility` declared in `metadata.declarations`
+    with `compatibility: COMPATIBLE` (or omit the declaration entirely
+    -- absence is treated as `COMPATIBLE`), plus `suggested_worker_mode`
+    with `mode: WORKER` (or omit `suggested_worker_mode` if you want the
+    library to launch in the orchestrator by default and let users opt
+    in via the GUI)
 - [ ] `__init__` does no I/O and issues no event-bus requests
 - [ ] No `add_parameter` / `remove_parameter_element` from inside
     `process`; use `AddParameterToNodeRequest` /
@@ -283,4 +327,4 @@ If a strict-mode line fires, the rule's remediation message names
 exactly which guideline above was violated and how to fix it. A
 worker log free of strict-mode WARNING and ERROR entries (apart from
 the explicitly-fine-to-ignore writes flagged by
-`worker-reach-into-orchestrator`) is the bar for "worker-ready."
+`worker-reach-into-orchestrator`) is the bar for "isolation-ready."

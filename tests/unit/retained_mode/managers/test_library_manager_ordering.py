@@ -51,8 +51,8 @@ class TestLibraryManagerDeterministicOrdering:
             result = library_manager._discover_library_files()
 
             # Should preserve config order, not alphabetical
-            assert [Path(entry.path) for entry in result] == [lib_z, lib_a, lib_m]
-            assert all(entry.enabled for entry in result)
+            assert [Path(entry.registration.path) for entry in result] == [lib_z, lib_a, lib_m]
+            assert all(entry.registration.enabled for entry in result)
 
     def test_discover_library_files_handles_directories_deterministically(
         self, griptape_nodes: GriptapeNodes, temp_dir: Path
@@ -81,7 +81,7 @@ class TestLibraryManagerDeterministicOrdering:
             result = library_manager._discover_library_files()
 
             # Files from directory should be sorted alphabetically by path
-            assert [Path(entry.path) for entry in result] == [lib_a, lib_b, lib_z]
+            assert [Path(entry.registration.path) for entry in result] == [lib_a, lib_b, lib_z]
 
     def test_discover_library_files_mixed_files_and_directories_preserves_order(
         self, griptape_nodes: GriptapeNodes, temp_dir: Path
@@ -120,7 +120,12 @@ class TestLibraryManagerDeterministicOrdering:
 
             # Should be: direct_lib, dir_lib_a, dir_lib_b, another_direct
             # (directory contents are sorted alphabetically by path)
-            assert [Path(entry.path) for entry in result] == [direct_lib, dir_lib_a, dir_lib_b, another_direct]
+            assert [Path(entry.registration.path) for entry in result] == [
+                direct_lib,
+                dir_lib_a,
+                dir_lib_b,
+                another_direct,
+            ]
 
     def test_discover_library_files_deduplicates_preserving_first_occurrence(
         self, griptape_nodes: GriptapeNodes, temp_dir: Path
@@ -141,7 +146,7 @@ class TestLibraryManagerDeterministicOrdering:
             result = library_manager._discover_library_files()
 
             # Should only appear once
-            assert [Path(entry.path) for entry in result] == [lib]
+            assert [Path(entry.registration.path) for entry in result] == [lib]
             assert len(result) == 1
 
     def test_discover_libraries_request_returns_list_in_order(

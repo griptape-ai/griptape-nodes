@@ -5,6 +5,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PydanticField
 
+from griptape_nodes.common.project_templates import PerPlatformProjectPath
+from griptape_nodes.node_library.library_declarations import WorkerMode
+
 LIBRARIES_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.libraries_to_register"
 LIBRARIES_TO_DOWNLOAD_KEY = "app_events.on_app_initialization_complete.libraries_to_download"
 WORKFLOWS_TO_REGISTER_KEY = "app_events.on_app_initialization_complete.workflows_to_register"
@@ -111,7 +114,8 @@ class LibraryRegistration(BaseModel):
     """A library entry in libraries_to_register with optional metadata.
 
     Bare path strings remain valid in the config; this object form is used when
-    additional fields (such as `enabled`) need to be set per entry.
+    additional fields (such as `enabled` or `worker_mode_override`) need to be
+    set per entry.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -120,6 +124,15 @@ class LibraryRegistration(BaseModel):
     enabled: bool = Field(
         default=True,
         description="When False, the library remains in config but is not loaded on startup.",
+    )
+    worker_mode_override: WorkerMode | None = Field(
+        default=None,
+        description=(
+            "Per-library override of the launch mode declared in the library's manifest. "
+            "ORCHESTRATOR or WORKER. Only honored when the manifest declares "
+            "WorkerModeCompatibility.COMPATIBLE; ignored for INCOMPATIBLE libraries. "
+            "None reverts to the manifest's SuggestedWorkerMode."
+        ),
     )
 
 
@@ -131,9 +144,10 @@ class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str | LibraryRegistration] = Field(
         default_factory=list,
         description=(
-            "Libraries to automatically load when the engine starts. Each entry is either a path string "
-            "(loaded as enabled) or an object with `path` and `enabled` fields. Paths may point to a "
-            "griptape_nodes_library.json file or a directory scanned recursively for library JSON files."
+            "Libraries the engine loads on startup. Each entry can be a path to a single "
+            "griptape_nodes_library.json file or a folder containing one or more libraries. "
+            "Use the toggle to enable or skip a library, and pick whether it runs alongside "
+            "the engine or in its own isolated process when the library supports it."
         ),
     )
     workflows_to_register: list[str] = Field(default_factory=list)
@@ -142,10 +156,17 @@ class AppInitializationComplete(BaseModel):
         description="Core secrets to register. Can be a list of secret names (default to empty values) or a dict mapping names to default values. Library-specific secrets are registered automatically from library settings.",
     )
     models_to_download: list[str] = Field(default_factory=list)
-    projects_to_register: list[str] = Field(
+    projects_to_register: list[str | PerPlatformProjectPath] = Field(
         category=PROJECTS,
         default_factory=list,
-        description="List of griptape-nodes-project.yml file paths to load at startup",
+        description=(
+            "List of griptape-nodes-project.yml file paths to load at startup. "
+            "Each entry may be either: "
+            "(1) a single path string (supports `${ENV_VAR}` and `~` expansion), or "
+            "(2) a per-platform mapping with optional `linux`, `darwin`, `windows`, and `default` keys "
+            "for cross-platform deployments where the same project resolves to different paths on each OS. "
+            "Per-platform entries with no key matching the active platform and no `default` are skipped with a warning."
+        ),
     )
 
 

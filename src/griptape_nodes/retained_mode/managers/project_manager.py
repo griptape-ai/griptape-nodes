@@ -21,12 +21,14 @@ from griptape_nodes.common.macro_parser import (
 from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_TEMPLATE,
     DirectoryDefinition,
+    PerPlatformProjectPath,
     ProjectOverlayData,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
     SituationTemplate,
     load_partial_project_template,
+    select_project_path,
 )
 from griptape_nodes.files.derivation import DERIVATION_RULES, apply_derivation_rules
 from griptape_nodes.files.file import File, FileLoadError, FileWriteError
@@ -524,10 +526,11 @@ class ProjectManager:
 
         Relative `parent_project_path` paths resolve against the directory of
         `project_file_path` so a child project can name its parent with a relative
-        path (e.g. `parent_project_path: ../base/griptape-nodes-project.yml`). The
-        macro `{workspace_dir}` is also expanded against the active workspace so
-        a parent shared between collaborators on different machines remains
-        portable.
+        path (e.g. `parent_project_path: ../base/griptape-nodes-project.yml`).
+        Macro tokens are rejected by the loader; only absolute or relative
+        paths reach this resolver. A per-platform mapping is reduced to the
+        active OS's path first; a mapping with no key for this OS and no
+        `default` is treated as no parent on this platform.
 
         Errors during parent resolution (missing file, unparsable YAML, cycle)
         are recorded on the child's `validation` and surfaced to the caller as
@@ -536,8 +539,20 @@ class ProjectManager:
         if overlay.parent_project_path is None:
             return DEFAULT_PROJECT_TEMPLATE
 
-        parent_path_str = self._expand_workspace_dir_macro(overlay.parent_project_path)
-        parent_path_raw = Path(parent_path_str)
+        # Reduce the (possibly per-platform) value to a single string for the
+        # active platform. A per-platform mapping with no key matching the
+        # active OS and no `default` returns None — treat that as "no parent
+        # on this platform" and fall back to the system default base.
+        selected_parent = select_project_path(overlay.parent_project_path)
+        if selected_parent is None:
+            logger.debug(
+                "parent_project_path %r has no entry for the active platform and no default; "
+                "treating as no parent on this OS",
+                overlay.parent_project_path,
+            )
+            return DEFAULT_PROJECT_TEMPLATE
+
+        parent_path_raw = Path(selected_parent)
         if not parent_path_raw.is_absolute():
             parent_path_raw = project_file_path.parent / parent_path_raw
         parent_file_path = canonicalize_for_identity(parent_path_raw)
@@ -557,9 +572,7 @@ class ProjectManager:
             parent_status = parent_load.validation.status
             validation.add_error(
                 field_path="parent_project_path",
-                message=(
-                    f"Parent project '{overlay.parent_project_path}' could not be loaded (status: {parent_status})"
-                ),
+                message=(f"Parent project '{selected_parent}' could not be loaded (status: {parent_status})"),
                 line_number=overlay.line_info.get_line("parent_project_path"),
             )
             return None
@@ -569,8 +582,7 @@ class ProjectManager:
             validation.add_error(
                 field_path="parent_project_path",
                 message=(
-                    f"Parent project '{overlay.parent_project_path}' has validation errors "
-                    f"(status: {parent_validation.status})"
+                    f"Parent project '{selected_parent}' has validation errors (status: {parent_validation.status})"
                 ),
                 line_number=overlay.line_info.get_line("parent_project_path"),
             )
@@ -595,7 +607,7 @@ class ProjectManager:
             for problem in parent_merge_validation.problems:
                 validation.add_error(
                     field_path=f"parent_project_path.{problem.field_path}",
-                    message=f"Parent '{overlay.parent_project_path}': {problem.message}",
+                    message=f"Parent '{selected_parent}': {problem.message}",
                     line_number=overlay.line_info.get_line("parent_project_path"),
                 )
             return None
@@ -634,28 +646,21 @@ class ProjectManager:
             if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
                 continue
 
-            # Surface the parent_project_path in its stored form (after expanding
-            # the {workspace_dir} macro and resolving relative paths against the
-            # child YAML's directory). The result is a canonical absolute path
-            # that consumers can match against other entries' project_id for
-            # hierarchy reconstruction. The original macro form (if any) lives
-            # on the child template itself; this field is for cross-referencing.
-            raw_parent = project_info.template.parent_project_path
+            # Resolve parent_project_path to a canonical absolute string that
+            # matches another entry's project_id, so consumers can reconstruct
+            # the parent/child hierarchy with a string-equality lookup. Parent
+            # links are either absolute or relative to the child YAML's
+            # directory (the loader rejects macro tokens); both forms canonicalize
+            # to the same result here regardless of which workspace is active.
+            # Per-platform mappings are reduced to the active platform's value
+            # before resolving so the GUI sees a single resolved string.
+            selected_parent = select_project_path(project_info.template.parent_project_path)
             resolved_parent: str | None = None
-            if raw_parent is not None:
-                expanded = self._expand_workspace_dir_macro(raw_parent)
-                parent_path = Path(expanded)
+            if selected_parent is not None:
+                parent_path = Path(selected_parent)
                 if not parent_path.is_absolute() and project_info.project_file_path is not None:
                     parent_path = project_info.project_file_path.parent / parent_path
                 resolved_parent = str(canonicalize_for_identity(parent_path))
-
-            # Each project's own path expressed in portable macro form. The GUI
-            # parent-picker stores this directly into a child's parent_project_path
-            # so links remain valid across machines and OSes when both projects
-            # live under the workspace.
-            project_macro_path: str | None = None
-            if project_info.project_file_path is not None and project_id != SYSTEM_DEFAULTS_KEY:
-                project_macro_path = self._workspace_relative_macro_path(project_info.project_file_path)
 
             successfully_loaded.append(
                 ProjectTemplateInfo(
@@ -663,7 +668,6 @@ class ProjectManager:
                     validation=project_info.validation,
                     name=project_info.template.name,
                     parent_project_path=resolved_parent,
-                    project_macro_path=project_macro_path,
                 )
             )
 
@@ -1138,18 +1142,21 @@ class ProjectManager:
         # from the parent don't redundantly appear in the child's YAML. The parent
         # must already be in the registry; if not, fail loudly rather than silently
         # diffing against system defaults (which would emit inherited values into
-        # the child's overlay).
+        # the child's overlay). Per-platform mappings are reduced to the active
+        # platform's path before lookup; a mapping with no matching key and no
+        # `default` falls back to system defaults (no parent on this OS).
         base_template: ProjectTemplate = DEFAULT_PROJECT_TEMPLATE
-        if template.parent_project_path is not None:
+        selected_parent = select_project_path(template.parent_project_path)
+        if selected_parent is not None:
             parent_id = self._resolve_parent_path_for_lookup(
-                template.parent_project_path,
+                selected_parent,
                 anchor=request.project_path,
             )
             if parent_id is None:
                 return SaveProjectTemplateResultFailure(
                     result_details=(
                         f"Attempted to save project template to '{request.project_path}'. "
-                        f"Failed because parent_project_path '{template.parent_project_path}' "
+                        f"Failed because parent_project_path '{selected_parent}' "
                         f"is relative and no anchor could be resolved."
                     ),
                 )
@@ -1158,7 +1165,7 @@ class ProjectManager:
                 return SaveProjectTemplateResultFailure(
                     result_details=(
                         f"Attempted to save project template to '{request.project_path}'. "
-                        f"Failed because parent project '{template.parent_project_path}' "
+                        f"Failed because parent project '{selected_parent}' "
                         f"(resolved to '{parent_id}') is not loaded. Load the parent before saving the child."
                     ),
                 )
@@ -1241,16 +1248,20 @@ class ProjectManager:
         picks a parent that already points back at the project being edited)
         is detected.
 
-        `parent_project_path` values are stored in their portable form (which
-        may include `{workspace_dir}` and may be relative). Each hop expands
-        the macro and resolves relative paths against the *containing*
-        template's file path before looking up the registry key.
+        `parent_project_path` values are stored as absolute or relative paths
+        (macro tokens are rejected by the loader). Each hop resolves relative
+        paths against the *containing* template's file path before looking up
+        the registry key.
         """
         visited: set[str] = set()
         if editing_project_id is not None:
             visited.add(str(canonicalize_for_identity(Path(editing_project_id))))
 
-        current_parent_raw = template.parent_project_path
+        # Reduce the (possibly per-platform) parent value to a string for the
+        # active OS at every hop. A per-platform mapping with no key matching
+        # this OS and no `default` ends the walk on this platform — the cycle
+        # only exists on platforms whose selections all land in the same chain.
+        current_parent_raw = select_project_path(template.parent_project_path)
         current_anchor: Path | None = Path(editing_project_id) if editing_project_id is not None else None
         while current_parent_raw is not None:
             resolved = self._resolve_parent_path_for_lookup(current_parent_raw, current_anchor)
@@ -1266,54 +1277,27 @@ class ProjectManager:
             parent_info = self._successfully_loaded_project_templates.get(resolved)
             if parent_info is None:
                 return
-            current_parent_raw = parent_info.template.parent_project_path
+            current_parent_raw = select_project_path(parent_info.template.parent_project_path)
             current_anchor = parent_info.project_file_path
 
-    def _resolve_parent_path_for_lookup(self, raw_parent: str, anchor: Path | None) -> str | None:
+    def _resolve_parent_path_for_lookup(self, raw_parent: str, anchor: Path | str | None) -> str | None:
         """Resolve a stored parent_project_path to a canonical registry key.
 
-        Expands `{workspace_dir}`, then resolves relative paths against `anchor`
-        (the containing template's file path). Returns None if the path is
-        relative and no anchor was provided, since we can't form an absolute
-        path without one.
+        Resolves relative paths against `anchor` (the containing template's
+        file path). Returns None if the path is relative and no anchor was
+        provided, since we can't form an absolute path without one. Macro
+        tokens are rejected by the loader; this resolver only sees absolute
+        or anchor-relative paths.
+
+        `anchor` is coerced to `Path` defensively because request payloads
+        deserialized over the wire arrive with `project_path` as a `str`.
         """
-        expanded = self._expand_workspace_dir_macro(raw_parent)
-        parent_path = Path(expanded)
+        parent_path = Path(raw_parent)
         if not parent_path.is_absolute():
             if anchor is None:
                 return None
-            parent_path = anchor.parent / parent_path
+            parent_path = Path(anchor).parent / parent_path
         return str(canonicalize_for_identity(parent_path))
-
-    def _expand_workspace_dir_macro(self, value: str) -> str:
-        """Substitute the `{workspace_dir}` token with the active workspace path.
-
-        Other macro tokens are intentionally left untouched here. Path-bearing
-        fields that need full macro resolution (situations, directories) go
-        through the macro parser; `parent_project_path` only honors
-        `{workspace_dir}` to keep the resolution surface narrow.
-        """
-        if "{workspace_dir}" not in value:
-            return value
-        return value.replace("{workspace_dir}", str(self._config_manager.workspace_path))
-
-    def _workspace_relative_macro_path(self, absolute_path: Path) -> str:
-        """Express an absolute path in portable form for cross-machine sharing.
-
-        If the path lives under the active workspace, returns
-        `{workspace_dir}/<rel>` (POSIX-style). Otherwise returns the
-        canonicalized absolute path as a string. Callers persist this value
-        into a child's `parent_project_path` so the link survives moves
-        between machines that share the same workspace layout.
-        """
-        workspace = canonicalize_for_identity(self._config_manager.workspace_path)
-        abs_canon = canonicalize_for_identity(absolute_path)
-        if abs_canon.is_relative_to(workspace):
-            rel = abs_canon.relative_to(workspace).as_posix()
-            if rel == ".":
-                return "{workspace_dir}"
-            return f"{{workspace_dir}}/{rel}"
-        return str(abs_canon)
 
     def on_unregister_project_template_request(
         self, request: UnregisterProjectTemplateRequest
@@ -1967,8 +1951,33 @@ class ProjectManager:
         workspace project) are skipped. Missing or invalid files are skipped
         with a warning rather than raising.
         """
-        registered_paths: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
-        for path_str in registered_paths:
+        registered_entries: list[str | dict | PerPlatformProjectPath] = (
+            self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+        )
+        for entry in registered_entries:
+            # Coerce raw dicts (from JSON/YAML config) into the per-platform
+            # model so select_project_path can apply the active-platform key
+            # and `default` fallback uniformly.
+            if isinstance(entry, dict):
+                try:
+                    selectable: str | PerPlatformProjectPath | None = PerPlatformProjectPath.model_validate(entry)
+                except ValidationError as err:
+                    logger.warning(
+                        "Skipping invalid per-platform projects_to_register entry %s: %s",
+                        entry,
+                        err,
+                    )
+                    continue
+            else:
+                selectable = entry
+            path_str = select_project_path(selectable)
+            if path_str is None:
+                logger.warning(
+                    "Skipping per-platform projects_to_register entry with no key for the active platform "
+                    "and no `default`: %s",
+                    entry,
+                )
+                continue
             # Project IDs are canonicalized absolute paths, so expand ~/env
             # vars and resolve the persisted string before checking for an
             # existing load (prevents duplicate entries when the same file
@@ -1994,11 +2003,26 @@ class ProjectManager:
         present. Errors are logged as warnings and do not affect the load result.
         """
         try:
-            registered: list[str] = self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            registered: list[str | dict | PerPlatformProjectPath] = (
+                self._config_manager.get_config_value(PROJECTS_TO_REGISTER_KEY, default=[]) or []
+            )
             # Compare by canonicalized path (~/env expansion + resolution) so a
             # previously persisted relative or ~/ spelling of the same file
-            # isn't re-persisted as a duplicate.
-            resolved_existing = {str(canonicalize_for_identity(p)) for p in registered}
+            # isn't re-persisted as a duplicate. Per-platform entries are
+            # reduced to the active-platform string before comparison; entries
+            # with no match for this platform are skipped from the dedupe set.
+            resolved_existing: set[str] = set()
+            for entry in registered:
+                if isinstance(entry, dict):
+                    try:
+                        selected = select_project_path(PerPlatformProjectPath.model_validate(entry))
+                    except ValidationError:
+                        continue
+                else:
+                    selected = select_project_path(entry)
+                if selected is None:
+                    continue
+                resolved_existing.add(str(canonicalize_for_identity(selected)))
             if project_id not in resolved_existing:
                 self._config_manager.set_config_value(PROJECTS_TO_REGISTER_KEY, [*registered, project_id])
         except Exception:

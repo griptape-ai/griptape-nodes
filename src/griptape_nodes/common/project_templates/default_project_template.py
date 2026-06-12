@@ -16,7 +16,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.video.video_artifa
 
 # Default project template matching the values from project_template.yml
 DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
-    project_template_schema_version="0.3.2",
+    project_template_schema_version="0.3.3",
     name="Default Project",
     description="System default configuration",
     directories={
@@ -193,6 +193,16 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
                 create_dirs=True,
             ),
             fallback="save_workflow",
+        ),
+        "save_temp_file": SituationTemplate(
+            name="save_temp_file",
+            description="Save a temporary scratch file (e.g. intermediate processing artifacts)",
+            macro="{temp}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.OVERWRITE,
+                create_dirs=True,
+            ),
+            fallback="save_file",
         ),
     },
 )

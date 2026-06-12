@@ -5,9 +5,16 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from griptape_nodes.node_library.library_declarations import LibraryDeclaration, NodeDeclaration
+from griptape_nodes.node_library.library_declarations import (
+    LibraryDeclaration,
+    NodeDeclaration,
+    SuggestedWorkerMode,
+    WorkerCompatibility,
+    WorkerMode,
+    WorkerModeCompatibility,
+)
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
 )
@@ -81,21 +88,6 @@ class ResourceRequirements(BaseModel):
         return converted
 
 
-class WorkerConfig(BaseModel):
-    """Configuration for running a library in a dedicated worker process.
-
-    When enabled, the library's nodes execute in a separate Python process,
-    providing full dependency isolation.
-
-    Attributes:
-        enabled: If True, the orchestrator spawns a worker process for this library
-            when the library is loaded.
-    """
-
-    enabled: bool = False
-    # Future expansion: additional fields such as count and spinup_policy can be added here.
-
-
 class LibraryMetadata(BaseModel):
     """Metadata that explains details about the library, including versioning and search details."""
 
@@ -109,11 +101,32 @@ class LibraryMetadata(BaseModel):
     is_griptape_nodes_searchable: bool = True
     # Resource requirements for this library. If None, library is assumed to work on any platform.
     resources: ResourceRequirements | None = None
-    # Worker process configuration. If None or disabled, nodes execute in the orchestrator process.
-    worker: WorkerConfig | None = None
     # Declarative properties / capabilities for this library. Applies to all nodes in the library.
-    # See griptape_nodes.node_library.library_declarations for the supported types.
+    # See griptape_nodes.node_library.library_declarations for the supported types,
+    # including WorkerModeCompatibility for orchestrator/worker hosting.
     declarations: list[LibraryDeclaration] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _reject_incompatible_with_suggested_worker(self) -> LibraryMetadata:
+        # A library declared INCOMPATIBLE with worker hosting must not also
+        # suggest WORKER as its launch mode. The two declarations live on
+        # the same metadata block, so the cross-axis check belongs here --
+        # the individual declaration models are independent and can't see
+        # each other.
+        capability = next((d for d in self.declarations if isinstance(d, WorkerModeCompatibility)), None)
+        if capability is None or capability.compatibility is not WorkerCompatibility.INCOMPATIBLE:
+            return self
+        suggested = next(
+            (d for d in self.declarations if isinstance(d, SuggestedWorkerMode)),
+            None,
+        )
+        if suggested is not None and suggested.mode is WorkerMode.WORKER:
+            msg = (
+                "Library declares WorkerModeCompatibility(compatibility=INCOMPATIBLE) but also "
+                "declares SuggestedWorkerMode(mode=WORKER); the two are contradictory."
+            )
+            raise ValueError(msg)
+        return self
 
 
 class IconVariant(BaseModel):
@@ -196,7 +209,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.8.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.9.0"
 
     name: str
     library_schema_version: str
@@ -514,8 +527,17 @@ class Library:
         # into the node's metadata blob.
         if metadata is None:
             metadata = {}
-        library_node_metadata = self._node_metadata.get(node_type, {})
-        metadata["library_node_metadata"] = library_node_metadata
+        # Dump to a JSON-safe dict so downstream consumers (and the workflow
+        # serializer in particular) only ever see plain literals — no Pydantic
+        # models, no StrEnum members. Without this, a NodeMetadata carrying a
+        # LifecycleStageNodeProperty would leak through to the generated workflow
+        # as a Python repr (e.g. `<LifecycleStage.BETA: 'BETA'>`), which is not
+        # valid Python.
+        library_node_metadata_model = self._node_metadata.get(node_type)
+        if library_node_metadata_model is None:
+            metadata["library_node_metadata"] = {}
+        else:
+            metadata["library_node_metadata"] = library_node_metadata_model.model_dump(mode="json")
         metadata["library"] = self._library_data.name
         metadata["node_type"] = node_type
         node = node_class(name=name, metadata=metadata)
