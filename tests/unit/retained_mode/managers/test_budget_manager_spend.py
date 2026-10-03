@@ -182,6 +182,14 @@ class TestBudgetCheckAllowed:
             "correlation_id": result.correlation_id,
         }
 
+    def test_an_estimate_of_zero_is_sent(self, http: MagicMock) -> None:
+        """Cloud reads 0 as an estimate that fits only zero headroom, and absence as no estimate."""
+        http.return_value = _response(200, {"allowed": True})
+
+        _check(_manager(), BudgetAccessRequest(model_id="m", estimated_cost_micro_usd=0))
+
+        assert _sent(http)["estimated_cost_micro_usd"] == 0
+
     def test_leaves_out_what_is_unknown(self, http: MagicMock) -> None:
         http.return_value = _response(200, {"allowed": True})
         engine = _mock_engine()
@@ -257,7 +265,7 @@ class TestBudgetCheckFailsOpen:
             httpx2.ConnectError("refused"),
             httpx2.ReadTimeout("slow"),
             _response(500),
-            _response(400, {"estimated_cost_micro_usd": ["Ensure this value is less than or equal to 10000000000."]}),
+            _response(400, {"model": ["Ensure this field has no more than 255 characters."]}),
             _response(403, {"detail": "not permitted"}),
             _response(404),
             _response(200, ["not", "an", "object"]),
