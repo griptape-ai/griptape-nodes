@@ -15,6 +15,7 @@ full result, and worker forwarding puts the Success payload on the response topi
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -176,7 +177,7 @@ class BudgetManager(EngineScoped):
         )
 
     @handles(BudgetAccessRequest)
-    def on_budget_access_request(
+    async def on_budget_access_request(
         self, request: BudgetAccessRequest
     ) -> BudgetAccessResultSuccess | BudgetAccessResultFailure:
         """Ask Cloud whether a direct provider call fits its budgets; fail open unless Cloud says no."""
@@ -190,7 +191,10 @@ class BudgetManager(EngineScoped):
             body["estimated_cost_micro_usd"] = request.estimated_cost_micro_usd
 
         try:
-            response = self._post(BUDGET_CHECKS_PATH, body, timeout=CHECK_TIMEOUT_SECONDS, max_attempts=1)
+            # Off the event loop: a slow Cloud would otherwise freeze the engine for the timeout.
+            response = await asyncio.to_thread(
+                self._post, BUDGET_CHECKS_PATH, body, timeout=CHECK_TIMEOUT_SECONDS, max_attempts=1
+            )
         except _NoCredentialError:
             return self._unchecked(correlation_id, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
         except httpx2.HTTPError as exc:

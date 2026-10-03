@@ -6,8 +6,10 @@ the tests can see every attempt it makes.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import threading
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
@@ -65,6 +67,12 @@ def _manager(engine: MagicMock | None = None) -> BudgetManager:
     manager = BudgetManager(MagicMock(), engine=engine or _mock_engine())
     manager._report_executor = _InlineExecutor()  # type: ignore[assignment]
     return manager
+
+
+def _check(
+    manager: BudgetManager, request: BudgetAccessRequest
+) -> BudgetAccessResultSuccess | BudgetAccessResultFailure:
+    return asyncio.run(manager.on_budget_access_request(request))
 
 
 def _response(status: int, body: object = None) -> httpx2.Response:
@@ -128,7 +136,7 @@ class TestBudgetCheckAllowed:
             },
         )
 
-        result = _manager().on_budget_access_request(BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is True
@@ -137,7 +145,7 @@ class TestBudgetCheckAllowed:
     def test_cleared_with_headroom(self, http: MagicMock) -> None:
         http.return_value = _response(200, {"allowed": True, "blocked_by": [], "effective_remaining_credits": 13})
 
-        result = _manager().on_budget_access_request(BudgetAccessRequest(model_id="gtc_claude_opus_4_7"))
+        result = _check(_manager(), BudgetAccessRequest(model_id="gtc_claude_opus_4_7"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is True
@@ -146,13 +154,14 @@ class TestBudgetCheckAllowed:
     def test_posts_the_check_with_attribution_in_tags(self, http: MagicMock) -> None:
         http.return_value = _response(200, {"allowed": True})
 
-        result = _manager().on_budget_access_request(
+        result = _check(
+            _manager(),
             BudgetAccessRequest(
                 model_id="gtc_claude_opus_4_7",
                 estimated_cost_micro_usd=40000,
                 node_type="AnthropicPrompt",
                 node_id="node-7",
-            )
+            ),
         )
 
         assert isinstance(result, BudgetAccessResultSuccess)
@@ -181,7 +190,7 @@ class TestBudgetCheckAllowed:
         engine.get_engine_id.return_value = None
         engine.get_session_id.return_value = None
 
-        _manager(engine).on_budget_access_request(BudgetAccessRequest(model_id="m"))
+        _check(_manager(engine), BudgetAccessRequest(model_id="m"))
 
         assert _sent(http) == {"tags": {}, "model": "m", "correlation_id": _sent(http)["correlation_id"]}
 
@@ -189,8 +198,8 @@ class TestBudgetCheckAllowed:
         http.return_value = _response(200, {"allowed": True})
         manager = _manager()
 
-        first = manager.on_budget_access_request(BudgetAccessRequest(model_id="m"))
-        second = manager.on_budget_access_request(BudgetAccessRequest(model_id="m"))
+        first = _check(manager, BudgetAccessRequest(model_id="m"))
+        second = _check(manager, BudgetAccessRequest(model_id="m"))
 
         assert isinstance(first, BudgetAccessResultSuccess)
         assert isinstance(second, BudgetAccessResultSuccess)
@@ -221,7 +230,7 @@ class TestBudgetCheckDenied:
             },
         )
 
-        result = _manager().on_budget_access_request(BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
 
         assert isinstance(result, BudgetAccessResultFailure)
         assert result.blocked_by == blocked_by
@@ -235,7 +244,7 @@ class TestBudgetCheckDenied:
     def test_a_deny_naming_no_budget_still_refuses(self, http: MagicMock) -> None:
         http.return_value = _response(200, {"allowed": False, "blocked_by": [{"unexpected": True}]})
 
-        result = _manager().on_budget_access_request(BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
 
         assert isinstance(result, BudgetAccessResultFailure)
         assert str(result.result_details).startswith(f"{BUDGET_HALT_PREFIX} The next call was blocked by a budget.")
@@ -262,7 +271,7 @@ class TestBudgetCheckFailsOpen:
         else:
             http.return_value = outcome
 
-        result = _manager().on_budget_access_request(BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is False
@@ -272,20 +281,28 @@ class TestBudgetCheckFailsOpen:
     def test_unreadable_body(self, http: MagicMock) -> None:
         http.return_value = httpx2.Response(200, content=b"<html>", request=httpx2.Request("POST", BASE_URL))
 
-        result = _manager().on_budget_access_request(BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is False
 
+    def test_the_http_call_runs_off_the_event_loop_thread(self, http: MagicMock) -> None:
+        loop_thread = threading.get_ident()
+        http.side_effect = lambda *_, **__: _response(200, {"allowed": threading.get_ident() != loop_thread})
+
+        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+
+        assert isinstance(result, BudgetAccessResultSuccess)
+
     def test_check_is_not_retried(self, http: MagicMock) -> None:
         http.return_value = _response(503)
 
-        _manager().on_budget_access_request(BudgetAccessRequest(model_id="m"))
+        _check(_manager(), BudgetAccessRequest(model_id="m"))
 
         assert http.call_count == 1
 
     def test_no_credential(self, http: MagicMock) -> None:
-        result = _manager(_mock_engine(credential=None)).on_budget_access_request(BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(_mock_engine(credential=None)), BudgetAccessRequest(model_id="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is False
