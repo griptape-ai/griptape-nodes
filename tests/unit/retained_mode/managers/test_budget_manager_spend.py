@@ -257,13 +257,14 @@ class TestBudgetCheckFailsOpen:
             httpx2.ConnectError("refused"),
             httpx2.ReadTimeout("slow"),
             _response(500),
+            _response(400, {"estimated_cost_micro_usd": ["Ensure this value is less than or equal to 10000000000."]}),
             _response(403, {"detail": "not permitted"}),
             _response(404),
             _response(200, ["not", "an", "object"]),
             _response(200, {"blocked_by": []}),
             _response(200, {"allowed": "no"}),
         ],
-        ids=["connect", "timeout", "500", "403", "404", "not-object", "allowed-missing", "allowed-not-bool"],
+        ids=["connect", "timeout", "500", "400", "403", "404", "not-object", "allowed-missing", "allowed-not-bool"],
     )
     def test_cleared_unchecked(self, http: MagicMock, outcome: object) -> None:
         if isinstance(outcome, Exception):
