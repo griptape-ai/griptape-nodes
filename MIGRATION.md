@@ -51,19 +51,7 @@ They have no effect. While a library still asks for a worker and declares no
 - The fitness problems reporting that request handlers and post-dispatch hooks are unsupported in an
     isolated library. Both now work in every library.
 
-## Parameter values carry their type
-
-**Request API and editor clients.** A parameter value of a type JSON lacks arrives as a dict whose
-`$type` names its Python type. A tuple that arrived as `[1, 2]` now arrives as:
-
-```json
-{"$type": "builtins:tuple", "$value": [1, 2]}
-```
-
-Send a value back in the same form to set that exact type.
-
-[Parameter values](docs/guides/mcp/external_clients.md#parameter-values) lists the forms and which
-fields carry them.
+## Parameter values keep their type
 
 **Library authors.** A field of your own request, result, or event payload that holds parameter
 values must be annotated `Value`. A field typed `Any` that holds a griptape object, or any value
