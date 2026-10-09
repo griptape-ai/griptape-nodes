@@ -882,8 +882,13 @@ class LibraryRegistrar(EngineScoped):
                         # for a library the orchestrator cannot import: an exec-deps library already
                         # registered its real classes there, and probing every node class to build
                         # schemas it will discard costs a timeout apiece and can exceed 100 KB.
+                        #
+                        # Not from a general-purpose worker: it is no library's worker, so its load
+                        # is not the one the orchestrator is waiting on, and a report from it would
+                        # release a library's gate before that library's own worker had loaded it.
                         if (
                             self.engine.library_manager.is_worker
+                            and not self.engine.library_manager.is_general_purpose_worker
                             and library_info.lifecycle_state == LibraryLifecycleState.LOADED
                             and library_info.library_name
                         ):

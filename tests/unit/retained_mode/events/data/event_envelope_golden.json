@@ -118,6 +118,7 @@
       "models_to_download": [],
       "skip_library_loading": false,
       "is_worker": false,
+      "is_general_purpose_worker": false,
       "static_server_base_url": null
     }
   }
