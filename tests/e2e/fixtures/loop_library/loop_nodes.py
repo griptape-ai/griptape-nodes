@@ -21,9 +21,20 @@ from griptape_nodes.exe_types.node_types import DataNode, EndNode, StartNode
 class StartFlow(StartNode):
     """The packaged body's entry node."""
 
+    def process(self) -> None:
+        return None
+
 
 class EndFlow(EndNode):
-    """The packaged body's exit node."""
+    """The packaged body's exit node.
+
+    Must call super().process(): that is what copies every dynamically-added data parameter's
+    raw value into parameter_output_values, which is how the loop executor reads an iteration's
+    result back out.
+    """
+
+    def process(self) -> None:
+        super().process()
 
 
 class LoopBodyNode(DataNode):
@@ -54,6 +65,52 @@ class LoopBodyNode(DataNode):
         self.parameter_output_values["result"] = self.get_parameter_value("text") or ""
 
 
+class OutsideCounterDataNode(DataNode):
+    """A node living OUTSIDE the loop, with a run counter standing in for an Agent/image-gen call.
+
+    No control connections, so it is a plain data dependency. Used to measure how many times a
+    node outside a packaged loop body actually runs when it gets pulled into the packaged flow as
+    an unresolved data dependency (see ``NodeExecutor._collect_loop_body_nodes`` ->
+    ``DagBuilder.collect_data_dependencies_for_node``).
+    """
+
+    def __init__(self, name: str, metadata: dict | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+        self.run_count = 0
+        self.add_parameter(
+            Parameter(
+                name="value",
+                tooltip="Constant value, computed once",
+                type="str",
+                default_value="",
+                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+    def process(self) -> None:
+        self.run_count += 1
+        self.parameter_output_values["value"] = f"outside-run-{self.run_count}"
+
+
+class AnySinkDataNode(DataNode):
+    """A downstream sink that accepts any type, used to pull an upstream node in as a dependency."""
+
+    def __init__(self, name: str, metadata: dict | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+        self.add_parameter(
+            Parameter(
+                name="value",
+                tooltip="Anything",
+                type="any",
+                default_value=None,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+    def process(self) -> None:
+        return None
+
+
 class LoopEndNode(BaseIterativeEndNode):
     """Closes the loop. Declared before the Start node so it can name it as compatible."""
 
@@ -69,6 +126,21 @@ class LoopStartNode(BaseIterativeStartNode):
     """Iterates a fixed three-item list, so no input wiring is needed to have a total."""
 
     ITEMS = ("first", "second", "third")
+
+    def __init__(self, name: str, metadata: dict | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+        # BaseIterativeStartNode has no run_in_order of its own -- real library start nodes
+        # (ForEachStartNode, ForLoopStartNode) add it. _handle_sequential_loop_execution reads
+        # it via get_parameter_value and silently treats an absent param as falsy (parallel), so
+        # this fixture needs it to exercise the sequential path at all.
+        self.run_in_order = Parameter(
+            name="run_in_order",
+            tooltip="Run iterations one at a time instead of all at once",
+            type="bool",
+            default_value=True,
+            allowed_modes={ParameterMode.PROPERTY},
+        )
+        self.add_parameter(self.run_in_order)
 
     @classmethod
     def _get_compatible_end_classes(cls) -> set[type]:
