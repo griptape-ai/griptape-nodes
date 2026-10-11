@@ -58,7 +58,7 @@ from griptape_nodes.agents.pydantic_ai.model import build_model
 from griptape_nodes.drivers.cloud_models import ProviderID
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterable, Awaitable, Callable, Sequence
+    from collections.abc import AsyncIterable, Awaitable, Callable, Mapping, Sequence
     from pathlib import Path
 
     from pydantic_ai._run_context import RunContext
@@ -203,7 +203,7 @@ class PydanticAgentRunner:
                 raise ValueError(msg)
             self._image_toolset = register_image_tools(self._agent, self.image_config, self.static_files_manager)
         resolved_settings = model.settings or {}
-        logger.info(
+        logger.debug(
             "PydanticAgentRunner ready: model=%s workspace=%s mcp_servers=%d image_tool=%s skills_library=%s "
             "usage_limits=%s max_tokens=%s",
             self.model_name,
@@ -341,6 +341,7 @@ class PydanticAgentRunner:
         history_rehydrator: Callable[[list[ModelMessage]], Awaitable[list[ModelMessage]]] | None = None,
         extra_toolsets: Sequence[AbstractToolset[Any]] | None = None,
         extra_instructions: str | None = None,
+        extra_headers: Mapping[str, str] | None = None,
     ) -> AgentRunResult:
         """Run the agent against ``prompt``, streaming events and saving history.
 
@@ -378,6 +379,10 @@ class PydanticAgentRunner:
             extra_instructions: Instructions to append for this run only, in the
                 same additive spirit. Guidance that belongs to a toolset passed
                 via ``extra_toolsets`` travels here, so the two stay in sync.
+            extra_headers: HTTP headers to send on this run's model calls, and on
+                any Griptape Cloud call a tool makes. Per run, because a value
+                such as the budget attribution header follows the project open
+                when the turn starts.
 
         Returns:
             An :class:`AgentRunResult` describing the new state of the thread.
@@ -398,7 +403,7 @@ class PydanticAgentRunner:
         # Rebuilt every run so skill edits land without an engine restart.
         capabilities = self._build_skills_capabilities()
 
-        logger.info(
+        logger.debug(
             "[run %s] start: model=%s history_len=%d skills=%s run_toolsets=%d prompt=%r",
             run_id,
             self.model_name,
@@ -426,6 +431,7 @@ class PydanticAgentRunner:
                 capabilities=capabilities or None,
                 toolsets=list(extra_toolsets) if extra_toolsets else None,
                 instructions=extra_instructions or None,
+                model_settings={"extra_headers": dict(extra_headers)} if extra_headers else None,
             )
         )
         try:
@@ -440,7 +446,7 @@ class PydanticAgentRunner:
 
         if agent_result is None:
             text = "".join(text_buffer)
-            logger.info(
+            logger.debug(
                 "[run %s] cancelled after %.2fs: tool_calls=%d partial_output=%r",
                 run_id,
                 time.monotonic() - started,
@@ -566,7 +572,7 @@ class _RunCounters:
         elif isinstance(event, FunctionToolCallEvent):
             self.tool_calls += 1
             args_str = _args_str(event.part.args)
-            logger.info(
+            logger.debug(
                 "[run %s] tool call #%d -> %s(%s) id=%s",
                 self.run_id,
                 self.tool_calls,
@@ -590,7 +596,7 @@ class _RunCounters:
             content_str = _stringify(content)
             if tool_name == IMAGE_TOOL_NAME and not is_error and content_str:
                 self.image_urls.append(content_str)
-            logger.info(
+            logger.debug(
                 "[run %s] tool result <- %s id=%s preview=%r is_error=%s",
                 self.run_id,
                 tool_name,
@@ -609,7 +615,7 @@ class _RunCounters:
             )
         elif isinstance(event, FinalResultEvent):
             self.final_result_emitted = True
-            logger.info(
+            logger.debug(
                 "[run %s] final result event: tool_name=%s tool_call_id=%s",
                 self.run_id,
                 event.tool_name,
@@ -625,7 +631,7 @@ class _RunCounters:
     ) -> None:
         if isinstance(event.part, TextPart):
             self.text_parts += 1
-            logger.info("[run %s] text part #%d started", self.run_id, self.text_parts)
+            logger.debug("[run %s] text part #%d started", self.run_id, self.text_parts)
             if event.part.content:
                 text_buffer.append(event.part.content)
                 await _push_token(token_sink, event.part.content)
@@ -634,7 +640,7 @@ class _RunCounters:
             if event.part.content:
                 await _push_event(event_sink, ThinkingDelta(delta=event.part.content))
         elif isinstance(event.part, ToolCallPart):
-            logger.info(
+            logger.debug(
                 "[run %s] tool-call part started: %s id=%s",
                 self.run_id,
                 event.part.tool_name,
@@ -718,7 +724,7 @@ def _log_run_outcome(  # noqa: PLR0913
     Split out of :meth:`PydanticAgentRunner.run` to keep that method under the
     complexity limit; it is pure logging and has no effect on the result.
     """
-    logger.info(
+    logger.debug(
         "[run %s] done in %.2fs: requests=%d tool_calls=%d "
         "input_tokens=%d output_tokens=%d new_messages=%d finish_reason=%s output=%r",
         run_id,

@@ -31,13 +31,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlsplit
 
-import httpx
+import httpx2
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import BinaryContent, ImageUrl, ModelMessagesTypeAdapter, ModelRequest, UserPromptPart
 from pydantic_ai.usage import UsageLimits
-from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.agents.pydantic_ai.image_tools import GRIPTAPE_CLOUD_BASE_URL, ImageGenerationToolsetConfig
+from griptape_nodes.agents.pydantic_ai.image_tools import ImageGenerationToolsetConfig
 from griptape_nodes.agents.pydantic_ai.mcp_servers import streamable_http_local
 from griptape_nodes.agents.pydantic_ai.mcp_toolset_cache import (
     MCPToolsetCache,
@@ -53,10 +52,13 @@ from griptape_nodes.agents.pydantic_ai.runner import (
     ToolResult,
 )
 from griptape_nodes.drivers.cloud_credentials import (
+    BASE_URL_SETTING_NAME,
+    DEFAULT_CLOUD_BASE_URL,
     MISSING_CREDENTIAL_MESSAGE,
     POLICY_DENIED_HINT,
     is_license_credential,
     resolve_cloud_credential,
+    resolve_cloud_host,
 )
 from griptape_nodes.drivers.cloud_models import (
     DEPRECATED_MODELS,
@@ -133,14 +135,24 @@ from griptape_nodes.retained_mode.events.agent_events import (
 )
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete, ConfigChanged
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
+from griptape_nodes.retained_mode.events.budget_events import (
+    GetAttributionContextRequest,
+    GetAttributionContextResultSuccess,
+)
 from griptape_nodes.retained_mode.events.mcp_events import (
     GetEnabledMCPServersRequest,
     GetEnabledMCPServersResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.servers import bind_free_socket
 from griptape_nodes.servers.mcp import GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT, start_mcp_server
+from griptape_nodes.utils.budget_refusal import BUDGET_REPLY_HALT_PREFIX, refusal_from_exception
+from griptape_nodes.utils.budget_refusal import describe_reply as describe_budget_refusal
+from griptape_nodes.utils.budget_refusal import halt_message as budget_halt_message
+from griptape_nodes.utils.budget_refusal import log_line as budget_log_line
+from griptape_nodes.utils.engine_dirs import engine_data_dir
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -223,12 +235,12 @@ def _cloud_http_status_of(exc: BaseException, cloud_host: str) -> int | None:
     """Return the HTTP status of a Griptape Cloud failure, or None if it isn't one.
 
     Two unrelated shapes reach this code: Pydantic AI's ``ModelHTTPError`` carries
-    ``status_code`` directly (the chat path), while ``httpx.HTTPStatusError`` keeps
+    ``status_code`` directly (the chat path), while ``httpx2.HTTPStatusError`` keeps
     it on ``response`` (the image path). The image toolset also wraps its failure in
     ``ModelRetry`` with ``raise ... from exc``, so follow the cause chain.
 
     Only errors from ``cloud_host`` count. An agent turn also talks to remote MCP
-    servers, which raise the same ``httpx.HTTPStatusError``; attributing their 403
+    servers, which raise the same ``httpx2.HTTPStatusError``; attributing their 403
     to Griptape licensing would send the user to their Griptape administrator over
     an expired token on their own MCP server.
     """
@@ -236,7 +248,7 @@ def _cloud_http_status_of(exc: BaseException, cloud_host: str) -> int | None:
     current: BaseException | None = exc
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        if isinstance(current, httpx.HTTPStatusError):
+        if isinstance(current, httpx2.HTTPStatusError):
             if current.request.url.host == cloud_host:
                 return current.response.status_code
             return None
@@ -265,19 +277,19 @@ def _friendly_list_models_error(exc: Exception, base_url: str | None) -> str | N
     (e.g. an HTTP status error or a bad JSON body — those aren't "server down").
     """
     where = f" at '{base_url}'" if base_url else ""
-    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+    if isinstance(exc, (httpx2.ConnectError, httpx2.ConnectTimeout)):
         return (
             f"Couldn't reach the model provider{where}. Is the local server "
             "(e.g. LMStudio or Ollama) running and reachable at that address?"
         )
-    if isinstance(exc, (httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout)):
+    if isinstance(exc, (httpx2.ReadTimeout, httpx2.WriteTimeout, httpx2.PoolTimeout)):
         return (
             f"The model provider{where} didn't respond in time. Is the local "
             "server (e.g. LMStudio or Ollama) running and reachable at that address?"
         )
-    # Other httpx.RequestError subclasses (DNS failures, connection drops, etc.)
+    # Other httpx2.RequestError subclasses (DNS failures, connection drops, etc.)
     # are still connection-shaped from the user's perspective.
-    if isinstance(exc, httpx.RequestError):
+    if isinstance(exc, httpx2.RequestError):
         return (
             f"Couldn't connect to the model provider{where}. Is the local "
             "server (e.g. LMStudio or Ollama) running and reachable at that address?"
@@ -411,7 +423,7 @@ class AgentManager(EngineScoped):
         self._image_model_name: str = IMAGE_MODEL_CHOICES[0] if IMAGE_MODEL_CHOICES else "gpt-image-1-mini"
         self._system_prompt_extra: str = config_manager.get_config_value("agent.system_prompt", default="")
 
-        self._threads_dir: Path = xdg_data_home() / "griptape_nodes" / "threads"
+        self._threads_dir: Path = engine_data_dir() / "threads"
         self._thread_storage: LocalThreadStorageDriver = LocalThreadStorageDriver(
             self._threads_dir, config_manager, secrets_manager
         )
@@ -428,42 +440,7 @@ class AgentManager(EngineScoped):
         self._active_runs: dict[str, _ActiveRun] = {}
 
         if event_manager is not None:
-            event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
-            event_manager.assign_manager_to_request_type(CancelAgentRequest, self.on_handle_cancel_agent_request)
-            event_manager.assign_manager_to_request_type(ConfigureAgentRequest, self.on_handle_configure_agent_request)
-            event_manager.assign_manager_to_request_type(
-                GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request
-            )
-            event_manager.assign_manager_to_request_type(CreateThreadRequest, self.on_handle_create_thread_request)
-            event_manager.assign_manager_to_request_type(
-                GetThreadMetadataRequest, self.on_handle_get_thread_metadata_request
-            )
-            event_manager.assign_manager_to_request_type(ListThreadsRequest, self.on_handle_list_threads_request)
-            event_manager.assign_manager_to_request_type(DeleteThreadRequest, self.on_handle_delete_thread_request)
-            event_manager.assign_manager_to_request_type(RenameThreadRequest, self.on_handle_rename_thread_request)
-            event_manager.assign_manager_to_request_type(ArchiveThreadRequest, self.on_handle_archive_thread_request)
-            event_manager.assign_manager_to_request_type(
-                UnarchiveThreadRequest, self.on_handle_unarchive_thread_request
-            )
-            event_manager.assign_manager_to_request_type(
-                ListAgentModelsRequest, self.on_handle_list_agent_models_request
-            )
-            event_manager.assign_manager_to_request_type(GetAgentConfigRequest, self.on_handle_get_agent_config_request)
-            event_manager.assign_manager_to_request_type(
-                ListProviderModelsRequest, self.on_handle_list_provider_models_request
-            )
-            event_manager.assign_manager_to_request_type(
-                ListAgentProvidersRequest, self.on_handle_list_agent_providers_request
-            )
-            event_manager.assign_manager_to_request_type(
-                CreateAgentProviderRequest, self.on_handle_create_agent_provider_request
-            )
-            event_manager.assign_manager_to_request_type(
-                UpdateAgentProviderRequest, self.on_handle_update_agent_provider_request
-            )
-            event_manager.assign_manager_to_request_type(
-                DeleteAgentProviderRequest, self.on_handle_delete_agent_provider_request
-            )
+            event_manager.register_request_handlers(self)
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
@@ -502,27 +479,42 @@ class AgentManager(EngineScoped):
             self._load_providers_from_config()
             self._runner_cache.clear()
 
+    @handles(RunAgentRequest)
     async def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
             return await self._run_agent(request)
         except Exception as e:
             message = self._explain_agent_run_error(e, request.provider_name)
-            err_msg = f"Error running agent: {message}"
+            # Keep a budget halt's opening words, which the editor recognizes.
+            if message.startswith(BUDGET_REPLY_HALT_PREFIX):
+                err_msg = message
+            else:
+                err_msg = f"Error running agent: {message}"
             logger.exception(err_msg)
             return RunAgentResultFailure(error={"message": message}, result_details=err_msg)
 
     def _explain_agent_run_error(self, exc: Exception, provider_name: str | None) -> str:
         """Return the user-facing text for a failed agent run.
 
-        A Griptape Cloud request authenticated with a License can authenticate
-        successfully and still be refused: Cloud evaluates an entitlement policy
-        per request and answers HTTP 403. On its own that surfaces as a bare
-        "Forbidden", which reads like a bug rather than a licensing decision, so
-        name the cause. Every other error keeps its original text.
+        A Cloud 403 is either a budget refusal, recognized from its body, or an
+        entitlement refusal. Both get a readable message instead of "Forbidden";
+        every other error keeps its text. A halt a tool already worded is
+        returned as is.
         """
+        halt = budget_halt_message(exc)
+        if halt is not None:
+            return halt
+
         if self._get_provider(provider_name).type != _PROTECTED_PROVIDER_NAME:
             return str(exc)
-        cloud_host = urlsplit(os.environ.get("GT_CLOUD_BASE_URL") or GRIPTAPE_CLOUD_BASE_URL).hostname or ""
+
+        cloud_host = resolve_cloud_host(secrets_manager)
+
+        refusal = refusal_from_exception(exc, cloud_host=cloud_host)
+        if refusal is not None:
+            logger.error(budget_log_line(refusal))
+            return describe_budget_refusal(refusal)
+
         if _cloud_http_status_of(exc, cloud_host) != HTTPStatus.FORBIDDEN:
             return str(exc)
         if not is_license_credential(resolve_cloud_credential(secrets_manager, secret_name=API_KEY_ENV_VAR)):
@@ -538,6 +530,7 @@ class AgentManager(EngineScoped):
             model_name=request.model_name,
         )
         composed = await _compose_prompt(request.input, request.url_artifacts)
+        attribution_headers = await self._attribution_headers(request.provider_name)
 
         event_manager = self.engine.event_manager
 
@@ -567,6 +560,7 @@ class AgentManager(EngineScoped):
                     history_rehydrator=_rehydrate_history,
                     extra_toolsets=mcp.lease.toolsets,
                     extra_instructions=mcp.instructions,
+                    extra_headers=attribution_headers,
                 )
         finally:
             # Only drop our own entry; a newer run for the same thread may have
@@ -640,6 +634,7 @@ class AgentManager(EngineScoped):
             result_details="Agent execution completed successfully.",
         )
 
+    @handles(CancelAgentRequest)
     def on_handle_cancel_agent_request(self, request: CancelAgentRequest) -> ResultPayload:
         """Signal cooperative cancellation to the in-flight run for a thread.
 
@@ -668,6 +663,7 @@ class AgentManager(EngineScoped):
             logger.exception(details)
             return CancelAgentResultFailure(result_details=details)
 
+    @handles(CreateThreadRequest)
     def on_handle_create_thread_request(self, request: CreateThreadRequest) -> ResultPayload:
         try:
             thread_id, meta = self._thread_storage.create_thread(title=request.title, local_id=request.local_id)
@@ -683,11 +679,11 @@ class AgentManager(EngineScoped):
             logger.exception(details)
             return CreateThreadResultFailure(result_details=details)
 
+    @handles(GetThreadMetadataRequest)
     def on_handle_get_thread_metadata_request(self, request: GetThreadMetadataRequest) -> ResultPayload:
         try:
             if not self._thread_storage.thread_exists(request.thread_id):
                 details = f"Thread {request.thread_id} not found"
-                logger.error(details)
                 return GetThreadMetadataResultFailure(result_details=details)
 
             thread = self._thread_storage.get_thread_metadata(request.thread_id)
@@ -699,6 +695,7 @@ class AgentManager(EngineScoped):
             logger.exception(details)
             return GetThreadMetadataResultFailure(result_details=details)
 
+    @handles(ListThreadsRequest)
     def on_handle_list_threads_request(self, _: ListThreadsRequest) -> ResultPayload:
         try:
             threads = self._thread_storage.list_threads()
@@ -708,24 +705,24 @@ class AgentManager(EngineScoped):
             logger.exception(details)
             return ListThreadsResultFailure(result_details=details)
 
+    @handles(DeleteThreadRequest)
     def on_handle_delete_thread_request(self, request: DeleteThreadRequest) -> ResultPayload:
         try:
             self._thread_storage.delete_thread(request.thread_id)
             return DeleteThreadResultSuccess(thread_id=request.thread_id, result_details="Thread deleted successfully.")
         except ValueError as e:
             details = str(e)
-            logger.error(details)
             return DeleteThreadResultFailure(result_details=details)
         except Exception as e:
             details = f"Error deleting thread: {e}"
             logger.exception(details)
             return DeleteThreadResultFailure(result_details=details)
 
+    @handles(RenameThreadRequest)
     def on_handle_rename_thread_request(self, request: RenameThreadRequest) -> ResultPayload:
         try:
             if not self._thread_storage.thread_exists(request.thread_id):
                 details = f"Thread {request.thread_id} not found"
-                logger.error(details)
                 return RenameThreadResultFailure(result_details=details)
 
             updated_meta = self._thread_storage.update_thread_metadata(request.thread_id, title=request.new_title)
@@ -740,16 +737,15 @@ class AgentManager(EngineScoped):
             logger.exception(details)
             return RenameThreadResultFailure(result_details=details)
 
+    @handles(ArchiveThreadRequest)
     def on_handle_archive_thread_request(self, request: ArchiveThreadRequest) -> ResultPayload:
         try:
             if not self._thread_storage.thread_exists(request.thread_id):
                 details = f"Thread {request.thread_id} not found"
-                logger.error(details)
                 return ArchiveThreadResultFailure(result_details=details)
 
             if self._thread_storage.is_archived(request.thread_id):
                 details = f"Thread {request.thread_id} is already archived"
-                logger.error(details)
                 return ArchiveThreadResultFailure(result_details=details)
 
             updated_meta = self._thread_storage.update_thread_metadata(request.thread_id, archived=True)
@@ -763,16 +759,15 @@ class AgentManager(EngineScoped):
             logger.exception(details)
             return ArchiveThreadResultFailure(result_details=details)
 
+    @handles(UnarchiveThreadRequest)
     def on_handle_unarchive_thread_request(self, request: UnarchiveThreadRequest) -> ResultPayload:
         try:
             if not self._thread_storage.thread_exists(request.thread_id):
                 details = f"Thread {request.thread_id} not found"
-                logger.error(details)
                 return UnarchiveThreadResultFailure(result_details=details)
 
             if not self._thread_storage.is_archived(request.thread_id):
                 details = f"Thread {request.thread_id} is not archived"
-                logger.error(details)
                 return UnarchiveThreadResultFailure(result_details=details)
 
             updated_meta = self._thread_storage.update_thread_metadata(request.thread_id, archived=False)
@@ -786,6 +781,7 @@ class AgentManager(EngineScoped):
             logger.exception(details)
             return UnarchiveThreadResultFailure(result_details=details)
 
+    @handles(ConfigureAgentRequest)
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
         """Update agent configuration from the chat sidebar.
 
@@ -839,6 +835,7 @@ class AgentManager(EngineScoped):
             changed = True
         return changed
 
+    @handles(ListAgentModelsRequest)
     def on_handle_list_agent_models_request(self, _: ListAgentModelsRequest) -> ResultPayload:
         return ListAgentModelsResultSuccess(
             prompt_models=list(MODEL_CHOICES),
@@ -848,6 +845,7 @@ class AgentManager(EngineScoped):
             result_details="Agent model lists retrieved successfully.",
         )
 
+    @handles(GetAgentConfigRequest)
     def on_handle_get_agent_config_request(self, _: GetAgentConfigRequest) -> ResultPayload:
         gc = self._get_provider(None)
         return GetAgentConfigResultSuccess(
@@ -859,6 +857,7 @@ class AgentManager(EngineScoped):
             result_details="Agent config retrieved successfully.",
         )
 
+    @handles(ListProviderModelsRequest)
     async def on_handle_list_provider_models_request(self, request: ListProviderModelsRequest) -> ResultPayload:
         try:
             if request.provider == ProviderID.GRIPTAPE_CLOUD:
@@ -877,7 +876,7 @@ class AgentManager(EngineScoped):
             if request.api_key:
                 headers["Authorization"] = f"Bearer {request.api_key}"
 
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx2.AsyncClient(timeout=5.0) as client:
                 response = await client.get(f"{base_url}/models", headers=headers)
                 response.raise_for_status()
 
@@ -887,7 +886,7 @@ class AgentManager(EngineScoped):
                 models=models,
                 result_details=f"Retrieved {len(models)} models from {base_url}.",
             )
-        except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
+        except (httpx2.HTTPStatusError, httpx2.RequestError, ValueError) as e:
             # Keep the raw exception in the logs for debugging, but surface a
             # message the user can act on when the provider is simply offline.
             logger.warning("Attempted to list models from '%s'. Failed with: %s", request.base_url, e)
@@ -895,6 +894,7 @@ class AgentManager(EngineScoped):
             details = friendly or f"Attempted to list models from '{request.base_url}'. Failed with: {e}"
             return ListProviderModelsResultFailure(result_details=details)
 
+    @handles(GetConversationMemoryRequest)
     def on_handle_get_conversation_memory_request(self, request: GetConversationMemoryRequest) -> ResultPayload:
         try:
             history = self._thread_storage.load_history(request.thread_id)
@@ -908,6 +908,22 @@ class AgentManager(EngineScoped):
             details = f"Error getting conversation memory: {e}"
             logger.exception(details)
             return GetConversationMemoryResultFailure(result_details=details)
+
+    async def _attribution_headers(self, provider_name: str | None) -> dict[str, str]:
+        """Return the budget attribution header for a Griptape Cloud run, or ``{}``.
+
+        Cloud checks project budgets against this header, so without it a chat reply is
+        never charged to the open project. Only Griptape Cloud reads it; other providers get
+        nothing. A failure sends no header rather than failing the turn: not knowing which
+        project to bill is not a reason to refuse the reply, and the handler has already
+        logged why.
+        """
+        if self._get_provider(provider_name).type != _PROTECTED_PROVIDER_NAME:
+            return {}
+        result = await self.engine.ahandle_request(GetAttributionContextRequest())
+        if not isinstance(result, GetAttributionContextResultSuccess):
+            return {}
+        return {result.header_name: result.header_value}
 
     def _build_runner(
         self,
@@ -935,7 +951,7 @@ class AgentManager(EngineScoped):
             # Match build_griptape_cloud_model's `or` semantics: a set-but-empty
             # GT_CLOUD_BASE_URL falls back to the default rather than yielding a
             # malformed endpoint, so the chat and image paths agree.
-            cloud_base_url = os.environ.get("GT_CLOUD_BASE_URL") or GRIPTAPE_CLOUD_BASE_URL
+            cloud_base_url = os.environ.get(BASE_URL_SETTING_NAME) or DEFAULT_CLOUD_BASE_URL
             model_base_url: str | None = cloud_base_url
             image_config: ImageGenerationToolsetConfig | None = ImageGenerationToolsetConfig(
                 api_key=api_key, model=self._image_model_name, base_url=cloud_base_url
@@ -1005,6 +1021,7 @@ class AgentManager(EngineScoped):
         except OSError as e:
             logger.warning("Attempted to scaffold skills directory at %s. Failed because of: %s", skills_dir, e)
 
+    @handles(ListAgentProvidersRequest)
     def on_handle_list_agent_providers_request(self, _: ListAgentProvidersRequest) -> ResultPayload:
         return ListAgentProvidersResultSuccess(
             providers=list(self._providers),
@@ -1012,6 +1029,7 @@ class AgentManager(EngineScoped):
             result_details="Chat providers retrieved successfully.",
         )
 
+    @handles(CreateAgentProviderRequest)
     def on_handle_create_agent_provider_request(self, request: CreateAgentProviderRequest) -> ResultPayload:
         pd = request.provider
         name = pd.name.strip()
@@ -1045,6 +1063,7 @@ class AgentManager(EngineScoped):
         self._runner_cache.clear()
         return CreateAgentProviderResultSuccess(name=name, result_details=f"Provider '{name}' created successfully.")
 
+    @handles(UpdateAgentProviderRequest)
     def on_handle_update_agent_provider_request(self, request: UpdateAgentProviderRequest) -> ResultPayload:
         existing = next((p for p in self._providers if p.name == request.name), None)
         if existing is None:
@@ -1077,6 +1096,7 @@ class AgentManager(EngineScoped):
         self._runner_cache.clear()
         return UpdateAgentProviderResultSuccess(result_details=f"Provider '{request.name}' updated successfully.")
 
+    @handles(DeleteAgentProviderRequest)
     def on_handle_delete_agent_provider_request(self, request: DeleteAgentProviderRequest) -> ResultPayload:
         if request.name == _PROTECTED_PROVIDER_NAME:
             return DeleteAgentProviderResultFailure(
@@ -1269,7 +1289,7 @@ async def _compose_prompt(text: str, url_artifacts: list[RunAgentRequestArtifact
     if text:
         live.append(text)
         persist.append(text)
-    async with httpx.AsyncClient(timeout=_ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS) as client:
+    async with httpx2.AsyncClient(timeout=_ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS) as client:
         for url in image_urls:
             content = await _download_image_content(client, url)
             if content is None:
@@ -1305,7 +1325,7 @@ async def _rehydrate_history(messages: list[ModelMessage]) -> list[ModelMessage]
     ]
     if not image_requests:
         return messages
-    async with httpx.AsyncClient(timeout=_REHYDRATE_DOWNLOAD_TIMEOUT_SECONDS) as client:
+    async with httpx2.AsyncClient(timeout=_REHYDRATE_DOWNLOAD_TIMEOUT_SECONDS) as client:
         # Rehydrate every image-bearing message concurrently so a slow or
         # unreachable static server bounds the whole turn's stall to one
         # timeout, not one per message.
@@ -1333,7 +1353,7 @@ async def _rehydrate_history(messages: list[ModelMessage]) -> list[ModelMessage]
     return rehydrated_messages
 
 
-async def _rehydrate_message(client: httpx.AsyncClient, message: ModelRequest) -> _RehydratedMessage:
+async def _rehydrate_message(client: httpx2.AsyncClient, message: ModelRequest) -> _RehydratedMessage:
     """Return a copy of ``message`` with each user-prompt ``ImageUrl`` inlined.
 
     Downloads for a message run concurrently. The result also carries how many
@@ -1385,7 +1405,7 @@ def _message_has_image_url(message: ModelMessage) -> bool:
     return False
 
 
-async def _download_image_content(client: httpx.AsyncClient, url: str) -> BinaryContent | None:
+async def _download_image_content(client: httpx2.AsyncClient, url: str) -> BinaryContent | None:
     """Download an image URL and wrap its bytes as inline ``BinaryContent``.
 
     Returns ``None`` when the download fails so the caller can drop the
@@ -1394,13 +1414,13 @@ async def _download_image_content(client: httpx.AsyncClient, url: str) -> Binary
     try:
         response = await client.get(url)
         response.raise_for_status()
-    except httpx.HTTPError as e:
+    except httpx2.HTTPError as e:
         logger.warning("Attempted to attach image from %s. Skipping it because the download failed with %s.", url, e)
         return None
     return BinaryContent(data=response.content, media_type=_resolve_image_media_type(response, url))
 
 
-def _resolve_image_media_type(response: httpx.Response, url: str) -> str:
+def _resolve_image_media_type(response: httpx2.Response, url: str) -> str:
     """Determine the image media type from the response header, then the URL.
 
     Prefers the server's ``Content-Type`` and falls back to guessing from the

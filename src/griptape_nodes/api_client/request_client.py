@@ -164,13 +164,12 @@ class RequestClient:
             else:
                 result = await asyncio.wrap_future(response_future)
 
-        except TimeoutError:
-            logger.error("Request %s timed out", request_id)
+        except TimeoutError as e:
             self.discard_request(request_id)
-            raise
+            msg = f"Request {request_id} timed out"
+            raise TimeoutError(msg) from e
 
-        except Exception as e:
-            logger.error("Request %s failed: %s", request_id, e)
+        except Exception:
             self.discard_request(request_id)
             raise
         else:
@@ -207,14 +206,14 @@ class RequestClient:
             event_request.request_id = str(uuid.uuid4())
         request_id = event_request.request_id
         event_request.response_topic = worker_response_topic
+        # Before tracking, so a request that cannot be sent leaves no pending response behind.
+        payload_dict = json.loads(event_request.json())
 
         response_future = await self._track_request(request_id)
 
         if worker_response_topic not in self._subscribed_response_topics:
             await self.client.subscribe(worker_response_topic)
             self._subscribed_response_topics.add(worker_response_topic)
-
-        payload_dict = json.loads(event_request.json())
 
         logger.debug("Forwarding request %s to orchestrator on %s", request_id, orchestrator_request_topic)
 
@@ -227,13 +226,12 @@ class RequestClient:
             else:
                 result = await asyncio.wrap_future(response_future)
 
-        except TimeoutError:
-            logger.error("Forwarded request %s timed out", request_id)
+        except TimeoutError as e:
             self.discard_request(request_id)
-            raise
+            msg = f"Forwarded request {request_id} timed out"
+            raise TimeoutError(msg) from e
 
-        except Exception as e:
-            logger.error("Forwarded request %s failed: %s", request_id, e)
+        except Exception:
             self.discard_request(request_id)
             raise
         else:
@@ -317,8 +315,7 @@ class RequestClient:
                 results = await asyncio.wait_for(gather, timeout=timeout_ms / 1000)
             else:
                 results = await gather
-        except (TimeoutError, Exception) as e:
-            logger.error("Batch request failed: %s", e)
+        except Exception:
             for request_id in request_ids:
                 self.discard_request(request_id)
             raise

@@ -15,7 +15,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
-from xdg_base_dirs import xdg_state_home
 
 from griptape_nodes.retained_mode.events.app_events import (
     AppEndSessionRequest,
@@ -29,6 +28,8 @@ from griptape_nodes.retained_mode.events.app_events import (
     SessionHeartbeatResultFailure,
     SessionHeartbeatResultSuccess,
 )
+from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.utils.engine_dirs import engine_state_dir
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -75,10 +76,7 @@ class SessionManager:
         self._sessions_data = self._load_sessions_data()
         self._active_session_id = self._get_or_initialize_active_session()
         if event_manager is not None:
-            event_manager.assign_manager_to_request_type(AppStartSessionRequest, self.handle_session_start_request)
-            event_manager.assign_manager_to_request_type(AppEndSessionRequest, self.handle_session_end_request)
-            event_manager.assign_manager_to_request_type(AppGetSessionRequest, self.handle_get_session_request)
-            event_manager.assign_manager_to_request_type(SessionHeartbeatRequest, self.handle_session_heartbeat_request)
+            event_manager.register_request_handlers(self)
 
     @property
     def active_session_id(self) -> str | None:
@@ -127,7 +125,7 @@ class SessionManager:
 
         # Set as active session
         self._active_session_id = session_id
-        logger.info("Saved and activated session: %s for engine: %s", session_id, engine_id)
+        logger.debug("Saved and activated session: %s for engine: %s", session_id, engine_id)
 
     def remove_session(self, session_id: str) -> None:
         """Remove a session from the sessions data for the current engine.
@@ -148,7 +146,7 @@ class SessionManager:
             self._active_session_id = (
                 self._sessions_data.sessions[0].session_id if self._sessions_data.sessions else None
             )
-            logger.info(
+            logger.debug(
                 "Removed active session %s for engine %s, set new active session to: %s",
                 session_id,
                 engine_id,
@@ -156,7 +154,7 @@ class SessionManager:
             )
 
         self._save_sessions_data(self._sessions_data, engine_id)
-        logger.info("Removed session: %s from engine: %s", session_id, engine_id)
+        logger.debug("Removed session: %s from engine: %s", session_id, engine_id)
 
     def clear_saved_session(self) -> None:
         """Clear all saved session data for the current engine."""
@@ -172,7 +170,7 @@ class SessionManager:
             try:
                 # TODO: Replace with DeleteFileRequest https://github.com/griptape-ai/griptape-nodes/issues/3765
                 session_state_file.unlink()
-                logger.info("Cleared all saved session data for engine: %s", engine_id)
+                logger.debug("Cleared all saved session data for engine: %s", engine_id)
             except OSError:
                 # If we can't delete the file, just clear its contents
                 self._save_sessions_data(self._sessions_data, engine_id)
@@ -266,6 +264,7 @@ class SessionManager:
         # Update in-memory copy
         self._sessions_data = sessions_data
 
+    @handles(AppStartSessionRequest)
     async def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
         current_session_id = self.active_session_id
         if current_session_id is None:
@@ -273,21 +272,22 @@ class SessionManager:
             current_session_id = uuid.uuid4().hex
             self.save_session(current_session_id)
             details = f"New session '{current_session_id}' started at {datetime.now(tz=UTC)}."
-            logger.info(details)
+            logger.debug(details)
         else:
             details = f"Session '{current_session_id}' already active. Joining..."
 
         return AppStartSessionResultSuccess(current_session_id, result_details="Session started successfully.")
 
+    @handles(AppEndSessionRequest)
     async def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
         try:
             previous_session_id = self.active_session_id
             if previous_session_id is None:
                 details = "No active session to end."
-                logger.info(details)
+                logger.debug(details)
             else:
                 details = f"Session '{previous_session_id}' ended at {datetime.now(tz=UTC)}."
-                logger.info(details)
+                logger.debug(details)
                 self.clear_saved_session()
 
             return AppEndSessionResultSuccess(
@@ -295,15 +295,16 @@ class SessionManager:
             )
         except Exception as err:
             details = f"Failed to end session due to '{err}'."
-            logger.error(details)
             return AppEndSessionResultFailure(result_details=details)
 
+    @handles(AppGetSessionRequest)
     def handle_get_session_request(self, _: AppGetSessionRequest) -> ResultPayload:
         return AppGetSessionResultSuccess(
             session_id=self.active_session_id,
             result_details="Session ID retrieved successfully.",
         )
 
+    @handles(SessionHeartbeatRequest)
     def handle_session_heartbeat_request(self, request: SessionHeartbeatRequest) -> ResultPayload:  # noqa: ARG002
         """Handle session heartbeat requests.
 
@@ -313,14 +314,12 @@ class SessionManager:
             active_session_id = self.active_session_id
             if active_session_id is None:
                 details = "Session heartbeat received but no active session found"
-                logger.warning(details)
                 return SessionHeartbeatResultFailure(result_details=details)
 
             details = f"Session heartbeat successful for session: {active_session_id}"
             return SessionHeartbeatResultSuccess(result_details=details)
         except Exception as err:
             details = f"Failed to handle session heartbeat: {err}"
-            logger.error(details)
             return SessionHeartbeatResultFailure(result_details=details)
 
     @staticmethod
@@ -355,7 +354,7 @@ class SessionManager:
         Args:
             engine_id: Optional engine ID to create engine-specific directory
         """
-        base_dir = xdg_state_home() / "griptape_nodes"
+        base_dir = engine_state_dir()
         if engine_id:
             return base_dir / "engines" / engine_id
         return base_dir

@@ -6,10 +6,110 @@ Rename the key in any config file or environment that sets it; the environment v
 `GTN_CONFIG_WORKER__LIBRARY_LOAD_TIMEOUT_S`. The old name is not read, so a setting left behind
 silently reverts to the 600 second default.
 
-What the value bounds is unchanged: how long a worker may take to load its library, covering the boot
-wait for worker libraries, a node waiting for its library's worker, and a project switch waiting for
-each worker to adopt it. It no longer delays heartbeat enforcement, which is what the old name
-suggested. `worker.heartbeat_timeout_s` and `worker.heartbeat_interval_s` own that.
+What the value bounds is unchanged: how long a worker may take to load its library, covering a node
+waiting for its library's worker and a project switch waiting for each worker to adopt it. It no
+longer delays heartbeat enforcement, which is what the old name suggested. `worker.heartbeat_timeout_s` and `worker.heartbeat_interval_s` own that.
+
+## Libraries no longer choose a worker
+
+Where a library's nodes execute now follows from its dependencies. A library that declared
+`SuggestedWorkerMode(WORKER)`, or that a user set to "Isolated" through `worker_mode_override`, used
+to be hosted whole in a worker process. It now loads into the engine process like any other
+library, and its `pip_dependencies` install into `<library>/.venv`, which sits on the engine's own
+import path. Packages that conflict with the engine's now conflict in that process.
+
+**Library authors.** Move the packages that need isolation into `pip_dependencies_exec`, under
+`metadata.dependencies` in `griptape-nodes-library.json`:
+
+```json
+"dependencies": {
+  "pip_dependencies": ["pillow"],
+  "pip_dependencies_exec": ["torch", "diffusers"]
+}
+```
+
+The library's nodes still load in the engine, so the editor gets their real traits, converters,
+and validators. Only `process`/`aprocess` runs in a worker, against `<library>/.venv-exec`, which is
+resolved over both sets. A node module must stay importable without the execution set, so import
+those packages inside `process`. See
+[How to declare execution dependencies](docs/development/custom_nodes/node_isolation_with_workers.md#how-to-declare-execution-dependencies).
+
+`WorkerModeCompatibility`, `SuggestedWorkerMode`, and the `worker_mode_override` key in
+`libraries_to_register` still parse, so neither old manifests nor old config files fail to load.
+They have no effect. While a library still asks for a worker and declares no
+`pip_dependencies_exec`, loading it logs one INFO line saying so.
+
+**Also removed:**
+
+- The `WORKER_DELEGATED` and `WORKER_PENDING` library lifecycle states.
+- `requires_worker` on a library's diagnostics.
+- `node_schemas` on `ReportLibraryLoadedRequest`, with the `WorkerNodeSchema` and
+    `WorkerParameterSchema` payloads it carried.
+- The strict-mode rules `reentrant-bus-in-init`, `parameter-behaviors-dropped-in-schema`,
+    `connection-hooks-inert-on-worker`, and `value-hooks-execute-only-on-worker`, and the
+    `LOAD_PROBE` scope kind. `parameter-mutation-during-aprocess` is the only rule left.
+- The fitness problems reporting that request handlers and post-dispatch hooks are unsupported in an
+    isolated library. Both now work in every library.
+
+## Parameter values carry their type
+
+**Request API and editor clients.** A parameter value of a type JSON lacks arrives as a dict whose
+`$type` names its Python type. A tuple that arrived as `[1, 2]` now arrives as:
+
+```json
+{"$type": "builtins:tuple", "$value": [1, 2]}
+```
+
+Send a value back in the same form to set that exact type.
+
+[Parameter values](docs/guides/mcp/external_clients.md#parameter-values) lists the forms and which
+fields carry them.
+
+**Library authors.** A field of your own request, result, or event payload that holds parameter
+values must be annotated `Value`. A field typed `Any` that holds a griptape object, or any value
+JSON can't represent, now fails to send:
+
+```python
+from griptape_nodes.serialization.values import Value
+
+
+@dataclass
+class ColorizeResultSuccess(ResultPayloadSuccess):
+    image: Value  # was: Any
+```
+
+To make a class you own save, decorate it with `register_value_codec` and
+give it `to_state()` and a `from_state()` classmethod. For a class you cannot edit, pass the
+conversion functions from your library's `before_library_nodes_loaded`:
+
+```python
+import numpy as np
+
+from griptape_nodes.exe_types.core_types import register_value_codec
+from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
+
+
+@register_value_codec
+class Palette:
+    def __init__(self, colors: list[str]) -> None:
+        self.colors = colors
+
+    def to_state(self) -> dict:
+        return {"colors": self.colors}
+
+    @classmethod
+    def from_state(cls, state: dict) -> "Palette":
+        return cls(state["colors"])
+
+
+class MyLibrary(AdvancedNodeLibrary):
+    def before_library_nodes_loaded(self, library_data, library) -> None:
+        register_value_codec(
+            np.ndarray,
+            to_state=lambda array: {"dtype": str(array.dtype), "shape": list(array.shape), "data": array.tobytes()},
+            from_state=lambda state: np.frombuffer(state["data"], state["dtype"]).reshape(state["shape"]),
+        )
+```
 
 ## `serializable=False` outputs are held in their own process across a worker boundary
 

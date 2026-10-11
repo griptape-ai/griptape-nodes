@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from contextvars import ContextVar
@@ -201,11 +202,11 @@ class VariableResolver:
 
         Routing it through GetVariableSubstitutionEnabledRequest so it forwards was tried and
         backed out: `parameter_output_values[...] = x` inside a node `__init__` reaches this
-        through TrackedParameterOutputValues, so every node construction became a bus request
-        and tripped `reentrant-bus-in-init`. Fixing it properly means resolving the answer once
-        per execution and carrying it, rather than asking per value.
+        through TrackedParameterOutputValues, so every node construction became a bus request.
+        Fixing it properly means resolving the answer once per execution and carrying it,
+        rather than asking per value.
         """
-        return engine.workflow_manager.is_variable_substitution_enabled()
+        return engine.workflow_manager.variable_substitution.is_enabled()
 
     @staticmethod
     def get_variables_if_enabled(engine: Engine, node_name: str) -> dict[str, str | int] | None:
@@ -228,7 +229,7 @@ class VariableResolver:
         """
         # Same local read as is_substitution_enabled, and the same worker limitation applies;
         # see the note there.
-        if not engine.workflow_manager.is_variable_substitution_enabled():
+        if not engine.workflow_manager.variable_substitution.is_enabled():
             return None
 
         cached = _aprocess_variable_cache.get()
@@ -328,9 +329,36 @@ class VariableResolver:
 
     @staticmethod
     def _filter_for_substitution(variables: dict[str, Any]) -> dict[str, str | int]:
-        """Filter a name→value dict to only str/int values (excluding bool) for macro substitution."""
-        return {
-            name: value
-            for name, value in variables.items()
-            if isinstance(value, (str, int)) and not isinstance(value, bool)
-        }
+        """Filter a name→value dict to the values that can substitute into {VAR} tokens.
+
+        str and int (excluding bool) pass through unchanged. Floats, bools, dicts, and lists pass as
+        strings, so the substitution and picker code downstream only ever sees str/int. A float,
+        bool, or dict is spelled as compact JSON (`1.5`, `true`, `{"a": 1}`), and a list has one
+        item per line.
+        """
+        filtered: dict[str, str | int] = {}
+        for name, value in variables.items():
+            if isinstance(value, list):
+                filtered[name] = VariableResolver._render_list(value)
+            # bool subclasses int, so it has to be caught before the int branch below.
+            elif isinstance(value, (bool, float, dict)):
+                filtered[name] = VariableResolver._render_value(value)
+            elif isinstance(value, (str, int)):
+                filtered[name] = value
+        return filtered
+
+    @staticmethod
+    def _render_list(items: list[Any]) -> str:
+        """Join list items into one string, one item per line."""
+        return "\n".join(VariableResolver._render_value(item) for item in items)
+
+    @staticmethod
+    def _render_value(item: Any) -> str:
+        """Strings pass through. Every other item is JSON, so a value is spelled the same at any depth."""
+        if isinstance(item, str):
+            return item
+        try:
+            return json.dumps(item)
+        except (TypeError, ValueError):
+            # Non-JSON values, or a container that contains itself.
+            return str(item)

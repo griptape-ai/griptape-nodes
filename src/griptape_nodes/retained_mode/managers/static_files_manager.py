@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import NamedTuple
 
 import anyio
-from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.common.project_templates.situation import BuiltInSituation, SituationFilePolicy
@@ -53,17 +52,19 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.servers.static import (
     ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV,
     STATIC_SERVER_HOST,
     STATIC_SERVER_PORT,
     STATIC_SERVER_URL,
 )
+from griptape_nodes.utils.engine_dirs import engine_config_dir
 from griptape_nodes.utils.url_utils import uri_to_path
 
 logger = logging.getLogger("griptape_nodes")
 
-USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
+USER_CONFIG_PATH = engine_config_dir() / "griptape_nodes_config.json"
 
 
 class ResolvedStaticFilePath(NamedTuple):
@@ -175,19 +176,7 @@ class StaticFilesManager(EngineScoped):
                 raise ValueError(msg)
 
         if event_manager is not None:
-            event_manager.assign_manager_to_request_type(
-                CreateStaticFileRequest, self.on_handle_create_static_file_request
-            )
-            event_manager.assign_manager_to_request_type(
-                CreateStaticFileUploadUrlRequest, self.on_handle_create_static_file_upload_url_request
-            )
-            event_manager.assign_manager_to_request_type(
-                CreateStaticFileDownloadUrlRequest, self.on_handle_create_static_file_download_url_request
-            )
-            event_manager.assign_manager_to_request_type(
-                CreateStaticFileDownloadUrlFromPathRequest,
-                self.on_handle_create_static_file_download_url_from_path_request,
-            )
+            event_manager.register_request_handlers(self)
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
@@ -304,6 +293,7 @@ class StaticFilesManager(EngineScoped):
         logger.debug("Serving preview for %s -> %s", file_path, preview_path)
         return PreviewResolution(path_to_serve=preview_path, artifact_metadata=result.artifact_metadata)
 
+    @handles(CreateStaticFileRequest)
     def on_handle_create_static_file_request(
         self,
         request: CreateStaticFileRequest,
@@ -324,6 +314,7 @@ class StaticFilesManager(EngineScoped):
 
         return CreateStaticFileResultSuccess(url=url, result_details=f"Successfully created static file: {url}")
 
+    @handles(CreateStaticFileUploadUrlRequest)
     def on_handle_create_static_file_upload_url_request(
         self,
         request: CreateStaticFileUploadUrlRequest,
@@ -358,6 +349,7 @@ class StaticFilesManager(EngineScoped):
             result_details="Successfully created static file upload URL",
         )
 
+    @handles(CreateStaticFileDownloadUrlRequest)
     def on_handle_create_static_file_download_url_request(
         self,
         request: CreateStaticFileDownloadUrlRequest,
@@ -479,6 +471,7 @@ class StaticFilesManager(EngineScoped):
             logger.debug("Serving full image (no thumbnail available) for %s", file_path)
         return resolution
 
+    @handles(CreateStaticFileDownloadUrlFromPathRequest)
     async def on_handle_create_static_file_download_url_from_path_request(
         self,
         request: CreateStaticFileDownloadUrlFromPathRequest,
@@ -504,7 +497,6 @@ class StaticFilesManager(EngineScoped):
             parsed = ParsedMacro(file_path)
         except MacroSyntaxError as e:
             msg = f"Attempted to create download URL. Failed with file_path='{file_path}' because the path has invalid macro syntax: {e}"
-            logger.warning(msg)
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         # Keep the original macro form alongside the resolved path: preview metadata
@@ -668,7 +660,6 @@ class StaticFilesManager(EngineScoped):
             raise
         except Exception as e:
             msg = f"Failed to save static file {file_name}: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
         return self.storage_driver.create_signed_download_url(Path(saved_path))
 

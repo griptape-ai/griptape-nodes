@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -48,16 +49,16 @@ class ControlFlowContext(EngineScoped):
     selected_output: Parameter | None
     paused: bool = False
     flow_name: str
-    pickle_control_flow_result: bool
     end_node: BaseNode | None = None
     is_isolated: bool
+    # perf_counter() when the current run started, for the run_seconds the run's end events carry.
+    run_started_at: float | None = None
 
     def __init__(
         self,
         flow_name: str,
         max_nodes_in_parallel: int,
         *,
-        pickle_control_flow_result: bool = False,
         is_isolated: bool = False,
         engine: Engine | None = None,
     ) -> None:
@@ -78,7 +79,6 @@ class ControlFlowContext(EngineScoped):
             flow_name, max_nodes_in_parallel, dag_builder=dag_builder, engine=self.engine
         )
         self.current_nodes = []
-        self.pickle_control_flow_result = pickle_control_flow_result
         self.is_isolated = is_isolated
 
     def reset(self, *, cancel: bool = False) -> None:
@@ -89,6 +89,13 @@ class ControlFlowContext(EngineScoped):
         self.resolution_machine.reset_machine(cancel=cancel)
         self.selected_output = None
         self.paused = False
+        self.run_started_at = None
+
+    def seconds_since_run_started(self) -> float | None:
+        """Seconds since the current run started, or None when no run is being timed."""
+        if self.run_started_at is None:
+            return None
+        return time.perf_counter() - self.run_started_at
 
 
 # GOOD!
@@ -109,7 +116,7 @@ class ResolveNodeState(State):
                     wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=current_node.name))
                 )
             )
-            logger.info("Resolving %s", current_node.name)
+            logger.debug("Resolving %s", current_node.name)
         if not context.paused:
             # Call the update. Otherwise wait
             return ResolveNodeState
@@ -151,25 +158,18 @@ class CompleteState(State):
 
         # Broadcast completion events for any remaining current nodes
         for current_node in context.current_nodes:
-            # Use pickle-based serialization for complex parameter output values
-
-            parameter_output_values, unique_uuid_to_values = NodeManager.serialize_parameter_output_values(
-                current_node,
-                workflow_manager=context.engine.workflow_manager,
-                use_pickling=context.pickle_control_flow_result,
-            )
             context.engine.event_manager.put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=ControlFlowResolvedEvent(
                             end_node_name=current_node.name,
-                            parameter_output_values=parameter_output_values,
-                            unique_parameter_uuid_to_values=unique_uuid_to_values or None,
+                            parameter_output_values=NodeManager.result_parameter_values(current_node),
+                            run_seconds=context.seconds_since_run_started(),
                         )
                     )
                 )
             )
-        logger.info("Flow is complete.")
+        logger.debug("Flow is complete.")
         return None
 
     @staticmethod
@@ -183,7 +183,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self,
         flow_name: str,
         *,
-        pickle_control_flow_result: bool = False,
         is_isolated: bool = False,
         engine: Engine | None = None,
     ) -> None:
@@ -203,7 +202,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         context = ControlFlowContext(
             flow_name,
             max_nodes_in_parallel,
-            pickle_control_flow_result=pickle_control_flow_result,
             is_isolated=is_isolated,
             engine=resolved_engine,
         )
@@ -212,6 +210,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     async def start_flow(
         self, start_node: BaseNode, end_node: BaseNode | None = None, *, debug_mode: bool = False
     ) -> None:
+        self._context.run_started_at = time.perf_counter()
         # If using DAG resolution, process data_nodes from queue first
         current_nodes = await self._process_nodes_for_dag(start_node)
         self._context.current_nodes = current_nodes

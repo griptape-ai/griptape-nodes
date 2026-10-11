@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from typing import TYPE_CHECKING, NamedTuple
 
+from griptape_nodes.common.node_executor import ExecuteNodeFailedError
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
@@ -21,7 +23,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
 )
-from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
@@ -30,10 +31,12 @@ from griptape_nodes.retained_mode.events.execution_events import (
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
 )
+from griptape_nodes.retained_mode.events.node_error_details import NodeErrorDetails, build_node_error_details
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
     SetParameterValueResultFailure,
 )
+from griptape_nodes.serialization.values import encode_for_display
 
 if TYPE_CHECKING:
     from griptape_nodes.common.directed_graph import DirectedGraph
@@ -46,6 +49,13 @@ logger = logging.getLogger("griptape_nodes")
 # How long a driver waits on the new-work flag when it has nothing running and nothing it
 # can dispatch. Short enough to stay responsive, long enough not to busy-loop.
 _IDLE_RECHECK_SECONDS = 0.05
+
+
+def _node_error_details(node_name: str, exc: BaseException) -> NodeErrorDetails:
+    """Use the details built where the node failed, or build them from an engine exception that never became a result."""
+    if isinstance(exc, ExecuteNodeFailedError):
+        return exc.details
+    return build_node_error_details(node_name, exc)
 
 
 class NodeStatesResult(NamedTuple):
@@ -236,8 +246,8 @@ class ExecuteDagState(State):
         if logger.level <= logging.DEBUG:
             logger.debug(
                 "INPUTS: %s\nOUTPUTS: %s",
-                safe_unstructure(current_node.parameter_values),
-                safe_unstructure(current_node.parameter_output_values),
+                encode_for_display(dict(current_node.parameter_values)),
+                encode_for_display(dict(current_node.parameter_output_values)),
             )
 
         for parameter_name, value in current_node.parameter_output_values.items():
@@ -263,7 +273,7 @@ class ExecuteDagState(State):
                             node_name=current_node.name,
                             parameter_name=parameter_name,
                             data_type=data_type,
-                            value=safe_unstructure(display_value),
+                            value=display_value,
                         )
                     ),
                 )
@@ -280,7 +290,7 @@ class ExecuteDagState(State):
         # displayed values, so raw substituted values (e.g. "25") would
         # overwrite the template (e.g. "{SHOT}") the user sees on the node.
         display_output_values = {
-            param_name: safe_unstructure(current_node.get_display_value_for_output(param_name, val))
+            param_name: current_node.get_display_value_for_output(param_name, val)
             for param_name, val in current_node.parameter_output_values.items()
         }
         await context.engine.event_manager.aput_event(
@@ -291,6 +301,7 @@ class ExecuteDagState(State):
                         parameter_output_values=display_output_values,
                         node_type=current_node.__class__.__name__,
                         specific_library_name=library_name,
+                        run_seconds=done_node.run_seconds,
                     )
                 )
             )
@@ -507,7 +518,6 @@ class ExecuteDagState(State):
                 )
                 if isinstance(result, SetParameterValueResultFailure):
                     msg = f"Failed to set parameter value for node '{current_node.name}' and parameter '{parameter.name}'. Details: {result.result_details}"
-                    logger.error(msg)
                     raise RuntimeError(msg)
 
     @staticmethod
@@ -593,7 +603,11 @@ class ExecuteDagState(State):
     @staticmethod
     async def execute_node(engine: Engine, current_node: DagNode) -> None:
         executor = engine.flow_manager.node_executor
-        await executor.execute(current_node.node_reference)
+        started_at = time.perf_counter()
+        try:
+            await executor.execute(current_node.node_reference)
+        finally:
+            current_node.run_seconds = time.perf_counter() - started_at
 
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
@@ -674,6 +688,7 @@ class ExecuteDagState(State):
                             payload=NodeErrorEvent(
                                 node_name=error_node_name,
                                 error_message=str(e),
+                                error=_node_error_details(error_node_name, e),
                             )
                         )
                     )
@@ -704,6 +719,7 @@ class ExecuteDagState(State):
                             payload=NodeErrorEvent(
                                 node_name=validation_node_name,
                                 error_message=str(exceptions),
+                                error=build_node_error_details(validation_node_name, exceptions),
                             )
                         )
                     )
@@ -815,14 +831,19 @@ class ExecuteDagState(State):
                 if task.cancelled():
                     # Task was cancelled - this is expected during flow cancellation
                     dag_node.node_state = NodeState.CANCELED
-                    logger.info("Task execution was cancelled.")
+                    logger.debug("Task execution was cancelled.")
                     return ErrorState
                 if (exc := task.exception()) is not None:
                     node_name = dag_node.node_reference.name
                     dag_node.node_state = NodeState.ERRORED
 
-                    logger.error("Error processing node '%s'", node_name, exc_info=exc)
-                    msg = f"Node '{node_name}' encountered a problem: {exc}"
+                    # Every caller of the machine reports the failure from `get_error_message()`.
+                    logger.debug("Node '%s' failed", node_name, exc_info=exc)
+                    # ExecuteNodeFailedError already names the node.
+                    if isinstance(exc, ExecuteNodeFailedError):
+                        msg = str(exc)
+                    else:
+                        msg = f"Node '{node_name}' encountered a problem: {exc}"
 
                     await context.engine.event_manager.aput_event(
                         ExecutionGriptapeNodeEvent(
@@ -830,6 +851,8 @@ class ExecuteDagState(State):
                                 payload=NodeErrorEvent(
                                     node_name=node_name,
                                     error_message=str(exc),
+                                    error=_node_error_details(node_name, exc),
+                                    run_seconds=dag_node.run_seconds,
                                 )
                             )
                         )

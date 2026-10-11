@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
-import httpx
+import httpx2
 
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
 from griptape_nodes.files.path_utils import canonicalize_to_posix, strip_windows_long_path_prefix
@@ -86,18 +86,16 @@ class LocalStorageDriver(BaseStorageDriver):
 
         static_url = urljoin(self.base_url, "/static-upload-urls")
         try:
-            response = httpx.post(static_url, json={"file_path": str(resolved_path)})
+            response = httpx2.post(static_url, json={"file_path": str(resolved_path)})
             response.raise_for_status()
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = f"Failed to create upload URL for file {resolved_path}: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         response_data = response.json()
         url = response_data.get("url")
         if url is None:
             msg = f"Failed to get upload URL for file {resolved_path}: {response_data}"
-            logger.error(msg)
             raise ValueError(msg)
 
         return {
@@ -218,14 +216,13 @@ class LocalStorageDriver(BaseStorageDriver):
         delete_url = urljoin(self.base_url, f"/static-files/{path.as_posix()}")
 
         try:
-            response = httpx.delete(delete_url)
+            response = httpx2.delete(delete_url)
             response.raise_for_status()
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             if e.response.status_code == HTTPStatus.NOT_FOUND:
                 logger.debug("File %s is already absent from local storage; nothing to delete", path)
                 return
             msg = f"Failed to delete file {path}: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
     def list_files(self) -> list[str]:
@@ -238,11 +235,10 @@ class LocalStorageDriver(BaseStorageDriver):
         list_url = urljoin(self.base_url, "/static-uploads/")
 
         try:
-            response = httpx.get(list_url)
+            response = httpx2.get(list_url)
             response.raise_for_status()
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = f"Failed to list files: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         response_data = response.json()

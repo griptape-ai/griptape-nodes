@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import dataclasses
+import json
 import logging
-import pickle
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
 
@@ -18,14 +18,14 @@ from griptape_nodes.common.strict_mode import (
 from griptape_nodes.exe_types.local_objects import cache_outputs_for_egress
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from griptape_nodes.node_library.library_declarations import LibraryDeclaration, NodeDeclaration
     from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
-    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+from griptape_nodes.drivers.cloud_credentials import resolve_cloud_host
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
     BaseIterativeStartNode,
@@ -53,6 +53,7 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeResolutionState,
     TransformedParameterValue,
+    _values_differ,
     aprocess_scope,
     sanctioned_parameter_mutation,
 )
@@ -87,7 +88,6 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeResultSuccess,
     OutgoingConnection,
 )
-from griptape_nodes.retained_mode.events.event_converter import converter, safe_unstructure
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelExecuteNodeRequest,
     CancelExecuteNodeResultSuccess,
@@ -108,6 +108,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
 )
+from griptape_nodes.retained_mode.events.node_error_details import build_node_error_details
 from griptape_nodes.retained_mode.events.node_events import (
     AddNodesToNodeGroupRequest,
     AddNodesToNodeGroupResultFailure,
@@ -243,8 +244,29 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointSubjectType,
 )
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
+from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
+from griptape_nodes.serialization.converter import converter, dump_json
+from griptape_nodes.serialization.legacy_pickle import (
+    LegacyPickleError,
+    read_legacy_clipboard_commands,
+    read_legacy_clipboard_value,
+)
+from griptape_nodes.serialization.values import (
+    JsonValue,
+    UndecodedValue,
+    Unencodable,
+    ValueEncodeError,
+    decode_value,
+    encodable_default,
+    try_encode,
+    value_key,
+)
 from griptape_nodes.traits.trait_resolver import resolve_trait
+from griptape_nodes.utils.budget_refusal import BudgetExceededError, BudgetRefusal, refusal_from_exception
+from griptape_nodes.utils.budget_refusal import describe as describe_budget_refusal
+from griptape_nodes.utils.budget_refusal import log_line as budget_log_line
 from griptape_nodes.utils.exception_utils import readable_exception_message
 
 logger = logging.getLogger("griptape_nodes")
@@ -274,18 +296,6 @@ class _FlowCancelOutcome:
 
     failure: ResultPayload | None = None
     cancelled_for_node_name: str | None = None
-
-
-class SerializedParameterValues(NamedTuple):
-    """Result of serializing parameter output values.
-
-    Attributes:
-        parameter_output_values: Either raw values or UUID references if pickling was used
-        unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
-    """
-
-    parameter_output_values: dict[str, Any]
-    unique_parameter_uuid_to_values: dict[Any, Any] | None
 
 
 class CanResetResult(NamedTuple):
@@ -325,6 +335,10 @@ class SerializedGroupResult:
     child_uuids: list[SerializedNodeCommands.NodeUUID]
 
 
+class CopiedNodesError(Exception):
+    """Copied nodes could not be read for pasting. The message completes 'Failed because ...'."""
+
+
 class _NodeInstantiationDeniedError(Exception):
     """Raised inside node creation when the license policy denies the node type.
 
@@ -356,88 +370,7 @@ class NodeManager(EngineScoped):
         # task to cancel.
         self._worker_inflight_aprocesses: dict[str, tuple[asyncio.Task, BaseNode]] = {}
 
-        event_manager.assign_manager_to_request_type(CreateNodeRequest, self.on_create_node_request)
-        event_manager.assign_manager_to_request_type(
-            AddNodesToNodeGroupRequest, self.on_add_nodes_to_node_group_request
-        )
-        event_manager.assign_manager_to_request_type(
-            RemoveNodeFromNodeGroupRequest, self.on_remove_node_from_node_group_request
-        )
-        event_manager.assign_manager_to_request_type(DeleteNodeRequest, self.on_delete_node_request)
-        event_manager.assign_manager_to_request_type(MoveNodeToNewFlowRequest, self.on_move_node_to_new_flow_request)
-        event_manager.assign_manager_to_request_type(
-            GetNodeResolutionStateRequest, self.on_get_node_resolution_state_request
-        )
-        event_manager.assign_manager_to_request_type(GetNodeMetadataRequest, self.on_get_node_metadata_request)
-        event_manager.assign_manager_to_request_type(SetNodeMetadataRequest, self.on_set_node_metadata_request)
-        event_manager.assign_manager_to_request_type(
-            BatchSetNodeMetadataRequest, self.on_batch_set_node_metadata_request
-        )
-        event_manager.assign_manager_to_request_type(
-            ListConnectionsForNodeRequest, self.on_list_connections_for_node_request
-        )
-        event_manager.assign_manager_to_request_type(
-            GetConnectionsForParameterRequest, self.on_get_connections_for_parameter_request
-        )
-        event_manager.assign_manager_to_request_type(
-            ListParametersOnNodeRequest, self.on_list_parameters_on_node_request
-        )
-        event_manager.assign_manager_to_request_type(AddParameterToNodeRequest, self.on_add_parameter_to_node_request)
-        event_manager.assign_manager_to_request_type(
-            AddParameterGroupToNodeRequest, self.on_add_parameter_group_to_node_request
-        )
-        event_manager.assign_manager_to_request_type(
-            AlterParameterGroupDetailsRequest, self.on_alter_parameter_group_details_request
-        )
-        event_manager.assign_manager_to_request_type(
-            RemoveParameterFromNodeRequest, self.on_remove_parameter_from_node_request
-        )
-        event_manager.assign_manager_to_request_type(GetParameterDetailsRequest, self.on_get_parameter_details_request)
-        event_manager.assign_manager_to_request_type(
-            AlterParameterDetailsRequest, self.on_alter_parameter_details_request
-        )
-        event_manager.assign_manager_to_request_type(GetParameterValueRequest, self.on_get_parameter_value_request)
-        event_manager.assign_manager_to_request_type(SetParameterValueRequest, self.on_set_parameter_value_request)
-        event_manager.assign_manager_to_request_type(RenameParameterRequest, self.on_rename_parameter_request)
-        event_manager.assign_manager_to_request_type(
-            ReorderParameterListItemRequest, self.on_reorder_parameter_list_item_request
-        )
-        event_manager.assign_manager_to_request_type(MigrateParameterRequest, self.on_migrate_parameter_request)
-        event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
-        event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
-        event_manager.assign_manager_to_request_type(
-            GetCompatibleParametersRequest, self.on_get_compatible_parameters_request
-        )
-        event_manager.assign_manager_to_request_type(
-            ValidateNodeDependenciesRequest, self.on_validate_node_dependencies_request
-        )
-        event_manager.assign_manager_to_request_type(
-            GetNodeElementDetailsRequest, self.on_get_node_element_details_request
-        )
-        event_manager.assign_manager_to_request_type(SerializeNodeToCommandsRequest, self.on_serialize_node_to_commands)
-        event_manager.assign_manager_to_request_type(
-            DeserializeNodeFromCommandsRequest, self.on_deserialize_node_from_commands
-        )
-        event_manager.assign_manager_to_request_type(
-            SerializeSelectedNodesToCommandsRequest, self.on_serialize_selected_nodes_to_commands
-        )
-        event_manager.assign_manager_to_request_type(
-            DeserializeSelectedNodesFromCommandsRequest, self.on_deserialize_selected_nodes_from_commands
-        )
-        event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
-        event_manager.assign_manager_to_request_type(SetLockNodeStateRequest, self.on_toggle_lock_node_request)
-        event_manager.assign_manager_to_request_type(GetFlowForNodeRequest, self.on_get_flow_for_node_request)
-        event_manager.assign_manager_to_request_type(SendNodeMessageRequest, self.on_send_node_message_request)
-        event_manager.assign_manager_to_request_type(
-            CanResetNodeToDefaultsRequest, self.on_can_reset_node_to_defaults_request
-        )
-        event_manager.assign_manager_to_request_type(ResetNodeToDefaultsRequest, self.on_reset_node_to_defaults_request)
-        event_manager.assign_manager_to_request_type(UnresolveNodeRequest, self.on_unresolve_node_request)
-        event_manager.assign_manager_to_request_type(
-            BatchSetNodeLockStateRequest, self.on_batch_set_lock_node_state_request
-        )
-        event_manager.assign_manager_to_request_type(ExecuteNodeRequest, self.on_execute_node_request)
-        event_manager.assign_manager_to_request_type(CancelExecuteNodeRequest, self.on_cancel_execute_node_request)
+        event_manager.register_request_handlers(self)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -727,23 +660,24 @@ class NodeManager(EngineScoped):
 
         resolved_library_name = library_name
         if resolved_library_name is None:
-            resolved_library_name = self.engine.library_manager.get_library_name_for_node_type(node_type)
+            resolved_library_name = self.engine.library_manager.catalog.get_library_name_for_node_type(node_type)
         if resolved_library_name is None:
             return message
 
         library_manager = self.engine.library_manager
         parts = [message]
 
-        problems = library_manager.get_collated_problems_for_library(resolved_library_name)
+        problems = library_manager.catalog.get_collated_problems_for_library(resolved_library_name)
         if problems is not None:
             parts.append(f"Library '{resolved_library_name}' reported problems when it loaded:\n{problems}")
 
-        stale_module_explanation = library_manager.explain_stale_module_failure(resolved_library_name)
+        stale_module_explanation = library_manager.catalog.explain_stale_module_failure(resolved_library_name)
         if stale_module_explanation is not None:
             parts.append(stale_module_explanation)
 
         return "\n\n".join(parts)
 
+    @handles(CreateNodeRequest)
     def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
@@ -1109,6 +1043,7 @@ class NodeManager(EngineScoped):
 
         return node_group
 
+    @handles(AddNodesToNodeGroupRequest)
     def on_add_nodes_to_node_group_request(self, request: AddNodesToNodeGroupRequest) -> ResultPayload:
         """Handle AddNodeToNodeGroupRequest to add a node to an existing NodeGroup.
 
@@ -1207,6 +1142,7 @@ class NodeManager(EngineScoped):
 
         return node_group
 
+    @handles(RemoveNodeFromNodeGroupRequest)
     def on_remove_node_from_node_group_request(self, request: RemoveNodeFromNodeGroupRequest) -> ResultPayload:
         """Handle RemoveNodeFromNodeGroupRequest to remove nodes from an existing NodeGroup.
 
@@ -1402,6 +1338,7 @@ class NodeManager(EngineScoped):
 
         return False
 
+    @handles(DeleteNodeRequest)
     async def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (Complex logic, lots of edge cases)
         node_name = request.node_name
         node = None
@@ -1525,6 +1462,7 @@ class NodeManager(EngineScoped):
             )
         return DeleteNodeResultSuccess(result_details=details)
 
+    @handles(MoveNodeToNewFlowRequest)
     def on_move_node_to_new_flow_request(self, request: MoveNodeToNewFlowRequest) -> ResultPayload:  # noqa: PLR0911
         """Move a node from one flow to another flow.
 
@@ -1593,6 +1531,7 @@ class NodeManager(EngineScoped):
             result_details=details,
         )
 
+    @handles(GetNodeResolutionStateRequest)
     def on_get_node_resolution_state_request(self, request: GetNodeResolutionStateRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
@@ -1620,6 +1559,7 @@ class NodeManager(EngineScoped):
         result = GetNodeResolutionStateResultSuccess(state=node_state.name, result_details=details)
         return result
 
+    @handles(GetNodeMetadataRequest)
     def on_get_node_metadata_request(self, request: GetNodeMetadataRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
@@ -1648,6 +1588,7 @@ class NodeManager(EngineScoped):
         result = GetNodeMetadataResultSuccess(metadata=metadata, result_details=details)
         return result
 
+    @handles(SetNodeMetadataRequest)
     def on_set_node_metadata_request(self, request: SetNodeMetadataRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
@@ -1678,6 +1619,7 @@ class NodeManager(EngineScoped):
         result = SetNodeMetadataResultSuccess(result_details=details)
         return result
 
+    @handles(BatchSetNodeMetadataRequest)
     def on_batch_set_node_metadata_request(self, request: BatchSetNodeMetadataRequest) -> ResultPayload:
         updated_nodes = []
         failed_nodes = {}
@@ -1722,6 +1664,7 @@ class NodeManager(EngineScoped):
             result_details=f"Successfully updated metadata for {len(updated_nodes)} nodes.",
         )
 
+    @handles(ListConnectionsForNodeRequest)
     def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912 Removed list comprehension
         node_name = request.node_name
         node = None
@@ -1794,6 +1737,7 @@ class NodeManager(EngineScoped):
         )
         return result
 
+    @handles(GetConnectionsForParameterRequest)
     def on_get_connections_for_parameter_request(
         self, request: GetConnectionsForParameterRequest
     ) -> GetConnectionsForParameterResultFailure | GetConnectionsForParameterResultSuccess:
@@ -1872,6 +1816,7 @@ class NodeManager(EngineScoped):
         )
         return result
 
+    @handles(ListParametersOnNodeRequest)
     def on_list_parameters_on_node_request(self, request: ListParametersOnNodeRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
@@ -1919,6 +1864,7 @@ class NodeManager(EngineScoped):
             counter += 1
         return f"{base_name}_{counter}"
 
+    @handles(AddParameterToNodeRequest)
     def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -2049,6 +1995,7 @@ class NodeManager(EngineScoped):
             parent_element_name=parent_group.name if parent_group is not None else None,
             settable=request.settable,
             allow_variable_substitution=request.allow_variable_substitution,
+            serializable=request.serializable,
         )
         # Hand saved state to the traits so their converters, validators, and rendered
         # options match what was saved.
@@ -2081,6 +2028,7 @@ class NodeManager(EngineScoped):
         )
         return result
 
+    @handles(AddParameterGroupToNodeRequest)
     def on_add_parameter_group_to_node_request(  # noqa: C901, PLR0911
         self, request: AddParameterGroupToNodeRequest
     ) -> ResultPayload:
@@ -2147,6 +2095,7 @@ class NodeManager(EngineScoped):
             group_name=new_group.name, node_name=node_name, result_details=details
         )
 
+    @handles(RemoveParameterFromNodeRequest)
     def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -2265,6 +2214,7 @@ class NodeManager(EngineScoped):
         result = RemoveParameterFromNodeResultSuccess(result_details=details)
         return result
 
+    @handles(GetParameterDetailsRequest)
     def on_get_parameter_details_request(self, request: GetParameterDetailsRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
@@ -2329,6 +2279,7 @@ class NodeManager(EngineScoped):
         )
         return result
 
+    @handles(GetNodeElementDetailsRequest)
     def on_get_node_element_details_request(self, request: GetNodeElementDetailsRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
@@ -2389,27 +2340,8 @@ class NodeManager(EngineScoped):
                 # Otherwise grab the set value or default value
                 value = node._get_raw_parameter_value(parameter.name)
             if value is not None:
-                element_id = parameter.element_id
-                # Check if the value is in builtins. If it isn't we need to handle it specially.
-                if value.__class__.__module__ != "builtins":
-                    # Enums (including StrEnum/IntEnum) are not builtins but serialize to
-                    # their underlying value. Without this, the __dict__ fallback below
-                    # would send the raw enum internals (e.g. {"_value_": ..., "_name_": ...})
-                    # to the GUI, which renders them as an object instead of the value.
-                    if isinstance(value, Enum):
-                        param_to_value[element_id] = value.value
-                        continue
-                    # Check if it has a to_dict method. Use that, if it's been implemented.
-                    if hasattr(value, "to_dict"):
-                        # If the object has a __dict__, use that
-                        param_to_value[element_id] = value.to_dict()
-                        continue
-                    # Otherwise use __dict__.
-                    if hasattr(value, "__dict__"):
-                        param_to_value[element_id] = value.__dict__
-                        continue
-                # Otherwise, just set it here. It'll be handled in .json() when we send it over.
-                param_to_value[element_id] = value
+                # Encoded where the result is sent; see ElementDocument.
+                param_to_value[parameter.element_id] = value
 
     def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: BaseNodeElement) -> None:
         if isinstance(parameter, Parameter):
@@ -2526,6 +2458,7 @@ class NodeManager(EngineScoped):
 
         return None
 
+    @handles(AlterParameterDetailsRequest)
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         node_name = request.node_name
         node = None
@@ -2561,7 +2494,7 @@ class NodeManager(EngineScoped):
                 # Early return with warning - we're just preserving the original changes
                 details = f"Parameter '{request.parameter_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
 
-                result_details = ResultDetails(message=details, level=logging.WARNING)
+                result_details = ResultDetails(message=details, level=logging.DEBUG)
                 return AlterParameterDetailsResultSuccess(result_details=result_details)
 
             # Reject runtime parameter alterations on ErrorProxy
@@ -2607,6 +2540,7 @@ class NodeManager(EngineScoped):
         result = AlterParameterDetailsResultSuccess(result_details=details)
         return result
 
+    @handles(AlterParameterGroupDetailsRequest)
     def on_alter_parameter_group_details_request(  # noqa: PLR0911
         self, request: AlterParameterGroupDetailsRequest
     ) -> ResultPayload:
@@ -2637,7 +2571,7 @@ class NodeManager(EngineScoped):
             if request.initial_setup:
                 node.record_initialization_request(request)
                 details = f"ParameterGroup '{request.group_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
-                result_details = ResultDetails(message=details, level=logging.WARNING)
+                result_details = ResultDetails(message=details, level=logging.DEBUG)
                 return AlterParameterGroupDetailsResultSuccess(result_details=result_details)
 
             details = f"Cannot modify ParameterGroup '{request.group_name}' on placeholder node '{node_name}'. This placeholder preserves your workflow structure but doesn't allow modifications."
@@ -2657,6 +2591,7 @@ class NodeManager(EngineScoped):
         return AlterParameterGroupDetailsResultSuccess(result_details=details)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
+    @handles(GetParameterValueRequest)
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
@@ -2700,7 +2635,7 @@ class NodeManager(EngineScoped):
             input_types=parameter.input_types,
             type=parameter.type,
             output_type=parameter.output_type,
-            value=safe_unstructure(data_value),
+            value=data_value,
             result_details=details,
         )
         return result
@@ -2712,6 +2647,7 @@ class NodeManager(EngineScoped):
         modified: bool
 
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
+    @handles(SetParameterValueRequest)
     def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -2873,6 +2809,8 @@ class NodeManager(EngineScoped):
         if request.initial_setup is False and not request.is_output and modified:
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
+            if output_snapshot is not None:
+                self._discard_stale_output_value(node, request.parameter_name, output_snapshot)
             # Get the flow
             # Pass the value through to connected downstream parameters!
             # Set incoming_connection_source fields to identify this as legitimate upstream value propagation
@@ -2938,6 +2876,32 @@ class NodeManager(EngineScoped):
         )
         return result
 
+    def _discard_stale_output_value(self, node: BaseNode, parameter_name: str, output_snapshot: dict[str, Any]) -> None:
+        """Discard the output value that the set we just applied has invalidated.
+
+        A PROPERTY+OUTPUT parameter stores the typed value and the produced value under one name, and
+        reads prefer the produced one, so a leftover output would mask the new value. Only that
+        parameter's own output value is discarded; the rest still reflect the last run.
+
+        This covers upstream propagation as well as manual edits -- an arriving connection value is a
+        set like any other, and the output recorded under that name predates it either way.
+
+        A value that changed since `output_snapshot` was taken was recomputed in `after_value_set`,
+        making it newer than the set, so it stays. A recompute landing on an equal value is not
+        detected; see `test_equal_value_recompute_is_not_yet_detected`.
+        """
+        if parameter_name not in node.parameter_output_values:
+            return
+        if parameter_name not in output_snapshot:
+            # Nothing was recorded here before the set, so whatever is here now was written during it.
+            return
+        recomputed_during_set = _values_differ(
+            output_snapshot[parameter_name], node.parameter_output_values[parameter_name]
+        )
+        if recomputed_during_set:
+            return
+        del node.parameter_output_values[parameter_name]
+
     def _set_and_pass_through_values(self, request: SetParameterValueRequest, node: BaseNode) -> ModifiedReturnValue:
         """Set the parameter value on the node according to the specifications."""
         modified = False
@@ -2970,6 +2934,7 @@ class NodeManager(EngineScoped):
     # want to give clear reasoning for each failure.
     # For PLR0915 (too many statements): very little reusable code here, want to be explicit and
     # make debugger use friendly.
+    @handles(GetAllNodeInfoRequest)
     def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: C901, PLR0911
         node_name = request.node_name
         node = None
@@ -3057,6 +3022,7 @@ class NodeManager(EngineScoped):
         )
         return result
 
+    @handles(GetCompatibleParametersRequest)
     def on_get_compatible_parameters_request(self, request: GetCompatibleParametersRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -3205,6 +3171,7 @@ class NodeManager(EngineScoped):
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
+    @handles(ResolveNodeRequest)
     async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         node_name = request.node_name
         debug_mode = request.debug_mode
@@ -3247,7 +3214,6 @@ class NodeManager(EngineScoped):
 
         # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
         if node.name in flow_mgr._global_dag_builder.node_to_reference:
-            logger.error("Node %s is already executing. Cannot start execution.", node.name)
             return ResolveNodeResultFailure(
                 validation_exceptions=[],
                 result_details=f"Node {node.name} is already executing. Cannot start execution.",
@@ -3279,12 +3245,10 @@ class NodeManager(EngineScoped):
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4532 - support
-        # wait_for_completion / completion_timeout_ms here, mirroring StartFlowRequest so
-        # callers do not have to poll check_for_existing_running_flow() themselves.
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         return ResolveNodeResultSuccess(result_details=details)
 
+    @handles(ExecuteNodeRequest)
     async def on_execute_node_request(self, request: ExecuteNodeRequest) -> ResultPayload:
         """Execute a node. Orchestrator path is lookup-only; worker path is a pure RPC.
 
@@ -3341,7 +3305,7 @@ class NodeManager(EngineScoped):
             try:
                 if library_name:
                     await self.engine.worker_manager.wait_until_executable(library_name)
-                worker = library_manager.get_worker_for_library(library_name) if library_name else None
+                worker = library_manager.workers.get_worker_for_library(library_name) if library_name else None
             except RuntimeError as err:
                 return ExecuteNodeResultFailure(result_details=str(err), exception=err)
             wm = self.engine.worker_manager
@@ -3474,7 +3438,7 @@ class NodeManager(EngineScoped):
         # a failed dependency install is EVALUATED, not FAILURE, so this cannot test for FAILURE.
         if library_info.lifecycle_state is LibraryManager.LibraryLifecycleState.LOADED:
             return None
-        return library_manager.get_collated_problems_for_library(library_name)
+        return library_manager.catalog.get_collated_problems_for_library(library_name)
 
     async def _execute_node_via_worker(
         self,
@@ -3491,6 +3455,13 @@ class NodeManager(EngineScoped):
         (NodeExecutor.execute) so the write path is identical for local and
         worker routes.
         """
+        unsendable = self._unencodable_value_names(request.parameter_values)
+        if unsendable:
+            details = (
+                f"Attempted to run node '{request.node_name}' in a separate process. Failed because "
+                f"its input {', '.join(unsendable)} cannot be sent there."
+            )
+            return ExecuteNodeResultFailure(result_details=details)
         worker_engine_id, worker_request_topic = worker
         # Assign the request_id on the payload itself so the worker handler can
         # read it from request.request_id. WorkerManager.route_to_worker will
@@ -3522,7 +3493,6 @@ class NodeManager(EngineScoped):
                 f"Attempted to run node '{request.node_name}' in a separate process. Failed because "
                 f"{err} Editing the node still works and your workflow keeps it."
             )
-            logger.error(details)
             return ExecuteNodeResultFailure(result_details=details, exception=err)
         finally:
             # Drop the tracking entry regardless of success, failure, or cancellation
@@ -3564,6 +3534,7 @@ class NodeManager(EngineScoped):
             worker_request_topic=worker_request_topic,
         )
 
+    @handles(CancelExecuteNodeRequest)
     async def on_cancel_execute_node_request(self, request: CancelExecuteNodeRequest) -> ResultPayload:
         """Worker-side handler: cancel an in-flight aprocess task by request_id.
 
@@ -3654,9 +3625,8 @@ class NodeManager(EngineScoped):
     async def _hydrate_and_run_node_inner(self, node: BaseNode, request: ExecuteNodeRequest) -> ResultPayload:
         node_name = request.node_name
         with self.engine.event_manager.node_execution_scope():
-            # Rehydrate serialized artifacts that crossed the orchestrator->worker JSON boundary.
-            parameter_values = hydrate_parameter_values(request.parameter_values)
-            hydration_failure = self._apply_hydrated_values(node, node_name, parameter_values)
+            hydrated_values = hydrate_parameter_values(request.parameter_values)
+            hydration_failure = self._apply_hydrated_values(node, node_name, hydrated_values)
             if hydration_failure is not None:
                 return hydration_failure
             # Materialize parameter defaults into parameter_values so that user
@@ -3690,25 +3660,14 @@ class NodeManager(EngineScoped):
                         f"{'; '.join(str(exception) for exception in validation_exceptions)}"
                     ),
                     validation_exceptions=validation_exceptions,
+                    error=build_node_error_details(node_name, validation_exceptions),
                 )
 
             try:
-                with aprocess_scope(request.variables):
+                with aprocess_scope(request.variables, node):
                     await node.aprocess()
             except Exception as e:
-                # Pass the live exception through ``exception=`` so the
-                # converter can capture worker-side frames into a
-                # ForwardedException on the orchestrator. Without this
-                # the orchestrator only sees the type and message --
-                # PR06's whole reason for the dict wire-format -- and
-                # NodeExecutor._format_node_failure_message would have
-                # nothing to surface. ``__traceback__`` is populated
-                # because ``e`` was actually raised, so the strict-mode
-                # tripwire stays quiet for raise-in-process.
-                return ExecuteNodeResultFailure(
-                    result_details=f"Attempted to execute node '{node_name}'. Failed with error: {e}",
-                    exception=e,
-                )
+                return self._execution_failure(e, node_name)
             finally:
                 # The scratch marker only means anything while the run is in flight. A parameter
                 # the node still holds here was never torn down, so serialization must treat it
@@ -3718,13 +3677,103 @@ class NodeManager(EngineScoped):
         # NodeExecutor, which copies it onto this very node, so caching here would put a reference in the
         # dict the node just wrote its object into.
         if self.engine.library_manager.is_worker:
-            output_values = cache_outputs_for_egress(node.parameter_output_values, node=node)
-        else:
-            output_values = dict(node.parameter_output_values)
+            return self._worker_execution_result(node)
         return ExecuteNodeResultSuccess(
-            parameter_output_values=output_values,
+            parameter_output_values=dict(node.parameter_output_values),
             result_details=f"Node '{node_name}' executed successfully.",
         )
+
+    def _worker_execution_result(self, node: BaseNode) -> ResultPayload:
+        """The result a worker sends back: outputs with cached objects swapped for their keys."""
+        output_values = cache_outputs_for_egress(node.parameter_output_values, node=node)
+        unsendable = self._unencodable_value_names(output_values)
+        if unsendable:
+            library_name = node.metadata.get("library", "its library")
+            details = (
+                f"Attempted to send node '{node.name}' output {', '.join(unsendable)} out of "
+                f"'{library_name}'s isolated process. Failed because it has no plain-data form. Give "
+                f"the value a plain-data form, or declare its parameter serializable=False so the value "
+                f"stays in that process and the next node receives a reference to it."
+            )
+            return ExecuteNodeResultFailure(result_details=details)
+        return ExecuteNodeResultSuccess(
+            parameter_output_values=output_values,
+            result_details=f"Node '{node.name}' executed successfully.",
+        )
+
+    def _execution_failure(self, exc: Exception, node_name: str) -> ExecuteNodeResultFailure:
+        """Report a node whose `aprocess` raised, as a budget halt when Griptape Cloud refused its call."""
+        budget_halt = self._budget_halt_for(exc, node_name)
+        if budget_halt is not None:
+            # The engine words the halt, so it carries no node-built details.
+            return ExecuteNodeResultFailure(result_details=str(budget_halt), exception=budget_halt)
+        # The raised exception itself, so its traceback crosses the worker boundary. The details are
+        # built here, where the real exception and anything it attached still exist.
+        return ExecuteNodeResultFailure(
+            result_details=f"Attempted to execute node '{node_name}'. Failed with error: {exc}",
+            exception=exc,
+            error=build_node_error_details(node_name, exc),
+        )
+
+    def _budget_halt_for(self, exc: Exception, node_name: str) -> BudgetExceededError | None:
+        """Return the halt for a node whose call Griptape Cloud refused over budget, or None.
+
+        Every node failure passes through here, so no node type has to catch the
+        refusal itself. A halt that does not yet name a node (one a Cloud driver
+        raised) is re-worded to name this one; a halt that already does is kept.
+        """
+        already_worded = self._named_budget_halt(exc)
+        if already_worded is not None:
+            return already_worded
+
+        refusal = self._refusal_carried_by(exc)
+        if refusal is None:
+            return None
+
+        logger.error("%s: %s", node_name, budget_log_line(refusal))
+        halt = BudgetExceededError(describe_budget_refusal(refusal, node_name=node_name), refusal, node_name=node_name)
+        # Raised from the failure rather than only built, so the halt keeps the original as its
+        # cause and has a traceback of its own; without one the converter forwards no traceback
+        # across the worker boundary.
+        try:
+            raise halt from exc
+        except BudgetExceededError:
+            return halt
+
+    def _named_budget_halt(self, exc: Exception) -> BudgetExceededError | None:
+        """Return the halt on this chain that already names its node, if there is one."""
+        for halt in self._budget_halts_on(exc):
+            if halt.node_name is not None:
+                return halt
+        return None
+
+    def _refusal_carried_by(self, exc: Exception) -> BudgetRefusal | None:
+        """Return the refusal behind this failure, from a halt already raised or from the HTTP error.
+
+        A raised halt's parsed refusal is preferred, since the SDK may have closed
+        the response. The host resolver is passed uncalled so the secret is read
+        only for a failure that carries a response.
+        """
+        for halt in self._budget_halts_on(exc):
+            return halt.refusal
+        return refusal_from_exception(exc, cloud_host=self._cloud_host)
+
+    def _cloud_host(self) -> str:
+        """Hostname of the Griptape Cloud deployment this engine is pointed at."""
+        return resolve_cloud_host(self.engine.secrets_manager)
+
+    def _budget_halts_on(self, exc: Exception) -> Iterator[BudgetExceededError]:
+        """Walk the cause chain, yielding each budget halt on it, outermost first.
+
+        In-process only; a halt forwarded from a worker was already worded there.
+        """
+        seen: set[int] = set()
+        current: BaseException | None = exc
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            if isinstance(current, BudgetExceededError):
+                yield current
+            current = current.__cause__
 
     def _apply_hydrated_values(
         self, node: BaseNode, node_name: str, parameter_values: dict[str, Any]
@@ -3770,6 +3819,15 @@ class NodeManager(EngineScoped):
                 current = node.parameter_values.get(param_name, _PARAM_MISSING)
                 if current is value or current == value:
                     continue
+                if type(value) is UndecodedValue:
+                    # Still set: nodes that read artifact-shaped dicts can use it.
+                    logger.warning(
+                        "Node '%s' received a value for parameter '%s' that this process cannot "
+                        "rebuild, so it arrives as plain data instead of its type. %s",
+                        node_name,
+                        param_name,
+                        value.reason,
+                    )
                 try:
                     node.set_parameter_value(param_name, value)
                 except Exception as e:
@@ -3790,6 +3848,17 @@ class NodeManager(EngineScoped):
             )
         return None
 
+    @staticmethod
+    def _unencodable_value_names(values: dict[str, Any]) -> list[str]:
+        """Name each value that has no plain-data form, with the reason."""
+        names = []
+        for name, value in values.items():
+            encoded = try_encode(value)
+            if isinstance(encoded, Unencodable):
+                names.append(f"'{name}' ({encoded.reason})")
+        return names
+
+    @handles(ValidateNodeDependenciesRequest)
     def on_validate_node_dependencies_request(self, request: ValidateNodeDependenciesRequest) -> ResultPayload:
         node_name = request.node_name
         obj_manager = self.engine.object_manager
@@ -3836,7 +3905,7 @@ class NodeManager(EngineScoped):
 
         Args:
             group_node: The group node to serialize
-            unique_uuid_to_values: Shared dictionary for tracking pickled parameter values
+            unique_uuid_to_values: Shared pool of encoded parameter values, keyed by content
             serialized_parameter_value_tracker: Tracker for parameter value hashes
             serialize_all_parameter_values: If True, capture every parameter value on the group and
                 on each child, not just the ones the ordinary save condition would record
@@ -3855,13 +3924,11 @@ class NodeManager(EngineScoped):
                 node_name=group_name,
                 unique_parameter_uuid_to_values=unique_uuid_to_values,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-                use_pickling=True,
                 serialize_all_parameter_values=serialize_all_parameter_values,
             )
         )
 
         if not isinstance(group_result, SerializeNodeToCommandsResultSuccess):
-            logger.error("Failed to serialize group node '%s'", group_name)
             msg = f"Failed to serialize children and group node '{group_name}'"
             raise RuntimeError(msg)  # noqa: TRY004 Type Error doesn't make sense here, this is a runtime error.
 
@@ -3882,13 +3949,11 @@ class NodeManager(EngineScoped):
                     node_name=child_name,
                     unique_parameter_uuid_to_values=unique_uuid_to_values,
                     serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-                    use_pickling=True,
                     serialize_all_parameter_values=serialize_all_parameter_values,
                 )
             )
 
             if not isinstance(child_result, SerializeNodeToCommandsResultSuccess):
-                logger.error("%s failed to serialize child node '%s'", group_name, child_name)
                 msg = f"Failed to serialize child node '{child_name}'"
                 raise RuntimeError(msg)  # noqa: TRY004 Type Error doesn't make sense here, this is a runtime error.
 
@@ -3911,6 +3976,7 @@ class NodeManager(EngineScoped):
             child_uuids=child_uuids,
         )
 
+    @handles(SerializeNodeToCommandsRequest)
     def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -3952,7 +4018,7 @@ class NodeManager(EngineScoped):
                 if execution_env not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
                     # Get library details for the execution environment library
                     exec_env_metadata_request = GetLibraryMetadataRequest(library=execution_env)
-                    exec_env_metadata_result = self.engine.library_manager.get_library_metadata_request(
+                    exec_env_metadata_result = self.engine.library_manager.catalog.get_library_metadata_request(
                         exec_env_metadata_request
                     )
                     if isinstance(exec_env_metadata_result, GetLibraryMetadataResultSuccess):
@@ -3964,7 +4030,9 @@ class NodeManager(EngineScoped):
             library_metadata_request = GetLibraryMetadataRequest(library=library_used)
             # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
             # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
-            library_metadata_result = self.engine.library_manager.get_library_metadata_request(library_metadata_request)
+            library_metadata_result = self.engine.library_manager.catalog.get_library_metadata_request(
+                library_metadata_request
+            )
 
             if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
                 if isinstance(node, ErrorProxyNode):
@@ -4046,7 +4114,7 @@ class NodeManager(EngineScoped):
             if isinstance(node, ErrorProxyNode):
                 reference_node = None
             else:
-                with LibraryRegistry.constructing_node():
+                with LibraryRegistry.constructing_node(throwaway=True):
                     reference_node = type(node)(
                         name="REFERENCE NODE",
                         metadata={
@@ -4162,6 +4230,10 @@ class NodeManager(EngineScoped):
                         alter_group_request = AlterParameterGroupDetailsRequest(**diff)
                         element_modification_commands.append(alter_group_request)
 
+            element_modification_commands = [
+                NodeManager._with_encodable_default(command, node_name) for command in element_modification_commands
+            ]
+
             # Now assignment of values to all of the parameters.
             set_value_commands = []
 
@@ -4179,8 +4251,6 @@ class NodeManager(EngineScoped):
                     unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
                     serialized_parameter_value_tracker=request.serialized_parameter_value_tracker,
                     create_node_request=create_node_request,
-                    workflow_manager=self.engine.workflow_manager,
-                    use_pickling=request.use_pickling,
                     serialize_all_parameter_values=request.serialize_all_parameter_values,
                 )
                 if set_param_value_requests is not None:
@@ -4340,6 +4410,7 @@ class NodeManager(EngineScoped):
                     )
                     self.engine.handle_request(create_old_outgoing_connections_request)
 
+    @handles(DeserializeNodeFromCommandsRequest)
     def on_deserialize_node_from_commands(self, request: DeserializeNodeFromCommandsRequest) -> ResultPayload:
         # Issue the creation command first.
         create_node_request = request.serialized_node_commands.create_node_command
@@ -4380,6 +4451,7 @@ class NodeManager(EngineScoped):
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name, result_details=details)
 
+    @handles(SerializeSelectedNodesToCommandsRequest)
     def on_serialize_selected_nodes_to_commands(  # noqa: C901, PLR0912, PLR0915
         self, request: SerializeSelectedNodesToCommandsRequest
     ) -> ResultPayload:
@@ -4467,7 +4539,6 @@ class NodeManager(EngineScoped):
                         node_name=node_name,
                         unique_parameter_uuid_to_values=unique_uuid_to_values,
                         serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-                        use_pickling=True,
                     )
                 )
                 if not isinstance(result, SerializeNodeToCommandsResultSuccess):
@@ -4534,55 +4605,31 @@ class NodeManager(EngineScoped):
             set_lock_commands_per_node=lock_commands,
         )
 
-        # Encode pickled bytes to latin-1 strings for JSON serialization
-        encoded_values = {}
-        for uuid, value in unique_uuid_to_values.items():
-            if isinstance(value, bytes):
-                # Pickled bytes - encode as latin-1 string for transport
-                encoded_values[uuid] = value.decode("latin1")
-            else:
-                # Non-pickled value - keep as-is (for backward compatibility)
-                encoded_values[uuid] = value
-
-        # Pickle the commands object and encode as latin-1 string for transport
-        pickled_commands_bytes = pickle.dumps(final_result)
-        pickled_commands_string = pickled_commands_bytes.decode("latin1")
+        try:
+            commands_text = dump_json(encode_commands(final_result))
+        except ValueEncodeError as error:
+            details = f"Attempted to copy {len(request.nodes_to_serialize)} nodes. Failed because {error}"
+            return SerializeSelectedNodesToCommandsResultFailure(result_details=details)
+        # The pool already holds encoded values, so each one only needs to become text.
+        serialized_values = {uuid: json.dumps(value) for uuid, value in unique_uuid_to_values.items()}
         return SerializeSelectedNodesToCommandsResultSuccess(
-            pickled_commands_string,  # Send pickled string instead of object
-            pickled_values=encoded_values,
+            serialized_selected_node_commands=commands_text,
+            pickled_values=serialized_values,
             node_names_serialized=node_names_in_order,
             result_details=f"Successfully serialized {len(request.nodes_to_serialize)} selected nodes to commands.",
         )
 
+    @handles(DeserializeSelectedNodesFromCommandsRequest)
     def on_deserialize_selected_nodes_from_commands(  # noqa: C901, PLR0912, PLR0915
         self,
         request: DeserializeSelectedNodesFromCommandsRequest,
     ) -> ResultPayload:
-        # Decode latin-1 encoded pickled strings back to Python objects
-        decoded_values = {}
-        if request.pickled_values:
-            for uuid, latin1_string in request.pickled_values.items():
-                if isinstance(latin1_string, str):
-                    try:
-                        # Decode: latin-1 string → bytes → unpickled object
-                        pickled_bytes = latin1_string.encode("latin1")
-                        decoded_values[uuid] = pickle.loads(pickled_bytes)  # noqa: S301 Expecting this from the GUI.
-                    except Exception:
-                        details = f"Failed to unpickle parameter value for UUID {uuid}"
-                        logger.warning(details)
-                        # Keep original value if unpickling fails
-                        decoded_values[uuid] = latin1_string
-                else:
-                    # Not a string, keep as-is
-                    decoded_values[uuid] = latin1_string
-
-        # Unpickle the commands string into SerializedSelectedNodesCommands
         try:
-            pickled_commands_bytes = request.deserialize_commands.encode("latin1")
-            commands = pickle.loads(pickled_commands_bytes)  # noqa: S301 Expecting this from the GUI.
-        except Exception as e:
-            details = f"Failed to unpickle commands: {e}"
+            commands = self._read_copied_commands(request.deserialize_commands)
+        except CopiedNodesError as error:
+            details = f"Attempted to paste nodes. Failed because {error}."
             return DeserializeSelectedNodesFromCommandsResultFailure(result_details=details)
+        copied_values = self._read_copied_values(request.pickled_values)
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
         created_node_names: list[str] = []
@@ -4626,9 +4673,8 @@ class NodeManager(EngineScoped):
             if metadata and "_parent_group_uuid" in metadata:
                 parent_group_uuid = metadata["_parent_group_uuid"]
                 if parent_group_uuid not in node_uuid_to_name:
-                    logger.error("Parent group UUID %s not found in UUID mapping", parent_group_uuid)
                     return DeserializeSelectedNodesFromCommandsResultFailure(
-                        result_details="Parent group UUID not found in UUID mapping"
+                        result_details=f"Parent group UUID {parent_group_uuid} not found in UUID mapping"
                     )
                 node_command.create_node_command.parent_group_name = node_uuid_to_name[parent_group_uuid]
                 del metadata["_parent_group_uuid"]
@@ -4654,20 +4700,20 @@ class NodeManager(EngineScoped):
                     param_request = parameter_command.set_parameter_value_command
                     # Set the Node name
                     param_request.node_name = result.node_name
-                    # Set the new value from decoded_values
-                    if decoded_values and parameter_command.unique_value_uuid in decoded_values:
-                        value = decoded_values[parameter_command.unique_value_uuid]
-                        # Using try-except-pass instead of contextlib.suppress because it's clearer.
-                        try:  # noqa: SIM105
-                            # If we're pasting multiple times - we need to create a new copy for each paste so they don't all have the same reference.
-                            value = copy.deepcopy(value)
-                        except Exception:  # noqa: S110
-                            pass
-                        param_request.value = value
+                    if parameter_command.unique_value_uuid in copied_values:
+                        # Decoding builds a fresh object each time, so repeated pastes share nothing.
+                        param_request.value = decode_value(copied_values[parameter_command.unique_value_uuid])
                         set_parameter_result = self.engine.handle_request(parameter_command.set_parameter_value_command)
                         if not set_parameter_result.succeeded():
                             details = f"Failed to set parameter value for {param_request.parameter_name} on node {param_request.node_name}"
                             logger.warning(details)
+                    else:
+                        logger.warning(
+                            "Attempted to paste the value of parameter '%s' on node '%s'. Failed because the "
+                            "copied value could not be read, so the parameter uses its default.",
+                            param_request.parameter_name,
+                            param_request.node_name,
+                        )
                 lock_command = commands.set_lock_commands_per_node[node_command.node_uuid]
                 if lock_command is not None:
                     lock_node_result = self.engine.handle_request(lock_command)
@@ -4696,6 +4742,44 @@ class NodeManager(EngineScoped):
             result_details=f"Successfully deserialized {len(node_uuid_to_name)} nodes from commands.",
         )
 
+    def _read_copied_commands(self, text: str) -> SerializedSelectedNodesCommands:
+        """Read copied node commands, sent as JSON, or as pickle by earlier engines.
+
+        Raises:
+            CopiedNodesError: The text holds no readable node commands.
+        """
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            try:
+                return read_legacy_clipboard_commands(
+                    text, self.engine.library_manager.module_loading.stable_module_names()
+                )
+            except LegacyPickleError as error:
+                raise CopiedNodesError(str(error)) from error
+        try:
+            return decode_commands(data, SerializedSelectedNodesCommands)
+        except CommandsFormatError as error:
+            raise CopiedNodesError(str(error)) from error
+
+    def _read_copied_values(self, texts: dict[str, str]) -> dict[str, JsonValue]:
+        """Read copied parameter values, keeping them encoded until each use decodes its own copy.
+
+        A value that cannot be read is left out, so its parameter pastes with its default.
+        """
+        values: dict[str, JsonValue] = {}
+        library_modules = self.engine.library_manager.module_loading.stable_module_names()
+        for uuid, text in texts.items():
+            try:
+                values[uuid] = json.loads(text)
+            except json.JSONDecodeError:
+                try:
+                    values[uuid] = read_legacy_clipboard_value(text, library_modules)
+                except LegacyPickleError as error:
+                    logger.warning("Attempted to paste a copied parameter value. Failed because %s.", error)
+        return values
+
+    @handles(DuplicateSelectedNodesRequest)
     def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
         serialize_result = self.engine.handle_request(
             SerializeSelectedNodesToCommandsRequest(nodes_to_serialize=request.nodes_to_duplicate)
@@ -4704,7 +4788,6 @@ class NodeManager(EngineScoped):
             details = "Failed to serialized selected nodes."
             return DuplicateSelectedNodesResultFailure(result_details=details)
 
-        # Pass the pickled commands and values to deserialization
         deserialize_request = DeserializeSelectedNodesFromCommandsRequest(
             deserialize_commands=serialize_result.serialized_selected_node_commands,
             pickled_values=serialize_result.pickled_values,
@@ -4731,9 +4814,9 @@ class NodeManager(EngineScoped):
             trait_module = entry.get("trait_module")
             if trait_module is None:
                 continue
-            if not library_manager.is_dynamic_module(trait_module):
+            if not library_manager.module_loading.is_dynamic_module(trait_module):
                 continue
-            stable_namespace = library_manager.get_stable_namespace_for_dynamic_module(trait_module)
+            stable_namespace = library_manager.module_loading.get_stable_namespace_for_dynamic_module(trait_module)
             if stable_namespace is None:
                 entry["trait_module"] = None
                 logger.warning(
@@ -4858,6 +4941,16 @@ class NodeManager(EngineScoped):
         return diff
 
     @staticmethod
+    def _with_encodable_default(command: Any, node_name: str) -> Any:
+        """Return ``command``, with a default value that has no plain-data form replaced by None."""
+        if not isinstance(command, AddParameterToNodeRequest | AlterParameterDetailsRequest):
+            return command
+        default_value = encodable_default(command.default_value, node_name, command.parameter_name)
+        if default_value is command.default_value:
+            return command
+        return dataclasses.replace(command, default_value=default_value)
+
+    @staticmethod
     def _handle_value_hashing(  # noqa: PLR0913, PLR0917
         value: Any,
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
@@ -4867,54 +4960,32 @@ class NodeManager(EngineScoped):
         node_name: str,
         *,
         is_output: bool,
-        workflow_manager: WorkflowManager,
-        use_pickling: bool = False,
     ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
-        try:
-            hash(value)
-            value_id = (type(value), value)
-        except TypeError:
-            # Couldn't get a hash. Use the object's ID
-            value_id = id(value)
+        """Pool ``value``'s encoded form under a hash of its content and return the command that restores it.
 
+        Returns None when the value is not to be saved: the parameter opted out, or the value has no
+        plain-data form. The tracker remembers each object's outcome, so a value shared by several
+        parameters is encoded once.
+        """
+        value_id = id(value)
         tracker_status = serialized_parameter_value_tracker.get_tracker_state(value_id)
         match tracker_status:
             case SerializedParameterValueTracker.TrackerState.SERIALIZABLE:
-                # We have a match on this value. We're all good.
                 unique_uuid = serialized_parameter_value_tracker.get_uuid_for_value_hash(value_id)
             case SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE:
-                # This value is not serializable. Bail.
                 return None
             case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
-                # This value is new for us.
-
-                # Check if parameter is marked as non-serializable (e.g., ImageDrivers, PromptDrivers, file handles)
+                # Author opt-out, e.g. drivers and file handles.
                 if not parameter.serializable:
                     serialized_parameter_value_tracker.add_as_not_serializable(value_id)
                     return None
-
-                # Check if we can serialize it.
-                try:
-                    pickle.dumps(value)
-                except Exception:
-                    # Not serializable; don't waste time on future attempts.
+                encoded = try_encode(value)
+                if isinstance(encoded, Unencodable):
+                    logger.debug("Not saving '%s' on node '%s': %s", parameter_name, node_name, encoded.reason)
                     serialized_parameter_value_tracker.add_as_not_serializable(value_id)
-                    # Bail.
                     return None
-                # The value should be serialized. Add it to the map of uniques.
-                unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
-
-                if use_pickling:
-                    pickled_bytes = workflow_manager._patch_and_pickle_object(value)
-                    unique_parameter_uuid_to_values[unique_uuid] = pickled_bytes
-                else:
-                    # Use existing deep copy approach
-                    try:
-                        unique_parameter_uuid_to_values[unique_uuid] = copy.deepcopy(value)
-                    except Exception:
-                        details = f"Attempted to serialize parameter '{parameter_name}' on node '{node_name}'. The parameter value could not be copied. It will be serialized by value. If problems arise from this, ensure the type '{type(value)}' works with copy.deepcopy()."
-                        logger.warning(details)
-                        unique_parameter_uuid_to_values[unique_uuid] = value
+                unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(value_key(encoded))
+                unique_parameter_uuid_to_values[unique_uuid] = encoded
                 serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
 
         # Serialize it
@@ -4938,8 +5009,6 @@ class NodeManager(EngineScoped):
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
         create_node_request: CreateNodeRequest,
         *,
-        workflow_manager: WorkflowManager,
-        use_pickling: bool = False,
         serialize_all_parameter_values: bool = False,
     ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
@@ -4958,8 +5027,6 @@ class NodeManager(EngineScoped):
             unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique value UUIDs to values
             serialized_parameter_value_tracker (SerializedParameterValueTracker): Object mapping maintaining value hashes to unique value UUIDs, and non-serializable values
             create_node_request (CreateNodeRequest): The node creation request that will be modified if serialization fails
-            workflow_manager (WorkflowManager): Used to pickle values when use_pickling is True
-            use_pickling (bool): If True, use pickle-based serialization; if False, use deep copy
             serialize_all_parameter_values (bool): If True, save all parameter values regardless of whether they were explicitly set or match defaults
 
         Returns:
@@ -4967,9 +5034,7 @@ class NodeManager(EngineScoped):
 
         Notes:
             - Parameter output values take precedence over regular parameter values
-            - For values that can be hashed, the value itself is used as the key in values_created
-            - For unhashable values, the object's id is used as the key
-            - The function will reuse already created values to avoid duplication
+            - Each object is encoded once, tracked by its id, and pooled under a hash of its encoded content
         """
         output_value = None
         internal_value = None
@@ -5000,8 +5065,6 @@ class NodeManager(EngineScoped):
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             serialized_parameter_value_tracker=serialized_parameter_value_tracker,
             create_node_request=create_node_request,
-            workflow_manager=workflow_manager,
-            use_pickling=use_pickling,
         )
         if internal_command is not None:
             commands.append(internal_command)
@@ -5014,8 +5077,6 @@ class NodeManager(EngineScoped):
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             serialized_parameter_value_tracker=serialized_parameter_value_tracker,
             create_node_request=create_node_request,
-            workflow_manager=workflow_manager,
-            use_pickling=use_pickling,
         )
         if output_command is not None:
             commands.append(output_command)
@@ -5032,8 +5093,6 @@ class NodeManager(EngineScoped):
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
         create_node_request: CreateNodeRequest,
-        workflow_manager: WorkflowManager,
-        use_pickling: bool,
     ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
         """Serialize one of a parameter's values (internal-set or output) for workflow save.
 
@@ -5065,8 +5124,6 @@ class NodeManager(EngineScoped):
             is_output=is_output,
             parameter_name=parameter.name,
             node_name=node.name,
-            workflow_manager=workflow_manager,
-            use_pickling=use_pickling,
         )
         if command is not None:
             return command
@@ -5079,192 +5136,37 @@ class NodeManager(EngineScoped):
         if not parameter.serializable:
             return None
         # Genuine serialization failure — warn and mark unresolved.
-        details = f"Attempted to serialize {value_kind} value for parameter '{parameter.name}' on node '{node.name}'. The {value_kind} value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
+        details = f"Attempted to save the {value_kind} value of parameter '{parameter.name}' on node '{node.name}'. Failed because a '{type(value).__name__}' value has no plain-data form, so the node will run again when the workflow is reopened. To keep the value, register its class with register_value_codec, or set serializable=False on the parameter to stop this warning."
         logger.warning(details)
         return None
 
     @staticmethod
-    def serialize_parameter_output_values(
-        node: BaseNode, *, workflow_manager: WorkflowManager, use_pickling: bool = False
-    ) -> SerializedParameterValues:
-        """Serialize parameter output values with optional pickling for complex objects.
+    def result_parameter_values(node: BaseNode) -> dict[str, Any]:
+        """Each parameter's result value, preferring its output value, for the flow's result event.
 
-        Args:
-            node: The node whose parameter output values should be serialized
-            workflow_manager: Used to pickle values when use_pickling is True
-            use_pickling: If True, use pickle-based serialization; if False, use safe_unstructure
-
-        Returns:
-            SerializedParameterValues containing:
-            - parameter_output_values: Either raw values or UUID references if pickling was used
-            - unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
+        A value with no plain-data form becomes None, so one such value cannot keep the others
+        from reaching whoever runs the flow.
         """
-        if not node.parameters:
-            return SerializedParameterValues({}, None)
-
-        if not use_pickling:
-            return NodeManager._serialize_without_pickling(node)
-
-        return NodeManager._serialize_with_pickling(node, workflow_manager=workflow_manager)
-
-    @staticmethod
-    def _serialize_without_pickling(node: BaseNode) -> SerializedParameterValues:
-        """Serialize parameter values using safe_unstructure.
-
-        Args:
-            node: The node whose parameter values should be serialized
-
-        Returns:
-            SerializedParameterValues with no pickling
-        """
-        param_values = {}
-        for param in node.parameters:
-            if param.name in node.parameter_output_values:
-                param_values[param.name] = node.parameter_output_values[param.name]
-            else:
-                param_values[param.name] = node._get_raw_parameter_value(param.name)
-        simple_values = safe_unstructure(param_values)
-        return SerializedParameterValues(simple_values, None)
-
-    @staticmethod
-    def _serialize_with_pickling(
-        node: BaseNode,
-        *,
-        workflow_manager: WorkflowManager,
-    ) -> SerializedParameterValues:
-        """Serialize parameter values using pickle-based serialization with UUID references.
-
-        Args:
-            node: The node whose parameter values should be serialized
-            workflow_manager: Used to pickle values
-
-        Returns:
-            SerializedParameterValues with pickled values
-        """
-        unique_parameter_uuid_to_values = {}
-        serialized_parameter_value_tracker = SerializedParameterValueTracker()
-        uuid_referenced_values = {}
-
+        values = {}
         for parameter in node.parameters:
-            param_name = parameter.name
-            param_value = NodeManager._get_parameter_value_for_serialization(node, param_name)
-
-            unique_uuid = NodeManager._process_parameter_for_pickling(
-                param_value,
-                param_name,
-                serialized_parameter_value_tracker,
-                unique_parameter_uuid_to_values,
-                uuid_referenced_values,
-                workflow_manager=workflow_manager,
-            )
-
-            uuid_referenced_values[param_name] = unique_uuid
-
-        return SerializedParameterValues(uuid_referenced_values, unique_parameter_uuid_to_values or None)
-
-    @staticmethod
-    def _get_parameter_value_for_serialization(node: BaseNode, param_name: str) -> Any:
-        """Get parameter value for serialization, checking output values first.
-
-        Args:
-            node: The node to get the parameter value from
-            param_name: The parameter name
-
-        Returns:
-            The parameter value
-        """
-        if param_name in node.parameter_output_values:
-            return node.parameter_output_values[param_name]
-        return node._get_raw_parameter_value(param_name)
-
-    @staticmethod
-    def _process_parameter_for_pickling(  # noqa: PLR0913
-        param_value: Any,
-        param_name: str,
-        tracker: SerializedParameterValueTracker,
-        unique_parameter_uuid_to_values: dict,
-        uuid_referenced_values: dict,
-        *,
-        workflow_manager: WorkflowManager,
-    ) -> SerializedNodeCommands.UniqueParameterValueUUID | None:
-        """Process a parameter value for pickle-based serialization.
-
-        Args:
-            param_value: The value to serialize
-            param_name: Parameter name for tracking
-            tracker: Tracker for managing serialization state
-            unique_parameter_uuid_to_values: Dictionary to store pickled values
-            uuid_referenced_values: Dictionary to store UUID references
-            workflow_manager: Used to pickle newly seen values
-
-        Returns:
-            UUID reference for the value, or None if not serializable
-        """
-        try:
-            hash(param_value)
-            value_id = param_value
-        except TypeError:
-            value_id = id(param_value)
-
-        tracker_status = tracker.get_tracker_state(value_id)
-
-        match tracker_status:
-            case SerializedParameterValueTracker.TrackerState.SERIALIZABLE:
-                return tracker.get_uuid_for_value_hash(value_id)
-            case SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE:
-                uuid_referenced_values[param_name] = None
-                return None
-            case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
-                return NodeManager._handle_new_value_for_pickling(
-                    param_value,
-                    param_name,
-                    tracker,
-                    unique_parameter_uuid_to_values,
-                    uuid_referenced_values,
-                    workflow_manager=workflow_manager,
+            if parameter.name in node.parameter_output_values:
+                value = node.parameter_output_values[parameter.name]
+            else:
+                value = node._get_raw_parameter_value(parameter.name)
+            encoded = try_encode(value)
+            if isinstance(encoded, Unencodable):
+                logger.warning(
+                    "Node '%s' finished its flow with a '%s' value that cannot be sent on. Whoever ran "
+                    "the flow receives no value for it. %s",
+                    node.name,
+                    parameter.name,
+                    encoded.reason,
                 )
+                value = None
+            values[parameter.name] = value
+        return values
 
-    @staticmethod
-    def _handle_new_value_for_pickling(  # noqa: PLR0913
-        param_value: Any,
-        param_name: str,
-        tracker: SerializedParameterValueTracker,
-        unique_parameter_uuid_to_values: dict,
-        uuid_referenced_values: dict,
-        *,
-        workflow_manager: WorkflowManager,
-    ) -> SerializedNodeCommands.UniqueParameterValueUUID | None:
-        """Handle a new value that hasn't been seen before in pickling serialization.
-
-        Args:
-            param_value: The value to pickle
-            param_name: Parameter name for tracking
-            tracker: Tracker for managing serialization state
-            unique_parameter_uuid_to_values: Dictionary to store pickled values
-            uuid_referenced_values: Dictionary to store UUID references
-            workflow_manager: Used to pickle the value
-
-        Returns:
-            UUID reference for the value, or None if not serializable
-        """
-        try:
-            hash(param_value)
-            value_id = param_value
-        except TypeError:
-            value_id = id(param_value)
-
-        try:
-            pickled_bytes = workflow_manager._patch_and_pickle_object(param_value)
-        except Exception:
-            tracker.add_as_not_serializable(value_id)
-            uuid_referenced_values[param_name] = None
-            return None
-
-        unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
-        unique_parameter_uuid_to_values[unique_uuid] = pickled_bytes
-        tracker.add_as_serializable(value_id, unique_uuid)
-        return unique_uuid
-
+    @handles(RenameParameterRequest)
     def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Handle renaming a parameter on a node.
 
@@ -5343,15 +5245,8 @@ class NodeManager(EngineScoped):
                 # Update the index key from old name to new name
                 outgoing_connections[request.new_parameter_name] = outgoing_connections.pop(request.parameter_name)
 
-        # Update parameter name
         old_name = parameter.name
-        parameter.name = request.new_parameter_name
-
-        # Update parameter values if they exist
-        if old_name in node.parameter_values:
-            node.parameter_values[request.new_parameter_name] = node.parameter_values.pop(old_name)
-        if old_name in node.parameter_output_values:
-            node.parameter_output_values[request.new_parameter_name] = node.parameter_output_values.pop(old_name)
+        self._apply_parameter_rename(node, parameter, request.new_parameter_name)
 
         return RenameParameterResultSuccess(
             old_parameter_name=old_name,
@@ -5360,6 +5255,34 @@ class NodeManager(EngineScoped):
             result_details=f"Successfully renamed parameter '{old_name}' to '{request.new_parameter_name}' on node '{node_name}'.",
         )
 
+    def _apply_parameter_rename(self, node: BaseNode, parameter: Parameter, new_name: str) -> None:
+        """Rename a parameter and carry the values stored under its old name across.
+
+        The values move off the old name first and back on after, because the output value's change
+        events are looked up by parameter name: a move done after the rename finds no parameter for
+        the old name, so consumers are told the new name has a value but never that the old one lost
+        it.
+        """
+        old_name = parameter.name
+        output_value = None
+        had_output_value = old_name in node.parameter_output_values
+        if had_output_value:
+            output_value = node.parameter_output_values[old_name]
+            del node.parameter_output_values[old_name]
+
+        set_value = None
+        had_set_value = old_name in node.parameter_values
+        if had_set_value:
+            set_value = node.parameter_values.pop(old_name)
+
+        parameter.name = new_name
+
+        if had_set_value:
+            node.parameter_values[new_name] = set_value
+        if had_output_value:
+            node.parameter_output_values[new_name] = output_value
+
+    @handles(SetLockNodeStateRequest)
     def on_toggle_lock_node_request(self, request: SetLockNodeStateRequest) -> ResultPayload:
         node_name = request.node_name
         if node_name is None:
@@ -5381,6 +5304,7 @@ class NodeManager(EngineScoped):
             result_details=f"Successfully set lock state to {node.lock} for node '{node_name}'.",
         )
 
+    @handles(BatchSetNodeLockStateRequest)
     def on_batch_set_lock_node_state_request(self, request: BatchSetNodeLockStateRequest) -> ResultPayload:
         updated: list[str] = []
         failed: dict[str, str] = {}
@@ -5405,6 +5329,7 @@ class NodeManager(EngineScoped):
             result_details=details,
         )
 
+    @handles(SendNodeMessageRequest)
     def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:
         """Handle a SendNodeMessageRequest by calling the node's message callback.
 
@@ -5463,6 +5388,7 @@ class NodeManager(EngineScoped):
             altered_workflow_state=callback_result.altered_workflow_state,
         )
 
+    @handles(GetFlowForNodeRequest)
     def on_get_flow_for_node_request(self, request: GetFlowForNodeRequest) -> ResultPayload:
         """Get the flow name that contains a specific node."""
         try:
@@ -5476,6 +5402,7 @@ class NodeManager(EngineScoped):
                 result_details=f"Node '{request.node_name}' not found or not assigned to any flow.",
             )
 
+    @handles(MigrateParameterRequest)
     def on_migrate_parameter_request(
         self, request: MigrateParameterRequest
     ) -> MigrateParameterResultFailure | MigrateParameterResultSuccess:
@@ -5828,6 +5755,7 @@ class NodeManager(EngineScoped):
 
         return CanResetResult(can_reset=True, editor_tooltip_reason=None)
 
+    @handles(CanResetNodeToDefaultsRequest)
     def on_can_reset_node_to_defaults_request(self, request: CanResetNodeToDefaultsRequest) -> ResultPayload:
         """Check if a node can be reset to its default state."""
         node_name = request.node_name
@@ -5877,6 +5805,7 @@ class NodeManager(EngineScoped):
             result_details=details,
         )
 
+    @handles(ResetNodeToDefaultsRequest)
     async def on_reset_node_to_defaults_request(self, request: ResetNodeToDefaultsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Reset a node to its default state while preserving connections where possible."""
         node_name = request.node_name
@@ -5997,7 +5926,7 @@ class NodeManager(EngineScoped):
         )
         rename_result = self.engine.object_manager.on_rename_object_request(rename_request)
         if not isinstance(rename_result, RenameObjectResultSuccess):
-            details = f"Attempted to reset Node '{node_name}'. Failed to rename new node to original name."
+            details = f"Attempted to reset Node '{node_name}'. Failed to rename new node to original name: {rename_result.result_details}"
             return ResetNodeToDefaultsResultFailure(result_details=details)
 
         # SUCCESS PATH
@@ -6021,6 +5950,7 @@ class NodeManager(EngineScoped):
             result_details=ResultDetails(message=details, level=log_level),
         )
 
+    @handles(ReorderParameterListItemRequest)
     def on_reorder_parameter_list_item_request(self, request: ReorderParameterListItemRequest) -> ResultPayload:  # noqa: PLR0911
         """Handle reordering an item within a ParameterList.
 
@@ -6078,7 +6008,7 @@ class NodeManager(EngineScoped):
         if request.from_index == request.to_index:
             details = f"Item in ParameterList '{request.parameter_list_name}' on Node '{node_name}' is already at index {request.from_index}. No reordering needed."
             return ReorderParameterListItemResultSuccess(
-                result_details=ResultDetails(message=details, level=logging.WARNING)
+                result_details=ResultDetails(message=details, level=logging.DEBUG)
             )
 
         # Perform the reorder by moving the item in the _children list
@@ -6099,6 +6029,7 @@ class NodeManager(EngineScoped):
             result_details=f"Successfully reordered item in ParameterList '{request.parameter_list_name}' on Node '{node_name}' from index {request.from_index} to {request.to_index}."
         )
 
+    @handles(UnresolveNodeRequest)
     def on_unresolve_node_request(self, request: UnresolveNodeRequest) -> ResultPayload:
         """Mark a single node UNRESOLVED and propagate to downstream nodes."""
         node = self.engine.object_manager.attempt_get_object_by_name_as_type(request.node_name, BaseNode)

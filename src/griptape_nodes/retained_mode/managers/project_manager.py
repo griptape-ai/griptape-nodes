@@ -45,6 +45,7 @@ from griptape_nodes.common.project_templates import (
     schema_major_or_none,
     select_project_path,
 )
+from griptape_nodes.common.project_templates.situation import BuiltInSituation
 from griptape_nodes.common.workflow_context_handoff import WorkflowContextSnapshot
 from griptape_nodes.files.derivation import DERIVATION_RULES, apply_derivation_rules
 from griptape_nodes.files.file import File, FileWriteError
@@ -53,7 +54,6 @@ from griptape_nodes.files.path_utils import (
     resolve_file_path,
     resolve_path_safely,
 )
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete, CurrentProjectChanged
 from griptape_nodes.retained_mode.events.base_events import AppEvent
@@ -61,6 +61,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     ReloadAllLibrariesRequest,
     ReloadAllLibrariesResultFailure,
 )
+from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     ActivateWorkspaceProjectRequest,
@@ -145,6 +146,7 @@ from griptape_nodes.retained_mode.publishing.project_packager import (
     read_manifest,
     rename_project_template,
 )
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.variable_types import FlowVariable, VariableLayer, VariablePermission
 from griptape_nodes.utils.dict_utils import get_dot_value
 from griptape_nodes.utils.file_utils import find_files_recursive
@@ -188,6 +190,12 @@ BUILTIN_WORKSPACE_DIR = "workspace_dir"
 BUILTIN_WORKFLOW_NAME = "workflow_name"
 BUILTIN_WORKFLOW_DIR = "workflow_dir"
 BUILTIN_STATIC_FILES_DIR = "static_files_dir"
+
+# Stands in for the filename when resolving `save_workflow` purely to learn its folder. Never
+# reaches disk: only the parent of the resolved path is read. Carries no path separator, so it
+# cannot add a level the real filename would not have.
+_SAVE_DIR_PROBE_STEM = "workflow"
+_SAVE_DIR_PROBE_EXTENSION = "py"
 
 
 @dataclass(frozen=True)
@@ -715,6 +723,11 @@ class ProjectManager(EngineScoped):
         # Set to True at end of on_app_initialization_complete. Guards workspace switch
         # logic so expensive reloads don't fire during startup.
         self._initialization_complete: bool = False
+        # Set while `_resolve_default_workflow_save_dir` is resolving `save_workflow` to learn
+        # where an unsaved workflow would be saved. That resolution can reach `workflow_dir`
+        # again, directly or through a directory such as `{outputs}`, and each re-entry builds
+        # its own resolver, so the resolver's own cycle guard never sees the loop.
+        self._resolving_default_workflow_save_dir: bool = False
 
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
         # This allows UI to query why a project failed to load
@@ -736,46 +749,7 @@ class ProjectManager(EngineScoped):
         self._boot_id_index_built: bool = False
 
         # Register event handlers
-        event_manager.assign_manager_to_request_type(LoadProjectTemplateRequest, self.on_load_project_template_request)
-        event_manager.assign_manager_to_request_type(GetProjectTemplateRequest, self.on_get_project_template_request)
-        event_manager.assign_manager_to_request_type(
-            ResolveProjectWorkspaceRequest, self.on_resolve_project_workspace_request
-        )
-        event_manager.assign_manager_to_request_type(
-            ListProjectTemplatesRequest, self.on_list_project_templates_request
-        )
-        event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
-        event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
-        event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
-        event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
-        event_manager.assign_manager_to_request_type(SaveProjectTemplateRequest, self.on_save_project_template_request)
-        event_manager.assign_manager_to_request_type(
-            UpgradeProjectSchemaRequest, self.on_upgrade_project_schema_request
-        )
-        event_manager.assign_manager_to_request_type(
-            AttemptMatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
-        )
-        event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
-        event_manager.assign_manager_to_request_type(
-            GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
-        )
-        event_manager.assign_manager_to_request_type(
-            AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
-        )
-        event_manager.assign_manager_to_request_type(
-            UnregisterProjectTemplateRequest, self.on_unregister_project_template_request
-        )
-        event_manager.assign_manager_to_request_type(
-            ValidateProjectTemplateRequest, self.on_validate_project_template_request
-        )
-        event_manager.assign_manager_to_request_type(
-            ActivateWorkspaceProjectRequest, self.on_activate_workspace_project_request
-        )
-        event_manager.assign_manager_to_request_type(ExportProjectRequest, self.on_export_project_request)
-        event_manager.assign_manager_to_request_type(
-            PreviewImportProjectRequest, self.on_preview_import_project_request
-        )
-        event_manager.assign_manager_to_request_type(ImportProjectRequest, self.on_import_project_request)
+        event_manager.register_request_handlers(self)
 
         # Register app initialization listener
         event_manager.add_listener_to_app_event(
@@ -789,6 +763,7 @@ class ProjectManager(EngineScoped):
         self._load_system_defaults()
         self._current_project_id = SYSTEM_DEFAULTS_KEY
 
+    @handles(LoadProjectTemplateRequest)
     async def on_load_project_template_request(
         self, request: LoadProjectTemplateRequest
     ) -> LoadProjectTemplateResultSuccess | LoadProjectTemplateResultFailure:
@@ -1436,6 +1411,7 @@ class ProjectManager(EngineScoped):
             return existing.project_file_path
         return self._boot_id_to_file_path.get(parent_project_id)
 
+    @handles(GetProjectTemplateRequest)
     def on_get_project_template_request(
         self, request: GetProjectTemplateRequest
     ) -> GetProjectTemplateResultSuccess | GetProjectTemplateResultFailure:
@@ -1453,6 +1429,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully retrieved project template for '{request.project_id}'. Status: {project_info.validation.status}",
         )
 
+    @handles(ResolveProjectWorkspaceRequest)
     async def on_resolve_project_workspace_request(
         self, request: ResolveProjectWorkspaceRequest
     ) -> ResolveProjectWorkspaceResultSuccess:
@@ -1468,6 +1445,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Resolved workspace for '{request.project_id}': {resolved}",
         )
 
+    @handles(ListProjectTemplatesRequest)
     async def on_list_project_templates_request(
         self, request: ListProjectTemplatesRequest
     ) -> ListProjectTemplatesResultSuccess:
@@ -1597,6 +1575,7 @@ class ProjectManager(EngineScoped):
             libraries_root=libraries_root,
         )
 
+    @handles(GetSituationRequest)
     def on_get_situation_request(
         self, request: GetSituationRequest
     ) -> GetSituationResultSuccess | GetSituationResultFailure:
@@ -1629,6 +1608,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully retrieved situation '{request.situation_name}'. Macro: {situation.macro}, Policy: create_dirs={situation.policy.create_dirs}, on_collision={situation.policy.on_collision}",
         )
 
+    @handles(GetPathForMacroRequest)
     def on_get_path_for_macro_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, request: GetPathForMacroRequest
     ) -> GetPathForMacroResultSuccess | GetPathForMacroResultFailure:
@@ -2556,7 +2536,7 @@ class ProjectManager(EngineScoped):
         workspace config layer can re-point the final workspace_path; a forced override
         would mask that. Both _activate_project (live) and the provisioning preview drive
         off this one decision, so the previewed library/engine_version plan and what
-        _reconcile_libraries_from_config actually does cannot drift.
+        reconcile_libraries_from_config actually does cannot drift.
 
         Branches 1-3 and 4-result/5 are factored into _decide_workspace_pre_inheritance and
         _decide_workspace_post_inheritance so resolve_workspace_dir_for_project_id (which resolves an
@@ -3014,7 +2994,13 @@ class ProjectManager(EngineScoped):
     async def _reload_after_project_switch(
         self, project_id: str, *, workspace_changed: bool, library_config_changed: bool
     ) -> SetCurrentProjectResultFailure | None:
-        """Reload libraries and optionally re-register workflows after a project switch.
+        """Close the open workflow, reload libraries, and re-register workflows after a switch.
+
+        A workspace change closes the open workflow, because re-registering the
+        workflows re-keys them against the new workspace: a context that outlives
+        its registry entry names a key nothing can look up again, and every
+        `workflow_dir` resolution against it warns for the life of the process.
+        Clients are expected to return the user to the workflow picker.
 
         Only reloads libraries when the project's library-affecting config
         actually changed: the reload triggers LibraryManager's reconcile, which
@@ -3023,15 +3009,33 @@ class ProjectManager(EngineScoped):
         default workspace) skips the deep reset. Workflows are re-registered only
         when the workspace directory changed.
 
-        Returns a failure result if the library reload (reconcile/engine_version
-        gate included) fails, otherwise None.
+        Returns a failure result if the workflow could not be closed, or if the
+        library reload (reconcile/engine_version gate included) fails, otherwise
+        None.
         """
+        # Ahead of refresh_workflow_registry, which deletes the entry this teardown resolves
+        # paths through, and ahead of the reload below, whose own clear then finds an empty
+        # stack and no-ops.
+        #
+        # Both failures below report altered_workflow_state: the teardown pops the context
+        # before the checks that can fail it, so the workflow is gone either way. A failure
+        # that claimed otherwise would leave the client showing a workflow the engine has
+        # dropped, which is the state this teardown exists to prevent.
+        if workspace_changed:
+            clear_result = await self.engine.ahandle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+            if not clear_result.succeeded():
+                return SetCurrentProjectResultFailure(
+                    result_details=f"Attempted to set project '{project_id}'. "
+                    f"Config updated but the open workflow could not be closed: {clear_result.result_details}",
+                    altered_workflow_state=True,
+                )
         if library_config_changed:
             reload_result = await self.engine.ahandle_request(ReloadAllLibrariesRequest())
             if isinstance(reload_result, ReloadAllLibrariesResultFailure):
                 return SetCurrentProjectResultFailure(
                     result_details=f"Attempted to set project '{project_id}'. "
                     f"Config updated but library reload failed: {reload_result.result_details}",
+                    altered_workflow_state=True,
                 )
         if workspace_changed:
             await self.engine.workflow_manager.refresh_workflow_registry()
@@ -3105,6 +3109,7 @@ class ProjectManager(EngineScoped):
             current_id = self._reduce_parent_link_to_id(template, anchor, file_path_to_id)
         return chain
 
+    @handles(SetCurrentProjectRequest)
     async def on_set_current_project_request(
         self, request: SetCurrentProjectRequest
     ) -> SetCurrentProjectResultSuccess | SetCurrentProjectResultFailure:
@@ -3253,7 +3258,6 @@ class ProjectManager(EngineScoped):
                 f"Attempted to activate project '{resolved_project_id}'. Failed because no loaded "
                 f"project template has that id, so its configuration could not be established."
             )
-            logger.error(details)
             return SetCurrentProjectResultFailure(result_details=details)
 
         return self._refuse_unresolvable_declared_paths(project_info)
@@ -3519,7 +3523,7 @@ class ProjectManager(EngineScoped):
         for that case.
         """
         if generation <= self._last_adopted_generation:
-            logger.info(
+            logger.debug(
                 "Skipping adoption of project '%s' (generation %d): generation %d already adopted.",
                 project_id,
                 generation,
@@ -3532,6 +3536,7 @@ class ProjectManager(EngineScoped):
         """Mark `generation` as adopted, once its activation has fully succeeded."""
         self._last_adopted_generation = max(self._last_adopted_generation, generation)
 
+    @handles(GetCurrentProjectRequest)
     def on_get_current_project_request(
         self, _request: GetCurrentProjectRequest
     ) -> GetCurrentProjectResultSuccess | GetCurrentProjectResultFailure:
@@ -3547,6 +3552,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully retrieved current project. ID: {self._current_project_id}",
         )
 
+    @handles(SaveProjectTemplateRequest)
     def on_save_project_template_request(
         self, request: SaveProjectTemplateRequest
     ) -> SaveProjectTemplateResultSuccess | SaveProjectTemplateResultFailure:
@@ -3714,6 +3720,7 @@ class ProjectManager(EngineScoped):
 
         return None
 
+    @handles(UpgradeProjectSchemaRequest)
     async def on_upgrade_project_schema_request(  # noqa: PLR0911
         self, request: UpgradeProjectSchemaRequest
     ) -> UpgradeProjectSchemaResultSuccess | UpgradeProjectSchemaResultFailure:
@@ -3854,6 +3861,7 @@ class ProjectManager(EngineScoped):
             ),
         )
 
+    @handles(ValidateProjectTemplateRequest)
     def on_validate_project_template_request(
         self, request: ValidateProjectTemplateRequest
     ) -> ValidateProjectTemplateResultSuccess:
@@ -4025,6 +4033,7 @@ class ProjectManager(EngineScoped):
             return ParentLinkLookup(path=None, reason=reason)
         return ParentLinkLookup(path=str(resolution.path), reason=None)
 
+    @handles(UnregisterProjectTemplateRequest)
     def on_unregister_project_template_request(  # noqa: C901, PLR0912
         self, request: UnregisterProjectTemplateRequest
     ) -> UnregisterProjectTemplateResultSuccess | UnregisterProjectTemplateResultFailure:
@@ -4101,6 +4110,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully unregistered project template '{project_id}'",
         )
 
+    @handles(AttemptMatchPathAgainstMacroRequest)
     def on_match_path_against_macro_request(
         self, request: AttemptMatchPathAgainstMacroRequest
     ) -> AttemptMatchPathAgainstMacroResultSuccess | AttemptMatchPathAgainstMacroResultFailure:
@@ -4189,6 +4199,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully matched path '{request.file_path}' against macro '{request.parsed_macro.template}'. Extracted {len(extracted)} variables",
         )
 
+    @handles(GetStateForMacroRequest)
     def on_get_state_for_macro_request(
         self, request: GetStateForMacroRequest
     ) -> GetStateForMacroResultSuccess | GetStateForMacroResultFailure:
@@ -4282,6 +4293,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Analyzed macro with {len(all_variables)} variables: {len(satisfied_variables)} satisfied, {len(missing_required_variables)} missing, {len(conflicting_variables)} conflicting",
         )
 
+    @handles(ActivateWorkspaceProjectRequest)
     async def on_activate_workspace_project_request(
         self, _request: ActivateWorkspaceProjectRequest
     ) -> ActivateWorkspaceProjectResultSuccess | ActivateWorkspaceProjectResultFailure:
@@ -4320,6 +4332,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Activated workspace project: {self._current_project_id}",
         )
 
+    @handles(ExportProjectRequest)
     def on_export_project_request(
         self, request: ExportProjectRequest
     ) -> ExportProjectResultSuccess | ExportProjectResultFailure:
@@ -4391,6 +4404,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Exported project '{request.project_id}' to '{result.archive_path}'.",
         )
 
+    @handles(PreviewImportProjectRequest)
     def on_preview_import_project_request(
         self, request: PreviewImportProjectRequest
     ) -> PreviewImportProjectResultSuccess | PreviewImportProjectResultFailure:
@@ -4418,6 +4432,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Read manifest from project package '{request.archive_path}'.",
         )
 
+    @handles(ImportProjectRequest)
     async def on_import_project_request(
         self, request: ImportProjectRequest
     ) -> ImportProjectResultSuccess | ImportProjectResultFailure:
@@ -4616,6 +4631,7 @@ class ProjectManager(EngineScoped):
         # reload when the workspace actually changes.
         self._initialization_complete = True
 
+    @handles(GetAllSituationsForProjectRequest)
     def on_get_all_situations_for_project_request(
         self, request: GetAllSituationsForProjectRequest
     ) -> GetAllSituationsForProjectResultSuccess | GetAllSituationsForProjectResultFailure:
@@ -4638,6 +4654,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully retrieved all situations. Found {len(situations)} situations",
         )
 
+    @handles(AttemptMapAbsolutePathToProjectRequest)
     def on_attempt_map_absolute_path_to_project_request(
         self, request: AttemptMapAbsolutePathToProjectRequest
     ) -> AttemptMapAbsolutePathToProjectResultSuccess | AttemptMapAbsolutePathToProjectResultFailure:
@@ -4758,7 +4775,7 @@ class ProjectManager(EngineScoped):
 
         Raises ValueError when the project isn't loaded or the name isn't a computed name;
         RuntimeError / NotImplementedError when the value's context isn't ready (e.g.
-        {workflow_dir} before the workflow is saved).
+        {workflow_dir} with no workflow in context).
         """
         effective = self.resolve_project_id(project_id)
         if effective is None:
@@ -4925,7 +4942,7 @@ class ProjectManager(EngineScoped):
                 raise NotImplementedError(msg)
 
             case "workspace_dir":
-                return str(self._config_manager.workspace_path)
+                return self._resolve_builtin_workspace_dir()
 
             case "workflow_name":
                 context_manager = self.engine.context_manager
@@ -4935,7 +4952,7 @@ class ProjectManager(EngineScoped):
                 return context_manager.get_current_workflow_name()
 
             case "workflow_dir":
-                return self._resolve_workflow_dir()
+                return self._resolve_workflow_dir(project_info)
 
             case "static_files_dir":
                 return self._config_manager.get_config_value("static_files_directory", default="staticfiles")
@@ -4969,10 +4986,19 @@ class ProjectManager(EngineScoped):
             working_directory=context_manager.get_current_workflow_working_directory(),
         )
 
-    def _resolve_workflow_dir(self) -> str:
+    def _resolve_builtin_workspace_dir(self) -> str:
+        """Resolve the `workspace_dir` builtin: the root every relative project path anchors to.
+
+        Also the last rung of `_resolve_workflow_dir`, which is why it is a method rather than
+        an inline expression -- the two must answer identically or a never-saved workflow's
+        files land somewhere `{workspace_dir}` does not describe.
+        """
+        return str(self._config_manager.workspace_path)
+
+    def _resolve_workflow_dir(self, project_info: ProjectInfo) -> str:
         """Resolve the `workflow_dir` builtin: the folder the current workflow belongs to.
 
-        Three sources, in descending order of authority:
+        Four sources, in descending order of authority:
 
         1. The file path retained on the context. The registry key is derived against the
            workspace that was active at push time, so a project switch -- which re-registers
@@ -4980,15 +5006,19 @@ class ProjectManager(EngineScoped):
            longer exists. The lookup then raises, `{workflow_dir?:/}` swallows it as an
            optional reference, and `{outputs}` silently degrades from the workflow's own folder
            to a workspace-relative path, so saved media resolves somewhere it was never written.
-        2. The registry entry for the context's name.
+        2. The registry entry for the context's name. Missing entries fall through.
         3. The folder the workflow was created in, for a workflow that has never been saved and
-           so has no file to answer from. Last because a saved workflow's own location always
-           beats the folder it was created in -- the two differ as soon as the user saves
-           somewhere else.
+           so has no file to answer from. Below the two above because a saved workflow's own
+           location always beats the folder it was created in -- the two differ as soon as the
+           user saves somewhere else.
+        4. The folder the workflow WOULD be saved into, for a never-saved workflow whose creator
+           named no folder, read from the `save_workflow` situation with no sub-directories so a
+           template that anchors saves outside the workspace root is answered with its folder
+           rather than the root. Where the user later chooses to save is a choice at save time,
+           not a misprediction by this rung. See `_resolve_default_workflow_save_dir`.
 
         Raises:
-            RuntimeError: If no workflow is in context, or the workflow has neither a file nor
-                a folder to answer with.
+            RuntimeError: If no workflow is in context.
         """
         context_manager = self.engine.context_manager
         if not context_manager.has_current_workflow():
@@ -5001,28 +5031,73 @@ class ProjectManager(EngineScoped):
 
         workflow_name = context_manager.get_current_workflow_name()
         working_directory = context_manager.get_current_workflow_working_directory()
-        try:
-            workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
-        except KeyError as e:
+        workflow = None
+        if self.engine.workflow_registry.has_workflow_with_name(workflow_name):
+            workflow = self.engine.workflow_registry.get_workflow_by_name(workflow_name)
+
+        if workflow is None or workflow.file_path is None:
             if working_directory is not None:
                 return working_directory
-            # NOT the same as unsaved: the file may be on disk and saved, but keyed
-            # under a different workspace. Say so, rather than reporting a state the
-            # user cannot act on.
-            msg = (
-                f"Workflow '{workflow_name}' is not registered on this engine "
-                f"(it may be registered under a different workspace)"
-            )
-            raise RuntimeError(msg) from e
+            return self._resolve_default_workflow_save_dir(project_info)
 
-        if workflow.file_path is None:
-            if working_directory is not None:
-                return working_directory
-            msg = f"Workflow '{workflow_name}' has not been saved yet"
-            raise RuntimeError(msg)
-
-        workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
+        workflow_file_path = Path(self.engine.workflow_registry.get_complete_file_path(workflow.file_path))
         return str(workflow_file_path.parent)
+
+    def _resolve_default_workflow_save_dir(self, project_info: ProjectInfo) -> str:
+        """The folder `save_workflow` would put a workflow in when the save names no sub-directory.
+
+        Rung 4 of `_resolve_workflow_dir`. Resolves the situation through
+        `on_get_path_for_macro_request`, the same handler the real save goes through, so the
+        answer accounts for derivation rules and stored project variables rather than tracking
+        only what this manager's resolver knows. `sub_dirs` is left out so the folder is the one
+        a save with no hierarchy lands in; `file_name_base` and `file_extension` are required by
+        the macro but cannot change which folder it names, so they get placeholders and only the
+        parent is kept.
+
+        Falls back to the workspace root when the situation is absent, failed to parse, or cannot
+        resolve, since answering with the root is what dropping an optional `{workflow_dir}`
+        already did -- a never-saved workflow keeps a usable folder either way.
+        """
+        # Anchored so every answer here has one shape: the resolved path is fully absolute, and on
+        # Windows a bare `/workspace` carries no drive letter until it is anchored against the CWD.
+        workspace_root = str(resolve_path_safely(Path(self._resolve_builtin_workspace_dir())))
+
+        # Resolving the situation can reach `workflow_dir` again and land back here, so answer the
+        # root for the duration. The macro may name the builtin outright, or reach it through a
+        # directory: every v1 default directory is `{workflow_dir?:/}<name>`, and that form appends
+        # its own name once per pass, so an unguarded loop yields `outputs/outputs/outputs/...`.
+        if self._resolving_default_workflow_save_dir:
+            return workspace_root
+
+        parsed_macro = project_info.parsed_situation_schemas.get(BuiltInSituation.SAVE_WORKFLOW)
+        if parsed_macro is None:
+            return workspace_root
+
+        self._resolving_default_workflow_save_dir = True
+        try:
+            result = self.on_get_path_for_macro_request(
+                GetPathForMacroRequest(
+                    parsed_macro=parsed_macro,
+                    variables={
+                        "file_name_base": _SAVE_DIR_PROBE_STEM,
+                        "file_extension": _SAVE_DIR_PROBE_EXTENSION,
+                    },
+                    project_id=project_info.project_id,
+                )
+            )
+        finally:
+            self._resolving_default_workflow_save_dir = False
+
+        if not isinstance(result, GetPathForMacroResultSuccess):
+            logger.debug(
+                "Could not resolve the '%s' situation to find where an unsaved workflow would be "
+                "saved; using the workspace root (%s)",
+                BuiltInSituation.SAVE_WORKFLOW,
+                result.result_details,
+            )
+            return workspace_root
+
+        return str(result.absolute_path.parent)
 
     def _absolute_path_to_macro_path(self, absolute_path: Path, project_info: ProjectInfo) -> str | None:
         """Convert an absolute path to macro form using longest prefix matching.

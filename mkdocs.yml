@@ -127,6 +127,7 @@ plugins:
         Configuration and libraries:
           - guides/configuration.md: Engine configuration (workspace, secrets, libraries)
           - guides/libraries.md: Installing and managing node libraries
+          - guides/managed_environment.md: Running the engine inside an environment a studio's own tools prepare (library paths, provisioned by, worker command prefix)
         Project system:
           - guides/projects/index.md: Project system overview
           - guides/projects/gui_guide.md: Managing projects from the GUI
@@ -182,9 +183,9 @@ plugins:
           - development/custom_nodes/advanced_libraries.md: AdvancedNodeLibrary lifecycle hooks, library-owned request handlers, and registering node types without listing them in the manifest
           - development/custom_nodes/custom_widgets.md: Custom JavaScript widget components and the widget testbed
           - development/custom_nodes/examples.md: Advanced patterns from production nodes and quick-reference material
-          - development/custom_nodes/node_isolation_with_workers.md: Running a library isolated in a worker subprocess for dependency isolation
+          - development/custom_nodes/node_isolation_with_workers.md: Running a library's node execution in a worker subprocess for dependency isolation
           - development/custom_nodes/passing_unserializable_values.md: Passing pipelines, tensors and other unserializable values between nodes across a worker process boundary
-          - development/custom_nodes/strict_mode.md: Strict-mode rules that identify isolation incompatibilities
+          - development/custom_nodes/strict_mode.md: Strict-mode rules checked while a node executes
         Reference:
           - reference/command_line_interface.md: gtn CLI reference
           - reference/configuration_reference.md: Every engine setting with type, default, and env var
@@ -307,6 +308,7 @@ nav:
       - Engine:
           - Configuration: guides/configuration.md
           - Libraries: guides/libraries.md
+          - Managed Environment: guides/managed_environment.md
       - Projects:
           - Overview: guides/projects/index.md
           - Managing Projects in the GUI: guides/projects/gui_guide.md
@@ -561,6 +563,7 @@ nav:
           - Node Isolation with Workers: development/custom_nodes/node_isolation_with_workers.md
           - Strict Mode Reference: development/custom_nodes/strict_mode.md
           - Example Control Node: development/custom_nodes/example_control_node.py
+          - Example NodeError Node: development/custom_nodes/example_node_error_node.py
       - For Agents: for_agents.md
   - Reference:
       - Command Line Interface: reference/command_line_interface.md

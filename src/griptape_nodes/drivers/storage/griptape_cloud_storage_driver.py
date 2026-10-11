@@ -4,10 +4,10 @@ import logging
 import os
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin, urlparse
 
-import httpx
+import httpx2
 
 from griptape_nodes.drivers.cloud_credentials import resolve_cloud_credential
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
@@ -16,8 +16,6 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.utils.http_utils import request_with_retry, retry_on_transient_error
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import SidecarContent
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 
@@ -53,11 +51,11 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         self.bucket_id = bucket_id
 
     @retry_on_transient_error
-    def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+    def _request(self, method: str, url: str, **kwargs) -> httpx2.Response:
         """Make an HTTP request with automatic retries on transient errors."""
         kwargs.setdefault("headers", self.headers)
         kwargs.setdefault("timeout", self.request_timeout)
-        response = httpx.request(method, url, **kwargs)
+        response = httpx2.request(method, url, **kwargs)
         response.raise_for_status()
         return response
 
@@ -83,9 +81,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{normalized_path.as_posix()}")
         try:
             response = self._request("POST", url, json={"operation": "PUT"})
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = f"Failed to create presigned upload URL for file {normalized_path}: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         response_data = response.json()
@@ -134,7 +131,6 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
                     f"configured base URL '{self.base_url}'. "
                     f"Expected domain: '{expected_domain}'"
                 )
-                logger.error(msg)
                 raise ValueError(msg)
 
             # Extract path component for further processing
@@ -162,9 +158,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{normalized_path.as_posix()}")
         try:
             response = self._request("POST", url, json={"method": "GET"})
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = f"Failed to create presigned download URL for file {normalized_path}: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         response_data = response.json()
@@ -215,9 +210,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
                 content=file_content,
                 headers=upload_response["headers"],
             )
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = f"Failed to upload file {normalized_path}: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         # Return the full asset URL
@@ -227,9 +221,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
         try:
             response = self._request("PUT", url, json={"name": asset_name})
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = str(e)
-            logger.error(msg)
             raise ValueError(msg) from e
 
         return response.json()["name"]
@@ -256,15 +249,14 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         try:
             response = request_with_retry("POST", url, json=payload, headers=headers, timeout=timeout)
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = f"Failed to create bucket '{bucket_name}': {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         response_data = response.json()
         bucket_id = response_data["bucket_id"]
 
-        logger.info("Created new Griptape Cloud bucket '%s' with ID: %s", bucket_name, bucket_id)
+        logger.debug("Created new Griptape Cloud bucket '%s' with ID: %s", bucket_name, bucket_id)
         return bucket_id
 
     def list_files(self) -> list[str]:
@@ -279,9 +271,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
         try:
             response = self._request("GET", url, params={"prefix": self.workspace_directory.name or ""})
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = f"Failed to list files in bucket {self.bucket_id}: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         response_data = response.json()
@@ -330,9 +321,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         try:
             response = request_with_retry("GET", url, headers=headers, timeout=timeout)
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = f"Failed to list buckets: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         return response.json().get("buckets", [])
@@ -363,9 +353,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         try:
             response = request_with_retry("GET", url, headers=headers, timeout=timeout)
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             msg = f"Failed to fetch organization default bucket: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         organizations = response.json().get("organizations", [])
@@ -400,11 +389,10 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         try:
             request_with_retry("GET", url, headers=headers, timeout=timeout)
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             if e.response.status_code == HTTPStatus.NOT_FOUND:
                 return False
             msg = f"Failed to check bucket '{bucket_id}': {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
         return True
@@ -426,7 +414,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         try:
             self._request("DELETE", url)
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             if e.response.status_code == HTTPStatus.NOT_FOUND:
                 logger.debug(
                     "Asset %s is already absent from bucket %s; nothing to delete",
@@ -435,7 +423,6 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
                 )
                 return
             msg = f"Failed to delete file {normalized_path}: {e}"
-            logger.error(msg)
             raise RuntimeError(msg) from e
 
     def _is_cloud_asset_url(self, url_str: str) -> bool:
@@ -528,9 +515,9 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             response_data = response.json()
             signed_url = response_data["url"]
 
-            logger.info("Converted cloud asset URL to signed URL: %s", asset_url)
+            logger.debug("Converted cloud asset URL to signed URL: %s", asset_url)
         except Exception as e:
-            if isinstance(e, httpx.HTTPStatusError):
+            if isinstance(e, httpx2.HTTPStatusError):
                 logger.warning(
                     "Failed to create signed download URL for %s: HTTP %s", asset_url, e.response.status_code
                 )
@@ -544,7 +531,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
     def is_cloud_asset_url(url_str: str, base_url: str | None = None) -> bool:
         """Check if URL is a Griptape Cloud asset URL with domain validation.
 
-        Static version for use without driver instance (e.g., httpx patching layer).
+        Static version for use without driver instance.
         Detects URLs matching pattern: https://cloud.griptape.ai/buckets/{id}/assets/{path}
         Validates domain matches expected cloud domain.
 
@@ -655,66 +642,3 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             return None
         else:
             return bucket_id
-
-    @staticmethod
-    def create_signed_download_url_from_asset_url(
-        asset_url: str,
-        bucket_id: str | None = None,
-        api_key: str | None = None,
-        base_url: str | None = None,
-        *,
-        httpx_request_func: Callable[..., Any],
-    ) -> str | None:
-        """Create a signed download URL for a cloud asset.
-
-        Static version for use without driver instance (e.g., httpx patching layer).
-
-        Args:
-            asset_url: Cloud asset URL to convert
-            bucket_id: Bucket ID. If None, reads from GT_CLOUD_BUCKET_ID env var.
-            api_key: Credential. If None, resolves the license, then GT_CLOUD_API_KEY.
-            base_url: Cloud base URL. If None, reads from GT_CLOUD_BASE_URL env var.
-            httpx_request_func: The httpx request function to use (original, not patched)
-
-        Returns:
-            Signed download URL if successful, None if fails
-        """
-        # Get credentials from parameters or environment
-        if bucket_id is None:
-            bucket_id = os.environ.get("GT_CLOUD_BUCKET_ID")
-        if api_key is None:
-            api_key = resolve_cloud_credential()
-        if base_url is None:
-            base_url = os.environ.get("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-
-        # Guard: Check for required credentials
-        if not bucket_id:
-            logger.debug("GT_CLOUD_BUCKET_ID not set, skipping cloud URL conversion: %s", asset_url)
-            return None
-
-        if not api_key:
-            logger.debug("No Griptape Cloud credential set, skipping cloud URL conversion: %s", asset_url)
-            return None
-
-        # Extract workspace-relative path
-        workspace_path = GriptapeCloudStorageDriver.extract_workspace_path_from_cloud_url(asset_url)
-        if not workspace_path:
-            logger.debug("Could not extract workspace path from cloud URL: %s", asset_url)
-            return None
-
-        # Build API URL for signed download URL
-        api_url = urljoin(base_url, f"/api/buckets/{bucket_id}/asset-urls/{workspace_path}")
-
-        # Make API request to get signed URL
-        try:
-            headers = {"Authorization": f"Bearer {api_key}"}
-            response = request_with_retry(
-                "POST", api_url, httpx_request_func=httpx_request_func, json={"method": "GET"}, headers=headers
-            )
-        except Exception as e:
-            logger.warning("Failed to create signed download URL for %s: %s", asset_url, e)
-            return None
-
-        signed_url = response.json()["url"]
-        logger.info("Converted cloud asset URL to signed URL: %s", asset_url)
-        return signed_url

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.context_events import (
     EnsureWorkflowAndFlowRequest,
@@ -19,6 +18,7 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
 )
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -69,7 +69,7 @@ class ContextManager(EngineScoped):
             # at push time, so it goes stale the moment the workspace changes -- a project
             # switch re-registers workflows under the new workspace and the lookup then misses.
             # Callers that want the workflow's location (see ProjectManager's `workflow_dir`
-            # builtin) read this instead of round-tripping through WorkflowRegistry.
+            # builtin) read this instead of round-tripping through the workflow registry.
             self._file_path = file_path
             # The folder this workflow belongs to while it has no file of its own: the folder the
             # user was browsing when they created it. A DIRECTORY, unlike `_file_path`, which is
@@ -266,16 +266,9 @@ class ContextManager(EngineScoped):
         """Initialize the context manager with empty workflow and flow stacks."""
         super().__init__(engine)
         self._workflow_stack = []
-        event_manager.assign_manager_to_request_type(
-            request_type=SetWorkflowContextRequest, callback=self.on_set_workflow_context_request
-        )
-        event_manager.assign_manager_to_request_type(
-            request_type=GetWorkflowContextRequest, callback=self.on_get_workflow_context_request
-        )
-        event_manager.assign_manager_to_request_type(
-            request_type=EnsureWorkflowAndFlowRequest, callback=self.on_ensure_workflow_and_flow_request
-        )
+        event_manager.register_request_handlers(self)
 
+    @handles(SetWorkflowContextRequest)
     def on_set_workflow_context_request(self, request: SetWorkflowContextRequest) -> ResultPayload:
         # As of today, we only allow a single Workflow context at a time. This may change in the future.
         if self.has_current_workflow():
@@ -304,15 +297,17 @@ class ContextManager(EngineScoped):
         # When no workflow_name is supplied, mint a fresh "unsaved:<uuid>" key here so the
         # engine owns the namespace. Callers doing "create a new workflow" should omit the
         # name and read the resolved key off the success result.
-        resolved_name = request.workflow_name or f"{WorkflowRegistry.UNSAVED_KEY_PREFIX}{uuid.uuid4()}"
+        resolved_name = request.workflow_name or f"{self.engine.workflow_registry.UNSAVED_KEY_PREFIX}{uuid.uuid4()}"
 
         # Auto-register an unsaved registry entry when the caller is activating an
         # "unsaved:<uuid>" key. This makes every workflow (saved or not) a first-class
         # registry entry, so list/metadata/etc. calls don't need special-casing for
         # pre-save state. `ensure_unsaved` is idempotent.
-        if resolved_name.startswith(WorkflowRegistry.UNSAVED_KEY_PREFIX):
+        if resolved_name.startswith(self.engine.workflow_registry.UNSAVED_KEY_PREFIX):
             try:
-                WorkflowRegistry.ensure_unsaved(key=resolved_name, display_name=request.display_name or "Untitled")
+                self.engine.workflow_registry.ensure_unsaved(
+                    key=resolved_name, display_name=request.display_name or "Untitled"
+                )
             except ValueError as err:
                 msg = (
                     f"Attempted to auto-register unsaved workflow '{resolved_name}' "
@@ -324,19 +319,21 @@ class ContextManager(EngineScoped):
         msg = f"Successfully set the Workflow '{resolved_name}' as the Current Context."
         return SetWorkflowContextSuccess(workflow_name=resolved_name, result_details=msg)
 
+    @handles(GetWorkflowContextRequest)
     def on_get_workflow_context_request(self, request: GetWorkflowContextRequest) -> ResultPayload:  # noqa: ARG002
         workflow_name = None
         is_saved = None
         if self.has_current_workflow():
             workflow_name = self.get_current_workflow_name()
-            if WorkflowRegistry.has_workflow_with_name(workflow_name):
-                is_saved = WorkflowRegistry.get_workflow_by_name(workflow_name).is_saved
+            if self.engine.workflow_registry.has_workflow_with_name(workflow_name):
+                is_saved = self.engine.workflow_registry.get_workflow_by_name(workflow_name).is_saved
         return GetWorkflowContextSuccess(
             workflow_name=workflow_name,
             is_saved=is_saved,
             result_details=f"Successfully retrieved workflow context: {workflow_name or 'None'}",
         )
 
+    @handles(EnsureWorkflowAndFlowRequest)
     def on_ensure_workflow_and_flow_request(self, request: EnsureWorkflowAndFlowRequest) -> ResultPayload:
         """Cold-start bootstrap that guarantees a workflow + flow context exist.
 
@@ -432,12 +429,10 @@ class ContextManager(EngineScoped):
                 control_flow = self.engine.object_manager.attempt_get_object_by_name_as_type(flow, ControlFlow)
                 if control_flow is None:
                     msg = f"Flow '{flow}' not found in current workflow."
-                    logger.error(msg)
                     raise ValueError(msg)
                 flow = control_flow
             except KeyError as e:
                 msg = f"Flow '{flow}' not found in current workflow."
-                logger.error(msg)
                 raise ValueError(msg) from e
         return self.FlowContext(self, flow)
 
@@ -455,7 +450,6 @@ class ContextManager(EngineScoped):
                 node = self.get_current_flow().nodes[node]
             except KeyError as e:
                 msg = f"Node '{node}' not found in current flow."
-                logger.error(msg)
                 raise ValueError(msg) from e
         return self.NodeContext(self, node)
 
@@ -473,12 +467,10 @@ class ContextManager(EngineScoped):
                 node_element = self.get_current_node().root_ui_element.find_element_by_name(element)
                 if node_element is None:
                     msg = f"Element '{element}' not found in current node."
-                    logger.error(msg)
                     raise ValueError(msg)
                 element = node_element
             except KeyError as e:
                 msg = f"Element '{element}' not found in current node."
-                logger.error(msg)
                 raise ValueError(msg) from e
         return self.ElementContext(self, element)
 
@@ -745,12 +737,12 @@ class ContextManager(EngineScoped):
             # callers already handle.
             if file_path is None:
                 try:
-                    workflow = WorkflowRegistry.get_workflow_by_name(resolved_name)
+                    workflow = self.engine.workflow_registry.get_workflow_by_name(resolved_name)
                 except KeyError:
                     file_path = None
                 else:
                     if workflow.file_path is not None:
-                        file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
+                        file_path = self.engine.workflow_registry.get_complete_file_path(workflow.file_path)
         elif file_path is not None:
             resolved = canonicalize_for_identity(file_path)
             workspace_path = canonicalize_for_identity(self.engine.config_manager.workspace_path)

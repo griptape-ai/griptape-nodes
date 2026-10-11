@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 import semver
 
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+from griptape_nodes.node_library.workflow_registry import _WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     EngineHeartbeatRequest,
     EngineHeartbeatResultFailure,
@@ -42,6 +42,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
@@ -174,6 +175,7 @@ class Engine:
     _budget_manager: BudgetManager
     _diagnostics_manager: DiagnosticsManager
     _worker_manager: WorkerManager
+    _workflow_registry: _WorkflowRegistry
 
     def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.access_manager import AccessManager
@@ -223,6 +225,7 @@ class Engine:
         self._resource_manager = ResourceManager(self._event_manager, engine=self)
         self._config_manager = ConfigManager(self._event_manager, engine=self)
         self._os_manager = OSManager(self._event_manager, engine=self)
+        self._workflow_registry = _WorkflowRegistry(self._config_manager)
         self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
         self._object_manager = ObjectManager(self._event_manager, engine=self)
         self._node_manager = NodeManager(self._event_manager, engine=self)
@@ -255,8 +258,7 @@ class Engine:
         self._diagnostics_manager = DiagnosticsManager(self._event_manager, engine=self)
 
         # Assign handlers now that these are created.
-        self._event_manager.assign_manager_to_request_type(GetEngineVersionRequest, self.handle_engine_version_request)
-        self._event_manager.assign_manager_to_request_type(EngineHeartbeatRequest, self.handle_engine_heartbeat_request)
+        self._event_manager.register_request_handlers(self)
 
     @property
     def event_manager(self) -> EventManager:
@@ -378,6 +380,10 @@ class Engine:
     def worker_manager(self) -> WorkerManager:
         return self._worker_manager
 
+    @property
+    def workflow_registry(self) -> _WorkflowRegistry:
+        return self._workflow_registry
+
     # Node libraries and saved workflows do `app = GriptapeNodes()` and then call these
     # PascalCase accessors on the result. `GriptapeNodes()` hands back an `Engine`, so
     # the compat surface has to live here. Engine-internal code uses the snake_case
@@ -487,12 +493,13 @@ class Engine:
             if request.broadcast_result and not event_mgr.should_suppress_event(result_event):
                 event_mgr.put_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
+            # Log the type and ID, never the request itself: its repr includes every field, and a
+            # SetSecretValueRequest carries the secret value. The traceback says what failed.
             logger.exception(
-                "Unhandled exception while processing request of type %s. "
-                "Consider saving your work and restarting the engine if issues persist."
-                "Request: %s",
+                "Unhandled exception while processing request of type %s (request_id: %s). "
+                "Consider saving your work and restarting the engine if issues persist.",
                 type(request).__name__,
-                request,
+                request.request_id,
             )
             return ResultPayloadFailure(
                 exception=e, result_details=f"Unhandled exception while processing {type(request).__name__}: {e}"
@@ -514,12 +521,12 @@ class Engine:
             if request.broadcast_result and not event_mgr.should_suppress_event(result_event):
                 await event_mgr.aput_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
+            # Same as handle_request: the request's repr can include a secret value.
             logger.exception(
-                "Unhandled exception while processing async request of type %s. "
-                "Consider saving your work and restarting the engine if issues persist."
-                "Request: %s",
+                "Unhandled exception while processing async request of type %s (request_id: %s). "
+                "Consider saving your work and restarting the engine if issues persist.",
                 type(request).__name__,
-                request,
+                request.request_id,
             )
             return ResultPayloadFailure(
                 exception=e, result_details=f"Unhandled exception while processing async {type(request).__name__}: {e}"
@@ -596,6 +603,7 @@ class Engine:
         if dropped:
             logger.debug("Released %d held object(s) while tearing down the workflow.", dropped)
 
+    @handles(GetEngineVersionRequest)
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
         try:
             engine_ver = semver.VersionInfo.parse(engine_version)
@@ -607,9 +615,9 @@ class Engine:
             )
         except Exception as err:
             details = f"Attempted to get engine version. Failed due to '{err}'."
-            logger.error(details)
             return GetEngineVersionResultFailure(result_details=details)
 
+    @handles(EngineHeartbeatRequest)
     def handle_engine_heartbeat_request(self, request: EngineHeartbeatRequest) -> ResultPayload:
         """Handle engine heartbeat requests.
 
@@ -649,7 +657,6 @@ class Engine:
             )
         except Exception as err:
             details = f"Failed to handle engine heartbeat: {err}"
-            logger.error(details)
             return EngineHeartbeatResultFailure(heartbeat_id=request.heartbeat_id, result_details=details)
 
     def _get_instance_info(self) -> dict[str, str | None]:
@@ -689,10 +696,10 @@ class Engine:
                 workflow_info["has_active_flow"] = context_manager.has_current_flow()
 
                 # Get workflow file path from registry (None for unsaved workflows).
-                if WorkflowRegistry.has_workflow_with_name(workflow_name):
-                    workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+                if self._workflow_registry.has_workflow_with_name(workflow_name):
+                    workflow = self._workflow_registry.get_workflow_by_name(workflow_name)
                     if workflow.file_path is not None:
-                        absolute_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
+                        absolute_path = self._workflow_registry.get_complete_file_path(workflow.file_path)
                         workflow_info["workflow_file_path"] = absolute_path
 
         except Exception as err:

@@ -14,10 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
-from griptape_nodes.common.strict_mode import STRICT_MODE
-from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.engine import EngineScoped, engine_scope
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
@@ -33,7 +30,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
     StrictModeViolationDetail,
 )
-from griptape_nodes.retained_mode.events.event_converter import converter
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
@@ -41,6 +37,8 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointDenial,
     CheckpointFailure,
 )
+from griptape_nodes.retained_mode.request_handlers import handled_request_types
+from griptape_nodes.serialization.converter import converter
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 if TYPE_CHECKING:
@@ -154,38 +152,6 @@ def current_request_type() -> type[RequestPayload] | None:
     this ContextVar.
     """
     return _active_request_type.get()
-
-
-def reentrant_bus_in_init_would_report() -> bool:
-    """Whether a bus request issued right now would fire ``reentrant-bus-in-init``.
-
-    Both halves of the detector's condition (see
-    ``EventManager._report_reentrant_bus_in_init``), exposed so code that runs
-    inside a node ``__init__`` can ask BEFORE issuing a request and skip it
-    rather than commit the violation. The detector and every such caller read
-    this one predicate, so "we deferred" and "it would have been reported"
-    cannot drift apart as the scopes change.
-
-    Being inside a node ``__init__`` is not sufficient on its own. ``STRICT_MODE.report``
-    no-ops when no scope is active, and scopes open in exactly two places: around the
-    worker's schema probe (LOAD_PROBE, where a violation drops the class from the worker
-    schema) and around node execution (RUNTIME_EXECUTE, where a worker violation promotes
-    the result to a failure). An ordinary ``CreateNodeRequest`` -- an editor drop, a
-    workflow load, any single-process engine, where no probe runs at all -- opens neither,
-    so a read from ``__init__`` there is free and callers should just do it. Keying a
-    deferral off ``is_constructing_node()`` alone instead makes every node in every
-    deployment pay for a hazard only the worker's probe has.
-
-    When strict mode is disabled the scope is detached (``open_scope`` keeps it off the
-    stack), so this cannot tell a probe from an editor drop. It answers True while
-    constructing in that case: with the checker off, the conservative answer is the
-    safe one.
-    """
-    if not LibraryRegistry.is_constructing_node():
-        return False
-    if not STRICT_MODE.enabled:
-        return True
-    return STRICT_MODE.current_scope() is not None
 
 
 # Result types that should NOT trigger a flush request.
@@ -846,6 +812,18 @@ class EventManager(EngineScoped):
             raise ValueError(msg)
         self._request_type_to_manager[request_type] = callback
 
+    def register_request_handlers(self, owner: object) -> None:
+        """Assign each `@handles` method on `owner`. An unmarked override keeps its parent's marks."""
+        marks: dict[str, tuple[type[RequestPayload], ...]] = {}
+        for klass in reversed(type(owner).__mro__):
+            for name, attr in vars(klass).items():
+                request_types = handled_request_types(attr)
+                if request_types:
+                    marks[name] = request_types
+        for name, request_types in marks.items():
+            for request_type in request_types:
+                self.assign_manager_to_request_type(request_type, getattr(owner, name))
+
     def configure_worker_forwarding(
         self,
         *,
@@ -910,32 +888,6 @@ class EventManager(EngineScoped):
         """Return True when this process is currently inside a node-execution scope."""
         with self._node_execution_lock:
             return self._node_execution_depth > 0
-
-    def _report_reentrant_bus_in_init(self, request: RequestPayload) -> None:
-        """Detect the reentrant-bus-in-init rule.
-
-        A node class that issues an event-bus request from its __init__
-        deadlocks the worker's schema probe, which calls __init__ on
-        the worker thread during library load. LibraryRegistry sets a
-        ContextVar around create_node so every __init__ body in the
-        hierarchy is covered.
-
-        The condition lives in ``reentrant_bus_in_init_would_report`` rather
-        than inline, because engine components that legitimately read state
-        from a node ``__init__`` consult the same predicate to decide whether
-        to defer. One owner, so the two answers cannot disagree.
-        """
-        if not reentrant_bus_in_init_would_report():
-            return
-        rule = RULES["reentrant-bus-in-init"]
-        # Subject attribution lives on the violation's ``subject`` field,
-        # set from the surrounding strict-mode scope (class name under
-        # LOAD_PROBE, instance name under RUNTIME_EXECUTE). The message
-        # only needs the request type.
-        STRICT_MODE.report(
-            rule_id=rule.rule_id,
-            message=rule.render(request_type=type(request).__name__),
-        )
 
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
         """Return the currently-registered handler callback for a request type, or None."""
@@ -1172,8 +1124,6 @@ class EventManager(EngineScoped):
         if result_context is None:
             result_context = ResultContext()
 
-        self._report_reentrant_bus_in_init(request)
-
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -1228,8 +1178,6 @@ class EventManager(EngineScoped):
         operation_depth_mgr = self.engine.operation_depth_manager
         if result_context is None:
             result_context = ResultContext()
-
-        self._report_reentrant_bus_in_init(request)
 
         # Notify the manager of the event type
         request_type = type(request)

@@ -14,6 +14,8 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.connection_events import IncomingConnection, OutgoingConnection
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from griptape_nodes.serialization.converter import ElementDocument
+from griptape_nodes.serialization.values import DisplayValue, Value
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -48,6 +50,7 @@ class AddParameterToNodeRequest(RequestPayload):
         initial_setup: Skip setup work when loading from file
         settable: Whether parameter can be set directly by the user or not
         allow_variable_substitution: Whether {VAR} tokens in this parameter's value are substituted at execution time
+        serializable: Whether the parameter's value is saved with the workflow
 
     Results: AddParameterToNodeResultSuccess (with parameter name) | AddParameterToNodeResultFailure
     """
@@ -55,7 +58,7 @@ class AddParameterToNodeRequest(RequestPayload):
     # If node name is None, use the Current Context
     node_name: str | None = None
     parameter_name: str | None = None
-    default_value: Any | None = None
+    default_value: Value = None
     tooltip: str | list[dict] | None = None
     tooltip_as_input: str | list[dict] | None = None
     tooltip_as_property: str | list[dict] | None = None
@@ -70,6 +73,7 @@ class AddParameterToNodeRequest(RequestPayload):
     is_user_defined: bool = field(default=True)
     settable: bool = field(default=True)
     allow_variable_substitution: bool = field(default=True)
+    serializable: bool = field(default=True)
     parent_container_name: str | None = None
     parent_element_name: str | None = None
     traits: list[dict[str, Any]] | None = None
@@ -247,7 +251,7 @@ class SetParameterValueRequest(RequestPayload):
     """
 
     parameter_name: str
-    value: str | int | float | bool | dict | list | None
+    value: DisplayValue
     # If node name is None, use the Current Context
     node_name: str | None = None
     data_type: str | None = None
@@ -271,7 +275,7 @@ class SetParameterValueResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess)
         data_type: The determined data type of the value
     """
 
-    finalized_value: Any
+    finalized_value: DisplayValue
     data_type: str
 
 
@@ -330,7 +334,7 @@ class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
     type: str
     input_types: list[str]
     output_type: str
-    default_value: Any | None
+    default_value: DisplayValue
     tooltip: str | list[dict]
     tooltip_as_input: str | list[dict] | None
     tooltip_as_property: str | list[dict] | None
@@ -388,7 +392,7 @@ class AlterParameterDetailsRequest(RequestPayload):
     type: str | None = None
     input_types: list[str] | None = None
     output_type: str | None = None
-    default_value: Any | None = None
+    default_value: Value = None
     clear_default_value: bool = False
     tooltip: str | list[dict] | None = None
     tooltip_as_input: str | list[dict] | None = None
@@ -491,7 +495,7 @@ class GetParameterValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
     input_types: list[str]
     type: str
     output_type: str
-    value: Any
+    value: DisplayValue
 
 
 @dataclass
@@ -506,7 +510,7 @@ class OnParameterValueChanged(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
     parameter_name: str
     data_type: str
-    value: Any
+    value: DisplayValue
 
 
 @dataclass
@@ -577,7 +581,7 @@ class GetNodeElementDetailsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    element_details: dict[str, Any]
+    element_details: ElementDocument
 
 
 @dataclass
@@ -590,7 +594,7 @@ class GetNodeElementDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 @dataclass
 @PayloadRegistry.register
 class AlterElementEvent(ExecutionPayload):
-    element_details: dict[str, Any]
+    element_details: ElementDocument
 
 
 @dataclass

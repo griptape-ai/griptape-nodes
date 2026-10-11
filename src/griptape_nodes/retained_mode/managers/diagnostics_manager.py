@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, NamedTuple
 from urllib.parse import unquote, urlparse
 
-import httpx
+import httpx2
 from dotenv import dotenv_values
 
 from griptape_nodes.common.diagnostics.bundle import DiagnosticsBundle, DiagnosticsBundleManifest
@@ -92,6 +92,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     SECRETS_TO_REGISTER_KEY,
     SESSION_LOG_BUFFER_LINES_KEY,
 )
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.dict_utils import normalize_secrets_to_register
 from griptape_nodes.utils.version_utils import get_install_source
 
@@ -172,12 +173,9 @@ class DiagnosticsManager(EngineScoped):
             engine: The owning Engine, used to resolve peer managers.
         """
         super().__init__(engine)
-        event_manager.assign_manager_to_request_type(
-            GetDiagnosticsReportRequest, self.on_get_diagnostics_report_request
-        )
-        event_manager.assign_manager_to_request_type(CollectDiagnosticsRequest, self.on_collect_diagnostics_request)
-        event_manager.assign_manager_to_request_type(RunHealthChecksRequest, self.on_run_health_checks_request)
+        event_manager.register_request_handlers(self)
 
+    @handles(GetDiagnosticsReportRequest)
     async def on_get_diagnostics_report_request(
         self, request: GetDiagnosticsReportRequest
     ) -> GetDiagnosticsReportResultSuccess | GetDiagnosticsReportResultFailure:
@@ -193,7 +191,6 @@ class DiagnosticsManager(EngineScoped):
             details = (
                 "Attempted to collect a diagnostics report. Failed because the engine's host could not be identified."
             )
-            logger.error(details)
             return GetDiagnosticsReportResultFailure(result_details=details)
 
         return GetDiagnosticsReportResultSuccess(
@@ -204,6 +201,7 @@ class DiagnosticsManager(EngineScoped):
             ),
         )
 
+    @handles(RunHealthChecksRequest)
     async def on_run_health_checks_request(
         self,
         request: RunHealthChecksRequest,  # noqa: ARG002 - the checks take no options yet
@@ -219,7 +217,6 @@ class DiagnosticsManager(EngineScoped):
             details = (
                 "Attempted to run health checks. Failed because the engine's own state could not be collected first."
             )
-            logger.error(details)
             return RunHealthChecksResultFailure(result_details=details)
 
         # Redacted like the bundle's copy: most of a verdict is quoted from the already-clean
@@ -236,6 +233,7 @@ class DiagnosticsManager(EngineScoped):
             ),
         )
 
+    @handles(CollectDiagnosticsRequest)
     async def on_collect_diagnostics_request(
         self, request: CollectDiagnosticsRequest
     ) -> CollectDiagnosticsResultSuccess | CollectDiagnosticsResultFailure:
@@ -248,7 +246,6 @@ class DiagnosticsManager(EngineScoped):
                 "Failed because that is a path rather than a file name. Give a name with no folders in "
                 "it, and use the output path to choose where the bundle goes."
             )
-            logger.error(details)
             return CollectDiagnosticsResultFailure(result_details=details)
 
         redactor = Redactor(
@@ -271,7 +268,6 @@ class DiagnosticsManager(EngineScoped):
                 report = await self._build_report(redactor, warnings, normalize_identity=request.normalize_identity)
                 if report is None:
                     details = "Attempted to collect a diagnostics bundle. Failed because the engine's host could not be identified."
-                    logger.error(details)
                     return CollectDiagnosticsResultFailure(result_details=details)
 
                 if request.include_health_checks:
@@ -294,7 +290,6 @@ class DiagnosticsManager(EngineScoped):
                 data = bundle.to_zip_bytes()
         except OSError as err:
             details = f"Attempted to collect a diagnostics bundle. Failed because it could not be assembled: {err}"
-            logger.error(details)
             return CollectDiagnosticsResultFailure(result_details=details)
 
         file_name = request.file_name or self._default_bundle_file_name(report)
@@ -332,7 +327,6 @@ class DiagnosticsManager(EngineScoped):
                 f"Attempted to write the diagnostics bundle to '{strip_windows_long_path_prefix(destination)}'. "
                 f"Failed because the file could not be written: {result.result_details}"
             )
-            logger.error(details)
             return CollectDiagnosticsResultFailure(result_details=details)
 
         written_path = strip_windows_long_path_prefix(result.final_file_path)
@@ -375,14 +369,13 @@ class DiagnosticsManager(EngineScoped):
                 ExistingFilePolicy.CREATE_NEW,
                 skip_metadata_injection=True,
             )
-        # `httpx.HTTPError` because the cloud storage driver uploads the bundle and then asks for a
+        # `httpx2.HTTPError` because the cloud storage driver uploads the bundle and then asks for a
         # download URL over HTTP; a refused connection on either call is this request's to report.
-        except (OSError, RuntimeError, httpx.HTTPError) as err:
+        except (OSError, RuntimeError, httpx2.HTTPError) as err:
             details = (
                 f"Attempted to save the diagnostics bundle as '{file_name}'. "
                 f"Failed because it could not be written: {err}"
             )
-            logger.error(details)
             return CollectDiagnosticsResultFailure(result_details=details)
 
         written_name = self._file_name_from_url(url, fallback=file_name)
@@ -830,7 +823,6 @@ class DiagnosticsManager(EngineScoped):
                     lifecycle_state=lib_info.lifecycle_state.value,
                     enabled=lib_info.enabled,
                     is_sandbox=lib_info.is_sandbox,
-                    requires_worker=lib_info.requires_worker,
                     executes_in_worker=lib_info.executes_in_worker,
                     worker_ready=self._worker_ready(lib_info),
                     worker_unavailable_reason=self._worker_unavailable_reason(lib_info, redactor),
@@ -1071,7 +1063,7 @@ class DiagnosticsManager(EngineScoped):
 
     def _collated_problems(self, lib_info: LibraryManager.LibraryInfo, redactor: Redactor) -> str | None:
         """Return a library's problems as the engine already formats them, redacted."""
-        collated = self.engine.library_manager.collate_problems_for_lib_info(lib_info)
+        collated = self.engine.library_manager.catalog.collate_problems_for_lib_info(lib_info)
         if collated is None:
             return None
         return redactor.redact_text(collated)

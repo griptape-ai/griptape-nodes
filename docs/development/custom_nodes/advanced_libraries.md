@@ -206,6 +206,10 @@ therefore the same payload classes. Give that module a distinctive name: every l
 directory lands on the same `sys.path`, so `events.py` risks resolving to another
 library's file.
 
+A field that carries a parameter value, such as an artifact, must be annotated `Value` from
+`griptape_nodes.serialization.values` (`image: Value`) so it reads back as the same type. A field
+holding a value JSON can't represent fails to send.
+
 **2. Return the pair from the hook.**
 
 ```python
@@ -234,9 +238,7 @@ success = cast("ConvertColorspaceResultSuccess", result)
 Two rules for callers:
 
 - **Dispatch from `process`, never from `__init__`.** A node constructor that sends a
-    request trips the `reentrant-bus-in-init` strict-mode rule, and it can deadlock
-    against handlers that await engine startup. See
-    [Strict Mode Reference](strict_mode.md).
+    request can deadlock against handlers that await engine startup.
 - **Always handle failure.** The providing library might not be installed, might have
     failed to load, or might have been unloaded. In those cases the request has no handler
     at all, and the engine returns a generic failure result rather than your library's
@@ -250,10 +252,10 @@ Constraints on the mechanism:
     handler raises, surfaced as a `RequestHandlerRegistrationProblem`. For request types
     where several libraries compete and the caller picks one by name, use
     `LibraryManager.on_register_event_handler()` in `after_library_nodes_loaded` instead.
-- **Orchestrator only.** A library running isolated in a worker subprocess registers its
-    handlers in that worker, where the orchestrator cannot reach them. Requests fail with
-    "No manager found". The engine flags this combination with a
-    `RequestHandlersWorkerIncompatibleProblem` at load. See
+- **Registered per process.** Every library loads on the orchestrator, so its handlers
+    always serve requests dispatched there. A library whose nodes execute in a worker
+    also loads in that worker and registers its own copy; neither process forwards
+    handler requests to the other. See
     [Node Isolation with Workers](node_isolation_with_workers.md).
 
 Other code can discover what a loaded library exposes with
@@ -320,10 +322,9 @@ Constraints on the mechanism:
 - **Do not issue engine requests from a hook.** The engine's operation-depth and
     node-execution state is process-wide, so a request sent from a hook can perturb an
     operation that is still in flight. Do external work — HTTP, file writes — instead.
-- **Orchestrator only.** Hooks are registered on the event manager of whichever process
-    loads the library, so a worker-mode library's hooks never see requests the
-    orchestrator handled. The engine flags that combination with a
-    `PostDispatchHooksWorkerIncompatibleProblem` at load. See
+- **Registered per process.** Hooks are registered on the event manager of whichever
+    process loads the library. A library whose nodes execute in a worker loads in both
+    processes, so each copy observes only the requests its own process handles. See
     [Node Isolation with Workers](node_isolation_with_workers.md).
 - **Not durable.** Hooks still in flight when the process exits are abandoned. Do not use
     them where delivery has to be guaranteed.
@@ -369,8 +370,8 @@ registers fine, but the editor has no category to file it under.
 
 Definitions added this way are indistinguishable from hand-written ones, which means they
 inherit the loader's behavior: lazy module loading, one memoized import per file even
-when many classes share it, stable-namespace aliasing so saved workflows can unpickle
-values your classes define, per-node problem reporting, and correct fitness.
+when many classes share it, stable-namespace aliasing so saved workflows, copied nodes, and
+images can rebuild values your classes define, per-node problem reporting, and correct fitness.
 
 ### Where the classes come from
 
@@ -391,8 +392,8 @@ def __getattr__(name: str) -> type[DataNode]:
 ```
 
 Cache the built class in module globals. Two lookups of the same node type must return
-the same object, because the engine caches the resolved class, `isinstance` checks
-compare against it, and pickles reference it.
+the same object, because the engine caches the resolved class and `isinstance` checks
+compare against it.
 
 !!! warning "Set `__module__` explicitly when you build a class"
 
@@ -402,9 +403,9 @@ compare against it, and pickles reference it.
     is inside the standard library's `abc` module, and your class ends up claiming
     `__module__ == "abc"`.
 
-    Nothing complains at load time. The failure appears later: unpickling a saved
-    workflow imports `__module__` and looks up `__qualname__` on it, so any workflow
-    carrying a value your class defines will fail to reopen. Pass both explicitly:
+    Nothing complains at load time. The failure appears later: reopening a saved
+    workflow looks up `__qualname__` in `__module__`, so a value your class defines
+    comes back as plain data instead of as your class. Pass both explicitly:
 
     ```python
     return type(
@@ -435,12 +436,6 @@ Prefer synthesizing definitions anyway, for two reasons:
 
 ### Limitations
 
-- **Isolated (worker) libraries are not supported.** When a library runs in a worker
-    subprocess, the orchestrator rebuilds stub classes from schemas the worker sends
-    back, and it resolves each stub's metadata from the manifest's `nodes` list. Node
-    types that exist only in the worker's registry are dropped with a warning. Keep
-    dynamically registered libraries in the orchestrator, or list their nodes in the
-    manifest.
 - **Declaration validation only sees the manifest.** Validation of `model_usage` and
     `model_provider_usage` references runs against the manifest read from disk, so those
     declarations on synthesized nodes are never checked. A bad model reference fails at

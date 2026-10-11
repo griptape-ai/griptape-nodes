@@ -370,6 +370,17 @@ class TestSerializeNodeToCommandsBasics:
 
         assert isinstance(result, SerializeNodeToCommandsResultFailure)
 
+    def test_reference_node_broadcasts_no_events(
+        self, engine: Engine, library_name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        node_name = _create_text_node(engine, library_name, "N1")
+        events: list[object] = []
+        monkeypatch.setattr(engine.event_manager, "put_event", events.append)
+
+        _serialize(engine, node_name)
+
+        assert events == []
+
 
 class TestElementModificationCommands:
     """User-defined parameters replay via AddParameterToNodeRequest; library ones only diff."""
@@ -399,6 +410,21 @@ class TestElementModificationCommands:
             if isinstance(command, AddParameterToNodeRequest) and command.parameter_name == "extra"
         ]
         assert len(add_commands) == 1
+
+    def test_user_defined_parameter_keeps_serializable_false_across_a_round_trip(
+        self, engine: Engine, library_name: str
+    ) -> None:
+        node_name = _create_text_node(engine, library_name, "N1")
+        add_result = engine.handle_request(
+            AddParameterToNodeRequest(node_name=node_name, parameter_name="extra", tooltip="", serializable=False)
+        )
+        assert isinstance(add_result, AddParameterToNodeResultSuccess), add_result
+
+        restored = _round_trip(engine, node_name)
+
+        parameter = restored.get_parameter_by_name("extra")
+        assert parameter is not None
+        assert parameter.serializable is False
 
     def test_unchanged_library_parameter_is_not_re_added(self, engine: Engine, library_name: str) -> None:
         node_name = _create_text_node(engine, library_name, "N1")
@@ -663,29 +689,16 @@ class TestNodeUuidFreshness:
 
 
 class TestParameterValueSerializationMode:
-    """use_pickling selects whether the value pool holds pickled bytes or plain deep copies."""
+    """The value pool holds each value's encoded form, whatever ``use_pickling`` says."""
 
-    def test_use_pickling_true_stores_pickled_bytes(self, engine: Engine, library_name: str) -> None:
+    @pytest.mark.parametrize("use_pickling", [True, False])
+    def test_pool_holds_encoded_values(self, engine: Engine, library_name: str, *, use_pickling: bool) -> None:
         node_name = _create_text_node(engine, library_name, "N1")
 
         unique_values: dict = {}
         result = engine.node_manager.on_serialize_node_to_commands(
             SerializeNodeToCommandsRequest(
-                node_name=node_name, use_pickling=True, unique_parameter_uuid_to_values=unique_values
-            )
-        )
-
-        assert isinstance(result, SerializeNodeToCommandsResultSuccess)
-        assert len(unique_values) >= 1
-        assert all(isinstance(value, bytes) for value in unique_values.values())
-
-    def test_use_pickling_false_stores_raw_value(self, engine: Engine, library_name: str) -> None:
-        node_name = _create_text_node(engine, library_name, "N1")
-
-        unique_values: dict = {}
-        result = engine.node_manager.on_serialize_node_to_commands(
-            SerializeNodeToCommandsRequest(
-                node_name=node_name, use_pickling=False, unique_parameter_uuid_to_values=unique_values
+                node_name=node_name, use_pickling=use_pickling, unique_parameter_uuid_to_values=unique_values
             )
         )
 
