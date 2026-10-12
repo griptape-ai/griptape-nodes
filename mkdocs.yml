@@ -103,6 +103,7 @@ plugins:
           - tutorials/04_photography_team/index.md
         Desktop App:
           - guides/desktop/app_settings.md: Griptape Nodes Desktop App Settings — workspace, license, logs, update behavior, and the Stable/Nightly release channels
+          - guides/desktop/environment_variables.md: Desktop launch environment variables for licenses, updates, server endpoints, and HTTPS routing
         Editor:
           - guides/editor/index.md: Orientation tour of the visual editor (canvas, header, menus, sidebars)
           - guides/editor/keyboard_shortcuts.md: Complete keyboard shortcut reference
@@ -281,6 +282,7 @@ nav:
   - Guides:
       - Desktop App:
           - App Settings: guides/desktop/app_settings.md
+          - Environment Variables: guides/desktop/environment_variables.md
       - Editor:
           - Overview: guides/editor/index.md
           - Keyboard Shortcuts: guides/editor/keyboard_shortcuts.md

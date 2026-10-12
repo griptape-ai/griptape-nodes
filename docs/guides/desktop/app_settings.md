@@ -6,6 +6,9 @@ App Settings covers what the application itself owns: how it closes, which
 theme it wears, the workspace it hands to the engine, your license, log
 files, and how the app updates itself.
 
+See [Desktop Environment Variables](environment_variables.md) for launch-time
+configuration.
+
 ## Opening App Settings
 
 Click your name in the top-right corner of the window, then choose

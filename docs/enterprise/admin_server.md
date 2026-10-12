@@ -308,18 +308,13 @@ Do **not** set `HTTP_PROXY` to the Admin Server. It does not support plain HTTP 
 
 ### Managed desktop settings
 
-Set these variables in the app's launch environment:
+Use `GTN_DESKTOP_SERVER_URL` and `GTN_DESKTOP_ROUTE_TRAFFIC_THROUGH_SERVER`
+to override saved desktop settings. See
+[Desktop Environment Variables](../guides/desktop/environment_variables.md)
+for values and launch instructions.
 
-| Variable                                   | Value                                                                                                                         |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `GTN_DESKTOP_SERVER_URL`                   | Overrides the saved endpoint. Use an `http` or `https` root origin, such as `http://admin-server:8080`; any path is stripped. |
-| `GTN_DESKTOP_ROUTE_TRAFFIC_THROUGH_SERVER` | `1` or `true` enables routing; `0` or `false` disables it. Values are case-insensitive.                                       |
-
-Both settings are read at app startup. Restart the app after changing them. Removing an override restores the saved user setting on the next launch. Blank or invalid values are ignored; invalid values are logged.
-
-The app must inherit the launch environment. On macOS, launching from Finder or the Dock does not inherit shell exports.
-
-These settings are not firewall enforcement. Use firewall rules to prevent direct internet access by clients that ignore proxy settings.
+These settings are not firewall enforcement. Use firewall rules to prevent
+direct internet access by clients that ignore proxy settings.
 
 ## Troubleshooting
 
