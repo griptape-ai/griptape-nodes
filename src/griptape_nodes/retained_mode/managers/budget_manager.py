@@ -202,7 +202,8 @@ class BudgetManager(EngineScoped):
             return self._unchecked(request.model_id, correlation_id, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
         except httpx2.HTTPStatusError as exc:
             return self._refused_over_http(request.model_id, correlation_id, exc.response.status_code)
-        except httpx2.HTTPError:
+        # InvalidURL is not an HTTPError: a mistyped GT_CLOUD_BASE_URL must still fail open.
+        except (httpx2.HTTPError, httpx2.InvalidURL):
             return self._unchecked(
                 request.model_id, correlation_id, "Failed because Griptape Cloud could not be reached."
             )
@@ -345,7 +346,7 @@ class BudgetManager(EngineScoped):
                 status,
                 exc.response.text,
             )
-        except httpx2.HTTPError as exc:
+        except (httpx2.HTTPError, httpx2.InvalidURL) as exc:
             logger.warning("Dropped usage report %s: %s", body["idempotency_key"], exc)
 
     def _unchecked(

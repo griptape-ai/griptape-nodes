@@ -41,7 +41,7 @@ await GriptapeNodes.ahandle_request(
     ReportUsageRequest(
         declared_cost_micro_usd=12_345,
         provider="anthropic",
-        model="claude-sonnet-5",
+        model="gtc_claude_opus_4_7",
         activity_type="chat_completion",
         node_type=type(self).__name__,
         correlation_id=check.correlation_id,

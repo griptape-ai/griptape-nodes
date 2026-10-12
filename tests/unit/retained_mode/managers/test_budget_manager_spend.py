@@ -309,6 +309,18 @@ class TestBudgetCheckFailsOpen:
         assert detail.level == level
         assert f"Failed because {reason} The call will proceed" in detail.message
 
+    def test_a_mistyped_base_url_fails_open(self) -> None:
+        """A malformed port raises InvalidURL, which is not an HTTPError."""
+        engine = _mock_engine()
+        secrets = {"GT_CLOUD_BASE_URL": "https://cloud.griptape.ai:443x", "GT_CLOUD_API_KEY": "gt-key"}
+        engine.secrets_manager.get_secret.side_effect = lambda name, **_: secrets.get(name)
+
+        result = _check(_manager(engine), BudgetAccessRequest(model_id="m"))
+
+        assert isinstance(result, BudgetAccessResultSuccess)
+        assert result.checked is False
+        assert UNREACHABLE in str(result.result_details)
+
     def test_the_message_carries_no_raw_error_text(self, http: MagicMock) -> None:
         """The raw HTTP error text is multi-line and links to MDN; an artist sees only the status."""
         http.return_value = _response(503)
@@ -433,6 +445,17 @@ class TestReportUsage:
 
         assert isinstance(result, ReportUsageResultSuccess)
         assert http.call_count == budget_manager_module.REPORT_MAX_ATTEMPTS
+        assert f"Dropped usage report {result.idempotency_key}" in caplog.text
+
+    def test_a_mistyped_base_url_drops_the_report(self, caplog: pytest.LogCaptureFixture) -> None:
+        engine = _mock_engine()
+        secrets = {"GT_CLOUD_BASE_URL": "https://cloud.griptape.ai:443x", "GT_CLOUD_API_KEY": "gt-key"}
+        engine.secrets_manager.get_secret.side_effect = lambda name, **_: secrets.get(name)
+
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            result = _manager(engine).on_report_usage_request(ReportUsageRequest(declared_cost_micro_usd=1))
+
+        assert isinstance(result, ReportUsageResultSuccess)
         assert f"Dropped usage report {result.idempotency_key}" in caplog.text
 
     def test_retries_are_bounded(self, http: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
