@@ -481,6 +481,27 @@ class TestReportUsage:
         assert "Secret Poster Label" not in json.dumps(_sent(http))
 
 
+class TestReportQueue:
+    def test_exit_does_not_wait_on_pending_reports(self) -> None:
+        budget_manager_module._DaemonQueue("test-report")
+        threads = [thread for thread in threading.enumerate() if thread.name == "test-report"]
+
+        assert threads
+        assert all(thread.daemon for thread in threads)
+
+    def test_a_failing_report_does_not_stop_later_ones(self) -> None:
+        queue = budget_manager_module._DaemonQueue("test-report-survives")
+        done = threading.Event()
+
+        def boom() -> None:
+            raise ValueError
+
+        queue.submit(boom)
+        queue.submit(done.set)
+
+        assert done.wait(timeout=5)
+
+
 class TestWiring:
     def test_the_engine_routes_both_requests_to_the_budget_manager(self, engine: Any) -> None:
         manager = engine.budget_manager

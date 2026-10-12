@@ -19,8 +19,9 @@ import asyncio
 import base64
 import json
 import logging
+import queue
+import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
@@ -58,6 +59,8 @@ from griptape_nodes.utils.budget_refusal import (
 from griptape_nodes.utils.http_utils import is_retryable_httpx_error, request_with_retry
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -121,7 +124,7 @@ class BudgetManager(EngineScoped):
         super().__init__(engine)
         # Reports post off the caller's thread. Not an asyncio task: a sync dispatch runs the
         # handler under a short-lived loop that would take the task down with it.
-        self._report_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="budget-report")
+        self._report_executor = _DaemonQueue("budget-report")
         event_manager.register_request_handlers(self)
 
     @handles(GetAttributionContextRequest)
@@ -376,6 +379,32 @@ def _describe_call(model: str | None) -> str:
     if model is None:
         return "a direct model call"
     return f"a direct call to model '{model}'"
+
+
+class _DaemonQueue:
+    """Runs submitted work in order on one daemon thread.
+
+    Daemon, unlike `ThreadPoolExecutor`'s workers, which interpreter exit waits on: with Cloud
+    hanging, every queued report would hold the engine open for its full retry budget. Reports
+    are best-effort, so the ones still pending at exit are dropped instead.
+    """
+
+    def __init__(self, name: str) -> None:
+        self._work: queue.SimpleQueue[tuple[Callable[..., object], tuple[Any, ...]]] = queue.SimpleQueue()
+        threading.Thread(target=self._run, name=name, daemon=True).start()
+
+    def submit(self, fn: Callable[..., object], *args: Any) -> None:
+        self._work.put((fn, args))
+
+    def _run(self) -> None:
+        while True:
+            fn, args = self._work.get()
+            # One report failing in a way nothing anticipated must not end the thread and
+            # silently drop every report after it.
+            try:
+                fn(*args)
+            except Exception:
+                logger.exception("A usage report failed unexpectedly and was dropped.")
 
 
 class _NoCredentialError(Exception):
