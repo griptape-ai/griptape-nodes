@@ -287,6 +287,13 @@ class TestBudgetCheckFailsOpen:
         assert isinstance(result.result_details, ResultDetails)
         assert result.result_details.result_details[0].level == logging.WARNING
 
+    def test_the_message_names_the_model(self, http: MagicMock) -> None:
+        http.side_effect = httpx2.ConnectError("refused")
+
+        result = _check(_manager(), BudgetAccessRequest(model_id="gtc_claude_opus_4_7"))
+
+        assert "'gtc_claude_opus_4_7'" in str(result.result_details)
+
     def test_unreadable_body(self, http: MagicMock) -> None:
         http.return_value = httpx2.Response(200, content=b"<html>", request=httpx2.Request("POST", BASE_URL))
 

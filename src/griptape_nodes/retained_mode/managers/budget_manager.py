@@ -196,16 +196,22 @@ class BudgetManager(EngineScoped):
                 self._post, BUDGET_CHECKS_PATH, body, timeout=CHECK_TIMEOUT_SECONDS, max_attempts=1
             )
         except _NoCredentialError:
-            return self._unchecked(correlation_id, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
+            return self._unchecked(request.model_id, correlation_id, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
         except httpx2.HTTPError as exc:
-            return self._unchecked(correlation_id, f"Failed because Griptape Cloud could not be reached ({exc}).")
+            return self._unchecked(
+                request.model_id, correlation_id, f"Failed because Griptape Cloud could not be reached ({exc})."
+            )
 
         try:
             result = response.json()
         except ValueError:
-            return self._unchecked(correlation_id, "Failed because Griptape Cloud's answer could not be read.")
+            return self._unchecked(
+                request.model_id, correlation_id, "Failed because Griptape Cloud's answer could not be read."
+            )
         if not isinstance(result, dict) or not isinstance(result.get("allowed"), bool):
-            return self._unchecked(correlation_id, "Failed because Griptape Cloud's answer could not be read.")
+            return self._unchecked(
+                request.model_id, correlation_id, "Failed because Griptape Cloud's answer could not be read."
+            )
 
         if result["allowed"] is False:
             refusal = refusal_from_check(result)
@@ -228,7 +234,7 @@ class BudgetManager(EngineScoped):
             correlation_id=correlation_id,
             checked=True,
             effective_remaining_credits=remaining,
-            result_details="Griptape Cloud cleared a direct model call against its budgets.",
+            result_details=f"Griptape Cloud cleared a direct call to model '{request.model_id}' against its budgets.",
         )
 
     @handles(ReportUsageRequest)
@@ -238,10 +244,10 @@ class BudgetManager(EngineScoped):
         """Queue a usage report for a direct provider call and return without waiting on Cloud."""
         if request.declared_cost_micro_usd < 0:
             return self._report_not_sent(
-                f"Failed because the declared cost {request.declared_cost_micro_usd} is negative."
+                request.model, f"Failed because the declared cost {request.declared_cost_micro_usd} is negative."
             )
         if resolve_cloud_credential(self.engine.secrets_manager) is None:
-            return self._report_not_sent(f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
+            return self._report_not_sent(request.model, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
 
         # Minted once and captured in `body`, so every retry sends the same key.
         idempotency_key = uuid.uuid4().hex
@@ -261,7 +267,7 @@ class BudgetManager(EngineScoped):
         self._report_executor.submit(self._send_report, body)
         return ReportUsageResultSuccess(
             idempotency_key=idempotency_key,
-            result_details="Queued a usage report for a direct model call.",
+            result_details=f"Queued a usage report for {_describe_call(request.model)}.",
         )
 
     def _resolve_project_chain(self) -> list[str] | None:
@@ -342,27 +348,34 @@ class BudgetManager(EngineScoped):
         except httpx2.HTTPError as exc:
             logger.warning("Dropped usage report %s: %s", body["idempotency_key"], exc)
 
-    def _unchecked(self, correlation_id: str, reason: str) -> BudgetAccessResultSuccess:
+    def _unchecked(self, model_id: str, correlation_id: str, reason: str) -> BudgetAccessResultSuccess:
         """Clear a call Cloud could not be asked about. Logged at WARNING, since the work goes ahead."""
         return BudgetAccessResultSuccess(
             correlation_id=correlation_id,
             checked=False,
             result_details=ResultDetails(
                 message=(
-                    f"Attempted to check a direct model call against your budgets. {reason} "
+                    f"Attempted to check a direct call to model '{model_id}' against your budgets. {reason} "
                     "The call will proceed without a budget check."
                 ),
                 level=logging.WARNING,
             ),
         )
 
-    def _report_not_sent(self, reason: str) -> ReportUsageResultFailure:
+    def _report_not_sent(self, model: str | None, reason: str) -> ReportUsageResultFailure:
         return ReportUsageResultFailure(
             result_details=ResultDetails(
-                message=f"Attempted to report the cost of a direct model call. {reason} The node is unaffected.",
+                message=f"Attempted to report the cost of {_describe_call(model)}. {reason} The node is unaffected.",
                 level=logging.WARNING,
             )
         )
+
+
+def _describe_call(model: str | None) -> str:
+    """Name a direct call by its model when the caller gave one."""
+    if model is None:
+        return "a direct model call"
+    return f"a direct call to model '{model}'"
 
 
 class _NoCredentialError(Exception):
