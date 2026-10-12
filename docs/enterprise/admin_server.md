@@ -229,7 +229,7 @@ During graceful shutdown, the server stops accepting new tunnels and allows exis
 
 ## Environment variable overrides
 
-Every server setting can be overridden with an environment variable, which takes precedence over `config.yaml`. These variables belong in the Admin Server's environment, not the client environment used in [Routing HTTPS downloads](#routing-https-downloads).
+Every server setting can be overridden with an environment variable, which takes precedence over `config.yaml`. These variables belong in the Admin Server's environment, not the client environment used in [Routing other HTTPS traffic](#routing-other-https-traffic).
 
 | Variable                     | Default                     | Description                                                                   |
 | ---------------------------- | --------------------------- | ----------------------------------------------------------------------------- |
@@ -264,29 +264,29 @@ Duration values must carry a unit — `30s`, `2m` — and `0` disables a timeout
 
 1. Provide a `config.yaml` (see [Configuration](#configuration)) and start the Admin Server. By default it listens on `0.0.0.0:8080` and forwards to `https://cloud.griptape.ai`.
 
-1. Point your Griptape Nodes Application instances at the Admin Server's address instead of `cloud.griptape.ai`. For other HTTPS traffic, also follow [Routing HTTPS downloads](#routing-https-downloads).
+1. Point your Griptape Nodes Application instances at the Admin Server's address instead of `cloud.griptape.ai`. For other HTTPS traffic, also follow [Routing other HTTPS traffic](#routing-other-https-traffic).
 
 If the API key is missing or invalid, or the upstream cannot be reached, the Admin Server logs the reason and exits without serving — so configuration problems surface at startup.
 
-## Routing HTTPS downloads
+## Routing other HTTPS traffic
 
-The Cloud API returns presigned storage URLs that clients use to upload and download assets directly. Setting the Cloud endpoint does not route those transfers, library installs, or model downloads through the Admin Server. To send those HTTPS requests through the Admin Server:
+The Admin Server can tunnel HTTPS connections to allowed destinations outside the Cloud API. Use this for library installs, model downloads, asset transfers, or other HTTPS services your workflows need. Setting the Cloud endpoint alone does not route this traffic through the Admin Server.
 
-1. Allow the destinations your deployment needs in the server's `config.yaml`, then restart it. This example includes Cloud storage, library installation, and model download hosts:
+1. Add the destinations to the server's `config.yaml`, then restart it. This is a recommended starting configuration for common Griptape Nodes tasks:
 
     ```yaml
     tunnel:
       allowed_hosts:
-        - "gtcazureservicesaprod.blob.core.windows.net"  # Cloud storage
-        - "github.com"                                # Library installation
-        - "pypi.org"
-        - "files.pythonhosted.org"
-        - "huggingface.co"                             # Model downloads
-        - "*.hf.co"
+        - "gtcazureservicesaprod.blob.core.windows.net"  # Griptape Cloud asset uploads and downloads
+        - "github.com"                                 # GitHub repositories for node libraries
+        - "pypi.org"                                   # Python package index for library dependencies
+        - "files.pythonhosted.org"                     # Python package files downloaded from PyPI
+        - "huggingface.co"                             # Hugging Face model repositories
+        - "*.hf.co"                                    # Hugging Face subdomains serving model files
       idle_timeout: "5m"
     ```
 
-    These are examples, not an exhaustive list. Redirects and the providers used by your workflows may require additional hosts. Add only destinations you intend to permit.
+    Remove destinations your deployment does not need. Redirects and the providers used by your workflows may require additional hosts; add only those you intend to permit.
 
 1. Set these variables in the **client's launch environment**, replacing `admin-server` with your actual Admin Server hostname:
 
@@ -322,7 +322,7 @@ The Cloud API returns presigned storage URLs that clients use to upload and down
 
 - **`403 {"error":"path not permitted"}`.** A `forwarding` rule is blocking that path. Adjust `forwarding.mode` / `forwarding.rules` if the path should egress.
 
-- **Activation works, but downloads or previews fail.** The Cloud endpoint alone does not route these requests. Check the engine's inherited proxy environment and the browser's proxy settings separately. See [Routing HTTPS downloads](#routing-https-downloads).
+- **Activation works, but downloads or previews fail.** The Cloud endpoint alone does not route these requests. Check the engine's inherited proxy environment and the browser's proxy settings separately. See [Routing other HTTPS traffic](#routing-other-https-traffic).
 
 - **`403 {"error":"tunnel host not permitted"}`.** Check the `target` in the `tunnel rejected` log against `tunnel.allowed_hosts`, including its port. An empty list disables tunnels, and a wildcard does not include the bare domain. A redirect may lead to a different host. Restart after changing the allowlist and check for a `TUNNEL_ALLOWED_HOSTS` override.
 
