@@ -249,6 +249,14 @@ class TestBudgetCheckDenied:
         assert isinstance(result.exception, BudgetExceededError)
         assert result.exception.refusal.spend_id == "s-1"
 
+    def test_a_deny_without_a_blocked_by_list_still_refuses(self, http: MagicMock) -> None:
+        http.return_value = _response(200, {"allowed": False, "blocked_by": "not a list"})
+
+        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+
+        assert isinstance(result, BudgetAccessResultFailure)
+        assert result.blocked_by == []
+
     def test_a_deny_naming_no_budget_still_refuses(self, http: MagicMock) -> None:
         http.return_value = _response(200, {"allowed": False, "blocked_by": [{"unexpected": True}]})
 
@@ -345,7 +353,8 @@ class TestReportUsage:
         method, url = http.call_args.args
         assert (method, url) == ("POST", f"{BASE_URL}/api/spend")
         body = _sent(http)
-        assert body.pop("occurred_at")
+        occurred_at = body.pop("occurred_at")
+        assert occurred_at
         assert body == {
             "idempotency_key": result.idempotency_key,
             "declared_cost_micro_usd": 12345,
@@ -391,6 +400,18 @@ class TestReportUsage:
         assert _sent(http, 0)["idempotency_key"] == result.idempotency_key
         assert _sent(http, 1)["idempotency_key"] == result.idempotency_key
 
+    def test_a_lasting_transport_error_drops_the_report(
+        self, http: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        http.side_effect = httpx2.ConnectError("refused")
+
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            result = _manager().on_report_usage_request(ReportUsageRequest(declared_cost_micro_usd=1))
+
+        assert isinstance(result, ReportUsageResultSuccess)
+        assert http.call_count == budget_manager_module.REPORT_MAX_ATTEMPTS
+        assert f"Dropped usage report {result.idempotency_key}" in caplog.text
+
     def test_retries_are_bounded(self, http: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         http.return_value = _response(503)
 
@@ -423,6 +444,24 @@ class TestReportUsage:
         assert isinstance(result.result_details, ResultDetails)
         assert result.result_details.result_details[0].level == logging.WARNING
         http.assert_not_called()
+
+    def test_a_credential_removed_before_sending_drops_the_report(
+        self, http: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The report is queued with a credential, but the background send finds none."""
+        engine = _mock_engine()
+        manager = BudgetManager(MagicMock(), engine=engine)
+        queued: list[Callable[[], object]] = []
+        manager._report_executor = MagicMock()
+        manager._report_executor.submit.side_effect = lambda fn, *args: queued.append(lambda: fn(*args))
+        manager.on_report_usage_request(ReportUsageRequest(declared_cost_micro_usd=1))
+        engine.secrets_manager.get_secret.side_effect = lambda *_, **__: None
+
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            queued[0]()
+
+        http.assert_not_called()
+        assert "Dropped a usage report" in caplog.text
 
     def test_no_credential_is_not_sent(self, http: MagicMock) -> None:
         result = _manager(_mock_engine(credential=None)).on_report_usage_request(
