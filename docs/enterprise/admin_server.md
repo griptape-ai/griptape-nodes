@@ -339,8 +339,6 @@ These settings are not firewall enforcement. Use firewall rules to prevent direc
 
 - **`403 {"error":"path not permitted"}`.** A `forwarding` rule is blocking that path. Adjust `forwarding.mode` / `forwarding.rules` if the path should egress.
 
-- **Activation works, but downloads or previews fail.** The Cloud endpoint alone does not route these requests. Check the desktop routing setting and restart the engine, or check the standalone engine's inherited proxy environment. Confirm the destinations are in `tunnel.allowed_hosts`. See [Routing other HTTPS traffic](#routing-other-https-traffic).
-
 - **`403 {"error":"tunnel host not permitted"}`.** Check the `target` in the `tunnel rejected` log against `tunnel.allowed_hosts`, including its port. An empty list disables tunnels, and a wildcard does not include the bare domain. A redirect may lead to a different host. Restart after changing the allowlist and check for a `TUNNEL_ALLOWED_HOSTS` override.
 
 - **`502 {"error":"tunnel host unreachable"}`.** The destination is allowed, but the Admin Server cannot connect to it. Check DNS and outbound firewall access from the Admin Server to the logged host and port.
