@@ -315,8 +315,6 @@ Set these variables in the app's launch environment:
 | `GTN_DESKTOP_SERVER_URL`                   | Overrides the saved endpoint. Use an `http` or `https` root origin, such as `http://admin-server:8080`; any path is stripped. |
 | `GTN_DESKTOP_ROUTE_TRAFFIC_THROUGH_SERVER` | `1` or `true` enables routing; `0` or `false` disables it. Values are case-insensitive.                                       |
 
-A valid override locks its corresponding control, labeled **Set by your organization.** This includes the endpoint on the license screen. Routing still requires active license credentials and an endpoint other than `https://cloud.griptape.ai`.
-
 Both settings are read at app startup. Restart the app after changing them. Removing an override restores the saved user setting on the next launch. Blank or invalid values are ignored; invalid values are logged.
 
 The app must inherit the launch environment. On macOS, launching from Finder or the Dock does not inherit shell exports.
