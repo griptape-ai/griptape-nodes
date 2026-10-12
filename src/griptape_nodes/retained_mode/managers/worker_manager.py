@@ -1376,18 +1376,10 @@ class WorkerManager(EngineScoped):
         dest_socket = "success_result" if payload.get("event_type") == "EventResultSuccess" else "failure_result"
         payload["response_topic"] = session_response_topic
         logger.debug("Relaying %s to %s", payload.get("event_type"), session_response_topic)
-        await self._tx.send_message(dest_socket, self._for_clients(payload), session_response_topic)
-
-    @staticmethod
-    def _for_clients(payload: dict) -> str:
         # Untags the JSON rather than reading the result back, since its payload class may live in a
         # library only the worker has loaded. Only values carry tags, but a plain field holding its own
         # "$type" key would lose it here.
-        untagged = {**payload}
-        for section in ("request", "result"):
-            if section in untagged:
-                untagged[section] = untag(untagged[section])
-        return json.dumps(untagged)
+        await self._tx.send_message(dest_socket, json.dumps(untag(payload)), session_response_topic)
 
     def _determine_response_topic(self) -> str:
         """Determine the response topic based on current session and engine IDs."""
