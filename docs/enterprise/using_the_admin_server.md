@@ -51,10 +51,6 @@ The endpoint and checkbox appear only with an active license. Routing is off by 
 1. Enable **Route all traffic through this server**.
 1. Restart the running engine.
 
-The embedded editor and its previews use the configured route immediately. The engine and app-launched package and library processes receive proxy settings when they start; clients must honor those settings.
-
-Despite the checkbox label, routing covers HTTPS, not plain HTTP or arbitrary protocols. Local, Admin Server, and direct-engine hosts bypass the tunnel. No manual browser configuration is needed for the embedded editor, and external browser proxy settings are unchanged.
-
 ## Reusing a saved license
 
 Licenses you have activated before are remembered. If you log out (or the license is deactivated), the login screen shows a **Saved licenses** section after you click **Activate with a License**. Click **Use** next to a saved license to re-activate it without pasting the key again. The configured server endpoint is also remembered, so you only need to enter the Admin Server address once.
