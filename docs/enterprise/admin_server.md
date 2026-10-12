@@ -1,14 +1,14 @@
 # Admin Server
 
-The Admin Server runs inside your network and acts as the single host that talks to Griptape Cloud on behalf of your Griptape Nodes Application instances. Your instances point at the Admin Server instead of `cloud.griptape.ai` directly, and it forwards each request upstream. This lets you keep individual application instances off the public internet while they continue to license, run sessions, and use Griptape Cloud features.
+The Admin Server runs inside your network and forwards Griptape Cloud requests on behalf of your Griptape Nodes Application instances. Your instances point at the Admin Server instead of `cloud.griptape.ai` directly. It can also tunnel other HTTPS traffic, such as storage and model downloads, when you configure allowed destinations and client proxy settings. Together with firewall controls, this lets you keep individual application instances off the public internet.
 
 ## Why use it
 
 A studio that deploys Griptape Nodes on-premises usually does not want every application instance reaching the public internet on its own. The Admin Server gives you one place to manage that connection:
 
-- **Lock instances down.** Application instances talk only to the Admin Server, so they never need direct internet egress.
-- **One egress point.** Instead of opening internet access for each instance, you allow a single host through your firewall — one rule to manage and one place to audit outbound traffic.
-- **Central configuration.** You configure where Griptape Cloud lives and, optionally, which Cloud paths are allowed to leave your network — in one spot rather than per instance.
+- **Lock instances down.** Configure applications to use the Admin Server for Cloud requests and permitted HTTPS downloads, then use firewall rules to prevent direct internet access.
+- **One egress point.** Instead of opening internet access for each instance, allow the Admin Server host through your firewall and audit outbound traffic there.
+- **Central configuration.** Choose which Cloud paths and HTTPS destinations may leave your network through the Admin Server.
 
 If your application instances can already reach `cloud.griptape.ai` directly and that is acceptable for your environment, you do not need the Admin Server.
 
@@ -23,8 +23,9 @@ The Admin Server is provided to enterprise customers. [Contact Foundry](https://
 - **Forwards Cloud requests.** It forwards your applications' Griptape Cloud requests to the configured upstream (`https://cloud.griptape.ai` by default) and preserves the caller's `Authorization` header, so licensing and sessions keep working through it. Griptape Cloud remains the authority on authentication and authorization.
 - **Validates at startup.** It validates the operator's Griptape Cloud API key once at startup, so a misconfigured deployment fails fast at boot rather than breaking later.
 - **Egress filtering.** You can optionally choose exactly which Cloud paths may leave your network (see [`forwarding`](#forwarding)).
+- **HTTPS tunneling.** It accepts `CONNECT` requests on the same server port for allowed destinations. TLS stays end-to-end between the client and destination, without content or path inspection or additional certificate installation for tunneling.
 - **Health endpoint.** A local `GET /health` endpoint returns `{"status":"ok"}` for liveness and readiness probes.
-- **Structured logging.** Each request is logged once at completion (method, path, status, latency, client IP, bytes written) in JSON or text for auditing.
+- **Structured logging.** Each Cloud request is logged once at completion (method, path, status, latency, client IP, bytes written) in JSON or text for auditing. Tunnels log their destination, byte counts, and duration when they close.
 
 ## Configuration
 
@@ -34,9 +35,11 @@ The Admin Server reads its settings from a `config.yaml` file. Configuration is 
 1. The `config.yaml` file (the default path; it can be pointed elsewhere at startup)
 1. Environment variables
 
-!!! note "Which version this describes"
+!!! note "Timeout defaults and tunneling support"
 
-    This page documents Admin Server 0.3.0 and later — run `./server -version` to check which one you have. On earlier versions `read_timeout` and `write_timeout` default to `30s`, which cuts streamed replies off mid-reply; see the [warning below](#server) for what to set.
+    The server timeout defaults shown here apply to Admin Server 0.3.0 and later. Run `./server -version` to check your version. On earlier versions, `read_timeout` and `write_timeout` default to `30s`, which cuts streamed replies off mid-reply; see the [warning below](#server) for what to set.
+
+    HTTPS tunneling requires a build that supports the `tunnel` settings. Ask your Admin Server provider for a compatible build if your version does not support them.
 
 A complete `config.yaml` with the default values looks like this:
 
@@ -63,6 +66,10 @@ logging:
 forwarding:
   mode: "allow_all"  # allow_all | allow | deny
   rules: []
+
+tunnel:
+  allowed_hosts: []  # Empty disables HTTPS tunnels.
+  idle_timeout: "5m"
 ```
 
 ### server
@@ -74,7 +81,7 @@ forwarding:
 | `read_header_timeout` | `10s`     | Deadline for a request's headers to arrive (a duration string, e.g. `10s`).                                                                                                    |
 | `write_stall_timeout` | `60s`     | How long a single write to a client may block before the connection is dropped. Re-armed before every write, so it does not cap how long a response may take. `0` disables it. |
 | `idle_timeout`        | `120s`    | How long an idle keep-alive connection is held open between requests.                                                                                                          |
-| `shutdown_timeout`    | `10s`     | Deadline for in-flight requests to finish during a graceful shutdown.                                                                                                          |
+| `shutdown_timeout`    | `10s`     | Deadline for in-flight requests and tunnels to finish during a graceful shutdown.                                                                                              |
 | `read_timeout`        | `0` (off) | **Deprecated.** A deadline on reading the *whole* request, so it caps how long an upload may take. Use `read_header_timeout`.                                                  |
 | `write_timeout`       | `0` (off) | **Deprecated.** A deadline on writing the *whole* response — any value above `0` cuts streamed responses off mid-reply. Use `write_stall_timeout`.                             |
 
@@ -136,17 +143,20 @@ To use a different variable name, set `api_key_env` and export the key under tha
 
 The Admin Server writes logs to standard output and standard error — it does not write a log file. If you need one, redirect when you start it (`./server -config config.yaml > admin-server.log 2>&1`), or let your container runtime or service manager collect the streams. Set `format: "text"` if you will be reading the log by eye rather than feeding it to a log collector.
 
-Three lines are worth knowing when diagnosing a request that ended early:
+These lines are useful when diagnosing requests and tunnels:
 
 | Line                                        | Meaning                                                                                                                                                                                                                |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `starting server`                           | Lists every timeout actually in effect, with `config.yaml` and environment overrides already resolved. Check this before anything else.                                                                                |
+| `starting server`                           | Lists server and upstream timeouts, with `config.yaml` and environment overrides already applied.                                                                                                                      |
 | `response stream aborted before completion` | A response could not be finished. Includes `bytes_out` (how far it got) and `request_id`. Logged as a warning because the usual cause is a user closing a tab mid-reply; the other cause is a write deadline elapsing. |
 | `panic recovered`                           | A bug in the Admin Server. The caller received a `500`. Worth reporting.                                                                                                                                               |
+| `tunnels configured`                        | Lists the allowed hosts and tunnel idle timeout in effect at startup.                                                                                                                                                  |
+| `tunnel closed`                             | An HTTPS tunnel ended. Logged at `info` with `target`, `client_ip`, `bytes_up`, `bytes_down`, and `duration`.                                                                                                          |
+| `tunnel rejected`                           | A tunnel could not be opened. Logged at `warn` with `reason` and `target`.                                                                                                                                             |
 
 ### forwarding
 
-The `forwarding` block controls which Cloud paths may egress through the Admin Server. This is an egress control for your network, layered on top of the upstream's own access control.
+The `forwarding` block controls which Cloud paths may egress through the Admin Server. This is an egress control for your network, layered on top of the upstream's own access control. It applies only to Cloud reverse-proxy requests, not HTTPS tunnels; tunnel destinations are controlled by [`tunnel.allowed_hosts`](#tunnel).
 
 | Key     | Default     | Description                                                                                     |
 | ------- | ----------- | ----------------------------------------------------------------------------------------------- |
@@ -170,7 +180,7 @@ forwarding:
     - "/api/proxy/*"
 ```
 
-For the most restricted posture, use `allow` mode and list only the routes the application needs at runtime. Nothing else egresses. These are the required routes — the Admin Server refuses to start if `allow` mode omits any of them. Each one must be written as a prefix rule ending in `/*`; an exact rule such as `"/api/users"` or `"/api/users/"` does not count:
+For the most restricted posture, use `allow` mode and list only the Cloud routes the application needs at runtime. No other Cloud paths are forwarded. These are the required routes — the Admin Server refuses to start if `allow` mode omits any of them. Each one must be written as a prefix rule ending in `/*`; an exact rule such as `"/api/users"` or `"/api/users/"` does not count:
 
 ```yaml
 forwarding:
@@ -189,9 +199,34 @@ This is the minimal set the product cannot run without. Add further rules only f
 
     Forwarding rules decide which paths may leave your network — they are not authentication; Griptape Cloud remains the authority on who may call what. The core routes the application needs at runtime (session lifecycle, user, and organization routes) can never be blocked: if your configuration would block them, the Admin Server refuses to start and names the offending routes. This means you can tighten egress without accidentally breaking the product.
 
+### tunnel
+
+The `tunnel` block controls HTTPS `CONNECT` requests on the same listener and port as Cloud requests. An empty `allowed_hosts` list disables tunnels. Settings are read at startup, so restart the Admin Server after changing them.
+
+| Key             | Default   | Description                                                                                                                 |
+| --------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `allowed_hosts` | _(empty)_ | Allowed destination hostnames, each with an optional port. An entry without a port allows only port `443`.                  |
+| `idle_timeout`  | `5m`      | Closes a tunnel when neither side has sent data for this long. `0` disables it. There is no limit on total tunnel duration. |
+
+Use hostnames, not URLs or path rules:
+
+- `github.com` allows only `github.com:443`.
+- `example.com:8443` allows only that hostname on port `8443`.
+- `"*.hf.co"` allows any subdomain of `hf.co`, including nested subdomains, but not the bare `hf.co` domain. Quote entries beginning with `*` in YAML.
+
+Only a leading `*.` wildcard is supported. Entries such as `https://github.com` or `github.com/downloads/*` are invalid and prevent startup. Because TLS remains end-to-end, the Admin Server cannot restrict paths or inspect content inside a tunnel.
+
+During graceful shutdown, the server stops accepting new tunnels and allows existing ones to finish within `server.shutdown_timeout`. Any tunnels still open at the deadline are closed.
+
+!!! warning "Restrict access to the listener"
+
+    Tunnel requests do not check a client's license or API key. Restrict access to the Admin Server listener to trusted network clients.
+
+    Allow wildcard domains only when you trust their DNS operator. The Admin Server connects to whichever address an allowed hostname resolves to; the hostname allowlist is not an IP-address restriction.
+
 ## Environment variable overrides
 
-Every setting can be overridden with an environment variable, which takes precedence over `config.yaml`:
+Every server setting can be overridden with an environment variable, which takes precedence over `config.yaml`. These variables belong in the Admin Server's environment, not the client environment used in [Routing HTTPS downloads](#routing-https-downloads).
 
 | Variable                     | Default                     | Description                                                                   |
 | ---------------------------- | --------------------------- | ----------------------------------------------------------------------------- |
@@ -211,6 +246,8 @@ Every setting can be overridden with an environment variable, which takes preced
 | `LOG_FORMAT`                 | `json`                      | Log output format.                                                            |
 | `FORWARDING_MODE`            | `allow_all`                 | `allow_all`, `allow`, or `deny`.                                              |
 | `FORWARDING_RULES`           | _(empty)_                   | Comma-separated list of paths to allow or deny.                               |
+| `TUNNEL_ALLOWED_HOSTS`       | _(empty)_                   | Comma-separated list of allowed tunnel destinations, with optional ports.     |
+| `TUNNEL_IDLE_TIMEOUT`        | `5m`                        | Tunnel inactivity timeout; `0` disables it.                                   |
 
 Duration values must carry a unit — `30s`, `2m` — and `0` disables a timeout. A value with no unit (`SERVER_READ_TIMEOUT=30`) makes the Admin Server refuse to start, rather than quietly running with a different timeout than you asked for.
 
@@ -224,9 +261,47 @@ Duration values must carry a unit — `30s`, `2m` — and `0` disables a timeout
 
 1. Provide a `config.yaml` (see [Configuration](#configuration)) and start the Admin Server. By default it listens on `0.0.0.0:8080` and forwards to `https://cloud.griptape.ai`.
 
-1. Point your Griptape Nodes Application instances at the Admin Server's address instead of `cloud.griptape.ai`.
+1. Point your Griptape Nodes Application instances at the Admin Server's address instead of `cloud.griptape.ai`. For other HTTPS traffic, also follow [Routing HTTPS downloads](#routing-https-downloads).
 
 If the API key is missing or invalid, or the upstream cannot be reached, the Admin Server logs the reason and exits without serving — so configuration problems surface at startup.
+
+## Routing HTTPS downloads
+
+The Cloud API returns presigned storage URLs that clients use to upload and download assets directly. Setting the Cloud endpoint does not route those transfers, library installs, or model downloads through the Admin Server. To send those HTTPS requests through the Admin Server:
+
+1. Allow the destinations your deployment needs in the server's `config.yaml`, then restart it. This example includes Cloud storage, library installation, and model download hosts:
+
+    ```yaml
+    tunnel:
+      allowed_hosts:
+        - "gtcazureservicesaprod.blob.core.windows.net"  # Cloud storage
+        - "github.com"                                # Library installation
+        - "pypi.org"
+        - "files.pythonhosted.org"
+        - "huggingface.co"                             # Model downloads
+        - "*.hf.co"
+      idle_timeout: "5m"
+    ```
+
+    These are examples, not an exhaustive list. Redirects and the providers used by your workflows may require additional hosts. Add only destinations you intend to permit.
+
+1. Set these variables in the **client's launch environment**, replacing `admin-server` with your actual Admin Server hostname:
+
+    ```bash
+    export GT_CLOUD_BASE_URL=http://admin-server:8080
+    export HTTPS_PROXY=http://admin-server:8080
+    export NO_PROXY=localhost,127.0.0.1,admin-server
+    ```
+
+    `GT_CLOUD_BASE_URL` sets the engine's Cloud API endpoint. `HTTPS_PROXY` tells clients that support this variable to tunnel other HTTPS requests through the Admin Server. `NO_PROXY` keeps local and Admin Server requests out of the tunnel.
+
+    Launch the engine or application from that environment, or set the variables in its service or container configuration. The engine and any downloading processes must inherit them. Not every client honors proxy environment variables, so check the clients your workflows use.
+
+    Do **not** set `HTTP_PROXY` to the Admin Server. It does not support plain HTTP forward-proxy traffic; those requests are forwarded to the configured Cloud upstream instead of their intended destination.
+
+1. Configure browser traffic separately if previews need access to Cloud storage. Browsers do not use a shell's `HTTPS_PROXY` setting. Use system or browser proxy settings, or a proxy auto-configuration (PAC) file, to route HTTPS traffic through the Admin Server. Bypass local and Admin Server addresses, and scope the proxy to HTTPS rather than plain HTTP.
+
+1. Enforce your egress policy with firewall rules. Proxy settings route traffic from cooperating clients; they do not stop clients that ignore those settings from reaching the internet directly.
 
 ## Troubleshooting
 
@@ -243,3 +318,11 @@ If the API key is missing or invalid, or the upstream cannot be reached, the Adm
 - **`502` on every request.** The Admin Server cannot reach the upstream. Check network egress to `upstream.base_url`, DNS resolution, and TLS interception by corporate proxies.
 
 - **`403 {"error":"path not permitted"}`.** A `forwarding` rule is blocking that path. Adjust `forwarding.mode` / `forwarding.rules` if the path should egress.
+
+- **Activation works, but downloads or previews fail.** The Cloud endpoint alone does not route these requests. Check the engine's inherited proxy environment and the browser's proxy settings separately. See [Routing HTTPS downloads](#routing-https-downloads).
+
+- **`403 {"error":"tunnel host not permitted"}`.** Check the `target` in the `tunnel rejected` log against `tunnel.allowed_hosts`, including its port. An empty list disables tunnels, and a wildcard does not include the bare domain. A redirect may lead to a different host. Restart after changing the allowlist and check for a `TUNNEL_ALLOWED_HOSTS` override.
+
+- **`502 {"error":"tunnel host unreachable"}`.** The destination is allowed, but the Admin Server cannot connect to it. Check DNS and outbound firewall access from the Admin Server to the logged host and port.
+
+- **An HTTPS tunnel closes after a quiet period.** `tunnel.idle_timeout` defaults to `5m`. Increase it, or set it to `"0"` to disable idle closure, if the client needs longer pauses. This timeout does not cap the duration of an active download. A graceful shutdown also closes remaining tunnels once `server.shutdown_timeout` expires.
