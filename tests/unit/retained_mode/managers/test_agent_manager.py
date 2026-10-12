@@ -1455,6 +1455,7 @@ class TestRunAgentResultPayloadContract:
         # A non-empty history keeps `is_first_run` False, so the title update is skipped.
         manager._thread_storage = SimpleNamespace(  # type: ignore[assignment]
             load_history=lambda _t: [object()],
+            get_thread_metadata=lambda _t: SimpleNamespace(tool_grants=[]),
             update_thread_metadata=lambda _t, **_kw: {},
             append_run_record=lambda thread_id, record: None,  # noqa: ARG005
         )
@@ -1469,8 +1470,6 @@ class TestRunAgentResultPayloadContract:
             # tests are about the result payload, so report none configured.
             handle_request=lambda _r: GetEnabledMCPServersResultSuccess(servers={}, result_details="none"),
             ahandle_request=_no_attribution,
-            # No beta features configured, so tool approval stays off.
-            config_manager=SimpleNamespace(get_config_value=lambda _key, **_kw: None),
         )
         return manager
 

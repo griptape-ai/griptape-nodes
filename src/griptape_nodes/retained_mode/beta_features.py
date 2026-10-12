@@ -340,17 +340,3 @@ def _entry_label(index: int, entry: Any) -> str:
 
 def _today() -> date:
     return datetime.now(tz=UTC).date()
-
-
-AGENT_TOOL_APPROVAL = register_beta_feature(
-    BetaFeature(
-        id="agent_tool_approval",
-        name="Ask before the chat agent runs things",
-        description=(
-            "The chat agent asks for your approval before it runs workflows or nodes, generates images, "
-            "or uses tools from your own MCP servers."
-        ),
-        owner="@cjkindel",
-        remove_by=date(2027, 4, 10),
-    )
-)

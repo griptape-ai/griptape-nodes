@@ -79,7 +79,6 @@ from griptape_nodes.drivers.cloud_models import (
     provider_catalog_entries,
 )
 from griptape_nodes.drivers.thread_storage.local_thread_storage_driver import LocalThreadStorageDriver
-from griptape_nodes.retained_mode.beta_features import AGENT_TOOL_APPROVAL, is_beta_enabled
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.agent_events import (
     TOOL_APPROVAL_APPROVE_FOR_CONVERSATION,
@@ -227,15 +226,14 @@ _IMAGE_TOOL_INSTRUCTION = (
 )
 
 
-# Sent per run rather than baked into the agent, because the beta flag that turns
-# approval on is read when the turn starts.
 _TOOL_APPROVAL_INSTRUCTIONS = (
     "Tool approval rules:\n"
     "  - Some tools need the user's approval before they run. The user sees each such call and "
     "decides whether it runs.\n"
     "  - When the user asks a question (how, why, what), answer in text. Do not build or run "
     "workflows unless the user asks you to.\n"
-    "  - If the user declines a tool call, do not retry it or work around it with a different tool.\n"
+    "  - If the user declines a tool call, do not retry it on your own or work around it with a "
+    "different tool. If the user later asks for it again, call it again; they will be asked to approve it.\n"
 )
 
 
@@ -260,11 +258,9 @@ def _compose_server_rules(configs: Sequence[Mapping[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
-def _compose_run_instructions(server_rules: str, approval: ToolApprovalDeps) -> str:
+def _compose_run_instructions(server_rules: str) -> str:
     """Join the instructions that apply to one run: MCP server rules, then approval rules."""
-    parts = [server_rules]
-    if approval.enabled:
-        parts.append(_TOOL_APPROVAL_INSTRUCTIONS)
+    parts = [server_rules, _TOOL_APPROVAL_INSTRUCTIONS]
     return "\n\n".join(part for part in parts if part)
 
 
@@ -324,6 +320,12 @@ def _plan_tool_approvals(
             approvals[call.tool_call_id] = ToolApproved()
 
     return _ApprovalPlan(results=DeferredToolResults(approvals=approvals), granted=frozenset(updated_grants))
+
+
+def _reply_in_progress_failure(attempted: str) -> RunAgentResultFailure:
+    """The failure for a request that arrives while another turn is running in its thread."""
+    details = f"Attempted to {attempted}. Failed because a reply is already in progress in this conversation."
+    return RunAgentResultFailure(error={"message": details}, result_details=details)
 
 
 def _cloud_http_status_of(exc: BaseException, cloud_host: str) -> int | None:
@@ -642,6 +644,17 @@ class AgentManager(EngineScoped):
 
     async def _run_agent(self, request: RunAgentRequest) -> ResultPayload:
         thread_id = self._validate_thread_for_run(request.thread_id)
+        active = self._claim_thread(thread_id)
+        if active is None:
+            return _reply_in_progress_failure(f"send a message in conversation {thread_id}")
+        try:
+            return await self._run_agent_on_claimed_thread(request, thread_id, active)
+        finally:
+            self._release_thread(thread_id, active)
+
+    async def _run_agent_on_claimed_thread(
+        self, request: RunAgentRequest, thread_id: str, active: _ActiveRun
+    ) -> ResultPayload:
         history = self._thread_storage.load_history(thread_id)
         is_first_run = len(history) == 0
 
@@ -654,20 +667,18 @@ class AgentManager(EngineScoped):
                 approvals={call.tool_call_id: ToolDenied(TOOL_DENIED_BY_NEW_MESSAGE) for call in waiting}
             )
 
-        approval_enabled = self._tool_approval_enabled()
-        granted: frozenset[str] = frozenset()
-        if approval_enabled:
-            granted = frozenset(self._thread_storage.get_thread_metadata(thread_id).tool_grants)
+        granted = frozenset(self._thread_storage.get_thread_metadata(thread_id).tool_grants)
 
         composed = await _compose_prompt(request.input, request.url_artifacts)
         result = await self._run_turn(
             thread_id=thread_id,
+            active=active,
             provider_name=request.provider_name,
             model_name=request.model_name,
             mcp_server_names=request.additional_mcp_servers,
             prompt=composed.live,
             persist_prompt=composed.persist,
-            approval=ToolApprovalDeps(enabled=approval_enabled, granted=granted),
+            approval=ToolApprovalDeps(granted=granted),
             deferred_tool_results=deferred_tool_results,
         )
 
@@ -694,6 +705,19 @@ class AgentManager(EngineScoped):
             details = f"Attempted to answer the approval request in conversation {thread_id}. Failed because the conversation is archived. Unarchive it first."
             return RunAgentResultFailure(error={"message": details}, result_details=details)
 
+        # Claimed before the first await so two answers to the same card, such as a
+        # double click, cannot both resume the turn and run a paid call twice.
+        active = self._claim_thread(thread_id)
+        if active is None:
+            return _reply_in_progress_failure(f"answer the approval request in conversation {thread_id}")
+        try:
+            return await self._resolve_tool_approvals_on_claimed_thread(request, thread_id, active)
+        finally:
+            self._release_thread(thread_id, active)
+
+    async def _resolve_tool_approvals_on_claimed_thread(
+        self, request: ResolveToolApprovalsRequest, thread_id: str, active: _ActiveRun
+    ) -> ResultPayload:
         # Read from the saved conversation rather than anything held in memory, so
         # an approval card still works after the engine restarts.
         waiting = pending_tool_calls(self._thread_storage.load_history(thread_id))
@@ -713,12 +737,13 @@ class AgentManager(EngineScoped):
 
         result = await self._run_turn(
             thread_id=thread_id,
+            active=active,
             provider_name=request.provider_name,
             model_name=request.model_name,
             mcp_server_names=request.additional_mcp_servers,
             prompt=None,
             persist_prompt=None,
-            approval=ToolApprovalDeps(enabled=self._tool_approval_enabled(), granted=plan.granted),
+            approval=ToolApprovalDeps(granted=plan.granted),
             deferred_tool_results=plan.results,
         )
         return self._finish_turn(
@@ -728,13 +753,11 @@ class AgentManager(EngineScoped):
             mcp_server_names=request.additional_mcp_servers,
         )
 
-    def _tool_approval_enabled(self) -> bool:
-        return is_beta_enabled(AGENT_TOOL_APPROVAL, self.engine.config_manager)
-
     async def _run_turn(  # noqa: PLR0913
         self,
         *,
         thread_id: str,
+        active: _ActiveRun,
         provider_name: str | None,
         model_name: str | None,
         mcp_server_names: list[str],
@@ -743,7 +766,11 @@ class AgentManager(EngineScoped):
         approval: ToolApprovalDeps,
         deferred_tool_results: DeferredToolResults | None,
     ) -> AgentRunResult:
-        """Run one agent turn on ``thread_id``, streaming its events and making it cancellable."""
+        """Run one agent turn on ``thread_id``, streaming its events.
+
+        ``active`` is the thread's claim from :meth:`_claim_thread`; its cancel event
+        is what ``CancelAgentRequest`` sets.
+        """
         runner = self._build_runner(
             provider_name=provider_name,
             model_name=model_name,
@@ -762,31 +789,41 @@ class AgentManager(EngineScoped):
                 ),
             )
 
-        cancel_event = asyncio.Event()
-        self._active_runs[thread_id] = _ActiveRun(cancel_event=cancel_event, loop=asyncio.get_running_loop())
-        try:
-            # Nothing may sit between this and the `async with` that releases
-            # it: a server left with a stray use count is never shut down.
-            mcp = await self._acquire_mcp_toolsets(mcp_server_names)
-            async with mcp.lease:
-                return await runner.run(
-                    prompt,
-                    thread_id=thread_id,
-                    event_sink=emit,
-                    cancel_event=cancel_event,
-                    persist_prompt=persist_prompt,
-                    history_rehydrator=_rehydrate_history,
-                    extra_toolsets=mcp.lease.toolsets,
-                    extra_instructions=_compose_run_instructions(mcp.instructions, approval),
-                    extra_headers=attribution_headers,
-                    approval=approval,
-                    deferred_tool_results=deferred_tool_results,
-                )
-        finally:
-            # Only drop our own entry; a newer run for the same thread may have
-            # replaced it (shouldn't happen for the chat sidebar, but stay safe).
-            if (active := self._active_runs.get(thread_id)) is not None and active.cancel_event is cancel_event:
-                del self._active_runs[thread_id]
+        # Nothing may sit between this and the `async with` that releases
+        # it: a server left with a stray use count is never shut down.
+        mcp = await self._acquire_mcp_toolsets(mcp_server_names)
+        async with mcp.lease:
+            return await runner.run(
+                prompt,
+                thread_id=thread_id,
+                event_sink=emit,
+                cancel_event=active.cancel_event,
+                persist_prompt=persist_prompt,
+                history_rehydrator=_rehydrate_history,
+                extra_toolsets=mcp.lease.toolsets,
+                extra_instructions=_compose_run_instructions(mcp.instructions),
+                extra_headers=attribution_headers,
+                approval=approval,
+                deferred_tool_results=deferred_tool_results,
+            )
+
+    def _claim_thread(self, thread_id: str) -> _ActiveRun | None:
+        """Mark ``thread_id`` as running a turn, or return ``None`` when it already is.
+
+        One turn per thread: both a new message and an approval answer start from
+        the saved history, so two at once would resume the same paused calls twice.
+        Must be called with no ``await`` between it and the caller's check, and
+        released with :meth:`_release_thread` in a ``finally``.
+        """
+        if thread_id in self._active_runs:
+            return None
+        active = _ActiveRun(cancel_event=asyncio.Event(), loop=asyncio.get_running_loop())
+        self._active_runs[thread_id] = active
+        return active
+
+    def _release_thread(self, thread_id: str, active: _ActiveRun) -> None:
+        if self._active_runs.get(thread_id) is active:
+            del self._active_runs[thread_id]
 
     def _finish_turn(
         self,

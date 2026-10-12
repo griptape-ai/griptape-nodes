@@ -8,6 +8,7 @@ stand-in.
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -54,16 +55,14 @@ async def _no_attribution(_request: object) -> GetAttributionContextResultFailur
 
 
 class _Harness:
-    """An `AgentManager` wired to one runner, with tool approval switched on or off."""
+    """An `AgentManager` wired to one runner on real thread storage."""
 
-    def __init__(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: ScriptedModel, *, approval_on: bool
-    ) -> None:
+    def __init__(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: ScriptedModel) -> None:
         self.ran: list[str] = []
         self.model = model
         self.runner: PydanticAgentRunner = runner_with(tmp_path, model, self.ran)
         self.storage: LocalThreadStorageDriver = self.runner.storage  # type: ignore[assignment]
-        self.manager = _manager_on(self.storage, self.runner, monkeypatch, approval_on=approval_on)
+        self.manager = _manager_on(self.storage, self.runner, monkeypatch)
 
     def thread(self) -> str:
         thread_id, _ = self.storage.create_thread()
@@ -98,10 +97,7 @@ def _manager_on(
     storage: LocalThreadStorageDriver,
     runner: PydanticAgentRunner,
     monkeypatch: pytest.MonkeyPatch,
-    *,
-    approval_on: bool,
 ) -> AgentManager:
-    config = {"beta_features.agent_tool_approval": approval_on}
     manager = AgentManager.__new__(AgentManager)
     manager._active_runs = {}
     manager._mcp_toolsets = MCPToolsetCache()
@@ -114,28 +110,16 @@ def _manager_on(
         event_manager=SimpleNamespace(put_event=lambda _e: None),
         handle_request=lambda _r: GetEnabledMCPServersResultSuccess(servers={}, result_details="none"),
         ahandle_request=_no_attribution,
-        config_manager=SimpleNamespace(get_config_value=lambda key, **_kw: config.get(key)),
     )
     return manager
 
 
 @pytest.mark.asyncio
 class TestPausing:
-    async def test_approval_off_never_pauses(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started."), approval_on=False)
-
-        result = await harness.send(harness.thread(), "Run the flow.")
-
-        assert harness.ran == ["StartFlowRequest"]
-        assert result.output["pending_approvals"] == []
-        assert "approval" not in (harness.model.requests[0][0].instructions or "")  # type: ignore[union-attr]
-
     async def test_a_gated_call_pauses_with_a_card_to_answer(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        harness = _Harness(
-            tmp_path, monkeypatch, ScriptedModel([(START, {"flow_name": "main"}, "c1")]), approval_on=True
-        )
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {"flow_name": "main"}, "c1")]))
 
         result = await harness.send(harness.thread(), "Run the flow.")
 
@@ -149,13 +133,14 @@ class TestPausing:
     async def test_the_agent_is_told_to_answer_questions_in_text(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        harness = _Harness(tmp_path, monkeypatch, ScriptedModel("It wires nodes."), approval_on=True)
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel("It wires nodes."))
 
         await harness.send(harness.thread(), "How does this work?")
 
         instructions = harness.model.requests[0][0].instructions or ""  # type: ignore[union-attr]
         assert "need the user's approval" in instructions
         assert "answer in text" in instructions
+        assert "If the user later asks for it again, call it again" in instructions
 
 
 @pytest.mark.asyncio
@@ -163,9 +148,7 @@ class TestResolving:
     async def test_approve_once_runs_it_and_remembers_nothing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        harness = _Harness(
-            tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started.", [(START, {}, "c2")]), approval_on=True
-        )
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started.", [(START, {}, "c2")]))
         thread_id = harness.thread()
         await harness.send(thread_id, "Run the flow.")
 
@@ -187,7 +170,6 @@ class TestResolving:
             tmp_path,
             monkeypatch,
             ScriptedModel([(START, {}, "c1")], "Started.", [(START, {}, "c2")], "Started again."),
-            approval_on=True,
         )
         thread_id = harness.thread()
         await harness.send(thread_id, "Run the flow.")
@@ -200,7 +182,7 @@ class TestResolving:
         assert harness.ran == ["StartFlowRequest", "StartFlowRequest"]
 
     async def test_deny_tells_the_agent_not_to_retry(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Understood."), approval_on=True)
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Understood."))
         thread_id = harness.thread()
         await harness.send(thread_id, "Run the flow.")
 
@@ -215,7 +197,7 @@ class TestResolving:
     ) -> None:
         batch_args = {"requests": [{"request_type": "StartFlowRequest", "request": {}}]}
         model = ScriptedModel([(LIST, {}, "c0"), (START, {}, "c1"), (BATCH, batch_args, "c2")], "All done.")
-        harness = _Harness(tmp_path, monkeypatch, model, approval_on=True)
+        harness = _Harness(tmp_path, monkeypatch, model)
         thread_id = harness.thread()
         paused = await harness.send(thread_id, "Run everything.")
         assert [card["tool_call_id"] for card in paused.output["pending_approvals"]] == ["c1", "c2"]
@@ -224,17 +206,19 @@ class TestResolving:
 
         assert isinstance(result, RunAgentResultSuccess)
         assert result.output["text"] == "All done."
-        # The read-only call ran once, before the pause, and is not run again.
-        assert harness.ran == ["ListFlowsInCurrentContextRequest", "StartFlowRequest", "EventRequestBatch"]
+        # The read-only call ran once, before the pause, and is not run again. The
+        # resumed calls run in parallel, so their order is not fixed.
+        assert harness.ran[0] == "ListFlowsInCurrentContextRequest"
+        assert sorted(harness.ran[1:]) == ["EventRequestBatch", "StartFlowRequest"]
 
     async def test_survives_an_engine_restart(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started."), approval_on=True)
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started."))
         thread_id = harness.thread()
         await harness.send(thread_id, "Run the flow.")
 
         reopened = LocalThreadStorageDriver(harness.storage.threads_directory, None, None)  # type: ignore[arg-type]
         harness.runner.storage = reopened
-        restarted = _manager_on(reopened, harness.runner, monkeypatch, approval_on=True)
+        restarted = _manager_on(reopened, harness.runner, monkeypatch)
         result = await restarted.on_handle_resolve_tool_approvals_request(
             ResolveToolApprovalsRequest(
                 thread_id=thread_id, decisions=[ToolApprovalDecision(tool_call_id="c1", decision="approve_once")]
@@ -250,7 +234,7 @@ class TestResolvingFailures:
     @staticmethod
     async def _paused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[_Harness, str]:
         model = ScriptedModel([(START, {}, "c1"), (START, {"flow_name": "other"}, "c2")])
-        harness = _Harness(tmp_path, monkeypatch, model, approval_on=True)
+        harness = _Harness(tmp_path, monkeypatch, model)
         thread_id = harness.thread()
         await harness.send(thread_id, "Run both.")
         return harness, thread_id
@@ -284,7 +268,7 @@ class TestResolvingFailures:
         assert harness.storage.get_thread_metadata(thread_id).tool_grants == []
 
     async def test_a_thread_that_is_not_paused_fails(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        harness = _Harness(tmp_path, monkeypatch, ScriptedModel("Hi."), approval_on=True)
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel("Hi."))
         thread_id = harness.thread()
         await harness.send(thread_id, "Hello.")
 
@@ -294,7 +278,7 @@ class TestResolvingFailures:
         assert "not waiting for approval" in result.error["message"]
 
     async def test_a_missing_thread_fails(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        harness = _Harness(tmp_path, monkeypatch, ScriptedModel(), approval_on=True)
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel())
 
         result = await harness.resolve("missing", c1="approve_once")
 
@@ -305,7 +289,7 @@ class TestResolvingFailures:
 @pytest.mark.asyncio
 async def test_a_new_message_declines_what_was_pending(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Sending a message instead of answering the card declines it, and the agent answers the message."""
-    harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Here is how."), approval_on=True)
+    harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Here is how."))
     thread_id = harness.thread()
     await harness.send(thread_id, "Run the flow.")
 
@@ -324,9 +308,7 @@ async def test_a_new_message_declines_what_was_pending(tmp_path: Path, monkeypat
 class TestClearToolGrants:
     @pytest.mark.asyncio
     async def test_clearing_makes_the_agent_ask_again(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        harness = _Harness(
-            tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started.", [(START, {}, "c2")]), approval_on=True
-        )
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started.", [(START, {}, "c2")]))
         thread_id = harness.thread()
         await harness.send(thread_id, "Run the flow.")
         await harness.resolve(thread_id, c1="approve_for_conversation")
@@ -340,8 +322,87 @@ class TestClearToolGrants:
         assert [card["tool_call_id"] for card in again.output["pending_approvals"]] == ["c2"]
 
     def test_a_missing_thread_fails(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        harness = _Harness(tmp_path, monkeypatch, ScriptedModel(), approval_on=True)
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel())
 
         result = harness.manager.on_handle_clear_tool_grants_request(ClearToolGrantsRequest(thread_id="missing"))
 
         assert isinstance(result, ClearToolGrantsResultFailure)
+
+
+@pytest.mark.asyncio
+class TestOneReplyAtATime:
+    """Two requests on one thread must not both resume the same paused calls."""
+
+    async def test_a_second_answer_to_the_same_card_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started."))
+        thread_id = harness.thread()
+        await harness.send(thread_id, "Run the flow.")
+
+        first, second = await asyncio.gather(
+            harness.resolve(thread_id, c1="approve_once"),
+            harness.resolve(thread_id, c1="approve_once"),
+        )
+
+        assert isinstance(first, RunAgentResultSuccess)
+        assert isinstance(second, RunAgentResultFailure)
+        assert "a reply is already in progress in this conversation" in second.error["message"]
+        assert harness.ran == ["StartFlowRequest"]
+
+    async def test_a_message_during_an_answer_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started."))
+        thread_id = harness.thread()
+        await harness.send(thread_id, "Run the flow.")
+
+        resolved, sent = await asyncio.gather(
+            harness.resolve(thread_id, c1="approve_once"),
+            harness.manager.on_handle_run_agent_request(
+                RunAgentRequest(input="Never mind.", url_artifacts=[], thread_id=thread_id)
+            ),
+        )
+
+        assert isinstance(resolved, RunAgentResultSuccess)
+        assert isinstance(sent, RunAgentResultFailure)
+        assert "a reply is already in progress in this conversation" in sent.error["message"]
+        assert harness.ran == ["StartFlowRequest"]
+        assert TOOL_DENIED_BY_NEW_MESSAGE not in harness.tool_returns(thread_id).values()
+
+    async def test_a_rejected_answer_frees_the_conversation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "Started."))
+        thread_id = harness.thread()
+        await harness.send(thread_id, "Run the flow.")
+
+        rejected = await harness.resolve(thread_id, c1="maybe")
+        accepted = await harness.resolve(thread_id, c1="approve_once")
+
+        assert isinstance(rejected, RunAgentResultFailure)
+        assert isinstance(accepted, RunAgentResultSuccess)
+        assert harness.manager._active_runs == {}
+
+    async def test_a_failed_run_frees_the_conversation(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        harness = _Harness(tmp_path, monkeypatch, ScriptedModel("Hello."))
+        thread_id = harness.thread()
+        real_run = harness.runner.run
+        calls = 0
+
+        async def fail_once(*args: Any, **kwargs: Any) -> Any:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                msg = "the model went away"
+                raise RuntimeError(msg)
+            return await real_run(*args, **kwargs)
+
+        monkeypatch.setattr(harness.runner, "run", fail_once)
+
+        failed = await harness.manager.on_handle_run_agent_request(
+            RunAgentRequest(input="Hi.", url_artifacts=[], thread_id=thread_id)
+        )
+        retried = await harness.send(thread_id, "Hi again.")
+
+        assert isinstance(failed, RunAgentResultFailure)
+        assert retried.output["text"] == "Hello."
+        assert harness.manager._active_runs == {}

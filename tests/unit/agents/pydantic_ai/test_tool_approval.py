@@ -48,8 +48,7 @@ if TYPE_CHECKING:
     from pydantic_ai.tools import ToolDefinition
 
 
-ON = ToolApprovalDeps(enabled=True)
-OFF = ToolApprovalDeps(enabled=False)
+ON = ToolApprovalDeps()
 
 
 def _ctx(deps: ToolApprovalDeps) -> RunContext[Any]:
@@ -107,13 +106,9 @@ class TestGrantKeysForCall:
 
 
 class TestNeedsApproval:
-    def test_off_never_asks(self) -> None:
-        assert needs_approval(OFF, ["generate_image"]) is False
-
-    def test_on_asks_until_every_key_is_granted(self) -> None:
-        partly = ToolApprovalDeps(enabled=True, granted=frozenset({"GriptapeNodes_ResolveNodeRequest"}))
+    def test_asks_until_every_key_is_granted(self) -> None:
+        partly = ToolApprovalDeps(granted=frozenset({"GriptapeNodes_ResolveNodeRequest"}))
         fully = ToolApprovalDeps(
-            enabled=True,
             granted=frozenset({"GriptapeNodes_ResolveNodeRequest", "GriptapeNodes_StartFlowRequest"}),
         )
         keys = ["GriptapeNodes_ResolveNodeRequest", "GriptapeNodes_StartFlowRequest"]
@@ -124,6 +119,10 @@ class TestNeedsApproval:
 
     def test_nothing_to_grant_never_asks(self) -> None:
         assert needs_approval(ON, []) is False
+
+    def test_a_run_without_approval_state_fails_instead_of_running_unasked(self) -> None:
+        with pytest.raises(TypeError, match="no approval state"):
+            needs_approval(None, ["generate_image"])
 
 
 class TestGtnToolRequiresApproval:
@@ -137,17 +136,14 @@ class TestGtnToolRequiresApproval:
     def test_tools_that_only_edit_or_read_never_ask(self, request_type: str) -> None:
         assert _gtn_tool_requires_approval(_ctx(ON), _tool(f"GriptapeNodes_{request_type}"), {}) is False
 
-    def test_nothing_asks_when_approval_is_off(self) -> None:
-        assert _gtn_tool_requires_approval(_ctx(OFF), _tool("GriptapeNodes_StartFlowRequest"), {}) is False
-
     def test_a_granted_tool_runs_without_asking(self) -> None:
-        deps = ToolApprovalDeps(enabled=True, granted=frozenset({"GriptapeNodes_StartFlowRequest"}))
+        deps = ToolApprovalDeps(granted=frozenset({"GriptapeNodes_StartFlowRequest"}))
 
         assert _gtn_tool_requires_approval(_ctx(deps), _tool("GriptapeNodes_StartFlowRequest"), {}) is False
 
     def test_a_batch_asks_only_when_it_holds_an_ungranted_gated_request(self) -> None:
         mixed = _batch("CreateNodeRequest", "StartFlowRequest")
-        granted = ToolApprovalDeps(enabled=True, granted=frozenset({"GriptapeNodes_StartFlowRequest"}))
+        granted = ToolApprovalDeps(granted=frozenset({"GriptapeNodes_StartFlowRequest"}))
         batch = _tool(GTN_BATCH_TOOL_NAME)
 
         assert _gtn_tool_requires_approval(_ctx(ON), batch, _batch("CreateNodeRequest")) is False
@@ -156,14 +152,11 @@ class TestGtnToolRequiresApproval:
 
 
 class TestUserToolRequiresApproval:
-    def test_every_tool_asks_when_approval_is_on(self) -> None:
+    def test_every_tool_asks(self) -> None:
         assert _user_tool_requires_approval(_ctx(ON), _tool("brave_search"), {}) is True
 
-    def test_nothing_asks_when_approval_is_off(self) -> None:
-        assert _user_tool_requires_approval(_ctx(OFF), _tool("brave_search"), {}) is False
-
     def test_a_granted_tool_runs_without_asking(self) -> None:
-        deps = ToolApprovalDeps(enabled=True, granted=frozenset({"brave_search"}))
+        deps = ToolApprovalDeps(granted=frozenset({"brave_search"}))
 
         assert _user_tool_requires_approval(_ctx(deps), _tool("brave_search"), {}) is False
 
@@ -266,12 +259,26 @@ def runner_with(tmp_path: Path, model: ScriptedModel, ran: list[str]) -> Pydanti
 
 class TestRunnerPauseAndResume:
     @pytest.mark.asyncio
-    async def test_approval_off_runs_the_call_without_pausing(self, tmp_path: Path) -> None:
+    async def test_a_run_without_approval_state_still_gates(self, tmp_path: Path) -> None:
+        """Leaving `approval` out means no grants, never an ungated run."""
+        ran: list[str] = []
+        model = ScriptedModel([("GriptapeNodes_StartFlowRequest", {}, "c1")])
+        runner = runner_with(tmp_path, model, ran)
+
+        result = await runner.run("Run the flow.")
+
+        assert ran == []
+        assert [pending.tool_call_id for pending in result.pending_approvals] == ["c1"]
+
+    @pytest.mark.asyncio
+    async def test_a_granted_call_runs_without_pausing(self, tmp_path: Path) -> None:
         ran: list[str] = []
         model = ScriptedModel([("GriptapeNodes_StartFlowRequest", {}, "c1")], "Done.")
         runner = runner_with(tmp_path, model, ran)
 
-        result = await runner.run("Run the flow.", approval=OFF)
+        result = await runner.run(
+            "Run the flow.", approval=ToolApprovalDeps(granted=frozenset({"GriptapeNodes_StartFlowRequest"}))
+        )
 
         assert ran == ["StartFlowRequest"]
         assert result.pending_approvals == []

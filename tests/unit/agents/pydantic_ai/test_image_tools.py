@@ -58,9 +58,13 @@ def _ctx(
     model_settings: dict[str, Any] | None = None,
     *,
     deps: ToolApprovalDeps | None = None,
-    tool_call_approved: bool = False,
+    tool_call_approved: bool = True,
 ) -> RunContext[Any]:
-    """Stand in for the agent run; the tool reads its model settings and approval state."""
+    """Stand in for the agent run; the tool reads its model settings and approval state.
+
+    Defaults to a call the user already approved, so tests about generating the
+    image are not stopped by the approval gate.
+    """
     return cast(
         "RunContext[Any]",
         SimpleNamespace(
@@ -171,21 +175,21 @@ class TestGenerateImage:
         assert "a red bird" in body
         assert "gpt-image-1-mini" in body
 
-    async def test_asks_before_spending_credits_when_approval_is_on(
+    async def test_asks_before_spending_credits(
         self, static_files: _FakeStaticFilesManager, patch_transport: _TransportRecorder
     ) -> None:
         toolset = _make_toolset(ImageGenerationToolsetConfig(api_key="k"), static_files)
 
         with pytest.raises(ApprovalRequired):
-            await toolset.generate_image(_ctx(deps=ToolApprovalDeps(enabled=True)), "a red bird")
+            await toolset.generate_image(_ctx(deps=ToolApprovalDeps(), tool_call_approved=False), "a red bird")
 
         assert patch_transport.requests == []
 
     @pytest.mark.parametrize(
         ("deps", "tool_call_approved"),
         [
-            (ToolApprovalDeps(enabled=True), True),
-            (ToolApprovalDeps(enabled=True, granted=frozenset({"generate_image"})), False),
+            (ToolApprovalDeps(), True),
+            (ToolApprovalDeps(granted=frozenset({"generate_image"})), False),
         ],
         ids=["approved-call", "granted-for-conversation"],
     )

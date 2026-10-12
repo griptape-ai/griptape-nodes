@@ -1,10 +1,6 @@
 # Approvals
 
-Some things the agent can do cost credits or change your project: running a workflow, running a node, generating an image, or using a tool from one of your own MCP servers. With approvals on, the agent stops and asks you before it does any of these, so a question like "how does this node work?" never turns into a workflow run you didn't ask for.
-
-!!! note "Beta feature"
-
-    Approvals are a beta feature. Turn on **Ask before the chat agent runs things** on the [Beta Features](../editor/beta_features.md) page to use them. While it is off, the agent runs every tool without asking.
+Some things the agent can do cost credits or change your project: running a workflow, running a node, generating an image, or using a tool from one of your own MCP servers. The agent stops and asks you before it does any of these, so a question like "how does this node work?" never turns into a workflow run you didn't ask for.
 
 ## What the agent asks about
 

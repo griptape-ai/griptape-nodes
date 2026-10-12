@@ -412,8 +412,9 @@ class PydanticAgentRunner:
                 any Griptape Cloud call a tool makes. Per run, because a value
                 such as the budget attribution header follows the project open
                 when the turn starts.
-            approval: Which tool calls must pause for the user this run. Handed
-                to every tool as ``ctx.deps``. ``None`` pauses nothing.
+            approval: The thread's conversation grants, handed to every tool as
+                ``ctx.deps``. ``None`` means no grants, so every gated call
+                pauses for the user.
             deferred_tool_results: Answers for the calls a paused turn is
                 waiting on. Required exactly when the thread has such calls;
                 with a ``prompt`` too, the prompt follows the answers in the same

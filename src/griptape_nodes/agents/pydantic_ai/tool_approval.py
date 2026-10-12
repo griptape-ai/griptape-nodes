@@ -39,23 +39,30 @@ class ToolApprovalDeps:
     """Approval state for one agent run, passed as the run's ``deps``.
 
     Attributes:
-        enabled: Whether gated tools must ask before running. ``False`` runs every
-            tool without pausing.
         granted: Grant keys the user approved for the whole conversation. A gated
             call runs without asking when all of its grant keys are in here.
     """
 
-    enabled: bool = False
     granted: frozenset[str] = field(default_factory=frozenset)
 
 
-def needs_approval(deps: ToolApprovalDeps, grant_keys: Sequence[str]) -> bool:
+def needs_approval(deps: object, grant_keys: Sequence[str]) -> bool:
     """Whether a call with these grant keys must wait for the user.
 
-    An empty ``grant_keys`` means the call has nothing that needs approving.
+    ``deps`` is the run's ``ctx.deps``. Anything other than a
+    :class:`ToolApprovalDeps` raises rather than letting a gated call run
+    unasked. An empty ``grant_keys`` means the call has nothing that needs
+    approving.
+
+    Raises:
+        TypeError: ``deps`` is not a :class:`ToolApprovalDeps`.
     """
-    if not deps.enabled:
-        return False
+    if not isinstance(deps, ToolApprovalDeps):
+        msg = (
+            "Attempted to check whether a chat agent tool call needs the user's approval. Failed because the "
+            f"run carried no approval state (got {type(deps).__name__})."
+        )
+        raise TypeError(msg)
     if not grant_keys:
         return False
     return not deps.granted.issuperset(grant_keys)
