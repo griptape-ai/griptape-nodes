@@ -208,13 +208,16 @@ The `tunnel` block controls HTTPS `CONNECT` requests on the same listener and po
 | `allowed_hosts` | _(empty)_ | Allowed destination hostnames, each with an optional port. An entry without a port allows only port `443`.                  |
 | `idle_timeout`  | `5m`      | Closes a tunnel when neither side has sent data for this long. `0` disables it. There is no limit on total tunnel duration. |
 
-Use hostnames, not URLs or path rules:
+Use hostnames, not URLs or path rules. In `allowed_hosts`, write entries like this:
 
-- `github.com` allows only `github.com:443`.
-- `example.com:8443` allows only that hostname on port `8443`.
-- `"*.hf.co"` allows any subdomain of `hf.co`, including nested subdomains, but not the bare `hf.co` domain. Quote entries beginning with `*` in YAML.
+| Don't use                    | Use instead          | What it allows                                                                                                                |
+| ---------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `"https://github.com"`       | `"github.com"`       | Only `github.com:443`. Leave out the URL scheme.                                                                              |
+| `"github.com/downloads/*"`   | `"github.com"`       | Any path on `github.com:443`, not just downloads. Path restrictions are not supported.                                        |
+| `"https://example.com:8443"` | `"example.com:8443"` | Only `example.com` on port `8443`. Keep the port, but leave out the URL scheme.                                               |
+| `*.hf.co` (unquoted YAML)    | `"*.hf.co"`          | Any subdomain of `hf.co`, including nested subdomains, but not the bare `hf.co` domain. Wildcard entries need quotes in YAML. |
 
-Only a leading `*.` wildcard is supported. Entries such as `https://github.com` or `github.com/downloads/*` are invalid and prevent startup. Because TLS remains end-to-end, the Admin Server cannot restrict paths or inspect content inside a tunnel.
+Only a leading `*.` wildcard is supported. Invalid entries prevent startup. Because TLS remains end-to-end, the Admin Server cannot restrict paths or inspect content inside a tunnel.
 
 During graceful shutdown, the server stops accepting new tunnels and allows existing ones to finish within `server.shutdown_timeout`. Any tunnels still open at the deadline are closed.
 
