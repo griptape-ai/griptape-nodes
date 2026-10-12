@@ -64,7 +64,7 @@ class ResultJson:
 class EventConverter(JsonConverter):
     """Build one with ``make_event_converter``.
 
-    ``copy()`` keeps every hook, but hooks from ``register_polymorphic_dataclass`` and the
+    After ``copy()``, hooks from ``register_polymorphic_dataclass`` and the
     ``_cattrs_structure``/``_cattrs_unstructure`` class methods still call the original converter.
     """
 

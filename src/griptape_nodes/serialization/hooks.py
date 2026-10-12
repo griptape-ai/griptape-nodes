@@ -237,19 +237,14 @@ def _make_namedtuple_structure_fn(cls: type, conv: Converter) -> Any:
 
 
 def with_converter(hook: Callable[..., Any]) -> Callable[[Any, Converter], Callable[..., Any]]:
-    """Make a hook factory, so ``hook`` recurses through the converter using it, copies included.
-
-    ``hook`` takes the converter as its ``conv`` keyword.
-    """
+    """Bind ``hook``'s ``conv`` keyword to the converter using it, including copies."""
     return lambda _cls, conv: partial(hook, conv=conv)
 
 
 def configure_converter(conv: Converter) -> None:
-    """Register the hooks every event converter shares.
+    """Call after ``cattrs.preconf.json.configure_converter``: cattrs tries the latest hook first.
 
-    Call it after ``cattrs.preconf.json.configure_converter``, since cattrs tries the latest hook
-    first. It registers no unstructure hook for ``Value`` or ``DisplayValue``: they differ by the
-    message's reader, so the caller registers them.
+    The caller registers ``Value`` and ``DisplayValue`` unstructure hooks for the message's reader.
     """
     conv.register_unstructure_hook_func(
         lambda cls: isinstance(cls, type) and issubclass(cls, SerializableMixin),
