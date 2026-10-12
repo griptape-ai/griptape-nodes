@@ -223,7 +223,7 @@ During graceful shutdown, the server stops accepting new tunnels and allows exis
 
 !!! warning "Restrict access to the listener"
 
-    Tunnel requests do not check a client's license or API key. Restrict access to the Admin Server listener to trusted network clients.
+    Restrict access to the Admin Server to trusted network clients. Any client that can reach it can open tunnels to the configured destinations.
 
     Allow wildcard domains only when you trust their DNS operator. The Admin Server connects to whichever address an allowed hostname resolves to; the hostname allowlist is not an IP-address restriction.
 
