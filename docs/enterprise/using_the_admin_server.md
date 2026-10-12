@@ -42,13 +42,13 @@ Click **Activate License**. The application validates the license and launches t
 
 ## Route HTTPS traffic through the Admin Server
 
-In desktop builds with **Route all traffic through this server**, you can route HTTPS downloads and previews through the Admin Server. Ask your operator to confirm that it runs Admin Server 0.4.0 or later and has the required destinations in [`tunnel.allowed_hosts`](admin_server.md#tunnel).
+In desktop builds with **Route HTTPS traffic through this server**, you can route HTTPS downloads and previews through the Admin Server. Ask your operator to confirm that it runs Admin Server 0.4.0 or later and has the required destinations in [`tunnel.allowed_hosts`](admin_server.md#tunnel).
 
 The endpoint and checkbox appear only with an active license. Routing is off by default and requires an Admin Server endpoint other than `https://cloud.griptape.ai`.
 
 1. Open the account or license menu in the top-right corner, then choose **App Settings**.
 1. In **License**, check **Griptape Server Endpoint**. If you change it, click **Save**.
-1. Enable **Route all traffic through this server**.
+1. Enable **Route HTTPS traffic through this server**.
 1. Restart the running engine.
 
 ## Reusing a saved license
@@ -60,6 +60,6 @@ Licenses you have activated before are remembered. If you log out (or the licens
 - **Activation fails immediately.** Check that the license key was pasted completely and has not expired. If the key looks right, confirm the **Griptape Server Endpoint** is correct and that the machine can reach it — try opening `http://<admin-server-address>/health` in a browser; a healthy server responds with `{"status":"ok"}`.
 - **Activation worked before but fails now.** The license may have expired. Ask your organization admin for a new one.
 - **Some features return errors after activating.** If the Admin Server is configured with [forwarding rules](admin_server.md#forwarding), paths that are not permitted are rejected with `403 {"error":"path not permitted"}`. Ask your Admin Server operator whether the feature's routes are allowed to egress.
-- **Activation succeeds, but downloads or previews fail.** Check that **Route all traffic through this server** is enabled and restart the engine. Ask your operator to confirm Admin Server 0.4.0 or later and the allowed tunnel destinations. See [Route HTTPS traffic through the Admin Server](#route-https-traffic-through-the-admin-server).
+- **Activation succeeds, but downloads or previews fail.** Check that **Route HTTPS traffic through this server** is enabled and restart the engine. Ask your operator to confirm Admin Server 0.4.0 or later and the allowed tunnel destinations. See [Route HTTPS traffic through the Admin Server](#route-https-traffic-through-the-admin-server).
 - **A download reports `tunnel host not permitted` or `tunnel host unreachable`.** Give your operator the error and the destination host, if shown. These indicate a blocked tunnel destination or a connection failure from the Admin Server, not a license problem. See [Admin Server troubleshooting](admin_server.md#troubleshooting).
 - **Everything returns errors.** If every request fails, the Admin Server itself may be unable to reach Griptape Cloud. This is an operator-side issue — see the [Admin Server troubleshooting section](admin_server.md#troubleshooting).

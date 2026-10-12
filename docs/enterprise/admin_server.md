@@ -290,7 +290,7 @@ Remove destinations your deployment does not need. Redirects and the providers u
 
 ### Desktop application
 
-In desktop builds with **Route all traffic through this server**, license users can enable HTTPS routing in **App Settings → License**. Save the Admin Server endpoint, enable the checkbox, and restart the running engine. See [Route HTTPS traffic through the Admin Server](using_the_admin_server.md#route-https-traffic-through-the-admin-server) for prerequisites and steps.
+In desktop builds with **Route HTTPS traffic through this server**, license users can enable HTTPS routing in **App Settings → License**. Save the Admin Server endpoint, enable the checkbox, and restart the running engine. See [Route HTTPS traffic through the Admin Server](using_the_admin_server.md#route-https-traffic-through-the-admin-server) for prerequisites and steps.
 
 The embedded editor and its previews need no manual browser configuration. This does not change proxy settings in an external browser.
 
