@@ -116,11 +116,9 @@ converters.engine.dumps(payload)  # was: payload.to_json()
 converters.engine.structure(data, EventResultSuccess)  # was: EventResultSuccess.from_dict(data)
 ```
 
-`engine` tags parameter values with their type, for another engine process. `client` writes them as
-plain JSON, for the editor and other clients. `dumps` raises `EventSerializationError`, now in
-`converters`, where `json()` sent a failure in place of a result it could not send. To keep that
-behavior for a result, send `dumps_result(result).text`, which is the failure when the result cannot
-be sent.
+`engine` preserves parameter types between engine processes; `client` writes plain JSON for
+the editor and other clients. `dumps` raises `EventSerializationError` from `converters`.
+Use `dumps_result(result).text` to send a failure when a result cannot be serialized.
 
 `event.json()` and `event.dict()` raise `TypeError`.
 

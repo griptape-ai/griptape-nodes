@@ -255,7 +255,11 @@ def configure_converter(conv: Converter) -> None:
         lambda cls: isinstance(cls, type) and issubclass(cls, Exception),
         _unstructure_exception,
     )
-    conv.register_unstructure_hook(ElementDocument, lambda document: _unstructure_element_document(document, conv))
+    # A factory, so a copied converter's documents recurse through the copy.
+    conv.register_unstructure_hook_factory(
+        lambda cls: cls is ElementDocument,
+        lambda _cls, c: lambda document: _unstructure_element_document(document, c),
+    )
     conv.register_structure_hook(ElementDocument, _structure_element_document)
     conv.register_unstructure_hook(type, type_name)
     # ParsedMacro.segments is derived by __post_init__; only the template crosses the wire.

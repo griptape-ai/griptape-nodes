@@ -7,7 +7,7 @@ from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import EventRequest, EventRequestBatch, RequestPayload
 from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
-from griptape_nodes.serialization.values import ElementDocument, Value
+from griptape_nodes.serialization.values import DisplayValue, ElementDocument, Value
 
 
 @dataclass
@@ -73,7 +73,7 @@ class TestDumps:
 
 class TestEventConverter:
     def test_has_every_event_hook(self) -> None:
-        conv = converters.EventConverter(value=lambda _: "value", display=lambda _: "display")
+        conv = converters.make_event_converter(value=lambda _: "value", display=lambda _: "display")
 
         sent = conv.unstructure(_HoldsAnyRequest(request=SetParameterValueRequest(parameter_name="p", value=1)))
 
@@ -81,11 +81,21 @@ class TestEventConverter:
         assert sent["request"]["request"]["value"] == "display"
 
     def test_polymorphic_dataclass_registers_on_every_converter(self) -> None:
-        conv = converters.EventConverter(value=lambda v: v, display=lambda v: v)
+        conv = converters.make_event_converter(value=lambda v: v, display=lambda v: v)
 
         converters.register_polymorphic_dataclass(_Shape)
 
-        later = converters.EventConverter(value=lambda v: v, display=lambda v: v)
+        later = converters.make_event_converter(value=lambda v: v, display=lambda v: v)
 
         for converter in (conv, later, converters.engine, converters.client):
             assert isinstance(converter.structure({"name": "c", "radius": 1.0}, _Shape), _Circle)
+
+    def test_copy_recurses_through_the_copy(self) -> None:
+        copied = converters.client.copy()
+        copied.register_unstructure_hook(DisplayValue, lambda _: "copied")
+
+        sent = copied.unstructure(_HoldsAnyRequest(request=SetParameterValueRequest(parameter_name="p", value=1)))
+        document = copied.unstructure({"value": 1, "children": [{"value": 2}]}, ElementDocument)
+
+        assert sent["request"]["request"]["value"] == "copied"
+        assert document == {"value": "copied", "children": [{"value": "copied"}]}

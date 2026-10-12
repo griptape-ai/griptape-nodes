@@ -7,6 +7,7 @@ from collections import Counter
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from dataclasses import fields as dataclass_fields
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from cattrs.preconf.json import JsonConverter
@@ -62,37 +63,16 @@ class ResultJson:
 
 
 class EventConverter(JsonConverter):
-    """``value`` and ``display`` encode fields typed ``Value`` and ``DisplayValue``.
+    """A JSON converter for events and payloads. Build one with ``make_event_converter``.
 
-    Both tagged and plain JSON values decode with the shared hooks.
+    ``copy()`` keeps every hook, but hooks from ``register_polymorphic_dataclass`` still call the
+    converter they were registered on.
     """
-
-    def __init__(self, *, value: Callable[[Any], Any], display: Callable[[Any], Any]) -> None:
-        # As cattrs.preconf.json.make_converter builds its converter.
-        super().__init__(unstruct_collection_overrides={AbstractSet: list, Counter: dict})
-        configure_json_converter(self)
-        self.register_unstructure_hook(Value, value)
-        self.register_unstructure_hook(DisplayValue, display)
-        configure_converter(self)
-        # Register after the shared pydantic hooks so event hooks take precedence.
-        _configure_event_hooks(self)
-        for root in _polymorphic_roots:
-            include_subclasses(root, self)
-        _event_converters.add(self)
 
     def dumps(self, obj: Any, unstructure_as: Any = None, **kwargs: Any) -> str:
         """Raise ``EventSerializationError`` if ``obj`` holds a value with no JSON form."""
-        if isinstance(obj, Payload):
-            return _to_json(_unstructure_payload(obj, self), type(obj).__name__, **kwargs)
-        try:
-            data = self.unstructure(obj, unstructure_as=unstructure_as)
-        except (ValueEncodeError, TypeNameError) as error:
-            msg = f"Attempted to send a '{type(obj).__name__}'. Failed because: {error}"
-            raise EventSerializationError(msg) from error
-        described_as = None
-        if isinstance(data, dict):
-            described_as = data.get("result_type") or data.get("payload_type") or data.get("request_type")
-        return _to_json(data, described_as or type(obj).__name__, **kwargs)
+        data = _unstructure(obj, self, unstructure_as)
+        return _to_json(data, _described_type(obj, data), **kwargs)
 
     def dumps_result(self, event: EventResult, **kwargs: Any) -> ResultJson:
         """Write ``event``, or a failure naming why it could not be sent, so the requester always hears back."""
@@ -105,22 +85,39 @@ class EventConverter(JsonConverter):
     def _failure_dumps(self, event: EventResult, error: EventSerializationError, **kwargs: Any) -> str:
         try:
             # Through JSON: unstructuring alone passes some values through for dump_json to reject.
-            request = json.loads(_to_json(_unstructure_payload(event.request, self), type(event.request).__name__))
+            request = json.loads(_to_json(_unstructure(event.request, self), type(event.request).__name__))
         except EventSerializationError:
-            # The request itself holds the value; send what identifies it.
             request = {"request_id": event.request.request_id}
         failure: dict[str, Any] = {
             "event_type": EventResultFailure.__name__,
             "request_type": type(event.request).__name__,
             "request": request,
             "result_type": GenericResultFailure.__name__,
-            "result": _unstructure_payload(GenericResultFailure(result_details=str(error)), self),
+            "result": _unstructure(GenericResultFailure(result_details=str(error)), self),
             "request_id": event.request_id,
             "response_topic": event.response_topic,
         }
         if event.retained_mode:
             failure["retained_mode"] = event.retained_mode
         return _to_json(failure, GenericResultFailure.__name__, **kwargs)
+
+
+def make_event_converter(*, value: Callable[[Any], Any], display: Callable[[Any], Any]) -> EventConverter:
+    """``value`` and ``display`` encode fields typed ``Value`` and ``DisplayValue``.
+
+    Both tagged and plain JSON values decode with the shared hooks.
+    """
+    conv = EventConverter(unstruct_collection_overrides={AbstractSet: list, Counter: dict})
+    configure_json_converter(conv)
+    conv.register_unstructure_hook(Value, value)
+    conv.register_unstructure_hook(DisplayValue, display)
+    configure_converter(conv)
+    # Register after the shared pydantic hooks so event hooks take precedence.
+    _configure_event_hooks(conv)
+    for root in _polymorphic_roots:
+        include_subclasses(root, conv)
+    _event_converters.add(conv)
+    return conv
 
 
 def register_polymorphic_dataclass(cls: type) -> None:
@@ -143,12 +140,19 @@ def _to_json(data: Any, payload_type: str, **kwargs: Any) -> str:
         raise EventSerializationError(msg) from error
 
 
-def _unstructure_payload(payload: Payload, conv: Converter) -> Any:
+def _unstructure(obj: Any, conv: Converter, unstructure_as: Any = None) -> Any:
     try:
-        return conv.unstructure(payload)
+        return conv.unstructure(obj, unstructure_as=unstructure_as)
     except (ValueEncodeError, TypeNameError) as error:
-        msg = f"Attempted to send a '{type(payload).__name__}'. Failed because: {error}"
+        msg = f"Attempted to send a '{type(obj).__name__}'. Failed because: {error}"
         raise EventSerializationError(msg) from error
+
+
+def _described_type(obj: Any, data: Any) -> str:
+    """Name an event by its payload, so a send error names what the user asked for."""
+    if isinstance(obj, Payload) or not isinstance(data, dict):
+        return type(obj).__name__
+    return data.get("result_type") or data.get("payload_type") or data.get("request_type") or type(obj).__name__
 
 
 def _untagged_value(value: Any) -> Any:
@@ -168,25 +172,26 @@ def _configure_event_hooks(conv: Converter) -> None:
     def is_any_request(cls: Any) -> bool:
         return cls is RequestPayload
 
-    conv.register_unstructure_hook_func(is_any_request, lambda request: _unstructure_any_request(request, conv))
-    conv.register_structure_hook_func(is_any_request, lambda data, _: _structure_any_request(data, conv))
+    conv.register_unstructure_hook_factory(is_any_request, _with_converter(_unstructure_any_request))
+    conv.register_structure_hook_factory(is_any_request, _with_converter(_structure_any_request))
 
     conv.register_unstructure_hook_func(is_event(BaseEvent), _envelope)
-    conv.register_unstructure_hook_func(is_event(EventRequest), lambda event: _unstructure_request(event, conv))
-    conv.register_unstructure_hook_func(is_event(EventRequestBatch), lambda event: _unstructure_batch(event, conv))
-    conv.register_unstructure_hook_func(is_event(EventResult), lambda event: _unstructure_result(event, conv))
-    conv.register_unstructure_hook_func(is_event(ExecutionEvent), lambda event: _unstructure_payload_event(event, conv))
-    conv.register_unstructure_hook_func(is_event(AppEvent), lambda event: _unstructure_payload_event(event, conv))
+    conv.register_unstructure_hook_factory(is_event(EventRequest), _with_converter(_unstructure_request))
+    conv.register_unstructure_hook_factory(is_event(EventRequestBatch), _with_converter(_unstructure_batch))
+    conv.register_unstructure_hook_factory(is_event(EventResult), _with_converter(_unstructure_result))
+    conv.register_unstructure_hook_factory(is_event(ExecutionEvent), _with_converter(_unstructure_payload_event))
+    conv.register_unstructure_hook_factory(is_event(AppEvent), _with_converter(_unstructure_payload_event))
 
-    conv.register_structure_hook_func(is_event(EventRequest), lambda data, cls: _structure_request(data, cls, conv))
-    conv.register_structure_hook_func(is_event(EventRequestBatch), lambda data, cls: _structure_batch(data, cls, conv))
-    conv.register_structure_hook_func(is_event(EventResult), lambda data, cls: _structure_result(data, cls, conv))
-    conv.register_structure_hook_func(
-        is_event(ExecutionEvent), lambda data, cls: _structure_payload_event(data, cls, conv)
-    )
-    conv.register_structure_hook_func(is_event(AppEvent), lambda data, cls: _structure_payload_event(data, cls, conv))
+    conv.register_structure_hook_factory(is_event(EventRequest), _with_converter(_structure_request))
+    conv.register_structure_hook_factory(is_event(EventRequestBatch), _with_converter(_structure_batch))
+    conv.register_structure_hook_factory(is_event(EventResult), _with_converter(_structure_result))
+    conv.register_structure_hook_factory(is_event(ExecutionEvent), _with_converter(_structure_payload_event))
+    conv.register_structure_hook_factory(is_event(AppEvent), _with_converter(_structure_payload_event))
 
-    include_subclasses(ResultDetail, conv)
+
+def _with_converter(hook: Callable[..., Any]) -> Callable[[Any, Converter], Callable[..., Any]]:
+    """Make a hook factory, so the hook recurses through the converter using it, copies included."""
+    return lambda _cls, conv: partial(hook, conv=conv)
 
 
 def _unstructure_any_request(request: RequestPayload, conv: Converter) -> dict[str, Any]:
@@ -197,7 +202,7 @@ def _unstructure_any_request(request: RequestPayload, conv: Converter) -> dict[s
     return {"request_type": request_type.__name__, "request": conv.unstructure(request, request_type)}
 
 
-def _structure_any_request(data: dict[str, Any], conv: Converter) -> RequestPayload:
+def _structure_any_request(data: dict[str, Any], _cls: Any, conv: Converter) -> RequestPayload:
     request_type = PayloadRegistry.get_type(data["request_type"])
     if request_type is None or not issubclass(request_type, RequestPayload):
         msg = f"'{data['request_type']}' is not a registered request."
@@ -221,7 +226,7 @@ def _envelope(event: BaseEvent, exclude: set[str] | None = None) -> dict[str, An
 
 def _unstructure_request(event: EventRequest, conv: Converter) -> dict[str, Any]:
     result = _envelope(event, exclude={"request"})
-    result["request"] = _unstructure_payload(event.request, conv)
+    result["request"] = _unstructure(event.request, conv)
     return result
 
 
@@ -236,8 +241,8 @@ _RESULT_FRAMEWORK_FIELDS = frozenset(field.name for field in dataclass_fields(Re
 
 def _unstructure_result(event: EventResult, conv: Converter) -> dict[str, Any]:
     result = _envelope(event, exclude={"request", "result"})
-    result["request"] = _unstructure_payload(event.request, conv)
-    result_dict = _unstructure_payload(event.result, conv)
+    result["request"] = _unstructure(event.request, conv)
+    result_dict = _unstructure(event.result, conv)
     if event.request.fields is not None and event.result.succeeded():
         tree = build_path_tree(event.request.fields)
         filtered = apply_path_tree(result_dict, tree)
@@ -255,7 +260,7 @@ def _unstructure_result(event: EventResult, conv: Converter) -> dict[str, Any]:
 
 def _unstructure_payload_event(event: ExecutionEvent | AppEvent, conv: Converter) -> dict[str, Any]:
     result = _envelope(event, exclude={"payload"})
-    result["payload"] = _unstructure_payload(event.payload, conv)
+    result["payload"] = _unstructure(event.payload, conv)
     return result
 
 
@@ -290,11 +295,6 @@ def _structure_payload_event[T: ExecutionEvent | AppEvent](data: dict[str, Any],
 
 
 def _resolve_payload_type(event_data: dict[str, Any], type_key: str) -> type:
-    """Pop ``type_key`` from ``event_data`` and return the payload class it names.
-
-    Raises:
-        ValueError: The key is missing or names no registered payload.
-    """
     type_name = event_data.pop(type_key, None)
     if type_name is None:
         msg = f"Cannot resolve payload type: '{type_key}' not found in event data."
@@ -307,10 +307,10 @@ def _resolve_payload_type(event_data: dict[str, Any], type_key: str) -> type:
 
 
 _event_converters: weakref.WeakSet[EventConverter] = weakref.WeakSet()
-_polymorphic_roots: list[type] = []
+_polymorphic_roots: list[type] = [ResultDetail]
 
-engine = EventConverter(value=encode_value, display=encode_for_display)
+engine = make_event_converter(value=encode_value, display=encode_for_display)
 """Writes for another engine process: parameter values tagged with their type."""
 
-client = EventConverter(value=_untagged_value, display=_untagged_display_value)
+client = make_event_converter(value=_untagged_value, display=_untagged_display_value)
 """Writes for a client, such as the editor or an MCP agent: parameter values as plain JSON."""
