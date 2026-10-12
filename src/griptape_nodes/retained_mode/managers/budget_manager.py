@@ -200,18 +200,15 @@ class BudgetManager(EngineScoped):
             )
         except _NoCredentialError:
             return self._unchecked(request.model_id, correlation_id, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
-        except httpx2.HTTPError as exc:
+        except httpx2.HTTPStatusError as exc:
+            return self._refused_over_http(request.model_id, correlation_id, exc.response.status_code)
+        except httpx2.HTTPError:
             return self._unchecked(
-                request.model_id, correlation_id, f"Failed because Griptape Cloud could not be reached ({exc})."
+                request.model_id, correlation_id, "Failed because Griptape Cloud could not be reached."
             )
 
-        try:
-            result = response.json()
-        except ValueError:
-            return self._unchecked(
-                request.model_id, correlation_id, "Failed because Griptape Cloud's answer could not be read."
-            )
-        if not isinstance(result, dict) or not isinstance(result.get("allowed"), bool):
+        result = _decision(response)
+        if result is None:
             return self._unchecked(
                 request.model_id, correlation_id, "Failed because Griptape Cloud's answer could not be read."
             )
@@ -351,8 +348,10 @@ class BudgetManager(EngineScoped):
         except httpx2.HTTPError as exc:
             logger.warning("Dropped usage report %s: %s", body["idempotency_key"], exc)
 
-    def _unchecked(self, model_id: str, correlation_id: str, reason: str) -> BudgetAccessResultSuccess:
-        """Clear a call Cloud could not be asked about. Logged at WARNING, since the work goes ahead."""
+    def _unchecked(
+        self, model_id: str, correlation_id: str, reason: str, *, level: int = logging.WARNING
+    ) -> BudgetAccessResultSuccess:
+        """Clear a call Cloud could not be asked about. WARNING by default, since the work goes ahead."""
         return BudgetAccessResultSuccess(
             correlation_id=correlation_id,
             checked=False,
@@ -361,8 +360,22 @@ class BudgetManager(EngineScoped):
                     f"Attempted to check a direct call to model '{model_id}' against your budgets. {reason} "
                     "The call will proceed without a budget check."
                 ),
-                level=logging.WARNING,
+                level=level,
             ),
+        )
+
+    def _refused_over_http(self, model_id: str, correlation_id: str, status: int) -> BudgetAccessResultSuccess:
+        """Clear a call Cloud answered with an HTTP error rather than a decision."""
+        if status == HTTPStatus.NOT_FOUND:
+            # The deployment has reporting switched off: the steady state there, not news.
+            return self._unchecked(
+                model_id,
+                correlation_id,
+                "Failed because this Griptape Cloud deployment does not offer budget checks.",
+                level=logging.DEBUG,
+            )
+        return self._unchecked(
+            model_id, correlation_id, f"Failed because Griptape Cloud refused the check (HTTP {status})."
         )
 
     def _report_not_sent(self, model: str | None, reason: str) -> ReportUsageResultFailure:
@@ -372,6 +385,17 @@ class BudgetManager(EngineScoped):
                 level=logging.WARNING,
             )
         )
+
+
+def _decision(response: httpx2.Response) -> dict[str, Any] | None:
+    """Return a budget check's answer, or None when it is not JSON or carries no boolean `allowed`."""
+    try:
+        result = response.json()
+    except ValueError:
+        return None
+    if not isinstance(result, dict) or not isinstance(result.get("allowed"), bool):
+        return None
+    return result
 
 
 def _describe_call(model: str | None) -> str:
@@ -390,10 +414,17 @@ class _DaemonQueue:
     """
 
     def __init__(self, name: str) -> None:
+        self._name = name
         self._work: queue.SimpleQueue[tuple[Callable[..., object], tuple[Any, ...]]] = queue.SimpleQueue()
-        threading.Thread(target=self._run, name=name, daemon=True).start()
+        self._lock = threading.Lock()
+        self._started = False
 
     def submit(self, fn: Callable[..., object], *args: Any) -> None:
+        # Started on first use, so an engine that never reports never holds a thread.
+        with self._lock:
+            if not self._started:
+                threading.Thread(target=self._run, name=self._name, daemon=True).start()
+                self._started = True
         self._work.put((fn, args))
 
     def _run(self) -> None:

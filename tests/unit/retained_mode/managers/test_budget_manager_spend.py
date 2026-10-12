@@ -266,23 +266,35 @@ class TestBudgetCheckDenied:
         assert str(result.result_details).startswith(f"{BUDGET_HALT_PREFIX} The next call was blocked by a budget.")
 
 
+UNREACHABLE = "Griptape Cloud could not be reached."
+UNREADABLE = "Griptape Cloud's answer could not be read."
+
+
 class TestBudgetCheckFailsOpen:
     @pytest.mark.parametrize(
-        "outcome",
+        ("outcome", "reason", "level"),
         [
-            httpx2.ConnectError("refused"),
-            httpx2.ReadTimeout("slow"),
-            _response(500),
-            _response(400, {"model": ["Ensure this field has no more than 255 characters."]}),
-            _response(403, {"detail": "not permitted"}),
-            _response(404),
-            _response(200, ["not", "an", "object"]),
-            _response(200, {"blocked_by": []}),
-            _response(200, {"allowed": "no"}),
+            (httpx2.ConnectError("refused"), UNREACHABLE, logging.WARNING),
+            (httpx2.ReadTimeout("slow"), UNREACHABLE, logging.WARNING),
+            (_response(500), "Griptape Cloud refused the check (HTTP 500).", logging.WARNING),
+            (
+                _response(400, {"model": ["Ensure this field has no more than 255 characters."]}),
+                "Griptape Cloud refused the check (HTTP 400).",
+                logging.WARNING,
+            ),
+            (
+                _response(403, {"detail": "not permitted"}),
+                "Griptape Cloud refused the check (HTTP 403).",
+                logging.WARNING,
+            ),
+            (_response(404), "this Griptape Cloud deployment does not offer budget checks.", logging.DEBUG),
+            (_response(200, ["not", "an", "object"]), UNREADABLE, logging.WARNING),
+            (_response(200, {"blocked_by": []}), UNREADABLE, logging.WARNING),
+            (_response(200, {"allowed": "no"}), UNREADABLE, logging.WARNING),
         ],
         ids=["connect", "timeout", "500", "400", "403", "404", "not-object", "allowed-missing", "allowed-not-bool"],
     )
-    def test_cleared_unchecked(self, http: MagicMock, outcome: object) -> None:
+    def test_cleared_unchecked(self, http: MagicMock, outcome: object, reason: str, level: int) -> None:
         if isinstance(outcome, Exception):
             http.side_effect = outcome
         else:
@@ -293,7 +305,18 @@ class TestBudgetCheckFailsOpen:
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is False
         assert isinstance(result.result_details, ResultDetails)
-        assert result.result_details.result_details[0].level == logging.WARNING
+        detail = result.result_details.result_details[0]
+        assert detail.level == level
+        assert f"Failed because {reason} The call will proceed" in detail.message
+
+    def test_the_message_carries_no_raw_error_text(self, http: MagicMock) -> None:
+        """The raw HTTP error text is multi-line and links to MDN; an artist sees only the status."""
+        http.return_value = _response(503)
+
+        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+
+        assert "\n" not in str(result.result_details)
+        assert "developer.mozilla.org" not in str(result.result_details)
 
     def test_the_message_names_the_model(self, http: MagicMock) -> None:
         http.side_effect = httpx2.ConnectError("refused")
@@ -482,10 +505,18 @@ class TestReportUsage:
 
 
 class TestReportQueue:
-    def test_exit_does_not_wait_on_pending_reports(self) -> None:
-        budget_manager_module._DaemonQueue("test-report")
-        threads = [thread for thread in threading.enumerate() if thread.name == "test-report"]
+    def test_no_thread_until_the_first_report(self) -> None:
+        budget_manager_module._DaemonQueue("test-report-lazy")
 
+        assert not [thread for thread in threading.enumerate() if thread.name == "test-report-lazy"]
+
+    def test_exit_does_not_wait_on_pending_reports(self) -> None:
+        queue = budget_manager_module._DaemonQueue("test-report")
+        done = threading.Event()
+        queue.submit(done.set)
+        assert done.wait(timeout=5)
+
+        threads = [thread for thread in threading.enumerate() if thread.name == "test-report"]
         assert threads
         assert all(thread.daemon for thread in threads)
 
