@@ -39,7 +39,7 @@ The Admin Server reads its settings from a `config.yaml` file. Configuration is 
 
     The server timeout defaults shown here apply to Admin Server 0.3.0 and later. Run `./server -version` to check your version. On earlier versions, `read_timeout` and `write_timeout` default to `30s`, which cuts streamed replies off mid-reply; see the [warning below](#server) for what to set.
 
-    HTTPS tunneling requires a build that supports the `tunnel` settings. Ask your Admin Server provider for a compatible build if your version does not support them.
+    HTTPS tunneling requires Admin Server 0.4.0 or later.
 
 A complete `config.yaml` with the default values looks like this:
 
@@ -270,41 +270,62 @@ If the API key is missing or invalid, or the upstream cannot be reached, the Adm
 
 ## Routing other HTTPS traffic
 
-The Admin Server can tunnel HTTPS connections to allowed destinations outside the Cloud API. Use this for library installs, model downloads, asset transfers, or other HTTPS services your workflows need. Setting the Cloud endpoint alone does not route this traffic through the Admin Server.
+The Admin Server can tunnel HTTPS connections for library installs, model downloads, asset transfers, and other services your workflows need. This requires Admin Server 0.4.0 or later. Setting the Cloud endpoint alone does not route this traffic.
 
-1. Add the destinations to the server's `config.yaml`, then restart it. This is a recommended starting configuration for common Griptape Nodes tasks:
+Add destinations to the server's `config.yaml`, then restart it. This is a recommended starting configuration for common Griptape Nodes tasks:
 
-    ```yaml
-    tunnel:
-      allowed_hosts:
-        - "gtcazureservicesaprod.blob.core.windows.net"  # Griptape Cloud asset uploads and downloads
-        - "github.com"                                 # GitHub repositories for node libraries
-        - "pypi.org"                                   # Python package index for library dependencies
-        - "files.pythonhosted.org"                     # Python package files downloaded from PyPI
-        - "huggingface.co"                             # Hugging Face model repositories
-        - "*.hf.co"                                    # Hugging Face subdomains serving model files
-      idle_timeout: "5m"
-    ```
+```yaml
+tunnel:
+  allowed_hosts:
+    - "gtcazureservicesaprod.blob.core.windows.net"  # Griptape Cloud asset uploads and downloads
+    - "github.com"                                 # GitHub repositories for node libraries
+    - "pypi.org"                                   # Python package index for library dependencies
+    - "files.pythonhosted.org"                     # Python package files downloaded from PyPI
+    - "huggingface.co"                             # Hugging Face model repositories
+    - "*.hf.co"                                    # Hugging Face subdomains serving model files
+  idle_timeout: "5m"
+```
 
-    Remove destinations your deployment does not need. Redirects and the providers used by your workflows may require additional hosts; add only those you intend to permit.
+Remove destinations your deployment does not need. Redirects and the providers used by your workflows may require additional hosts; add only those you intend to permit.
 
-1. Set these variables in the **client's launch environment**, replacing `admin-server` with your actual Admin Server hostname:
+### Desktop application
 
-    ```bash
-    export GT_CLOUD_BASE_URL=http://admin-server:8080
-    export HTTPS_PROXY=http://admin-server:8080
-    export NO_PROXY=localhost,127.0.0.1,admin-server
-    ```
+In desktop builds with **Route all traffic through this server**, license users can enable HTTPS routing in **App Settings → License**. Save the Admin Server endpoint, enable the checkbox, and restart the running engine. See [Route HTTPS traffic through the Admin Server](using_the_admin_server.md#route-https-traffic-through-the-admin-server) for prerequisites and steps.
 
-    `GT_CLOUD_BASE_URL` sets the engine's Cloud API endpoint. `HTTPS_PROXY` tells clients that support this variable to tunnel other HTTPS requests through the Admin Server. `NO_PROXY` keeps local and Admin Server requests out of the tunnel.
+The embedded editor and its previews need no manual browser configuration. This does not change proxy settings in an external browser.
 
-    Launch the engine or application from that environment, or set the variables in its service or container configuration. The engine and any downloading processes must inherit them. Not every client honors proxy environment variables, so check the clients your workflows use.
+### Standalone engine
 
-    Do **not** set `HTTP_PROXY` to the Admin Server. It does not support plain HTTP forward-proxy traffic; those requests are forwarded to the configured Cloud upstream instead of their intended destination.
+For an engine launched outside the desktop app, set these variables in its **launch environment**, replacing `admin-server` with your actual Admin Server hostname:
 
-1. Configure browser traffic separately if previews need access to Cloud storage. Browsers do not use a shell's `HTTPS_PROXY` setting. Use system or browser proxy settings, or a proxy auto-configuration (PAC) file, to route HTTPS traffic through the Admin Server. Bypass local and Admin Server addresses, and scope the proxy to HTTPS rather than plain HTTP.
+```bash
+export GT_CLOUD_BASE_URL=http://admin-server:8080
+export HTTPS_PROXY=http://admin-server:8080
+export NO_PROXY=localhost,127.0.0.1,admin-server
+```
 
-1. Enforce your egress policy with firewall rules. Proxy settings route traffic from cooperating clients; they do not stop clients that ignore those settings from reaching the internet directly.
+`GT_CLOUD_BASE_URL` sets the engine's Cloud API endpoint. `HTTPS_PROXY` tells clients that support it to tunnel other HTTPS requests through the Admin Server. `NO_PROXY` keeps local and Admin Server requests out of the tunnel.
+
+Launch the engine from that environment, or set the variables in its service or container configuration. The engine and any downloading processes must inherit them. Not every client honors proxy environment variables, so check the clients your workflows use.
+
+Do **not** set `HTTP_PROXY` to the Admin Server. It does not support plain HTTP forward-proxy traffic; those requests are forwarded to the configured Cloud upstream instead of their intended destination.
+
+### Managed desktop settings
+
+In desktop builds that support managed endpoint and routing settings, set these variables in the app's launch environment:
+
+| Variable                                   | Value                                                                                                                         |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `GTN_DESKTOP_SERVER_URL`                   | Overrides the saved endpoint. Use an `http` or `https` root origin, such as `http://admin-server:8080`; any path is stripped. |
+| `GTN_DESKTOP_ROUTE_TRAFFIC_THROUGH_SERVER` | `1` or `true` enables routing; `0` or `false` disables it. Values are case-insensitive.                                       |
+
+A valid override locks its corresponding control, labeled **Set by your organization.** This includes the endpoint on the license screen. Routing still requires active license credentials and an endpoint other than `https://cloud.griptape.ai`.
+
+Both settings are read at app startup. Restart the app after changing them. Removing an override restores the saved user setting on the next launch. Blank or invalid values are ignored; invalid values are logged.
+
+The app must inherit the launch environment. On macOS, launching from Finder or the Dock does not inherit shell exports.
+
+These settings are not firewall enforcement. Use firewall rules to prevent direct internet access by clients that ignore proxy settings.
 
 ## Troubleshooting
 
@@ -322,7 +343,7 @@ The Admin Server can tunnel HTTPS connections to allowed destinations outside th
 
 - **`403 {"error":"path not permitted"}`.** A `forwarding` rule is blocking that path. Adjust `forwarding.mode` / `forwarding.rules` if the path should egress.
 
-- **Activation works, but downloads or previews fail.** The Cloud endpoint alone does not route these requests. Check the engine's inherited proxy environment and the browser's proxy settings separately. See [Routing other HTTPS traffic](#routing-other-https-traffic).
+- **Activation works, but downloads or previews fail.** The Cloud endpoint alone does not route these requests. Check the desktop routing setting and restart the engine, or check the standalone engine's inherited proxy environment. Confirm the destinations are in `tunnel.allowed_hosts`. See [Routing other HTTPS traffic](#routing-other-https-traffic).
 
 - **`403 {"error":"tunnel host not permitted"}`.** Check the `target` in the `tunnel rejected` log against `tunnel.allowed_hosts`, including its port. An empty list disables tunnels, and a wildcard does not include the bare domain. A redirect may lead to a different host. Restart after changing the allowlist and check for a `TUNNEL_ALLOWED_HOSTS` override.
 

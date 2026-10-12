@@ -111,9 +111,22 @@ when it's the one in use. Use the pencil icon to give it a friendlier
 name, or **Remove** to deactivate it on this machine. Making a different
 license the active one restarts the engine.
 
-**Griptape Server Endpoint** points the engine at an on-premises Griptape
-server for cloud and license requests instead of the default
-`https://cloud.griptape.ai`. Restart the engine after changing it.
+**Griptape Server Endpoint** appears when a license is active. It points
+the app and engine at an on-premises Griptape server for Cloud and license
+requests instead of the default `https://cloud.griptape.ai`. Click **Save**
+after editing it, then restart the engine.
+
+In desktop builds with **Route all traffic through this server**, this
+checkbox also appears with an active license. It is off by default and
+routes HTTPS through a non-default server endpoint. Despite its label, it
+does not route plain HTTP or arbitrary protocols. See
+[Route HTTPS traffic through the Admin Server](../../enterprise/using_the_admin_server.md#route-https-traffic-through-the-admin-server)
+for requirements and setup.
+
+Controls labeled **Set by your organization.** are locked by managed
+settings. Administrators can set the endpoint and routing choice through
+the app's launch environment; see
+[Managed desktop settings](../../enterprise/admin_server.md#managed-desktop-settings).
 
 To add another key, paste it into the box and click **Add & Activate**.
 
