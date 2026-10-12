@@ -23,7 +23,7 @@ The Admin Server is provided to enterprise customers. [Contact Foundry](https://
 - **Forwards Cloud requests.** It forwards your applications' Griptape Cloud requests to the configured upstream (`https://cloud.griptape.ai` by default) and preserves the caller's `Authorization` header, so licensing and sessions keep working through it. Griptape Cloud remains the authority on authentication and authorization.
 - **Validates at startup.** It validates the operator's Griptape Cloud API key once at startup, so a misconfigured deployment fails fast at boot rather than breaking later.
 - **Egress filtering.** You can optionally choose exactly which Cloud paths may leave your network (see [`forwarding`](#forwarding)).
-- **HTTPS tunneling.** It accepts `CONNECT` requests on the same server port for allowed destinations. TLS stays end-to-end between the client and destination, without content or path inspection or additional certificate installation for tunneling.
+- **HTTPS tunneling.** Tunnels HTTPS traffic to allowed destinations.
 - **Health endpoint.** A local `GET /health` endpoint returns `{"status":"ok"}` for liveness and readiness probes.
 - **Structured logging.** Each Cloud request is logged once at completion (method, path, status, latency, client IP, bytes written) in JSON or text for auditing. Tunnels log their destination, byte counts, and duration when they close.
 
@@ -219,8 +219,6 @@ Use hostnames, not URLs or path rules. In `allowed_hosts`, write entries like th
 
 Only a leading `*.` wildcard is supported. Invalid entries prevent startup. Because TLS remains end-to-end, the Admin Server cannot restrict paths or inspect content inside a tunnel.
 
-During graceful shutdown, the server stops accepting new tunnels and allows existing ones to finish within `server.shutdown_timeout`. Any tunnels still open at the deadline are closed.
-
 !!! warning "Restrict access to the listener"
 
     Restrict access to the Admin Server to trusted network clients. Any client that can reach it can open tunnels to the configured destinations.
@@ -229,7 +227,7 @@ During graceful shutdown, the server stops accepting new tunnels and allows exis
 
 ## Environment variable overrides
 
-Every server setting can be overridden with an environment variable, which takes precedence over `config.yaml`. These variables belong in the Admin Server's environment, not the client environment used in [Routing other HTTPS traffic](#routing-other-https-traffic).
+Every server setting can be overridden with an environment variable, which takes precedence over `config.yaml`.
 
 | Variable                     | Default                     | Description                                                                   |
 | ---------------------------- | --------------------------- | ----------------------------------------------------------------------------- |
@@ -290,9 +288,7 @@ Remove destinations your deployment does not need. Redirects and the providers u
 
 ### Desktop application
 
-In desktop builds with **Route HTTPS traffic through this server**, license users can enable HTTPS routing in **App Settings → License**. Save the Admin Server endpoint, enable the checkbox, and restart the running engine. See [Route HTTPS traffic through the Admin Server](using_the_admin_server.md#route-https-traffic-through-the-admin-server) for prerequisites and steps.
-
-The embedded editor and its previews need no manual browser configuration. This does not change proxy settings in an external browser.
+For desktop HTTPS routing prerequisites and steps, see [Route HTTPS traffic through the Admin Server](using_the_admin_server.md#route-https-traffic-through-the-admin-server).
 
 ### Standalone engine
 
@@ -312,7 +308,7 @@ Do **not** set `HTTP_PROXY` to the Admin Server. It does not support plain HTTP 
 
 ### Managed desktop settings
 
-In desktop builds that support managed endpoint and routing settings, set these variables in the app's launch environment:
+Set these variables in the app's launch environment:
 
 | Variable                                   | Value                                                                                                                         |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -349,4 +345,4 @@ These settings are not firewall enforcement. Use firewall rules to prevent direc
 
 - **`502 {"error":"tunnel host unreachable"}`.** The destination is allowed, but the Admin Server cannot connect to it. Check DNS and outbound firewall access from the Admin Server to the logged host and port.
 
-- **An HTTPS tunnel closes after a quiet period.** `tunnel.idle_timeout` defaults to `5m`. Increase it, or set it to `"0"` to disable idle closure, if the client needs longer pauses. This timeout does not cap the duration of an active download. A graceful shutdown also closes remaining tunnels once `server.shutdown_timeout` expires.
+- **An HTTPS tunnel closes after a quiet period.** `tunnel.idle_timeout` defaults to `5m`. Increase it, or set it to `"0"` to disable idle closure, if the client needs longer pauses. This timeout does not cap the duration of an active download.

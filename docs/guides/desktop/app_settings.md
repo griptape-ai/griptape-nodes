@@ -116,9 +116,9 @@ the app and engine at an on-premises Griptape server for Cloud and license
 requests instead of the default `https://cloud.griptape.ai`. Click **Save**
 after editing it, then restart the engine.
 
-In desktop builds with **Route HTTPS traffic through this server**, this
-checkbox also appears with an active license. It is off by default and
-routes HTTPS through a non-default server endpoint. See
+**Route HTTPS traffic through this server** appears with an active
+license. It is off by default and routes HTTPS through a non-default
+server endpoint. See
 [Route HTTPS traffic through the Admin Server](../../enterprise/using_the_admin_server.md#route-https-traffic-through-the-admin-server)
 for requirements and setup.
 

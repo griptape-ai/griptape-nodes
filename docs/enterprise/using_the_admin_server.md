@@ -42,7 +42,7 @@ Click **Activate License**. The application validates the license and launches t
 
 ## Route HTTPS traffic through the Admin Server
 
-In desktop builds with **Route HTTPS traffic through this server**, you can route HTTPS downloads and previews through the Admin Server. Ask your operator to confirm that it runs Admin Server 0.4.0 or later and has the required destinations in [`tunnel.allowed_hosts`](admin_server.md#tunnel).
+**Route HTTPS traffic through this server** routes HTTPS downloads and previews through the Admin Server. Ask your operator to confirm that it runs Admin Server 0.4.0 or later and has the required destinations in [`tunnel.allowed_hosts`](admin_server.md#tunnel).
 
 The endpoint and checkbox appear only with an active license. Routing is off by default and requires an Admin Server endpoint other than `https://cloud.griptape.ai`.
 
