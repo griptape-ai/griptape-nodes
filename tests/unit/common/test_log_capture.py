@@ -637,17 +637,22 @@ class TestFindLogFiles:
         kept = _write_log(tmp_path, f"{LOG_FILE_PREFIX}kept.log")
         vanishing = _write_log(tmp_path, f"{LOG_FILE_PREFIX}vanishing.log")
 
+        real_is_file = Path.is_file
         real_stat = Path.stat
-        seen: list[str] = []
+
+        # Survives being listed, and is gone by the time its age is read. Both are patched because
+        # whether is_file() goes through stat() differs between Python versions.
+        def listed(self: Path, **kwargs: object) -> bool:
+            if self.name == vanishing.name:
+                return True
+            return real_is_file(self, **kwargs)  # type: ignore[arg-type]
 
         def stat_then_vanish(self: Path, **kwargs: object) -> os.stat_result:
-            # Survives being listed, and is gone by the time its age is read.
             if self.name == vanishing.name:
-                seen.append(self.name)
-                if len(seen) > 1:
-                    raise FileNotFoundError(self)
+                raise FileNotFoundError(self)
             return real_stat(self, **kwargs)  # type: ignore[arg-type]
 
+        monkeypatch.setattr(Path, "is_file", listed)
         monkeypatch.setattr(Path, "stat", stat_then_vanish)
 
         assert find_log_files(tmp_path) == [kept]
