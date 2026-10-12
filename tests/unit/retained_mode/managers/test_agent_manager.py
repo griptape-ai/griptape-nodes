@@ -1469,6 +1469,8 @@ class TestRunAgentResultPayloadContract:
             # tests are about the result payload, so report none configured.
             handle_request=lambda _r: GetEnabledMCPServersResultSuccess(servers={}, result_details="none"),
             ahandle_request=_no_attribution,
+            # No beta features configured, so tool approval stays off.
+            config_manager=SimpleNamespace(get_config_value=lambda _key, **_kw: None),
         )
         return manager
 
@@ -1496,9 +1498,14 @@ class TestRunAgentResultPayloadContract:
         payload = await manager._run_agent(_run_request())
 
         assert isinstance(payload, RunAgentResultSuccess)
-        assert set(payload.output) == {"text", "message_count", "cancelled", "truncated", "generated_image_urls"}, (
-            f"the {branch} branch's payload keys differ from the other branches'"
-        )
+        assert set(payload.output) == {
+            "text",
+            "message_count",
+            "cancelled",
+            "truncated",
+            "generated_image_urls",
+            "pending_approvals",
+        }, f"the {branch} branch's payload keys differ from the other branches'"
 
     @pytest.mark.asyncio
     async def test_cancelled_run_does_not_append_run_record(self, monkeypatch: pytest.MonkeyPatch) -> None:

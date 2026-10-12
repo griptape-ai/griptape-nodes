@@ -61,6 +61,7 @@ Cloud. A budget that stops a workflow run is shown differently — see
 ## What's next
 
 - [Threads](./threads.md) — how conversations are saved and where to find them
+- [Approvals](./approvals.md) — have the agent ask before it runs workflows, generates images, or uses your MCP tools
 - [Personalization](./personalization.md) — customize the agent's tone and context
 - [Skills](./skills.md) — give the agent extra domain knowledge
 - [External Tools (MCP Servers)](./mcp_servers.md) — connect file access, web search, and other tools to the agent

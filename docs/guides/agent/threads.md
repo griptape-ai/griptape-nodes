@@ -11,11 +11,11 @@ Each conversation is a **thread**. Threads are named automatically with the date
 
 Threads are saved to your local filesystem and persist across sessions. Each thread is stored as three files:
 
-| File                    | Contents                                     |
-| ----------------------- | -------------------------------------------- |
-| `thread_{id}.json`      | Full message history                         |
-| `thread_{id}.meta.json` | Title, timestamps, message count             |
-| `thread_{id}.runs.json` | Per-run provider, model, and MCP server info |
+| File                    | Contents                                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| `thread_{id}.json`      | Full message history                                                                     |
+| `thread_{id}.meta.json` | Title, timestamps, message count, and [Approve for conversation](./approvals.md) choices |
+| `thread_{id}.runs.json` | Per-run provider, model, and MCP server info                                             |
 
 The runs file tracks which AI provider, model, and MCP servers were used for each response in the thread.
 

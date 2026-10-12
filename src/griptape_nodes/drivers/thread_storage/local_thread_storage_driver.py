@@ -5,7 +5,7 @@ Each thread lives in three files inside ``threads_directory``:
   * ``thread_{id}.json``       - the message history, encoded by
     :class:`pydantic_ai.messages.ModelMessagesTypeAdapter`.
   * ``thread_{id}.meta.json``  - a small metadata dict (title, timestamps,
-    archived flag, optional ``local_id``).
+    archived flag, optional ``local_id``, optional ``tool_grants``).
   * ``thread_{id}.runs.json``  - per-run provider/model records; absent until
     the first run completes (old threads without this file are unaffected).
 
@@ -102,6 +102,7 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
             archived=meta.get("archived", False),
             local_id=meta.get("local_id"),
             runs=self._load_runs(thread_id),
+            tool_grants=list(meta.get("tool_grants", [])),
         )
 
     def list_threads(self) -> list[ThreadMetadata]:
@@ -121,6 +122,7 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
                     message_count=meta.get("message_count", 0),
                     archived=meta.get("archived", False),
                     local_id=meta.get("local_id"),
+                    tool_grants=list(meta.get("tool_grants", [])),
                 ),
             )
 
