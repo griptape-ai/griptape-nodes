@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -277,6 +277,22 @@ class BaseEvent(BaseModel, ABC):
     """Abstract base class for all events."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def json(self, *_args: Any, **_kwargs: Any) -> NoReturn:
+        """Raise: pydantic's JSON is not the wire format."""
+        msg = (
+            f"'{type(self).__name__}.json()' is not the wire format. "
+            "Use 'converters.client.dumps(event)' from 'griptape_nodes.retained_mode.events'."
+        )
+        raise TypeError(msg)
+
+    def dict(self, *_args: Any, **_kwargs: Any) -> NoReturn:
+        """Raise: pydantic's dict is not the wire format."""
+        msg = (
+            f"'{type(self).__name__}.dict()' is not the wire format. "
+            "Use 'converters.engine.unstructure(event)' from 'griptape_nodes.retained_mode.events'."
+        )
+        raise TypeError(msg)
 
     @abstractmethod
     def get_request(self) -> Payload:

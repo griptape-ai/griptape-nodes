@@ -121,13 +121,10 @@ class SubprocessWebSocketSenderMixin(SubprocessWebSocketBaseMixin):
 
     def _send_result(self, event_type: str, event: EventResultSuccess | EventResultFailure) -> None:
         """Send a result, or a GenericResultFailure naming why it could not be sent, so the requester hears back."""
-        try:
-            payload = converters.engine.dumps(event)
-        except EventSerializationError as error:
-            logger.error("Could not send %s for %s: %s", event_type, type(event.request).__name__, error)
-            self.send_event("failure_result", converters.engine.failure_dumps(event, error))
-            return
-        self.send_event(event_type, payload)
+        result_json = converters.engine.dumps_result(event)
+        if result_json.error is not None:
+            event_type = "failure_result"
+        self.send_event(event_type, result_json.text)
 
     async def _stop_websocket_connection(self) -> None:
         """Stop the sender task and close client."""

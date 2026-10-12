@@ -5,6 +5,7 @@ import logging
 import weakref
 from collections import Counter
 from collections.abc import Set as AbstractSet
+from dataclasses import dataclass
 from dataclasses import fields as dataclass_fields
 from typing import TYPE_CHECKING, Any
 
@@ -52,6 +53,14 @@ class EventSerializationError(TypeError):
     """A payload holds a value with no JSON form, so it cannot be sent."""
 
 
+@dataclass(frozen=True)
+class ResultJson:
+    """A result as JSON to send, or a failure in its place when the result could not be sent."""
+
+    text: str
+    error: EventSerializationError | None = None
+
+
 class EventConverter(JsonConverter):
     """``value`` and ``display`` encode fields typed ``Value`` and ``DisplayValue``.
 
@@ -85,8 +94,15 @@ class EventConverter(JsonConverter):
             described_as = data.get("result_type") or data.get("payload_type") or data.get("request_type")
         return _to_json(data, described_as or type(obj).__name__, **kwargs)
 
-    def failure_dumps(self, event: EventResult, error: EventSerializationError, **kwargs: Any) -> str:
-        """A failure to send in place of ``event`` when ``error`` stops it being sent, so the requester hears back."""
+    def dumps_result(self, event: EventResult, **kwargs: Any) -> ResultJson:
+        """Write ``event``, or a failure naming why it could not be sent, so the requester always hears back."""
+        try:
+            return ResultJson(text=self.dumps(event, **kwargs))
+        except EventSerializationError as error:
+            logger.error("Could not send %s for %s: %s", type(event).__name__, type(event.request).__name__, error)
+            return ResultJson(text=self._failure_dumps(event, error, **kwargs), error=error)
+
+    def _failure_dumps(self, event: EventResult, error: EventSerializationError, **kwargs: Any) -> str:
         try:
             # Through JSON: unstructuring alone passes some values through for dump_json to reject.
             request = json.loads(_to_json(_unstructure_payload(event.request, self), type(event.request).__name__))

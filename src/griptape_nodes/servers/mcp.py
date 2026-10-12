@@ -43,7 +43,6 @@ from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
     SetWorkflowContextRequest,
 )
-from griptape_nodes.retained_mode.events.converters import EventSerializationError
 from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeRequest,
     ResolveNodeRequest,
@@ -385,12 +384,7 @@ async def _handle_request_on_engine_loop(request_payload: RequestPayload) -> dic
         )
     else:
         result_event = EventResultFailure(request=request_payload, result=result_payload)
-    try:
-        text = converters.client.dumps(result_event)
-    except EventSerializationError as error:
-        mcp_server_logger.error("%s", error)
-        text = converters.client.failure_dumps(result_event, error)
-    return json.loads(text)
+    return json.loads(converters.client.dumps_result(result_event).text)
 
 
 async def _dispatch_to_engine(request_payload: RequestPayload, timeout_ms: int | None = None) -> dict[str, Any]:

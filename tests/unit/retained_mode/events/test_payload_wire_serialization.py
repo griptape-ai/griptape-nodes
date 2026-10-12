@@ -593,9 +593,9 @@ class TestUnsendableResults:
 
 
 def _failure_dumps(event: EventResultSuccess) -> str:
-    with pytest.raises(EventSerializationError) as caught:
-        converters.engine.dumps(event)
-    return converters.engine.failure_dumps(event, caught.value)
+    result_json = converters.engine.dumps_result(event)
+    assert result_json.error is not None
+    return result_json.text
 
 
 _FAILURE_REASON: Any = SequenceScanFailureReason | FileIOFailureReason
@@ -644,3 +644,23 @@ class TestFromDictUnknownPayloadType:
 
         with pytest.raises(ValueError, match="TotallyUnknownRequestType"):
             converters.engine.structure(data, EventResultFailure)
+
+
+class TestPydanticDumpsRaise:
+    """Pydantic's dumps of an event are not the wire format, so calling them raises."""
+
+    def test_json_raises(self) -> None:
+        event = EventResultSuccess(
+            request=_PayloadHoldingAnything(), result=_ResultHoldingAnything(result_details="ok")
+        )
+
+        with pytest.raises(TypeError, match=r"converters\.client\.dumps"):
+            event.json()
+
+    def test_dict_raises(self) -> None:
+        event = EventResultSuccess(
+            request=_PayloadHoldingAnything(), result=_ResultHoldingAnything(result_details="ok")
+        )
+
+        with pytest.raises(TypeError, match=r"converters\.engine\.unstructure"):
+            event.dict()
