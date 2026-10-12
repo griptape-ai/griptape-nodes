@@ -7,6 +7,7 @@ from dataclasses import fields as dc_fields
 from dataclasses import is_dataclass
 from datetime import datetime
 from enum import Enum
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union, get_args, get_origin, get_type_hints
 
@@ -21,6 +22,8 @@ from griptape_nodes.serialization.type_names import resolve_type_name, type_name
 from griptape_nodes.serialization.values import DisplayValue, ElementDocument, Value, ValueEncodeError, decode_value
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cattrs import Converter
 
 logger = logging.getLogger(__name__)
@@ -233,11 +236,20 @@ def _make_namedtuple_structure_fn(cls: type, conv: Converter) -> Any:
     return lambda data, _: cls(*structure_fields(data, fields_tuple))
 
 
-def configure_converter(conv: Converter) -> None:
-    """Register shared hooks after ``cattrs.preconf.json.configure_converter``.
+def with_converter(hook: Callable[..., Any]) -> Callable[[Any, Converter], Callable[..., Any]]:
+    """Make a hook factory, so ``hook`` recurses through the converter using it, copies included.
 
-    cattrs tries the latest hook first. Register ``Value`` and ``DisplayValue`` unstructure
-    hooks separately for the message's reader.
+    ``hook`` takes the converter as its ``conv`` keyword.
+    """
+    return lambda _cls, conv: partial(hook, conv=conv)
+
+
+def configure_converter(conv: Converter) -> None:
+    """Register the hooks every event converter shares.
+
+    Call it after ``cattrs.preconf.json.configure_converter``, since cattrs tries the latest hook
+    first. It registers no unstructure hook for ``Value`` or ``DisplayValue``: they differ by the
+    message's reader, so the caller registers them.
     """
     conv.register_unstructure_hook_func(
         lambda cls: isinstance(cls, type) and issubclass(cls, SerializableMixin),
@@ -255,10 +267,8 @@ def configure_converter(conv: Converter) -> None:
         lambda cls: isinstance(cls, type) and issubclass(cls, Exception),
         _unstructure_exception,
     )
-    # A factory, so a copied converter's documents recurse through the copy.
     conv.register_unstructure_hook_factory(
-        lambda cls: cls is ElementDocument,
-        lambda _cls, c: lambda document: _unstructure_element_document(document, c),
+        lambda cls: cls is ElementDocument, with_converter(_unstructure_element_document)
     )
     conv.register_structure_hook(ElementDocument, _structure_element_document)
     conv.register_unstructure_hook(type, type_name)

@@ -647,8 +647,6 @@ class TestFromDictUnknownPayloadType:
 
 
 class TestPydanticDumpsRaise:
-    """Pydantic's dumps of an event are not the wire format, so calling them raises."""
-
     def test_json_raises(self) -> None:
         event = EventResultSuccess(
             request=_PayloadHoldingAnything(), result=_ResultHoldingAnything(result_details="ok")

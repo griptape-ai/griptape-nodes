@@ -279,7 +279,6 @@ class BaseEvent(BaseModel, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def json(self, *_args: Any, **_kwargs: Any) -> NoReturn:
-        """Raise: pydantic's JSON is not the wire format."""
         msg = (
             f"'{type(self).__name__}.json()' is not the wire format. "
             "Use 'converters.client.dumps(event)' from 'griptape_nodes.retained_mode.events'."
@@ -287,7 +286,6 @@ class BaseEvent(BaseModel, ABC):
         raise TypeError(msg)
 
     def dict(self, *_args: Any, **_kwargs: Any) -> NoReturn:
-        """Raise: pydantic's dict is not the wire format."""
         msg = (
             f"'{type(self).__name__}.dict()' is not the wire format. "
             "Use 'converters.engine.unstructure(event)' from 'griptape_nodes.retained_mode.events'."

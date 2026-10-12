@@ -7,7 +7,6 @@ from collections import Counter
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from dataclasses import fields as dataclass_fields
-from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from cattrs.preconf.json import JsonConverter
@@ -30,7 +29,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.path_filter import apply_path_tree, build_path_tree
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.serialization.hooks import configure_converter
+from griptape_nodes.serialization.hooks import configure_converter, with_converter
 from griptape_nodes.serialization.type_names import TypeNameError
 from griptape_nodes.serialization.values import (
     DisplayValue,
@@ -63,10 +62,10 @@ class ResultJson:
 
 
 class EventConverter(JsonConverter):
-    """A JSON converter for events and payloads. Build one with ``make_event_converter``.
+    """Build one with ``make_event_converter``.
 
-    ``copy()`` keeps every hook, but hooks from ``register_polymorphic_dataclass`` still call the
-    converter they were registered on.
+    ``copy()`` keeps every hook, but hooks from ``register_polymorphic_dataclass`` and the
+    ``_cattrs_structure``/``_cattrs_unstructure`` class methods still call the original converter.
     """
 
     def dumps(self, obj: Any, unstructure_as: Any = None, **kwargs: Any) -> str:
@@ -172,26 +171,21 @@ def _configure_event_hooks(conv: Converter) -> None:
     def is_any_request(cls: Any) -> bool:
         return cls is RequestPayload
 
-    conv.register_unstructure_hook_factory(is_any_request, _with_converter(_unstructure_any_request))
-    conv.register_structure_hook_factory(is_any_request, _with_converter(_structure_any_request))
+    conv.register_unstructure_hook_factory(is_any_request, with_converter(_unstructure_any_request))
+    conv.register_structure_hook_factory(is_any_request, with_converter(_structure_any_request))
 
     conv.register_unstructure_hook_func(is_event(BaseEvent), _envelope)
-    conv.register_unstructure_hook_factory(is_event(EventRequest), _with_converter(_unstructure_request))
-    conv.register_unstructure_hook_factory(is_event(EventRequestBatch), _with_converter(_unstructure_batch))
-    conv.register_unstructure_hook_factory(is_event(EventResult), _with_converter(_unstructure_result))
-    conv.register_unstructure_hook_factory(is_event(ExecutionEvent), _with_converter(_unstructure_payload_event))
-    conv.register_unstructure_hook_factory(is_event(AppEvent), _with_converter(_unstructure_payload_event))
+    conv.register_unstructure_hook_factory(is_event(EventRequest), with_converter(_unstructure_request))
+    conv.register_unstructure_hook_factory(is_event(EventRequestBatch), with_converter(_unstructure_batch))
+    conv.register_unstructure_hook_factory(is_event(EventResult), with_converter(_unstructure_result))
+    conv.register_unstructure_hook_factory(is_event(ExecutionEvent), with_converter(_unstructure_payload_event))
+    conv.register_unstructure_hook_factory(is_event(AppEvent), with_converter(_unstructure_payload_event))
 
-    conv.register_structure_hook_factory(is_event(EventRequest), _with_converter(_structure_request))
-    conv.register_structure_hook_factory(is_event(EventRequestBatch), _with_converter(_structure_batch))
-    conv.register_structure_hook_factory(is_event(EventResult), _with_converter(_structure_result))
-    conv.register_structure_hook_factory(is_event(ExecutionEvent), _with_converter(_structure_payload_event))
-    conv.register_structure_hook_factory(is_event(AppEvent), _with_converter(_structure_payload_event))
-
-
-def _with_converter(hook: Callable[..., Any]) -> Callable[[Any, Converter], Callable[..., Any]]:
-    """Make a hook factory, so the hook recurses through the converter using it, copies included."""
-    return lambda _cls, conv: partial(hook, conv=conv)
+    conv.register_structure_hook_factory(is_event(EventRequest), with_converter(_structure_request))
+    conv.register_structure_hook_factory(is_event(EventRequestBatch), with_converter(_structure_batch))
+    conv.register_structure_hook_factory(is_event(EventResult), with_converter(_structure_result))
+    conv.register_structure_hook_factory(is_event(ExecutionEvent), with_converter(_structure_payload_event))
+    conv.register_structure_hook_factory(is_event(AppEvent), with_converter(_structure_payload_event))
 
 
 def _unstructure_any_request(request: RequestPayload, conv: Converter) -> dict[str, Any]:

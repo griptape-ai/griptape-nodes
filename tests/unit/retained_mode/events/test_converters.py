@@ -80,7 +80,8 @@ class TestEventConverter:
         assert sent["request"]["request_type"] == "SetParameterValueRequest"
         assert sent["request"]["request"]["value"] == "display"
 
-    def test_polymorphic_dataclass_registers_on_every_converter(self) -> None:
+    def test_polymorphic_dataclass_registers_on_every_converter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(converters, "_polymorphic_roots", [*converters._polymorphic_roots])
         conv = converters.make_event_converter(value=lambda v: v, display=lambda v: v)
 
         converters.register_polymorphic_dataclass(_Shape)
