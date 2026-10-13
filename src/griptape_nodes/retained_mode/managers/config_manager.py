@@ -1583,12 +1583,12 @@ class ConfigManager(EngineScoped):
             result_details = "Attempted to get config value but no category or key was specified."
             return GetConfigValueResultFailure(result_details=result_details)
 
-        # See if we got something valid.
-        find_results = self.get_config_value(request.category_and_key)
-        if find_results is None:
+        key_path = tuple(request.category_and_key.split("."))
+        if self._layer_value_at(self.merged_config, key_path) is _KEY_NOT_IN_LAYER:
             result_details = f"Attempted to get config value for category.key '{request.category_and_key}'. Failed because no such category.key could be found."
             return GetConfigValueResultFailure(result_details=result_details)
 
+        find_results = self.get_config_value(request.category_and_key)
         source = self.value_source(request.category_and_key)
         result_details = f"Successfully returned the config value for section '{request.category_and_key}'."
         return GetConfigValueResultSuccess(
