@@ -25,6 +25,7 @@ from griptape_nodes.exe_types.node_types import (
     BaseNode,
     DataNode,
     NodeDependencies,
+    NodeResolutionState,
     aprocess_scope,
 )
 from griptape_nodes.node_library.library_registry import (
@@ -672,6 +673,32 @@ class TestLockState:
 
         assert isinstance(result, SerializeNodeToCommandsResultSuccess)
         assert result.serialized_node_commands.lock_node_command is None
+
+    @pytest.mark.parametrize(
+        ("resolved_while_locked", "expected_state"),
+        [
+            pytest.param(True, NodeResolutionState.UNRESOLVED, id="resolved-by-passing-through"),
+            pytest.param(False, NodeResolutionState.RESOLVED, id="resolved-by-executing"),
+        ],
+    )
+    def test_locked_resolved_node_saves_resolved_only_if_it_executed(
+        self,
+        engine: Engine,
+        library_name: str,
+        *,
+        resolved_while_locked: bool,
+        expected_state: NodeResolutionState,
+    ) -> None:
+        node_name = _create_text_node(engine, library_name, "N1")
+        engine.handle_request(SetLockNodeStateRequest(node_name=node_name, lock=True))
+        node = engine.node_manager.get_node_by_name(node_name)
+        node.state = NodeResolutionState.RESOLVED
+        node.resolved_while_locked = resolved_while_locked
+
+        result, _ = _serialize(engine, node_name)
+
+        assert result.serialized_node_commands.lock_node_command is not None
+        assert result.serialized_node_commands.create_node_command.resolution == expected_state.value
 
 
 class TestNodeUuidFreshness:
