@@ -1455,6 +1455,7 @@ class TestRunAgentResultPayloadContract:
         # A non-empty history keeps `is_first_run` False, so the title update is skipped.
         manager._thread_storage = SimpleNamespace(  # type: ignore[assignment]
             load_history=lambda _t: [object()],
+            get_thread_metadata=lambda _t: SimpleNamespace(tool_grants=[]),
             update_thread_metadata=lambda _t, **_kw: {},
             append_run_record=lambda thread_id, record: None,  # noqa: ARG005
         )
@@ -1496,9 +1497,14 @@ class TestRunAgentResultPayloadContract:
         payload = await manager._run_agent(_run_request())
 
         assert isinstance(payload, RunAgentResultSuccess)
-        assert set(payload.output) == {"text", "message_count", "cancelled", "truncated", "generated_image_urls"}, (
-            f"the {branch} branch's payload keys differ from the other branches'"
-        )
+        assert set(payload.output) == {
+            "text",
+            "message_count",
+            "cancelled",
+            "truncated",
+            "generated_image_urls",
+            "pending_approvals",
+        }, f"the {branch} branch's payload keys differ from the other branches'"
 
     @pytest.mark.asyncio
     async def test_cancelled_run_does_not_append_run_record(self, monkeypatch: pytest.MonkeyPatch) -> None:

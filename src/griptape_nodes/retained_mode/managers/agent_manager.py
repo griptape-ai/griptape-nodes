@@ -25,7 +25,7 @@ import mimetypes
 import os
 import textwrap
 import threading
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -34,22 +34,30 @@ from urllib.parse import urlsplit
 import httpx2
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import BinaryContent, ImageUrl, ModelMessagesTypeAdapter, ModelRequest, UserPromptPart
+from pydantic_ai.tools import DeferredToolResults, ToolApproved, ToolDenied
 from pydantic_ai.usage import UsageLimits
 
 from griptape_nodes.agents.pydantic_ai.image_tools import ImageGenerationToolsetConfig
-from griptape_nodes.agents.pydantic_ai.mcp_servers import streamable_http_local
+from griptape_nodes.agents.pydantic_ai.mcp_servers import grant_keys_for_call, streamable_http_local
 from griptape_nodes.agents.pydantic_ai.mcp_toolset_cache import (
     MCPToolsetCache,
     MCPToolsetLease,
 )
 from griptape_nodes.agents.pydantic_ai.runner import (
     DEFAULT_SKILLS_DIRECTORY,
+    AgentRunResult,
     PydanticAgentRunner,
     RunEvent,
     TextDelta,
     ThinkingDelta,
     ToolCall,
     ToolResult,
+)
+from griptape_nodes.agents.pydantic_ai.tool_approval import (
+    TOOL_DENIED_BY_NEW_MESSAGE,
+    TOOL_DENIED_BY_USER_MESSAGE,
+    ToolApprovalDeps,
+    pending_tool_calls,
 )
 from griptape_nodes.drivers.cloud_credentials import (
     BASE_URL_SETTING_NAME,
@@ -73,6 +81,9 @@ from griptape_nodes.drivers.cloud_models import (
 from griptape_nodes.drivers.thread_storage.local_thread_storage_driver import LocalThreadStorageDriver
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.agent_events import (
+    TOOL_APPROVAL_APPROVE_FOR_CONVERSATION,
+    TOOL_APPROVAL_DECISIONS,
+    TOOL_APPROVAL_DENY,
     AgentStreamEvent,
     AgentThinkingEvent,
     AgentToolCallEvent,
@@ -83,6 +94,9 @@ from griptape_nodes.retained_mode.events.agent_events import (
     CancelAgentRequest,
     CancelAgentResultFailure,
     CancelAgentResultSuccess,
+    ClearToolGrantsRequest,
+    ClearToolGrantsResultFailure,
+    ClearToolGrantsResultSuccess,
     ConfigureAgentRequest,
     ConfigureAgentResultFailure,
     ConfigureAgentResultSuccess,
@@ -121,11 +135,13 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RenameThreadRequest,
     RenameThreadResultFailure,
     RenameThreadResultSuccess,
+    ResolveToolApprovalsRequest,
     RunAgentRequest,
     RunAgentRequestArtifact,
     RunAgentResultFailure,
     RunAgentResultSuccess,
     RunRecord,
+    ToolApprovalDecision,
     UnarchiveThreadRequest,
     UnarchiveThreadResultFailure,
     UnarchiveThreadResultSuccess,
@@ -157,7 +173,7 @@ from griptape_nodes.utils.engine_dirs import engine_data_dir
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from pydantic_ai.messages import ModelMessage, UserContent
+    from pydantic_ai.messages import ModelMessage, ToolCallPart, UserContent
     from pydantic_ai.toolsets import AbstractToolset
 
     from griptape_nodes.retained_mode.engine import Engine
@@ -210,6 +226,17 @@ _IMAGE_TOOL_INSTRUCTION = (
 )
 
 
+_TOOL_APPROVAL_INSTRUCTIONS = (
+    "Tool approval rules:\n"
+    "  - Some tools need the user's approval before they run. The user sees each such call and "
+    "decides whether it runs.\n"
+    "  - When the user asks a question (how, why, what), answer in text. Do not build or run "
+    "workflows unless the user asks you to.\n"
+    "  - If the user declines a tool call, do not retry it on your own or work around it with a "
+    "different tool. If the user later asks for it again, call it again; they will be asked to approve it.\n"
+)
+
+
 def _build_agent_instructions(*, include_image_tool: bool) -> str:
     image_tool_line = _IMAGE_TOOL_INSTRUCTION if include_image_tool else ""
     return _AGENT_INSTRUCTIONS_BASE.format(image_tool_line=image_tool_line)
@@ -229,6 +256,76 @@ def _compose_server_rules(configs: Sequence[Mapping[str, Any]]) -> str:
         if isinstance(config.get("rules"), str) and config["rules"].strip()
     ]
     return "\n\n".join(parts)
+
+
+def _compose_run_instructions(server_rules: str) -> str:
+    """Join the instructions that apply to one run: MCP server rules, then approval rules."""
+    parts = [server_rules, _TOOL_APPROVAL_INSTRUCTIONS]
+    return "\n\n".join(part for part in parts if part)
+
+
+def _plan_tool_approvals(
+    waiting: Sequence[ToolCallPart],
+    decisions: Sequence[ToolApprovalDecision],
+    granted: frozenset[str],
+) -> _ApprovalPlan:
+    """Turn the user's decisions on a paused turn into answers for every waiting call.
+
+    "Approve for conversation" grants are applied first, so a call the user left
+    undecided still runs when those grants now cover all of its grant keys.
+
+    Raises:
+        ValueError: A decision names a call the turn is not waiting on, or is not
+            one of the known choices, or a waiting call is left with no answer.
+            The message is meant for the user.
+    """
+    waiting_by_id = {call.tool_call_id: call for call in waiting}
+    decided: dict[str, str] = {}
+    for decision in decisions:
+        if decision.tool_call_id not in waiting_by_id:
+            msg = (
+                f"Attempted to answer the approval request for tool call '{decision.tool_call_id}'. Failed because "
+                "the agent is not waiting on that call. It may already have been answered."
+            )
+            raise ValueError(msg)
+        if decision.decision not in TOOL_APPROVAL_DECISIONS:
+            msg = (
+                f"Attempted to answer the approval request for tool call '{decision.tool_call_id}'. Failed because "
+                f"'{decision.decision}' is not a choice. Use one of: {', '.join(sorted(TOOL_APPROVAL_DECISIONS))}."
+            )
+            raise ValueError(msg)
+        decided[decision.tool_call_id] = decision.decision
+
+    updated_grants = set(granted)
+    for tool_call_id, choice in decided.items():
+        if choice == TOOL_APPROVAL_APPROVE_FOR_CONVERSATION:
+            call = waiting_by_id[tool_call_id]
+            updated_grants.update(grant_keys_for_call(call.tool_name, call.args_as_dict()))
+
+    approvals: dict[str, bool | ToolApproved | ToolDenied] = {}
+    for call in waiting:
+        choice = decided.get(call.tool_call_id)
+        if choice is None:
+            grant_keys = grant_keys_for_call(call.tool_name, call.args_as_dict())
+            if not grant_keys or not updated_grants.issuperset(grant_keys):
+                msg = (
+                    f"Attempted to continue the conversation. Failed because '{call.tool_name}' is still waiting "
+                    "for you to approve or deny it."
+                )
+                raise ValueError(msg)
+            approvals[call.tool_call_id] = ToolApproved()
+        elif choice == TOOL_APPROVAL_DENY:
+            approvals[call.tool_call_id] = ToolDenied(TOOL_DENIED_BY_USER_MESSAGE)
+        else:
+            approvals[call.tool_call_id] = ToolApproved()
+
+    return _ApprovalPlan(results=DeferredToolResults(approvals=approvals), granted=frozenset(updated_grants))
+
+
+def _reply_in_progress_failure(attempted: str) -> RunAgentResultFailure:
+    """The failure for a request that arrives while another turn is running in its thread."""
+    details = f"Attempted to {attempted}. Failed because a reply is already in progress in this conversation."
+    return RunAgentResultFailure(error={"message": details}, result_details=details)
 
 
 def _cloud_http_status_of(exc: BaseException, cloud_host: str) -> int | None:
@@ -389,6 +486,19 @@ class _MCPAttachment:
     instructions: str
 
 
+@dataclass(frozen=True)
+class _ApprovalPlan:
+    """How to answer a paused turn's tool calls, and the thread grants that result.
+
+    ``granted`` already includes the grant keys of every "Approve for
+    conversation" decision, so it is what gets saved and what the resumed run
+    checks later calls against.
+    """
+
+    results: DeferredToolResults
+    granted: frozenset[str]
+
+
 @dataclass
 class _RehydratedMessage:
     """A history message copy plus how many of its images were re-inlined.
@@ -484,14 +594,25 @@ class AgentManager(EngineScoped):
         try:
             return await self._run_agent(request)
         except Exception as e:
-            message = self._explain_agent_run_error(e, request.provider_name)
-            # Keep a budget halt's opening words, which the editor recognizes.
-            if message.startswith(BUDGET_REPLY_HALT_PREFIX):
-                err_msg = message
-            else:
-                err_msg = f"Error running agent: {message}"
-            logger.exception(err_msg)
-            return RunAgentResultFailure(error={"message": message}, result_details=err_msg)
+            return self._agent_run_failure(e, request.provider_name)
+
+    @handles(ResolveToolApprovalsRequest)
+    async def on_handle_resolve_tool_approvals_request(self, request: ResolveToolApprovalsRequest) -> ResultPayload:
+        try:
+            return await self._resolve_tool_approvals(request)
+        except Exception as e:
+            return self._agent_run_failure(e, request.provider_name)
+
+    def _agent_run_failure(self, exc: Exception, provider_name: str | None) -> RunAgentResultFailure:
+        """Log a failed agent turn and turn it into the result the editor shows."""
+        message = self._explain_agent_run_error(exc, provider_name)
+        # Keep a budget halt's opening words, which the editor recognizes.
+        if message.startswith(BUDGET_REPLY_HALT_PREFIX):
+            err_msg = message
+        else:
+            err_msg = f"Error running agent: {message}"
+        logger.error(err_msg, exc_info=exc)
+        return RunAgentResultFailure(error={"message": message}, result_details=err_msg)
 
     def _explain_agent_run_error(self, exc: Exception, provider_name: str | None) -> str:
         """Return the user-facing text for a failed agent run.
@@ -523,14 +644,138 @@ class AgentManager(EngineScoped):
 
     async def _run_agent(self, request: RunAgentRequest) -> ResultPayload:
         thread_id = self._validate_thread_for_run(request.thread_id)
-        is_first_run = len(self._thread_storage.load_history(thread_id)) == 0
+        active = self._claim_thread(thread_id)
+        if active is None:
+            return _reply_in_progress_failure(f"send a message in conversation {thread_id}")
+        try:
+            return await self._run_agent_on_claimed_thread(request, thread_id, active)
+        finally:
+            self._release_thread(thread_id, active)
 
-        runner = self._build_runner(
+    async def _run_agent_on_claimed_thread(
+        self, request: RunAgentRequest, thread_id: str, active: _ActiveRun
+    ) -> ResultPayload:
+        history = self._thread_storage.load_history(thread_id)
+        is_first_run = len(history) == 0
+
+        # Sending a message instead of answering an approval card declines every
+        # call the card was asking about, in the same request as the message.
+        deferred_tool_results: DeferredToolResults | None = None
+        waiting = pending_tool_calls(history)
+        if waiting:
+            deferred_tool_results = DeferredToolResults(
+                approvals={call.tool_call_id: ToolDenied(TOOL_DENIED_BY_NEW_MESSAGE) for call in waiting}
+            )
+
+        granted = frozenset(self._thread_storage.get_thread_metadata(thread_id).tool_grants)
+
+        composed = await _compose_prompt(request.input, request.url_artifacts)
+        result = await self._run_turn(
+            thread_id=thread_id,
+            active=active,
             provider_name=request.provider_name,
             model_name=request.model_name,
+            mcp_server_names=request.additional_mcp_servers,
+            prompt=composed.live,
+            persist_prompt=composed.persist,
+            approval=ToolApprovalDeps(granted=granted),
+            deferred_tool_results=deferred_tool_results,
         )
-        composed = await _compose_prompt(request.input, request.url_artifacts)
-        attribution_headers = await self._attribution_headers(request.provider_name)
+
+        # A first run creates the thread; title it from the input even when the
+        # turn is cancelled, so a quick send-then-cancel doesn't leave a
+        # titleless orphan thread in the listing.
+        if is_first_run:
+            self._thread_storage.update_thread_metadata(
+                result.thread_id, title=textwrap.shorten(request.input, width=50, placeholder="...")
+            )
+        return self._finish_turn(
+            result,
+            provider_name=request.provider_name,
+            model_name=request.model_name,
+            mcp_server_names=request.additional_mcp_servers,
+        )
+
+    async def _resolve_tool_approvals(self, request: ResolveToolApprovalsRequest) -> ResultPayload:
+        thread_id = request.thread_id
+        if not self._thread_storage.thread_exists(thread_id):
+            details = f"Attempted to answer the approval request in conversation {thread_id}. Failed because the conversation does not exist."
+            return RunAgentResultFailure(error={"message": details}, result_details=details)
+        if self._thread_storage.is_archived(thread_id):
+            details = f"Attempted to answer the approval request in conversation {thread_id}. Failed because the conversation is archived. Unarchive it first."
+            return RunAgentResultFailure(error={"message": details}, result_details=details)
+
+        # Claimed before the first await so two answers to the same card, such as a
+        # double click, cannot both resume the turn and run a paid call twice.
+        active = self._claim_thread(thread_id)
+        if active is None:
+            return _reply_in_progress_failure(f"answer the approval request in conversation {thread_id}")
+        try:
+            return await self._resolve_tool_approvals_on_claimed_thread(request, thread_id, active)
+        finally:
+            self._release_thread(thread_id, active)
+
+    async def _resolve_tool_approvals_on_claimed_thread(
+        self, request: ResolveToolApprovalsRequest, thread_id: str, active: _ActiveRun
+    ) -> ResultPayload:
+        # Read from the saved conversation rather than anything held in memory, so
+        # an approval card still works after the engine restarts.
+        waiting = pending_tool_calls(self._thread_storage.load_history(thread_id))
+        if not waiting:
+            details = f"Attempted to answer the approval request in conversation {thread_id}. Failed because the agent is not waiting for approval there."
+            return RunAgentResultFailure(error={"message": details}, result_details=details)
+
+        granted_before = frozenset(self._thread_storage.get_thread_metadata(thread_id).tool_grants)
+        try:
+            plan = _plan_tool_approvals(waiting, request.decisions, granted_before)
+        except ValueError as e:
+            details = str(e)
+            return RunAgentResultFailure(error={"message": details}, result_details=details)
+
+        if plan.granted != granted_before:
+            self._thread_storage.update_thread_metadata(thread_id, tool_grants=sorted(plan.granted))
+
+        result = await self._run_turn(
+            thread_id=thread_id,
+            active=active,
+            provider_name=request.provider_name,
+            model_name=request.model_name,
+            mcp_server_names=request.additional_mcp_servers,
+            prompt=None,
+            persist_prompt=None,
+            approval=ToolApprovalDeps(granted=plan.granted),
+            deferred_tool_results=plan.results,
+        )
+        return self._finish_turn(
+            result,
+            provider_name=request.provider_name,
+            model_name=request.model_name,
+            mcp_server_names=request.additional_mcp_servers,
+        )
+
+    async def _run_turn(  # noqa: PLR0913
+        self,
+        *,
+        thread_id: str,
+        active: _ActiveRun,
+        provider_name: str | None,
+        model_name: str | None,
+        mcp_server_names: list[str],
+        prompt: str | list[UserContent] | None,
+        persist_prompt: str | list[UserContent] | None,
+        approval: ToolApprovalDeps,
+        deferred_tool_results: DeferredToolResults | None,
+    ) -> AgentRunResult:
+        """Run one agent turn on ``thread_id``, streaming its events.
+
+        ``active`` is the thread's claim from :meth:`_claim_thread`; its cancel event
+        is what ``CancelAgentRequest`` sets.
+        """
+        runner = self._build_runner(
+            provider_name=provider_name,
+            model_name=model_name,
+        )
+        attribution_headers = await self._attribution_headers(provider_name)
 
         event_manager = self.engine.event_manager
 
@@ -544,49 +789,65 @@ class AgentManager(EngineScoped):
                 ),
             )
 
-        cancel_event = asyncio.Event()
-        self._active_runs[thread_id] = _ActiveRun(cancel_event=cancel_event, loop=asyncio.get_running_loop())
-        try:
-            # Nothing may sit between this and the `async with` that releases
-            # it: a server left with a stray use count is never shut down.
-            mcp = await self._acquire_mcp_toolsets(request.additional_mcp_servers)
-            async with mcp.lease:
-                result = await runner.run(
-                    composed.live,
-                    thread_id=thread_id,
-                    event_sink=emit,
-                    cancel_event=cancel_event,
-                    persist_prompt=composed.persist,
-                    history_rehydrator=_rehydrate_history,
-                    extra_toolsets=mcp.lease.toolsets,
-                    extra_instructions=mcp.instructions,
-                    extra_headers=attribution_headers,
-                )
-        finally:
-            # Only drop our own entry; a newer run for the same thread may have
-            # replaced it (shouldn't happen for the chat sidebar, but stay safe).
-            if (active := self._active_runs.get(thread_id)) is not None and active.cancel_event is cancel_event:
-                del self._active_runs[thread_id]
-
-        # A first run creates the thread; title it from the input even when the
-        # turn is cancelled, so a quick send-then-cancel doesn't leave a
-        # titleless orphan thread in the listing.
-        if is_first_run:
-            self._thread_storage.update_thread_metadata(
-                result.thread_id, title=textwrap.shorten(request.input, width=50, placeholder="...")
+        # Nothing may sit between this and the `async with` that releases
+        # it: a server left with a stray use count is never shut down.
+        mcp = await self._acquire_mcp_toolsets(mcp_server_names)
+        async with mcp.lease:
+            return await runner.run(
+                prompt,
+                thread_id=thread_id,
+                event_sink=emit,
+                cancel_event=active.cancel_event,
+                persist_prompt=persist_prompt,
+                history_rehydrator=_rehydrate_history,
+                extra_toolsets=mcp.lease.toolsets,
+                extra_instructions=_compose_run_instructions(mcp.instructions),
+                extra_headers=attribution_headers,
+                approval=approval,
+                deferred_tool_results=deferred_tool_results,
             )
-        # A cancelled run persists nothing, so there is no response to record.
+
+    def _claim_thread(self, thread_id: str) -> _ActiveRun | None:
+        """Mark ``thread_id`` as running a turn, or return ``None`` when it already is.
+
+        One turn per thread: both a new message and an approval answer start from
+        the saved history, so two at once would resume the same paused calls twice.
+        Must be called with no ``await`` between it and the caller's check, and
+        released with :meth:`_release_thread` in a ``finally``.
+        """
+        if thread_id in self._active_runs:
+            return None
+        active = _ActiveRun(cancel_event=asyncio.Event(), loop=asyncio.get_running_loop())
+        self._active_runs[thread_id] = active
+        return active
+
+    def _release_thread(self, thread_id: str, active: _ActiveRun) -> None:
+        if self._active_runs.get(thread_id) is active:
+            del self._active_runs[thread_id]
+
+    def _finish_turn(
+        self,
+        result: AgentRunResult,
+        *,
+        provider_name: str | None,
+        model_name: str | None,
+        mcp_server_names: list[str],
+    ) -> RunAgentResultSuccess:
+        """Record a finished turn and build the result the editor renders it from."""
+        # A cancelled run saves no model response, so there is no response to record.
         if not result.cancelled:
-            resolved_provider = self._get_provider(request.provider_name)
+            resolved_provider = self._get_provider(provider_name)
             self._thread_storage.append_run_record(
                 result.thread_id,
                 RunRecord(
                     message_index=result.message_count - 1,
                     provider_name=resolved_provider.name,
-                    model=request.model_name or resolved_provider.model,
-                    mcp_servers=request.additional_mcp_servers or [],
+                    model=model_name or resolved_provider.model,
+                    mcp_servers=mcp_server_names or [],
                 ),
             )
+
+        pending_approvals = [asdict(pending) for pending in result.pending_approvals]
 
         if result.cancelled:
             logger.info("Agent run for thread %s cancelled by request.", result.thread_id)
@@ -601,6 +862,7 @@ class AgentManager(EngineScoped):
                     # without having to treat a missing key as False.
                     "truncated": False,
                     "generated_image_urls": result.image_urls,
+                    "pending_approvals": pending_approvals,
                 },
                 thread_id=result.thread_id,
                 result_details="Agent run cancelled.",
@@ -614,6 +876,7 @@ class AgentManager(EngineScoped):
                     "cancelled": False,
                     "truncated": True,
                     "generated_image_urls": result.image_urls,
+                    "pending_approvals": pending_approvals,
                 },
                 thread_id=result.thread_id,
                 result_details=(
@@ -622,6 +885,9 @@ class AgentManager(EngineScoped):
                 ),
             )
 
+        result_details = "Agent execution completed successfully."
+        if pending_approvals:
+            result_details = "The agent is waiting for your approval before it continues."
         return RunAgentResultSuccess(
             output={
                 "text": result.output,
@@ -629,9 +895,26 @@ class AgentManager(EngineScoped):
                 "cancelled": False,
                 "truncated": False,
                 "generated_image_urls": result.image_urls,
+                "pending_approvals": pending_approvals,
             },
             thread_id=result.thread_id,
-            result_details="Agent execution completed successfully.",
+            result_details=result_details,
+        )
+
+    @handles(ClearToolGrantsRequest)
+    def on_handle_clear_tool_grants_request(self, request: ClearToolGrantsRequest) -> ResultPayload:
+        if not self._thread_storage.thread_exists(request.thread_id):
+            details = f"Attempted to forget the approvals given in conversation {request.thread_id}. Failed because the conversation does not exist."
+            return ClearToolGrantsResultFailure(result_details=details)
+        try:
+            self._thread_storage.update_thread_metadata(request.thread_id, tool_grants=[])
+        except OSError as e:
+            details = f"Attempted to forget the approvals given in conversation {request.thread_id}. Failed because the conversation could not be saved: {e}"
+            logger.exception(details)
+            return ClearToolGrantsResultFailure(result_details=details)
+        return ClearToolGrantsResultSuccess(
+            thread_id=request.thread_id,
+            result_details=f"Cleared the approvals given in conversation {request.thread_id}.",
         )
 
     @handles(CancelAgentRequest)
@@ -980,10 +1263,7 @@ class AgentManager(EngineScoped):
         # The engine's own MCP server is the only one baked into the agent: the
         # engine owns its lifetime and its address cannot change mid-session.
         mcp_servers: list[AbstractToolset[Any]] = [
-            streamable_http_local(
-                f"http://localhost:{self._mcp_server_port}/mcp/",
-                name="GriptapeNodes",
-            ),
+            streamable_http_local(f"http://localhost:{self._mcp_server_port}/mcp/"),
         ]
 
         runner = PydanticAgentRunner(
