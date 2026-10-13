@@ -70,7 +70,7 @@ from griptape_nodes.agents.pydantic_ai.image_tools import (
     ImageGenerationToolsetConfig,
     register_image_tools,
 )
-from griptape_nodes.agents.pydantic_ai.mcp_servers import grant_keys_for_call, prefixed_tool_name
+from griptape_nodes.agents.pydantic_ai.mcp_servers import grant_keys_for_call
 from griptape_nodes.agents.pydantic_ai.model import build_model
 from griptape_nodes.agents.pydantic_ai.tool_approval import (
     ToolApprovalDeps,
@@ -288,9 +288,6 @@ class PydanticAgentRunner:
     @property
     def supports_tool_approval(self) -> bool:
         return True
-
-    def mcp_tool_name(self, server: str, tool: str) -> str:
-        return prefixed_tool_name(server, tool)
 
     async def run_turn(self, turn: AgentTurn) -> AgentRunResult:
         """Run one turn with the turn's MCP servers attached.

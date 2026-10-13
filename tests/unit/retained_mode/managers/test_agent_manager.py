@@ -21,6 +21,7 @@ from pydantic_ai.messages import BinaryContent, ImageUrl, ModelMessage, ModelReq
 
 from griptape_nodes.agents.harness import (
     AgentRunResult,
+    MCPServerSpec,
     RunEvent,
     TextDelta,
     ThinkingDelta,
@@ -196,13 +197,21 @@ class TestComposeServerRules:
 
     def test_each_server_is_labelled_with_its_name(self) -> None:
         composed = _compose_server_rules(
-            [{"name": "a", "rules": "be terse"}, {"name": "b", "rules": "be kind"}],
+            [
+                MCPServerSpec(name="a", config={"rules": "be terse"}),
+                MCPServerSpec(name="b", config={"rules": "be kind"}),
+            ],
         )
         assert composed == "Rules for MCP server 'a':\nbe terse\n\nRules for MCP server 'b':\nbe kind"
 
     def test_servers_without_rules_are_skipped(self) -> None:
         composed = _compose_server_rules(
-            [{"name": "a"}, {"name": "b", "rules": "   "}, {"name": "c", "rules": None}, {"name": "d", "rules": "go"}],
+            [
+                MCPServerSpec(name="a", config={}),
+                MCPServerSpec(name="b", config={"rules": "   "}),
+                MCPServerSpec(name="c", config={"rules": None}),
+                MCPServerSpec(name="d", config={"rules": "go"}),
+            ],
         )
         assert composed == "Rules for MCP server 'd':\ngo"
 

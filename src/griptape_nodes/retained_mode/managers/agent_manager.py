@@ -251,7 +251,7 @@ def _build_agent_instructions(*, include_image_tool: bool, tool_name: Callable[[
     )
 
 
-def _compose_server_rules(configs: Sequence[Mapping[str, Any]]) -> str:
+def _compose_server_rules(servers: Sequence[MCPServerSpec]) -> str:
     """Collect the per-server guidance for the MCP servers attached to one run.
 
     Composed per run rather than baked into the agent so editing a server's
@@ -260,9 +260,9 @@ def _compose_server_rules(configs: Sequence[Mapping[str, Any]]) -> str:
     same as when these were concatenated at construction time.
     """
     parts = [
-        f"Rules for MCP server '{config['name']}':\n{config['rules'].strip()}"
-        for config in configs
-        if isinstance(config.get("rules"), str) and config["rules"].strip()
+        f"Rules for MCP server '{server.name}':\n{server.config['rules'].strip()}"
+        for server in servers
+        if isinstance(server.config.get("rules"), str) and server.config["rules"].strip()
     ]
     return "\n\n".join(parts)
 
@@ -1505,12 +1505,9 @@ class AgentManager(EngineScoped):
                 ", ".join(sorted(unavailable)),
             )
 
-        configs = [{**enabled[name], "name": name} for name in server_names if name in enabled]
+        servers = [MCPServerSpec(name=name, config=enabled[name]) for name in server_names if name in enabled]
         # Never log free-text rules; they may contain secrets.
-        return _MCPAttachment(
-            servers=[MCPServerSpec(name=name, config=enabled[name]) for name in server_names if name in enabled],
-            instructions=_compose_server_rules(configs),
-        )
+        return _MCPAttachment(servers=servers, instructions=_compose_server_rules(servers))
 
     def _lookup_enabled_mcp_servers(self) -> Mapping[str, Mapping[str, Any]] | None:
         """Current config of every enabled MCP server, or ``None`` if unreadable.

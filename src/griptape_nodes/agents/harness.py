@@ -167,10 +167,6 @@ class AgentHarness(Protocol):
         """
         ...
 
-    def mcp_tool_name(self, server: str, tool: str) -> str:
-        """The name the agent sees for ``tool`` on MCP server ``server``."""
-        ...
-
     async def run_turn(self, turn: AgentTurn) -> AgentRunResult:
         """Run one turn, streaming events to ``turn.event_sink`` and saving it."""
         ...
