@@ -419,8 +419,7 @@ class CliHarness(ABC):
         instructions = "\n\n".join(part for part in (self.instructions, turn.instructions) if part)
         prompt_text = render_catch_up(unseen) + _prompt_text(turn.prompt or "")
         if not self.supports_system_prompt:
-            # The session keeps what it was sent, but the MCP server rules follow
-            # this turn's servers, so a resumed session gets them again.
+            # Sessions retain base instructions, but MCP server rules depend on this turn's servers.
             prompt_instructions = instructions if resume_session_id is None else turn.instructions
             if prompt_instructions:
                 prompt_text = f"<instructions>\n{prompt_instructions}\n</instructions>\n\n{prompt_text}"
