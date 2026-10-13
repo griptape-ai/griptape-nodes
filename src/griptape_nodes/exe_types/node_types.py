@@ -2965,7 +2965,12 @@ def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> 
             # would put a live object in it and send it to a worker as JSON. The node still sees objects:
             # its read resolves the whole list on the way out.
             value = current_node._get_raw_parameter_value(child.name)
-            if value is not None:
+            if value is None:
+                continue
+            # A row fed a whole list adds its items, so the list ends up the concatenation of its rows.
+            if isinstance(value, list) and isinstance(parameter, ParameterList) and parameter.concatenates_list_rows:
+                build_parameter_value.extend(value)
+            else:
                 build_parameter_value.append(value)
         return build_parameter_value
     return None
