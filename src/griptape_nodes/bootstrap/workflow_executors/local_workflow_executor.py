@@ -88,7 +88,9 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
         await GriptapeNodes.EventManager().abroadcast_app_event(
             AppInitializationComplete(
-                skip_library_loading=self._skip_library_loading, workflows_to_register=self._workflows_to_register
+                skip_library_loading=self._skip_library_loading,
+                workflows_to_register=self._workflows_to_register,
+                defer_pending_library_resets=True,
             )
         )
         return self
