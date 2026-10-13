@@ -23,6 +23,7 @@ from mcp.types import (
 from pydantic import TypeAdapter
 from starlette.types import Receive, Scope, Send
 
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import (
     EventResultFailure,
     EventResultSuccess,
@@ -383,7 +384,7 @@ async def _handle_request_on_engine_loop(request_payload: RequestPayload) -> dic
         )
     else:
         result_event = EventResultFailure(request=request_payload, result=result_payload)
-    return json.loads(result_event.json())
+    return json.loads(converters.client.dumps_result(result_event).text)
 
 
 async def _dispatch_to_engine(request_payload: RequestPayload, timeout_ms: int | None = None) -> dict[str, Any]:

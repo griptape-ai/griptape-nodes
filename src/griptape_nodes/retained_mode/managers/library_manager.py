@@ -207,6 +207,9 @@ class LibraryManager(EngineScoped):
     def get_library_info_for_attempted_load(self, library_file_path: str) -> LibraryInfo:
         return self._library_file_path_to_info[library_file_path]
 
+    def find_library_info_for_attempted_load(self, library_file_path: str) -> LibraryInfo | None:
+        return self._library_file_path_to_info.get(library_file_path)
+
     def get_library_info_by_library_name(self, library_name: str) -> LibraryInfo | None:
         # A library name can have more than one entry: a duplicate install registers a second
         # copy that fails with DuplicateLibraryProblem but is deliberately kept in the dict

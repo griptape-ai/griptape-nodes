@@ -222,6 +222,12 @@ class ExecuteDagState(State):
             )
             return
 
+        # A locked node passes its frozen outputs through without executing. Record when that pass
+        # is the only reason it now reads RESOLVED, so unlocking it can put it back in the next run.
+        current_node.resolved_while_locked = current_node.lock and (
+            current_node.resolved_while_locked or current_node.state != NodeResolutionState.RESOLVED
+        )
+
         # Special handling for BaseIterativeStartNode
         # Remove it from the network so the end node can process control flow
         if isinstance(current_node, BaseIterativeStartNode):
