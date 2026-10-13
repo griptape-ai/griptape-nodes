@@ -1,9 +1,6 @@
-"""Start an MCP server with environment variables read from a file.
+"""Keep stdio MCP environment secrets off Codex's command line.
 
-Codex takes its MCP config on the command line, where other local users can
-read it. Its stdio servers run this script instead: ``python mcp_env_launcher.py
-<env.json> <command> [args...]``. It runs on its own interpreter, so it imports
-nothing from the engine.
+This script runs independently of the engine and must not import it.
 """
 
 import json

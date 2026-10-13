@@ -221,12 +221,7 @@ def _toml_table(values: Mapping[str, str]) -> str:
 
 @dataclass
 class _CodexMCPConfig:
-    """``tables`` go on the command line, so secrets stay out of them.
-
-    HTTP headers are read from ``secret_env``, which Codex keeps from its shell
-    commands because the names contain ``TOKEN``. Stdio servers start through
-    :mod:`mcp_env_launcher`, which reads their variables from a file.
-    """
+    """``tables`` go on the command line, so secrets stay out of them."""
 
     tables: dict[str, str] = field(default_factory=dict)
     secret_env: dict[str, str | None] = field(default_factory=dict)
@@ -254,6 +249,7 @@ def _mcp_config(servers: Sequence[CliMCPServer], scratch_dir: Path) -> _CodexMCP
             if server.headers:
                 header_vars: dict[str, str] = {}
                 for header_index, (header, value) in enumerate(server.headers.items()):
+                    # Codex hides variables containing TOKEN from its shell commands.
                     var = f"GTN_MCP_SECRET_TOKEN_{index}_{header_index}"
                     config.secret_env[var] = value
                     header_vars[header] = var

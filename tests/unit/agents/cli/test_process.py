@@ -11,7 +11,6 @@ from griptape_nodes.agents.cli import process
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Process groups are POSIX-only.")
 
-# Prints the pid of a child it leaves running, then exits.
 _CLI_LEAVING_A_CHILD = """
 import json, subprocess, sys
 stdout = subprocess.DEVNULL if sys.argv[1] == "detached" else None

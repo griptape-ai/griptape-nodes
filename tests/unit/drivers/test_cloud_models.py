@@ -125,7 +125,7 @@ class TestModelSettings:
 
 
 def test_every_cli_provider_has_a_harness() -> None:
-    """The catalog's CLI providers and the harness registry name the same providers."""
+    """Match catalog CLI providers to registered harnesses."""
     cli_providers = {
         provider_id
         for provider_id, provider in PROVIDER_CATALOG.providers.items()

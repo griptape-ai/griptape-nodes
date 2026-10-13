@@ -83,7 +83,7 @@ async def run_jsonl_process(  # noqa: PLR0913
             with contextlib.suppress(asyncio.CancelledError):
                 await reader
 
-    # Also stops children the CLI left running, which would keep its pipes open.
+    # Surviving children can keep the CLI's pipes open.
     await _stop(process)
     with contextlib.suppress(TimeoutError):
         await asyncio.wait_for(stderr_task, timeout=_TERMINATE_GRACE_SECONDS)
@@ -95,7 +95,6 @@ async def _await_reader(
     process: asyncio.subprocess.Process,
     cancel_event: asyncio.Event | None,
 ) -> bool:
-    """Return True when the turn was cancelled before the CLI finished its output."""
     exit_waiter = asyncio.ensure_future(_wait_for_exit(process))
     cancel_waiter = asyncio.ensure_future(cancel_event.wait()) if cancel_event is not None else None
     waiters: set[asyncio.Future[Any]] = {reader, exit_waiter}
@@ -120,11 +119,7 @@ async def _await_reader(
 
 
 async def _wait_for_exit(process: asyncio.subprocess.Process) -> int:
-    """Wait for the CLI itself to exit.
-
-    ``process.wait()`` also waits for the pipes to close, which a child left
-    running would keep open.
-    """
+    """``process.wait()`` waits for pipe closure, which surviving children can prevent."""
     while process.returncode is None:  # noqa: ASYNC110 asyncio exposes no exit-only event
         await asyncio.sleep(_EXIT_POLL_SECONDS)
     return process.returncode
