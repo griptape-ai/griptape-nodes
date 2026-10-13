@@ -205,7 +205,7 @@ class LibraryMetadataLoading(EngineScoped):
         library_dir = json_path.parent.absolute()
         git_remote, git_ref = get_git_info(library_dir)
 
-        existing_info = self.engine.library_manager._library_file_path_to_info.get(file_path)
+        existing_info = self.engine.library_manager.find_library_info_for_attempted_load(file_path)
         enabled = existing_info.enabled if existing_info is not None else True
         details = f"Successfully loaded library metadata from JSON file at {json_path}"
         return LoadLibraryMetadataFromFileResultSuccess(
@@ -308,7 +308,7 @@ class LibraryMetadataLoading(EngineScoped):
         dependency install failed reads exactly like one added since the last refresh, unless the
         record of the attempt travels with it.
         """
-        library_info = self.engine.library_manager._library_file_path_to_info.get(metadata_result.file_path)
+        library_info = self.engine.library_manager.find_library_info_for_attempted_load(metadata_result.file_path)
         if library_info is None:
             return
         metadata_result.lifecycle_state = library_info.lifecycle_state.value
