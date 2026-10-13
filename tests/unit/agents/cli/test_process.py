@@ -65,3 +65,29 @@ async def test_children_left_running_are_stopped(tmp_path: Path, mode: str) -> N
     assert exit_info.returncode == 0
     assert not exit_info.cancelled
     assert not _is_running(records[0]["child_pid"])
+
+
+@pytest.mark.asyncio
+async def test_cancel_stops_a_cli_that_closed_its_output(tmp_path: Path) -> None:
+    """Cancel still works once stdout is closed but the CLI keeps running."""
+    cancel_event = asyncio.Event()
+
+    async def on_record(_record: dict[str, Any]) -> None:
+        return None
+
+    run = asyncio.ensure_future(
+        process.run_jsonl_process(
+            [sys.executable, "-c", "import os, time; os.close(1); time.sleep(60)"],
+            cwd=tmp_path,
+            env=os.environ,
+            stdin=None,
+            on_record=on_record,
+            cancel_event=cancel_event,
+        )
+    )
+    await asyncio.sleep(0.5)
+    cancel_event.set()
+    exit_info = await asyncio.wait_for(run, timeout=10)
+
+    assert exit_info.cancelled
+    assert exit_info.returncode is None

@@ -73,7 +73,8 @@ async def run_jsonl_process(  # noqa: PLR0913
     try:
         cancelled = await _await_reader(reader, process, cancel_event)
         if not cancelled:
-            returncode = await _wait_for_exit(process)
+            returncode = await _wait_for_exit(process, cancel_event)
+            cancelled = returncode is None
     except BaseException:
         await _stop(process)
         raise
@@ -85,8 +86,10 @@ async def run_jsonl_process(  # noqa: PLR0913
 
     # Surviving children can keep the CLI's pipes open.
     await _stop(process)
-    with contextlib.suppress(TimeoutError):
+    try:
         await asyncio.wait_for(stderr_task, timeout=_TERMINATE_GRACE_SECONDS)
+    except TimeoutError:
+        logger.debug("A process outside the agent CLI's process group kept its stderr open: %s", argv[0])
     return ProcessExit(returncode=returncode, stderr_tail="\n".join(stderr_lines), cancelled=cancelled)
 
 
@@ -118,9 +121,14 @@ async def _await_reader(
     return cancel_event is not None and cancel_event.is_set()
 
 
-async def _wait_for_exit(process: asyncio.subprocess.Process) -> int:
-    """``process.wait()`` waits for pipe closure, which surviving children can prevent."""
-    while process.returncode is None:  # noqa: ASYNC110 asyncio exposes no exit-only event
+async def _wait_for_exit(process: asyncio.subprocess.Process, cancel_event: asyncio.Event | None = None) -> int | None:
+    """Return ``None`` if the turn is cancelled first.
+
+    ``process.wait()`` waits for pipe closure, which surviving children can prevent.
+    """
+    while process.returncode is None:
+        if cancel_event is not None and cancel_event.is_set():
+            return None
         await asyncio.sleep(_EXIT_POLL_SECONDS)
     return process.returncode
 

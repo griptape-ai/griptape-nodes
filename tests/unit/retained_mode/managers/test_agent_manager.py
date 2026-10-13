@@ -72,12 +72,14 @@ from griptape_nodes.retained_mode.events.agent_events import (
     ListProviderModelsResultSuccess,
     PromptDriverConfig,
     ProviderConfig,
+    ResolveToolApprovalsRequest,
     RunAgentRequest,
     RunAgentRequestArtifact,
     RunAgentResultFailure,
     RunAgentResultSuccess,
     RunRecord,
     ThreadMetadata,
+    ToolApprovalDecision,
     UpdateAgentProviderRequest,
     UpdateAgentProviderResultFailure,
     UpdateAgentProviderResultSuccess,
@@ -1693,6 +1695,30 @@ class TestCliHarnessProviders:
         }
 
         assert cli_providers == set(CLI_HARNESSES)
+
+    @pytest.mark.asyncio
+    async def test_approval_for_a_harness_that_never_asks_saves_no_grants(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Refuse before saving "Approve for conversation" grants."""
+        manager = AgentManager.__new__(AgentManager)
+        updates: list[dict[str, object]] = []
+        manager._thread_storage = SimpleNamespace(  # type: ignore[assignment]
+            load_history=lambda _t: [],
+            update_thread_metadata=lambda _t, **kwargs: updates.append(kwargs),
+        )
+        monkeypatch.setattr(_AGENT_MANAGER_MODULE + ".pending_tool_calls", lambda _history: [object()])
+        monkeypatch.setattr(manager, "_build_harness", lambda **_k: SimpleNamespace(supports_tool_approval=False))
+        request = ResolveToolApprovalsRequest(
+            thread_id="t1",
+            decisions=[ToolApprovalDecision(tool_call_id="call-1", decision="approve_for_conversation")],
+        )
+
+        result = await manager._resolve_tool_approvals_on_claimed_thread(request, "t1", active=None)  # type: ignore[arg-type]
+
+        assert isinstance(result, RunAgentResultFailure)
+        assert "runs its tools without asking" in result.error["message"]
+        assert updates == []
 
     def test_approval_rules_are_left_out_for_a_harness_that_never_asks(self) -> None:
         """Exclude approval instructions for CLI harnesses."""

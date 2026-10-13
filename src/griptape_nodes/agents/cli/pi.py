@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 _EXTENSION_FILE_NAME = "gtn-mcp-servers.js"
+_INSTRUCTIONS_FILE_NAME = "instructions.md"
 
 
 @dataclass
@@ -46,7 +47,11 @@ class PiHarness(CliHarness):
         if context.model:
             args += ["--model", context.model]
         if context.instructions:
-            args += ["--append-system-prompt", context.instructions]
+            # pi reads the file when given a path. MCP server rules in the instructions may hold secrets.
+            instructions_path = context.scratch_dir / _INSTRUCTIONS_FILE_NAME
+            instructions_path.write_text(context.instructions, encoding="utf-8")
+            instructions_path.chmod(0o600)
+            args += ["--append-system-prompt", str(instructions_path)]
         if context.resume_session_id:
             args += ["--session", context.resume_session_id]
         else:

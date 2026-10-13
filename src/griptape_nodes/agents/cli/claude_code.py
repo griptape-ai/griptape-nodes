@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 _MCP_CONFIG_FILE_NAME = "mcp-config.json"
+_INSTRUCTIONS_FILE_NAME = "instructions.md"
 
 
 @dataclass
@@ -57,7 +58,9 @@ class ClaudeCodeHarness(CliHarness):
         if context.max_turns:
             args += ["--max-turns", str(context.max_turns)]
         if context.instructions:
-            args += ["--append-system-prompt", context.instructions]
+            # MCP server rules in the instructions may hold secrets.
+            instructions_path = _write_private(context.scratch_dir / _INSTRUCTIONS_FILE_NAME, context.instructions)
+            args += ["--append-system-prompt-file", str(instructions_path)]
         if context.resume_session_id:
             args += ["--resume", context.resume_session_id]
         else:
@@ -214,8 +217,12 @@ def _content_blocks(text: str, images: Sequence[PromptImage]) -> list[dict[str, 
 
 def _write_mcp_config(context: CliTurnContext) -> Path:
     """Write the config to a file, since the command line is readable by other local users."""
-    path = context.scratch_dir / _MCP_CONFIG_FILE_NAME
-    path.write_text(json.dumps({"mcpServers": _mcp_config(context.mcp_servers)}), encoding="utf-8")
+    config = json.dumps({"mcpServers": _mcp_config(context.mcp_servers)})
+    return _write_private(context.scratch_dir / _MCP_CONFIG_FILE_NAME, config)
+
+
+def _write_private(path: Path, content: str) -> Path:
+    path.write_text(content, encoding="utf-8")
     path.chmod(0o600)
     return path
 
@@ -230,6 +237,13 @@ def _mcp_config(servers: Sequence[CliMCPServer]) -> dict[str, dict[str, Any]]:
                 "args": list(server.args),
                 "env": dict(server.env),
             }
+            if server.cwd:
+                logger.warning(
+                    "Attempted to start Claude Code MCP server '%s' in '%s'. Failed because Claude Code can't "
+                    "set a working directory for a server, so it will start in the workspace.",
+                    server.name,
+                    server.cwd,
+                )
         elif server.transport in ("streamable_http", "sse") and server.url:
             config[server.name] = {
                 "type": "http" if server.transport == "streamable_http" else "sse",

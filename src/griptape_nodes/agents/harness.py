@@ -58,10 +58,6 @@ class ThinkingDelta(RunEvent):
     delta: str
 
 
-EventSink = "Callable[[RunEvent], Awaitable[None] | None]"
-"""Callback that receives structured run events for relay to clients."""
-
-
 @dataclass
 class PendingApproval:
     """A tool call a paused turn is waiting on the user to approve or deny.

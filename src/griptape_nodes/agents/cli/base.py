@@ -16,6 +16,7 @@ from pydantic_ai.tools import ToolDenied
 
 from griptape_nodes.agents.cli.process import run_jsonl_process
 from griptape_nodes.agents.cli.transcript import TranscriptBuilder, denied_tool_return, render_catch_up, user_turn
+from griptape_nodes.agents.cli.windows_shims import launch_command
 from griptape_nodes.agents.harness import (
     RESULT_TRANSPORT_BYTES,
     AgentRunResult,
@@ -352,7 +353,7 @@ class CliHarness(ABC):
         )
         try:
             exit_info = await run_jsonl_process(
-                [executable, *invocation.args],
+                [*launch_command(executable), *invocation.args],
                 cwd=self.workspace_root,
                 env=env,
                 stdin=invocation.stdin,

@@ -675,11 +675,12 @@ class AgentManager(EngineScoped):
         granted = frozenset(self._thread_storage.get_thread_metadata(thread_id).tool_grants)
 
         composed = await _compose_prompt(request.input, request.url_artifacts)
+        harness = self._build_harness(provider_name=request.provider_name, model_name=request.model_name)
         result = await self._run_turn(
+            harness,
             thread_id=thread_id,
             active=active,
             provider_name=request.provider_name,
-            model_name=request.model_name,
             mcp_server_names=request.additional_mcp_servers,
             prompt=composed.live,
             persist_prompt=composed.persist,
@@ -730,6 +731,16 @@ class AgentManager(EngineScoped):
             details = f"Attempted to answer the approval request in conversation {thread_id}. Failed because the agent is not waiting for approval there."
             return RunAgentResultFailure(error={"message": details}, result_details=details)
 
+        harness = self._build_harness(provider_name=request.provider_name, model_name=request.model_name)
+        # Checked before saving grants, which would otherwise outlive the refusal.
+        if not harness.supports_tool_approval:
+            details = (
+                f"Attempted to answer the approval request in conversation {thread_id}. Failed because the "
+                "selected provider runs its tools without asking, so it cannot continue this approval. "
+                "Send a new message instead."
+            )
+            return RunAgentResultFailure(error={"message": details}, result_details=details)
+
         granted_before = frozenset(self._thread_storage.get_thread_metadata(thread_id).tool_grants)
         try:
             plan = _plan_tool_approvals(waiting, request.decisions, granted_before)
@@ -741,10 +752,10 @@ class AgentManager(EngineScoped):
             self._thread_storage.update_thread_metadata(thread_id, tool_grants=sorted(plan.granted))
 
         result = await self._run_turn(
+            harness,
             thread_id=thread_id,
             active=active,
             provider_name=request.provider_name,
-            model_name=request.model_name,
             mcp_server_names=request.additional_mcp_servers,
             prompt=None,
             persist_prompt=None,
@@ -760,11 +771,11 @@ class AgentManager(EngineScoped):
 
     async def _run_turn(  # noqa: PLR0913
         self,
+        harness: AgentHarness,
         *,
         thread_id: str,
         active: _ActiveRun,
         provider_name: str | None,
-        model_name: str | None,
         mcp_server_names: list[str],
         prompt: str | list[UserContent] | None,
         persist_prompt: str | list[UserContent] | None,
@@ -776,7 +787,6 @@ class AgentManager(EngineScoped):
         ``active`` is the thread's claim from :meth:`_claim_thread`; its cancel event
         is what ``CancelAgentRequest`` sets.
         """
-        harness = self._build_harness(provider_name=provider_name, model_name=model_name)
         attribution_headers = await self._attribution_headers(provider_name)
 
         event_manager = self.engine.event_manager

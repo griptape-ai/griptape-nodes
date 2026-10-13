@@ -61,7 +61,7 @@ def test_new_session_is_started_with_the_chosen_id(tmp_path: Path) -> None:
     assert _flag(args, "--session-id") == "new-id"
     assert "--session" not in args
     assert _flag(args, "--model") == "anthropic/sonnet"
-    assert _flag(args, "--append-system-prompt") == "Be brief."
+    assert Path(_flag(args, "--append-system-prompt")).read_text() == "Be brief."
     assert invocation.stdin == b"Build a flow"
     assert invocation.env == {}
 

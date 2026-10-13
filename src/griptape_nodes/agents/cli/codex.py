@@ -212,7 +212,8 @@ def _server_name(name: str) -> str:
 
 def _toml_string(value: str) -> str:
     """JSON escapes are valid in TOML basic strings, except for DEL."""
-    return json.dumps(value).replace("\x7f", "\\u007f")
+    # ensure_ascii would write non-BMP characters as surrogate pairs, which TOML rejects.
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
 
 
 def _toml_table(values: Mapping[str, str]) -> str:

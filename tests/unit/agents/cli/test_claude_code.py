@@ -64,7 +64,7 @@ def test_new_session_is_started_with_the_chosen_id() -> None:
     assert "--resume" not in args
     assert _flag(args, "--model") == "sonnet"
     assert _flag(args, "--max-turns") == "60"
-    assert _flag(args, "--append-system-prompt") == "Be brief."
+    assert Path(_flag(args, "--append-system-prompt-file")).read_text() == "Be brief."
     assert _flag(args, "--permission-mode") == "bypassPermissions"
     assert invocation.env == {"CLAUDECODE": None}
 
@@ -83,7 +83,7 @@ def test_unset_options_are_left_to_claude() -> None:
 
     assert "--model" not in args
     assert "--max-turns" not in args
-    assert "--append-system-prompt" not in args
+    assert "--append-system-prompt-file" not in args
 
 
 def test_mcp_servers_are_translated_to_claude_config() -> None:

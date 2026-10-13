@@ -99,10 +99,11 @@ def test_unset_options_are_left_to_codex() -> None:
 
 
 def test_instructions_become_developer_instructions() -> None:
-    """Preserve quotes and newlines through TOML encoding."""
-    overrides = _overrides(list(_harness().build_invocation(_context()).args))
+    """Preserve quotes, newlines, and non-BMP characters through TOML encoding."""
+    instructions = 'Be "brief".\nThanks \U0001f600\x7f'
+    overrides = _overrides(list(_harness().build_invocation(_context(instructions=instructions)).args))
 
-    assert overrides["developer_instructions"] == 'Be "brief".\nThanks.'
+    assert overrides["developer_instructions"] == instructions
 
 
 def test_mcp_servers_are_translated_to_codex_config() -> None:
