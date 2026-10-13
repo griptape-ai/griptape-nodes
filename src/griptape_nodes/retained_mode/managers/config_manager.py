@@ -145,9 +145,6 @@ class EnvVarLayer(NamedTuple):
 _REJECTED_BAD_VALUE = object()
 _REJECTED_UNKNOWN_KEY = object()
 
-# Returned by `get_dot_value` when a key is absent, so a setting whose value is None is still found.
-_MISSING_KEY = object()
-
 
 class LoadedConfigFile(NamedTuple):
     """One config file's parsed contents plus why it failed to parse, if it did.
@@ -1586,7 +1583,8 @@ class ConfigManager(EngineScoped):
             result_details = "Attempted to get config value but no category or key was specified."
             return GetConfigValueResultFailure(result_details=result_details)
 
-        if get_dot_value(self.merged_config, request.category_and_key, _MISSING_KEY) is _MISSING_KEY:
+        key_path = tuple(request.category_and_key.split("."))
+        if self._layer_value_at(self.merged_config, key_path) is _KEY_NOT_IN_LAYER:
             result_details = f"Attempted to get config value for category.key '{request.category_and_key}'. Failed because no such category.key could be found."
             return GetConfigValueResultFailure(result_details=result_details)
 
