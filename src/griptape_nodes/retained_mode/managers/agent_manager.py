@@ -243,7 +243,6 @@ _TOOL_APPROVAL_INSTRUCTIONS = (
 
 
 def _build_agent_instructions(*, include_image_tool: bool, tool_name: Callable[[str, str], str]) -> str:
-    """Compose the base instructions, naming the engine's tools the way the harness shows them."""
     image_tool_line = _IMAGE_TOOL_INSTRUCTION if include_image_tool else ""
     return _AGENT_INSTRUCTIONS_BASE.format(
         image_tool_line=image_tool_line,
@@ -270,10 +269,6 @@ def _compose_server_rules(configs: Sequence[Mapping[str, Any]]) -> str:
 
 
 def _compose_run_instructions(server_rules: str, *, include_approval_rules: bool) -> str:
-    """Join the instructions that apply to one run: MCP server rules, then approval rules.
-
-    Approval rules are left out for a harness that runs every tool without asking.
-    """
     parts = [server_rules]
     if include_approval_rules:
         parts.append(_TOOL_APPROVAL_INSTRUCTIONS)
@@ -492,8 +487,6 @@ class _RunnerCacheKey(NamedTuple):
 
 @dataclass
 class _MCPAttachment:
-    """The user's MCP servers to attach to a single agent run, and their rules."""
-
     servers: list[MCPServerSpec]
     instructions: str
 
@@ -1224,12 +1217,7 @@ class AgentManager(EngineScoped):
         return {result.header_name: result.header_value}
 
     def _build_harness(self, provider_name: str | None, model_name: str | None) -> AgentHarness:
-        """Return the harness that runs turns for this provider.
-
-        CLI providers get a fresh harness per turn: it holds only settings, and
-        the CLI keeps its own state. Every other provider runs on the cached
-        Pydantic AI runner.
-        """
+        """CLI state lives in its session, so only Pydantic AI runners need caching."""
         provider = self._get_provider(provider_name)
         harness_class = CLI_HARNESSES.get(provider.type)
         if harness_class is None:
@@ -1542,7 +1530,7 @@ class AgentManager(EngineScoped):
             )
 
         configs = [{**enabled[name], "name": name} for name in server_names if name in enabled]
-        # The rules text is never logged - free-text the user may have pasted anything into.
+        # Never log free-text rules; they may contain secrets.
         return _MCPAttachment(
             servers=[MCPServerSpec(name=name, config=enabled[name]) for name in server_names if name in enabled],
             instructions=_compose_server_rules(configs),

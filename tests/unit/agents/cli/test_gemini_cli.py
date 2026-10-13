@@ -1,9 +1,8 @@
-"""Tests for the Gemini CLI harness's command line, scratch home, and stream parsing.
+"""Fixtures follow Gemini CLI 0.63.
 
-Records are shaped like real ``gemini --output-format stream-json`` output (Gemini CLI
-0.63): the ``init`` and user ``message`` records were captured from a run with an invalid
-API key, and the others follow ``JsonStreamEvent`` in google-gemini/gemini-cli
-(``packages/core/src/output/types.ts``).
+Records follow ``JsonStreamEvent`` in google-gemini/gemini-cli's
+``packages/core/src/output/types.ts``. ``init`` and user ``message`` records were
+captured with an invalid API key.
 """
 
 from __future__ import annotations
@@ -48,7 +47,7 @@ def _context(scratch_dir: Path, **overrides: Any) -> CliTurnContext:
 
 @pytest.fixture
 def user_gemini_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """The user's ``.gemini`` directory, with sign-in, settings, and a saved session."""
+    """Create a Gemini home with credentials, settings, and a session."""
     home = tmp_path / "user-home"
     gemini_dir = home / ".gemini"
     (gemini_dir / "tmp" / "project" / "chats").mkdir(parents=True)
@@ -67,7 +66,7 @@ def _flag(args: list[str], name: str) -> str:
 
 @pytest.mark.usefixtures("user_gemini_dir")
 def test_new_session_is_started_with_the_chosen_id(tmp_path: Path) -> None:
-    """A new session uses the id the harness chose, runs headless with auto-approval, and reads stdin."""
+    """Start a trusted, headless session with the chosen ID."""
     invocation = _harness().build_invocation(_context(tmp_path / "scratch"))
     args = list(invocation.args)
 
@@ -83,7 +82,7 @@ def test_new_session_is_started_with_the_chosen_id(tmp_path: Path) -> None:
 
 @pytest.mark.usefixtures("user_gemini_dir")
 def test_existing_session_is_resumed(tmp_path: Path) -> None:
-    """A known session is resumed rather than started."""
+    """Resume instead of creating a session."""
     args = list(_harness().build_invocation(_context(tmp_path / "scratch", resume_session_id="old-id")).args)
 
     assert _flag(args, "--resume") == "old-id"
@@ -91,13 +90,13 @@ def test_existing_session_is_resumed(tmp_path: Path) -> None:
 
 
 def test_instructions_go_in_the_prompt() -> None:
-    """Gemini CLI has no system prompt option, so the base puts instructions in the prompt."""
+    """Require prompt-based system instructions."""
     assert _harness().supports_system_prompt is False
 
 
 @pytest.mark.usefixtures("user_gemini_dir")
 def test_images_are_mentioned_in_the_prompt(tmp_path: Path) -> None:
-    """Images are mentioned as @path and their directory is made readable."""
+    """Escape image paths and allow access to their directory."""
     scratch = tmp_path / "my scratch"
     image = PromptImage(data=b"\x89PNG", media_type="image/png", path=scratch / "attachment-0.png")
     invocation = _harness().build_invocation(_context(scratch, images=[image]))
@@ -111,7 +110,7 @@ def test_images_are_mentioned_in_the_prompt(tmp_path: Path) -> None:
 
 
 def test_scratch_home_carries_over_the_users_files_and_adds_mcp_servers(tmp_path: Path, user_gemini_dir: Path) -> None:
-    """The scratch home links the user's files, and its settings are theirs plus the turn's MCP servers."""
+    """Merge MCP servers without changing the user's settings."""
     servers = [
         CliMCPServer(name="GriptapeNodes", transport="streamable_http", url="http://localhost:1/mcp/"),
         CliMCPServer(name="files", transport="stdio", command="npx", args=["-y", "fs"], env={"K": "V"}, cwd="/data"),
@@ -138,7 +137,7 @@ def test_scratch_home_carries_over_the_users_files_and_adds_mcp_servers(tmp_path
 
 @pytest.mark.usefixtures("user_gemini_dir")
 def test_scratch_home_can_be_built_again_for_a_retry(tmp_path: Path) -> None:
-    """Building the command line twice in one scratch directory, as a retry without a session does, works."""
+    """Reuse the scratch directory for session retries."""
     context = _context(tmp_path / "scratch")
 
     first = _harness().build_invocation(context)
@@ -148,7 +147,7 @@ def test_scratch_home_can_be_built_again_for_a_retry(tmp_path: Path) -> None:
 
 
 def test_scratch_home_works_without_a_users_gemini_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A user who has never run Gemini CLI still gets the MCP servers."""
+    """Attach MCP servers without an existing Gemini home."""
     monkeypatch.setenv("GEMINI_CLI_HOME", str(tmp_path / "empty-home"))
     invocation = _harness().build_invocation(_context(tmp_path / "scratch"))
 
@@ -157,7 +156,7 @@ def test_scratch_home_works_without_a_users_gemini_directory(tmp_path: Path, mon
 
 
 def test_mcp_tool_names_match_the_names_gemini_gives_them() -> None:
-    """Gemini CLI names MCP tools mcp_server_tool, and the parser reports server_tool."""
+    """Match Gemini's MCP names and normalize its prefix."""
     harness = _harness()
 
     assert harness.mcp_tool_name("GriptapeNodes", "CreateNodeRequest") == "mcp_GriptapeNodes_CreateNodeRequest"
@@ -172,7 +171,7 @@ def _feed(records: list[dict[str, Any]]) -> list[Any]:
 
 
 def test_a_turn_with_a_tool_call_is_parsed_in_order() -> None:
-    """A turn's session, text, tool call, result, and end come out in order, and the echoed prompt is skipped."""
+    """Preserve event order and exclude the echoed prompt."""
     events = _feed(
         [
             {"type": "init", "timestamp": "2026-10-13T19:19:31.844Z", "session_id": "s-1", "model": "auto"},
@@ -203,7 +202,7 @@ def test_a_turn_with_a_tool_call_is_parsed_in_order() -> None:
 
 
 def test_tool_errors_are_flagged() -> None:
-    """A tool result Gemini CLI marks as an error carries its message and is flagged."""
+    """Preserve tool error messages and flags."""
     events = _feed(
         [
             {"type": "tool_use", "tool_name": "run_shell_command", "tool_id": "c", "parameters": {"command": "false"}},
@@ -220,12 +219,12 @@ def test_tool_errors_are_flagged() -> None:
 
 
 def test_warnings_are_skipped() -> None:
-    """Warning records don't reach the sidebar or end the turn."""
+    """Ignore warnings without ending the turn."""
     assert _feed([{"type": "error", "severity": "warning", "message": "Loop detected"}]) == []
 
 
 def test_failed_result_reports_geminis_error() -> None:
-    """A failed result carries Gemini CLI's error text."""
+    """Preserve Gemini's failure message."""
     record = {
         "type": "result",
         "status": "error",

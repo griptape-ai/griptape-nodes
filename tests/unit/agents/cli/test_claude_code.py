@@ -1,8 +1,4 @@
-"""Tests for the Claude Code harness's command line and stream parsing.
-
-Records are shaped like real ``claude -p --output-format stream-json
---include-partial-messages`` output.
-"""
+"""Fixtures follow ``claude -p --output-format stream-json --include-partial-messages`` output."""
 
 from __future__ import annotations
 
@@ -48,7 +44,7 @@ def _flag(args: list[str], name: str) -> str:
 
 
 def test_new_session_is_started_with_the_chosen_id() -> None:
-    """A new session uses the id the harness chose, with the turn's options."""
+    """Pass the chosen session ID and turn options."""
     invocation = _harness().build_invocation(_context())
     args = list(invocation.args)
 
@@ -62,7 +58,7 @@ def test_new_session_is_started_with_the_chosen_id() -> None:
 
 
 def test_existing_session_is_resumed() -> None:
-    """A known session is resumed rather than started."""
+    """Resume instead of creating a session."""
     args = list(_harness().build_invocation(_context(resume_session_id="old-id")).args)
 
     assert _flag(args, "--resume") == "old-id"
@@ -70,7 +66,7 @@ def test_existing_session_is_resumed() -> None:
 
 
 def test_unset_options_are_left_to_claude() -> None:
-    """Options with no value are left to Claude Code's defaults."""
+    """Omit unset model, turn-limit, and instruction options."""
     args = list(_harness().build_invocation(_context(model=None, max_turns=None, instructions="")).args)
 
     assert "--model" not in args
@@ -79,7 +75,7 @@ def test_unset_options_are_left_to_claude() -> None:
 
 
 def test_mcp_servers_are_translated_to_claude_config() -> None:
-    """Engine MCP configs become Claude Code's, and unsupported transports are skipped."""
+    """Translate supported MCP transports and skip the rest."""
     servers = [
         CliMCPServer(name="GriptapeNodes", transport="streamable_http", url="http://localhost:1/mcp/"),
         CliMCPServer(name="files", transport="stdio", command="npx", args=["-y", "fs"], env={"K": "V"}),
@@ -97,7 +93,7 @@ def test_mcp_servers_are_translated_to_claude_config() -> None:
 
 
 def test_prompt_and_images_go_to_stdin_as_content_blocks() -> None:
-    """The message and its images are sent on stdin as content blocks."""
+    """Send text and base64 images on stdin."""
     image = PromptImage(data=b"\x89PNG", media_type="image/png", path=Path("scratch/a.png"))
     invocation = _harness().build_invocation(_context(images=[image]))
 
@@ -123,7 +119,7 @@ def _stream(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_a_turn_with_a_tool_call_is_parsed_in_order() -> None:
-    """A turn's session, thinking, tool call, result, text, and end come out in order."""
+    """Preserve event order without repeating streamed text."""
     events = _feed(
         [
             {"type": "system", "subtype": "init", "session_id": "s-1", "tools": ["Bash"]},
@@ -175,14 +171,14 @@ def test_a_turn_with_a_tool_call_is_parsed_in_order() -> None:
 
 
 def test_text_that_was_never_streamed_is_taken_from_the_message() -> None:
-    """Text missing from the partial stream is taken from the complete message."""
+    """Fall back to complete message text."""
     events = _feed([{"type": "assistant", "message": {"id": "m1", "content": [{"type": "text", "text": "Hi"}]}}])
 
     assert events == [TextDelta(delta="Hi")]
 
 
 def test_subagent_records_are_skipped() -> None:
-    """Subagent records don't reach the sidebar."""
+    """Exclude subagent output."""
     events = _feed(
         [
             {
@@ -197,7 +193,7 @@ def test_subagent_records_are_skipped() -> None:
 
 
 def test_tool_errors_are_flagged() -> None:
-    """A tool result Claude Code marks as an error is flagged."""
+    """Preserve tool-result error flags."""
     events = _feed(
         [
             {"type": "assistant", "message": {"id": "m", "content": [{"type": "tool_use", "id": "t", "name": "Bash"}]}},
@@ -214,13 +210,13 @@ def test_tool_errors_are_flagged() -> None:
 
 
 def test_output_limit_and_turn_limit_mark_the_reply_truncated() -> None:
-    """Hitting the output limit or the turn limit marks the reply truncated."""
+    """Treat output and turn limits as truncation."""
     assert _feed([{"type": "result", "subtype": "success", "stop_reason": "max_tokens"}]) == [TurnEnded(truncated=True)]
     assert _feed([{"type": "result", "subtype": "error_max_turns", "is_error": True}]) == [TurnEnded(truncated=True)]
 
 
 def test_failed_result_reports_claudes_error() -> None:
-    """A failed result carries Claude Code's error text."""
+    """Preserve Claude Code's failure message."""
     record = {
         "type": "result",
         "subtype": "error_during_execution",

@@ -1,10 +1,8 @@
-"""Tests for the OpenCode harness's command line and stream parsing.
+"""Fixtures follow OpenCode 1.19.
 
-Records are shaped like real ``opencode run --format json`` output (opencode 1.19): the
-``error`` record was captured from a run without credentials, and the part payloads
-follow ``TextPart``, ``ReasoningPart``, ``ToolPart`` and ``StepFinishPart`` in
-anomalyco/opencode (``packages/sdk/js/src/gen/types.gen.ts``) and the emitter in
-``packages/opencode/src/cli/cmd/run.ts``.
+The ``error`` record was captured without credentials. Parts follow ``TextPart``,
+``ReasoningPart``, ``ToolPart`` and ``StepFinishPart`` in anomalyco/opencode's
+``packages/sdk/js/src/gen/types.gen.ts``; the emitter is ``packages/opencode/src/cli/cmd/run.ts``.
 """
 
 from __future__ import annotations
@@ -56,7 +54,7 @@ def _config(env: dict[str, str | None]) -> dict[str, Any]:
 
 
 def test_new_session_runs_json_with_auto_approval(tmp_path: Path) -> None:
-    """A new session runs `opencode run` with JSON output, auto-approval, and the prompt on stdin."""
+    """Run with JSON output, auto-approval, thinking, and stdin text."""
     invocation = _harness().build_invocation(_context(tmp_path))
     args = list(invocation.args)
 
@@ -68,14 +66,14 @@ def test_new_session_runs_json_with_auto_approval(tmp_path: Path) -> None:
 
 
 def test_existing_session_is_resumed(tmp_path: Path) -> None:
-    """A known session is resumed rather than started."""
+    """Pass the existing session ID."""
     args = list(_harness().build_invocation(_context(tmp_path, resume_session_id="ses_abc")).args)
 
     assert _flag(args, "--session") == "ses_abc"
 
 
 def test_unset_options_are_left_to_opencode(tmp_path: Path) -> None:
-    """Options with no value are left to OpenCode's defaults."""
+    """Omit unset model and instruction options."""
     invocation = _harness().build_invocation(_context(tmp_path, model=None, instructions=""))
 
     assert "--model" not in invocation.args
@@ -83,7 +81,7 @@ def test_unset_options_are_left_to_opencode(tmp_path: Path) -> None:
 
 
 def test_instructions_are_listed_as_a_file_in_the_inline_config(tmp_path: Path) -> None:
-    """Instructions are written to the scratch directory and listed in the inline config."""
+    """Reference scratch-file instructions in inline config."""
     config = _config(dict(_harness().build_invocation(_context(tmp_path)).env))
 
     assert config["instructions"] == [str(tmp_path / "gtn-instructions.md")]
@@ -91,7 +89,7 @@ def test_instructions_are_listed_as_a_file_in_the_inline_config(tmp_path: Path) 
 
 
 def test_mcp_servers_are_translated_to_opencode_config(tmp_path: Path) -> None:
-    """Engine MCP configs become OpenCode's local and remote servers, and unsupported transports are skipped."""
+    """Translate local and remote MCP transports; skip unsupported ones."""
     servers = [
         CliMCPServer(name="GriptapeNodes", transport="streamable_http", url="http://localhost:1/mcp/"),
         CliMCPServer(name="files", transport="stdio", command="npx", args=["-y", "fs"], env={"K": "V"}),
@@ -108,7 +106,7 @@ def test_mcp_servers_are_translated_to_opencode_config(tmp_path: Path) -> None:
 
 
 def test_images_are_attached_as_files_after_the_other_options(tmp_path: Path) -> None:
-    """Each image is attached with --file, last, because --file takes several values."""
+    """``--file`` consumes multiple values, so it must follow the other options."""
     images = [PromptImage(data=b"1", media_type="image/png", path=tmp_path / "a.png")]
     args = list(_harness().build_invocation(_context(tmp_path, images=images, resume_session_id="ses_abc")).args)
 
@@ -116,7 +114,7 @@ def test_images_are_attached_as_files_after_the_other_options(tmp_path: Path) ->
 
 
 def test_mcp_tool_names_match_the_names_opencode_gives_them() -> None:
-    """OpenCode names MCP tools server_tool with punctuation replaced, which is the engine's form."""
+    """Match OpenCode's punctuation-normalized MCP names."""
     harness = _harness()
 
     assert harness.mcp_tool_name("GriptapeNodes", "CreateNodeRequest") == "GriptapeNodes_CreateNodeRequest"
@@ -134,7 +132,7 @@ def _record(record_type: str, part: dict[str, Any], session_id: str = "ses_1") -
 
 
 def test_a_turn_with_a_tool_call_is_parsed_in_order() -> None:
-    """A turn's session, reasoning, tool call and result, text, and end come out in order."""
+    """Preserve event order across tool-calling steps."""
     events = _feed(
         [
             _record("step_start", {"id": "prt_1", "type": "step-start"}),
@@ -176,7 +174,7 @@ def test_a_turn_with_a_tool_call_is_parsed_in_order() -> None:
 
 
 def test_parts_reported_twice_are_reported_once() -> None:
-    """A finished part that OpenCode repeats doesn't repeat in the sidebar."""
+    """Deduplicate repeated parts."""
     part = {"id": "prt_6", "type": "text", "text": "Hi", "time": {"start": 1, "end": 2}}
 
     assert _feed([_record("text", part), _record("text", part)]) == [
@@ -193,7 +191,7 @@ def test_synthetic_text_is_skipped() -> None:
 
 
 def test_tool_errors_are_flagged() -> None:
-    """A tool OpenCode reports as failed carries its error and is flagged."""
+    """Preserve tool error messages and flags."""
     events = _feed(
         [
             _record(
@@ -218,14 +216,14 @@ def test_tool_errors_are_flagged() -> None:
 
 
 def test_output_limit_marks_the_reply_truncated() -> None:
-    """A final step that stopped at the output limit marks the reply truncated."""
+    """Treat the final step's output limit as truncation."""
     events = _feed([_record("step_finish", {"id": "prt_7", "type": "step-finish", "reason": "length"})])
 
     assert events[1] == TurnEnded(truncated=True)
 
 
 def test_error_record_reports_opencodes_error() -> None:
-    """An error record carries OpenCode's message, and the error stays if a step finishes afterwards."""
+    """Keep errors when a later step finishes."""
     error = {"name": "UnknownError", "data": {"message": "Unexpected server error. Check server logs for details."}}
     events = _feed(
         [
@@ -239,7 +237,7 @@ def test_error_record_reports_opencodes_error() -> None:
 
 
 def test_the_first_of_several_errors_is_the_one_reported() -> None:
-    """OpenCode follows a specific error with a generic one, so the first is kept."""
+    """Keep the specific error rather than its generic follow-up."""
     first = {"name": "UnknownError", "data": {"message": "Model not found: x/y."}}
     second = {"name": "UnknownError", "data": {"message": "Unexpected server error."}}
     events = _feed(

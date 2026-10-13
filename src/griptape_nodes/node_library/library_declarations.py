@@ -179,8 +179,6 @@ class ModelCatalogLibraryProperty(BaseModel):
 
 
 class SidebarProviderKind(StrEnum):
-    """How the chat sidebar's agent runs on a provider."""
-
     MODEL = "model"
     """The engine's own agent loop calls the provider's models."""
 

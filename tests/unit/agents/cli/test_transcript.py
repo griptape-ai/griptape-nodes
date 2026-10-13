@@ -1,5 +1,3 @@
-"""Tests for mirroring a CLI turn into Pydantic AI message history."""
-
 from __future__ import annotations
 
 from pydantic_ai.messages import (
@@ -27,7 +25,7 @@ def _builder() -> TranscriptBuilder:
 
 
 def test_deltas_join_into_parts_and_results_open_a_request() -> None:
-    """Deltas join into parts, and tool results close the response and open a request."""
+    """Join deltas and group tool answers in a request."""
     builder = _builder()
     for event in [
         ThinkingDelta(delta="Let me "),
@@ -57,7 +55,7 @@ def test_deltas_join_into_parts_and_results_open_a_request() -> None:
 
 
 def test_unanswered_calls_are_closed_so_nothing_looks_pending() -> None:
-    """Calls without a result are closed as interrupted, so nothing looks pending."""
+    """Close unanswered calls as interrupted, not pending approval."""
     builder = _builder()
     builder.add(ToolCall(tool_call_id="a", tool_name="Bash", args="{}"))
 
@@ -74,14 +72,14 @@ def test_unanswered_calls_are_closed_so_nothing_looks_pending() -> None:
 
 
 def test_an_empty_turn_still_ends_in_a_response() -> None:
-    """A turn with no events still ends in a response."""
+    """End empty turns with a model response."""
     (only,) = _builder().messages()
 
     assert isinstance(only, ModelResponse)
 
 
 def test_catch_up_keeps_what_was_said() -> None:
-    """Catch-up keeps messages and tool names, not tool results."""
+    """Include dialogue and tool names, but not tool results."""
     text = render_catch_up(
         [
             ModelRequest(parts=[UserPromptPart(content="Make a node")]),
@@ -98,12 +96,12 @@ def test_catch_up_keeps_what_was_said() -> None:
 
 
 def test_catch_up_is_empty_without_messages() -> None:
-    """Nothing to catch up on renders as nothing."""
+    """Omit catch-up when history is empty."""
     assert render_catch_up([]) == ""
 
 
 def test_catch_up_keeps_the_newest_messages_when_long() -> None:
-    """Long catch-up keeps the newest messages."""
+    """Keep the newest messages within the catch-up limit."""
     old = ModelRequest(parts=[UserPromptPart(content="old " * CATCH_UP_MAX_CHARS)])
     new = ModelRequest(parts=[UserPromptPart(content="newest question")])
 

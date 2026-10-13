@@ -1620,8 +1620,6 @@ class TestGetThreadMetadataHandler:
 
 
 class TestCliHarnessProviders:
-    """A coding-agent CLI provider runs its turns on that CLI's harness."""
-
     @staticmethod
     def _with_claude_provider(manager: AgentManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         manager._providers.append(ProviderConfig(name="my-claude", type="claude_code", model="opus"))
@@ -1640,7 +1638,7 @@ class TestCliHarnessProviders:
     def test_cli_provider_gets_its_harness(
         self, providers_manager: AgentManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """The harness gets the provider's model, the configured command, and the engine's MCP server."""
+        """Build the CLI harness with provider and engine settings."""
         self._with_claude_provider(providers_manager, monkeypatch, tmp_path)
 
         harness = providers_manager._build_harness(provider_name="my-claude", model_name=None)
@@ -1655,7 +1653,7 @@ class TestCliHarnessProviders:
     def test_cli_instructions_name_tools_the_cli_way_and_keep_the_users_prompt(
         self, providers_manager: AgentManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """The CLI is told the engine's tools by the names it sees, plus the user's own system prompt."""
+        """Use CLI tool names and retain the user's system instructions."""
         self._with_claude_provider(providers_manager, monkeypatch, tmp_path)
 
         harness = providers_manager._build_harness(provider_name="my-claude", model_name="sonnet")
@@ -1670,7 +1668,7 @@ class TestCliHarnessProviders:
     def test_model_provider_gets_the_pydantic_runner(
         self, providers_manager: AgentManager, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Every provider that isn't a CLI keeps running on the cached Pydantic AI runner."""
+        """Use the Pydantic runner for model providers."""
         sentinel = object()
         monkeypatch.setattr(providers_manager, "_build_runner", lambda **_k: sentinel)
 
@@ -1678,7 +1676,7 @@ class TestCliHarnessProviders:
 
     @pytest.mark.asyncio
     async def test_cli_provider_lists_suggested_models(self, providers_manager: AgentManager) -> None:
-        """Picking a model for a CLI provider offers the CLI's common model names."""
+        """Offer the CLI's suggested model names."""
         result = await providers_manager.on_handle_list_provider_models_request(
             ListProviderModelsRequest(provider="claude_code")
         )
@@ -1687,7 +1685,7 @@ class TestCliHarnessProviders:
         assert result.models == list(ClaudeCodeHarness.suggested_models)
 
     def test_every_cli_provider_in_the_catalog_has_a_harness(self) -> None:
-        """The catalog's CLI providers and the registered harnesses are the same set."""
+        """Match catalog CLI providers to registered harnesses."""
         cli_providers = {
             provider_id
             for provider_id, provider in PROVIDER_CATALOG.providers.items()
@@ -1697,7 +1695,7 @@ class TestCliHarnessProviders:
         assert cli_providers == set(CLI_HARNESSES)
 
     def test_approval_rules_are_left_out_for_a_harness_that_never_asks(self) -> None:
-        """A CLI runs every tool without asking, so it isn't told some tools need approval."""
+        """Exclude approval instructions for CLI harnesses."""
         with_rules = _compose_run_instructions("Server rules.", include_approval_rules=True)
         without_rules = _compose_run_instructions("Server rules.", include_approval_rules=False)
 

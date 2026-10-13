@@ -1,10 +1,3 @@
-"""Claude Code as a chat-sidebar agent harness.
-
-Runs ``claude -p`` with ``stream-json`` input and output. The user's message
-goes in on stdin, so images travel as content blocks rather than files, and
-``--include-partial-messages`` streams text and thinking token by token.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -79,14 +72,6 @@ class ClaudeCodeHarness(CliHarness):
 
 
 class ClaudeCodeStreamParser(CliStreamParser):
-    """Parses ``claude -p --output-format stream-json --include-partial-messages``.
-
-    Text and thinking come from the partial-message stream. Tool calls come from
-    the complete ``assistant`` messages, which carry finished arguments, and tool
-    results from the ``user`` messages that follow them. Records from subagents
-    (``parent_tool_use_id`` set) are skipped: the sidebar shows the main agent.
-    """
-
     def __init__(self, *, normalize_tool_name: Callable[[str], str]) -> None:
         self._normalize_tool_name = normalize_tool_name
         self._tool_names: dict[str, str] = {}
@@ -94,6 +79,7 @@ class ClaudeCodeStreamParser(CliStreamParser):
         self._streamed_message_ids: set[str] = set()
 
     def feed(self, record: dict[str, Any]) -> list[CliEvent]:
+        # The sidebar shows only the main agent.
         if record.get("parent_tool_use_id"):
             return []
         events: list[CliEvent]
@@ -103,6 +89,7 @@ class ClaudeCodeStreamParser(CliStreamParser):
             case "stream_event":
                 events = self._stream_event(record.get("event") or {})
             case "assistant":
+                # Complete messages carry finished tool arguments.
                 events = self._assistant_message(record.get("message") or {})
             case "user":
                 events = self._tool_results(record.get("message") or {})
@@ -131,8 +118,7 @@ class ClaudeCodeStreamParser(CliStreamParser):
         return []
 
     def _assistant_message(self, message: dict[str, Any]) -> list[CliEvent]:
-        # Text normally arrives as deltas first. If a message's text was never
-        # streamed, as when a CLI version stops sending partial messages, take it here.
+        # Some CLI versions omit partial-message events.
         text_was_streamed = message.get("id") in self._streamed_message_ids
         events: list[CliEvent] = []
         for block in message.get("content") or []:
@@ -181,8 +167,7 @@ def _session_started(record: dict[str, Any]) -> list[CliEvent]:
 
 def _turn_ended(record: dict[str, Any]) -> TurnEnded:
     subtype = record.get("subtype")
-    # Hitting --max-turns stops the reply partway, as an output limit does: the
-    # work so far is kept, and the user can ask it to continue.
+    # A turn limit keeps partial work; treat it like an output limit.
     if subtype == "error_max_turns":
         return TurnEnded(truncated=True)
     if record.get("is_error") or subtype != "success":

@@ -20,14 +20,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class HarnessSession:
-    """A CLI harness's own session for a thread, and how much of the thread it has seen.
-
-    Attributes:
-        session_id: The id the CLI resumes the session by.
-        message_count: How many of the thread's messages the session holds. Messages
-            past this were added by another provider, so the CLI is told about
-            them on its next turn.
-    """
+    """``message_count`` marks the history prefix seen by the CLI; later messages need catch-up."""
 
     session_id: str
     message_count: int
@@ -143,10 +136,8 @@ class BaseThreadStorageDriver(ABC):
 
     @abstractmethod
     def get_harness_session(self, thread_id: str, harness_id: str) -> HarnessSession | None:
-        """Return the session ``harness_id`` keeps for this thread, or ``None`` if it has none."""
         raise NotImplementedError
 
     @abstractmethod
     def set_harness_session(self, thread_id: str, harness_id: str, session: HarnessSession) -> None:
-        """Record the session ``harness_id`` keeps for this thread, replacing any earlier one."""
         raise NotImplementedError

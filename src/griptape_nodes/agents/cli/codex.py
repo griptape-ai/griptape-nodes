@@ -1,22 +1,3 @@
-"""Codex as a chat-sidebar agent harness.
-
-Runs ``codex exec --json``, or ``codex exec resume --json`` to continue a
-session. ``--dangerously-bypass-approvals-and-sandbox`` skips Codex's approval
-prompts and its sandbox, which would otherwise keep it from editing files outside
-the workspace and from reaching the network. The user's message goes in on stdin
-(``-``) and images travel as ``--image`` files.
-
-Codex has no command line option for MCP servers or instructions, but ``-c``
-overrides any config key for one run. Each MCP server becomes a
-``mcp_servers.<name>`` table and the instructions become ``developer_instructions``.
-Nothing is written to ``~/.codex/config.toml``. Servers get
-``default_tools_approval_mode = "approve"`` so that tools an MCP server marks as
-changing things run without asking.
-
-Codex prints a message, a command, or a tool call once it is complete, not token by
-token, so text arrives as one ``TextDelta`` per message.
-"""
-
 from __future__ import annotations
 
 import json
@@ -65,6 +46,7 @@ class CodexHarness(CliHarness):
         args = ["exec"]
         if context.resume_session_id:
             args.append("resume")
+        # The sandbox blocks network access and edits outside the workspace.
         args += ["--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox"]
         if context.model:
             args += ["--model", context.model]
@@ -85,16 +67,9 @@ class CodexHarness(CliHarness):
 
 
 class CodexStreamParser(CliStreamParser):
-    """Parses ``codex exec --json``.
+    """Codex emits complete items, not token deltas.
 
-    Codex reports each unit of work as an item that starts and then completes.
-    Commands, MCP tool calls, and web searches become a tool call when they start
-    and a tool result when they complete; file changes are only reported complete,
-    so they produce both at once. Messages and reasoning are reported complete.
-
-    ``error`` records are progress notes such as "Reconnecting... 2/5"; the failure
-    that ends a turn is ``turn.failed``. Other items, such as the to-do list and
-    calls to Codex's own subagents, are skipped.
+    ``error`` records are reconnect progress; ``turn.failed`` ends a failed turn.
     """
 
     def __init__(self) -> None:
@@ -141,7 +116,6 @@ class CodexStreamParser(CliStreamParser):
         return [call, result]
 
     def _tool_call(self, item: dict[str, Any]) -> ToolCall | None:
-        """Return the call ``item`` stands for, unless it was reported before or is not a tool call."""
         item_id = str(item.get("id") or "")
         tool_name = _tool_name(item)
         if tool_name is None or item_id in self._announced:
@@ -233,7 +207,7 @@ def _server_name(name: str) -> str:
 
 
 def _toml_string(value: str) -> str:
-    """Return ``value`` as a TOML basic string. JSON's escapes are TOML's, except for DEL."""
+    """JSON escapes are valid in TOML basic strings, except for DEL."""
     return json.dumps(value).replace("\x7f", "\\u007f")
 
 
@@ -242,7 +216,6 @@ def _toml_table(values: Mapping[str, str]) -> str:
 
 
 def _mcp_config(servers: Sequence[CliMCPServer]) -> dict[str, str]:
-    """Return each server's TOML inline table, by the name Codex will know it as."""
     config: dict[str, str] = {}
     for server in servers:
         fields: list[str]
@@ -267,6 +240,7 @@ def _mcp_config(servers: Sequence[CliMCPServer]) -> dict[str, str]:
                 server.transport,
             )
             continue
+        # MCP tools marked as mutating require this approval setting even with CLI prompts bypassed.
         fields.append('default_tools_approval_mode = "approve"')
         config[_server_name(server.name)] = "{" + ", ".join(fields) + "}"
     return config

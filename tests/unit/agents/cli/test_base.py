@@ -1,9 +1,4 @@
-"""Tests for the shared CLI harness machinery, driven by a fake CLI.
-
-The fake CLI is a Python script that prints the JSON records it is told to and
-saves its argv and stdin, so these tests exercise the real subprocess plumbing
-without any coding-agent CLI installed.
-"""
+"""A fake CLI exercises real subprocess I/O without installed coding agents."""
 
 from __future__ import annotations
 
@@ -124,7 +119,7 @@ def _ok_run(text: str = "Done.", session_id: str = "s-1") -> dict[str, Any]:
 
 @pytest.fixture
 def storage(tmp_path: Path) -> LocalThreadStorageDriver:
-    """Local thread storage in a temporary directory."""
+    """Use temporary thread storage."""
     return LocalThreadStorageDriver(tmp_path / "threads", config_manager=None, secrets_manager=None)  # type: ignore[arg-type]
 
 
@@ -150,7 +145,7 @@ def _harness(
 
 @pytest.mark.asyncio
 async def test_turn_streams_events_and_saves_the_transcript(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """A turn streams its events and saves them as Pydantic AI messages, with the CLI's session."""
+    """Persist streamed events and the CLI session."""
     run = {
         "records": [
             {"t": "session", "id": "s-1"},
@@ -189,7 +184,7 @@ async def test_turn_streams_events_and_saves_the_transcript(tmp_path: Path, stor
 async def test_next_turn_resumes_the_session_without_catch_up(
     tmp_path: Path, storage: LocalThreadStorageDriver
 ) -> None:
-    """A later turn resumes the CLI's session and sends only the new message."""
+    """Resume with only the new prompt."""
     harness = _harness(tmp_path, storage, _ok_run("First."), _ok_run("Second."))
     thread_id, _ = storage.create_thread()
 
@@ -205,7 +200,7 @@ async def test_next_turn_resumes_the_session_without_catch_up(
 async def test_messages_added_by_another_provider_are_sent_as_catch_up(
     tmp_path: Path, storage: LocalThreadStorageDriver
 ) -> None:
-    """Messages the CLI's session has not seen are sent ahead of the new message."""
+    """Include unseen history before the new prompt."""
     harness = _harness(tmp_path, storage, _ok_run())
     thread_id, _ = storage.create_thread()
     earlier: list[ModelMessage] = [
@@ -228,7 +223,7 @@ async def test_messages_added_by_another_provider_are_sent_as_catch_up(
 async def test_instructions_and_mcp_servers_reach_the_invocation(
     tmp_path: Path, storage: LocalThreadStorageDriver
 ) -> None:
-    """Base and turn instructions combine, and the engine's MCP server comes before the turn's."""
+    """Combine instructions and attach the engine's MCP server first."""
     harness = _harness(tmp_path, storage, _ok_run())
     thread_id, _ = storage.create_thread()
 
@@ -253,7 +248,7 @@ async def test_instructions_and_mcp_servers_reach_the_invocation(
 async def test_without_system_prompt_support_instructions_lead_a_new_session(
     tmp_path: Path, storage: LocalThreadStorageDriver
 ) -> None:
-    """A CLI with no system prompt option gets the instructions at the start of a new session only."""
+    """Prepend instructions only when starting a session."""
     harness = _harness(tmp_path, storage, _ok_run(), _ok_run(), harness_class=_NoSystemPromptHarness)
     thread_id, _ = storage.create_thread()
 
@@ -268,7 +263,7 @@ async def test_without_system_prompt_support_instructions_lead_a_new_session(
 
 @pytest.mark.asyncio
 async def test_lost_session_is_replaced_by_a_new_one(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """A session the CLI can no longer resume is replaced by a new one that is caught up."""
+    """Catch up a new session when resuming fails."""
     lost = {"records": [{"t": "end", "error": "No conversation found"}], "exit": 1}
     harness = _harness(tmp_path, storage, lost, _ok_run(session_id="s-new"))
     thread_id, _ = storage.create_thread()
@@ -289,7 +284,7 @@ async def test_lost_session_is_replaced_by_a_new_one(tmp_path: Path, storage: Lo
 
 @pytest.mark.asyncio
 async def test_cli_error_is_raised_and_nothing_is_saved(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """An error the CLI reports fails the turn without saving it."""
+    """Leave history unchanged after CLI errors."""
     harness = _harness(tmp_path, storage, {"records": [{"t": "end", "error": "Not signed in"}], "exit": 1})
     thread_id, _ = storage.create_thread()
 
@@ -301,7 +296,7 @@ async def test_cli_error_is_raised_and_nothing_is_saved(tmp_path: Path, storage:
 
 @pytest.mark.asyncio
 async def test_crash_reports_exit_code_and_stderr(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """A CLI that exits without finishing reports its exit code and stderr."""
+    """Include exit code and stderr in crash errors."""
     harness = _harness(tmp_path, storage, {"records": [], "stderr": "boom: bad flag", "exit": 2})
     thread_id, _ = storage.create_thread()
 
@@ -313,7 +308,7 @@ async def test_crash_reports_exit_code_and_stderr(tmp_path: Path, storage: Local
 async def test_missing_cli_names_the_command_and_how_to_install_it(
     tmp_path: Path, storage: LocalThreadStorageDriver, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A CLI that isn't installed fails with its command name and how to install it."""
+    """Include the missing command and installation hint."""
     harness = _harness(tmp_path, storage, _ok_run())
     harness.command = None
     monkeypatch.setenv("PATH", str(tmp_path))
@@ -327,14 +322,13 @@ async def test_missing_cli_names_the_command_and_how_to_install_it(
 
 @pytest.mark.asyncio
 async def test_cancel_stops_the_cli_and_saves_nothing(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """Cancelling stops the CLI, keeps the streamed text, and saves no turn."""
+    """Keep partial output, but not the cancelled turn's history."""
     slow = {"records": [{"t": "session", "id": "s-1"}, {"t": "text", "d": "Partial"}, {"sleep": 30}, {"t": "end"}]}
     harness = _harness(tmp_path, storage, slow)
     thread_id, _ = storage.create_thread()
     cancel_event = asyncio.Event()
 
     def cancel_on_text(event: RunEvent) -> None:
-        """Cancel the turn as soon as any text arrives."""
         if isinstance(event, TextDelta):
             cancel_event.set()
 
@@ -362,7 +356,7 @@ def _paused_history() -> list[ModelMessage]:
 async def test_calls_left_waiting_by_another_provider_are_declined(
     tmp_path: Path, storage: LocalThreadStorageDriver
 ) -> None:
-    """Calls another provider left waiting are saved as declined ahead of the new message."""
+    """Persist declined calls before the new message."""
     harness = _harness(tmp_path, storage, _ok_run())
     thread_id, _ = storage.create_thread()
     storage.save_history(thread_id, _paused_history())
@@ -387,7 +381,7 @@ async def test_calls_left_waiting_by_another_provider_are_declined(
 
 @pytest.mark.asyncio
 async def test_approving_another_providers_call_is_refused(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """A CLI harness refuses to approve a call another provider asked for."""
+    """Reject another provider's pending approval."""
     harness = _harness(tmp_path, storage, _ok_run())
     thread_id, _ = storage.create_thread()
     storage.save_history(thread_id, _paused_history())
@@ -404,7 +398,7 @@ async def test_approving_another_providers_call_is_refused(tmp_path: Path, stora
 
 @pytest.mark.asyncio
 async def test_resuming_a_paused_turn_is_refused(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """A CLI harness has no paused turn to resume."""
+    """Reject promptless CLI turns."""
     harness = _harness(tmp_path, storage, _ok_run())
     thread_id, _ = storage.create_thread()
 
@@ -416,7 +410,7 @@ async def test_resuming_a_paused_turn_is_refused(tmp_path: Path, storage: LocalT
 async def test_images_are_written_for_the_cli_and_saved_as_urls(
     tmp_path: Path, storage: LocalThreadStorageDriver
 ) -> None:
-    """Attached images reach the CLI as files and bytes, and are saved as URLs."""
+    """Send image bytes and files; persist URL references."""
     harness = _harness(tmp_path, storage, _ok_run())
     thread_id, _ = storage.create_thread()
     image = BinaryContent(data=b"\x89PNG", media_type="image/png")
@@ -439,7 +433,7 @@ async def test_images_are_written_for_the_cli_and_saved_as_urls(
 
 
 def test_mcp_tool_names_are_normalized_to_the_engine_form(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """CLI MCP tool names are reported in the engine's `<server>_<tool>` form."""
+    """Normalize MCP names without changing built-in tool names."""
     harness = _harness(tmp_path, storage)
 
     assert harness.normalize_tool_name("mcp__GriptapeNodes__CreateNodeRequest") == "GriptapeNodes_CreateNodeRequest"

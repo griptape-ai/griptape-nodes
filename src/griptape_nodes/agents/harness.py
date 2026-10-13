@@ -1,16 +1,3 @@
-"""The interface every chat-sidebar agent harness implements.
-
-A harness runs one conversational turn: it takes the user's prompt, streams
-what the agent does as :class:`RunEvent` values, and saves the turn to the
-thread's history. ``AgentManager`` talks to every harness through
-:class:`AgentHarness`, so the Pydantic AI loop and the CLI harnesses (Claude
-Code, Codex, pi, ...) are interchangeable per provider.
-
-Thread history is always stored as Pydantic AI ``ModelMessage`` values, whichever
-harness produced it, so the sidebar renders every thread the same way and a
-thread can switch harness between turns.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -150,11 +137,9 @@ class AgentTurn:
             ``deferred_tool_results`` alone.
         persist_prompt: The form of ``prompt`` to save, with images as
             ``ImageUrl`` references. ``None`` saves ``prompt`` as-is.
-        event_sink: Receives every :class:`RunEvent` as it happens.
         cancel_event: Set to stop the turn. See ``AgentRunResult.cancelled``.
         instructions: Instructions for this turn only, on top of the harness's
             own, such as the rules attached to ``mcp_servers``.
-        mcp_servers: The user's MCP servers to attach to this turn.
         extra_headers: HTTP headers for this turn's model calls. Only harnesses
             that call a model directly can send them.
         approval: The thread's conversation grants. ``None`` means none.
@@ -175,7 +160,7 @@ class AgentTurn:
 
 
 class AgentHarness(Protocol):
-    """Runs chat-sidebar turns and saves them to thread storage."""
+    """Persist turns as Pydantic AI ``ModelMessage`` values so threads can switch providers."""
 
     @property
     def supports_tool_approval(self) -> bool:
@@ -199,7 +184,7 @@ async def push_event(
     event_sink: Callable[[RunEvent], Awaitable[None] | None] | None,
     event: RunEvent,
 ) -> None:
-    """Deliver ``event`` to ``event_sink``, awaiting it when it is a coroutine function."""
+    """Deliver the event, awaiting coroutine callbacks."""
     if event_sink is None:
         return
     result = event_sink(event)
@@ -208,14 +193,14 @@ async def push_event(
 
 
 def truncate(value: str, limit: int) -> str:
-    """Cut ``value`` to ``limit`` characters, marking the cut with ``...``."""
+    """Limit the prefix to ``limit`` characters, appending ``...`` if cut."""
     if len(value) <= limit:
         return value
     return value[:limit] + "..."
 
 
 def stringify(value: Any) -> str:
-    """Render a tool result for transport: strings as-is, anything else as JSON."""
+    """Format tool results as text; ``None`` becomes an empty string."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -227,11 +212,7 @@ def stringify(value: Any) -> str:
 
 
 def args_json(args: Any) -> str:
-    """Return a JSON-ish string of tool ``args`` for transport, truncated.
-
-    Preserves the full structure so clients can render real tool-call detail,
-    truncated at :data:`ARGS_TRANSPORT_BYTES` to bound the on-the-wire size.
-    """
+    """Return tool arguments for transport without log redaction, truncated to ``ARGS_TRANSPORT_BYTES``."""
     if args is None:
         return "{}"
     if isinstance(args, str):

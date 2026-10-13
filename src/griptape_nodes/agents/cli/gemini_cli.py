@@ -1,24 +1,3 @@
-"""Gemini CLI as a chat-sidebar agent harness.
-
-Runs ``gemini --output-format stream-json``. Standard input that is not a
-terminal puts Gemini CLI in its headless mode, so no ``-p`` is needed and the
-user's message goes in on stdin. ``--approval-mode yolo`` skips its permission
-prompts, and ``GEMINI_CLI_TRUST_WORKSPACE`` lets it do so in a folder it has not
-been told to trust.
-
-Gemini CLI has no option for MCP servers, and the one file it would read them from
-without touching the user's config (``GEMINI_CLI_SYSTEM_SETTINGS_PATH``) is ignored
-unless root owns it. So each turn runs with ``GEMINI_CLI_HOME`` pointing at a
-scratch home whose ``.gemini`` links to everything in the user's own, so sign-in
-and saved sessions carry over, except for a ``settings.json`` that is the user's
-settings plus the turn's MCP servers. The user's files are only read.
-
-Gemini CLI has no option to add to its system prompt, so the instructions go at the
-start of the prompt (``supports_system_prompt``). Images are mentioned in the prompt
-as ``@path``, which Gemini CLI attaches; ``--include-directories`` lets it read
-them from outside the workspace.
-"""
-
 from __future__ import annotations
 
 import json
@@ -62,13 +41,13 @@ class GeminiCliHarness(CliHarness):
         "Install Gemini CLI with `npm install -g @google/gemini-cli` (see https://geminicli.com), "
         "then run `gemini` once to sign in."
     )
+    # Gemini CLI has no option to append system instructions.
     supports_system_prompt: ClassVar[bool] = False
 
     def mcp_tool_name(self, server: str, tool: str) -> str:
         return re.sub(r"[^A-Za-z0-9_\-.:]", "_", f"{_MCP_TOOL_PREFIX}{_server_name(server)}_{tool}")
 
     def normalize_tool_name(self, name: str) -> str:
-        # Gemini CLI reports an MCP tool as `mcp_<server>_<tool>`, which is the engine's name behind a prefix.
         return name.removeprefix(_MCP_TOOL_PREFIX)
 
     def build_invocation(self, context: CliTurnContext) -> CliInvocation:
@@ -82,10 +61,12 @@ class GeminiCliHarness(CliHarness):
         if context.images:
             args += ["--include-directories", str(context.scratch_dir)]
         prompt = _prompt_with_images(context.prompt_text, context.images)
+        # Headless permission bypass requires a trusted workspace.
         env: dict[str, str | None] = {
             "GEMINI_CLI_TRUST_WORKSPACE": "true",
             "GEMINI_CLI_HOME": str(_write_scratch_home(context)),
         }
+        # Non-terminal stdin selects headless mode without -p.
         return CliInvocation(args=args, stdin=prompt.encode("utf-8"), env=env)
 
     def new_parser(self) -> CliStreamParser:
@@ -93,13 +74,7 @@ class GeminiCliHarness(CliHarness):
 
 
 class GeminiCliStreamParser(CliStreamParser):
-    """Parses ``gemini --output-format stream-json``.
-
-    Assistant ``message`` records are text chunks. Gemini CLI reports no thinking.
-    A ``tool_result`` names its call only by id, so the parser remembers the names
-    from ``tool_use``. ``error`` records are warnings or notes that precede the
-    ``result`` record, which says whether the turn succeeded.
-    """
+    """Gemini's ``result`` determines success; preceding ``error`` records do not end the turn."""
 
     def __init__(self, *, normalize_tool_name: Callable[[str], str]) -> None:
         self._normalize_tool_name = normalize_tool_name
@@ -171,7 +146,10 @@ def _server_name(name: str) -> str:
 
 
 def _write_scratch_home(context: CliTurnContext) -> Path:
-    """Build the home directory the turn runs with, and return it."""
+    """Use a scratch home because ``GEMINI_CLI_SYSTEM_SETTINGS_PATH`` requires root ownership.
+
+    Link sign-in and sessions to the user's home; merge MCP servers into scratch settings.
+    """
     home = context.scratch_dir / _SCRATCH_HOME_NAME
     scratch_gemini_dir = home / ".gemini"
     # The base builds the command line again, in the same scratch directory, to retry without a session.
@@ -206,10 +184,9 @@ def _link_or_copy(source: Path, target: Path) -> None:
     try:
         target.symlink_to(source, target_is_directory=source.is_dir())
     except OSError:
-        # Windows only allows symbolic links with developer mode or administrator rights.
-        # Copy files such as the sign-in, but not directories: they hold every saved
-        # session and can be large. Sessions then don't carry over between turns, and
-        # the harness catches each new session up on the conversation instead.
+        # Windows symlinks require developer mode or administrator rights.
+        # Copy sign-in files, but not potentially large session directories.
+        # Missing sessions trigger conversation catch-up on the next turn.
         if source.is_file():
             shutil.copy2(source, target)
 

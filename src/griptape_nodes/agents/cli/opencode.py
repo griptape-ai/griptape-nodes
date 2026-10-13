@@ -1,21 +1,3 @@
-"""OpenCode as a chat-sidebar agent harness.
-
-Runs ``opencode run --format json``. ``--auto`` approves the permission requests
-OpenCode would otherwise reject in a non-interactive run, and ``--thinking`` makes it
-report reasoning. The user's message goes in on stdin and images travel as ``--file``
-arguments.
-
-OpenCode merges the JSON in ``OPENCODE_CONFIG_CONTENT`` over the user's own config for
-one run, so that is where the turn's MCP servers and instructions go: the instructions
-are written to a file in the scratch directory and listed under ``instructions``.
-Nothing is written to the workspace or to OpenCode's config directory.
-
-OpenCode chooses the id of a new session itself, and reports it on every record.
-It prints a message or a tool call once it is complete, not token by token, and has
-no record for the end of a turn: the last step to finish without asking for tools
-ends it.
-"""
-
 from __future__ import annotations
 
 import json
@@ -61,6 +43,7 @@ class OpenCodeHarness(CliHarness):
         return f"{_sanitize(server)}_{_sanitize(tool)}"
 
     def build_invocation(self, context: CliTurnContext) -> CliInvocation:
+        # Non-interactive runs reject permission requests without --auto.
         args = ["run", "--format", "json", "--auto", "--thinking"]
         if context.model:
             args += ["--model", context.model]
@@ -74,6 +57,7 @@ class OpenCodeHarness(CliHarness):
             instructions_path = context.scratch_dir / _INSTRUCTIONS_FILE_NAME
             instructions_path.write_text(context.instructions, encoding="utf-8")
             config["instructions"] = [str(instructions_path)]
+        # Inline config overlays the user's settings for this run without modifying their config file.
         return CliInvocation(
             args=args,
             stdin=context.prompt_text.encode("utf-8"),
@@ -85,17 +69,9 @@ class OpenCodeHarness(CliHarness):
 
 
 class OpenCodeStreamParser(CliStreamParser):
-    """Parses ``opencode run --format json``.
+    """OpenCode emits complete parts; a tool part carries both input and output.
 
-    Every record names the session and carries one ``part``. A ``tool_use`` record
-    appears once the tool has finished, with its input and output, so it becomes a
-    tool call and its result together. OpenCode reports MCP tools as
-    ``<server>_<tool>``, the engine's form already. Parts of subagent sessions are
-    not reported.
-
-    A step that ends for any reason other than asking for tools ends the turn. An
-    ``error`` record also ends it, and the error stays with the turn if a step
-    finishes afterwards. When several errors arrive, the first is the one reported.
+    There is no turn-end record; a step ending without tool calls ends the turn.
     """
 
     def __init__(self) -> None:
@@ -133,7 +109,7 @@ class OpenCodeStreamParser(CliStreamParser):
         return [SessionStarted(session_id=session_id)]
 
     def _already_reported(self, part: dict[str, Any]) -> bool:
-        """Whether ``part`` was reported before. OpenCode can repeat a finished part."""
+        """OpenCode can repeat a finished part."""
         part_id = part.get("id")
         if not isinstance(part_id, str):
             return False

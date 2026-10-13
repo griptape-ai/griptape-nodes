@@ -1,20 +1,3 @@
-"""Shared machinery for agent harnesses that drive a coding-agent CLI.
-
-A CLI harness runs one CLI process per turn, in its non-interactive JSON
-streaming mode, inside the workspace. Each subclass knows its CLI's command
-line and its JSON records; this base does everything else:
-
-  * resumes the CLI's own session for the thread, and tells the CLI about any
-    messages another provider added since it last ran,
-  * attaches the engine's MCP server and the turn's MCP servers,
-  * streams the CLI's text, thinking, and tool calls to the sidebar,
-  * mirrors the turn into the thread's Pydantic AI history.
-
-Tool calls run without asking: each CLI is started in the mode that skips its
-own permission prompts. A harness that can route those prompts to the editor
-would set ``supports_tool_approval`` and turn them into pending approvals.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -79,10 +62,7 @@ class CliHarnessError(RuntimeError):
 
 @dataclass(frozen=True)
 class CliMCPServer:
-    """An MCP server to attach to a CLI turn, in the engine's ``MCPServerConfig`` shape.
-
-    ``env`` and ``headers`` may hold secrets: never log them.
-    """
+    """``env`` and ``headers`` may contain secrets; never log them."""
 
     name: str
     transport: str
@@ -109,8 +89,6 @@ class CliMCPServer:
 
 @dataclass(frozen=True)
 class PromptImage:
-    """An image attached to the user's message, as bytes and as a file in the turn's scratch directory."""
-
     data: bytes
     media_type: str
     path: Path
@@ -118,23 +96,15 @@ class PromptImage:
 
 @dataclass(frozen=True)
 class CliTurnContext:
-    """What a subclass needs to build its command line for one turn.
+    """Invocation context for one turn.
 
     Attributes:
-        prompt_text: The text to send, including any earlier messages the CLI
-            has not seen and, for a CLI with no system prompt option, the
-            instructions.
-        images: Images attached to the user's message.
-        instructions: Instructions to add to the CLI's system prompt. Empty when
-            there are none, or when they were put in ``prompt_text``.
-        resume_session_id: The CLI session to continue, or ``None`` to start one.
-        new_session_id: An id for a new session, for a CLI that lets the caller
-            choose it.
+        prompt_text: Includes messages the CLI has not seen and, when it has no
+            system prompt option, the instructions.
+        instructions: Empty when already included in ``prompt_text``.
         mcp_servers: The engine's MCP server, then the turn's.
-        model: The model to ask the CLI for, or ``None`` for the CLI's default.
-        max_turns: The most agent steps to allow, or ``None`` for the CLI's limit.
-        workspace_root: The directory the CLI runs in.
-        scratch_dir: A directory for this turn's files, removed after it.
+        max_turns: Maximum agent steps, or ``None`` for the CLI's limit.
+        scratch_dir: Removed after the turn.
     """
 
     prompt_text: str
@@ -151,14 +121,7 @@ class CliTurnContext:
 
 @dataclass(frozen=True)
 class CliInvocation:
-    """The command line for one turn.
-
-    Attributes:
-        args: Arguments after the executable.
-        stdin: Bytes to write to the CLI's stdin, or ``None`` for none.
-        env: Variables to add to the engine's environment. A ``None`` value
-            removes the variable.
-    """
+    """``env`` augments the engine's environment; a ``None`` value removes a variable."""
 
     args: Sequence[str]
     stdin: bytes | None = None
@@ -167,46 +130,33 @@ class CliInvocation:
 
 @dataclass(frozen=True)
 class SessionStarted:
-    """The CLI reported the id of the session it is running."""
-
     session_id: str
 
 
 @dataclass(frozen=True)
 class TurnEnded:
-    """The CLI reported that the turn is over.
-
-    Attributes:
-        truncated: The reply stopped at the model's output limit.
-        error: Why the turn failed, in the CLI's words, or ``None`` if it did not.
-    """
+    """``truncated`` covers output and turn limits, not CLI failures."""
 
     truncated: bool = False
     error: str | None = None
 
 
 CliEvent = RunEvent | SessionStarted | TurnEnded
-"""What a :class:`CliStreamParser` turns a CLI's JSON records into."""
 
 
 class CliStreamParser(ABC):
-    """Turns one CLI process's JSON records into :data:`CliEvent` values.
-
-    A parser lives for one process, so it can keep state across records, such as
-    which tool calls it has reported. Tool names it reports should be in the
-    engine's ``<server>_<tool>`` form (see :meth:`CliHarness.normalize_tool_name`),
-    and arguments and results untruncated: the base truncates what it streams.
-    """
+    """One parser per CLI process; state may span records."""
 
     @abstractmethod
     def feed(self, record: dict[str, Any]) -> list[CliEvent]:
-        """Return the events ``record`` carries, in order."""
+        """Emit events in record order, with engine ``<server>_<tool>`` names.
+
+        Leave arguments and results untruncated; the harness truncates transport copies.
+        """
 
 
 @dataclass
 class _TurnOutcome:
-    """What one CLI process produced."""
-
     transcript: TranscriptBuilder
     events_seen: int = 0
     session_id: str | None = None
@@ -219,29 +169,13 @@ class _TurnOutcome:
 
 @dataclass
 class CliHarness(ABC):
-    """An :class:`~griptape_nodes.agents.harness.AgentHarness` that drives a coding-agent CLI.
-
-    Attributes:
-        workspace_root: The directory the CLI runs in.
-        storage: Where the thread's history and the CLI's session id are kept.
-        engine_mcp_url: The engine's own MCP server, attached to every turn.
-        instructions: Instructions added to every turn's system prompt.
-        model: The model to ask the CLI for, or ``None`` for the CLI's default.
-        command: The CLI to run, overriding :attr:`executable` and the search.
-        max_turns: The most agent steps a turn may take, where the CLI supports it.
-    """
-
     harness_id: ClassVar[str]
-    """The provider type this harness serves, such as ``claude_code``."""
 
     display_name: ClassVar[str]
-    """The CLI's name as users know it, for messages."""
 
     executable: ClassVar[str]
-    """The command name to look for on ``PATH``."""
 
     install_hint: ClassVar[str]
-    """How to install the CLI, said to the user when it is missing."""
 
     supports_system_prompt: ClassVar[bool] = True
     """Whether the CLI takes extra system prompt text. Otherwise it goes in the prompt."""
@@ -256,6 +190,7 @@ class CliHarness(ABC):
     model: str | None = None
     command: str | None = None
     max_turns: int | None = None
+    """Maximum agent steps per turn, where the CLI supports a limit."""
 
     @property
     def supports_tool_approval(self) -> bool:
@@ -265,10 +200,8 @@ class CliHarness(ABC):
         return f"mcp__{server}__{tool}"
 
     def normalize_tool_name(self, name: str) -> str:
-        """Return the engine's ``<server>_<tool>`` name for a tool the CLI reports as ``name``.
+        """Use Pydantic AI's MCP names so tool cards and provider switches stay consistent.
 
-        Reporting MCP tools the way the Pydantic AI harness names them keeps the
-        sidebar's tool cards, and a thread that changes harness, consistent.
         Built-in CLI tools keep their own names.
         """
         prefix = "mcp__"
@@ -288,7 +221,6 @@ class CliHarness(ABC):
         """Return a parser for one process's output."""
 
     def environment(self) -> dict[str, str]:
-        """The environment the CLI runs in, before the invocation's additions."""
         return dict(os.environ)
 
     async def run_turn(self, turn: AgentTurn) -> AgentRunResult:
@@ -316,8 +248,7 @@ class CliHarness(ABC):
                 executable, turn, history, session, images=images, scratch_dir=scratch_dir
             )
             if _should_retry_without_session(outcome, session):
-                # The CLI could not resume its session, which it may have cleaned up.
-                # Start a new one, catching it up on the whole conversation.
+                # CLIs may delete saved sessions.
                 logger.warning(
                     "%s could not resume session %s for conversation %s; starting a new session.",
                     self.display_name,
@@ -343,8 +274,7 @@ class CliHarness(ABC):
         output = "".join(outcome.text)
 
         if outcome.cancelled:
-            # The CLI's session may hold part of the cancelled turn, which the thread
-            # doesn't. Nothing is lost by resuming it.
+            # A cancelled CLI session can hold partial turns absent from thread history.
             if session_id is not None:
                 self._remember_session(turn.thread_id, session_id, len(history))
             return AgentRunResult(thread_id=turn.thread_id, output=output, message_count=len(history), cancelled=True)
@@ -360,11 +290,7 @@ class CliHarness(ABC):
         return AgentRunResult(thread_id=turn.thread_id, output=output, message_count=len(messages), truncated=truncated)
 
     def _declined_calls(self, history: Sequence[ModelMessage], turn: AgentTurn) -> list[ToolReturnPart]:
-        """Answer the calls an earlier provider left waiting for approval, all as declined.
-
-        A new message declines them (see ``AgentManager``), which is the only answer
-        a CLI harness can give: it has no way to run another harness's calls.
-        """
+        """A CLI cannot run another harness's pending calls."""
         waiting = pending_tool_calls(history)
         if not waiting:
             return []
@@ -484,7 +410,6 @@ class CliHarness(ABC):
             resume_session_id = None
 
         instructions = "\n\n".join(part for part in (self.instructions, turn.instructions) if part)
-        # `run_turn` has already refused a turn with no prompt.
         prompt_text = render_catch_up(unseen) + _prompt_text(turn.prompt or "")
         if not self.supports_system_prompt:
             # The CLI keeps the instructions in its session, so only a new session needs them.
@@ -550,7 +475,6 @@ class CliHarness(ABC):
 
 
 def _should_retry_without_session(outcome: _TurnOutcome, session: HarnessSession | None) -> bool:
-    """Whether a resumed turn failed before doing anything, as when the CLI's session is gone."""
     if session is None or outcome.cancelled or outcome.events_seen:
         return False
     return outcome.ended is None or bool(outcome.ended.error)

@@ -1,8 +1,4 @@
-"""Agent harnesses that drive coding-agent CLIs installed on the user's computer.
-
-:data:`CLI_HARNESSES` maps each CLI provider type in the provider catalog to the
-harness that runs it.
-"""
+"""Coding-agent CLI harnesses."""
 
 from griptape_nodes.agents.cli.base import CliHarness, CliHarnessError
 from griptape_nodes.agents.cli.claude_code import ClaudeCodeHarness

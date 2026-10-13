@@ -1,8 +1,6 @@
-"""Tests for the pi harness's command line and stream parsing.
+"""Fixtures follow pi 1.1.0's ``docs/json.md``.
 
-Records are shaped like real ``pi --mode json`` output (pi 1.1.0), captured from runs
-with a stdio MCP server and with a model id that does not exist, and documented in pi's
-``docs/json.md``.
+Records were captured with a stdio MCP server and with an invalid model id.
 """
 
 from __future__ import annotations
@@ -55,7 +53,7 @@ def _registered_servers(extension_path: Path) -> dict[str, Any]:
 
 
 def test_new_session_is_started_with_the_chosen_id(tmp_path: Path) -> None:
-    """A new session uses the id the harness chose, with the turn's options and the prompt on stdin."""
+    """Pass the chosen session ID, turn options, and stdin text."""
     invocation = _harness().build_invocation(_context(tmp_path))
     args = list(invocation.args)
 
@@ -69,7 +67,7 @@ def test_new_session_is_started_with_the_chosen_id(tmp_path: Path) -> None:
 
 
 def test_existing_session_is_resumed(tmp_path: Path) -> None:
-    """A known session is resumed rather than started."""
+    """Resume instead of creating a session."""
     args = list(_harness().build_invocation(_context(tmp_path, resume_session_id="old-id")).args)
 
     assert _flag(args, "--session") == "old-id"
@@ -77,7 +75,7 @@ def test_existing_session_is_resumed(tmp_path: Path) -> None:
 
 
 def test_unset_options_are_left_to_pi(tmp_path: Path) -> None:
-    """Options with no value are left to pi's defaults."""
+    """Omit unset model and instruction options."""
     args = list(_harness().build_invocation(_context(tmp_path, model=None, instructions="")).args)
 
     assert "--model" not in args
@@ -85,7 +83,7 @@ def test_unset_options_are_left_to_pi(tmp_path: Path) -> None:
 
 
 def test_mcp_servers_are_registered_by_a_generated_extension(tmp_path: Path) -> None:
-    """MCP servers go in an extension file in the scratch directory, and unsupported transports are skipped."""
+    """Register supported MCP servers through a scratch extension."""
     servers = [
         CliMCPServer(name="GriptapeNodes", transport="streamable_http", url="http://localhost:1/mcp/"),
         CliMCPServer(name="files", transport="stdio", command="npx", args=["-y", "fs"], env={"K": "V"}, cwd="/data"),
@@ -105,7 +103,7 @@ def test_mcp_servers_are_registered_by_a_generated_extension(tmp_path: Path) -> 
 
 
 def test_images_are_attached_as_file_arguments(tmp_path: Path) -> None:
-    """Images are attached with @path arguments."""
+    """Attach images with @path arguments."""
     image = PromptImage(data=b"\x89PNG", media_type="image/png", path=tmp_path / "attachment-0.png")
     args = list(_harness().build_invocation(_context(tmp_path, images=[image])).args)
 
@@ -113,7 +111,7 @@ def test_images_are_attached_as_file_arguments(tmp_path: Path) -> None:
 
 
 def test_mcp_tool_names_match_the_names_pi_gives_them() -> None:
-    """Pi names MCP tools mcp__server__tool with punctuation replaced, and the parser reports server_tool."""
+    """Match pi's punctuation-normalized MCP names and normalize its prefix."""
     harness = _harness()
 
     assert harness.mcp_tool_name("GriptapeNodes", "CreateNodeRequest") == "mcp__GriptapeNodes__CreateNodeRequest"
@@ -136,7 +134,7 @@ def _assistant(stop_reason: str, **fields: Any) -> dict[str, Any]:
 
 
 def test_a_turn_with_a_tool_call_is_parsed_in_order() -> None:
-    """A turn's session, thinking, tool call, result, text, and end come out in order."""
+    """Preserve event order without repeating streamed blocks."""
     events = _feed(
         [
             {"type": "session", "version": 3, "id": "s-1", "timestamp": "2026-10-13T19:13:26.863Z", "cwd": "/ws"},
@@ -187,7 +185,7 @@ def test_a_turn_with_a_tool_call_is_parsed_in_order() -> None:
 
 
 def test_text_that_was_never_streamed_is_taken_from_its_end_record() -> None:
-    """A block with no deltas is taken from its end record, and a streamed one is not repeated."""
+    """Fall back to complete blocks without duplicating streamed ones."""
     events = _feed(
         [
             {"type": "message_start", "message": _assistant("pending")},
@@ -201,7 +199,7 @@ def test_text_that_was_never_streamed_is_taken_from_its_end_record() -> None:
 
 
 def test_calls_made_by_another_tool_are_skipped() -> None:
-    """Tools that a codemode script ran carry a parent id and don't reach the sidebar."""
+    """Exclude nested codemode calls."""
     events = _feed(
         [
             {
@@ -226,7 +224,7 @@ def test_calls_made_by_another_tool_are_skipped() -> None:
 
 
 def test_tool_errors_are_flagged() -> None:
-    """A tool result pi marks as an error is flagged."""
+    """Preserve tool-result error flags."""
     events = _feed(
         [
             {"type": "tool_execution_start", "toolCallId": "t", "toolName": "mcp__demo__fail_tool", "args": {}},
@@ -263,7 +261,7 @@ def test_failed_reply_reports_pis_error() -> None:
 
 
 def test_output_limit_marks_the_reply_truncated() -> None:
-    """A reply that stopped at the output limit is marked truncated."""
+    """Treat output limits as truncation."""
     events = _feed(
         [{"type": "message_end", "message": _assistant("length")}, {"type": "agent_settled", "aborted": False}]
     )
@@ -272,14 +270,14 @@ def test_output_limit_marks_the_reply_truncated() -> None:
 
 
 def test_an_aborted_run_is_an_error() -> None:
-    """A run pi aborted did not finish its reply."""
+    """Report aborted runs as unfinished replies."""
     events = _feed([{"type": "agent_settled", "aborted": True}])
 
     assert events == [TurnEnded(error="pi stopped before finishing the reply.")]
 
 
 def test_a_run_that_will_retry_has_not_ended() -> None:
-    """An agent_end that pi will retry does not end the turn."""
+    """Wait for retries before ending the turn."""
     events = _feed([{"type": "agent_end", "messages": [], "willRetry": True}])
 
     assert events == []

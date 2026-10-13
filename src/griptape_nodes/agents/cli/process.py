@@ -35,14 +35,7 @@ _TERMINATE_GRACE_SECONDS = 5.0
 
 @dataclass(frozen=True)
 class ProcessExit:
-    """How a CLI process ended.
-
-    Attributes:
-        returncode: The exit code, or ``None`` when the process was stopped
-            because the turn was cancelled.
-        stderr_tail: The last lines the process wrote to stderr.
-        cancelled: Whether the turn was cancelled while the process ran.
-    """
+    """``returncode`` is ``None`` when the turn is cancelled."""
 
     returncode: int | None
     stderr_tail: str
@@ -58,13 +51,9 @@ async def run_jsonl_process(  # noqa: PLR0913
     on_record: Callable[[dict[str, Any]], Awaitable[None]],
     cancel_event: asyncio.Event | None,
 ) -> ProcessExit:
-    """Run ``argv`` and pass each JSON object it prints to ``on_record``.
+    """Skip invalid JSON lines and non-object values.
 
-    Lines that are not JSON objects are logged and skipped. An exception from
-    ``on_record`` stops the process and propagates.
-
-    Raises:
-        FileNotFoundError: ``argv[0]`` could not be started.
+    Callback exceptions stop the process and propagate.
     """
     process = await asyncio.create_subprocess_exec(
         *argv,
@@ -101,7 +90,6 @@ async def run_jsonl_process(  # noqa: PLR0913
 
 
 async def _await_reader(reader: asyncio.Future[None], cancel_event: asyncio.Event | None) -> bool:
-    """Wait for the reader to finish, returning ``True`` if the turn was cancelled first."""
     if cancel_event is None:
         await reader
         return False
@@ -113,7 +101,6 @@ async def _await_reader(reader: asyncio.Future[None], cancel_event: asyncio.Even
         with contextlib.suppress(asyncio.CancelledError):
             await cancel_waiter
     if reader.done():
-        # Surface the reader's exception, if it raised.
         reader.result()
         return False
     return True

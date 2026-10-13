@@ -1,11 +1,3 @@
-"""Mirror a CLI harness's turn into Pydantic AI message history.
-
-A CLI keeps its own session, but the thread still has to hold the turn: the
-sidebar renders threads from it, and another provider picks the conversation up
-from it. :class:`TranscriptBuilder` turns the run events a CLI emits into the
-``ModelRequest``/``ModelResponse`` shape the Pydantic AI harness writes.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
@@ -38,11 +30,7 @@ CATCH_UP_MAX_CHARS = 20000
 
 
 class TranscriptBuilder:
-    """Accumulates one turn's events as Pydantic AI messages.
-
-    Text and thinking deltas extend the current response, a tool call joins it,
-    and a tool result closes it and opens the request that answers its calls.
-    """
+    """Mirror CLI turns into thread history for sidebar rendering and provider switches."""
 
     def __init__(self, *, provider_name: str, model_name: str | None) -> None:
         self._provider_name = provider_name
@@ -135,22 +123,18 @@ def user_turn(
     *,
     denied: Sequence[ToolReturnPart] = (),
 ) -> ModelRequest:
-    """The request that opens a turn: answers to any calls it declines, then the user's message."""
+    """Place declined tool answers before the new user prompt."""
     parts: list[ModelRequestPart] = [*denied, UserPromptPart(content=prompt)]  # type: ignore[arg-type]
     return ModelRequest(parts=parts)
 
 
 def denied_tool_return(tool_name: str, tool_call_id: str, message: str) -> ToolReturnPart:
-    """The answer to a call the user declined, as the Pydantic AI harness records it."""
+    """Match Pydantic AI's denied-tool result format."""
     return _tool_return(tool_name, tool_call_id, message, outcome="denied")
 
 
 def render_catch_up(messages: Sequence[ModelMessage]) -> str:
-    """Render earlier messages as plain text for a CLI that has not seen them.
-
-    Only what was said is kept: user messages, the agent's replies, and the names
-    of the tools it called. Returns ``""`` when there is nothing to tell.
-    """
+    """Catch-up includes user text, replies, and tool names, not tool arguments or results."""
     lines: list[str] = []
     for message in messages:
         if isinstance(message, ModelRequest):

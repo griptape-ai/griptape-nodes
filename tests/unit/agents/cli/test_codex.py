@@ -1,9 +1,7 @@
-"""Tests for the Codex harness's command line and stream parsing.
+"""Fixtures follow codex-cli 0.162.
 
-Records are shaped like real ``codex exec --json`` output (codex-cli 0.162): the
-``thread.started``, ``error`` and ``turn.failed`` records were captured from a run
-without credentials, and the item records follow ``ThreadItemDetails`` in the
-openai/codex repository (``codex-rs/exec/src/exec_events.rs``).
+``thread.started``, ``error`` and ``turn.failed`` were captured without credentials;
+items follow ``ThreadItemDetails`` in openai/codex's ``codex-rs/exec/src/exec_events.rs``.
 """
 
 from __future__ import annotations
@@ -45,7 +43,7 @@ def _context(**overrides: Any) -> CliTurnContext:
 
 
 def _overrides(args: list[str]) -> dict[str, Any]:
-    """Return the ``-c key=value`` overrides, parsed as Codex parses them: the value is TOML."""
+    """Codex parses config override values as TOML."""
     overrides: dict[str, Any] = {}
     for index, arg in enumerate(args):
         if arg == "-c":
@@ -55,7 +53,7 @@ def _overrides(args: list[str]) -> dict[str, Any]:
 
 
 def test_new_session_runs_exec_with_the_prompt_on_stdin() -> None:
-    """A new session runs `codex exec` with auto-approval, and the prompt goes on stdin."""
+    """Run exec with bypassed approvals and stdin text."""
     invocation = _harness().build_invocation(_context())
     args = list(invocation.args)
 
@@ -70,7 +68,7 @@ def test_new_session_runs_exec_with_the_prompt_on_stdin() -> None:
 
 
 def test_existing_session_is_resumed_with_the_prompt_read_from_stdin() -> None:
-    """A known session is resumed, with its id and a dash for stdin after the options."""
+    """Place the session ID and stdin marker after options."""
     args = list(_harness().build_invocation(_context(resume_session_id="thread-1")).args)
 
     assert args[:2] == ["exec", "resume"]
@@ -79,7 +77,7 @@ def test_existing_session_is_resumed_with_the_prompt_read_from_stdin() -> None:
 
 
 def test_unset_options_are_left_to_codex() -> None:
-    """Options with no value are left to Codex's defaults."""
+    """Omit unset model and instruction options."""
     args = list(_harness().build_invocation(_context(model=None, instructions="")).args)
 
     assert "--model" not in args
@@ -87,14 +85,14 @@ def test_unset_options_are_left_to_codex() -> None:
 
 
 def test_instructions_become_developer_instructions() -> None:
-    """Instructions are passed as a TOML string that survives quotes and newlines."""
+    """Preserve quotes and newlines through TOML encoding."""
     overrides = _overrides(list(_harness().build_invocation(_context()).args))
 
     assert overrides["developer_instructions"] == 'Be "brief".\nThanks.'
 
 
 def test_mcp_servers_are_translated_to_codex_config() -> None:
-    """Engine MCP configs become mcp_servers tables, and unsupported transports are skipped."""
+    """Translate supported MCP transports into approval-enabled tables."""
     servers = [
         CliMCPServer(name="GriptapeNodes", transport="streamable_http", url="http://localhost:1/mcp/"),
         CliMCPServer(name="files", transport="stdio", command="npx", args=["-y", "fs"], env={"K": "V"}, cwd="/data"),
@@ -112,7 +110,7 @@ def test_mcp_servers_are_translated_to_codex_config() -> None:
 
 
 def test_images_are_attached_before_the_positional_arguments() -> None:
-    """Each image is attached with --image, ahead of the `--` so it doesn't take the session id."""
+    """``--image`` consumes multiple values and can swallow the session id."""
     images = [
         PromptImage(data=b"1", media_type="image/png", path=Path("scratch/a.png")),
         PromptImage(data=b"2", media_type="image/png", path=Path("scratch/b.png")),
@@ -124,7 +122,7 @@ def test_images_are_attached_before_the_positional_arguments() -> None:
 
 
 def test_mcp_tool_names_match_the_names_codex_gives_them() -> None:
-    """Codex names MCP tools mcp__server__tool."""
+    """Match Codex's MCP tool prefix."""
     assert _harness().mcp_tool_name("GriptapeNodes", "CreateNodeRequest") == "mcp__GriptapeNodes__CreateNodeRequest"
 
 
@@ -134,7 +132,7 @@ def _feed(records: list[dict[str, Any]]) -> list[Any]:
 
 
 def test_a_turn_with_commands_and_tool_calls_is_parsed_in_order() -> None:
-    """A turn's thread, reasoning, command, MCP call, patch, message, and end come out in order."""
+    """Preserve command, MCP, patch, and message event order."""
     events = _feed(
         [
             {"type": "thread.started", "thread_id": "01a136b1-ebb6-72a1-ab56-134441f2dbea"},
@@ -219,7 +217,7 @@ def test_a_turn_with_commands_and_tool_calls_is_parsed_in_order() -> None:
 
 
 def test_failed_commands_and_tool_calls_are_flagged() -> None:
-    """A failed command and a failed MCP call are flagged as errors."""
+    """Preserve command and MCP failure flags."""
     events = _feed(
         [
             {
@@ -254,7 +252,7 @@ def test_failed_commands_and_tool_calls_are_flagged() -> None:
 
 
 def test_progress_errors_and_other_items_are_skipped() -> None:
-    """Reconnect notes, to-do lists, and subagent calls don't reach the sidebar."""
+    """Exclude reconnect notes, to-do lists, and subagent calls."""
     events = _feed(
         [
             {"type": "error", "message": "Reconnecting... 2/5 (unexpected status 401 Unauthorized)"},
@@ -271,7 +269,7 @@ def test_progress_errors_and_other_items_are_skipped() -> None:
 
 
 def test_failed_turn_reports_codexs_error() -> None:
-    """A failed turn carries Codex's error text."""
+    """Preserve Codex's failure message."""
     message = "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header"
 
     assert _feed([{"type": "error", "message": message}, {"type": "turn.failed", "error": {"message": message}}]) == [

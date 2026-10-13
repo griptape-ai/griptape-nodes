@@ -1,17 +1,3 @@
-"""pi as a chat-sidebar agent harness.
-
-Runs ``pi --mode json -p``. The user's message goes in on stdin and images
-travel as ``@path`` arguments, which pi attaches to the first prompt. pi never
-asks before running a tool, so there is no permission flag to pass.
-
-pi has no command line option for MCP servers, so the turn's servers go in a
-generated extension file, loaded with ``-e``, that registers each one with
-``pi.registerMcpServer``. Nothing is written to the workspace or to pi's own
-``mcp.json``. Each server is registered with ``exposure: "direct"``: pi's
-default hides MCP tools behind a ``codemode`` script, and the sidebar's tool
-cards should show the tool the model called.
-"""
-
 from __future__ import annotations
 
 import json
@@ -52,10 +38,10 @@ class PiHarness(CliHarness):
     )
 
     def mcp_tool_name(self, server: str, tool: str) -> str:
-        # pi replaces every character other than letters, digits, and `_` in the whole name.
         return re.sub(r"[^A-Za-z0-9_]", "_", f"mcp__{_server_name(server)}__{tool}")
 
     def build_invocation(self, context: CliTurnContext) -> CliInvocation:
+        # pi runs tools without asking; it needs no permission flag.
         args = ["--mode", "json", "-p"]
         if context.model:
             args += ["--model", context.model]
@@ -76,17 +62,7 @@ class PiHarness(CliHarness):
 
 
 class PiStreamParser(CliStreamParser):
-    """Parses ``pi --mode json``.
-
-    Text and thinking come from ``message_update`` deltas; a block that never
-    streamed is taken from its ``*_end`` record. Tool calls and results come from
-    ``tool_execution_start`` and ``tool_execution_end``. Calls that one tool makes
-    through another, such as the tools a ``codemode`` script runs, carry a
-    ``parentToolCallId`` and are skipped: the sidebar shows the call the model made.
-
-    pi reports a failed reply as an assistant message with ``stopReason: "error"``,
-    then exits with code 0, so the turn's end is read from that message.
-    """
+    """Failed pi replies carry errors in assistant messages but exit with code 0."""
 
     def __init__(self, *, normalize_tool_name: Callable[[str], str]) -> None:
         self._normalize_tool_name = normalize_tool_name
@@ -96,6 +72,7 @@ class PiStreamParser(CliStreamParser):
         self._error_message: str | None = None
 
     def feed(self, record: dict[str, Any]) -> list[CliEvent]:
+        # Show the model's call, not nested calls from tools such as codemode.
         if record.get("parentToolCallId"):
             return []
         events: list[CliEvent]
@@ -188,7 +165,6 @@ def _server_name(name: str) -> str:
 
 
 def _extension_source(servers: Sequence[CliMCPServer]) -> str:
-    """Return a pi extension that registers ``servers`` for the session."""
     config = json.dumps(_mcp_config(servers))
     return (
         "export default function (pi) {\n"
@@ -202,6 +178,7 @@ def _extension_source(servers: Sequence[CliMCPServer]) -> str:
 
 def _mcp_config(servers: Sequence[CliMCPServer]) -> dict[str, dict[str, Any]]:
     config: dict[str, dict[str, Any]] = {}
+    # Direct exposure shows each MCP tool on its own card instead of hiding it behind codemode.
     for server in servers:
         name = _server_name(server.name)
         if server.transport == "stdio" and server.command:

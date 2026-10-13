@@ -315,7 +315,7 @@ def provider_accepts_customer_key(provider_id: str) -> bool:
 
 
 def provider_runs_cli_harness(provider_id: str) -> bool:
-    """Return True if this provider runs a coding-agent CLI instead of the engine's agent loop."""
+    """Identify providers that run an installed CLI instead of the engine's agent loop."""
     provider = PROVIDER_CATALOG.providers.get(provider_id)
     return provider is not None and provider.kind == SidebarProviderKind.CLI_HARNESS
 

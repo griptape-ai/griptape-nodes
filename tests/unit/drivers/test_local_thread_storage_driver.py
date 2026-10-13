@@ -207,7 +207,7 @@ def test_get_thread_metadata_skips_malformed_run_records(storage: LocalThreadSto
 
 
 def test_harness_sessions_are_kept_per_harness(storage: LocalThreadStorageDriver) -> None:
-    """Each CLI's session for a thread is stored separately and replaced on update."""
+    """Update each CLI session independently."""
     thread_id, _ = storage.create_thread()
 
     storage.set_harness_session(thread_id, "claude_code", HarnessSession(session_id="a", message_count=2))
@@ -220,7 +220,7 @@ def test_harness_sessions_are_kept_per_harness(storage: LocalThreadStorageDriver
 
 
 def test_malformed_harness_session_reads_as_none(storage: LocalThreadStorageDriver) -> None:
-    """A hand-edited or partial session entry means no session, not a crash."""
+    """Treat malformed session entries as absent."""
     thread_id, _ = storage.create_thread()
     storage.update_thread_metadata(thread_id, harness_sessions={"claude_code": {"session_id": ""}, "codex": "x"})
 

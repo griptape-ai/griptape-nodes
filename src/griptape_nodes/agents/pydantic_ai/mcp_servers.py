@@ -224,7 +224,7 @@ def streamable_http_local(url: str) -> AbstractToolset[Any]:
 
 
 def prefixed_tool_name(server: str, tool: str) -> str:
-    """The name the agent sees for ``tool`` on MCP server ``server``: the prefix :func:`_compose` adds."""
+    """Match the names produced by ``_compose``'s toolset prefix."""
     return f"{server}_{tool}"
 
 

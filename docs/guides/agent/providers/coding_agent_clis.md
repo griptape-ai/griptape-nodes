@@ -22,8 +22,6 @@ Sign in once in a terminal before adding the provider. Griptape Nodes can't answ
 1. Click **+ Add Provider**
 1. Select the CLI, for example **Claude Code**
 
-Fill in the configuration:
-
 - **Name**: leave as is or enter a custom label
 - **Base URL**: leave empty. The CLI connects to its own service.
 - **Model (optional)**: a model name the CLI accepts, such as `sonnet` for Claude Code. Leave it blank to use the CLI's default.
