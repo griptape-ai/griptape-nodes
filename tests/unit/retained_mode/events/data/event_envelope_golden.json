@@ -9,6 +9,7 @@
       "request_id": null,
       "failure_log_level": null,
       "fields": null,
+      "undo_group": null,
       "parameter_name": "p",
       "node_name": "n"
     }
@@ -26,6 +27,7 @@
           "request_id": null,
           "failure_log_level": null,
           "fields": null,
+          "undo_group": null,
           "parameter_name": "p",
           "node_name": "n"
         }
@@ -44,6 +46,7 @@
       "request_id": null,
       "failure_log_level": null,
       "fields": null,
+      "undo_group": null,
       "parameter_name": "p",
       "node_name": "n"
     },
@@ -85,6 +88,7 @@
       "request_id": null,
       "failure_log_level": null,
       "fields": null,
+      "undo_group": null,
       "parameter_name": "p",
       "node_name": "n"
     },

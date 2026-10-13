@@ -84,6 +84,7 @@ if TYPE_CHECKING:
         StaticFilesManager,
     )
     from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
+    from griptape_nodes.retained_mode.managers.undo.manager import UndoManager
     from griptape_nodes.retained_mode.managers.user_manager import UserManager
     from griptape_nodes.retained_mode.managers.variable_manager import (
         VariablesManager,
@@ -175,6 +176,7 @@ class Engine:
     _budget_manager: BudgetManager
     _diagnostics_manager: DiagnosticsManager
     _worker_manager: WorkerManager
+    _undo_manager: UndoManager
     _workflow_registry: _WorkflowRegistry
 
     def __init__(self) -> None:  # noqa: PLR0915
@@ -209,6 +211,7 @@ class Engine:
             StaticFilesManager,
         )
         from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
+        from griptape_nodes.retained_mode.managers.undo.manager import UndoManager
         from griptape_nodes.retained_mode.managers.user_manager import UserManager
         from griptape_nodes.retained_mode.managers.variable_manager import (
             VariablesManager,
@@ -256,6 +259,7 @@ class Engine:
         self._manifest_manager = ManifestManager(self._event_manager, engine=self)
         self._budget_manager = BudgetManager(self._event_manager, engine=self)
         self._diagnostics_manager = DiagnosticsManager(self._event_manager, engine=self)
+        self._undo_manager = UndoManager(self._event_manager, engine=self)
 
         # Assign handlers now that these are created.
         self._event_manager.register_request_handlers(self)
@@ -379,6 +383,10 @@ class Engine:
     @property
     def worker_manager(self) -> WorkerManager:
         return self._worker_manager
+
+    @property
+    def undo_manager(self) -> UndoManager:
+        return self._undo_manager
 
     @property
     def workflow_registry(self) -> _WorkflowRegistry:

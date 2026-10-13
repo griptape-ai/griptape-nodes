@@ -253,6 +253,7 @@ class ObjectManager(EngineScoped):
             msg = f"Attempted to add an object with name '{name}' but an object with that name already exists. The Object Manager is sacrosanct in this regard."
             raise ValueError(msg)
         self._name_to_objects[name] = obj
+        self.engine.undo_manager.note_object_created(obj)
 
     def get_object_by_name(self, name: str) -> object:
         return self._name_to_objects[name]
