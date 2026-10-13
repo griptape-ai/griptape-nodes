@@ -5,7 +5,8 @@ editor updates through the results it already handles. Each phase reads the work
 rather than trusting the entry, because restoring one thing often restores another along with it:
 taking a node out of a group, for example, rewires its connections back on its own. Group
 membership is restored before connections for that reason, and connections before values, since
-connecting a parameter overwrites its value.
+connecting a parameter overwrites its value. A connection to a parameter that does not exist yet
+waits until the values have been restored, because setting a value can make the node add it.
 
 A part that cannot be restored is reported and skipped. The rest still applies, so one stale node
 does not cost the whole step.
@@ -60,6 +61,7 @@ class _Replay:
     def __init__(self, engine: Engine, entry: HistoryEntry, direction: Direction) -> None:
         self._engine = engine
         self._problems: list[str] = []
+        self._waiting_connections: list[ConnectionKey] = []
         # Source is the side the workflow is on now, target the side to move it to.
         if direction is Direction.UNDO:
             self._pairs = [(change.after, change.before) for change in entry.changes]
@@ -88,6 +90,7 @@ class _Replay:
             self._restore_properties(source, target)
         for source, target in kept:
             self._restore_structure(source, target)
+        self._add_waiting_connections()
         for target in added:
             self._restore_lock(target)
         return self._problems
@@ -191,7 +194,20 @@ class _Replay:
                 continue
             if self._node(key.source_node) is None or self._node(key.target_node) is None:
                 continue
+            if not self._has_both_parameters(key):
+                self._waiting_connections.append(key)
+                continue
             self._connect(key)
+
+    def _add_waiting_connections(self) -> None:
+        """Connect what had to wait for a parameter, now that values and structure are restored.
+
+        A connection that still cannot be made is reported here, and only here. Values were skipped
+        for these parameters while they were missing, so connecting them overwrites nothing restored.
+        """
+        for key in self._waiting_connections:
+            if not self._connection_exists(key):
+                self._connect(key)
 
     def _restore_properties(self, source: NodeImage, target: NodeImage) -> None:
         node = self._node(target.name)
@@ -365,6 +381,16 @@ class _Replay:
             return self._engine.node_manager.get_node_parent_flow_by_name(node_name)
         except KeyError:
             return None
+
+    def _has_both_parameters(self, key: ConnectionKey) -> bool:
+        source = self._node(key.source_node)
+        target = self._node(key.target_node)
+        if source is None or target is None:
+            return False
+        return (
+            source.get_parameter_by_name(key.source_parameter) is not None
+            and target.get_parameter_by_name(key.target_parameter) is not None
+        )
 
     def _connection_exists(self, key: ConnectionKey) -> bool:
         node = self._node(key.source_node)

@@ -19,7 +19,7 @@ from griptape_nodes.node_library.library_registry import (
     LibrarySchema,
     NodeMetadata,
 )
-from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
+from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest, DeleteConnectionRequest
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest
 from griptape_nodes.retained_mode.events.node_events import (
     AddNodesToNodeGroupRequest,
@@ -91,6 +91,37 @@ class _Toggle(BaseNode):
         return None
 
 
+class _Dynamic(BaseNode):
+    """Adds an `extra` input while `mode` is "on" and removes it otherwise, as dynamic-input nodes do."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata)
+        self.add_parameter(
+            Parameter(
+                name="mode", type="str", default_value="off", tooltip="mode", allowed_modes={ParameterMode.PROPERTY}
+            )
+        )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "mode":
+            if value == "on" and self.get_parameter_by_name("extra") is None:
+                self.add_parameter(
+                    Parameter(
+                        name="extra",
+                        type="str",
+                        default_value="",
+                        tooltip="extra",
+                        allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                    )
+                )
+            elif value != "on":
+                self.remove_parameter_element_by_name("extra")
+        return super().after_value_set(parameter, value)
+
+    def process(self) -> None:
+        return None
+
+
 class _Group(BaseNodeGroup):
     def process(self) -> None:
         return None
@@ -108,7 +139,7 @@ def engine(engine: Engine) -> Iterator[Engine]:
         nodes=[],
     )
     library = LibraryRegistry.generate_new_library(library_data=schema)
-    for node_class in (_Probe, _Toggle, _Group):
+    for node_class in (_Probe, _Toggle, _Dynamic, _Group):
         library.register_new_node_type(
             node_class, NodeMetadata(category="t", description="d", display_name=node_class.__name__)
         )
@@ -138,6 +169,26 @@ def _connect(engine: Engine, source: str, target: str) -> None:
         CreateConnectionRequest(
             source_node_name=source, source_parameter_name="text", target_node_name=target, target_parameter_name="text"
         ),
+    )
+
+
+def _connect_request(source: str, source_parameter: str, target: str, target_parameter: str) -> CreateConnectionRequest:
+    return CreateConnectionRequest(
+        source_node_name=source,
+        source_parameter_name=source_parameter,
+        target_node_name=target,
+        target_parameter_name=target_parameter,
+    )
+
+
+def _disconnect_request(
+    source: str, source_parameter: str, target: str, target_parameter: str
+) -> DeleteConnectionRequest:
+    return DeleteConnectionRequest(
+        source_node_name=source,
+        source_parameter_name=source_parameter,
+        target_node_name=target,
+        target_parameter_name=target_parameter,
     )
 
 
@@ -291,6 +342,63 @@ class TestReplay:
 
         assert replay(engine, entry, Direction.REDO) == []
         assert _image(engine, "T").structure == after.structure
+
+    def test_a_connection_to_a_parameter_that_a_value_removes_comes_back_with_the_parameter(
+        self, engine: Engine
+    ) -> None:
+        _create(engine, "A")
+        _create(engine, "D", node_type="_Dynamic")
+        _set(engine, "A", "text", "from A")
+        _set(engine, "D", "mode", "on")
+        _send(engine, _connect_request("A", "text", "D", "extra"))
+        before = _image(engine, "D")
+        key = ConnectionKey("A", "text", "D", "extra")
+        _send(engine, _disconnect_request("A", "text", "D", "extra"))
+        _set(engine, "D", "mode", "off")
+        entry = HistoryEntry(
+            changes=[NodeChange(before=before, after=_image(engine, "D"))], connections_removed=frozenset({key})
+        )
+        assert _node(engine, "D").get_parameter_by_name("extra") is None  # type: ignore[union-attr]
+
+        assert replay(engine, entry, Direction.UNDO) == []
+        assert _image(engine, "D").structure == before.structure
+        assert _connections(engine) == {("A", "text", "D", "extra")}
+        assert (_value(engine, "D", "mode"), _value(engine, "D", "extra")) == ("on", "from A")
+
+        assert replay(engine, entry, Direction.REDO) == []
+        assert _connections(engine) == set()
+        assert _value(engine, "D", "mode") == "off"
+        assert _node(engine, "D").get_parameter_by_name("extra") is None  # type: ignore[union-attr]
+
+    def test_a_connection_to_a_parameter_that_a_value_adds_is_made_with_the_parameter(self, engine: Engine) -> None:
+        _create(engine, "A")
+        _create(engine, "D", node_type="_Dynamic")
+        _set(engine, "A", "text", "from A")
+        before = _image(engine, "D")
+        _set(engine, "D", "mode", "on")
+        _send(engine, _connect_request("A", "text", "D", "extra"))
+        key = ConnectionKey("A", "text", "D", "extra")
+        entry = HistoryEntry(
+            changes=[NodeChange(before=before, after=_image(engine, "D"))], connections_added=frozenset({key})
+        )
+
+        assert replay(engine, entry, Direction.UNDO) == []
+        assert _connections(engine) == set()
+        assert _value(engine, "D", "mode") == "off"
+        assert _node(engine, "D").get_parameter_by_name("extra") is None  # type: ignore[union-attr]
+
+        assert replay(engine, entry, Direction.REDO) == []
+        assert _connections(engine) == {("A", "text", "D", "extra")}
+        assert (_value(engine, "D", "mode"), _value(engine, "D", "extra")) == ("on", "from A")
+
+    def test_a_connection_whose_parameter_never_comes_back_is_reported_once(self, engine: Engine) -> None:
+        _create(engine, "A")
+        _create(engine, "D", node_type="_Dynamic")
+        key = ConnectionKey("A", "text", "D", "extra")
+        entry = HistoryEntry(changes=[], connections_removed=frozenset({key}))
+
+        assert replay(engine, entry, Direction.UNDO) == ["Could not reconnect 'A' to 'D'."]
+        assert _connections(engine) == set()
 
     def test_group_membership_restores_both_ways(self, engine: Engine) -> None:
         _create(engine, "A")
