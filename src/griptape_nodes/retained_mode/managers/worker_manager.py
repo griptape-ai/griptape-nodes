@@ -563,6 +563,7 @@ class WorkerManager(EngineScoped):
         if claim is not None:
             await claim.wait()
         await self._stop_workers(library_names={library_name}, action="reset")
+        self.note_worker_unavailable(library_name, "its worker process was stopped while the library is being reset.")
 
     async def _stop_workers(self, *, library_names: set[str] | None, action: str) -> None:
         """Terminate the named libraries' workers (every worker when None) and forget them.
@@ -575,12 +576,14 @@ class WorkerManager(EngineScoped):
             for library_name, proc in self._managed_worker_processes.items()
             if library_names is None or library_name in library_names
         ]
+        await asyncio.gather(*(self._terminate_via_spawn_loop(library_name, proc) for library_name, proc in processes))
+        # Read after the termination, not before: a worker can register while its process is being
+        # stopped, and an id missed here stays routable to a dead process.
         worker_ids = [
             wid
             for wid, registration in self._workers.items()
             if library_names is None or registration.worker_key in library_names
         ]
-        await asyncio.gather(*(self._terminate_via_spawn_loop(library_name, proc) for library_name, proc in processes))
         # Settle anything still awaiting one of these workers, BEFORE the registry is cleared.
         # Clearing it is what makes this the last chance: the heartbeat loop can only evict ids it
         # can still see, so after this nothing reaches these requests at all. route_to_worker has no
