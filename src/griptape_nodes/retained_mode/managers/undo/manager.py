@@ -267,7 +267,9 @@ class UndoManager(EngineScoped):
     def _replay_blocker(self, verb: str) -> str | None:
         if self._replaying:
             return f"Attempted to {verb}. Failed because an undo or redo is already in progress."
-        if any(edit.in_flight > 0 and edit.touched for edit in self._edits.values()):
+        # An edit imaged the connections when it began, even if it has not named a node yet. A replay
+        # in the meantime would land in its entry and clear redo, so every edit still running blocks it.
+        if any(edit.in_flight > 0 for edit in self._edits.values()):
             return f"Attempted to {verb}. Failed because the last change is still being applied."
         if self.engine.flow_manager.check_for_existing_running_flow():
             return f"Attempted to {verb}. Failed because the workflow is running."

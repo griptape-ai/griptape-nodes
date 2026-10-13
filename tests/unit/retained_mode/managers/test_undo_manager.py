@@ -884,6 +884,77 @@ class TestMoreRefusals:
         assert isinstance(result, UndoResultFailure)
         assert "still being applied" in str(result.result_details)
 
+    def test_undo_not_while_an_edit_that_has_changed_nothing_yet_is_in_flight(self, engine: Engine) -> None:
+        """An async handler can wait before it names a node. The edit already imaged the connections."""
+        _create(engine, "A")
+        _create(engine, "B")
+        _connect(engine, "A", "B")
+        undo_manager = engine.undo_manager
+        slow_edit = contextvars.Context()
+        scope = slow_edit.run(
+            undo_manager.begin_dispatch,
+            CreateNodeRequest(node_type="_Probe", specific_library_name=_LIBRARY, node_name="C", undo_group="slow"),
+        )
+
+        result = _undo(engine)
+
+        assert isinstance(result, UndoResultFailure)
+        assert "still being applied" in str(result.result_details)
+        assert _connections(engine) == {("A", "text", "B", "text")}
+        assert _history(engine).undo_labels == ["Add 'A'", "Add 'B'", "Connect 'A' to 'B'"]
+
+        slow_edit.run(undo_manager.end_dispatch, scope)
+
+        assert _history(engine).undo_labels == ["Add 'A'", "Add 'B'", "Connect 'A' to 'B'"]
+        assert _undid_cleanly(_undo(engine))
+        assert _connections(engine) == set()
+        assert _history(engine).redo_labels == ["Connect 'A' to 'B'"]
+
+    def test_redo_not_while_an_edit_that_has_changed_nothing_yet_is_in_flight(self, engine: Engine) -> None:
+        _create(engine, "A")
+        _create(engine, "B")
+        _connect(engine, "A", "B")
+        assert _undid_cleanly(_undo(engine))
+        undo_manager = engine.undo_manager
+        slow_edit = contextvars.Context()
+        scope = slow_edit.run(
+            undo_manager.begin_dispatch,
+            CreateNodeRequest(node_type="_Probe", specific_library_name=_LIBRARY, node_name="C", undo_group="slow"),
+        )
+
+        result = _redo(engine)
+
+        assert isinstance(result, RedoResultFailure)
+        assert "still being applied" in str(result.result_details)
+        assert _connections(engine) == set()
+        assert _history(engine).redo_labels == ["Connect 'A' to 'B'"]
+
+        slow_edit.run(undo_manager.end_dispatch, scope)
+
+        assert _history(engine).undo_labels == ["Add 'A'", "Add 'B'"]
+        assert _history(engine).redo_labels == ["Connect 'A' to 'B'"]
+        assert isinstance(_redo(engine), RedoResultSuccess)
+        assert _connections(engine) == {("A", "text", "B", "text")}
+        assert _history(engine).undo_labels == ["Add 'A'", "Add 'B'", "Connect 'A' to 'B'"]
+
+    def test_reads_and_unrecorded_requests_in_flight_do_not_block_undo(self, engine: Engine) -> None:
+        _create(engine, "A")
+        undo_manager = engine.undo_manager
+        read_context, unrecorded_context = contextvars.Context(), contextvars.Context()
+        read_scope = read_context.run(
+            undo_manager.begin_dispatch, GetNodeMetadataRequest(node_name="A", undo_group="r")
+        )
+        unrecorded_scope = unrecorded_context.run(
+            undo_manager.begin_dispatch, UnresolveNodeRequest(node_name="A", undo_group="u")
+        )
+
+        result = _undo(engine)
+
+        read_context.run(undo_manager.end_dispatch, read_scope)
+        unrecorded_context.run(undo_manager.end_dispatch, unrecorded_scope)
+        assert _undid_cleanly(result)
+        assert _node(engine, "A") is None
+
     def test_not_during_another_undo(self, engine: Engine) -> None:
         _create(engine, "A")
         _create(engine, "B")
