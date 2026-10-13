@@ -248,7 +248,10 @@ class CancelAgentRequest(RequestPayload, SkipTheLineMixin):
     cancellation to the active :class:`RunAgentRequest` for ``thread_id``; the
     run unwinds promptly and returns a ``RunAgentResultSuccess`` whose ``output``
     carries ``cancelled: True`` and any text streamed so far. The cancelled
-    turn is not persisted to the thread.
+    turn is not persisted to the thread, except that cancelling a turn resumed
+    by ``ResolveToolApprovalsRequest`` (or by a message sent while approvals were
+    waiting) saves a result for each waiting call it ran, started, or denied. A
+    call it never started stays in ``pending_approvals``.
 
     ``SkipTheLineMixin`` so the cancel bypasses the event queue and reaches the
     dispatcher even while the run task is in flight.

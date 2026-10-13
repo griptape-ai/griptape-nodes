@@ -7,7 +7,9 @@ found in saved history, and the runner's pause and resume round trip against a
 
 from __future__ import annotations
 
+import asyncio
 import json
+from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
@@ -35,13 +37,18 @@ from griptape_nodes.agents.pydantic_ai.mcp_servers import (
     _user_tool_requires_approval,
     grant_keys_for_call,
 )
-from griptape_nodes.agents.pydantic_ai.runner import PendingApproval, PydanticAgentRunner
-from griptape_nodes.agents.pydantic_ai.tool_approval import ToolApprovalDeps, needs_approval, pending_tool_calls
+from griptape_nodes.agents.pydantic_ai.runner import PendingApproval, PydanticAgentRunner, RunEvent, ToolResult
+from griptape_nodes.agents.pydantic_ai.tool_approval import (
+    TOOL_STOPPED_WHILE_RUNNING_MESSAGE,
+    ToolApprovalDeps,
+    needs_approval,
+    pending_tool_calls,
+)
 from griptape_nodes.drivers.thread_storage.local_thread_storage_driver import LocalThreadStorageDriver
 from griptape_nodes.servers.mcp import EVENT_REQUEST_BATCH_TOOL_NAME, SUPPORTED_REQUEST_EVENTS
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable
+    from collections.abc import AsyncIterator, Awaitable, Callable
     from pathlib import Path
 
     from pydantic_ai import RunContext
@@ -230,12 +237,45 @@ class ScriptedModel:
         }
 
 
-def gtn_like_toolset(ran: list[str]) -> Any:
+@dataclass
+class ToolGate:
+    """Holds a run at a chosen point so a test can cancel it there.
+
+    Tools named in ``blocked`` stop once they start, standing in for an engine flow
+    that is still running. ``stall_before_tools`` stops the run before it reaches
+    any tool call. ``reached`` is set when the run is held; nothing ever releases it.
+    """
+
+    blocked: frozenset[str] = frozenset()
+    stall_before_tools: bool = False
+    reached: asyncio.Event = field(default_factory=asyncio.Event)
+
+    async def hold(self) -> None:
+        self.reached.set()
+        await asyncio.Event().wait()
+
+
+class _StallingToolset(FunctionToolset[Any]):
+    """No tools of its own; holds the run while tools are gathered, when the gate says to."""
+
+    def __init__(self, gate: ToolGate) -> None:
+        super().__init__()
+        self._gate = gate
+
+    async def get_tools(self, ctx: Any) -> dict[str, Any]:
+        if self._gate.stall_before_tools:
+            await self._gate.hold()
+        return await super().get_tools(ctx)
+
+
+def gtn_like_toolset(ran: list[str], gate: ToolGate | None = None) -> Any:
     """Stand in for the engine's MCP server, composed and gated exactly as the real one is."""
 
-    def recorder(name: str) -> Callable[..., str]:
-        def run(**_kwargs: Any) -> str:
+    def recorder(name: str) -> Callable[..., Awaitable[str]]:
+        async def run(**_kwargs: Any) -> str:
             ran.append(name)
+            if gate is not None and name in gate.blocked:
+                await gate.hold()
             return f"{name} ok"
 
         return run
@@ -247,13 +287,18 @@ def gtn_like_toolset(ran: list[str]) -> Any:
     return _compose(GTN_SERVER_NAME, FunctionToolset(tools=tools), requires_approval=_gtn_tool_requires_approval)
 
 
-def runner_with(tmp_path: Path, model: ScriptedModel, ran: list[str]) -> PydanticAgentRunner:
+def runner_with(
+    tmp_path: Path, model: ScriptedModel, ran: list[str], gate: ToolGate | None = None
+) -> PydanticAgentRunner:
     """A runner on real thread storage whose agent talks to `model` and has the gated toolset."""
     workspace = tmp_path / "ws"
     workspace.mkdir(exist_ok=True)
     storage = LocalThreadStorageDriver(tmp_path / "threads", config_manager=None, secrets_manager=None)  # type: ignore[arg-type]
     runner = PydanticAgentRunner(model_name="test", api_key="dummy", workspace_root=workspace, storage=storage)
-    runner._agent = Agent(FunctionModel(stream_function=model.stream), toolsets=[gtn_like_toolset(ran)])
+    toolsets: list[Any] = [gtn_like_toolset(ran, gate)]
+    if gate is not None:
+        toolsets.append(_StallingToolset(gate))
+    runner._agent = Agent(FunctionModel(stream_function=model.stream), toolsets=toolsets)
     return runner
 
 
@@ -359,3 +404,138 @@ class TestRunnerPauseAndResume:
 
         with pytest.raises(ValueError, match="waiting for approval"):
             await runner.run("Something else.", thread_id=paused.thread_id, approval=ON)
+
+
+def _results_by_call(messages: list[ModelMessage]) -> dict[str, str]:
+    return {
+        part.tool_call_id: str(part.content)
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    }
+
+
+async def _cancel_once(run: Awaitable[Any], cancel_event: asyncio.Event, reached: asyncio.Event) -> Any:
+    """Run `run`, cancel it as soon as `reached` is set, and return its result."""
+    task = asyncio.ensure_future(run)
+    await asyncio.wait_for(reached.wait(), timeout=5)
+    cancel_event.set()
+    return await asyncio.wait_for(task, timeout=5)
+
+
+class TestCancellingAResumedTurn:
+    """A cancelled resume saves what it did, so an approved call can never run twice."""
+
+    @pytest.mark.asyncio
+    async def test_a_call_cancelled_while_running_is_no_longer_pending(self, tmp_path: Path) -> None:
+        ran: list[str] = []
+        gate = ToolGate(blocked=frozenset({"StartFlowRequest"}))
+        runner = runner_with(tmp_path, ScriptedModel([("GriptapeNodes_StartFlowRequest", {}, "c1")]), ran, gate)
+        paused = await runner.run("Run the flow.", approval=ON)
+        events: list[RunEvent] = []
+        cancel_event = asyncio.Event()
+
+        cancelled = await _cancel_once(
+            runner.run(
+                None,
+                thread_id=paused.thread_id,
+                approval=ON,
+                deferred_tool_results=DeferredToolResults(approvals={"c1": True}),
+                cancel_event=cancel_event,
+                event_sink=events.append,
+            ),
+            cancel_event,
+            gate.reached,
+        )
+
+        history = runner.storage.load_history(paused.thread_id)
+        assert cancelled.cancelled is True
+        assert cancelled.pending_approvals == []
+        assert ran == ["StartFlowRequest"]
+        assert pending_tool_calls(history) == []
+        assert _results_by_call(history) == {"c1": TOOL_STOPPED_WHILE_RUNNING_MESSAGE}
+        # The editor is told the call is over, so its row stops reading as running.
+        assert any(
+            isinstance(event, ToolResult) and event.tool_call_id == "c1" and "stopped the reply" in event.content
+            for event in events
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_call_that_finished_keeps_its_result(self, tmp_path: Path) -> None:
+        ran: list[str] = []
+        gate = ToolGate(blocked=frozenset({"StartFlowRequest"}))
+        batch_args = {"requests": [{"request_type": "ResolveNodeRequest", "request": {}}]}
+        model = ScriptedModel(
+            [("GriptapeNodes_StartFlowRequest", {}, "c1"), ("GriptapeNodes_EventRequestBatch", batch_args, "c2")]
+        )
+        runner = runner_with(tmp_path, model, ran, gate)
+        paused = await runner.run("Run both.", approval=ON)
+        batch_done = asyncio.Event()
+        cancel_event = asyncio.Event()
+
+        def on_event(event: RunEvent) -> None:
+            if isinstance(event, ToolResult) and event.tool_call_id == "c2":
+                batch_done.set()
+
+        await _cancel_once(
+            runner.run(
+                None,
+                thread_id=paused.thread_id,
+                approval=ON,
+                deferred_tool_results=DeferredToolResults(approvals={"c1": True, "c2": True}),
+                cancel_event=cancel_event,
+                event_sink=on_event,
+            ),
+            cancel_event,
+            batch_done,
+        )
+
+        results = _results_by_call(runner.storage.load_history(paused.thread_id))
+        assert results == {"c1": TOOL_STOPPED_WHILE_RUNNING_MESSAGE, "c2": "EventRequestBatch ok"}
+
+    @pytest.mark.asyncio
+    async def test_an_approved_call_that_never_started_stays_pending_and_can_be_answered(self, tmp_path: Path) -> None:
+        ran: list[str] = []
+        gate = ToolGate()
+        model = ScriptedModel(
+            [
+                ("GriptapeNodes_StartFlowRequest", {}, "c1"),
+                ("GriptapeNodes_StartFlowRequest", {"flow_name": "b"}, "c2"),
+            ],
+            "Started.",
+        )
+        runner = runner_with(tmp_path, model, ran, gate)
+        paused = await runner.run("Run it.", approval=ON)
+        gate.stall_before_tools = True
+        cancel_event = asyncio.Event()
+
+        cancelled = await _cancel_once(
+            runner.run(
+                None,
+                thread_id=paused.thread_id,
+                approval=ON,
+                deferred_tool_results=DeferredToolResults(approvals={"c1": True, "c2": ToolDenied("no")}),
+                cancel_event=cancel_event,
+            ),
+            cancel_event,
+            gate.reached,
+        )
+
+        history = runner.storage.load_history(paused.thread_id)
+        assert ran == []
+        assert [pending.tool_call_id for pending in cancelled.pending_approvals] == ["c1"]
+        assert [call.tool_call_id for call in pending_tool_calls(history)] == ["c1"]
+        assert _results_by_call(history) == {"c2": "no"}
+
+        # The saved mix of answered and waiting calls resumes cleanly.
+        gate.stall_before_tools = False
+        resumed = await runner.run(
+            None,
+            thread_id=paused.thread_id,
+            approval=ON,
+            deferred_tool_results=DeferredToolResults(approvals={"c1": True}),
+        )
+        assert ran == ["StartFlowRequest"]
+        assert resumed.output == "Started."
+        assert pending_tool_calls(runner.storage.load_history(paused.thread_id)) == []

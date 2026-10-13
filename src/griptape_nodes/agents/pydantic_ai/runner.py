@@ -44,6 +44,7 @@ from pydantic_ai.messages import (
     ThinkingPart,
     ThinkingPartDelta,
     ToolCallPart,
+    ToolReturnPart,
     UserPromptPart,
 )
 from pydantic_ai.tools import DeferredToolRequests
@@ -57,7 +58,12 @@ from griptape_nodes.agents.pydantic_ai.image_tools import (
 )
 from griptape_nodes.agents.pydantic_ai.mcp_servers import grant_keys_for_call
 from griptape_nodes.agents.pydantic_ai.model import build_model
-from griptape_nodes.agents.pydantic_ai.tool_approval import ToolApprovalDeps, pending_tool_calls
+from griptape_nodes.agents.pydantic_ai.tool_approval import (
+    ToolApprovalDeps,
+    ends_in_tool_results,
+    pending_tool_calls,
+    settle_cancelled_resume,
+)
 from griptape_nodes.drivers.cloud_models import ProviderID
 
 if TYPE_CHECKING:
@@ -160,7 +166,8 @@ class AgentRunResult:
             during this run, in call order. Empty when no image was generated.
         cancelled: ``True`` when the run was stopped via its cancel event before
             completing. A cancelled run does not persist its turn to the thread,
-            so ``message_count`` reflects the pre-run history length.
+            except that a resumed one saves what happened to the calls it was
+            answering; ``message_count`` is the thread's length after that.
         truncated: ``True`` when the model stopped because it hit the output
             token limit rather than finishing its reply. ``output`` holds the
             partial text, which is complete-looking but ends mid-thought, so
@@ -388,7 +395,9 @@ class PydanticAgentRunner:
             cancel_event: When set while the run is in flight, the agent task is
                 cancelled and :meth:`run` returns an :class:`AgentRunResult` with
                 ``cancelled=True`` carrying the text streamed so far. The
-                cancelled turn is not persisted.
+                cancelled turn is not persisted, except that a run given
+                ``deferred_tool_results`` saves a result for each paused call it
+                finished, started, or denied.
             persist_prompt: When the live ``prompt`` inlines binary content, the
                 URL-reference form to store in this turn's user message instead
                 of it, keeping saved history small. ``None`` persists ``prompt``
@@ -504,12 +513,14 @@ class PydanticAgentRunner:
                 counters.tool_calls,
                 _preview(text),
             )
+            saved = await self._save_cancelled_resume(thread_id, history, deferred_tool_results, counters, event_sink)
             return AgentRunResult(
                 thread_id=thread_id,
                 output=text,
-                message_count=len(history),
+                message_count=len(saved),
                 image_urls=list(counters.image_urls),
                 cancelled=True,
+                pending_approvals=[pending_approval_for(call) for call in pending_tool_calls(saved)],
             )
 
         # Persist the pristine history plus only this turn's new messages. Using
@@ -542,9 +553,10 @@ class PydanticAgentRunner:
         # drift; fail loud rather than silently persist a malformed history.
         # Normal turns always end in a ModelResponse and cancelled turns are
         # never saved. The one trailing request allowed is a paused turn's, which
-        # holds only results for the calls that ran without asking.
+        # holds only tool results: those of the calls that ran without asking, or
+        # those a cancelled resume saved.
         turn_messages = list(new_messages)
-        if history and not isinstance(history[-1], ModelResponse) and not waiting:
+        if history and not isinstance(history[-1], ModelResponse) and not ends_in_tool_results(history):
             msg = (
                 f"Attempted to persist thread {thread_id}. Failed because loaded history ends with "
                 f"{type(history[-1]).__name__}, not a ModelResponse, indicating a partial turn was "
@@ -565,6 +577,44 @@ class PydanticAgentRunner:
             truncated=truncated,
             pending_approvals=pending_approvals,
         )
+
+    async def _save_cancelled_resume(
+        self,
+        thread_id: str,
+        history: list[ModelMessage],
+        deferred_tool_results: DeferredToolResults | None,
+        counters: _RunCounters,
+        event_sink: Callable[[RunEvent], Awaitable[None] | None] | None,
+    ) -> list[ModelMessage]:
+        """Save what a cancelled run did to the calls its paused turn was waiting on.
+
+        A fresh turn that is cancelled saves nothing. A resumed one cannot: a tool
+        it started keeps going after the cancel (an engine flow runs to the end),
+        so leaving the call unanswered would let it be approved and run a second
+        time. Returns the history as it now stands on disk.
+        """
+        if deferred_tool_results is None:
+            return history
+        settled = settle_cancelled_resume(
+            history,
+            deferred_tool_results,
+            started_tool_call_ids=counters.started_tool_call_ids,
+            tool_results=counters.tool_results,
+        )
+        if settled is None:
+            return history
+        self.storage.save_history(thread_id, settled.messages)
+        # The editor shows a call as running until it sees a result for it.
+        for part in settled.added_parts:
+            await _push_event(
+                event_sink,
+                ToolResult(
+                    tool_call_id=part.tool_call_id,
+                    tool_name=part.tool_name,
+                    content=_truncate(_stringify(part.content), _RESULT_TRANSPORT_BYTES),
+                ),
+            )
+        return settled.messages
 
     @staticmethod
     async def _await_run(run_task: asyncio.Future[Any], cancel_event: asyncio.Event | None) -> Any:
@@ -604,6 +654,12 @@ class _RunCounters:
     tool_calls: int = 0
     final_result_emitted: bool = False
     image_urls: list[str] = field(default_factory=list)
+    # Tool calls the run reached, and the results it got back, keyed by tool_call_id.
+    # Both are recorded before any await in the handler: pydantic-ai drives tool
+    # execution from this handler's iteration, so a call cannot start before its
+    # id is in `started_tool_call_ids`, and a cancel cannot fall between the two.
+    started_tool_call_ids: set[str] = field(default_factory=set)
+    tool_results: dict[str, ToolReturnPart | RetryPromptPart] = field(default_factory=dict)
 
     async def consume(
         self,
@@ -627,6 +683,7 @@ class _RunCounters:
         elif isinstance(event, PartDeltaEvent):
             await self._on_part_delta(event, token_sink, event_sink, text_buffer)
         elif isinstance(event, FunctionToolCallEvent):
+            self.started_tool_call_ids.add(event.part.tool_call_id)
             self.tool_calls += 1
             args_str = _args_str(event.part.args)
             logger.debug(
@@ -647,6 +704,8 @@ class _RunCounters:
             )
         elif isinstance(event, FunctionToolResultEvent):
             part = getattr(event, "part", None) or getattr(event, "result", None)
+            if isinstance(part, (ToolReturnPart, RetryPromptPart)):
+                self.tool_results[event.tool_call_id] = part
             content = getattr(part, "content", None)
             tool_name = getattr(part, "tool_name", "?")
             is_error = isinstance(part, RetryPromptPart)

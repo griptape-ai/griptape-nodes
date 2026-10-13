@@ -834,7 +834,7 @@ class AgentManager(EngineScoped):
         mcp_server_names: list[str],
     ) -> RunAgentResultSuccess:
         """Record a finished turn and build the result the editor renders it from."""
-        # A cancelled run persists nothing, so there is no response to record.
+        # A cancelled run saves no model response, so there is no response to record.
         if not result.cancelled:
             resolved_provider = self._get_provider(provider_name)
             self._thread_storage.append_run_record(

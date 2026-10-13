@@ -16,9 +16,15 @@ import pytest
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 
 from griptape_nodes.agents.pydantic_ai.mcp_toolset_cache import MCPToolsetCache
-from griptape_nodes.agents.pydantic_ai.tool_approval import TOOL_DENIED_BY_NEW_MESSAGE, TOOL_DENIED_BY_USER_MESSAGE
+from griptape_nodes.agents.pydantic_ai.tool_approval import (
+    TOOL_DENIED_BY_NEW_MESSAGE,
+    TOOL_DENIED_BY_USER_MESSAGE,
+    TOOL_STOPPED_WHILE_RUNNING_MESSAGE,
+)
 from griptape_nodes.drivers.thread_storage.local_thread_storage_driver import LocalThreadStorageDriver
 from griptape_nodes.retained_mode.events.agent_events import (
+    CancelAgentRequest,
+    CancelAgentResultSuccess,
     ClearToolGrantsRequest,
     ClearToolGrantsResultFailure,
     ClearToolGrantsResultSuccess,
@@ -31,7 +37,7 @@ from griptape_nodes.retained_mode.events.agent_events import (
 from griptape_nodes.retained_mode.events.budget_events import GetAttributionContextResultFailure
 from griptape_nodes.retained_mode.events.mcp_events import GetEnabledMCPServersResultSuccess
 from griptape_nodes.retained_mode.managers.agent_manager import AgentManager, ComposedPrompt
-from tests.unit.agents.pydantic_ai.test_tool_approval import ScriptedModel, runner_with
+from tests.unit.agents.pydantic_ai.test_tool_approval import ScriptedModel, ToolGate, runner_with
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -57,10 +63,12 @@ async def _no_attribution(_request: object) -> GetAttributionContextResultFailur
 class _Harness:
     """An `AgentManager` wired to one runner on real thread storage."""
 
-    def __init__(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: ScriptedModel) -> None:
+    def __init__(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: ScriptedModel, gate: ToolGate | None = None
+    ) -> None:
         self.ran: list[str] = []
         self.model = model
-        self.runner: PydanticAgentRunner = runner_with(tmp_path, model, self.ran)
+        self.runner: PydanticAgentRunner = runner_with(tmp_path, model, self.ran, gate)
         self.storage: LocalThreadStorageDriver = self.runner.storage  # type: ignore[assignment]
         self.manager = _manager_on(self.storage, self.runner, monkeypatch)
 
@@ -406,3 +414,34 @@ class TestOneReplyAtATime:
         assert isinstance(failed, RunAgentResultFailure)
         assert retried.output["text"] == "Hello."
         assert harness.manager._active_runs == {}
+
+
+@pytest.mark.asyncio
+async def test_cancelling_an_answer_mid_run_never_runs_the_call_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A flow keeps running after Cancel, so the call must not stay answerable or read as never run."""
+    gate = ToolGate(blocked=frozenset({"StartFlowRequest"}))
+    harness = _Harness(tmp_path, monkeypatch, ScriptedModel([(START, {}, "c1")], "It may still be running."), gate)
+    thread_id = harness.thread()
+    await harness.send(thread_id, "Run the flow.")
+
+    answering = asyncio.ensure_future(harness.resolve(thread_id, c1="approve_for_conversation"))
+    await asyncio.wait_for(gate.reached.wait(), timeout=5)
+    cancel = harness.manager.on_handle_cancel_agent_request(CancelAgentRequest(thread_id=thread_id))
+    cancelled = await asyncio.wait_for(answering, timeout=5)
+
+    assert isinstance(cancel, CancelAgentResultSuccess)
+    assert cancel.was_running is True
+    assert isinstance(cancelled, RunAgentResultSuccess)
+    assert cancelled.output["cancelled"] is True
+    assert cancelled.output["pending_approvals"] == []
+
+    again = await harness.resolve(thread_id, c1="approve_once")
+    assert isinstance(again, RunAgentResultFailure)
+    assert "not waiting for approval" in again.error["message"]
+
+    follow_up = await harness.send(thread_id, "Did it run?")
+    assert follow_up.output["text"] == "It may still be running."
+    assert harness.tool_returns(thread_id)["c1"] == TOOL_STOPPED_WHILE_RUNNING_MESSAGE
+    assert harness.ran == ["StartFlowRequest"]
