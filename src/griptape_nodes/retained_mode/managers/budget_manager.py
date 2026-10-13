@@ -187,7 +187,7 @@ class BudgetManager(EngineScoped):
         correlation_id = uuid.uuid4().hex
         body: dict[str, Any] = {
             "tags": self._build_tags(request.node_type, request.node_id),
-            "model": request.model_id,
+            "model": request.model,
             "correlation_id": correlation_id,
         }
         if request.estimated_cost_micro_usd is not None:
@@ -199,19 +199,17 @@ class BudgetManager(EngineScoped):
                 self._post, BUDGET_CHECKS_PATH, body, timeout=CHECK_TIMEOUT_SECONDS, max_attempts=1
             )
         except _NoCredentialError:
-            return self._unchecked(request.model_id, correlation_id, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
+            return self._unchecked(request.model, correlation_id, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
         except httpx2.HTTPStatusError as exc:
-            return self._refused_over_http(request.model_id, correlation_id, exc.response.status_code)
+            return self._refused_over_http(request.model, correlation_id, exc.response.status_code)
         # InvalidURL is not an HTTPError: a mistyped GT_CLOUD_BASE_URL must still fail open.
         except (httpx2.HTTPError, httpx2.InvalidURL):
-            return self._unchecked(
-                request.model_id, correlation_id, "Failed because Griptape Cloud could not be reached."
-            )
+            return self._unchecked(request.model, correlation_id, "Failed because Griptape Cloud could not be reached.")
 
         result = _decision(response)
         if result is None:
             return self._unchecked(
-                request.model_id, correlation_id, "Failed because Griptape Cloud's answer could not be read."
+                request.model, correlation_id, "Failed because Griptape Cloud's answer could not be read."
             )
 
         if result["allowed"] is False:
@@ -235,7 +233,7 @@ class BudgetManager(EngineScoped):
             correlation_id=correlation_id,
             checked=True,
             effective_remaining_credits=remaining,
-            result_details=f"Griptape Cloud cleared a direct call to model '{request.model_id}' against its budgets.",
+            result_details=f"Griptape Cloud cleared a direct call to model '{request.model}' against its budgets.",
         )
 
     @handles(ReportUsageRequest)
@@ -350,7 +348,7 @@ class BudgetManager(EngineScoped):
             logger.warning("Dropped usage report %s: %s", body["idempotency_key"], exc)
 
     def _unchecked(
-        self, model_id: str, correlation_id: str, reason: str, *, level: int = logging.WARNING
+        self, model: str, correlation_id: str, reason: str, *, level: int = logging.WARNING
     ) -> BudgetAccessResultSuccess:
         """Clear a call Cloud could not be asked about. WARNING by default, since the work goes ahead."""
         return BudgetAccessResultSuccess(
@@ -358,25 +356,25 @@ class BudgetManager(EngineScoped):
             checked=False,
             result_details=ResultDetails(
                 message=(
-                    f"Attempted to check a direct call to model '{model_id}' against your budgets. {reason} "
+                    f"Attempted to check a direct call to model '{model}' against your budgets. {reason} "
                     "The call will proceed without a budget check."
                 ),
                 level=level,
             ),
         )
 
-    def _refused_over_http(self, model_id: str, correlation_id: str, status: int) -> BudgetAccessResultSuccess:
+    def _refused_over_http(self, model: str, correlation_id: str, status: int) -> BudgetAccessResultSuccess:
         """Clear a call Cloud answered with an HTTP error rather than a decision."""
         if status == HTTPStatus.NOT_FOUND:
             # The deployment has reporting switched off: the steady state there, not news.
             return self._unchecked(
-                model_id,
+                model,
                 correlation_id,
                 "Failed because this Griptape Cloud deployment does not offer budget checks.",
                 level=logging.DEBUG,
             )
         return self._unchecked(
-            model_id, correlation_id, f"Failed because Griptape Cloud refused the check (HTTP {status})."
+            model, correlation_id, f"Failed because Griptape Cloud refused the check (HTTP {status})."
         )
 
     def _report_not_sent(self, model: str | None, reason: str) -> ReportUsageResultFailure:

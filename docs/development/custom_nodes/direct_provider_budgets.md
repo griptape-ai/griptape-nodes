@@ -5,7 +5,7 @@ Griptape Cloud enforces spending budgets on every call that goes through the Gri
 - `BudgetAccessRequest`, sent **before** the call, asks Cloud whether the call fits the budgets of the open project.
 - `ReportUsageRequest`, sent **after** the call, tells Cloud what the call cost, so it counts against those budgets and shows in usage auditing.
 
-The engine adds the project, workflow, engine and session to both requests for you. Pass the node's class name as `node_type`. `node_id` is for an opaque id; never pass the node's name, which the user types and may not want shared.
+The engine adds the project, workflow, engine and session to both requests for you. Send the provider's own name for the model, such as `gpt-5-nano`, in both requests, so a refusal and the spend it would have been are grouped under the same model in usage audits. Pass the node's class name as `node_type`. `node_id` is for an opaque id; never pass the node's name, which the user types and may not want shared.
 
 ## Before the call: `BudgetAccessRequest`
 
@@ -18,7 +18,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 check = await GriptapeNodes.ahandle_request(
     BudgetAccessRequest(
-        model_id="gtc_claude_opus_4_7",
+        model="gpt-5-nano",
         estimated_cost_micro_usd=40_000,
         node_type=type(self).__name__,
     )
@@ -40,8 +40,8 @@ from griptape_nodes.retained_mode.events.budget_events import ReportUsageRequest
 await GriptapeNodes.ahandle_request(
     ReportUsageRequest(
         declared_cost_micro_usd=12_345,
-        provider="anthropic",
-        model="gtc_claude_opus_4_7",
+        provider="openai",
+        model="gpt-5-nano",
         activity_type="chat_completion",
         node_type=type(self).__name__,
         correlation_id=check.correlation_id,

@@ -104,7 +104,9 @@ class BudgetAccessRequest(RequestPayload):
     Use when: A node is about to call a model provider directly, not through the Griptape proxy.
 
     Args:
-        model_id: Stable catalog key of the model being invoked (e.g., "gtc_claude_opus_4_7")
+        model: The provider's name for the model being invoked (e.g., "gpt-5-nano"), the same
+            value `ReportUsageRequest.model` carries, so a refusal and the spend it would have been
+            group under one model.
         estimated_cost_micro_usd: Expected cost of the call. When omitted, the call is refused
             only by budgets with no headroom left.
         node_type: Library class of the calling node, for attribution
@@ -114,7 +116,7 @@ class BudgetAccessRequest(RequestPayload):
         BudgetAccessResultFailure (a budget refused the call; the node should not make it)
     """
 
-    model_id: str
+    model: str
     estimated_cost_micro_usd: int | None = None
     node_type: str | None = None
     node_id: str | None = None
@@ -167,7 +169,7 @@ class ReportUsageRequest(RequestPayload):
     Args:
         declared_cost_micro_usd: What the call cost, in millionths of a US dollar
         provider: Provider name, e.g. "anthropic"
-        model: Model name or catalog key
+        model: The provider's name for the model, e.g. "gpt-5-nano"
         activity_type: Kind of call, e.g. "chat_completion"
         node_type: Library class of the calling node, for attribution
         node_id: Opaque id of the calling node, for attribution. Never the node's label.

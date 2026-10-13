@@ -169,10 +169,10 @@ class TestSpendRequestsAreForwardedFromWorkers:
 
         with harness.worker.node_execution_scope():
             result_event = await harness.worker.ahandle_request(
-                BudgetAccessRequest(model_id="m", estimated_cost_micro_usd=5, node_type="T", node_id="n-1")
+                BudgetAccessRequest(model="m", estimated_cost_micro_usd=5, node_type="T", node_id="n-1")
             )
 
         assert isinstance(result_event.result, BudgetAccessResultSuccess)
         assert result_event.result.correlation_id == "c"
-        assert (received[0].model_id, received[0].estimated_cost_micro_usd) == ("m", 5)
+        assert (received[0].model, received[0].estimated_cost_micro_usd) == ("m", 5)
         assert (received[0].node_type, received[0].node_id) == ("T", "n-1")

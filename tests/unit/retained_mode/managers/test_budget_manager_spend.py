@@ -136,7 +136,7 @@ class TestBudgetCheckAllowed:
             },
         )
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is True
@@ -145,7 +145,7 @@ class TestBudgetCheckAllowed:
     def test_cleared_with_headroom(self, http: MagicMock) -> None:
         http.return_value = _response(200, {"allowed": True, "blocked_by": [], "effective_remaining_credits": 13})
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="gtc_claude_opus_4_7"))
+        result = _check(_manager(), BudgetAccessRequest(model="gpt-5-nano"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is True
@@ -157,7 +157,7 @@ class TestBudgetCheckAllowed:
         result = _check(
             _manager(),
             BudgetAccessRequest(
-                model_id="gtc_claude_opus_4_7",
+                model="gpt-5-nano",
                 estimated_cost_micro_usd=40000,
                 node_type="AnthropicPrompt",
                 node_id="node-7",
@@ -177,7 +177,7 @@ class TestBudgetCheckAllowed:
                 "engine_id": "engine-1",
                 "session_id": "session-1",
             },
-            "model": "gtc_claude_opus_4_7",
+            "model": "gpt-5-nano",
             "estimated_cost_micro_usd": 40000,
             "correlation_id": result.correlation_id,
         }
@@ -186,7 +186,7 @@ class TestBudgetCheckAllowed:
         """Cloud reads 0 as an estimate that fits only zero headroom, and absence as no estimate."""
         http.return_value = _response(200, {"allowed": True})
 
-        _check(_manager(), BudgetAccessRequest(model_id="m", estimated_cost_micro_usd=0))
+        _check(_manager(), BudgetAccessRequest(model="m", estimated_cost_micro_usd=0))
 
         assert _sent(http)["estimated_cost_micro_usd"] == 0
 
@@ -198,7 +198,7 @@ class TestBudgetCheckAllowed:
         engine.get_engine_id.return_value = None
         engine.get_session_id.return_value = None
 
-        _check(_manager(engine), BudgetAccessRequest(model_id="m"))
+        _check(_manager(engine), BudgetAccessRequest(model="m"))
 
         assert _sent(http) == {"tags": {}, "model": "m", "correlation_id": _sent(http)["correlation_id"]}
 
@@ -206,8 +206,8 @@ class TestBudgetCheckAllowed:
         http.return_value = _response(200, {"allowed": True})
         manager = _manager()
 
-        first = _check(manager, BudgetAccessRequest(model_id="m"))
-        second = _check(manager, BudgetAccessRequest(model_id="m"))
+        first = _check(manager, BudgetAccessRequest(model="m"))
+        second = _check(manager, BudgetAccessRequest(model="m"))
 
         assert isinstance(first, BudgetAccessResultSuccess)
         assert isinstance(second, BudgetAccessResultSuccess)
@@ -238,7 +238,7 @@ class TestBudgetCheckDenied:
             },
         )
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model="m"))
 
         assert isinstance(result, BudgetAccessResultFailure)
         assert result.blocked_by == blocked_by
@@ -252,7 +252,7 @@ class TestBudgetCheckDenied:
     def test_a_deny_without_a_blocked_by_list_still_refuses(self, http: MagicMock) -> None:
         http.return_value = _response(200, {"allowed": False, "blocked_by": "not a list"})
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model="m"))
 
         assert isinstance(result, BudgetAccessResultFailure)
         assert result.blocked_by == []
@@ -260,7 +260,7 @@ class TestBudgetCheckDenied:
     def test_a_deny_naming_no_budget_still_refuses(self, http: MagicMock) -> None:
         http.return_value = _response(200, {"allowed": False, "blocked_by": [{"unexpected": True}]})
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model="m"))
 
         assert isinstance(result, BudgetAccessResultFailure)
         assert str(result.result_details).startswith(f"{BUDGET_HALT_PREFIX} The next call was blocked by a budget.")
@@ -300,7 +300,7 @@ class TestBudgetCheckFailsOpen:
         else:
             http.return_value = outcome
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is False
@@ -315,7 +315,7 @@ class TestBudgetCheckFailsOpen:
         secrets = {"GT_CLOUD_BASE_URL": "https://cloud.griptape.ai:443x", "GT_CLOUD_API_KEY": "gt-key"}
         engine.secrets_manager.get_secret.side_effect = lambda name, **_: secrets.get(name)
 
-        result = _check(_manager(engine), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(engine), BudgetAccessRequest(model="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is False
@@ -325,7 +325,7 @@ class TestBudgetCheckFailsOpen:
         """The raw HTTP error text is multi-line and links to MDN; an artist sees only the status."""
         http.return_value = _response(503)
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model="m"))
 
         assert "\n" not in str(result.result_details)
         assert "developer.mozilla.org" not in str(result.result_details)
@@ -333,14 +333,14 @@ class TestBudgetCheckFailsOpen:
     def test_the_message_names_the_model(self, http: MagicMock) -> None:
         http.side_effect = httpx2.ConnectError("refused")
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="gtc_claude_opus_4_7"))
+        result = _check(_manager(), BudgetAccessRequest(model="gpt-5-nano"))
 
-        assert "'gtc_claude_opus_4_7'" in str(result.result_details)
+        assert "'gpt-5-nano'" in str(result.result_details)
 
     def test_unreadable_body(self, http: MagicMock) -> None:
         http.return_value = httpx2.Response(200, content=b"<html>", request=httpx2.Request("POST", BASE_URL))
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is False
@@ -349,19 +349,19 @@ class TestBudgetCheckFailsOpen:
         loop_thread = threading.get_ident()
         http.side_effect = lambda *_, **__: _response(200, {"allowed": threading.get_ident() != loop_thread})
 
-        result = _check(_manager(), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(), BudgetAccessRequest(model="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
 
     def test_check_is_not_retried(self, http: MagicMock) -> None:
         http.return_value = _response(503)
 
-        _check(_manager(), BudgetAccessRequest(model_id="m"))
+        _check(_manager(), BudgetAccessRequest(model="m"))
 
         assert http.call_count == 1
 
     def test_no_credential(self, http: MagicMock) -> None:
-        result = _check(_manager(_mock_engine(credential=None)), BudgetAccessRequest(model_id="m"))
+        result = _check(_manager(_mock_engine(credential=None)), BudgetAccessRequest(model="m"))
 
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is False
