@@ -453,8 +453,10 @@ class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPa
                        follow-up calls are name-keyed too.
         lifecycle_state: How far the engine's last attempt to load this file got (a
                          LibraryLifecycleState value such as "loaded" or "failure"). None when
-                         the engine has no record of the file, which is the case for a library
-                         added to the configuration since libraries were last loaded. Set only by
+                         the engine has no record of the file. A library added since libraries
+                         were last loaded has either no record or one that stopped at
+                         "discovered" or "metadata_loaded"; tell it apart from a failed load by
+                         `problems`, not by this field. Set only by
                          LoadMetadataForAllLibrariesRequest.
         fitness: The LibraryFitness value of that attempt, or None alongside a None lifecycle_state.
         problems: The problems that attempt recorded, collated for display, or None when there were

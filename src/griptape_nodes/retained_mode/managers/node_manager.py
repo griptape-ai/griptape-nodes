@@ -70,6 +70,7 @@ from griptape_nodes.node_library.library_declarations import (
 )
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.engine import EngineScoped
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     ResultDetails,
@@ -247,7 +248,6 @@ from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
-from griptape_nodes.serialization.converter import converter, dump_json
 from griptape_nodes.serialization.legacy_pickle import (
     LegacyPickleError,
     read_legacy_clipboard_commands,
@@ -259,6 +259,7 @@ from griptape_nodes.serialization.values import (
     Unencodable,
     ValueEncodeError,
     decode_value,
+    dump_json,
     encodable_default,
     try_encode,
     value_key,
@@ -3508,8 +3509,8 @@ class NodeManager(EngineScoped):
         # worker-frame surfacing in
         # ``NodeExecutor._format_node_failure_message``.
         if result_type_name == ExecuteNodeResultSuccess.__name__:
-            return cast("ExecuteNodeResultSuccess", converter.structure(result_data, ExecuteNodeResultSuccess))
-        return cast("ExecuteNodeResultFailure", converter.structure(result_data, ExecuteNodeResultFailure))
+            return cast("ExecuteNodeResultSuccess", converters.engine.structure(result_data, ExecuteNodeResultSuccess))
+        return cast("ExecuteNodeResultFailure", converters.engine.structure(result_data, ExecuteNodeResultFailure))
 
     async def cancel_worker_execution(self, node_name: str) -> None:
         """Dispatch CancelExecuteNodeRequest to the worker running node_name.
@@ -4097,7 +4098,8 @@ class NodeManager(EngineScoped):
                     specific_library_name=serialized_library_name,
                     metadata=metadata_copy,
                     # If it is actively resolving, mark as unresolved.
-                    resolution=node.state.value,
+                    # A node resolved only by a locked pass-through never ran, so it reloads unresolved.
+                    resolution=NodeResolutionState.UNRESOLVED.value if node.resolved_while_locked else node.state.value,
                     initial_setup=True,
                 )
 
@@ -5298,6 +5300,7 @@ class NodeManager(EngineScoped):
                 details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
                 return SetLockNodeStateResultFailure(result_details=details)
         node.lock = request.lock
+        self._unresolve_unlocked_node_left_unexecuted(node)
         return SetLockNodeStateResultSuccess(
             node_name=node_name,
             locked=node.lock,
@@ -5315,6 +5318,7 @@ class NodeManager(EngineScoped):
                 failed[name] = f"Node not found. Error: {err}"
                 continue
             node.lock = request.lock
+            self._unresolve_unlocked_node_left_unexecuted(node)
             updated.append(name)
 
         if not updated:
@@ -5328,6 +5332,22 @@ class NodeManager(EngineScoped):
             failed_nodes=failed,
             result_details=details,
         )
+
+    def _unresolve_unlocked_node_left_unexecuted(self, node: BaseNode) -> None:
+        """Unresolve an unlocked node, and everything downstream, unless it resolved by executing.
+
+        While locked, a node is passed through without running, and that pass marks it RESOLVED even
+        if it never ran. Its consumers resolve on whatever it held. Once it is unlocked, both must run
+        again, or the next run stops at them and never reaches it.
+        """
+        if node.lock:
+            return
+        if node.state == NodeResolutionState.RESOLVED and not node.resolved_while_locked:
+            return
+
+        node.resolved_while_locked = False
+        node.make_node_unresolved(current_states_to_trigger_change_event={NodeResolutionState.RESOLVED})
+        self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
 
     @handles(SendNodeMessageRequest)
     def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:
