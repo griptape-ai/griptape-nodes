@@ -111,6 +111,7 @@ class LibraryMetadataLoading(EngineScoped):
                 # same name. Only the environment's own entry can be the one that loaded.
                 if environment_mode and not discovered.from_environment:
                     metadata_result.is_registered = False
+                self._stamp_load_outcome(metadata_result)
                 successful_libraries.append(metadata_result)
             else:
                 failed_libraries.append(cast("LoadLibraryMetadataFromFileResultFailure", metadata_result))
@@ -146,6 +147,7 @@ class LibraryMetadataLoading(EngineScoped):
                 # else: Keep the load failure result
 
             if isinstance(sandbox_result, LoadLibraryMetadataFromFileResultSuccess):
+                self._stamp_load_outcome(sandbox_result)
                 successful_libraries.append(sandbox_result)
             else:
                 failed_libraries.append(sandbox_result)
@@ -298,7 +300,7 @@ class LibraryMetadataLoading(EngineScoped):
                 result_details=details,
             )
 
-        existing_info = self.engine.library_manager._library_file_path_to_info.get(file_path)
+        existing_info = self.engine.library_manager.find_library_info_for_attempted_load(file_path)
         enabled = existing_info.enabled if existing_info is not None else True
         details = f"Successfully loaded library metadata from JSON file at {json_path}"
         return LoadLibraryMetadataFromFileResultSuccess(
@@ -324,6 +326,21 @@ class LibraryMetadataLoading(EngineScoped):
         if isinstance(result, LoadLibraryMetadataFromFileResultSuccess):
             result.git_remote, result.git_ref = await asyncio.to_thread(get_git_info, _library_dir(result))
         return result
+
+    def _stamp_load_outcome(self, metadata_result: LoadLibraryMetadataFromFileResultSuccess) -> None:
+        """Copy the engine's record of the last load attempt for this file onto its metadata.
+
+        A manifest that parses says nothing about whether the library then loaded: one whose
+        dependency install failed reads exactly like one added since the last refresh, unless the
+        record of the attempt travels with it.
+        """
+        library_info = self.engine.library_manager.find_library_info_for_attempted_load(metadata_result.file_path)
+        if library_info is None:
+            return
+        metadata_result.lifecycle_state = library_info.lifecycle_state.value
+        metadata_result.fitness = library_info.fitness.value
+        metadata_result.problems = self.engine.library_manager.catalog.collate_problems_for_lib_info(library_info)
+        metadata_result.execution_env_failure = library_info.execution_env_failure
 
 
 def _library_dir(result: LoadLibraryMetadataFromFileResultSuccess) -> Path:
