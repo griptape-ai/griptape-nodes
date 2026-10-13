@@ -51,19 +51,7 @@ They have no effect. While a library still asks for a worker and declares no
 - The fitness problems reporting that request handlers and post-dispatch hooks are unsupported in an
     isolated library. Both now work in every library.
 
-## Parameter values carry their type
-
-**Request API and editor clients.** A parameter value of a type JSON lacks arrives as a dict whose
-`$type` names its Python type. A tuple that arrived as `[1, 2]` now arrives as:
-
-```json
-{"$type": "builtins:tuple", "$value": [1, 2]}
-```
-
-Send a value back in the same form to set that exact type.
-
-[Parameter values](docs/guides/mcp/external_clients.md#parameter-values) lists the forms and which
-fields carry them.
+## Parameter values keep their type
 
 **Library authors.** A field of your own request, result, or event payload that holds parameter
 values must be annotated `Value`. A field typed `Any` that holds a griptape object, or any value
@@ -110,6 +98,29 @@ class MyLibrary(AdvancedNodeLibrary):
             from_state=lambda state: np.frombuffer(state["data"], state["dtype"]).reshape(state["shape"]),
         )
 ```
+
+## Events are serialized by converters
+
+**Embedders and request API clients written in Python.** Events and payloads no longer have
+wire-format serialization methods. Use the cattrs converters in
+`griptape_nodes.retained_mode.events.converters` for the message's reader:
+
+```python
+from griptape_nodes.retained_mode.events import converters
+
+converters.client.dumps(event)  # was: event.json()
+converters.engine.unstructure(event)  # was: event.dict()
+converters.engine.dumps(result)  # was: result.strict_json()
+converters.engine.dumps_result(result).text  # was: result.failure_json(error)
+converters.engine.dumps(payload)  # was: payload.to_json()
+converters.engine.structure(data, EventResultSuccess)  # was: EventResultSuccess.from_dict(data)
+```
+
+`engine` preserves parameter types between engine processes; `client` writes plain JSON for
+the editor and other clients. `dumps` raises `EventSerializationError` from `converters`.
+Use `dumps_result(result).text` to send a failure when a result cannot be serialized.
+
+`event.json()` and `event.dict()` raise `TypeError`.
 
 ## `serializable=False` outputs are held in their own process across a worker boundary
 
