@@ -28,6 +28,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.tools import DeferredToolResults, ToolDenied
 from pydantic_ai.toolsets import FunctionToolset
 
+from griptape_nodes.agents.harness import PendingApproval, RunEvent, ToolResult
 from griptape_nodes.agents.pydantic_ai.mcp_servers import (
     GTN_APPROVAL_REQUIRED_REQUESTS,
     GTN_BATCH_TOOL_NAME,
@@ -37,7 +38,7 @@ from griptape_nodes.agents.pydantic_ai.mcp_servers import (
     _user_tool_requires_approval,
     grant_keys_for_call,
 )
-from griptape_nodes.agents.pydantic_ai.runner import PendingApproval, PydanticAgentRunner, RunEvent, ToolResult
+from griptape_nodes.agents.pydantic_ai.runner import PydanticAgentRunner
 from griptape_nodes.agents.pydantic_ai.tool_approval import (
     TOOL_STOPPED_WHILE_RUNNING_MESSAGE,
     ToolApprovalDeps,
