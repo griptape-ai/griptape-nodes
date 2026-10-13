@@ -58,6 +58,10 @@ dependencies = [
   # Ceiling below 3.0 so the next major cannot silently break the sidebar agent at
   # construction time the way 2.0.0 did (see issue 5491).
   "pydantic-ai-skills>=2.0,<3",
+  # Ceiling below 0.52: from 0.52 harness reads skills from a workspace on each run, and
+  # pydantic-ai-skills 2.1 answers that with `LocalWorkspaceBackend`, which raises on Windows.
+  # Lift once pydantic-ai-skills reads skills without a POSIX-only backend.
+  "pydantic-ai-harness>=0.28,<0.52",
 ]
 
 [project.optional-dependencies]

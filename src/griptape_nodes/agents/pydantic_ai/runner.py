@@ -245,15 +245,24 @@ class PydanticAgentRunner:
         gated shell tool and skills here ship no scripts.
 
         Returns an empty list when skills are disabled, the directory is absent,
-        or no skill in it loads, so the run proceeds without skills instead of
-        failing on a bad ``SKILL.md``.
+        no skill in it loads, or this platform cannot load skills, so the run
+        proceeds without skills instead of failing.
         """
         skills_dir = self._skills_library()
         if skills_dir is None:
             return []
-        capability = self._load_skills(skills_dir)
-        if capability is None:
-            capability = self._load_usable_skills(skills_dir)
+        try:
+            capability = self._load_skills(skills_dir)
+            if capability is None:
+                capability = self._load_usable_skills(skills_dir)
+        except NotImplementedError as e:
+            # Raised for the whole library, not one skill, so probing skill by skill cannot help.
+            logger.warning(
+                "Attempted to load skills from %s. Failed because this platform does not support them: %s",
+                skills_dir,
+                e,
+            )
+            return []
         if capability is None:
             return []
         return [capability]
