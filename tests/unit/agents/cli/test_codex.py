@@ -170,7 +170,7 @@ def test_images_are_attached_before_the_positional_arguments() -> None:
     ]
     args = list(_harness().build_invocation(_context(images=images, resume_session_id="thread-1")).args)
 
-    assert [args[i + 1] for i, arg in enumerate(args) if arg == "--image"] == ["scratch/a.png", "scratch/b.png"]
+    assert [args[i + 1] for i, arg in enumerate(args) if arg == "--image"] == [str(image.path) for image in images]
     assert args.index("--image") < args.index("--")
 
 

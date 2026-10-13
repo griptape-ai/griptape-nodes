@@ -183,13 +183,16 @@ async def test_turn_streams_events_and_saves_the_transcript(tmp_path: Path, stor
 
 @pytest.mark.asyncio
 async def test_tool_call_ids_a_cli_reuses_are_saved_unique(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """Keep ids unique across turns and limited to characters every provider accepts."""
+    """Keep ids unique across turns and within the characters and length every provider accepts."""
     name = "GriptapeNodes_ListRegisteredLibrariesRequest"
+    long_id = "toolu_01ABCDEFGHIJKLMNOPQRSTUVWX"
     run = {
         "records": [
             {"t": "session", "id": "s-1"},
             {"t": "call", "id": "item.1", "name": name, "args": {}},
             {"t": "result", "id": "item.1", "name": name, "content": "[]"},
+            {"t": "call", "id": long_id, "name": name, "args": {}},
+            {"t": "result", "id": long_id, "name": name, "content": "[]"},
             {"t": "end"},
         ]
     }
@@ -206,9 +209,9 @@ async def test_tool_call_ids_a_cli_reuses_are_saved_unique(tmp_path: Path, stora
     return_ids = [
         part.tool_call_id for message in history for part in message.parts if isinstance(part, ToolReturnPart)
     ]
-    assert len(set(call_ids)) == len(prompts)
+    assert len(set(call_ids)) == len(prompts) * 2
     assert return_ids == call_ids
-    assert all(re.fullmatch(r"[A-Za-z0-9_-]+", call_id) for call_id in call_ids)
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]{1,40}", call_id) for call_id in call_ids)
     streamed = [event.tool_call_id for event in events if isinstance(event, ToolCall)]
     assert streamed == call_ids
 

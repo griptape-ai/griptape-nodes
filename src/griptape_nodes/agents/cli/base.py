@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 _UNSAFE_CALL_ID_CHARS = re.compile(r"[^A-Za-z0-9_-]")
+_MAX_CALL_ID_LENGTH = 40
 
 # Where CLIs commonly install, beyond PATH. An engine started by the desktop app
 # inherits a minimal PATH that misses the user's shell setup.
@@ -175,9 +177,14 @@ class _TurnOutcome:
         """Make a CLI's tool call id unique in the thread.
 
         Codex numbers calls from ``item_0`` on every run, and a thread replayed to
-        another provider needs unique ids in the characters Anthropic allows.
+        another provider needs unique ids in the characters Anthropic allows, no
+        longer than OpenAI allows.
         """
-        return f"{self.call_id_prefix}_{_UNSAFE_CALL_ID_CHARS.sub('_', cli_call_id)}"
+        call_id = f"{self.call_id_prefix}_{_UNSAFE_CALL_ID_CHARS.sub('_', cli_call_id)}"
+        if len(call_id) <= _MAX_CALL_ID_LENGTH:
+            return call_id
+        digest = hashlib.sha256(cli_call_id.encode("utf-8")).hexdigest()
+        return f"{self.call_id_prefix}_{digest}"[:_MAX_CALL_ID_LENGTH]
 
 
 @dataclass
