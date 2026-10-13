@@ -494,6 +494,32 @@ class TestSpawnSkipForUnmetRequirements:
         cast("MagicMock", manager._worker_manager).expect_worker.assert_not_called()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "state",
+        [
+            LibraryManager.LibraryLifecycleState.METADATA_LOADED,
+            LibraryManager.LibraryLifecycleState.EVALUATED,
+            LibraryManager.LibraryLifecycleState.DEPENDENCIES_INSTALLED,
+        ],
+    )
+    async def test_a_library_still_loading_is_not_spawned(self, state: LibraryManager.LibraryLifecycleState) -> None:
+        """A session can start mid-load, and the worker takes .venv-exec as PYTHONPATH at spawn.
+
+        Spawned before registration has built it, the worker gets no PYTHONPATH and can never
+        import the library's execution dependencies. Nothing is recorded as unavailable either: the
+        call after loading finishes starts this worker.
+        """
+        manager = self._manager(unmet=False)
+        manager._library_file_path_to_info["/some/path.json"].lifecycle_state = state
+        worker_manager = cast("MagicMock", manager._worker_manager)
+
+        await manager.workers._start_workers()
+
+        cast("MagicMock", manager._engine).ahandle_request.assert_not_awaited()
+        worker_manager.expect_worker.assert_not_called()
+        worker_manager.note_worker_unavailable.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_a_library_with_met_requirements_spawns(self) -> None:
         manager = self._manager(unmet=False)
 

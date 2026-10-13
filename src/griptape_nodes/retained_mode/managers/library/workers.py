@@ -20,6 +20,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     DependencyInstallationFailedProblem,
     IncompatibleRequirementsProblem,
 )
+from griptape_nodes.retained_mode.managers.library.common import LibraryLifecycleState
 from griptape_nodes.retained_mode.managers.settings import (
     LIBRARIES_TO_REGISTER_KEY,
     LibraryRegistration,
@@ -275,6 +276,15 @@ class LibraryWorkers(EngineScoped):
                 and library_info.library_name
                 and not self.engine.library_manager.is_worker
             ):
+                # The worker is handed .venv-exec as PYTHONPATH at spawn, and registration finishes
+                # building it before LOADED. A session can start while libraries are still loading,
+                # so this one is started by the call that follows load_all_libraries_from_config.
+                if library_info.lifecycle_state != LibraryLifecycleState.LOADED:
+                    logger.debug(
+                        "Not starting a worker for library '%s' until it finishes loading.",
+                        library_info.library_name,
+                    )
+                    continue
                 # A declared resource this machine does not have makes the whole spawn pointless:
                 # get_worker_for_library refuses on that reason before it ever consults a worker,
                 # so the process would resolve and download an entire execution environment --

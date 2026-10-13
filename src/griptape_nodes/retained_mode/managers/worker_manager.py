@@ -856,8 +856,8 @@ class WorkerManager(EngineScoped):
             return
         # The worker is handed its library's execution environment as PYTHONPATH, so that directory
         # has to exist before the process starts. It does: the orchestrator builds it while
-        # registering the library, and a library whose build failed is never asked for a worker --
-        # LibraryManager knows its own build result and does not request one.
+        # registering the library, and LibraryManager asks for no worker until that registration has
+        # finished, nor for one whose build failed.
         command = [
             sys.executable,
             "-m",
