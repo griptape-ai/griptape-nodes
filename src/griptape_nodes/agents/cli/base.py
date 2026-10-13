@@ -14,12 +14,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic_ai.messages import BinaryContent
-from pydantic_ai.tools import ToolDenied
 
 from griptape_nodes.agents.cli.process import run_jsonl_process
 from griptape_nodes.agents.cli.transcript import TranscriptBuilder, denied_tool_return, render_catch_up, user_turn
 from griptape_nodes.agents.cli.windows_shims import launch_command
 from griptape_nodes.agents.harness import (
+    GTN_SERVER_NAME,
     RESULT_TRANSPORT_BYTES,
     AgentRunResult,
     RunEvent,
@@ -30,8 +30,7 @@ from griptape_nodes.agents.harness import (
     push_event,
     truncate,
 )
-from griptape_nodes.agents.pydantic_ai.mcp_servers import GTN_SERVER_NAME
-from griptape_nodes.agents.pydantic_ai.tool_approval import pending_tool_calls
+from griptape_nodes.agents.thread_history import TOOL_DENIED_BY_NEW_MESSAGE, pending_tool_calls
 from griptape_nodes.drivers.thread_storage.base_thread_storage_driver import HarnessSession
 
 if TYPE_CHECKING:
@@ -39,7 +38,7 @@ if TYPE_CHECKING:
 
     from pydantic_ai.messages import ModelMessage, ToolReturnPart, UserContent
 
-    from griptape_nodes.agents.harness import AgentTurn
+    from griptape_nodes.agents.harness import AgentTurn, UserMessage
     from griptape_nodes.drivers.thread_storage.base_thread_storage_driver import BaseThreadStorageDriver
 
 logger = logging.getLogger("griptape_nodes")
@@ -208,10 +207,6 @@ class CliHarness(ABC):
     max_turns: int | None = None
     """Maximum agent steps per turn, where the CLI supports a limit."""
 
-    @property
-    def supports_tool_approval(self) -> bool:
-        return False
-
     def mcp_tool_name(self, server: str, tool: str) -> str:
         return f"mcp__{server}__{tool}"
 
@@ -239,20 +234,13 @@ class CliHarness(ABC):
     def environment(self) -> dict[str, str]:
         return dict(os.environ)
 
-    async def run_turn(self, turn: AgentTurn) -> AgentRunResult:
+    async def run_turn(self, turn: AgentTurn, message: UserMessage) -> AgentRunResult:
         if not self.storage.thread_exists(turn.thread_id):
             msg = f"Attempted to run {self.display_name} in conversation {turn.thread_id}. Failed because the conversation does not exist."
             raise CliHarnessError(msg)
-        if turn.prompt is None:
-            msg = (
-                f"Attempted to continue the conversation with {self.display_name}. Failed because "
-                f"{self.display_name} runs its tools without asking, so there is no approval to answer. "
-                "Send a new message instead."
-            )
-            raise CliHarnessError(msg)
 
         history = self.storage.load_history(turn.thread_id)
-        denied = self._declined_calls(history, turn)
+        denied = self._declined_calls(history)
         session = self.storage.get_harness_session(turn.thread_id, self.harness_id)
         executable = self._resolve_executable()
         if not self.workspace_root.is_dir():
@@ -265,9 +253,9 @@ class CliHarness(ABC):
         started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix=f"gtn-{self.harness_id}-") as scratch:
             scratch_dir = Path(scratch)
-            images = _write_images(turn.prompt, scratch_dir)
+            images = _write_images(message.content, scratch_dir)
             outcome = await self._run_process(
-                executable, turn, history, session, images=images, scratch_dir=scratch_dir
+                executable, turn, message, history, session, images=images, scratch_dir=scratch_dir
             )
             if _should_retry_without_session(outcome, session):
                 # CLIs may delete saved sessions.
@@ -279,7 +267,7 @@ class CliHarness(ABC):
                 )
                 session = None
                 outcome = await self._run_process(
-                    executable, turn, history, None, images=images, scratch_dir=scratch_dir
+                    executable, turn, message, history, None, images=images, scratch_dir=scratch_dir
                 )
 
         logger.debug(
@@ -303,7 +291,7 @@ class CliHarness(ABC):
 
         self._raise_for_failure(outcome)
 
-        persisted_prompt = turn.persist_prompt if turn.persist_prompt is not None else turn.prompt
+        persisted_prompt = message.persist_content if message.persist_content is not None else message.content
         messages = [*history, user_turn(persisted_prompt, denied=denied), *outcome.transcript.messages()]
         self.storage.save_history(turn.thread_id, messages)
         if session_id is not None:
@@ -311,39 +299,25 @@ class CliHarness(ABC):
         truncated = outcome.ended is not None and outcome.ended.truncated
         return AgentRunResult(thread_id=turn.thread_id, output=output, message_count=len(messages), truncated=truncated)
 
-    def _declined_calls(self, history: Sequence[ModelMessage], turn: AgentTurn) -> list[ToolReturnPart]:
-        """A CLI cannot run another harness's pending calls."""
-        waiting = pending_tool_calls(history)
-        if not waiting:
-            return []
-        approvals = turn.deferred_tool_results.approvals if turn.deferred_tool_results is not None else {}
-        denied: list[ToolReturnPart] = []
-        for call in waiting:
-            answer = approvals.get(call.tool_call_id)
-            if isinstance(answer, ToolDenied):
-                denied.append(denied_tool_return(call.tool_name, call.tool_call_id, answer.message))
-            elif answer is False:
-                denied.append(denied_tool_return(call.tool_name, call.tool_call_id, ToolDenied().message))
-            else:
-                msg = (
-                    f"Attempted to run '{call.tool_name}' with {self.display_name}. Failed because another "
-                    f"provider asked for it, and {self.display_name} can't run it. Switch back to that "
-                    "provider to approve it, or send a new message to decline it."
-                )
-                raise CliHarnessError(msg)
-        return denied
+    def _declined_calls(self, history: Sequence[ModelMessage]) -> list[ToolReturnPart]:
+        """Decline the calls another harness left waiting for approval, which a CLI cannot run."""
+        return [
+            denied_tool_return(call.tool_name, call.tool_call_id, TOOL_DENIED_BY_NEW_MESSAGE)
+            for call in pending_tool_calls(history)
+        ]
 
     async def _run_process(  # noqa: PLR0913
         self,
         executable: str,
         turn: AgentTurn,
+        message: UserMessage,
         history: Sequence[ModelMessage],
         session: HarnessSession | None,
         *,
         images: Sequence[PromptImage],
         scratch_dir: Path,
     ) -> _TurnOutcome:
-        context = self._turn_context(turn, history, session, images=images, scratch_dir=scratch_dir)
+        context = self._turn_context(turn, message, history, session, images=images, scratch_dir=scratch_dir)
         invocation = self.build_invocation(context)
         env = self.environment()
         for key, value in invocation.env.items():
@@ -417,9 +391,10 @@ class CliHarness(ABC):
         else:
             await push_event(turn.event_sink, event)
 
-    def _turn_context(
+    def _turn_context(  # noqa: PLR0913
         self,
         turn: AgentTurn,
+        message: UserMessage,
         history: Sequence[ModelMessage],
         session: HarnessSession | None,
         *,
@@ -434,7 +409,7 @@ class CliHarness(ABC):
             resume_session_id = None
 
         instructions = "\n\n".join(part for part in (self.instructions, turn.instructions) if part)
-        prompt_text = render_catch_up(unseen) + _prompt_text(turn.prompt or "")
+        prompt_text = render_catch_up(unseen) + _prompt_text(message.content)
 
         engine_server = CliMCPServer(name=GTN_SERVER_NAME, transport="streamable_http", url=self.engine_mcp_url)
         user_servers = [CliMCPServer.from_config(server.name, server.config) for server in turn.mcp_servers]

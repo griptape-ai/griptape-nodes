@@ -22,7 +22,6 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.tools import DeferredToolResults, ToolApproved, ToolDenied
 
 from griptape_nodes.agents.cli.base import (
     CliEvent,
@@ -34,8 +33,17 @@ from griptape_nodes.agents.cli.base import (
     SessionStarted,
     TurnEnded,
 )
-from griptape_nodes.agents.harness import AgentTurn, MCPServerSpec, RunEvent, TextDelta, ToolCall, ToolResult
-from griptape_nodes.agents.pydantic_ai.tool_approval import pending_tool_calls
+from griptape_nodes.agents.harness import (
+    AgentTurn,
+    MCPServerSpec,
+    RunEvent,
+    TextDelta,
+    ToolApprovalHarness,
+    ToolCall,
+    ToolResult,
+    UserMessage,
+)
+from griptape_nodes.agents.thread_history import TOOL_DENIED_BY_NEW_MESSAGE, pending_tool_calls
 from griptape_nodes.drivers.thread_storage.base_thread_storage_driver import HarnessSession
 from griptape_nodes.drivers.thread_storage.local_thread_storage_driver import LocalThreadStorageDriver
 
@@ -151,7 +159,9 @@ async def test_turn_streams_events_and_saves_the_transcript(tmp_path: Path, stor
     thread_id, _ = storage.create_thread()
     events: list[RunEvent] = []
 
-    result = await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="List libraries", event_sink=events.append))
+    result = await harness.run_turn(
+        AgentTurn(thread_id=thread_id, event_sink=events.append), UserMessage("List libraries")
+    )
 
     assert result.output == "Looking. No libraries."
     assert [type(event).__name__ for event in events] == ["TextDelta", "ToolCall", "ToolResult", "TextDelta"]
@@ -192,7 +202,7 @@ async def test_tool_call_ids_a_cli_reuses_are_saved_unique(tmp_path: Path, stora
 
     prompts = ["one", "two"]
     for prompt in prompts:
-        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt=prompt, event_sink=events.append))
+        await harness.run_turn(AgentTurn(thread_id=thread_id, event_sink=events.append), UserMessage(prompt))
 
     history = storage.load_history(thread_id)
     call_ids = [part.tool_call_id for message in history for part in message.parts if isinstance(part, ToolCallPart)]
@@ -214,8 +224,8 @@ async def test_next_turn_resumes_the_session_without_catch_up(
     harness = _harness(tmp_path, storage, _ok_run("First."), _ok_run("Second."))
     thread_id, _ = storage.create_thread()
 
-    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="one"))
-    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="two"))
+    await harness.run_turn(AgentTurn(thread_id=thread_id), UserMessage("one"))
+    await harness.run_turn(AgentTurn(thread_id=thread_id), UserMessage("two"))
 
     second = harness.invocations()[1]
     assert second["argv"][-2:] == ["--resume", "s-1"]
@@ -236,7 +246,7 @@ async def test_messages_added_by_another_provider_are_sent_as_catch_up(
     storage.save_history(thread_id, earlier)
     storage.set_harness_session(thread_id, "fake", HarnessSession(session_id="s-0", message_count=0))
 
-    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="Now a dog"))
+    await harness.run_turn(AgentTurn(thread_id=thread_id), UserMessage("Now a dog"))
 
     call = harness.invocations()[0]
     assert call["argv"][-2:] == ["--resume", "s-0"]
@@ -256,10 +266,10 @@ async def test_instructions_and_mcp_servers_reach_the_invocation(
     await harness.run_turn(
         AgentTurn(
             thread_id=thread_id,
-            prompt="hi",
             instructions="Server rules.",
             mcp_servers=[MCPServerSpec(name="docs", config={"transport": "streamable_http", "url": "http://d/mcp"})],
-        )
+        ),
+        UserMessage("hi"),
     )
 
     context = harness.contexts[0]
@@ -282,7 +292,7 @@ async def test_lost_session_is_replaced_by_a_new_one(tmp_path: Path, storage: Lo
     )
     storage.set_harness_session(thread_id, "fake", HarnessSession(session_id="s-gone", message_count=2))
 
-    result = await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="again"))
+    result = await harness.run_turn(AgentTurn(thread_id=thread_id), UserMessage("again"))
 
     retry = harness.invocations()[1]
     assert "--resume" not in retry["argv"]
@@ -298,7 +308,7 @@ async def test_cli_error_is_raised_and_nothing_is_saved(tmp_path: Path, storage:
     thread_id, _ = storage.create_thread()
 
     with pytest.raises(CliHarnessError, match="Fake CLI stopped with an error: Not signed in"):
-        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="hi"))
+        await harness.run_turn(AgentTurn(thread_id=thread_id), UserMessage("hi"))
 
     assert storage.load_history(thread_id) == []
 
@@ -310,7 +320,7 @@ async def test_crash_reports_exit_code_and_stderr(tmp_path: Path, storage: Local
     thread_id, _ = storage.create_thread()
 
     with pytest.raises(CliHarnessError, match=r"exited with code 2 .*boom: bad flag"):
-        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="hi"))
+        await harness.run_turn(AgentTurn(thread_id=thread_id), UserMessage("hi"))
 
 
 @pytest.mark.asyncio
@@ -326,7 +336,7 @@ async def test_missing_cli_names_the_command_and_how_to_install_it(
     with pytest.raises(
         CliHarnessError, match=r"`fake-cli-that-does-not-exist` command was not found.*Install the fake"
     ):
-        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="hi"))
+        await harness.run_turn(AgentTurn(thread_id=thread_id), UserMessage("hi"))
 
 
 @pytest.mark.asyncio
@@ -339,7 +349,7 @@ async def test_missing_workspace_is_not_reported_as_a_missing_cli(
     thread_id, _ = storage.create_thread()
 
     with pytest.raises(CliHarnessError, match=r"workspace '.*gone'.*folder does not exist"):
-        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="hi"))
+        await harness.run_turn(AgentTurn(thread_id=thread_id), UserMessage("hi"))
 
 
 @pytest.mark.asyncio
@@ -356,7 +366,7 @@ async def test_cancel_stops_the_cli_and_saves_nothing(tmp_path: Path, storage: L
 
     result = await asyncio.wait_for(
         harness.run_turn(
-            AgentTurn(thread_id=thread_id, prompt="hi", event_sink=cancel_on_text, cancel_event=cancel_event)
+            AgentTurn(thread_id=thread_id, event_sink=cancel_on_text, cancel_event=cancel_event), UserMessage("hi")
         ),
         timeout=10,
     )
@@ -375,7 +385,7 @@ def _paused_history() -> list[ModelMessage]:
 
 
 @pytest.mark.asyncio
-async def test_calls_left_waiting_by_another_provider_are_declined(
+async def test_a_new_message_declines_calls_left_waiting_by_another_provider(
     tmp_path: Path, storage: LocalThreadStorageDriver
 ) -> None:
     """Persist declined calls before the new message."""
@@ -383,49 +393,23 @@ async def test_calls_left_waiting_by_another_provider_are_declined(
     thread_id, _ = storage.create_thread()
     storage.save_history(thread_id, _paused_history())
 
-    await harness.run_turn(
-        AgentTurn(
-            thread_id=thread_id,
-            prompt="Never mind",
-            deferred_tool_results=DeferredToolResults(approvals={"p1": ToolDenied("Declined by a new message.")}),
-        )
-    )
+    await harness.run_turn(AgentTurn(thread_id=thread_id), UserMessage("Never mind"))
 
     history = storage.load_history(thread_id)
     opener = history[2]
     assert isinstance(opener, ModelRequest)
     denied, prompt = opener.parts
     assert isinstance(denied, ToolReturnPart)
-    assert (denied.tool_call_id, denied.outcome, denied.content) == ("p1", "denied", "Declined by a new message.")
+    assert (denied.tool_call_id, denied.outcome, denied.content) == ("p1", "denied", TOOL_DENIED_BY_NEW_MESSAGE)
     assert isinstance(prompt, UserPromptPart)
     assert pending_tool_calls(history) == []
 
 
-@pytest.mark.asyncio
-async def test_approving_another_providers_call_is_refused(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """Reject another provider's pending approval."""
-    harness = _harness(tmp_path, storage, _ok_run())
-    thread_id, _ = storage.create_thread()
-    storage.save_history(thread_id, _paused_history())
+def test_a_cli_harness_does_not_resume_paused_turns(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """A CLI runs its tools without asking, so the engine never asks it to resume."""
+    harness = _harness(tmp_path, storage)
 
-    with pytest.raises(CliHarnessError, match="Switch back to that provider"):
-        await harness.run_turn(
-            AgentTurn(
-                thread_id=thread_id,
-                prompt="go",
-                deferred_tool_results=DeferredToolResults(approvals={"p1": ToolApproved()}),
-            )
-        )
-
-
-@pytest.mark.asyncio
-async def test_resuming_a_paused_turn_is_refused(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
-    """Reject promptless CLI turns."""
-    harness = _harness(tmp_path, storage, _ok_run())
-    thread_id, _ = storage.create_thread()
-
-    with pytest.raises(CliHarnessError, match="runs its tools without asking"):
-        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt=None))
+    assert not isinstance(harness, ToolApprovalHarness)
 
 
 @pytest.mark.asyncio
@@ -438,11 +422,11 @@ async def test_images_are_written_for_the_cli_and_saved_as_urls(
     image = BinaryContent(data=b"\x89PNG", media_type="image/png")
 
     await harness.run_turn(
-        AgentTurn(
-            thread_id=thread_id,
-            prompt=["Describe", image],
-            persist_prompt=["Describe", ImageUrl(url="http://localhost/cat.png")],
-        )
+        AgentTurn(thread_id=thread_id),
+        UserMessage(
+            content=["Describe", image],
+            persist_content=["Describe", ImageUrl(url="http://localhost/cat.png")],
+        ),
     )
 
     (attached,) = harness.contexts[0].images

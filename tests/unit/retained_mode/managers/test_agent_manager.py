@@ -1721,7 +1721,7 @@ class TestCliHarnessProviders:
 
     @pytest.mark.asyncio
     async def test_approval_for_a_harness_that_never_asks_saves_no_grants(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """Refuse before saving "Approve for conversation" grants."""
         manager = AgentManager.__new__(AgentManager)
@@ -1731,7 +1731,10 @@ class TestCliHarnessProviders:
             update_thread_metadata=lambda _t, **kwargs: updates.append(kwargs),
         )
         monkeypatch.setattr(_AGENT_MANAGER_MODULE + ".pending_tool_calls", lambda _history: [object()])
-        monkeypatch.setattr(manager, "_build_harness", lambda **_k: SimpleNamespace(supports_tool_approval=False))
+        cli_harness = ClaudeCodeHarness(
+            workspace_root=tmp_path, storage=manager._thread_storage, engine_mcp_url="http://localhost:1/mcp/"
+        )
+        monkeypatch.setattr(manager, "_build_harness", lambda **_k: cli_harness)
         request = ResolveToolApprovalsRequest(
             thread_id="t1",
             decisions=[ToolApprovalDecision(tool_call_id="call-1", decision="approve_for_conversation")],

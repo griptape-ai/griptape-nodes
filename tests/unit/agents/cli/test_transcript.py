@@ -17,7 +17,7 @@ from griptape_nodes.agents.cli.transcript import (
     render_catch_up,
 )
 from griptape_nodes.agents.harness import TextDelta, ThinkingDelta, ToolCall, ToolResult
-from griptape_nodes.agents.pydantic_ai.tool_approval import pending_tool_calls
+from griptape_nodes.agents.thread_history import pending_tool_calls
 
 
 def _builder() -> TranscriptBuilder:
