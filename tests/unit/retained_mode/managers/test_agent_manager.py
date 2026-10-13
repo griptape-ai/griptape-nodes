@@ -19,8 +19,9 @@ import pytest
 from pydantic_ai.exceptions import ModelHTTPError, ModelRetry
 from pydantic_ai.messages import BinaryContent, ImageUrl, ModelMessage, ModelRequest, UserPromptPart
 
-from griptape_nodes.agents.pydantic_ai.mcp_toolset_cache import MCPToolsetCache
-from griptape_nodes.agents.pydantic_ai.runner import (
+from griptape_nodes.agents.cli import CLI_HARNESSES
+from griptape_nodes.agents.cli.claude_code import ClaudeCodeHarness
+from griptape_nodes.agents.harness import (
     AgentRunResult,
     RunEvent,
     TextDelta,
@@ -28,6 +29,8 @@ from griptape_nodes.agents.pydantic_ai.runner import (
     ToolCall,
     ToolResult,
 )
+from griptape_nodes.agents.pydantic_ai.mcp_servers import prefixed_tool_name
+from griptape_nodes.agents.pydantic_ai.mcp_toolset_cache import MCPToolsetCache
 from griptape_nodes.drivers.cloud_models import (
     DEPRECATED_MODELS,
     IMAGE_DEPRECATED_MODELS,
@@ -37,6 +40,7 @@ from griptape_nodes.drivers.cloud_models import (
     ProviderCatalogEntry,
     provider_catalog_entries,
 )
+from griptape_nodes.node_library.library_declarations import SidebarProviderKind
 from griptape_nodes.retained_mode.events.agent_events import (
     AgentStreamEvent,
     AgentThinkingEvent,
@@ -95,12 +99,14 @@ from griptape_nodes.retained_mode.managers.agent_manager import (
     _SKILLS_README,
     _UNAVAILABLE_IMAGE_PLACEHOLDER,
     _VALID_PROVIDER_TYPES,
+    DEFAULT_AGENT_USAGE_LIMITS,
     AgentManager,
     ComposedPrompt,
     _ActiveRun,
     _build_agent_instructions,
     _cloud_http_status_of,
     _compose_prompt,
+    _compose_run_instructions,
     _compose_server_rules,
     _friendly_list_models_error,
     _message_has_image_url,
@@ -171,13 +177,19 @@ class TestBuildAgentInstructions:
     """The agent's baked-in instructions describe only what cannot change mid-session."""
 
     def test_base_instructions_describe_the_engine_tools(self) -> None:
-        result = _build_agent_instructions(include_image_tool=False)
-        assert "GriptapeNodes" in result
+        result = _build_agent_instructions(include_image_tool=False, tool_name=prefixed_tool_name)
+        assert "GriptapeNodes_ListRegisteredLibrariesRequest" in result
         assert "generate_image" not in result
 
     def test_image_tool_included_when_requested(self) -> None:
-        result = _build_agent_instructions(include_image_tool=True)
+        result = _build_agent_instructions(include_image_tool=True, tool_name=prefixed_tool_name)
         assert "generate_image" in result
+
+    def test_engine_tools_are_named_the_way_the_harness_shows_them(self) -> None:
+        result = _build_agent_instructions(include_image_tool=False, tool_name=lambda s, t: f"mcp__{s}__{t}")
+        assert "`mcp__GriptapeNodes__`" in result
+        assert "mcp__GriptapeNodes__ListNodeTypesInLibraryRequest" in result
+        assert "GriptapeNodes_List" not in result
 
 
 class TestComposeServerRules:
@@ -1203,6 +1215,7 @@ class TestBuildRunnerCredential:
         providers_manager._system_prompt_extra = ""
         providers_manager._thread_storage = object()  # type: ignore[assignment]
         providers_manager.static_files_manager = None  # type: ignore[assignment]
+        providers_manager._mcp_toolsets = MCPToolsetCache()
 
         providers_manager._build_runner(provider_name="griptape_cloud")
 
@@ -1449,7 +1462,11 @@ class TestRunAgentResultPayloadContract:
             return result
 
         monkeypatch.setattr(manager, "_validate_thread_for_run", lambda _thread_id: "t1")
-        monkeypatch.setattr(manager, "_build_runner", lambda *_a, **_k: SimpleNamespace(run=fake_run))
+        monkeypatch.setattr(
+            manager,
+            "_build_harness",
+            lambda *_a, **_k: SimpleNamespace(run_turn=fake_run, supports_tool_approval=True),
+        )
         manager._active_provider_name = "griptape_cloud"
         manager._providers = []
         # A non-empty history keeps `is_first_run` False, so the title update is skipped.
@@ -1600,3 +1617,89 @@ class TestGetThreadMetadataHandler:
         result = manager.on_handle_get_thread_metadata_request(GetThreadMetadataRequest(thread_id="t1"))
         assert isinstance(result, GetThreadMetadataResultSuccess)
         assert result.thread is thread
+
+
+class TestCliHarnessProviders:
+    """A coding-agent CLI provider runs its turns on that CLI's harness."""
+
+    @staticmethod
+    def _with_claude_provider(manager: AgentManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        manager._providers.append(ProviderConfig(name="my-claude", type="claude_code", model="opus"))
+        manager._mcp_server_port = 4321
+        manager._system_prompt_extra = "Prefer short replies."
+        manager._thread_storage = object()  # type: ignore[assignment]
+        settings = {"agent.cli_commands": {"claude_code": "/opt/claude"}}
+        monkeypatch.setattr(
+            _AGENT_MANAGER_MODULE + ".config_manager",
+            SimpleNamespace(
+                workspace_path=str(tmp_path),
+                get_config_value=lambda key, default=None: settings.get(key, default),
+            ),
+        )
+
+    def test_cli_provider_gets_its_harness(
+        self, providers_manager: AgentManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The harness gets the provider's model, the configured command, and the engine's MCP server."""
+        self._with_claude_provider(providers_manager, monkeypatch, tmp_path)
+
+        harness = providers_manager._build_harness(provider_name="my-claude", model_name=None)
+
+        assert isinstance(harness, ClaudeCodeHarness)
+        assert harness.model == "opus"
+        assert harness.command == "/opt/claude"
+        assert harness.engine_mcp_url == "http://localhost:4321/mcp/"
+        assert harness.workspace_root == tmp_path
+        assert harness.max_turns == DEFAULT_AGENT_USAGE_LIMITS.request_limit
+
+    def test_cli_instructions_name_tools_the_cli_way_and_keep_the_users_prompt(
+        self, providers_manager: AgentManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The CLI is told the engine's tools by the names it sees, plus the user's own system prompt."""
+        self._with_claude_provider(providers_manager, monkeypatch, tmp_path)
+
+        harness = providers_manager._build_harness(provider_name="my-claude", model_name="sonnet")
+
+        assert isinstance(harness, ClaudeCodeHarness)
+        assert harness.model == "sonnet"
+        assert harness.instructions is not None
+        assert "mcp__GriptapeNodes__ListRegisteredLibrariesRequest" in harness.instructions
+        assert "generate_image" not in harness.instructions
+        assert harness.instructions.endswith("Prefer short replies.")
+
+    def test_model_provider_gets_the_pydantic_runner(
+        self, providers_manager: AgentManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Every provider that isn't a CLI keeps running on the cached Pydantic AI runner."""
+        sentinel = object()
+        monkeypatch.setattr(providers_manager, "_build_runner", lambda **_k: sentinel)
+
+        assert providers_manager._build_harness(provider_name="my-ollama", model_name=None) is sentinel
+
+    @pytest.mark.asyncio
+    async def test_cli_provider_lists_suggested_models(self, providers_manager: AgentManager) -> None:
+        """Picking a model for a CLI provider offers the CLI's common model names."""
+        result = await providers_manager.on_handle_list_provider_models_request(
+            ListProviderModelsRequest(provider="claude_code")
+        )
+
+        assert isinstance(result, ListProviderModelsResultSuccess)
+        assert result.models == list(ClaudeCodeHarness.suggested_models)
+
+    def test_every_cli_provider_in_the_catalog_has_a_harness(self) -> None:
+        """The catalog's CLI providers and the registered harnesses are the same set."""
+        cli_providers = {
+            provider_id
+            for provider_id, provider in PROVIDER_CATALOG.providers.items()
+            if provider.kind == SidebarProviderKind.CLI_HARNESS
+        }
+
+        assert cli_providers == set(CLI_HARNESSES)
+
+    def test_approval_rules_are_left_out_for_a_harness_that_never_asks(self) -> None:
+        """A CLI runs every tool without asking, so it isn't told some tools need approval."""
+        with_rules = _compose_run_instructions("Server rules.", include_approval_rules=True)
+        without_rules = _compose_run_instructions("Server rules.", include_approval_rules=False)
+
+        assert "Tool approval rules" in with_rules
+        assert without_rules == "Server rules."

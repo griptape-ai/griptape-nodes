@@ -223,6 +223,11 @@ def streamable_http_local(url: str) -> AbstractToolset[Any]:
     )
 
 
+def prefixed_tool_name(server: str, tool: str) -> str:
+    """The name the agent sees for ``tool`` on MCP server ``server``: the prefix :func:`_compose` adds."""
+    return f"{server}_{tool}"
+
+
 def grant_keys_for_call(tool_name: str, args: Mapping[str, Any]) -> list[str]:
     """Return the grant keys for a call that needs approval.
 
@@ -299,6 +304,7 @@ def _compose(
     """
     if tool_blocklist:
         toolset = toolset.filtered(_blocklist_filter(tool_blocklist))
+    # `prefixed` joins with "_", which `prefixed_tool_name` mirrors.
     return toolset.prefixed(name).approval_required(requires_approval)
 
 

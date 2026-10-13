@@ -21,6 +21,7 @@ from griptape_nodes.node_library.library_declarations import (
     KeySupport,
     ModelCatalogSidebarProperty,
     SidebarModelProvider,
+    SidebarProviderKind,
 )
 
 
@@ -29,6 +30,11 @@ class ProviderID(StrEnum):
     OLLAMA = "ollama"
     LMSTUDIO = "lmstudio"
     CUSTOM = "custom"
+    CLAUDE_CODE = "claude_code"
+    CODEX = "codex"
+    PI = "pi"
+    GEMINI_CLI = "gemini_cli"
+    OPENCODE = "opencode"
 
 
 # --- Per-family arg presets ---
@@ -250,6 +256,39 @@ PROVIDER_CATALOG = ModelCatalogSidebarProperty(
             has_model_list=False,
             default_model="",
         ),
+        ProviderID.CLAUDE_CODE: SidebarModelProvider(
+            display_name="Claude Code",
+            terms_url="https://www.anthropic.com/legal/consumer-terms",
+            notes="Runs the Claude Code CLI installed on this computer, with its own sign-in and settings.",
+            key_support=KeySupport.NO_KEY_REQUIRED,
+            kind=SidebarProviderKind.CLI_HARNESS,
+        ),
+        ProviderID.CODEX: SidebarModelProvider(
+            display_name="Codex",
+            terms_url="https://openai.com/policies/terms-of-use",
+            notes="Runs the Codex CLI installed on this computer, with its own sign-in and settings.",
+            key_support=KeySupport.NO_KEY_REQUIRED,
+            kind=SidebarProviderKind.CLI_HARNESS,
+        ),
+        ProviderID.PI: SidebarModelProvider(
+            display_name="pi",
+            notes="Runs the pi coding agent installed on this computer, with its own sign-in and settings.",
+            key_support=KeySupport.NO_KEY_REQUIRED,
+            kind=SidebarProviderKind.CLI_HARNESS,
+        ),
+        ProviderID.GEMINI_CLI: SidebarModelProvider(
+            display_name="Gemini CLI",
+            terms_url="https://policies.google.com/terms",
+            notes="Runs the Gemini CLI installed on this computer, with its own sign-in and settings.",
+            key_support=KeySupport.NO_KEY_REQUIRED,
+            kind=SidebarProviderKind.CLI_HARNESS,
+        ),
+        ProviderID.OPENCODE: SidebarModelProvider(
+            display_name="OpenCode",
+            notes="Runs the OpenCode CLI installed on this computer, with its own sign-in and settings.",
+            key_support=KeySupport.NO_KEY_REQUIRED,
+            kind=SidebarProviderKind.CLI_HARNESS,
+        ),
     }
 )
 
@@ -266,12 +305,19 @@ class ProviderCatalogEntry(BaseModel):
     default_base_url: str | None = None
     has_model_list: bool = False
     default_model: str = ""
+    kind: SidebarProviderKind = SidebarProviderKind.MODEL
 
 
 def provider_accepts_customer_key(provider_id: str) -> bool:
     """Return True only if this provider expects the user to supply their own API key."""
     provider = PROVIDER_CATALOG.providers.get(provider_id)
     return provider is not None and provider.key_support == KeySupport.REQUIRES_CUSTOMER_KEY
+
+
+def provider_runs_cli_harness(provider_id: str) -> bool:
+    """Return True if this provider runs a coding-agent CLI instead of the engine's agent loop."""
+    provider = PROVIDER_CATALOG.providers.get(provider_id)
+    return provider is not None and provider.kind == SidebarProviderKind.CLI_HARNESS
 
 
 def provider_catalog_entries() -> list[ProviderCatalogEntry]:

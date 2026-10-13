@@ -1,0 +1,447 @@
+"""Tests for the shared CLI harness machinery, driven by a fake CLI.
+
+The fake CLI is a Python script that prints the JSON records it is told to and
+saves its argv and stdin, so these tests exercise the real subprocess plumbing
+without any coding-agent CLI installed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+import textwrap
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar
+
+import pytest
+from pydantic_ai.messages import (
+    BinaryContent,
+    ImageUrl,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
+from pydantic_ai.tools import DeferredToolResults, ToolApproved, ToolDenied
+
+from griptape_nodes.agents.cli.base import (
+    CliEvent,
+    CliHarness,
+    CliHarnessError,
+    CliInvocation,
+    CliStreamParser,
+    CliTurnContext,
+    SessionStarted,
+    TurnEnded,
+)
+from griptape_nodes.agents.harness import AgentTurn, MCPServerSpec, RunEvent, TextDelta, ToolCall, ToolResult
+from griptape_nodes.agents.pydantic_ai.tool_approval import pending_tool_calls
+from griptape_nodes.drivers.thread_storage.base_thread_storage_driver import HarnessSession
+from griptape_nodes.drivers.thread_storage.local_thread_storage_driver import LocalThreadStorageDriver
+
+if TYPE_CHECKING:
+    from pydantic_ai.messages import ModelMessage
+
+_FAKE_CLI = textwrap.dedent(
+    """
+    import json, os, sys, time
+    out = os.environ["FAKE_CLI_OUT"]
+    calls = json.load(open(out)) if os.path.exists(out) else []
+    calls.append({"argv": sys.argv[1:], "stdin": sys.stdin.read()})
+    json.dump(calls, open(out, "w"))
+    script = json.loads(os.environ["FAKE_CLI_SCRIPT"])
+    runs = script["runs"]
+    run = runs[min(len(calls), len(runs)) - 1]
+    for step in run.get("records", []):
+        if "sleep" in step:
+            time.sleep(step["sleep"])
+            continue
+        print(json.dumps(step), flush=True)
+    sys.stderr.write(run.get("stderr", ""))
+    sys.exit(run.get("exit", 0))
+    """
+)
+
+
+class _FakeParser(CliStreamParser):
+    def feed(self, record: dict[str, Any]) -> list[CliEvent]:
+        kind = record.get("t")
+        if kind == "session":
+            return [SessionStarted(session_id=record["id"])]
+        if kind == "text":
+            return [TextDelta(delta=record["d"])]
+        if kind == "call":
+            return [ToolCall(tool_call_id=record["id"], tool_name=record["name"], args=json.dumps(record["args"]))]
+        if kind == "result":
+            return [ToolResult(tool_call_id=record["id"], tool_name=record["name"], content=record["content"])]
+        if kind == "end":
+            return [TurnEnded(truncated=record.get("truncated", False), error=record.get("error"))]
+        return []
+
+
+@dataclass
+class _FakeHarness(CliHarness):
+    harness_id: ClassVar[str] = "fake"
+    display_name: ClassVar[str] = "Fake CLI"
+    executable: ClassVar[str] = "fake-cli-that-does-not-exist"
+    install_hint: ClassVar[str] = "Install the fake CLI."
+
+    script_path: Path = field(default_factory=Path)
+    out_path: Path = field(default_factory=Path)
+    runs: list[dict[str, Any]] = field(default_factory=list)
+    contexts: list[CliTurnContext] = field(default_factory=list)
+
+    def build_invocation(self, context: CliTurnContext) -> CliInvocation:
+        self.contexts.append(context)
+        args = [str(self.script_path)]
+        if context.resume_session_id:
+            args += ["--resume", context.resume_session_id]
+        return CliInvocation(
+            args=args,
+            stdin=context.prompt_text.encode("utf-8"),
+            env={"FAKE_CLI_OUT": str(self.out_path), "FAKE_CLI_SCRIPT": json.dumps({"runs": self.runs})},
+        )
+
+    def new_parser(self) -> CliStreamParser:
+        return _FakeParser()
+
+    def invocations(self) -> list[dict[str, Any]]:
+        return json.loads(self.out_path.read_text())
+
+
+@dataclass
+class _NoSystemPromptHarness(_FakeHarness):
+    supports_system_prompt: ClassVar[bool] = False
+
+
+def _ok_run(text: str = "Done.", session_id: str = "s-1") -> dict[str, Any]:
+    return {"records": [{"t": "session", "id": session_id}, {"t": "text", "d": text}, {"t": "end"}]}
+
+
+@pytest.fixture
+def storage(tmp_path: Path) -> LocalThreadStorageDriver:
+    """Local thread storage in a temporary directory."""
+    return LocalThreadStorageDriver(tmp_path / "threads", config_manager=None, secrets_manager=None)  # type: ignore[arg-type]
+
+
+def _harness(
+    tmp_path: Path,
+    storage: LocalThreadStorageDriver,
+    *runs: dict[str, Any],
+    harness_class: type[_FakeHarness] = _FakeHarness,
+) -> _FakeHarness:
+    script = tmp_path / "fake_cli.py"
+    script.write_text(_FAKE_CLI, encoding="utf-8")
+    return harness_class(
+        workspace_root=tmp_path,
+        storage=storage,
+        engine_mcp_url="http://localhost:1/mcp/",
+        instructions="Base instructions.",
+        command=sys.executable,
+        script_path=script,
+        out_path=tmp_path / "calls.json",
+        runs=list(runs),
+    )
+
+
+@pytest.mark.asyncio
+async def test_turn_streams_events_and_saves_the_transcript(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """A turn streams its events and saves them as Pydantic AI messages, with the CLI's session."""
+    run = {
+        "records": [
+            {"t": "session", "id": "s-1"},
+            {"t": "text", "d": "Looking. "},
+            {"t": "call", "id": "c1", "name": "GriptapeNodes_ListRegisteredLibrariesRequest", "args": {}},
+            {"t": "result", "id": "c1", "name": "GriptapeNodes_ListRegisteredLibrariesRequest", "content": "[]"},
+            {"t": "text", "d": "No libraries."},
+            {"t": "end"},
+        ]
+    }
+    harness = _harness(tmp_path, storage, run)
+    thread_id, _ = storage.create_thread()
+    events: list[RunEvent] = []
+
+    result = await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="List libraries", event_sink=events.append))
+
+    assert result.output == "Looking. No libraries."
+    assert [type(event).__name__ for event in events] == ["TextDelta", "ToolCall", "ToolResult", "TextDelta"]
+    history = storage.load_history(thread_id)
+    assert result.message_count == len(history)
+    assert isinstance(history[0], ModelRequest)
+    assert isinstance(history[0].parts[0], UserPromptPart)
+    assert history[0].parts[0].content == "List libraries"
+    assert isinstance(history[1], ModelResponse)
+    assert [part.part_kind for part in history[1].parts] == ["text", "tool-call"]
+    assert history[1].provider_name == "fake"
+    assert isinstance(history[2], ModelRequest)
+    assert isinstance(history[2].parts[0], ToolReturnPart)
+    assert isinstance(history[3], ModelResponse)
+    assert storage.get_harness_session(thread_id, "fake") == HarnessSession(
+        session_id="s-1", message_count=len(history)
+    )
+
+
+@pytest.mark.asyncio
+async def test_next_turn_resumes_the_session_without_catch_up(
+    tmp_path: Path, storage: LocalThreadStorageDriver
+) -> None:
+    """A later turn resumes the CLI's session and sends only the new message."""
+    harness = _harness(tmp_path, storage, _ok_run("First."), _ok_run("Second."))
+    thread_id, _ = storage.create_thread()
+
+    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="one"))
+    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="two"))
+
+    second = harness.invocations()[1]
+    assert second["argv"][-2:] == ["--resume", "s-1"]
+    assert second["stdin"] == "two"
+
+
+@pytest.mark.asyncio
+async def test_messages_added_by_another_provider_are_sent_as_catch_up(
+    tmp_path: Path, storage: LocalThreadStorageDriver
+) -> None:
+    """Messages the CLI's session has not seen are sent ahead of the new message."""
+    harness = _harness(tmp_path, storage, _ok_run())
+    thread_id, _ = storage.create_thread()
+    earlier: list[ModelMessage] = [
+        ModelRequest(parts=[UserPromptPart(content="Make a cat node")]),
+        ModelResponse(parts=[TextPart(content="Made it.")]),
+    ]
+    storage.save_history(thread_id, earlier)
+    storage.set_harness_session(thread_id, "fake", HarnessSession(session_id="s-0", message_count=0))
+
+    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="Now a dog"))
+
+    call = harness.invocations()[0]
+    assert call["argv"][-2:] == ["--resume", "s-0"]
+    assert "User: Make a cat node" in call["stdin"]
+    assert "Assistant: Made it." in call["stdin"]
+    assert call["stdin"].endswith("Now a dog")
+
+
+@pytest.mark.asyncio
+async def test_instructions_and_mcp_servers_reach_the_invocation(
+    tmp_path: Path, storage: LocalThreadStorageDriver
+) -> None:
+    """Base and turn instructions combine, and the engine's MCP server comes before the turn's."""
+    harness = _harness(tmp_path, storage, _ok_run())
+    thread_id, _ = storage.create_thread()
+
+    await harness.run_turn(
+        AgentTurn(
+            thread_id=thread_id,
+            prompt="hi",
+            instructions="Server rules.",
+            mcp_servers=[MCPServerSpec(name="docs", config={"transport": "streamable_http", "url": "http://d/mcp"})],
+        )
+    )
+
+    context = harness.contexts[0]
+    assert context.instructions == "Base instructions.\n\nServer rules."
+    assert [(server.name, server.url) for server in context.mcp_servers] == [
+        ("GriptapeNodes", "http://localhost:1/mcp/"),
+        ("docs", "http://d/mcp"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_without_system_prompt_support_instructions_lead_a_new_session(
+    tmp_path: Path, storage: LocalThreadStorageDriver
+) -> None:
+    """A CLI with no system prompt option gets the instructions at the start of a new session only."""
+    harness = _harness(tmp_path, storage, _ok_run(), _ok_run(), harness_class=_NoSystemPromptHarness)
+    thread_id, _ = storage.create_thread()
+
+    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="one"))
+    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="two"))
+
+    first, second = harness.contexts
+    assert first.instructions == ""
+    assert first.prompt_text.startswith("<instructions>\nBase instructions.\n</instructions>")
+    assert second.prompt_text == "two"
+
+
+@pytest.mark.asyncio
+async def test_lost_session_is_replaced_by_a_new_one(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """A session the CLI can no longer resume is replaced by a new one that is caught up."""
+    lost = {"records": [{"t": "end", "error": "No conversation found"}], "exit": 1}
+    harness = _harness(tmp_path, storage, lost, _ok_run(session_id="s-new"))
+    thread_id, _ = storage.create_thread()
+    storage.save_history(
+        thread_id,
+        [ModelRequest(parts=[UserPromptPart(content="earlier")]), ModelResponse(parts=[TextPart(content="ok")])],
+    )
+    storage.set_harness_session(thread_id, "fake", HarnessSession(session_id="s-gone", message_count=2))
+
+    result = await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="again"))
+
+    retry = harness.invocations()[1]
+    assert "--resume" not in retry["argv"]
+    assert "User: earlier" in retry["stdin"]
+    assert result.output == "Done."
+    assert storage.get_harness_session(thread_id, "fake") == HarnessSession(session_id="s-new", message_count=4)
+
+
+@pytest.mark.asyncio
+async def test_cli_error_is_raised_and_nothing_is_saved(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """An error the CLI reports fails the turn without saving it."""
+    harness = _harness(tmp_path, storage, {"records": [{"t": "end", "error": "Not signed in"}], "exit": 1})
+    thread_id, _ = storage.create_thread()
+
+    with pytest.raises(CliHarnessError, match="Fake CLI stopped with an error: Not signed in"):
+        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="hi"))
+
+    assert storage.load_history(thread_id) == []
+
+
+@pytest.mark.asyncio
+async def test_crash_reports_exit_code_and_stderr(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """A CLI that exits without finishing reports its exit code and stderr."""
+    harness = _harness(tmp_path, storage, {"records": [], "stderr": "boom: bad flag", "exit": 2})
+    thread_id, _ = storage.create_thread()
+
+    with pytest.raises(CliHarnessError, match=r"exited with code 2 .*boom: bad flag"):
+        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="hi"))
+
+
+@pytest.mark.asyncio
+async def test_missing_cli_names_the_command_and_how_to_install_it(
+    tmp_path: Path, storage: LocalThreadStorageDriver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A CLI that isn't installed fails with its command name and how to install it."""
+    harness = _harness(tmp_path, storage, _ok_run())
+    harness.command = None
+    monkeypatch.setenv("PATH", str(tmp_path))
+    thread_id, _ = storage.create_thread()
+
+    with pytest.raises(
+        CliHarnessError, match=r"`fake-cli-that-does-not-exist` command was not found.*Install the fake"
+    ):
+        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="hi"))
+
+
+@pytest.mark.asyncio
+async def test_cancel_stops_the_cli_and_saves_nothing(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """Cancelling stops the CLI, keeps the streamed text, and saves no turn."""
+    slow = {"records": [{"t": "session", "id": "s-1"}, {"t": "text", "d": "Partial"}, {"sleep": 30}, {"t": "end"}]}
+    harness = _harness(tmp_path, storage, slow)
+    thread_id, _ = storage.create_thread()
+    cancel_event = asyncio.Event()
+
+    def cancel_on_text(event: RunEvent) -> None:
+        """Cancel the turn as soon as any text arrives."""
+        if isinstance(event, TextDelta):
+            cancel_event.set()
+
+    result = await asyncio.wait_for(
+        harness.run_turn(
+            AgentTurn(thread_id=thread_id, prompt="hi", event_sink=cancel_on_text, cancel_event=cancel_event)
+        ),
+        timeout=10,
+    )
+
+    assert result.cancelled
+    assert result.output == "Partial"
+    assert storage.load_history(thread_id) == []
+    assert storage.get_harness_session(thread_id, "fake") == HarnessSession(session_id="s-1", message_count=0)
+
+
+def _paused_history() -> list[ModelMessage]:
+    return [
+        ModelRequest(parts=[UserPromptPart(content="Run it")]),
+        ModelResponse(parts=[ToolCallPart(tool_name="GriptapeNodes_StartFlowRequest", args="{}", tool_call_id="p1")]),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_calls_left_waiting_by_another_provider_are_declined(
+    tmp_path: Path, storage: LocalThreadStorageDriver
+) -> None:
+    """Calls another provider left waiting are saved as declined ahead of the new message."""
+    harness = _harness(tmp_path, storage, _ok_run())
+    thread_id, _ = storage.create_thread()
+    storage.save_history(thread_id, _paused_history())
+
+    await harness.run_turn(
+        AgentTurn(
+            thread_id=thread_id,
+            prompt="Never mind",
+            deferred_tool_results=DeferredToolResults(approvals={"p1": ToolDenied("Declined by a new message.")}),
+        )
+    )
+
+    history = storage.load_history(thread_id)
+    opener = history[2]
+    assert isinstance(opener, ModelRequest)
+    denied, prompt = opener.parts
+    assert isinstance(denied, ToolReturnPart)
+    assert (denied.tool_call_id, denied.outcome, denied.content) == ("p1", "denied", "Declined by a new message.")
+    assert isinstance(prompt, UserPromptPart)
+    assert pending_tool_calls(history) == []
+
+
+@pytest.mark.asyncio
+async def test_approving_another_providers_call_is_refused(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """A CLI harness refuses to approve a call another provider asked for."""
+    harness = _harness(tmp_path, storage, _ok_run())
+    thread_id, _ = storage.create_thread()
+    storage.save_history(thread_id, _paused_history())
+
+    with pytest.raises(CliHarnessError, match="Switch back to that provider"):
+        await harness.run_turn(
+            AgentTurn(
+                thread_id=thread_id,
+                prompt="go",
+                deferred_tool_results=DeferredToolResults(approvals={"p1": ToolApproved()}),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_resuming_a_paused_turn_is_refused(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """A CLI harness has no paused turn to resume."""
+    harness = _harness(tmp_path, storage, _ok_run())
+    thread_id, _ = storage.create_thread()
+
+    with pytest.raises(CliHarnessError, match="runs its tools without asking"):
+        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt=None))
+
+
+@pytest.mark.asyncio
+async def test_images_are_written_for_the_cli_and_saved_as_urls(
+    tmp_path: Path, storage: LocalThreadStorageDriver
+) -> None:
+    """Attached images reach the CLI as files and bytes, and are saved as URLs."""
+    harness = _harness(tmp_path, storage, _ok_run())
+    thread_id, _ = storage.create_thread()
+    image = BinaryContent(data=b"\x89PNG", media_type="image/png")
+
+    await harness.run_turn(
+        AgentTurn(
+            thread_id=thread_id,
+            prompt=["Describe", image],
+            persist_prompt=["Describe", ImageUrl(url="http://localhost/cat.png")],
+        )
+    )
+
+    (attached,) = harness.contexts[0].images
+    assert (attached.data, attached.media_type, attached.path.suffix) == (b"\x89PNG", "image/png", ".png")
+    assert harness.contexts[0].prompt_text == "Describe"
+    opener = storage.load_history(thread_id)[0]
+    assert isinstance(opener, ModelRequest)
+    assert isinstance(opener.parts[0], UserPromptPart)
+    assert opener.parts[0].content == ["Describe", ImageUrl(url="http://localhost/cat.png")]
+
+
+def test_mcp_tool_names_are_normalized_to_the_engine_form(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """CLI MCP tool names are reported in the engine's `<server>_<tool>` form."""
+    harness = _harness(tmp_path, storage)
+
+    assert harness.normalize_tool_name("mcp__GriptapeNodes__CreateNodeRequest") == "GriptapeNodes_CreateNodeRequest"
+    assert harness.normalize_tool_name("Bash") == "Bash"
+    assert harness.mcp_tool_name("GriptapeNodes", "CreateNodeRequest") == "mcp__GriptapeNodes__CreateNodeRequest"

@@ -1,8 +1,8 @@
-"""High-level runner that wraps `pydantic_ai.Agent` for the chat sidebar.
+"""The Pydantic AI harness: runs `pydantic_ai.Agent` for the chat sidebar.
 
-This module is the single point of contact between the request-handling layer
-(``AgentManager``) and the Pydantic AI harness. It exposes one async entry
-point :meth:`PydanticAgentRunner.run` that:
+``AgentManager`` reaches it through :meth:`PydanticAgentRunner.run_turn`, the
+:class:`~griptape_nodes.agents.harness.AgentHarness` entry point, which attaches
+the turn's MCP servers and calls :meth:`PydanticAgentRunner.run`. That:
 
   * builds (or reuses) a Pydantic AI ``Agent`` configured with the Griptape
     Cloud model, the skills capability, and any MCP servers the caller passed,
@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import time
 from dataclasses import dataclass, field, replace
@@ -50,13 +49,28 @@ from pydantic_ai.messages import (
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai_skills import SkillsCapability
 
+from griptape_nodes.agents.harness import (
+    RESULT_TRANSPORT_BYTES,
+    AgentRunResult,
+    AgentTurn,
+    PendingApproval,
+    RunEvent,
+    TextDelta,
+    ThinkingDelta,
+    ToolCall,
+    ToolResult,
+    args_json,
+    push_event,
+    stringify,
+    truncate,
+)
 from griptape_nodes.agents.pydantic_ai.image_tools import (
     IMAGE_TOOL_NAME,
     ImageGenerationToolset,
     ImageGenerationToolsetConfig,
     register_image_tools,
 )
-from griptape_nodes.agents.pydantic_ai.mcp_servers import grant_keys_for_call
+from griptape_nodes.agents.pydantic_ai.mcp_servers import grant_keys_for_call, prefixed_tool_name
 from griptape_nodes.agents.pydantic_ai.model import build_model
 from griptape_nodes.agents.pydantic_ai.tool_approval import (
     ToolApprovalDeps,
@@ -77,6 +91,7 @@ if TYPE_CHECKING:
     from pydantic_ai.toolsets import AbstractToolset
     from pydantic_ai.usage import UsageLimits
 
+    from griptape_nodes.agents.pydantic_ai.mcp_toolset_cache import MCPToolsetCache
     from griptape_nodes.drivers.thread_storage.base_thread_storage_driver import BaseThreadStorageDriver
     from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
 
@@ -89,102 +104,10 @@ DEFAULT_SKILLS_DIRECTORY = ".agents/skills"
 TokenSink = "Callable[[str], Awaitable[None] | None]"
 """Callback that receives streamed text tokens for relay to clients."""
 
-EventSink = "Callable[[RunEvent], Awaitable[None] | None]"
-"""Callback that receives structured run events for relay to clients."""
-
 
 # Cap how much of any string we'll write to the log so a giant tool argument
 # or file payload doesn't drown the console.
 _LOG_PREVIEW_BYTES = 240
-
-
-@dataclass
-class RunEvent:
-    """Base class for structured events emitted during a runner ``run`` call."""
-
-
-@dataclass
-class TextDelta(RunEvent):
-    """Incremental text token from the model's final response."""
-
-    delta: str
-
-
-@dataclass
-class ToolCall(RunEvent):
-    """The model has committed to a tool call."""
-
-    tool_call_id: str
-    tool_name: str
-    args: str
-
-
-@dataclass
-class ToolResult(RunEvent):
-    """A tool call has returned a value (or a retry prompt for an error)."""
-
-    tool_call_id: str
-    tool_name: str
-    content: str
-    is_error: bool = False
-
-
-@dataclass
-class ThinkingDelta(RunEvent):
-    """Incremental reasoning text from the model."""
-
-    delta: str
-
-
-@dataclass
-class PendingApproval:
-    """A tool call a paused turn is waiting on the user to approve or deny.
-
-    Attributes:
-        tool_call_id: Identifier to answer the call by.
-        tool_name: Name of the tool the agent wants to call.
-        args: JSON of the call's arguments, truncated like ``ToolCall.args``.
-        grant_keys: What approving this call for the whole conversation grants.
-    """
-
-    tool_call_id: str
-    tool_name: str
-    args: str
-    grant_keys: list[str]
-
-
-@dataclass
-class AgentRunResult:
-    """The return value of :meth:`PydanticAgentRunner.run`.
-
-    Attributes:
-        thread_id: The thread that was used (created if the caller passed None).
-        output: The final assistant text response (or the partial text streamed
-            so far when ``cancelled`` is ``True``).
-        message_count: Total messages in the thread after this run.
-        image_urls: URLs of images produced by the ``generate_image`` tool
-            during this run, in call order. Empty when no image was generated.
-        cancelled: ``True`` when the run was stopped via its cancel event before
-            completing. A cancelled run does not persist its turn to the thread,
-            except that a resumed one saves what happened to the calls it was
-            answering; ``message_count`` is the thread's length after that.
-        truncated: ``True`` when the model stopped because it hit the output
-            token limit rather than finishing its reply. ``output`` holds the
-            partial text, which is complete-looking but ends mid-thought, so
-            callers should tell the user rather than render it as a normal turn.
-        pending_approvals: Tool calls the turn paused on, waiting for the user to
-            approve or deny them. The turn is persisted with these calls open, so
-            the next run on the thread must answer them. Empty when the turn did
-            not pause.
-    """
-
-    thread_id: str
-    output: str
-    message_count: int
-    image_urls: list[str] = field(default_factory=list)
-    cancelled: bool = False
-    truncated: bool = False
-    pending_approvals: list[PendingApproval] = field(default_factory=list)
 
 
 @dataclass
@@ -206,6 +129,10 @@ class PydanticAgentRunner:
     skills_directory: str = DEFAULT_SKILLS_DIRECTORY
     usage_limits: UsageLimits | None = None
     model_settings: ModelSettings | None = None
+    # Shared with every other runner, so it is owned by the caller: see
+    # `AgentManager._mcp_toolsets`. `None` attaches no user MCP servers.
+    mcp_toolset_cache: MCPToolsetCache | None = None
+    history_rehydrator: Callable[[list[ModelMessage]], Awaitable[list[ModelMessage]]] | None = None
 
     _agent: Agent[Any, str] = field(init=False)
     _image_toolset: ImageGenerationToolset | None = field(init=False, default=None)
@@ -357,6 +284,58 @@ class PydanticAgentRunner:
     @property
     def agent(self) -> Agent[Any, str]:
         return self._agent
+
+    @property
+    def supports_tool_approval(self) -> bool:
+        return True
+
+    def mcp_tool_name(self, server: str, tool: str) -> str:
+        return prefixed_tool_name(server, tool)
+
+    async def run_turn(self, turn: AgentTurn) -> AgentRunResult:
+        """Run one turn with the turn's MCP servers attached.
+
+        Leases a live toolset per server from :attr:`mcp_toolset_cache` for the
+        length of the turn, so an edited server is restarted on the next turn
+        rather than the next engine restart.
+        """
+        if self.mcp_toolset_cache is None:
+            if turn.mcp_servers:
+                logger.warning(
+                    "Attempted to give the agent MCP server(s) %s. Failed because this agent has no MCP "
+                    "connections, so it will run without them.",
+                    ", ".join(server.name for server in turn.mcp_servers),
+                )
+            return await self._run_turn_with_toolsets(turn, [])
+        configs = [{**server.config, "name": server.name} for server in turn.mcp_servers]
+        # Nothing may sit between this and the `async with` that releases it: a
+        # server left with a stray use count is never shut down.
+        lease = await self.mcp_toolset_cache.acquire(configs)
+        async with lease:
+            # Config digests answer "my edit didn't take effect": a digest that
+            # moved between runs says the new config really was read.
+            logger.debug(
+                "Agent run attached MCP server(s) %s",
+                ", ".join(f"{server.name}@{server.digest}" for server in lease.resolved) or "none",
+            )
+            return await self._run_turn_with_toolsets(turn, lease.toolsets)
+
+    async def _run_turn_with_toolsets(
+        self, turn: AgentTurn, toolsets: Sequence[AbstractToolset[Any]]
+    ) -> AgentRunResult:
+        return await self.run(
+            turn.prompt,
+            thread_id=turn.thread_id,
+            event_sink=turn.event_sink,
+            cancel_event=turn.cancel_event,
+            persist_prompt=turn.persist_prompt,
+            history_rehydrator=self.history_rehydrator,
+            extra_toolsets=toolsets,
+            extra_instructions=turn.instructions,
+            extra_headers=turn.extra_headers,
+            approval=turn.approval,
+            deferred_tool_results=turn.deferred_tool_results,
+        )
 
     @property
     def image_toolset(self) -> ImageGenerationToolset | None:
@@ -606,12 +585,12 @@ class PydanticAgentRunner:
         self.storage.save_history(thread_id, settled.messages)
         # The editor shows a call as running until it sees a result for it.
         for part in settled.added_parts:
-            await _push_event(
+            await push_event(
                 event_sink,
                 ToolResult(
                     tool_call_id=part.tool_call_id,
                     tool_name=part.tool_name,
-                    content=_truncate(_stringify(part.content), _RESULT_TRANSPORT_BYTES),
+                    content=truncate(stringify(part.content), RESULT_TRANSPORT_BYTES),
                 ),
             )
         return settled.messages
@@ -694,12 +673,12 @@ class _RunCounters:
                 _preview(args_str),
                 event.part.tool_call_id,
             )
-            await _push_event(
+            await push_event(
                 event_sink,
                 ToolCall(
                     tool_call_id=event.part.tool_call_id,
                     tool_name=event.part.tool_name,
-                    args=_args_json(event.part.args),
+                    args=args_json(event.part.args),
                 ),
             )
         elif isinstance(event, FunctionToolResultEvent):
@@ -709,7 +688,7 @@ class _RunCounters:
             content = getattr(part, "content", None)
             tool_name = getattr(part, "tool_name", "?")
             is_error = isinstance(part, RetryPromptPart)
-            content_str = _stringify(content)
+            content_str = stringify(content)
             if tool_name == IMAGE_TOOL_NAME and not is_error and content_str:
                 self.image_urls.append(content_str)
             logger.debug(
@@ -720,12 +699,12 @@ class _RunCounters:
                 _preview(content_str),
                 is_error,
             )
-            await _push_event(
+            await push_event(
                 event_sink,
                 ToolResult(
                     tool_call_id=event.tool_call_id,
                     tool_name=tool_name,
-                    content=_truncate(content_str, _RESULT_TRANSPORT_BYTES),
+                    content=truncate(content_str, RESULT_TRANSPORT_BYTES),
                     is_error=is_error,
                 ),
             )
@@ -751,10 +730,10 @@ class _RunCounters:
             if event.part.content:
                 text_buffer.append(event.part.content)
                 await _push_token(token_sink, event.part.content)
-                await _push_event(event_sink, TextDelta(delta=event.part.content))
+                await push_event(event_sink, TextDelta(delta=event.part.content))
         elif isinstance(event.part, ThinkingPart):
             if event.part.content:
-                await _push_event(event_sink, ThinkingDelta(delta=event.part.content))
+                await push_event(event_sink, ThinkingDelta(delta=event.part.content))
         elif isinstance(event.part, ToolCallPart):
             logger.debug(
                 "[run %s] tool-call part started: %s id=%s",
@@ -776,12 +755,12 @@ class _RunCounters:
                 return
             text_buffer.append(chunk)
             await _push_token(token_sink, chunk)
-            await _push_event(event_sink, TextDelta(delta=chunk))
+            await push_event(event_sink, TextDelta(delta=chunk))
         elif isinstance(event.delta, ThinkingPartDelta):
             chunk = event.delta.content_delta
             if not chunk:
                 return
-            await _push_event(event_sink, ThinkingDelta(delta=chunk))
+            await push_event(event_sink, ThinkingDelta(delta=chunk))
 
 
 async def _push_token(
@@ -791,17 +770,6 @@ async def _push_token(
     if token_sink is None:
         return
     result = token_sink(token)
-    if asyncio.iscoroutine(result):
-        await result
-
-
-async def _push_event(
-    event_sink: Callable[[RunEvent], Awaitable[None] | None] | None,
-    event: RunEvent,
-) -> None:
-    if event_sink is None:
-        return
-    result = event_sink(event)
     if asyncio.iscoroutine(result):
         await result
 
@@ -926,17 +894,6 @@ def _prompt_preview(prompt: str | Sequence[UserContent] | None) -> str:
     return " ".join(parts)
 
 
-def _stringify(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    try:
-        return json.dumps(value, default=str)
-    except (TypeError, ValueError):
-        return str(value)
-
-
 def _args_str(args: Any) -> str:
     if args is None:
         return "<empty: None>"
@@ -952,46 +909,11 @@ def _args_str(args: Any) -> str:
     return str(args)
 
 
-# Cap on how much arg JSON we ship to clients. Larger than the log preview so
-# UI surfaces show meaningful detail, smaller than "unbounded" so a giant file
-# payload doesn't bloat the WebSocket frame.
-_ARGS_TRANSPORT_BYTES = 4096
-_RESULT_TRANSPORT_BYTES = 16384
-
-
-def _truncate(value: str, limit: int) -> str:
-    if len(value) <= limit:
-        return value
-    return value[:limit] + "..."
-
-
-def _args_json(args: Any) -> str:
-    """Return a JSON-ish string of ``args`` suitable for transport to the UI.
-
-    Unlike :func:`_args_str` which redacts dict values for log readability,
-    this preserves the full structure so callers can render real tool-call
-    detail. The result is truncated at :data:`_ARGS_TRANSPORT_BYTES` to bound
-    the on-the-wire size.
-    """
-    if args is None:
-        return "{}"
-    if isinstance(args, str):
-        text = args or "{}"
-    else:
-        try:
-            text = json.dumps(args, default=str)
-        except (TypeError, ValueError):
-            text = str(args)
-    if len(text) <= _ARGS_TRANSPORT_BYTES:
-        return text
-    return text[:_ARGS_TRANSPORT_BYTES] + "..."
-
-
 def pending_approval_for(call: ToolCallPart) -> PendingApproval:
     """Describe a paused tool call the way clients are sent it."""
     return PendingApproval(
         tool_call_id=call.tool_call_id,
         tool_name=call.tool_name,
-        args=_args_json(call.args),
+        args=args_json(call.args),
         grant_keys=grant_keys_for_call(call.tool_name, call.args_as_dict()),
     )

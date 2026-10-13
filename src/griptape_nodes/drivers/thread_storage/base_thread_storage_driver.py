@@ -7,6 +7,7 @@ Griptape Cloud, etc.) but they all expose the same surface here.
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.events.agent_events import RunRecord, ThreadMetadata
@@ -15,6 +16,21 @@ from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelMessage
+
+
+@dataclass(frozen=True)
+class HarnessSession:
+    """A CLI harness's own session for a thread, and how much of the thread it has seen.
+
+    Attributes:
+        session_id: The id the CLI resumes the session by.
+        message_count: How many of the thread's messages the session holds. Messages
+            past this were added by another provider, so the CLI is told about
+            them on its next turn.
+    """
+
+    session_id: str
+    message_count: int
 
 
 class BaseThreadStorageDriver(ABC):
@@ -123,4 +139,14 @@ class BaseThreadStorageDriver(ABC):
         history every time. Implementations are also responsible for bumping
         ``updated_at`` in metadata so the thread floats to the top of listings.
         """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_harness_session(self, thread_id: str, harness_id: str) -> HarnessSession | None:
+        """Return the session ``harness_id`` keeps for this thread, or ``None`` if it has none."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def set_harness_session(self, thread_id: str, harness_id: str, session: HarnessSession) -> None:
+        """Record the session ``harness_id`` keeps for this thread, replacing any earlier one."""
         raise NotImplementedError
