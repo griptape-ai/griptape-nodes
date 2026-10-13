@@ -38,6 +38,7 @@ from pydantic_ai.tools import DeferredToolResults, ToolApproved, ToolDenied
 from pydantic_ai.usage import UsageLimits
 
 from griptape_nodes.agents.harness import (
+    GTN_SERVER_NAME,
     AgentHarness,
     AgentRunResult,
     AgentTurn,
@@ -45,24 +46,21 @@ from griptape_nodes.agents.harness import (
     RunEvent,
     TextDelta,
     ThinkingDelta,
+    ToolApprovalHarness,
     ToolCall,
     ToolResult,
+    UserMessage,
 )
 from griptape_nodes.agents.pydantic_ai.image_tools import ImageGenerationToolsetConfig
 from griptape_nodes.agents.pydantic_ai.mcp_servers import (
-    GTN_SERVER_NAME,
     grant_keys_for_call,
     prefixed_tool_name,
     streamable_http_local,
 )
 from griptape_nodes.agents.pydantic_ai.mcp_toolset_cache import MCPToolsetCache
 from griptape_nodes.agents.pydantic_ai.runner import DEFAULT_SKILLS_DIRECTORY, PydanticAgentRunner
-from griptape_nodes.agents.pydantic_ai.tool_approval import (
-    TOOL_DENIED_BY_NEW_MESSAGE,
-    TOOL_DENIED_BY_USER_MESSAGE,
-    ToolApprovalDeps,
-    pending_tool_calls,
-)
+from griptape_nodes.agents.pydantic_ai.tool_approval import TOOL_DENIED_BY_USER_MESSAGE
+from griptape_nodes.agents.thread_history import pending_tool_calls
 from griptape_nodes.drivers.cloud_credentials import (
     BASE_URL_SETTING_NAME,
     DEFAULT_CLOUD_BASE_URL,
@@ -662,30 +660,18 @@ class AgentManager(EngineScoped):
         history = self._thread_storage.load_history(thread_id)
         is_first_run = len(history) == 0
 
-        # Sending a message instead of answering an approval card declines every
-        # call the card was asking about, in the same request as the message.
-        deferred_tool_results: DeferredToolResults | None = None
-        waiting = pending_tool_calls(history)
-        if waiting:
-            deferred_tool_results = DeferredToolResults(
-                approvals={call.tool_call_id: ToolDenied(TOOL_DENIED_BY_NEW_MESSAGE) for call in waiting}
-            )
-
-        granted = frozenset(self._thread_storage.get_thread_metadata(thread_id).tool_grants)
-
         composed = await _compose_prompt(request.input, request.url_artifacts)
         harness = self._build_harness(provider_name=request.provider_name, model_name=request.model_name)
-        result = await self._run_turn(
+        turn = await self._build_turn(
             harness,
             thread_id=thread_id,
             active=active,
             provider_name=request.provider_name,
             mcp_server_names=request.additional_mcp_servers,
-            prompt=composed.live,
-            persist_prompt=composed.persist,
-            approval=ToolApprovalDeps(granted=granted),
-            deferred_tool_results=deferred_tool_results,
         )
+        # Sending a message instead of answering an approval card declines every
+        # call the card was asking about; the harness does that with the message.
+        result = await harness.run_turn(turn, UserMessage(content=composed.live, persist_content=composed.persist))
 
         # A first run creates the thread; title it from the input even when the
         # turn is cancelled, so a quick send-then-cancel doesn't leave a
@@ -731,6 +717,15 @@ class AgentManager(EngineScoped):
             return RunAgentResultFailure(error={"message": details}, result_details=details)
 
         harness = self._build_harness(provider_name=request.provider_name, model_name=request.model_name)
+        # Checked before saving grants, which would otherwise outlive the refusal.
+        if not isinstance(harness, ToolApprovalHarness):
+            details = (
+                f"Attempted to answer the approval request in conversation {thread_id}. Failed because the "
+                "selected provider runs its tools without asking, so it cannot continue this approval. "
+                "Send a new message instead."
+            )
+            return RunAgentResultFailure(error={"message": details}, result_details=details)
+
         granted_before = frozenset(self._thread_storage.get_thread_metadata(thread_id).tool_grants)
         try:
             plan = _plan_tool_approvals(waiting, request.decisions, granted_before)
@@ -738,20 +733,18 @@ class AgentManager(EngineScoped):
             details = str(e)
             return RunAgentResultFailure(error={"message": details}, result_details=details)
 
+        # Saved before resuming: the harness reads the thread's grants from storage.
         if plan.granted != granted_before:
             self._thread_storage.update_thread_metadata(thread_id, tool_grants=sorted(plan.granted))
 
-        result = await self._run_turn(
+        turn = await self._build_turn(
             harness,
             thread_id=thread_id,
             active=active,
             provider_name=request.provider_name,
             mcp_server_names=request.additional_mcp_servers,
-            prompt=None,
-            persist_prompt=None,
-            approval=ToolApprovalDeps(granted=plan.granted),
-            deferred_tool_results=plan.results,
         )
+        result = await harness.resume_turn(turn, plan.results)
         return self._finish_turn(
             result,
             provider_name=request.provider_name,
@@ -759,7 +752,7 @@ class AgentManager(EngineScoped):
             mcp_server_names=request.additional_mcp_servers,
         )
 
-    async def _run_turn(  # noqa: PLR0913
+    async def _build_turn(
         self,
         harness: AgentHarness,
         *,
@@ -767,12 +760,8 @@ class AgentManager(EngineScoped):
         active: _ActiveRun,
         provider_name: str | None,
         mcp_server_names: list[str],
-        prompt: str | list[UserContent] | None,
-        persist_prompt: str | list[UserContent] | None,
-        approval: ToolApprovalDeps,
-        deferred_tool_results: DeferredToolResults | None,
-    ) -> AgentRunResult:
-        """Run one agent turn on ``thread_id``, streaming its events.
+    ) -> AgentTurn:
+        """Describe one agent turn on ``thread_id``, streaming its events to the editor.
 
         ``active`` is the thread's claim from :meth:`_claim_thread`; its cancel event
         is what ``CancelAgentRequest`` sets.
@@ -792,21 +781,15 @@ class AgentManager(EngineScoped):
             )
 
         mcp = await self._resolve_mcp_servers(mcp_server_names)
-        return await harness.run_turn(
-            AgentTurn(
-                thread_id=thread_id,
-                prompt=prompt,
-                persist_prompt=persist_prompt,
-                event_sink=emit,
-                cancel_event=active.cancel_event,
-                instructions=_compose_run_instructions(
-                    mcp.instructions, include_approval_rules=harness.supports_tool_approval
-                ),
-                mcp_servers=mcp.servers,
-                extra_headers=attribution_headers,
-                approval=approval,
-                deferred_tool_results=deferred_tool_results,
-            )
+        return AgentTurn(
+            thread_id=thread_id,
+            event_sink=emit,
+            cancel_event=active.cancel_event,
+            instructions=_compose_run_instructions(
+                mcp.instructions, include_approval_rules=isinstance(harness, ToolApprovalHarness)
+            ),
+            mcp_servers=mcp.servers,
+            extra_headers=attribution_headers,
         )
 
     def _claim_thread(self, thread_id: str) -> _ActiveRun | None:

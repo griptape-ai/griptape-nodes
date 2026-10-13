@@ -46,7 +46,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.tools import DeferredToolRequests
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDenied
 from pydantic_ai_skills import SkillsCapability
 
 from griptape_nodes.agents.harness import (
@@ -59,6 +59,7 @@ from griptape_nodes.agents.harness import (
     ThinkingDelta,
     ToolCall,
     ToolResult,
+    UserMessage,
     args_json,
     push_event,
     stringify,
@@ -72,12 +73,8 @@ from griptape_nodes.agents.pydantic_ai.image_tools import (
 )
 from griptape_nodes.agents.pydantic_ai.mcp_servers import grant_keys_for_call
 from griptape_nodes.agents.pydantic_ai.model import build_model
-from griptape_nodes.agents.pydantic_ai.tool_approval import (
-    ToolApprovalDeps,
-    ends_in_tool_results,
-    pending_tool_calls,
-    settle_cancelled_resume,
-)
+from griptape_nodes.agents.pydantic_ai.tool_approval import ToolApprovalDeps, settle_cancelled_resume
+from griptape_nodes.agents.thread_history import TOOL_DENIED_BY_NEW_MESSAGE, ends_in_tool_results, pending_tool_calls
 from griptape_nodes.drivers.cloud_models import ProviderID
 
 if TYPE_CHECKING:
@@ -87,7 +84,6 @@ if TYPE_CHECKING:
     from pydantic_ai._run_context import RunContext
     from pydantic_ai.messages import ModelMessage, UserContent
     from pydantic_ai.settings import ModelSettings
-    from pydantic_ai.tools import DeferredToolResults
     from pydantic_ai.toolsets import AbstractToolset
     from pydantic_ai.usage import UsageLimits
 
@@ -285,12 +281,18 @@ class PydanticAgentRunner:
     def agent(self) -> Agent[Any, str]:
         return self._agent
 
-    @property
-    def supports_tool_approval(self) -> bool:
-        return True
+    async def run_turn(self, turn: AgentTurn, message: UserMessage) -> AgentRunResult:
+        """Run a turn for a new message, declining any calls a paused turn is waiting on."""
+        return await self._run_turn_with_mcp_servers(turn, message=message, answers=None)
 
-    async def run_turn(self, turn: AgentTurn) -> AgentRunResult:
-        """Run one turn with the turn's MCP servers attached.
+    async def resume_turn(self, turn: AgentTurn, answers: DeferredToolResults) -> AgentRunResult:
+        """Continue a paused turn from the user's answers."""
+        return await self._run_turn_with_mcp_servers(turn, message=None, answers=answers)
+
+    async def _run_turn_with_mcp_servers(
+        self, turn: AgentTurn, *, message: UserMessage | None, answers: DeferredToolResults | None
+    ) -> AgentRunResult:
+        """Run the turn with its MCP servers attached.
 
         Leases a live toolset per server from :attr:`mcp_toolset_cache` for the
         length of the turn, so an edited server is restarted on the next turn
@@ -303,7 +305,7 @@ class PydanticAgentRunner:
                     "connections, so it will run without them.",
                     ", ".join(server.name for server in turn.mcp_servers),
                 )
-            return await self._run_turn_with_toolsets(turn, [])
+            return await self._run_turn_with_toolsets(turn, message, answers, [])
         configs = [{**server.config, "name": server.name} for server in turn.mcp_servers]
         # Nothing may sit between this and the `async with` that releases it: a
         # server left with a stray use count is never shut down.
@@ -315,23 +317,28 @@ class PydanticAgentRunner:
                 "Agent run attached MCP server(s) %s",
                 ", ".join(f"{server.name}@{server.digest}" for server in lease.resolved) or "none",
             )
-            return await self._run_turn_with_toolsets(turn, lease.toolsets)
+            return await self._run_turn_with_toolsets(turn, message, answers, lease.toolsets)
 
     async def _run_turn_with_toolsets(
-        self, turn: AgentTurn, toolsets: Sequence[AbstractToolset[Any]]
+        self,
+        turn: AgentTurn,
+        message: UserMessage | None,
+        answers: DeferredToolResults | None,
+        toolsets: Sequence[AbstractToolset[Any]],
     ) -> AgentRunResult:
+        grants = self.storage.get_thread_metadata(turn.thread_id).tool_grants
         return await self.run(
-            turn.prompt,
+            message.content if message is not None else None,
             thread_id=turn.thread_id,
             event_sink=turn.event_sink,
             cancel_event=turn.cancel_event,
-            persist_prompt=turn.persist_prompt,
+            persist_prompt=message.persist_content if message is not None else None,
             history_rehydrator=self.history_rehydrator,
             extra_toolsets=toolsets,
             extra_instructions=turn.instructions,
             extra_headers=turn.extra_headers,
-            approval=turn.approval,
-            deferred_tool_results=turn.deferred_tool_results,
+            approval=ToolApprovalDeps(granted=frozenset(grants)),
+            deferred_tool_results=answers,
         )
 
     @property
@@ -401,9 +408,10 @@ class PydanticAgentRunner:
                 ``ctx.deps``. ``None`` means no grants, so every gated call
                 pauses for the user.
             deferred_tool_results: Answers for the calls a paused turn is
-                waiting on. Required exactly when the thread has such calls;
-                with a ``prompt`` too, the prompt follows the answers in the same
-                request to the model.
+                waiting on. Required exactly when the thread has such calls and
+                no ``prompt`` is given; with a ``prompt`` too, the prompt follows
+                the answers in the same request to the model. A ``prompt`` on
+                its own declines the calls the thread is waiting on.
 
         Returns:
             An :class:`AgentRunResult` describing the new state of the thread.
@@ -416,16 +424,16 @@ class PydanticAgentRunner:
         # the bytes for the model call, but we never write it back, so rehydrated
         # bytes never leak onto disk.
         history = self.storage.load_history(thread_id)
-        waiting = pending_tool_calls(history)
-        if waiting and deferred_tool_results is None:
-            msg = (
-                f"Attempted to run the agent on thread {thread_id}. Failed because the thread is waiting for "
-                f"approval of {len(waiting)} tool call(s), and the run did not answer them."
-            )
-            raise ValueError(msg)
         if prompt is None and deferred_tool_results is None:
             msg = f"Attempted to run the agent on thread {thread_id}. Failed because there was no message to send."
             raise ValueError(msg)
+        waiting = pending_tool_calls(history)
+        if waiting and deferred_tool_results is None:
+            # Sending a message instead of answering an approval request declines
+            # every call it was asking about, in the same request as the message.
+            deferred_tool_results = DeferredToolResults(
+                approvals={call.tool_call_id: ToolDenied(TOOL_DENIED_BY_NEW_MESSAGE) for call in waiting}
+            )
         model_history = history
         if history_rehydrator is not None:
             model_history = await history_rehydrator(history)

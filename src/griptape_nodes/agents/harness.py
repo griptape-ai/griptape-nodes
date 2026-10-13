@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from pydantic_ai.messages import UserContent
     from pydantic_ai.tools import DeferredToolResults
 
-    from griptape_nodes.agents.pydantic_ai.tool_approval import ToolApprovalDeps
-
+GTN_SERVER_NAME = "GriptapeNodes"
+"""Name the engine's own MCP server is attached under, and so the prefix its tools are exposed under."""
 
 # Caps on what reaches clients. Larger than a log preview so tool cards show real
 # detail, smaller than unbounded so a giant file payload doesn't bloat a frame.
@@ -122,53 +122,69 @@ class MCPServerSpec:
     config: Mapping[str, Any]
 
 
-@dataclass
+@dataclass(kw_only=True)
 class AgentTurn:
-    """Everything one turn needs that can change between turns.
+    """Everything a turn needs besides what starts it.
 
     Attributes:
         thread_id: The thread to run in. It must already exist.
-        prompt: The user's message: plain text, or text plus inlined
-            ``BinaryContent`` images. ``None`` resumes a paused turn from
-            ``deferred_tool_results`` alone.
-        persist_prompt: The form of ``prompt`` to save, with images as
-            ``ImageUrl`` references. ``None`` saves ``prompt`` as-is.
+        event_sink: Receives the turn's events as they happen.
         cancel_event: Set to stop the turn. See ``AgentRunResult.cancelled``.
         instructions: Instructions for this turn only, on top of the harness's
             own, such as the rules attached to ``mcp_servers``.
+        mcp_servers: User-configured MCP servers to attach to this turn.
         extra_headers: HTTP headers for this turn's model calls. Only harnesses
             that call a model directly can send them.
-        approval: The thread's conversation grants. ``None`` means none.
-        deferred_tool_results: Answers for the calls a paused turn is waiting on.
-            Required exactly when the thread has such calls.
     """
 
     thread_id: str
-    prompt: str | Sequence[UserContent] | None
-    persist_prompt: str | Sequence[UserContent] | None = None
     event_sink: Callable[[RunEvent], Awaitable[None] | None] | None = None
     cancel_event: asyncio.Event | None = None
     instructions: str | None = None
     mcp_servers: Sequence[MCPServerSpec] = ()
     extra_headers: Mapping[str, str] | None = None
-    approval: ToolApprovalDeps | None = None
-    deferred_tool_results: DeferredToolResults | None = None
+
+
+@dataclass(frozen=True)
+class UserMessage:
+    """The message that starts a turn.
+
+    Attributes:
+        content: The user's message: plain text, or text plus inlined
+            ``BinaryContent`` images.
+        persist_content: The form of ``content`` to save, with images as
+            ``ImageUrl`` references. ``None`` saves ``content`` as-is.
+    """
+
+    content: str | Sequence[UserContent]
+    persist_content: str | Sequence[UserContent] | None = None
 
 
 class AgentHarness(Protocol):
     """Persist turns as Pydantic AI ``ModelMessage`` values so threads can switch providers."""
 
-    @property
-    def supports_tool_approval(self) -> bool:
-        """Whether the harness can pause a turn for the user to approve a tool call.
+    async def run_turn(self, turn: AgentTurn, message: UserMessage) -> AgentRunResult:
+        """Run a turn for a new message, streaming events to ``turn.event_sink`` and saving it.
 
-        A harness that cannot runs every tool without asking, and the engine
-        leaves its approval instructions out of the turn.
+        Tool calls a paused turn is still waiting on are declined with
+        ``TOOL_DENIED_BY_NEW_MESSAGE`` in the same request as the message.
         """
         ...
 
-    async def run_turn(self, turn: AgentTurn) -> AgentRunResult:
-        """Run one turn, streaming events to ``turn.event_sink`` and saving it."""
+
+@runtime_checkable
+class ToolApprovalHarness(AgentHarness, Protocol):
+    """A harness that can pause a turn for the user to approve tool calls.
+
+    A harness that cannot runs every tool without asking, and the engine leaves
+    its approval instructions out of the turn.
+    """
+
+    async def resume_turn(self, turn: AgentTurn, answers: DeferredToolResults) -> AgentRunResult:
+        """Continue a paused turn from the user's answers, streaming and saving like ``run_turn``.
+
+        ``answers`` must cover every call the thread's paused turn is waiting on.
+        """
         ...
 
 

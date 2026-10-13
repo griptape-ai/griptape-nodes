@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.client.transports import ClientTransport, SSETransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai.mcp import MCPToolset
 
+from griptape_nodes.agents.harness import GTN_SERVER_NAME
 from griptape_nodes.agents.pydantic_ai.tool_approval import needs_approval
 
 if TYPE_CHECKING:
@@ -70,9 +71,6 @@ DEFAULT_GTN_TOOL_BLOCKLIST: frozenset[str] = frozenset()
 Left empty by default; the composer supports arbitrary blocklists for callers
 that want to hide specific tools (e.g. tests, alternate harnesses).
 """
-
-GTN_SERVER_NAME = "GriptapeNodes"
-"""Prefix the engine's own MCP tools are exposed under."""
 
 GTN_APPROVAL_REQUIRED_REQUESTS: frozenset[str] = frozenset(
     {
