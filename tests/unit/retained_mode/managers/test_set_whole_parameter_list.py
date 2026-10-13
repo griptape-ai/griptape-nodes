@@ -48,6 +48,16 @@ class _ListNode(BaseNode):
         return None
 
 
+class _HookedListNode(_ListNode):
+    def __init__(self, name: str) -> None:
+        super().__init__(name=name)
+        self.seen: list[object] = []
+
+    def after_value_set(self, parameter: Parameter, value: object) -> None:
+        if parameter.name != "items":
+            self.seen.append(value)
+
+
 class _Source(BaseNode):
     def __init__(self, name: str) -> None:
         super().__init__(name=name)
@@ -146,16 +156,26 @@ class TestWholeListSetOnAnUnconnectedList:
 
         assert node.state == NodeResolutionState.UNRESOLVED
 
-    def test_a_failed_item_still_unresolves_the_node(self, engine: Engine, flow_name: str) -> None:
-        """The old rows are gone by the time an item fails, so the node no longer holds what it ran with."""
+    def test_a_failed_item_puts_the_old_items_back(self, engine: Engine, flow_name: str) -> None:
+        """A failure partway through must not leave the list half replaced."""
         node = _add(engine, _ListNode(name="Lister"), flow_name)
         _set_items(engine, ["a", "b"])
-        node.state = NodeResolutionState.RESOLVED
 
-        result = _set_items(engine, ["bad"])
+        result = _set_items(engine, ["ok", "bad", "never reached"])
 
         assert isinstance(result, SetParameterValueResultFailure)
-        assert node.state == NodeResolutionState.UNRESOLVED
+        assert "left as it was" in str(result.result_details)
+        assert node.get_parameter_value("items") == ["a", "b"]
+        assert [node.get_parameter_value(row.name) for row in _rows(node)] == ["a", "b"]
+
+    def test_a_failed_item_on_an_empty_list_leaves_it_empty(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+
+        result = _set_items(engine, ["ok", "bad"])
+
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert node.get_parameter_value("items") == []
+        assert _rows(node) == []
 
     def test_a_connected_row_is_rejected_and_keeps_its_connection(self, engine: Engine, flow_name: str) -> None:
         """Replacing the rows would delete the row's connection with no word to the caller."""
@@ -177,6 +197,47 @@ class TestWholeListSetOnAnUnconnectedList:
 
         assert isinstance(result, SetParameterValueResultFailure)
         assert _rows(node) == [row]
+
+
+class TestValuesThatAreNotLists:
+    def test_a_string_is_rejected(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        _set_items(engine, ["a"])
+
+        result = _set_items(engine, "abc")
+
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert node.get_parameter_value("items") == ["a"]
+
+    def test_none_is_not_rejected(self, engine: Engine, flow_name: str) -> None:
+        """None is how a value gets cleared, so it keeps going through the normal path."""
+        _add(engine, _ListNode(name="Lister"), flow_name)
+
+        result = _set_items(engine, None)
+
+        assert isinstance(result, SetParameterValueResultSuccess)
+
+
+class TestWhoMayReplaceTheRows:
+    def test_a_node_that_is_not_settable_is_rejected(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        _set_items(engine, ["a"])
+        items = node.get_parameter_by_name("items")
+        assert items is not None
+        items.settable = False
+
+        result = _set_items(engine, ["x"])
+
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert node.get_parameter_value("items") == ["a"]
+
+    def test_the_node_hears_about_each_row(self, engine: Engine, flow_name: str) -> None:
+        """Hooks on row sets are how libraries react to a list changing, so they must fire."""
+        node = _add(engine, _HookedListNode(name="Lister"), flow_name)
+
+        _set_items(engine, ["a", "b"])
+
+        assert node.seen == ["a", "b"]
 
 
 class TestWholeListArrivingOverAConnection:

@@ -2780,14 +2780,15 @@ class NodeManager(EngineScoped):
             return result
 
         # A node reads an unconnected list from its rows, so a whole list set by request has to become rows.
+        # None is left to the normal path: it is how a value gets cleared.
         if (
             isinstance(parameter, ParameterList)
-            and isinstance(request.value, list)
-            and not request.initial_setup
-            and not request.is_output
-            and not incoming_node_set
-            and not node._param_has_incoming_connection(param_name)
+            and request.value is not None
+            and self._is_set_by_request_on_unconnected_list(node, request)
         ):
+            if not isinstance(request.value, list):
+                details = f"Attempted to set list '{node_name}.{param_name}'. Failed because a list parameter can only be set to a list, but got a value of type '{type(request.value).__name__}'."
+                return SetParameterValueResultFailure(result_details=details)
             return self._set_parameter_list_as_rows(node, parameter, request.value)
 
         try:
@@ -2911,41 +2912,39 @@ class NodeManager(EngineScoped):
             details = f"Attempted to set list {list_label}. Failed because some of its items are connected to other nodes, and replacing the items would remove those connections. Disconnect them first."
             return SetParameterValueResultFailure(result_details=details)
 
-        old_value = node._get_raw_parameter_value(parameter_list.name)
-        failure = self._replace_list_rows(node, parameter_list, rows, items)
-        finalized_value = node._get_raw_parameter_value(parameter_list.name)
-        # Row sets only unresolve when a row's own value changed, which misses removed rows. A failure
-        # partway through has changed the list too.
-        if old_value != finalized_value:
-            self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
-            node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
-
+        old_items = node._get_raw_parameter_value(parameter_list.name)
+        failure = self._replace_list_rows(node, parameter_list, items)
         if failure is not None:
-            details = f"Attempted to set list {list_label}. Failed because {failure} The list was left partly replaced."
+            # Put the old items back, so a failed set does not leave the list half replaced.
+            restore_failure = self._replace_list_rows(node, parameter_list, old_items)
+            self._unresolve_if_changed(node, parameter_list, old_items)
+            if restore_failure is None:
+                details = f"Attempted to set list {list_label}. Failed because {failure}. The list was left as it was."
+            else:
+                details = f"Attempted to set list {list_label}. Failed because {failure}. The old items could not be put back either, because {restore_failure}."
             return SetParameterValueResultFailure(result_details=details)
 
+        finalized_value = self._unresolve_if_changed(node, parameter_list, old_items)
         details = f"Successfully set list {list_label} to {len(items)} items."
         return SetParameterValueResultSuccess(
             finalized_value=finalized_value, data_type=parameter_list.type, result_details=details
         )
 
-    def _replace_list_rows(
-        self, node: BaseNode, parameter_list: ParameterList, rows: list[Parameter], items: list[Any]
-    ) -> str | None:
-        """Remove `rows`, then add and set one row per item. Returns why it stopped, or None when done."""
-        for row in rows:
+    def _replace_list_rows(self, node: BaseNode, parameter_list: ParameterList, items: list[Any]) -> str | None:
+        """Remove the list's rows, then add and set one row per item. Returns why it stopped, or None when done."""
+        for row in parameter_list.get_child_parameters():
             remove_result = self.engine.handle_request(
                 RemoveParameterFromNodeRequest(node_name=node.name, parameter_name=row.name)
             )
             if not isinstance(remove_result, RemoveParameterFromNodeResultSuccess):
-                return f"its existing item '{row.name}' could not be removed."
+                return f"its existing item '{row.name}' could not be removed"
 
         for index, item in enumerate(items):
             add_result = self.engine.handle_request(
                 AddParameterToNodeRequest(node_name=node.name, parent_container_name=parameter_list.name)
             )
             if not isinstance(add_result, AddParameterToNodeResultSuccess):
-                return f"item {index + 1} could not be added."
+                return f"item {index + 1} could not be added"
             set_result = self.engine.handle_request(
                 SetParameterValueRequest(node_name=node.name, parameter_name=add_result.parameter_name, value=item)
             )
@@ -2957,6 +2956,17 @@ class NodeManager(EngineScoped):
             node.set_parameter_value(parameter_list.name, [])
         return None
 
+    def _unresolve_if_changed(self, node: BaseNode, parameter_list: ParameterList, old_items: Any) -> Any:
+        """Unresolve the node and what follows it if the list no longer holds `old_items`. Returns the list's value.
+
+        Row sets only unresolve when a row's own value changed, which misses removed rows.
+        """
+        current_items = node._get_raw_parameter_value(parameter_list.name)
+        if current_items != old_items:
+            self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+            node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
+        return current_items
+
     def _connected_parameter_names(self, node: BaseNode, parameter_names: set[str]) -> set[str] | None:
         """Which of `parameter_names` on `node` have a connection in either direction, or None if unknown."""
         result = self.engine.handle_request(ListConnectionsForNodeRequest(node_name=node.name, broadcast_result=False))
@@ -2965,6 +2975,14 @@ class NodeManager(EngineScoped):
         connected = {connection.target_parameter_name for connection in result.incoming_connections}
         connected.update(connection.source_parameter_name for connection in result.outgoing_connections)
         return connected & parameter_names
+
+    def _is_set_by_request_on_unconnected_list(self, node: BaseNode, request: SetParameterValueRequest) -> bool:
+        """Whether this is a caller (not workflow loading or an upstream node) setting a list nothing feeds."""
+        if request.initial_setup or request.is_output:
+            return False
+        if request.incoming_connection_source_node_name is not None:
+            return False
+        return not node._param_has_incoming_connection(request.parameter_name)
 
     def _discard_stale_output_value(self, node: BaseNode, parameter_name: str, output_snapshot: dict[str, Any]) -> None:
         """Discard the output value that the set we just applied has invalidated.
