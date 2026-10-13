@@ -16,8 +16,6 @@ import asyncio
 import json
 import logging
 import shutil
-import sys
-import sysconfig
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -124,7 +122,7 @@ class LibraryReset(EngineScoped):
         if locked_paths:
             self.schedule_removal(locked_paths)
 
-        reload_result = await library_manager.git_operations._reload_library_after_git_operation(
+        reload_result = await library_manager.git_operations.reload_library(
             library_name,
             library_info.library_path,
             failure_result_class=ResetLibraryResultFailure,
@@ -251,10 +249,7 @@ class LibraryReset(EngineScoped):
         The engine splices it there when it loads the library's nodes, and anything imported from it
         stays in memory for the life of the process.
         """
-        site_packages = Path(
-            sysconfig.get_path("purelib", vars={"base": str(edit_env_path), "platbase": str(edit_env_path)})
-        ).resolve()
-        return any(Path(entry).resolve() == site_packages for entry in sys.path if entry)
+        return self.engine.library_manager.environment.venv_is_on_sys_path(edit_env_path)
 
     @staticmethod
     def _read_pending(pending_path: Path) -> list[str]:

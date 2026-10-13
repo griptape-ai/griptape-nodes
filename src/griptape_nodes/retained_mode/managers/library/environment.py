@@ -116,7 +116,7 @@ class LibraryEnvironment(EngineScoped):
         venv_path = self.get_library_venv_path(library_name, library_info.library_path, execution=True)
         if not venv_path.exists():
             return None
-        return sysconfig.get_path("purelib", vars={"base": str(venv_path), "platbase": str(venv_path)})
+        return str(self.venv_site_packages(venv_path))
 
     async def init_library_venv(self, library_venv_path: Path) -> LibraryVenvInitResult:
         """Initialize a virtual environment for the library.
@@ -326,6 +326,10 @@ class LibraryEnvironment(EngineScoped):
             logger.debug("Could not check venv write permissions for %s: %s", venv_path, e)
             return False
 
+    def venv_is_on_sys_path(self, venv_path: Path) -> bool:
+        """Whether this process has the venv's site-packages on its import path."""
+        return self._is_on_sys_path(self.venv_site_packages(venv_path))
+
     def _get_system_capabilities(self) -> dict[str, Any]:
         """Get the current system's capabilities for error reporting.
 
@@ -372,8 +376,7 @@ class LibraryEnvironment(EngineScoped):
         execution_site_packages = self.execution_site_packages(library_name)
         if execution_site_packages is None:
             return False
-        target = Path(execution_site_packages).resolve()
-        return any(Path(entry).resolve() == target for entry in sys.path if entry)
+        return self._is_on_sys_path(Path(execution_site_packages))
 
     async def _add_library_edit_venv_to_sys_path(self, library_name: str, library_file_path: str) -> None:
         """Add a library's EDIT-time venv site-packages to sys.path, if it exists.
@@ -400,13 +403,17 @@ class LibraryEnvironment(EngineScoped):
         if not await anyio.Path(venv_path).exists():
             return
 
-        site_packages = str(
-            Path(
-                sysconfig.get_path(
-                    "purelib",
-                    vars={"base": str(venv_path), "platbase": str(venv_path)},
-                )
-            )
-        )
+        site_packages = str(self.venv_site_packages(venv_path))
         sys.path.insert(0, site_packages)
         logger.debug("Added library '%s' edit-time venv to sys.path: %s", library_name, site_packages)
+
+    @staticmethod
+    def venv_site_packages(venv_path: Path) -> Path:
+        """The venv's site-packages directory, as the engine puts it on `sys.path`."""
+        return Path(sysconfig.get_path("purelib", vars={"base": str(venv_path), "platbase": str(venv_path)}))
+
+    @staticmethod
+    def _is_on_sys_path(directory: Path) -> bool:
+        """Compared as resolved paths, since an entry on `sys.path` need not be spelled the same way."""
+        target = directory.resolve()
+        return any(Path(entry).resolve() == target for entry in sys.path if entry)

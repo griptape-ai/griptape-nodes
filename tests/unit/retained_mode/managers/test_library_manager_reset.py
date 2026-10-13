@@ -135,7 +135,7 @@ def reload_mock(engine: Engine) -> Generator[AsyncMock, None, None]:
     library_manager = engine.library_manager
     reload = AsyncMock(return_value="1.0.0")
     with (
-        patch.object(library_manager.git_operations, "_reload_library_after_git_operation", new=reload),
+        patch.object(library_manager.git_operations, "reload_library", new=reload),
         patch.object(library_manager.workers, "stop_worker_for_library", new=AsyncMock()),
         patch.object(library_manager.workers, "start_worker_for_library", new=AsyncMock()),
     ):
@@ -473,6 +473,23 @@ class TestApplyPendingResets:
             await library_manager._run_app_initialization(
                 AppInitializationComplete(is_worker=True, libraries_to_register=[LIBRARY_NAME])
             )
+
+        apply.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_short_lived_engine_beside_the_orchestrator_leaves_them_alone(self, engine: Engine) -> None:
+        """A workflow subprocess must not delete the `.venv` the live orchestrator imports from."""
+        library_manager = engine.library_manager
+        apply = AsyncMock()
+
+        with (
+            patch.object(library_manager.discovery, "migrate_old_xdg_library_paths"),
+            patch.object(library_manager.provisioning, "ensure_libraries_from_config", new=AsyncMock()),
+            patch.object(library_manager.reset, "apply_pending_resets", new=apply),
+            patch.object(library_manager, "load_all_libraries_from_config", side_effect=_StopInitialization),
+            pytest.raises(_StopInitialization),
+        ):
+            await library_manager._run_app_initialization(AppInitializationComplete(defer_pending_library_resets=True))
 
         apply.assert_not_awaited()
 

@@ -470,7 +470,7 @@ class LibraryGitOperations(EngineScoped):
             logger.debug("Skipped post-update commit verification for Library '%s': %s", library_name, e)
 
         # Reload library
-        reload_result = await self._reload_library_after_git_operation(
+        reload_result = await self.reload_library(
             library_name=library_name,
             library_file_path=library_file_path,
             failure_result_class=UpdateLibraryResultFailure,
@@ -529,7 +529,7 @@ class LibraryGitOperations(EngineScoped):
             return SwitchLibraryRefResultFailure(result_details=details)
 
         # Reload library
-        reload_result = await self._reload_library_after_git_operation(
+        reload_result = await self.reload_library(
             library_name=library_name,
             library_file_path=library_file_path,
             failure_result_class=SwitchLibraryRefResultFailure,
@@ -744,6 +744,94 @@ class LibraryGitOperations(EngineScoped):
             ref=ref,
             result_details=details,
         )
+
+    async def reload_library(
+        self,
+        library_name: str,
+        library_file_path: str,
+        *,
+        failure_result_class: type[ResultPayloadFailure],
+    ) -> str | ResultPayloadFailure:
+        """Unload a library and register it again from the files now on disk.
+
+        Used after a git operation changed those files, and by a library reset.
+
+        Args:
+            library_name: Name of the library to reload
+            library_file_path: Path to the library JSON file
+            failure_result_class: Class to use for failure results
+
+        Returns:
+            On success: new_version (str, may be "unknown")
+            On failure: ResultPayloadFailure instance
+        """
+        # Unload the library. Only libraries that finished loading are in the registry, and
+        # unregistering one that never got there raises, so skip the unload for a library the
+        # git operation was meant to repair.
+        if library_name in LibraryRegistry.list_libraries():
+            unload_result = self.engine.handle_request(UnloadLibraryFromRegistryRequest(library_name=library_name))
+            if not unload_result.succeeded():
+                details = f"Failed to unload Library '{library_name}' after git operation."
+                return failure_result_class(result_details=details)
+
+        # Search for the library JSON file using flexible pattern to handle filename variations
+        # (after git operations, the filename might change between griptape-nodes-library.json and griptape_nodes_library.json)
+        library_dir = Path(library_file_path).parent
+        actual_library_file = find_file_in_directory(library_dir, "griptape[-_]nodes[-_]library.json")
+
+        if actual_library_file is None:
+            details = (
+                f"Failed to find library JSON file in {library_dir} after git operation for Library '{library_name}'."
+            )
+            return failure_result_class(result_details=details)
+
+        # Use the found file path for reloading
+        actual_library_file_path = str(actual_library_file)
+
+        # Drop any lingering entries for this library before reinserting. The git operation may
+        # resolve the JSON under a different filename (griptape_nodes_library.json vs
+        # griptape-nodes-library.json), which would otherwise leave the pre-operation entry keyed
+        # under the old filename alongside the new one. Two live entries for one name let the
+        # update and update-check paths resolve different on-disk copies, producing a permanent
+        # "update available" loop.
+        stale_paths = [
+            file_path
+            for file_path, existing_info in self.engine.library_manager._library_file_path_to_info.items()
+            if existing_info.library_name == library_name
+        ]
+        for file_path in stale_paths:
+            del self.engine.library_manager._library_file_path_to_info[file_path]
+
+        # Create LibraryInfo for tracking this library reload
+        lib_info = LibraryInfo(
+            lifecycle_state=LibraryLifecycleState.DISCOVERED,
+            library_path=actual_library_file_path,
+            is_sandbox=False,
+            library_name=library_name,
+            fitness=LibraryFitness.NOT_EVALUATED,
+            problems=[],
+        )
+        # Store lib_info in dict so register handler can find it
+        self.engine.library_manager._library_file_path_to_info[actual_library_file_path] = lib_info
+
+        # Reload the library from file
+        reload_result = await self.engine.ahandle_request(
+            RegisterLibraryFromFileRequest(file_path=actual_library_file_path)
+        )
+        if not isinstance(reload_result, RegisterLibraryFromFileResultSuccess):
+            details = f"Failed to reload Library '{library_name}' after git operation."
+            return failure_result_class(result_details=details)
+
+        # Get new version after reload
+        try:
+            updated_library = LibraryRegistry.get_library(name=library_name)
+            new_version = updated_library.get_metadata().library_version
+            if new_version is None:
+                new_version = "unknown"
+        except KeyError:
+            new_version = "unknown"
+
+        return new_version
 
     def _check_engine_version_compatibility(self, required_engine_version: str) -> tuple[bool, str]:
         """Check if a required engine version is compatible with the current engine.
@@ -960,92 +1048,6 @@ class LibraryGitOperations(EngineScoped):
             library_file_path=library_file_path,
             library_dir=library_dir,
         )
-
-    async def _reload_library_after_git_operation(
-        self,
-        library_name: str,
-        library_file_path: str,
-        *,
-        failure_result_class: type[ResultPayloadFailure],
-    ) -> str | ResultPayloadFailure:
-        """Reload library after git operation.
-
-        Args:
-            library_name: Name of the library to reload
-            library_file_path: Path to the library JSON file
-            failure_result_class: Class to use for failure results
-
-        Returns:
-            On success: new_version (str, may be "unknown")
-            On failure: ResultPayloadFailure instance
-        """
-        # Unload the library. Only libraries that finished loading are in the registry, and
-        # unregistering one that never got there raises, so skip the unload for a library the
-        # git operation was meant to repair.
-        if library_name in LibraryRegistry.list_libraries():
-            unload_result = self.engine.handle_request(UnloadLibraryFromRegistryRequest(library_name=library_name))
-            if not unload_result.succeeded():
-                details = f"Failed to unload Library '{library_name}' after git operation."
-                return failure_result_class(result_details=details)
-
-        # Search for the library JSON file using flexible pattern to handle filename variations
-        # (after git operations, the filename might change between griptape-nodes-library.json and griptape_nodes_library.json)
-        library_dir = Path(library_file_path).parent
-        actual_library_file = find_file_in_directory(library_dir, "griptape[-_]nodes[-_]library.json")
-
-        if actual_library_file is None:
-            details = (
-                f"Failed to find library JSON file in {library_dir} after git operation for Library '{library_name}'."
-            )
-            return failure_result_class(result_details=details)
-
-        # Use the found file path for reloading
-        actual_library_file_path = str(actual_library_file)
-
-        # Drop any lingering entries for this library before reinserting. The git operation may
-        # resolve the JSON under a different filename (griptape_nodes_library.json vs
-        # griptape-nodes-library.json), which would otherwise leave the pre-operation entry keyed
-        # under the old filename alongside the new one. Two live entries for one name let the
-        # update and update-check paths resolve different on-disk copies, producing a permanent
-        # "update available" loop.
-        stale_paths = [
-            file_path
-            for file_path, existing_info in self.engine.library_manager._library_file_path_to_info.items()
-            if existing_info.library_name == library_name
-        ]
-        for file_path in stale_paths:
-            del self.engine.library_manager._library_file_path_to_info[file_path]
-
-        # Create LibraryInfo for tracking this library reload
-        lib_info = LibraryInfo(
-            lifecycle_state=LibraryLifecycleState.DISCOVERED,
-            library_path=actual_library_file_path,
-            is_sandbox=False,
-            library_name=library_name,
-            fitness=LibraryFitness.NOT_EVALUATED,
-            problems=[],
-        )
-        # Store lib_info in dict so register handler can find it
-        self.engine.library_manager._library_file_path_to_info[actual_library_file_path] = lib_info
-
-        # Reload the library from file
-        reload_result = await self.engine.ahandle_request(
-            RegisterLibraryFromFileRequest(file_path=actual_library_file_path)
-        )
-        if not isinstance(reload_result, RegisterLibraryFromFileResultSuccess):
-            details = f"Failed to reload Library '{library_name}' after git operation."
-            return failure_result_class(result_details=details)
-
-        # Get new version after reload
-        try:
-            updated_library = LibraryRegistry.get_library(name=library_name)
-            new_version = updated_library.get_metadata().library_version
-            if new_version is None:
-                new_version = "unknown"
-        except KeyError:
-            new_version = "unknown"
-
-        return new_version
 
     def _build_library_update_result(
         self, *, library_name: str, old_version: str, new_version: str

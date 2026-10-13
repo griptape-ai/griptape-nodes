@@ -119,6 +119,9 @@ class AppInitializationComplete(AppPayload):
     # taken from the first entry in libraries_to_register. Multiple workers can run
     # simultaneously for different libraries.
     is_worker: bool = False
+    # Set by short-lived engines (workflow subprocesses and script runs) that can run beside a live
+    # orchestrator, which owns any library resets still waiting for a restart.
+    defer_pending_library_resets: bool = False
     # URL of the static file server the host process runs for this workspace. The engine serves
     # nothing itself, so when unset it assumes the host's default address (see StaticFilesManager).
     static_server_base_url: str | None = None

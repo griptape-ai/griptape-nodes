@@ -493,7 +493,7 @@ class LibraryManager(EngineScoped):
         self._target_library_names = payload.libraries_to_register if payload.is_worker else None
         # Before anything loads, since a loaded library holds its environment open. The
         # orchestrator only: its workers start after it, and two processes must not race to delete.
-        if not self._is_worker:
+        if not self._is_worker and not payload.defer_pending_library_resets:
             await self.reset.apply_pending_resets()
         reconcile_failures = await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
         # Soft boot: log reconcile failures and continue so the engine still starts and the
