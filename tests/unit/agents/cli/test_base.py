@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 import textwrap
 from dataclasses import dataclass, field
@@ -178,6 +179,38 @@ async def test_turn_streams_events_and_saves_the_transcript(tmp_path: Path, stor
     assert storage.get_harness_session(thread_id, "fake") == HarnessSession(
         session_id="s-1", message_count=len(history)
     )
+
+
+@pytest.mark.asyncio
+async def test_tool_call_ids_a_cli_reuses_are_saved_unique(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
+    """Keep ids unique across turns and limited to characters every provider accepts."""
+    name = "GriptapeNodes_ListRegisteredLibrariesRequest"
+    run = {
+        "records": [
+            {"t": "session", "id": "s-1"},
+            {"t": "call", "id": "item.1", "name": name, "args": {}},
+            {"t": "result", "id": "item.1", "name": name, "content": "[]"},
+            {"t": "end"},
+        ]
+    }
+    harness = _harness(tmp_path, storage, run, run)
+    thread_id, _ = storage.create_thread()
+    events: list[RunEvent] = []
+
+    prompts = ["one", "two"]
+    for prompt in prompts:
+        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt=prompt, event_sink=events.append))
+
+    history = storage.load_history(thread_id)
+    call_ids = [part.tool_call_id for message in history for part in message.parts if isinstance(part, ToolCallPart)]
+    return_ids = [
+        part.tool_call_id for message in history for part in message.parts if isinstance(part, ToolReturnPart)
+    ]
+    assert len(set(call_ids)) == len(prompts)
+    assert return_ids == call_ids
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]+", call_id) for call_id in call_ids)
+    streamed = [event.tool_call_id for event in events if isinstance(event, ToolCall)]
+    assert streamed == call_ids
 
 
 @pytest.mark.asyncio

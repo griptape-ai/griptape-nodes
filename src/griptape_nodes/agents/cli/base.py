@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
 import uuid
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -41,6 +42,8 @@ if TYPE_CHECKING:
     from griptape_nodes.drivers.thread_storage.base_thread_storage_driver import BaseThreadStorageDriver
 
 logger = logging.getLogger("griptape_nodes")
+
+_UNSAFE_CALL_ID_CHARS = re.compile(r"[^A-Za-z0-9_-]")
 
 # Where CLIs commonly install, beyond PATH. An engine started by the desktop app
 # inherits a minimal PATH that misses the user's shell setup.
@@ -166,6 +169,15 @@ class _TurnOutcome:
     cancelled: bool = False
     returncode: int | None = None
     stderr_tail: str = ""
+    call_id_prefix: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+
+    def call_id(self, cli_call_id: str) -> str:
+        """Make a CLI's tool call id unique in the thread.
+
+        Codex numbers calls from ``item_0`` on every run, and a thread replayed to
+        another provider needs unique ids in the characters Anthropic allows.
+        """
+        return f"{self.call_id_prefix}_{_UNSAFE_CALL_ID_CHARS.sub('_', cli_call_id)}"
 
 
 @dataclass
@@ -378,6 +390,8 @@ class CliHarness(ABC):
             outcome.ended = event
             return
         outcome.events_seen += 1
+        if isinstance(event, (ToolCall, ToolResult)):
+            event = replace(event, tool_call_id=outcome.call_id(event.tool_call_id))
         outcome.transcript.add(event)
         if isinstance(event, TextDelta):
             outcome.text.append(event.delta)
