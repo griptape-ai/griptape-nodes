@@ -122,10 +122,7 @@ async def _await_reader(
 
 
 async def _wait_for_exit(process: asyncio.subprocess.Process, cancel_event: asyncio.Event | None = None) -> int | None:
-    """Return ``None`` if the turn is cancelled first.
-
-    ``process.wait()`` waits for pipe closure, which surviving children can prevent.
-    """
+    """``process.wait()`` waits for pipe closure, which surviving children can prevent."""
     while process.returncode is None:
         if cancel_event is not None and cancel_event.is_set():
             return None

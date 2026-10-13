@@ -1,9 +1,4 @@
-"""Run npm's Windows ``.cmd`` shims through node directly.
-
-Windows runs a ``.cmd`` file through cmd.exe, which reparses its arguments.
-Free text such as instructions can't be quoted safely for it, and a stray ``&``
-can run a command.
-"""
+"""Run npm's Windows ``.cmd`` shims through node directly."""
 
 from __future__ import annotations
 
@@ -29,6 +24,7 @@ def launch_command(executable: str) -> list[str]:
     if script is None:
         logger.debug("Running %s through cmd.exe; it is not an npm shim.", executable)
         return [executable]
+    # cmd.exe reparses arguments, so an & in free text can run a command.
     bundled_node = path.parent / "node.exe"
     if bundled_node.is_file():
         return [str(bundled_node), str(script)]

@@ -69,7 +69,7 @@ async def test_children_left_running_are_stopped(tmp_path: Path, mode: str) -> N
 
 @pytest.mark.asyncio
 async def test_cancel_stops_a_cli_that_closed_its_output(tmp_path: Path) -> None:
-    """Cancel still works once stdout is closed but the CLI keeps running."""
+    """Closed stdout must not prevent cancellation."""
     cancel_event = asyncio.Event()
 
     async def on_record(_record: dict[str, Any]) -> None:

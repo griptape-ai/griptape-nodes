@@ -5,7 +5,7 @@ import pytest
 from griptape_nodes.agents.cli import windows_shims
 from griptape_nodes.agents.cli.windows_shims import launch_command, shim_script
 
-# The last line of the shim npm writes for `npm install -g @openai/codex`.
+# npm shim for `npm install -g @openai/codex`.
 _NPM_SHIM = (
     "@ECHO off\r\n"
     'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n'
