@@ -8,6 +8,7 @@ captured with an invalid API key.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -133,6 +134,20 @@ def test_scratch_home_carries_over_the_users_files_and_adds_mcp_servers(tmp_path
         "legacy": {"url": "http://s/sse", "type": "sse", "headers": {}, "trust": True},
     }
     assert json.loads((user_gemini_dir / "settings.json").read_text())["mcpServers"] == {"mine": {"command": "x"}}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Symlinks need developer mode on Windows.")
+def test_sessions_are_saved_to_the_users_home_on_the_first_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Create the sessions folder before linking, so it is not left in the scratch home."""
+    gemini_dir = tmp_path / "user-home" / ".gemini"
+    gemini_dir.mkdir(parents=True)
+    (gemini_dir / "oauth_creds.json").write_text("{}")
+    monkeypatch.setenv("GEMINI_CLI_HOME", str(tmp_path / "user-home"))
+
+    invocation = _harness().build_invocation(_context(tmp_path / "scratch"))
+
+    scratch_sessions = Path(str(invocation.env["GEMINI_CLI_HOME"])) / ".gemini" / "tmp"
+    assert scratch_sessions.resolve() == (gemini_dir / "tmp").resolve()
 
 
 @pytest.mark.usefixtures("user_gemini_dir")

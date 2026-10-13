@@ -37,7 +37,7 @@ from pydantic_ai.messages import BinaryContent, ImageUrl, ModelMessagesTypeAdapt
 from pydantic_ai.tools import DeferredToolResults, ToolApproved, ToolDenied
 from pydantic_ai.usage import UsageLimits
 
-from griptape_nodes.agents.cli import CLI_HARNESSES
+from griptape_nodes.agents.cli import CLI_HARNESSES, CliHarnessError
 from griptape_nodes.agents.harness import (
     AgentHarness,
     AgentRunResult,
@@ -616,7 +616,11 @@ class AgentManager(EngineScoped):
             err_msg = message
         else:
             err_msg = f"Error running agent: {message}"
-        logger.error(err_msg, exc_info=exc)
+        if isinstance(exc, CliHarnessError):
+            # Already worded for the user, such as a CLI that is not installed; a traceback adds nothing.
+            logger.error(err_msg)
+        else:
+            logger.error(err_msg, exc_info=exc)
         return RunAgentResultFailure(error={"message": message}, result_details=err_msg)
 
     def _explain_agent_run_error(self, exc: Exception, provider_name: str | None) -> str:

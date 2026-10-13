@@ -419,9 +419,11 @@ class CliHarness(ABC):
         instructions = "\n\n".join(part for part in (self.instructions, turn.instructions) if part)
         prompt_text = render_catch_up(unseen) + _prompt_text(turn.prompt or "")
         if not self.supports_system_prompt:
-            # The CLI keeps the instructions in its session, so only a new session needs them.
-            if resume_session_id is None and instructions:
-                prompt_text = f"<instructions>\n{instructions}\n</instructions>\n\n{prompt_text}"
+            # The session keeps what it was sent, but the MCP server rules follow
+            # this turn's servers, so a resumed session gets them again.
+            prompt_instructions = instructions if resume_session_id is None else turn.instructions
+            if prompt_instructions:
+                prompt_text = f"<instructions>\n{prompt_instructions}\n</instructions>\n\n{prompt_text}"
             instructions = ""
 
         engine_server = CliMCPServer(name=GTN_SERVER_NAME, transport="streamable_http", url=self.engine_mcp_url)

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 _SCRATCH_HOME_NAME = "gemini-home"
+_SESSIONS_DIR_NAME = "tmp"
 _SETTINGS_FILE_NAME = "settings.json"
 _MCP_TOOL_PREFIX = "mcp_"
 
@@ -156,6 +157,8 @@ def _write_scratch_home(context: CliTurnContext) -> Path:
     scratch_gemini_dir.mkdir(parents=True, exist_ok=True)
     user_gemini_dir = _user_gemini_dir()
     if user_gemini_dir.is_dir():
+        # Sessions are saved here. Created first so they are linked, not left in the scratch home.
+        (user_gemini_dir / _SESSIONS_DIR_NAME).mkdir(exist_ok=True)
         for entry in user_gemini_dir.iterdir():
             if entry.name != _SETTINGS_FILE_NAME:
                 _link_or_copy(entry, scratch_gemini_dir / entry.name)

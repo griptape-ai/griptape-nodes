@@ -262,6 +262,22 @@ async def test_without_system_prompt_support_instructions_lead_a_new_session(
 
 
 @pytest.mark.asyncio
+async def test_without_system_prompt_support_a_resumed_session_gets_this_turns_server_rules(
+    tmp_path: Path, storage: LocalThreadStorageDriver
+) -> None:
+    """Send MCP server rules attached after the session started."""
+    harness = _harness(tmp_path, storage, _ok_run(), _ok_run(), harness_class=_NoSystemPromptHarness)
+    thread_id, _ = storage.create_thread()
+
+    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="one"))
+    await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="two", instructions="Server rules."))
+
+    second = harness.contexts[1]
+    assert second.resume_session_id is not None
+    assert second.prompt_text == "<instructions>\nServer rules.\n</instructions>\n\ntwo"
+
+
+@pytest.mark.asyncio
 async def test_lost_session_is_replaced_by_a_new_one(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
     """Catch up a new session when resuming fails."""
     lost = {"records": [{"t": "end", "error": "No conversation found"}], "exit": 1}
