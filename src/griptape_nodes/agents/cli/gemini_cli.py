@@ -158,7 +158,11 @@ def _write_scratch_home(context: CliTurnContext) -> Path:
     user_gemini_dir = _user_gemini_dir()
     if user_gemini_dir.is_dir():
         # Create the sessions directory before linking so Gemini writes sessions to the user's home.
-        (user_gemini_dir / _SESSIONS_DIR_NAME).mkdir(exist_ok=True)
+        try:
+            (user_gemini_dir / _SESSIONS_DIR_NAME).mkdir(exist_ok=True)
+        except OSError as e:
+            # The turn still runs; without saved sessions the next turn sends a catch-up instead.
+            logger.debug("Could not create Gemini CLI's sessions folder in %s: %s", user_gemini_dir, e)
         for entry in user_gemini_dir.iterdir():
             if entry.name != _SETTINGS_FILE_NAME:
                 _link_or_copy(entry, scratch_gemini_dir / entry.name)

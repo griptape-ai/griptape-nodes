@@ -76,8 +76,8 @@ async def run_jsonl_process(  # noqa: PLR0913
             returncode = await _wait_for_exit(process, cancel_event)
             cancelled = returncode is None
     except BaseException:
-        await _stop(process)
         stderr_task.cancel()
+        await _stop(process)
         raise
     finally:
         if not reader.done():
