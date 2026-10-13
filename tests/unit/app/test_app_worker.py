@@ -1330,6 +1330,35 @@ class TestStopWorkerForLibrary:
             await worker_manager.route_to_worker(event_request, _ENGINE, _WORKER_REQUEST_TOPIC)
 
     @pytest.mark.asyncio
+    async def test_forgets_a_worker_that_registers_while_its_process_is_stopping(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        """A booting worker can register during the termination await; it must not stay routable."""
+        worker_manager._managed_worker_processes["Lib A"] = _managed_proc_mock()
+
+        async def register_during_termination(_library_name: str, _proc: object) -> None:
+            worker_manager._workers["eng-late"] = WorkerRegistration(
+                request_topic=f"sessions/{_SESSION}/workers/eng-late/request", worker_key="Lib A"
+            )
+
+        with patch.object(worker_manager, "_terminate_via_spawn_loop", side_effect=register_during_termination):
+            await worker_manager.stop_worker_for_library("Lib A")
+
+        assert worker_manager.get_worker_for_key("Lib A") is None
+
+    @pytest.mark.asyncio
+    async def test_releases_anything_waiting_for_that_library_to_become_executable(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        """A node waiting on the readiness gate learns why instead of waiting out the load timeout."""
+        worker_manager.expect_worker("Lib A")
+
+        await worker_manager.stop_worker_for_library("Lib A")
+
+        assert worker_manager.has_settled("Lib A")
+        assert worker_manager.worker_unavailable_reason("Lib A") is not None
+
+    @pytest.mark.asyncio
     async def test_is_a_no_op_for_a_library_without_a_worker(self, worker_manager: WorkerManager) -> None:
         proc = _managed_proc_mock()
         worker_manager._managed_worker_processes["Lib B"] = proc

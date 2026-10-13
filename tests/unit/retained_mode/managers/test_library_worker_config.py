@@ -517,6 +517,17 @@ class TestSpawnSkipForUnmetRequirements:
         ahandle_request.assert_awaited_once()
         assert ahandle_request.await_args.args[0].library_name == "Lib"
 
+    @pytest.mark.asyncio
+    async def test_starting_one_worker_without_a_session_does_nothing(self) -> None:
+        """Without a session the spawn is left to on_session_started, like every other worker."""
+        manager = self._manager(unmet=False)
+        engine = cast("MagicMock", manager._engine)
+        engine.get_session_id.return_value = None
+
+        await manager.workers.start_worker_for_library("Lib")
+
+        engine.ahandle_request.assert_not_awaited()
+
 
 class TestLibraryDependencyResolution:
     """A dependency declaration names a REPO; the registry is keyed by library NAME.
