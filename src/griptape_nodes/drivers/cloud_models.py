@@ -314,12 +314,6 @@ def provider_accepts_customer_key(provider_id: str) -> bool:
     return provider is not None and provider.key_support == KeySupport.REQUIRES_CUSTOMER_KEY
 
 
-def provider_runs_cli_harness(provider_id: str) -> bool:
-    """Identify providers that run an installed CLI instead of the engine's agent loop."""
-    provider = PROVIDER_CATALOG.providers.get(provider_id)
-    return provider is not None and provider.kind == SidebarProviderKind.CLI_HARNESS
-
-
 def provider_catalog_entries() -> list[ProviderCatalogEntry]:
     """Return the full provider list for the ListAgentModelsResultSuccess response.
 

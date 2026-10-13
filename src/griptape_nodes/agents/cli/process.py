@@ -31,6 +31,7 @@ logger = logging.getLogger("griptape_nodes")
 _STREAM_LIMIT_BYTES = 64 * 1024 * 1024
 _STDERR_TAIL_LINES = 40
 _TERMINATE_GRACE_SECONDS = 5.0
+_EXIT_POLL_SECONDS = 0.1
 
 
 @dataclass(frozen=True)
@@ -68,8 +69,11 @@ async def run_jsonl_process(  # noqa: PLR0913
     stderr_lines: deque[str] = deque(maxlen=_STDERR_TAIL_LINES)
     stderr_task = asyncio.ensure_future(_drain_stderr(process, stderr_lines))
     reader = asyncio.ensure_future(_read_records(process, stdin, on_record))
+    returncode: int | None = None
     try:
-        cancelled = await _await_reader(reader, cancel_event)
+        cancelled = await _await_reader(reader, process, cancel_event)
+        if not cancelled:
+            returncode = await _wait_for_exit(process)
     except BaseException:
         await _stop(process)
         raise
@@ -79,31 +83,51 @@ async def run_jsonl_process(  # noqa: PLR0913
             with contextlib.suppress(asyncio.CancelledError):
                 await reader
 
-    if cancelled:
-        await _stop(process)
-        returncode = None
-    else:
-        returncode = await process.wait()
-    with contextlib.suppress(asyncio.CancelledError):
-        await stderr_task
+    # Also stops children the CLI left running, which would keep its pipes open.
+    await _stop(process)
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(stderr_task, timeout=_TERMINATE_GRACE_SECONDS)
     return ProcessExit(returncode=returncode, stderr_tail="\n".join(stderr_lines), cancelled=cancelled)
 
 
-async def _await_reader(reader: asyncio.Future[None], cancel_event: asyncio.Event | None) -> bool:
-    if cancel_event is None:
-        await reader
-        return False
-    cancel_waiter = asyncio.ensure_future(cancel_event.wait())
+async def _await_reader(
+    reader: asyncio.Future[None],
+    process: asyncio.subprocess.Process,
+    cancel_event: asyncio.Event | None,
+) -> bool:
+    """Return True when the turn was cancelled before the CLI finished its output."""
+    exit_waiter = asyncio.ensure_future(_wait_for_exit(process))
+    cancel_waiter = asyncio.ensure_future(cancel_event.wait()) if cancel_event is not None else None
+    waiters: set[asyncio.Future[Any]] = {reader, exit_waiter}
+    if cancel_waiter is not None:
+        waiters.add(cancel_waiter)
     try:
-        await asyncio.wait({reader, cancel_waiter}, return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
+        if not reader.done() and exit_waiter.done():
+            # The CLI exited with stdout still open, so a child it started holds it.
+            waiters.discard(exit_waiter)
+            await asyncio.wait(waiters, timeout=_TERMINATE_GRACE_SECONDS, return_when=asyncio.FIRST_COMPLETED)
     finally:
-        cancel_waiter.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await cancel_waiter
+        for waiter in (exit_waiter, cancel_waiter):
+            if waiter is not None:
+                waiter.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await waiter
     if reader.done():
         reader.result()
         return False
-    return True
+    return cancel_event is not None and cancel_event.is_set()
+
+
+async def _wait_for_exit(process: asyncio.subprocess.Process) -> int:
+    """Wait for the CLI itself to exit.
+
+    ``process.wait()`` also waits for the pipes to close, which a child left
+    running would keep open.
+    """
+    while process.returncode is None:  # noqa: ASYNC110 asyncio exposes no exit-only event
+        await asyncio.sleep(_EXIT_POLL_SECONDS)
+    return process.returncode
 
 
 async def _read_records(
@@ -144,15 +168,18 @@ async def _drain_stderr(process: asyncio.subprocess.Process, lines: deque[str]) 
 
 
 async def _stop(process: asyncio.subprocess.Process) -> None:
-    """Stop the process and its children: politely first, then forcefully."""
-    if process.returncode is not None:
-        return
+    """Stop the CLI and its process group: politely first, then forcefully.
+
+    The group is signalled even after the CLI exits, to reach children it left
+    running. On Windows, ``taskkill /T`` can't find them once the CLI is gone.
+    """
     _signal_tree(process, force=False)
     try:
         await asyncio.wait_for(process.wait(), timeout=_TERMINATE_GRACE_SECONDS)
     except TimeoutError:
         _signal_tree(process, force=True)
-        await process.wait()
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(process.wait(), timeout=_TERMINATE_GRACE_SECONDS)
 
 
 def _signal_tree(process: asyncio.subprocess.Process, *, force: bool) -> None:

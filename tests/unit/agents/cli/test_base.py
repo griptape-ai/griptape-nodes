@@ -321,6 +321,19 @@ async def test_missing_cli_names_the_command_and_how_to_install_it(
 
 
 @pytest.mark.asyncio
+async def test_missing_workspace_is_not_reported_as_a_missing_cli(
+    tmp_path: Path, storage: LocalThreadStorageDriver
+) -> None:
+    """Name the missing workspace folder."""
+    harness = _harness(tmp_path, storage, _ok_run())
+    harness.workspace_root = tmp_path / "gone"
+    thread_id, _ = storage.create_thread()
+
+    with pytest.raises(CliHarnessError, match=r"workspace '.*gone'.*folder does not exist"):
+        await harness.run_turn(AgentTurn(thread_id=thread_id, prompt="hi"))
+
+
+@pytest.mark.asyncio
 async def test_cancel_stops_the_cli_and_saves_nothing(tmp_path: Path, storage: LocalThreadStorageDriver) -> None:
     """Keep partial output, but not the cancelled turn's history."""
     slow = {"records": [{"t": "session", "id": "s-1"}, {"t": "text", "d": "Partial"}, {"sleep": 30}, {"t": "end"}]}

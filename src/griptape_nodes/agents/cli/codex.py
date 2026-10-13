@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from griptape_nodes.agents.cli.base import (
@@ -24,6 +26,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
+_LAUNCHER_PATH = Path(__file__).with_name("mcp_env_launcher.py")
 _SHELL_TOOL_NAME = "shell"
 _PATCH_TOOL_NAME = "apply_patch"
 _SEARCH_TOOL_NAME = "web_search"
@@ -52,7 +55,8 @@ class CodexHarness(CliHarness):
             args += ["--model", context.model]
         if context.instructions:
             args += ["-c", f"developer_instructions={_toml_string(context.instructions)}"]
-        for name, table in _mcp_config(context.mcp_servers).items():
+        mcp = _mcp_config(context.mcp_servers, context.scratch_dir)
+        for name, table in mcp.tables.items():
             args += ["-c", f"mcp_servers.{name}={table}"]
         for image in context.images:
             args += ["--image", str(image.path)]
@@ -60,7 +64,7 @@ class CodexHarness(CliHarness):
         # After `--`, `-` reads the prompt from stdin.
         if context.resume_session_id:
             args += ["--", context.resume_session_id, "-"]
-        return CliInvocation(args=args, stdin=context.prompt_text.encode("utf-8"))
+        return CliInvocation(args=args, stdin=context.prompt_text.encode("utf-8"), env=mcp.secret_env)
 
     def new_parser(self) -> CliStreamParser:
         return CodexStreamParser()
@@ -215,23 +219,45 @@ def _toml_table(values: Mapping[str, str]) -> str:
     return "{" + ", ".join(f"{_toml_string(key)} = {_toml_string(value)}" for key, value in values.items()) + "}"
 
 
-def _mcp_config(servers: Sequence[CliMCPServer]) -> dict[str, str]:
-    config: dict[str, str] = {}
-    for server in servers:
+@dataclass
+class _CodexMCPConfig:
+    """``tables`` go on the command line, so secrets stay out of them.
+
+    HTTP headers are read from ``secret_env``, which Codex keeps from its shell
+    commands because the names contain ``TOKEN``. Stdio servers start through
+    :mod:`mcp_env_launcher`, which reads their variables from a file.
+    """
+
+    tables: dict[str, str] = field(default_factory=dict)
+    secret_env: dict[str, str | None] = field(default_factory=dict)
+
+
+def _mcp_config(servers: Sequence[CliMCPServer], scratch_dir: Path) -> _CodexMCPConfig:
+    config = _CodexMCPConfig()
+    for index, server in enumerate(servers):
         fields: list[str]
         if server.transport == "stdio" and server.command:
-            fields = [
-                f"command = {_toml_string(server.command)}",
-                f"args = [{', '.join(_toml_string(arg) for arg in server.args)}]",
-            ]
+            command = [server.command, *server.args]
             if server.env:
-                fields.append(f"env = {_toml_table(server.env)}")
+                env_file = scratch_dir / f"mcp-env-{index}.json"
+                env_file.write_text(json.dumps(dict(server.env)), encoding="utf-8")
+                env_file.chmod(0o600)
+                command = [sys.executable, str(_LAUNCHER_PATH), str(env_file), *command]
+            fields = [
+                f"command = {_toml_string(command[0])}",
+                f"args = [{', '.join(_toml_string(arg) for arg in command[1:])}]",
+            ]
             if server.cwd:
                 fields.append(f"cwd = {_toml_string(server.cwd)}")
         elif server.transport == "streamable_http" and server.url:
             fields = [f"url = {_toml_string(server.url)}"]
             if server.headers:
-                fields.append(f"http_headers = {_toml_table(server.headers)}")
+                header_vars: dict[str, str] = {}
+                for header_index, (header, value) in enumerate(server.headers.items()):
+                    var = f"GTN_MCP_SECRET_TOKEN_{index}_{header_index}"
+                    config.secret_env[var] = value
+                    header_vars[header] = var
+                fields.append(f"env_http_headers = {_toml_table(header_vars)}")
         else:
             logger.warning(
                 "Attempted to give Codex MCP server '%s'. Failed because its %s connection is not one "
@@ -242,5 +268,5 @@ def _mcp_config(servers: Sequence[CliMCPServer]) -> dict[str, str]:
             continue
         # MCP tools marked as mutating require this approval setting even with CLI prompts bypassed.
         fields.append('default_tools_approval_mode = "approve"')
-        config[_server_name(server.name)] = "{" + ", ".join(fields) + "}"
+        config.tables[_server_name(server.name)] = "{" + ", ".join(fields) + "}"
     return config

@@ -6,9 +6,15 @@ items follow ``ThreadItemDetails`` in openai/codex's ``codex-rs/exec/src/exec_ev
 
 from __future__ import annotations
 
+import json
+import stat
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from griptape_nodes.agents.cli.base import (
     CliMCPServer,
@@ -17,7 +23,7 @@ from griptape_nodes.agents.cli.base import (
     SessionStarted,
     TurnEnded,
 )
-from griptape_nodes.agents.cli.codex import CodexHarness, CodexStreamParser
+from griptape_nodes.agents.cli.codex import _LAUNCHER_PATH, CodexHarness, CodexStreamParser
 from griptape_nodes.agents.harness import TextDelta, ThinkingDelta, ToolCall, ToolResult
 
 
@@ -40,6 +46,14 @@ def _context(**overrides: Any) -> CliTurnContext:
     }
     values.update(overrides)
     return CliTurnContext(**values)
+
+
+@pytest.fixture(autouse=True)
+def scratch_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """``build_invocation`` writes config files to the context's relative ``scratch`` dir."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "scratch").mkdir()
+    return tmp_path / "scratch"
 
 
 def _overrides(args: list[str]) -> dict[str, Any]:
@@ -95,8 +109,7 @@ def test_mcp_servers_are_translated_to_codex_config() -> None:
     """Translate supported MCP transports into approval-enabled tables."""
     servers = [
         CliMCPServer(name="GriptapeNodes", transport="streamable_http", url="http://localhost:1/mcp/"),
-        CliMCPServer(name="files", transport="stdio", command="npx", args=["-y", "fs"], env={"K": "V"}, cwd="/data"),
-        CliMCPServer(name="remote api", transport="streamable_http", url="http://s/mcp", headers={"X-Key": "B"}),
+        CliMCPServer(name="files", transport="stdio", command="npx", args=["-y", "fs"], cwd="/data"),
         CliMCPServer(name="legacy", transport="sse", url="http://s/sse"),
     ]
     overrides = _overrides(list(_harness().build_invocation(_context(mcp_servers=servers)).args))
@@ -104,9 +117,48 @@ def test_mcp_servers_are_translated_to_codex_config() -> None:
     approve = {"default_tools_approval_mode": "approve"}
     assert {key: value for key, value in overrides.items() if key.startswith("mcp_servers.")} == {
         "mcp_servers.GriptapeNodes": {"url": "http://localhost:1/mcp/", **approve},
-        "mcp_servers.files": {"command": "npx", "args": ["-y", "fs"], "env": {"K": "V"}, "cwd": "/data", **approve},
-        "mcp_servers.remote_api": {"url": "http://s/mcp", "http_headers": {"X-Key": "B"}, **approve},
+        "mcp_servers.files": {"command": "npx", "args": ["-y", "fs"], "cwd": "/data", **approve},
     }
+
+
+def test_mcp_secrets_stay_off_the_command_line() -> None:
+    """Pass headers through the environment and stdio variables through a launcher file."""
+    servers = [
+        CliMCPServer(name="files", transport="stdio", command="npx", args=["-y", "fs"], env={"K": "secret-env"}),
+        CliMCPServer(
+            name="remote api", transport="streamable_http", url="http://s/mcp", headers={"X-Key": "secret-hdr"}
+        ),
+    ]
+    invocation = _harness().build_invocation(_context(mcp_servers=servers))
+    overrides = _overrides(list(invocation.args))
+
+    assert "secret" not in " ".join(invocation.args)
+    files = overrides["mcp_servers.files"]
+    assert files["command"] == sys.executable
+    launcher, env_file, *command = files["args"]
+    assert Path(launcher).name == "mcp_env_launcher.py"
+    assert json.loads(Path(env_file).read_text()) == {"K": "secret-env"}
+    if sys.platform != "win32":
+        assert stat.S_IMODE(Path(env_file).stat().st_mode) == stat.S_IRUSR | stat.S_IWUSR
+    assert command == ["npx", "-y", "fs"]
+    header_var = overrides["mcp_servers.remote_api"]["env_http_headers"]["X-Key"]
+    assert invocation.env[header_var] == "secret-hdr"
+
+
+def test_launcher_starts_the_server_with_the_file_variables(tmp_path: Path) -> None:
+    """Run the command with the file's variables added to the environment."""
+    env_file = tmp_path / "env.json"
+    env_file.write_text(json.dumps({"GTN_TEST_VAR": "from-file"}))
+    script = "import os; print(os.environ['GTN_TEST_VAR'])"
+
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(_LAUNCHER_PATH), str(env_file), sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "from-file"
 
 
 def test_images_are_attached_before_the_positional_arguments() -> None:

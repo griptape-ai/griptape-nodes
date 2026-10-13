@@ -19,10 +19,13 @@ from griptape_nodes.agents.harness import TextDelta, ThinkingDelta, ToolCall, To
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from pathlib import Path
 
     from griptape_nodes.agents.cli.base import CliMCPServer, PromptImage
 
 logger = logging.getLogger("griptape_nodes")
+
+_MCP_CONFIG_FILE_NAME = "mcp-config.json"
 
 
 @dataclass
@@ -47,7 +50,7 @@ class ClaudeCodeHarness(CliHarness):
             "--permission-mode",
             "bypassPermissions",
             "--mcp-config",
-            json.dumps({"mcpServers": _mcp_config(context.mcp_servers)}),
+            str(_write_mcp_config(context)),
         ]
         if context.model:
             args += ["--model", context.model]
@@ -207,6 +210,14 @@ def _content_blocks(text: str, images: Sequence[PromptImage]) -> list[dict[str, 
         for image in images
     )
     return blocks
+
+
+def _write_mcp_config(context: CliTurnContext) -> Path:
+    """Write the config to a file, since the command line is readable by other local users."""
+    path = context.scratch_dir / _MCP_CONFIG_FILE_NAME
+    path.write_text(json.dumps({"mcpServers": _mcp_config(context.mcp_servers)}), encoding="utf-8")
+    path.chmod(0o600)
+    return path
 
 
 def _mcp_config(servers: Sequence[CliMCPServer]) -> dict[str, dict[str, Any]]:

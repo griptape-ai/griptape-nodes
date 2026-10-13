@@ -239,6 +239,12 @@ class CliHarness(ABC):
         denied = self._declined_calls(history, turn)
         session = self.storage.get_harness_session(turn.thread_id, self.harness_id)
         executable = self._resolve_executable()
+        if not self.workspace_root.is_dir():
+            msg = (
+                f"Attempted to start {self.display_name} in the workspace '{self.workspace_root}'. "
+                "Failed because that folder does not exist. Choose an existing workspace folder in Settings."
+            )
+            raise CliHarnessError(msg)
 
         started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix=f"gtn-{self.harness_id}-") as scratch:

@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import base64
 import json
+import stat
+import sys
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from griptape_nodes.agents.cli.base import (
     CliMCPServer,
@@ -37,6 +41,14 @@ def _context(**overrides: Any) -> CliTurnContext:
     }
     values.update(overrides)
     return CliTurnContext(**values)
+
+
+@pytest.fixture(autouse=True)
+def scratch_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """``build_invocation`` writes config files to the context's relative ``scratch`` dir."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "scratch").mkdir()
+    return tmp_path / "scratch"
 
 
 def _flag(args: list[str], name: str) -> str:
@@ -84,7 +96,10 @@ def test_mcp_servers_are_translated_to_claude_config() -> None:
     ]
     args = list(_harness().build_invocation(_context(mcp_servers=servers)).args)
 
-    config = json.loads(_flag(args, "--mcp-config"))["mcpServers"]
+    config_path = Path(_flag(args, "--mcp-config"))
+    if sys.platform != "win32":
+        assert stat.S_IMODE(config_path.stat().st_mode) == stat.S_IRUSR | stat.S_IWUSR
+    config = json.loads(config_path.read_text())["mcpServers"]
     assert config == {
         "GriptapeNodes": {"type": "http", "url": "http://localhost:1/mcp/", "headers": {}},
         "files": {"type": "stdio", "command": "npx", "args": ["-y", "fs"], "env": {"K": "V"}},
