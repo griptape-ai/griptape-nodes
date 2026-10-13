@@ -90,7 +90,7 @@ class _Replay:
             self._restore_properties(source, target)
         for source, target in kept:
             self._restore_structure(source, target)
-        self._add_waiting_connections()
+        self._add_waiting_connections(kept)
         for target in added:
             self._restore_lock(target)
         return self._problems
@@ -199,15 +199,28 @@ class _Replay:
                 continue
             self._connect(key)
 
-    def _add_waiting_connections(self) -> None:
+    def _add_waiting_connections(self, kept: list[tuple[NodeImage, NodeImage]]) -> None:
         """Connect what had to wait for a parameter, now that values and structure are restored.
 
-        A connection that still cannot be made is reported here, and only here. Values were skipped
-        for these parameters while they were missing, so connecting them overwrites nothing restored.
+        A connection that still cannot be made is reported here, and only here. Connecting
+        overwrites the target's value, so the values of the nodes just connected to are restored again.
         """
+        if not self._waiting_connections:
+            return
         for key in self._waiting_connections:
             if not self._connection_exists(key):
                 self._connect(key)
+
+        connected_nodes = {key.target_node for key in self._waiting_connections}
+        for _source, target in kept:
+            node = self._node(target.name)
+            if target.name not in connected_nodes or node is None:
+                continue
+            live = capture_node(self._engine, node)
+            if live is None:
+                continue
+            self._restore_changed_values(node, target, target.changed_values(live))
+            self._restore_lock(target)
 
     def _restore_properties(self, source: NodeImage, target: NodeImage) -> None:
         node = self._node(target.name)
@@ -227,16 +240,18 @@ class _Replay:
                 f"Could not restore how '{target.name}' is laid out.",
             )
 
-        changed_values = source.changed_values(target)
-        if changed_values:
-            if node.lock:
-                self._send(
-                    SetLockNodeStateRequest(node_name=target.name, lock=False),
-                    f"Could not unlock '{target.name}' to restore its values.",
-                )
-            self._restore_values(node, target, changed_values)
-
+        self._restore_changed_values(node, target, source.changed_values(target))
         self._restore_lock(target)
+
+    def _restore_changed_values(self, node: BaseNode, target: NodeImage, changed_values: set[str]) -> None:
+        if not changed_values:
+            return
+        if node.lock:
+            self._send(
+                SetLockNodeStateRequest(node_name=target.name, lock=False),
+                f"Could not unlock '{target.name}' to restore its values.",
+            )
+        self._restore_values(node, target, changed_values)
 
     def _restore_structure(self, source: NodeImage, target: NodeImage) -> None:
         """Rebuild a node whose parameters still differ from the target once its values are back.
@@ -303,29 +318,24 @@ class _Replay:
         """
         connections = self._engine.flow_manager.get_connections()
         connected = set(connections.incoming_index.get(node.name, {}))
-        # A parameter missing on either side comes back with the node's structure instead.
-        restorable = [
-            parameter
-            for name in sorted(parameters)
-            if name in target.parameters
-            and (parameter := node.get_parameter_by_name(name)) is not None
-            and self._has_target_value(target, name)
-        ]
-
-        for parameter in restorable:
-            if parameter.name in connected:
-                continue
-            self._engine.handle_request(
-                SetParameterValueRequest(
-                    node_name=node.name,
-                    parameter_name=parameter.name,
-                    value=self._target_value(parameter, target),
-                    failure_log_level=logging.DEBUG,
+        # A parameter a hook adds is set as soon as it exists, so its own hooks run as well.
+        restorable: dict[str, Parameter] = {}
+        while new_parameters := self._restorable_parameters(node, target, parameters - set(restorable)):
+            for parameter in new_parameters:
+                restorable[parameter.name] = parameter
+                if parameter.name in connected:
+                    continue
+                self._engine.handle_request(
+                    SetParameterValueRequest(
+                        node_name=node.name,
+                        parameter_name=parameter.name,
+                        value=self._target_value(parameter, target),
+                        failure_log_level=logging.DEBUG,
+                    )
                 )
-            )
 
         live = capture_node(self._engine, node)
-        for parameter in restorable:
+        for parameter in restorable.values():
             if live is not None and live.values.get(parameter.name) == target.values.get(parameter.name):
                 continue
             self._send(
@@ -337,6 +347,16 @@ class _Replay:
                 ),
                 f"Could not restore '{parameter.name}' on '{node.name}'.",
             )
+
+    def _restorable_parameters(self, node: BaseNode, target: NodeImage, names: set[str]) -> list[Parameter]:
+        # A parameter missing on either side comes back with the node's structure instead.
+        return [
+            parameter
+            for name in sorted(names)
+            if name in target.parameters
+            and (parameter := node.get_parameter_by_name(name)) is not None
+            and self._has_target_value(target, name)
+        ]
 
     def _restore_lock(self, target: NodeImage) -> None:
         node = self._node(target.name)

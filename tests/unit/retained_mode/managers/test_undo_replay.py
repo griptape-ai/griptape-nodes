@@ -122,6 +122,38 @@ class _Dynamic(BaseNode):
         return None
 
 
+class _Emitter(BaseNode):
+    """Adds a valued `out` parameter that can be an output while `mode` is "on", as dynamic-output nodes do."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata)
+        self.add_parameter(
+            Parameter(
+                name="mode", type="str", default_value="off", tooltip="mode", allowed_modes={ParameterMode.PROPERTY}
+            )
+        )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "mode":
+            if value == "on" and self.get_parameter_by_name("out") is None:
+                self.add_parameter(
+                    Parameter(
+                        name="out",
+                        type="str",
+                        default_value="",
+                        tooltip="out",
+                        allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                    )
+                )
+            elif value != "on":
+                self.remove_parameter_element_by_name("out")
+                self.parameter_values.pop("out", None)
+        return super().after_value_set(parameter, value)
+
+    def process(self) -> None:
+        return None
+
+
 class _Group(BaseNodeGroup):
     def process(self) -> None:
         return None
@@ -139,7 +171,7 @@ def engine(engine: Engine) -> Iterator[Engine]:
         nodes=[],
     )
     library = LibraryRegistry.generate_new_library(library_data=schema)
-    for node_class in (_Probe, _Toggle, _Dynamic, _Group):
+    for node_class in (_Probe, _Toggle, _Dynamic, _Emitter, _Group):
         library.register_new_node_type(
             node_class, NodeMetadata(category="t", description="d", display_name=node_class.__name__)
         )
@@ -390,6 +422,54 @@ class TestReplay:
         assert replay(engine, entry, Direction.REDO) == []
         assert _connections(engine) == {("A", "text", "D", "extra")}
         assert (_value(engine, "D", "mode"), _value(engine, "D", "extra")) == ("on", "from A")
+
+    def test_a_source_parameter_that_a_value_removes_comes_back_with_its_value_and_connection(
+        self, engine: Engine
+    ) -> None:
+        _create(engine, "S", node_type="_Emitter")
+        _create(engine, "T")
+        _set(engine, "S", "mode", "on")
+        _set(engine, "S", "out", "kept")
+        _send(engine, _connect_request("S", "out", "T", "text"))
+        key = ConnectionKey("S", "out", "T", "text")
+        before = [_image(engine, "S"), _image(engine, "T")]
+        _send(engine, _disconnect_request("S", "out", "T", "text"))
+        _set(engine, "T", "text", "mine")
+        _set(engine, "S", "mode", "off")
+        after = [_image(engine, "S"), _image(engine, "T")]
+        entry = HistoryEntry(
+            changes=[NodeChange(before=b, after=a) for b, a in zip(before, after, strict=True)],
+            connections_removed=frozenset({key}),
+        )
+
+        assert replay(engine, entry, Direction.UNDO) == []
+        assert _connections(engine) == {("S", "out", "T", "text")}
+        assert (_value(engine, "S", "mode"), _value(engine, "S", "out")) == ("on", "kept")
+        assert _value(engine, "T", "text") == before[1].value_pool[before[1].values["text"]]
+
+        assert replay(engine, entry, Direction.REDO) == []
+        assert _connections(engine) == set()
+        assert (_value(engine, "S", "mode"), _value(engine, "T", "text")) == ("off", "mine")
+
+    def test_a_target_parameter_that_a_value_adds_comes_back_with_the_value_it_was_given(self, engine: Engine) -> None:
+        _create(engine, "A")
+        _create(engine, "D", node_type="_Dynamic")
+        _set(engine, "A", "text", "from A")
+        _set(engine, "D", "mode", "on")
+        _send(engine, _connect_request("A", "text", "D", "extra"))
+        _send(engine, SetParameterValueRequest(node_name="D", parameter_name="extra", value="mine", initial_setup=True))
+        before = _image(engine, "D")
+        assert _value(engine, "D", "extra") == "mine"
+        key = ConnectionKey("A", "text", "D", "extra")
+        _send(engine, _disconnect_request("A", "text", "D", "extra"))
+        _set(engine, "D", "mode", "off")
+        entry = HistoryEntry(
+            changes=[NodeChange(before=before, after=_image(engine, "D"))], connections_removed=frozenset({key})
+        )
+
+        assert replay(engine, entry, Direction.UNDO) == []
+        assert _connections(engine) == {("A", "text", "D", "extra")}
+        assert (_value(engine, "D", "mode"), _value(engine, "D", "extra")) == ("on", "mine")
 
     def test_a_connection_whose_parameter_never_comes_back_is_reported_once(self, engine: Engine) -> None:
         _create(engine, "A")
