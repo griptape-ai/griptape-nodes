@@ -1616,6 +1616,8 @@ class NodeManager(EngineScoped):
         # We can't completely overwrite metadata.
         for key, value in request.metadata.items():
             node.metadata[key] = value
+        for key in request.keys_to_remove or []:
+            node.metadata.pop(key, None)
         details = f"Successfully set metadata for a Node '{node_name}'."
         result = SetNodeMetadataResultSuccess(result_details=details)
         return result
