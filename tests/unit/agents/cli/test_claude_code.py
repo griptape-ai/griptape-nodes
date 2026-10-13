@@ -66,7 +66,7 @@ def test_new_session_is_started_with_the_chosen_id() -> None:
     assert _flag(args, "--max-turns") == "60"
     assert Path(_flag(args, "--append-system-prompt-file")).read_text() == "Be brief."
     assert _flag(args, "--permission-mode") == "bypassPermissions"
-    assert invocation.env == {"CLAUDECODE": None}
+    assert invocation.env == {"CLAUDECODE": None, "ANTHROPIC_API_KEY": None, "ANTHROPIC_AUTH_TOKEN": None}
 
 
 def test_existing_session_is_resumed() -> None:

@@ -29,6 +29,13 @@ _MCP_CONFIG_FILE_NAME = "mcp-config.json"
 _INSTRUCTIONS_FILE_NAME = "instructions.md"
 
 
+# Claude Code refuses to start inside another Claude Code session, which
+# `CLAUDECODE` marks, and an engine launched from one inherits it. In print mode
+# it bills an Anthropic key over the user's sign-in, and the engine's environment
+# holds any key set up for the Anthropic nodes.
+_REMOVED_ENV: dict[str, str | None] = {"CLAUDECODE": None, "ANTHROPIC_API_KEY": None, "ANTHROPIC_AUTH_TOKEN": None}
+
+
 @dataclass
 class ClaudeCodeHarness(CliHarness):
     harness_id: ClassVar[str] = "claude_code"
@@ -69,9 +76,7 @@ class ClaudeCodeHarness(CliHarness):
             "type": "user",
             "message": {"role": "user", "content": _content_blocks(context.prompt_text, context.images)},
         }
-        # Claude Code refuses to start inside another Claude Code session, which is
-        # what this variable marks. An engine launched from one would inherit it.
-        return CliInvocation(args=args, stdin=(json.dumps(message) + "\n").encode("utf-8"), env={"CLAUDECODE": None})
+        return CliInvocation(args=args, stdin=(json.dumps(message) + "\n").encode("utf-8"), env=_REMOVED_ENV)
 
     def new_parser(self) -> CliStreamParser:
         return ClaudeCodeStreamParser(normalize_tool_name=self.normalize_tool_name)

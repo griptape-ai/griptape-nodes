@@ -2,7 +2,7 @@
 
 The [Agent](../index.md) can run on a coding agent you already have installed: Claude Code. Griptape Nodes starts the CLI for each message, connects it to your project through the Griptape Nodes MCP server, and shows its replies and tool calls in the chat like any other provider.
 
-The CLI uses its own sign-in, models, and settings. Usage is billed by the CLI's provider, not by Griptape Cloud.
+The CLI uses its own sign-in, models, and settings. Usage is billed by the CLI's provider, not by Griptape Cloud. Griptape Nodes doesn't pass `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` to Claude Code, so it bills your Claude sign-in even when a key is set for your Anthropic nodes.
 
 ## Supported CLIs
 
