@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import re
+import stat
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +102,21 @@ def test_mcp_servers_are_registered_by_a_generated_extension(tmp_path: Path) -> 
         "remote_api": {"url": "http://s/mcp", "headers": {"A": "B"}, "exposure": "direct"},
     }
     assert "pi.registerMcpServer(name, server)" in extension_path.read_text(encoding="utf-8")
+    if sys.platform != "win32":
+        assert stat.S_IMODE(extension_path.stat().st_mode) == stat.S_IRUSR | stat.S_IWUSR
+
+
+def test_mcp_secrets_are_escaped_from_pis_value_templates(tmp_path: Path) -> None:
+    """Keep pi from expanding `$NAME` or running a value that starts with `!`."""
+    servers = [
+        CliMCPServer(name="files", transport="stdio", command="npx", env={"TOKEN": "pa$sword", "CMD": "!rm"}),
+        CliMCPServer(name="api", transport="streamable_http", url="http://s/mcp", headers={"A": "Bearer ${X}"}),
+    ]
+    args = list(_harness().build_invocation(_context(tmp_path, mcp_servers=servers)).args)
+
+    registered = _registered_servers(Path(_flag(args, "--extension")))
+    assert registered["files"]["env"] == {"TOKEN": "pa$$sword", "CMD": "$!rm"}
+    assert registered["api"]["headers"] == {"A": "Bearer $${X}"}
 
 
 def test_images_are_attached_as_file_arguments(tmp_path: Path) -> None:

@@ -14,8 +14,10 @@ from griptape_nodes.agents.cli.base import (
     CliTurnContext,
     SessionStarted,
     TurnEnded,
+    tool_result_text,
+    write_private,
 )
-from griptape_nodes.agents.harness import TextDelta, ThinkingDelta, ToolCall, ToolResult, stringify
+from griptape_nodes.agents.harness import TextDelta, ThinkingDelta, ToolCall, ToolResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -48,16 +50,16 @@ class PiHarness(CliHarness):
             args += ["--model", context.model]
         if context.instructions:
             # pi reads the file when given a path. MCP server rules in the instructions may hold secrets.
-            instructions_path = context.scratch_dir / _INSTRUCTIONS_FILE_NAME
-            instructions_path.write_text(context.instructions, encoding="utf-8")
-            instructions_path.chmod(0o600)
+            instructions_path = write_private(context.scratch_dir / _INSTRUCTIONS_FILE_NAME, context.instructions)
             args += ["--append-system-prompt", str(instructions_path)]
         if context.resume_session_id:
             args += ["--session", context.resume_session_id]
         else:
             args += ["--session-id", context.new_session_id]
-        extension_path = context.scratch_dir / _EXTENSION_FILE_NAME
-        extension_path.write_text(_extension_source(context.mcp_servers), encoding="utf-8")
+        # The extension holds the servers' env and headers.
+        extension_path = write_private(
+            context.scratch_dir / _EXTENSION_FILE_NAME, _extension_source(context.mcp_servers)
+        )
         args += ["--extension", str(extension_path)]
         args += [f"@{image.path}" for image in context.images]
         return CliInvocation(args=args, stdin=context.prompt_text.encode("utf-8"))
@@ -133,7 +135,7 @@ class PiStreamParser(CliStreamParser):
         return ToolResult(
             tool_call_id=tool_call_id,
             tool_name=self._tool_names.get(tool_call_id, "?"),
-            content=_tool_result_text((record.get("result") or {}).get("content")),
+            content=tool_result_text((record.get("result") or {}).get("content")),
             is_error=bool(record.get("isError")),
         )
 
@@ -150,18 +152,6 @@ def _session_started(record: dict[str, Any]) -> list[CliEvent]:
     if not isinstance(session_id, str) or not session_id:
         return []
     return [SessionStarted(session_id=session_id)]
-
-
-def _tool_result_text(content: Any) -> str:
-    if not isinstance(content, list):
-        return stringify(content)
-    parts = []
-    for item in content:
-        if isinstance(item, dict) and item.get("type") == "text":
-            parts.append(str(item.get("text") or ""))
-        elif isinstance(item, dict):
-            parts.append(f"[{item.get('type', 'content')}]")
-    return "\n".join(parts)
 
 
 def _server_name(name: str) -> str:
@@ -190,13 +180,17 @@ def _mcp_config(servers: Sequence[CliMCPServer]) -> dict[str, dict[str, Any]]:
             config[name] = {
                 "command": server.command,
                 "args": list(server.args),
-                "env": dict(server.env),
+                "env": {key: _literal(value) for key, value in server.env.items()},
                 "exposure": "direct",
             }
             if server.cwd:
                 config[name]["cwd"] = server.cwd
         elif server.transport == "streamable_http" and server.url:
-            config[name] = {"url": server.url, "headers": dict(server.headers), "exposure": "direct"}
+            config[name] = {
+                "url": server.url,
+                "headers": {key: _literal(value) for key, value in server.headers.items()},
+                "exposure": "direct",
+            }
         else:
             logger.warning(
                 "Attempted to give pi MCP server '%s'. Failed because its %s connection is not one "
@@ -205,3 +199,15 @@ def _mcp_config(servers: Sequence[CliMCPServer]) -> dict[str, dict[str, Any]]:
                 server.transport,
             )
     return config
+
+
+def _literal(value: str) -> str:
+    """Escape a value so pi's config resolver reads it as written.
+
+    pi expands ``$NAME`` and ``${NAME}`` from the environment and runs a value
+    that starts with ``!`` as a shell command. ``$$`` and ``$!`` are its escapes.
+    """
+    escaped = value.replace("$", "$$")
+    if escaped.startswith("!"):
+        return f"${escaped}"
+    return escaped
