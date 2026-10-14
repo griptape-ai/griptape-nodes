@@ -571,6 +571,16 @@ for tool in tools:
 - Flexible workflow design
 - Follows Griptape design patterns
 
+**Rows and whole lists:** each item of a `ParameterList` is a child row. A row accepts one item, a `list[...]` of the
+item type, or an untyped `list`. A row that receives a list adds its items to the list, so the list value is the
+concatenation of its rows. This does not apply when the list's own items may be lists (`list`, `any` or `all`), where a
+list in a row is one item.
+
+Setting a whole list on an unconnected `ParameterList` with `SetParameterValueRequest` replaces its rows with one row
+per item, the same as entering them one at a time in the editor, so `after_value_set` fires for each row. The request
+fails, leaving the list as it was, if a row's value is rejected, if the list would hold more than `max_items`, or if
+a current row is connected to another node. A value that is not a list is rejected.
+
 **Important behavior note:** `get_parameter_list_value()` flattens nested iterables and **drops falsey items**
 (e.g. `0`, `False`, `""`, empty dicts/lists). If you need to preserve falsey values, use `get_parameter_value()` and handle flattening yourself.
 

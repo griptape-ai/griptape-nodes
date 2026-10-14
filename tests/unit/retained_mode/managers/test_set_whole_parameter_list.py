@@ -125,6 +125,16 @@ class TestWholeListSetOnAnUnconnectedList:
         assert node.get_parameter_value("items") == ["new"]
         assert len(_rows(node)) == 1
 
+    def test_replaced_rows_leave_no_values_behind(self, engine: Engine, flow_name: str) -> None:
+        """A value kept for a removed row is sent to execution, which has no such row and warns."""
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        _set_items(engine, ["a", "b", "c", "d"])
+
+        _set_items(engine, ["x"])
+
+        row_value_names = {name for name in node.parameter_values if name.startswith("items_")}
+        assert row_value_names == {row.name for row in _rows(node)}
+
     def test_an_empty_list_clears_the_rows(self, engine: Engine, flow_name: str) -> None:
         node = _add(engine, _ListNode(name="Lister"), flow_name)
         _set_items(engine, ["a", "b"])
@@ -155,6 +165,16 @@ class TestWholeListSetOnAnUnconnectedList:
         _set_items(engine, [])
 
         assert node.state == NodeResolutionState.UNRESOLVED
+
+    def test_items_that_add_up_to_more_than_max_items_are_rejected(self, engine: Engine, flow_name: str) -> None:
+        """A row holding a list adds all of its items, so one row can overrun the limit alone."""
+        node = _add(engine, _ListNode(name="Lister", max_items=2), flow_name)
+        _set_items(engine, ["a"])
+
+        result = _set_items(engine, [["x", "y", "z"]])
+
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert node.get_parameter_value("items") == ["a"]
 
     def test_a_failed_item_puts_the_old_items_back(self, engine: Engine, flow_name: str) -> None:
         """A failure partway through must not leave the list half replaced."""

@@ -199,6 +199,9 @@ workspace survey above has confirmed the relevant library exposes those node typ
        node_name="TextInput_1", parameter_name="text", value="...")
    → there is no `parameter_values` shortcut on CreateNode; set every non-default
      parameter with its own SetParameterValue call.
+   → a list parameter (`ParameterList`) can be set to a whole list in one call, e.g.
+     `value=["a", "b", "c"]`; the engine turns it into one row per item. This only applies
+     when nothing is connected to the list.
 
 9. griptape_nodes_CreateConnectionRequest(
        source_node_name="TextInput_1",   source_parameter_name="text",

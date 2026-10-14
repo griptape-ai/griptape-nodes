@@ -2925,7 +2925,8 @@ class NodeManager(EngineScoped):
             return SetParameterValueResultFailure(result_details=details)
 
         finalized_value = self._unresolve_if_changed(node, parameter_list, old_items)
-        details = f"Successfully set list {list_label} to {len(items)} items."
+        # A row holding a list adds its items, so the list can hold more than the rows sent.
+        details = f"Successfully set list {list_label}. It now holds {len(finalized_value)} items."
         return SetParameterValueResultSuccess(
             finalized_value=finalized_value, data_type=parameter_list.type, result_details=details
         )
@@ -2938,6 +2939,9 @@ class NodeManager(EngineScoped):
             )
             if not isinstance(remove_result, RemoveParameterFromNodeResultSuccess):
                 return f"its existing item '{row.name}' could not be removed"
+            # Removing a row leaves its value behind, and execution would be sent that value for a row it
+            # no longer has.
+            node.parameter_values.pop(row.name, None)
 
         for index, item in enumerate(items):
             add_result = self.engine.handle_request(
@@ -2954,6 +2958,12 @@ class NodeManager(EngineScoped):
         if not items:
             # No row was set to refresh the list's own entry, which still holds the removed rows' values.
             node.set_parameter_value(parameter_list.name, [])
+
+        # Counted on what the list holds, since a row holding a list adds all of its items.
+        held_count = len(node._get_raw_parameter_value(parameter_list.name))
+        max_items = parameter_list.max_items
+        if max_items is not None and held_count > max_items:
+            return f"the list would hold {held_count} items and holds at most {max_items}"
         return None
 
     def _unresolve_if_changed(self, node: BaseNode, parameter_list: ParameterList, old_items: Any) -> Any:
