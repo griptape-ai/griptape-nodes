@@ -161,6 +161,47 @@ class TestSubflowNodeGroupProxyParameters:
         assert ParameterMode.PROPERTY not in incoming_proxy.allowed_modes
         assert ParameterMode.PROPERTY not in outgoing_proxy.allowed_modes
 
+    @pytest.mark.parametrize("is_incoming", [True, False])
+    def test_control_proxy_preserves_original_ui_metadata(
+        self, engine: Engine, monkeypatch: pytest.MonkeyPatch, *, is_incoming: bool
+    ) -> None:
+        group = _MiniSubflowGroup(name="metadata_group")
+        engine.object_manager.add_object_by_name(group.name, group)
+        parameter_type = ControlParameterInput if is_incoming else ControlParameterOutput
+        original = parameter_type(
+            name="custom_control",
+            tooltip="General control help",
+            tooltip_as_input="Input control help",
+            tooltip_as_property="Property control help",
+            tooltip_as_output="Output control help",
+            display_name="Custom flow port",
+            parameter_render_location="bottom",
+        )
+        original.ui_options = original.ui_options | {"custom_option": "preserved"}
+        assert original.tooltip_as_input == "Input control help"
+        assert original.tooltip_as_property == "Property control help"
+        assert original.tooltip_as_output == "Output control help"
+        requests: list[Any] = []
+        handle_request = engine.handle_request
+
+        def capture_request(request: Any) -> Any:
+            requests.append(request)
+            return handle_request(request)
+
+        monkeypatch.setattr(engine, "handle_request", capture_request)
+
+        proxy = group._create_proxy_parameter_for_connection(original, is_incoming=is_incoming)
+
+        assert requests[0].tooltip_as_input == "Input control help"
+        assert isinstance(proxy, parameter_type)
+        assert proxy.tooltip == "General control help"
+        assert proxy.tooltip_as_input == "Input control help"
+        assert proxy.tooltip_as_property == "Property control help"
+        assert proxy.tooltip_as_output == "Output control help"
+        assert proxy.display_name == "Custom flow port"
+        assert proxy.ui_options["parameter_render_location"] == "bottom"
+        assert proxy.ui_options["custom_option"] == "preserved"
+
     def test_multi_port_loop_connections_keep_their_control_port_mapping(
         self, engine: Engine, monkeypatch: pytest.MonkeyPatch
     ) -> None:

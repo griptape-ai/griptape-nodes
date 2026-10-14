@@ -386,6 +386,10 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                 if isinstance(original_param, (ControlParameterInput, ControlParameterOutput))
                 else original_param.tooltip or ""
             ),
+            tooltip_as_input=original_param.tooltip_as_input,
+            tooltip_as_property=original_param.tooltip_as_property,
+            tooltip_as_output=original_param.tooltip_as_output,
+            ui_options=original_param.ui_options,
             # A boundary proxy bridges an external edge and an internal edge. It therefore
             # intentionally exposes both modes even though its concrete control-port shape is
             # directional, and must not expose PROPERTY mode.
