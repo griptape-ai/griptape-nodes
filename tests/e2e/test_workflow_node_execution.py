@@ -277,6 +277,31 @@ async def test_two_workflow_nodes_run_independently(
     reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
 )
 @pytest.mark.asyncio
+async def test_registering_the_library_lists_the_backing_workflow(registered_library: Path, engine: Engine) -> None:
+    """A workflow the library ships is listed as library-provided before any node is placed."""
+    registry_key = (registered_library.parent / "shout_workflow").as_posix()
+
+    list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
+    assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
+    assert list_result.workflows[registry_key]["is_griptape_provided"] is True
+
+    callable_result = await engine.ahandle_request(ListCallableWorkflowsRequest())
+    assert isinstance(callable_result, ListCallableWorkflowsResultSuccess), callable_result
+    assert registry_key in callable_result.workflow_names
+
+    # A workspace refresh clears every workflow that is not library-provided.
+    await engine.workflow_manager.refresh_workflow_registry()
+
+    list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
+    assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
+    assert registry_key in list_result.workflows
+
+
+@pytest.mark.skipif(
+    not FIXTURE_WORKFLOW_FILE.exists(),
+    reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
+)
+@pytest.mark.asyncio
 async def test_workflow_node_reuses_the_key_the_workspace_scan_registered(
     workspace_backed_library: Path,  # noqa: ARG001
     engine: Engine,
@@ -295,6 +320,8 @@ async def test_workflow_node_reuses_the_key_the_workspace_scan_registered(
     list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
     assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
     assert [key for key in list_result.workflows if key.endswith("shout_workflow")] == ["nested/shout_workflow"]
+    # The user's own file in the workspace, so it is not marked library-provided.
+    assert list_result.workflows["nested/shout_workflow"]["is_griptape_provided"] is False
 
     callable_result = await engine.ahandle_request(ListCallableWorkflowsRequest())
     assert isinstance(callable_result, ListCallableWorkflowsResultSuccess), callable_result

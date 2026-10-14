@@ -13,8 +13,13 @@ from griptape_nodes.exe_types.workflow_node import (
     WorkflowNode,
     WorkflowNodeDefinitionError,
     build_workflow_node_class,
+    ensure_workflow_registered,
 )
-from griptape_nodes.files.path_utils import canonicalize_for_identity_preserving_symlinks, resolve_workspace_path
+from griptape_nodes.files.path_utils import (
+    canonicalize_for_identity_preserving_symlinks,
+    relative_to_keeping_or_following_links,
+    resolve_workspace_path,
+)
 from griptape_nodes.node_library.library_registry import (
     Library,
     LibraryRegistry,
@@ -926,4 +931,28 @@ class LibraryModuleLoading(EngineScoped):
         library_problem = library.register_new_node_type(node_class, metadata=workflow_node_definition.metadata)
         if library_problem is not None:
             library_info.problems.append(library_problem)
+            return True
+
+        # A workflow the library ships is listed now, as library-provided, like the workflows in the
+        # library's `workflows` list: browsable before any node is placed, and kept when a workspace
+        # refresh clears the user's workflows. A workflow in the workspace is the user's own file,
+        # so it stays editable and the workspace scan lists it.
+        workspace_path = self.engine.config_manager.workspace_path
+        if relative_to_keeping_or_following_links(node_class.workflow_file_path, workspace_path) is not None:
+            return True
+        node_class.workflow_metadata.is_griptape_provided = True
+        try:
+            ensure_workflow_registered(
+                workspace_path,
+                self.engine.workflow_registry,
+                node_class.workflow_file_path,
+                node_class.workflow_metadata,
+            )
+        except (KeyError, ValueError):
+            logger.warning(
+                "Library '%s' could not list the workflow '%s' behind node type '%s'.",
+                library.get_library_data().name,
+                node_class.workflow_file_path,
+                workflow_node_definition.node_type,
+            )
         return True
