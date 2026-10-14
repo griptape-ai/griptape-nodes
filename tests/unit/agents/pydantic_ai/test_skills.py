@@ -114,6 +114,17 @@ def test_unreadable_skill_costs_skills_not_the_run(workspace: Path, tmp_path: Pa
     assert (skill_dir / "SKILL.md").is_file()
 
 
+def test_unsupported_platform_costs_skills_not_the_run(workspace: Path, tmp_path: Path) -> None:
+    """A loader that cannot run on this platform yields no capability rather than raising."""
+    _write_skill(workspace, "demo-skill")
+    runner = _runner(workspace, tmp_path / "threads")
+    unsupported = NotImplementedError("`LocalWorkspaceBackend` only supports POSIX platforms at the moment")
+    with patch("griptape_nodes.agents.pydantic_ai.runner.SkillsCapability", side_effect=unsupported) as capability:
+        assert runner._build_skills_capabilities() == []
+    # The failure is the platform's, so the runner does not probe each skill on its own.
+    assert capability.call_count == 1
+
+
 def test_no_capability_when_every_skill_is_broken(workspace: Path, tmp_path: Path) -> None:
     """A library where nothing loads yields no capability rather than an empty one."""
     broken = workspace / ".agents/skills/broken-skill"
