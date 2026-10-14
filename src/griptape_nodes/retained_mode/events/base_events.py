@@ -416,6 +416,9 @@ RESULT_EVENT_TYPES = frozenset({EventResultSuccess.__name__, EventResultFailure.
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
 class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     payload: E
+    # The workflow whose run emitted this event, so a client showing a different open workflow can
+    # ignore it. Stamped when the event is queued; None for events from outside any workflow.
+    workflow_name: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an ExecutionEvent, inferring the generic type if needed."""

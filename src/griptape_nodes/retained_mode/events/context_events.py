@@ -164,20 +164,22 @@ class EnsureWorkflowAndFlowResultFailure(ResultPayloadFailure):
 class ActivateWorkflowRequest(RequestPayload):
     """Make an open workflow the one that requests act on, keeping every other open workflow loaded.
 
-    Use when: Switching the editor between workflows without reloading them.
+    Use when: Switching the editor between workflows without reloading them, or making room for a
+    new workflow without closing the current one.
 
     If a workflow with this name is open, it becomes active with its graph, values, and variables
-    as they were left. Otherwise an empty workflow slot becomes active (`already_open` is False), and
-    the caller loads the workflow into it as usual, for example with RunWorkflowFromRegistryRequest.
-    The workflow that was active stays open.
+    as they were left, even while another workflow runs. Otherwise, or when no name is given, an
+    empty workflow slot becomes active (`already_open` is False), and the caller loads or creates
+    the workflow in it as usual, for example with RunWorkflowFromRegistryRequest or
+    SetWorkflowContextRequest. The workflow that was active stays open.
 
     Args:
-        workflow_name: Registry key of the workflow to activate.
+        workflow_name: Registry key of the workflow to activate, or None for an empty slot.
 
-    Results: ActivateWorkflowResultSuccess | ActivateWorkflowResultFailure (the active workflow is running)
+    Results: ActivateWorkflowResultSuccess | ActivateWorkflowResultFailure
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
 
 
 @dataclass
@@ -186,18 +188,33 @@ class ActivateWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
     """The workflow is active.
 
     Args:
-        workflow_name: Registry key of the workflow that was requested.
+        workflow_name: Registry key of the workflow that was requested, or None for an empty slot.
         already_open: True when the workflow was already loaded and nothing needs to be reloaded.
     """
 
-    workflow_name: str
+    workflow_name: str | None
     already_open: bool
 
 
 @dataclass
 @PayloadRegistry.register
 class ActivateWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Activation failed. Common cause: the active workflow is running."""
+    """Activation failed."""
+
+
+@dataclass
+class OpenWorkflow:
+    """One workflow the engine holds open.
+
+    Args:
+        workflow_name: Registry key of the workflow.
+        display_name: The workflow's name as users see it.
+        is_running: Whether the workflow is running.
+    """
+
+    workflow_name: str
+    display_name: str
+    is_running: bool
 
 
 @dataclass
@@ -205,7 +222,7 @@ class ActivateWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 class ListOpenWorkflowsRequest(RequestPayload):
     """List the workflows the engine holds open.
 
-    Use when: Showing which workflows can be switched to without reloading.
+    Use when: Showing which workflows can be switched to without reloading, and which one is running.
 
     Results: ListOpenWorkflowsResultSuccess
     """
@@ -217,11 +234,11 @@ class ListOpenWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
     """The open workflows.
 
     Args:
-        workflow_names: Registry keys of the open workflows, in the order they were opened.
+        workflows: The open workflows, in the order they were opened.
         active_workflow_name: Registry key of the active workflow, or None when the active slot is empty.
     """
 
-    workflow_names: list[str]
+    workflows: list[OpenWorkflow]
     active_workflow_name: str | None
 
 

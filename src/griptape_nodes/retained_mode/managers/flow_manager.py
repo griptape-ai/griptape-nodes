@@ -353,6 +353,14 @@ class FlowManager(EngineScoped):
     def node_executor(self) -> NodeExecutor:
         return self._node_executor
 
+    def raise_if_another_workflow_is_running(self) -> None:
+        """Refuse to start a run while a different open workflow is running."""
+        running = self.engine.workflow_running_elsewhere()
+        if running is None:
+            return
+        msg = f"Workflow '{running}' is running. Only one workflow can run at a time. Wait for it to finish or cancel it, then run this one."
+        raise RuntimeError(msg)
+
     def get_connections(self) -> Connections:
         """Get the connections instance."""
         return self._state.connections
@@ -4510,6 +4518,7 @@ class FlowManager(EngineScoped):
             # If flow already exists, throw an error
             errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
             raise RuntimeError(errormsg)
+        self.raise_if_another_workflow_is_running()
 
         if start_node is None:
             if self._state.global_flow_queue.empty():
@@ -4842,6 +4851,7 @@ class FlowManager(EngineScoped):
                 await machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
+        self.raise_if_another_workflow_is_running()
         # We are now going to have different behavior depending on how the node is behaving.
         if self.check_for_existing_running_flow():
             # Now we know something is running, it's ParallelResolutionMachine, and that we are in single_node_resolution.

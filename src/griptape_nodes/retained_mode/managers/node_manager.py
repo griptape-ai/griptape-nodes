@@ -3235,6 +3235,10 @@ class NodeManager(EngineScoped):
 
         # Check for existing running flow
         flow_mgr = self.engine.flow_manager
+        running_elsewhere = self.engine.workflow_running_elsewhere()
+        if running_elsewhere is not None:
+            errormsg = f"Attempted to run '{node.name}'. Failed because workflow '{running_elsewhere}' is running, and only one workflow can run at a time."
+            return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
         if flow_mgr.check_for_existing_running_flow() and not flow_mgr.global_single_node_resolution:
             # Behavior should also match if the flow running is a Control Flow, and not a singular node resolution.
             errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."

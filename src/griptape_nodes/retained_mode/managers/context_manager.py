@@ -10,7 +10,6 @@ from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_re
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.context_events import (
     ActivateWorkflowRequest,
-    ActivateWorkflowResultFailure,
     ActivateWorkflowResultSuccess,
     CloseWorkflowRequest,
     CloseWorkflowResultFailure,
@@ -22,6 +21,7 @@ from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextSuccess,
     ListOpenWorkflowsRequest,
     ListOpenWorkflowsResultSuccess,
+    OpenWorkflow,
     SetWorkflowContextFailure,
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
@@ -424,7 +424,9 @@ class ContextManager(EngineScoped):
     @handles(ActivateWorkflowRequest)
     def on_activate_workflow_request(self, request: ActivateWorkflowRequest) -> ResultPayload:
         engine = self.engine
-        target = self.find_open_workflow_runtime(request.workflow_name)
+        target = None
+        if request.workflow_name is not None:
+            target = self.find_open_workflow_runtime(request.workflow_name)
         active = engine.active_workflow_runtime
         if target is active:
             return ActivateWorkflowResultSuccess(
@@ -433,17 +435,8 @@ class ContextManager(EngineScoped):
                 result_details=f"Workflow '{request.workflow_name}' is already the active workflow.",
             )
 
-        # Requests are pinned to the workflow that was active when they arrived, but the events a
-        # run emits are not tagged with their workflow, so the editor would apply them to whatever
-        # it shows next.
-        if engine.flow_manager.check_for_existing_running_flow():
-            running_name = self.get_current_workflow_name() if self.has_current_workflow() else "the active workflow"
-            details = (
-                f"Attempted to switch to workflow '{request.workflow_name}'. "
-                f"Failed because '{running_name}' is running. Wait for it to finish or cancel it, then switch."
-            )
-            return ActivateWorkflowResultFailure(result_details=details)
-
+        # A running workflow can be left: its run is pinned to it, and its events name it, so a
+        # client can tell them apart from the workflow it switches to.
         already_open = target is not None
         if target is None:
             target = self._find_empty_workflow_runtime() or engine.create_workflow_runtime()
@@ -451,6 +444,8 @@ class ContextManager(EngineScoped):
 
         if already_open:
             details = f"Switched to open workflow '{request.workflow_name}'."
+        elif request.workflow_name is None:
+            details = "An empty workflow is active."
         else:
             details = f"Workflow '{request.workflow_name}' isn't open. An empty workflow is active for it to load into."
         return ActivateWorkflowResultSuccess(
@@ -460,19 +455,23 @@ class ContextManager(EngineScoped):
     @handles(ListOpenWorkflowsRequest)
     def on_list_open_workflows_request(self, request: ListOpenWorkflowsRequest) -> ResultPayload:  # noqa: ARG002
         engine = self.engine
-        workflow_names = []
+        workflows = []
         active_workflow_name = None
         for runtime in engine.workflow_runtimes:
             name = self._workflow_name_in(runtime)
             if name is None:
                 continue
-            workflow_names.append(name)
+            with engine.bind_workflow_runtime(runtime):
+                is_running = engine.flow_manager.check_for_existing_running_flow()
+            workflows.append(
+                OpenWorkflow(workflow_name=name, display_name=self._display_name_of(name), is_running=is_running)
+            )
             if runtime is engine.active_workflow_runtime:
                 active_workflow_name = name
         return ListOpenWorkflowsResultSuccess(
-            workflow_names=workflow_names,
+            workflows=workflows,
             active_workflow_name=active_workflow_name,
-            result_details=f"{len(workflow_names)} workflow(s) open.",
+            result_details=f"{len(workflows)} workflow(s) open.",
         )
 
     @handles(CloseWorkflowRequest)
@@ -522,6 +521,12 @@ class ContextManager(EngineScoped):
             failure = await self.close_workflow_runtime(runtime)
             if failure is not None:
                 logger.warning("Could not close workflow '%s': %s", self._workflow_name_in(runtime), failure)
+
+    def _display_name_of(self, workflow_name: str) -> str:
+        registry = self.engine.workflow_registry
+        if not registry.has_workflow_with_name(workflow_name):
+            return workflow_name
+        return registry.get_workflow_by_name(workflow_name).metadata.name or workflow_name
 
     def _find_empty_workflow_runtime(self) -> WorkflowRuntime | None:
         for runtime in self.engine.workflow_runtimes:

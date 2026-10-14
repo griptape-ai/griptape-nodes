@@ -4,23 +4,28 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.context_events import (
     ActivateWorkflowRequest,
-    ActivateWorkflowResultFailure,
     ActivateWorkflowResultSuccess,
     CloseWorkflowRequest,
     CloseWorkflowResultSuccess,
     ListOpenWorkflowsRequest,
     ListOpenWorkflowsResultSuccess,
 )
+from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from griptape_nodes.retained_mode.engine import Engine
 
 
@@ -73,7 +78,7 @@ class TestOpenWorkflows:
         result = engine.handle_request(ListOpenWorkflowsRequest())
 
         assert isinstance(result, ListOpenWorkflowsResultSuccess), result
-        assert result.workflow_names == ["wf_a", "wf_b"]
+        assert [w.workflow_name for w in result.workflows] == ["wf_a", "wf_b"]
         assert result.active_workflow_name == "wf_b"
 
     def test_clear_all_only_clears_the_active_workflow(self, engine: Engine) -> None:
@@ -94,7 +99,7 @@ class TestOpenWorkflows:
         assert isinstance(result, CloseWorkflowResultSuccess), result
         listed = engine.handle_request(ListOpenWorkflowsRequest())
         assert isinstance(listed, ListOpenWorkflowsResultSuccess)
-        assert listed.workflow_names == ["wf_b"]
+        assert [w.workflow_name for w in listed.workflows] == ["wf_b"]
         assert _node_names(engine) == {"NoteB"}
         assert len(engine.workflow_runtimes) == 1
 
@@ -108,15 +113,65 @@ class TestOpenWorkflows:
         assert isinstance(reopened, ActivateWorkflowResultSuccess)
         assert reopened.already_open is False
 
-    def test_cannot_switch_away_from_a_running_workflow(self, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_can_switch_away_from_a_running_workflow(self, engine: Engine) -> None:
         _open_workflow_with_note(engine, "wf_a", "NoteA")
         _open_workflow_with_note(engine, "wf_b", "NoteB")
-        monkeypatch.setattr(engine.flow_manager, "check_for_existing_running_flow", lambda: True)
 
-        result = engine.handle_request(ActivateWorkflowRequest(workflow_name="wf_a"))
+        with patch.object(FlowManager, "check_for_existing_running_flow", _running_in(engine, "wf_b")):
+            result = engine.handle_request(ActivateWorkflowRequest(workflow_name="wf_a"))
+            listed = engine.handle_request(ListOpenWorkflowsRequest())
 
-        assert isinstance(result, ActivateWorkflowResultFailure), result
-        assert engine.context_manager.get_current_workflow_name() == "wf_b"
+        assert isinstance(result, ActivateWorkflowResultSuccess), result
+        assert engine.context_manager.get_current_workflow_name() == "wf_a"
+        assert isinstance(listed, ListOpenWorkflowsResultSuccess)
+        assert {w.workflow_name: w.is_running for w in listed.workflows} == {"wf_a": False, "wf_b": True}
+
+    @pytest.mark.asyncio
+    async def test_only_one_workflow_runs_at_a_time(self, engine: Engine) -> None:
+        _open_workflow_with_note(engine, "wf_a", "NoteA")
+        _open_workflow_with_note(engine, "wf_b", "NoteB")
+        engine.handle_request(ActivateWorkflowRequest(workflow_name="wf_a"))
+        flow = engine.flow_manager.get_flow_by_name("wf_a_flow")
+
+        with (
+            patch.object(FlowManager, "check_for_existing_running_flow", _running_in(engine, "wf_b")),
+            pytest.raises(RuntimeError, match="Workflow 'wf_b' is running"),
+        ):
+            await engine.flow_manager.start_flow(flow)
+
+    def test_activating_no_name_keeps_the_current_workflow_open(self, engine: Engine) -> None:
+        _open_workflow_with_note(engine, "wf_a", "NoteA")
+
+        result = engine.handle_request(ActivateWorkflowRequest())
+
+        assert isinstance(result, ActivateWorkflowResultSuccess), result
+        assert result.already_open is False
+        assert not engine.context_manager.has_current_workflow()
+        engine.handle_request(ActivateWorkflowRequest(workflow_name="wf_a"))
+        assert _node_names(engine) == {"NoteA"}
+
+    def test_run_events_name_their_workflow(self, engine: Engine) -> None:
+        _open_workflow_with_note(engine, "wf_a", "NoteA")
+        engine.event_manager.initialize_queue(asyncio.Queue())
+        event = ExecutionGriptapeNodeEvent(
+            wrapped_event=ExecutionEvent(
+                payload=ParameterValueUpdateEvent(node_name="NoteA", parameter_name="p", data_type="str", value="v")
+            )
+        )
+
+        engine.event_manager.put_event(event)
+
+        assert event.wrapped_event.workflow_name == "wf_a"
+
+
+def _running_in(engine: Engine, workflow_name: str) -> Callable[[FlowManager], bool]:
+    """A stand-in for `check_for_existing_running_flow` that reports only `workflow_name` as running."""
+
+    def check(_flow_manager: FlowManager) -> bool:
+        context_manager = engine.context_manager
+        return context_manager.has_current_workflow() and context_manager.get_current_workflow_name() == workflow_name
+
+    return check
 
 
 class TestRequestPinning:

@@ -666,6 +666,24 @@ class Engine:
         if dropped:
             logger.debug("Released %d held object(s) while tearing down the workflow.", dropped)
 
+    def workflow_running_elsewhere(self) -> str | None:
+        """The name of an open workflow other than the current one that is running, if any.
+
+        Runs are serialized across workflows: workers, the GPU, and the resource manager are shared,
+        and none of them tell runs apart yet.
+        """
+        current = self.workflow_runtime
+        for runtime in self._workflow_runtimes:
+            if runtime is current:
+                continue
+            with self.bind_workflow_runtime(runtime):
+                if not self._flow_manager.check_for_existing_running_flow():
+                    continue
+                if self._context_manager.has_current_workflow():
+                    return self._context_manager.get_current_workflow_name()
+                return "another workflow"
+        return None
+
     def another_workflow_runtime_holds_objects(self) -> bool:
         """Whether an open workflow other than the current one still has flows or nodes."""
         current = self.workflow_runtime

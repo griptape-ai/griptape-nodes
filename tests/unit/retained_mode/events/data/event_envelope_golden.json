@@ -102,6 +102,7 @@
     }
   },
   "ExecutionEvent": {
+    "workflow_name": null,
     "event_type": "ExecutionEvent",
     "payload_type": "CurrentControlNodeEvent",
     "payload": {

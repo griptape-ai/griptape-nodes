@@ -9,4 +9,5 @@ def mock_engine_with_workflow_runtime() -> MagicMock:
     """A `MagicMock` engine with a real runtime, so managers can keep per-workflow state."""
     engine = MagicMock()
     engine.workflow_runtime = WorkflowRuntime(owner=engine)
+    engine.workflow_running_elsewhere.return_value = None
     return engine

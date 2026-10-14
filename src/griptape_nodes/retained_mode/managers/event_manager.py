@@ -335,6 +335,8 @@ class EventManager(EngineScoped):
         if self._event_queue is None:
             return
 
+        self._stamp_workflow(event)
+
         if self._is_cross_thread_call() and self._event_loop is not None:
             # We're in a different thread from the event loop, use thread-safe method
             # _is_cross_thread_call() guarantees _event_loop is not None
@@ -359,6 +361,8 @@ class EventManager(EngineScoped):
         if self._event_queue is None:
             return
 
+        self._stamp_workflow(event)
+
         if self._is_cross_thread_call() and self._event_loop is not None:
             # We're in a different thread from the event loop, use thread-safe method
             # _is_cross_thread_call() guarantees _event_loop is not None
@@ -370,6 +374,21 @@ class EventManager(EngineScoped):
         # Dispatch after enqueuing so a re-entrant emission from a callback lands on the
         # queue after its triggering event (see put_event).
         self._dispatch_to_execution_listeners(event)
+
+    def _stamp_workflow(self, event: Any) -> None:
+        """Tag a run event with the workflow it came from.
+
+        Runs in the emitting task, which is pinned to its workflow, so the active workflow at this
+        point is the one that emitted it even if a client has switched to another since.
+        """
+        if not isinstance(event, ExecutionGriptapeNodeEvent):
+            return
+        execution_event = event.wrapped_event
+        if execution_event.workflow_name is not None:
+            return
+        context_manager = self.engine.context_manager
+        if context_manager.has_current_workflow():
+            execution_event.workflow_name = context_manager.get_current_workflow_name()
 
     def add_pre_dispatch_hook(
         self,
