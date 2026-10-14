@@ -12,6 +12,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
+from packaging.version import InvalidVersion
+from packaging.version import Version as PackagingVersion
+
 from griptape_nodes.common.strict_mode import STRICT_MODE
 from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import (
@@ -137,6 +140,9 @@ _in_aprocess: ContextVar[bool] = ContextVar("_node_types_in_aprocess", default=F
 # records a result needs the identity as well: a running node can set a value on a *different*
 # node, and on that node the value is an ordinary authored one, not something it produced.
 _running_node: ContextVar[BaseNode | None] = ContextVar("_node_types_running_node", default=None)
+
+# A library declaring this engine version or later has a whole list its nodes write become the list's rows.
+LIST_WRITES_FILL_ROWS_ENGINE_VERSION = PackagingVersion("0.105.0")
 
 
 class _PreservedTemplate(NamedTuple):
@@ -434,6 +440,8 @@ class BaseNode(ABC):
         # its own prior objects.
         self.local_object_source = f"{name}@{uuid.uuid4().hex[:8]}"
         self.parameter_values = {}
+        # Lists whose rows `_replace_list_rows` is replacing, so a write from a hook during it is stored as is.
+        self._lists_being_replaced: set[str] = set()
         self.parameter_output_values = TrackedParameterOutputValues(self)
         self._local_objects = None
         self.root_ui_element = BaseNodeElement()
@@ -1128,13 +1136,13 @@ class BaseNode(ABC):
         if parameter is None:
             err = f"Attempted to set value for Parameter '{param_name}' but no such Parameter could be found."
             raise KeyError(err)
+        if self._fill_list_rows_from_node_code(parameter, value, initial_setup=initial_setup):
+            return
         # Perform any conversions to the value based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
         # cause a calling object to alter its assumptions/behavior. The value requested
         # to be assigned will NOT be set.
-        candidate_value = value
-        for converter in parameter.converters:
-            candidate_value = converter(candidate_value)
+        candidate_value = self._convert_value(parameter, value)
 
         # Validate the values next, based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
@@ -1178,6 +1186,46 @@ class BaseNode(ABC):
                         initial_setup=initial_setup,
                         emit_change=False,
                     )
+
+    @staticmethod
+    def _convert_value(parameter: Parameter, value: Any) -> Any:
+        """Run the parameter's converters on `value`, and a list's item converters on each of its items first."""
+        candidate_value = value
+        if isinstance(parameter, ParameterList):
+            candidate_value = parameter.convert_items(candidate_value)
+        for converter in parameter.converters:
+            candidate_value = converter(candidate_value)
+        return candidate_value
+
+    def _fill_list_rows_from_node_code(self, parameter: Parameter, value: Any, *, initial_setup: bool) -> bool:
+        """Turn a whole list this node writes into the list's rows, if its library opted in. Returns whether it did.
+
+        A library opts in by declaring an `engine_version` of at least `LIST_WRITES_FILL_ROWS_ENGINE_VERSION`.
+        Older libraries write a list beside its rows and read it back, so their writes keep doing that.
+        """
+        if initial_setup or not isinstance(parameter, ParameterList):
+            return False
+        if _running_node.get() is self:
+            # Rows added during a run do not reach the node's copy in the orchestrator.
+            return False
+        if not self._library_fills_list_rows():
+            return False
+        return self._set_list_as_rows_if_unconnected(parameter, value)
+
+    def _library_fills_list_rows(self) -> bool:
+        """Whether this node's library declares an engine version where a whole list it writes fills the rows."""
+        library_name = self.metadata.get("library")
+        if not library_name:
+            return False
+        try:
+            library = LibraryRegistry.get_library(library_name)
+        except KeyError:
+            return False
+        try:
+            declared = PackagingVersion(library.get_metadata().engine_version)
+        except InvalidVersion:
+            return False
+        return declared >= LIST_WRITES_FILL_ROWS_ENGINE_VERSION
 
     def _also_record_as_result(self, parameter: Parameter, value: Any) -> None:
         """Additionally record `value` in `parameter_output_values` if it is something this run produced.
@@ -1924,6 +1972,16 @@ class BaseNode(ABC):
             return False
         if isinstance(value, list) and value == handle_container_parameter(self, parameter):
             return False
+        if parameter.name in self._lists_being_replaced:
+            # Storing it would leave the list's value and its rows disagreeing, and replacing the rows
+            # again would undo the rows being set.
+            logger.warning(
+                "Node '%s' set list '%s' while its items were being set, so the write was ignored. "
+                "Convert each item with the list's item_converters instead.",
+                self.name,
+                parameter.name,
+            )
+            return True
         if self._param_has_incoming_connection(parameter.name):
             # A connected list is read whole, and keeps the value as it arrived.
             return False
@@ -1959,6 +2017,7 @@ class BaseNode(ABC):
         with sanctioned_parameter_mutation():
             for row in old_rows:
                 self.remove_parameter_element(row)
+        self._lists_being_replaced.add(parameter_list.name)
         try:
             for item in items:
                 row = parameter_list.add_child_parameter()
@@ -1967,6 +2026,8 @@ class BaseNode(ABC):
             # Converters, validators and hooks may raise anything. Undo, then let it propagate unchanged.
             self._restore_list_rows(parameter_list, old_rows, old_values)
             raise
+        finally:
+            self._lists_being_replaced.discard(parameter_list.name)
         if not items:
             # No row was set, so nothing refreshed the list or ran its hooks.
             self.set_parameter_value(parameter_list.name, [])
