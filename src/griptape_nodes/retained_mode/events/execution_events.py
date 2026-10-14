@@ -185,7 +185,8 @@ class CancelFlowRequest(RequestPayload):
     stopping execution due to errors or changes. Cleanly terminates execution.
 
     Args:
-        flow_name: Name of the flow to cancel (required)
+        flow_name: Name of the flow to cancel. Required today: the request fails without
+            it. Planned for removal in griptape-ai/griptape-nodes#1663.
 
     Results: CancelFlowResultSuccess | CancelFlowResultFailure (cancellation error)
     """
@@ -215,7 +216,8 @@ class UnresolveFlowRequest(RequestPayload):
     Does not stop a running flow; use CancelFlowRequest for that.
 
     Args:
-        flow_name: Name of the flow to unresolve (required)
+        flow_name: Name of the flow to unresolve. Required today: the request fails without
+            it. Planned for removal in griptape-ai/griptape-nodes#1663.
 
     Results: UnresolveFlowResultSuccess | UnresolveFlowResultFailure (unresolve error)
     """
