@@ -569,7 +569,9 @@ class LibraryManager(EngineScoped):
         return workflow_files
 
     async def _run_reload_libraries(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
-        # Start with a clean slate.
+        # Start with a clean slate. Open workflows other than the active one hold nodes built from
+        # the old library classes, and only the active one is reloaded afterwards, so close them.
+        await self.engine.context_manager.close_inactive_workflow_runtimes()
         clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
         clear_all_result = await self.engine.ahandle_request(clear_all_request)
         if not clear_all_result.succeeded():

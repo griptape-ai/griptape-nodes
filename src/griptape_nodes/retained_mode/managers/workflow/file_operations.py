@@ -61,6 +61,14 @@ class WorkflowFileOperations(EngineScoped):
             # clear_current_workflow_data releases what THIS process holds; the worker half must be
             # awaited, so it belongs here in the async handler rather than in that sync method.
             await self.engine.worker_manager.broadcast_local_object_teardown()
+        else:
+            # Open, but not the active workflow.
+            open_runtime = context_manager.find_open_workflow_runtime(request.name)
+            if open_runtime is not None:
+                failure = await context_manager.close_workflow_runtime(open_runtime)
+                if failure is not None:
+                    details = f"Attempted to delete workflow '{request.name}'. Failed to close it: {failure}"
+                    return DeleteWorkflowResultFailure(result_details=details)
         try:
             workflow = self.engine.workflow_registry.delete_workflow_by_name(request.name)
         except Exception as e:

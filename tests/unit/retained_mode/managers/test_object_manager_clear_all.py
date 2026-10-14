@@ -19,6 +19,7 @@ from griptape_nodes.retained_mode.events.object_events import (
     ClearAllObjectStateResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
+from tests.unit.mock_engine import mock_engine_with_workflow_runtime
 
 
 class TestClearAllObjectStateCancelsFirst:
@@ -26,7 +27,7 @@ class TestClearAllObjectStateCancelsFirst:
     async def test_running_flow_is_cancelled_before_execution_state_is_reset(self) -> None:
         calls: list[str] = []
 
-        engine = MagicMock()
+        engine = mock_engine_with_workflow_runtime()
         engine.flow_manager.check_for_existing_running_flow.return_value = True
         engine.flow_manager.cancel_flow_run = AsyncMock(side_effect=lambda: calls.append("cancel"))
         engine.flow_manager.reset_global_execution_state = MagicMock(side_effect=lambda: calls.append("reset"))
@@ -44,7 +45,7 @@ class TestClearAllObjectStateCancelsFirst:
 
     @pytest.mark.asyncio
     async def test_idle_engine_is_not_cancelled(self) -> None:
-        engine = MagicMock()
+        engine = mock_engine_with_workflow_runtime()
         engine.flow_manager.check_for_existing_running_flow.return_value = False
         engine.flow_manager.cancel_flow_run = AsyncMock()
         engine.worker_manager.broadcast_local_object_teardown = AsyncMock()

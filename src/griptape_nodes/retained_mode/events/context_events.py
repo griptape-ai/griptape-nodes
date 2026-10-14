@@ -157,3 +157,105 @@ class EnsureWorkflowAndFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSucc
 @PayloadRegistry.register
 class EnsureWorkflowAndFlowResultFailure(ResultPayloadFailure):
     """EnsureWorkflowAndFlow failed. Common causes: could not push workflow context, flow creation rejected by the engine."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ActivateWorkflowRequest(RequestPayload):
+    """Make an open workflow the one that requests act on, keeping every other open workflow loaded.
+
+    Use when: Switching the editor between workflows without reloading them.
+
+    If a workflow with this name is open, it becomes active with its graph, values, and variables
+    as they were left. Otherwise an empty workflow slot becomes active (`already_open` is False), and
+    the caller loads the workflow into it as usual, for example with RunWorkflowFromRegistryRequest.
+    The workflow that was active stays open.
+
+    Args:
+        workflow_name: Registry key of the workflow to activate.
+
+    Results: ActivateWorkflowResultSuccess | ActivateWorkflowResultFailure (the active workflow is running)
+    """
+
+    workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ActivateWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """The workflow is active.
+
+    Args:
+        workflow_name: Registry key of the workflow that was requested.
+        already_open: True when the workflow was already loaded and nothing needs to be reloaded.
+    """
+
+    workflow_name: str
+    already_open: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class ActivateWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Activation failed. Common cause: the active workflow is running."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ListOpenWorkflowsRequest(RequestPayload):
+    """List the workflows the engine holds open.
+
+    Use when: Showing which workflows can be switched to without reloading.
+
+    Results: ListOpenWorkflowsResultSuccess
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ListOpenWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """The open workflows.
+
+    Args:
+        workflow_names: Registry keys of the open workflows, in the order they were opened.
+        active_workflow_name: Registry key of the active workflow, or None when the active slot is empty.
+    """
+
+    workflow_names: list[str]
+    active_workflow_name: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class ListOpenWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Listing the open workflows failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CloseWorkflowRequest(RequestPayload):
+    """Close an open workflow, discarding its unsaved changes.
+
+    Use when: The user closes a workflow they have open.
+
+    Closing the active workflow leaves an empty workflow slot active.
+
+    Args:
+        workflow_name: Registry key of the workflow to close.
+
+    Results: CloseWorkflowResultSuccess | CloseWorkflowResultFailure (not open, or it couldn't be cleared)
+    """
+
+    workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CloseWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """The workflow is closed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CloseWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Closing the workflow failed."""

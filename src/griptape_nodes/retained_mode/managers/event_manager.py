@@ -39,6 +39,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointFailure,
 )
 from griptape_nodes.retained_mode.request_handlers import handled_request_types
+from griptape_nodes.retained_mode.workflow_runtime import bound_workflow_runtime
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 if TYPE_CHECKING:
@@ -1143,6 +1144,8 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
+        # Pin the request, and any tasks it spawns, to the workflow that is active now.
+        runtime_token = bound_workflow_runtime.set(self.engine.workflow_runtime)
         try:
             try:
                 # Actually make the handler callback (support both sync and async):
@@ -1161,6 +1164,7 @@ class EventManager(EngineScoped):
                 context=result_context,
             )
         finally:
+            bound_workflow_runtime.reset(runtime_token)
             _active_request_type.reset(token)
 
     def handle_request(
@@ -1198,6 +1202,8 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
+        # Pin the request, and any tasks it spawns, to the workflow that is active now.
+        runtime_token = bound_workflow_runtime.set(self.engine.workflow_runtime)
         try:
             try:
                 result_payload = self._invoke_handler_from_sync(callback, request)
@@ -1215,6 +1221,7 @@ class EventManager(EngineScoped):
                 context=result_context,
             )
         finally:
+            bound_workflow_runtime.reset(runtime_token)
             _active_request_type.reset(token)
 
     def _invoke_handler_from_sync(self, callback: Callable, request: RequestPayload) -> ResultPayload:

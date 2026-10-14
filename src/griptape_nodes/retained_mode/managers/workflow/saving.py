@@ -433,7 +433,7 @@ class WorkflowSaver(EngineScoped):
                 self.engine.workflow_manager.variable_substitution.rekey(unsaved_source_key, registry_key)
                 rekeyed_workflow = self.engine.workflow_registry.get_workflow_by_name(registry_key)
                 rekeyed_workflow.file_path = relative_file_path
-            for workflow_context_state in self.engine.context_manager._workflow_stack:
+            for workflow_context_state in self.engine.context_manager._state.workflow_stack:
                 if workflow_context_state._name == unsaved_source_key:
                     workflow_context_state._name = registry_key
                     # The context also retains the workflow's path, and `workflow_dir` prefers

@@ -77,7 +77,7 @@ class TestRunSeconds:
         machine.reset_machine.side_effect = lambda **_: setattr(
             machine.context.seconds_since_run_started, "return_value", None
         )
-        flow_manager._global_control_flow_machine = machine
+        flow_manager._state.global_control_flow_machine = machine
         flow_manager.check_for_existing_running_flow = MagicMock(return_value=True)
 
         await flow_manager.cancel_flow_run()

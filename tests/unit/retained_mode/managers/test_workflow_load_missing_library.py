@@ -1083,7 +1083,7 @@ class TestRefusedSubflowIsNotOrphaned:
         node = self._node_class_for(tmp_path / relative_path)(name="Wrapper")
         reopened.flow_manager.get_flow_by_name(host_flow.flow_name).add_node(node)
         reopened.object_manager.add_object_by_name(node.name, node)
-        reopened.node_manager._name_to_parent_flow_name[node.name] = host_flow.flow_name
+        reopened.node_manager._state.name_to_parent_flow_name[node.name] = host_flow.flow_name
 
         flows_before = set(reopened.object_manager.get_filtered_subset(type=ControlFlow))
         for _ in range(3):

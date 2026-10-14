@@ -48,6 +48,7 @@ from griptape_nodes.retained_mode.events.project_events import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.project_manager import PROJECTS_TO_REGISTER_KEY, ProjectManager
 from griptape_nodes.utils.file_utils import DEFAULT_MAX_SEARCH_DEPTH
+from tests.unit.mock_engine import mock_engine_with_workflow_runtime
 
 
 def _stub_config_for_listing(mock_config: Mock, *, global_workspace: str = "/global/ws") -> None:
@@ -724,7 +725,7 @@ class TestProjectManagerBuiltinVariables:
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 
         # A real ContextManager with an empty stack: exactly a worker before adopting.
-        context_manager = ContextManager(event_manager=MagicMock(), engine=MagicMock())
+        context_manager = ContextManager(event_manager=MagicMock(), engine=mock_engine_with_workflow_runtime())
         project_manager_with_template._engine = MagicMock()
         mock_workflow_registry = project_manager_with_template._engine.workflow_registry
         project_manager_with_template._engine.context_manager = context_manager
@@ -758,7 +759,7 @@ class TestProjectManagerBuiltinVariables:
         """
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 
-        context_manager = ContextManager(event_manager=MagicMock(), engine=MagicMock())
+        context_manager = ContextManager(event_manager=MagicMock(), engine=mock_engine_with_workflow_runtime())
         context_manager.mirror_workflow_context("w", "/a/b/w.py", None)
 
         assert context_manager.has_current_workflow() is True
@@ -770,13 +771,13 @@ class TestProjectManagerBuiltinVariables:
         """A mirror tracks ONE peer context; stacking would leave a stale workflow to be read."""
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 
-        context_manager = ContextManager(event_manager=MagicMock(), engine=MagicMock())
+        context_manager = ContextManager(event_manager=MagicMock(), engine=mock_engine_with_workflow_runtime())
         context_manager.mirror_workflow_context("first", "/a/first.py", None)
         context_manager.mirror_workflow_context("second", "/b/second.py", None)
         # Re-adopting the same context must not grow the stack either.
         context_manager.mirror_workflow_context("second", "/b/second.py", None)
 
-        assert len(context_manager._workflow_stack) == 1
+        assert len(context_manager._state.workflow_stack) == 1
         assert context_manager.get_current_workflow_name() == "second"
 
     def test_mirroring_an_empty_context_drops_the_previous_one(self) -> None:
@@ -789,7 +790,7 @@ class TestProjectManagerBuiltinVariables:
         """
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 
-        context_manager = ContextManager(event_manager=MagicMock(), engine=MagicMock())
+        context_manager = ContextManager(event_manager=MagicMock(), engine=mock_engine_with_workflow_runtime())
         context_manager.mirror_workflow_context("showA", "/a/showA.py", None)
 
         context_manager.mirror_workflow_context(None, None, None)
@@ -5192,6 +5193,7 @@ class TestProjectManagerProjectWorkspaces:
         mock_workflow_manager.refresh_workflow_registry = AsyncMock(return_value=None)
         mock_engine = MagicMock()
         mock_engine.workflow_manager = mock_workflow_manager
+        mock_engine.context_manager.close_inactive_workflow_runtimes = AsyncMock(return_value=None)
         return self._WorkspaceSwitchHarness(pm, mock_engine, mock_workflow_manager, str(project_file))
 
     @pytest.mark.asyncio

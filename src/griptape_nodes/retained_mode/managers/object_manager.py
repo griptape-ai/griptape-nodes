@@ -35,12 +35,19 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class ObjectManager(EngineScoped):
-    _name_to_objects: dict[str, object]
+    class WorkflowState:
+        """The named objects (flows, nodes) of one open workflow."""
+
+        def __init__(self) -> None:
+            self.name_to_objects: dict[str, object] = {}
 
     def __init__(self, _event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
-        self._name_to_objects = {}
         _event_manager.register_request_handlers(self)
+
+    @property
+    def _state(self) -> "ObjectManager.WorkflowState":
+        return self.engine.workflow_runtime.state(ObjectManager.WorkflowState, ObjectManager.WorkflowState)
 
     @handles(RenameObjectRequest)
     def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
@@ -89,8 +96,8 @@ class ObjectManager(EngineScoped):
                 return RenameObjectResultFailure(next_available_name=None, result_details=details)
 
         # Update the object table.
-        self._name_to_objects[final_name] = source_obj
-        del self._name_to_objects[request.object_name]
+        self._state.name_to_objects[final_name] = source_obj
+        del self._state.name_to_objects[request.object_name]
 
         details = f"Successfully renamed object '{request.object_name}' to '{final_name}'."
         log_level = logging.DEBUG
@@ -148,8 +155,8 @@ class ObjectManager(EngineScoped):
             # its objects for the life of the process.
             await self.engine.worker_manager.broadcast_local_object_teardown()
 
-        if self._name_to_objects:
-            details = f"Attempted to clear all object state, but {len(self._name_to_objects)} object(s) remained after workflow teardown."
+        if self._state.name_to_objects:
+            details = f"Attempted to clear all object state, but {len(self._state.name_to_objects)} object(s) remained after workflow teardown."
             return ClearAllObjectStateResultFailure(result_details=details)
 
         # Clear all local workflow variables
@@ -160,6 +167,10 @@ class ObjectManager(EngineScoped):
 
         details = "Successfully cleared all object state (deleted everything)."
         return ClearAllObjectStateResultSuccess(result_details=details)
+
+    def has_objects(self) -> bool:
+        """Whether the current workflow has any flows or nodes."""
+        return bool(self._state.name_to_objects)
 
     def get_filtered_subset[T](
         self,
@@ -181,7 +192,7 @@ class ObjectManager(EngineScoped):
         if name and isinstance(name, str):
             name = re.compile(name)
 
-        for key, value in self._name_to_objects.items():
+        for key, value in self._state.name_to_objects.items():
             # Check key pattern if provided
             key_match = True
             if name:
@@ -213,7 +224,7 @@ class ObjectManager(EngineScoped):
         if requested_name is None:
             # 1. If no name was requested, use the type name + first free integer.
             incremental_prefix = f"{type_name}_"
-        elif requested_name not in self._name_to_objects:
+        elif requested_name not in self._state.name_to_objects:
             # 2. If a name was requested and no collision, use it as-is.
             name_to_return = requested_name
         else:
@@ -234,7 +245,7 @@ class ObjectManager(EngineScoped):
             done = False
             while not done:
                 test_name = f"{incremental_prefix}{curr_idx}"
-                if test_name not in self._name_to_objects:
+                if test_name not in self._state.name_to_objects:
                     # Found it.
                     name_to_return = test_name
                     done = True
@@ -249,20 +260,20 @@ class ObjectManager(EngineScoped):
         return name_to_return
 
     def add_object_by_name(self, name: str, obj: object) -> None:
-        if name in self._name_to_objects:
+        if name in self._state.name_to_objects:
             msg = f"Attempted to add an object with name '{name}' but an object with that name already exists. The Object Manager is sacrosanct in this regard."
             raise ValueError(msg)
-        self._name_to_objects[name] = obj
+        self._state.name_to_objects[name] = obj
 
     def get_object_by_name(self, name: str) -> object:
-        return self._name_to_objects[name]
+        return self._state.name_to_objects[name]
 
     def has_object_with_name(self, name: str) -> bool:
-        has_it = name in self._name_to_objects
+        has_it = name in self._state.name_to_objects
         return has_it
 
     def attempt_get_object_by_name(self, name: str) -> Any | None:
-        return self._name_to_objects.get(name, None)
+        return self._state.name_to_objects.get(name, None)
 
     def attempt_get_object_by_name_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
         obj = self.attempt_get_object_by_name(name)
@@ -272,7 +283,7 @@ class ObjectManager(EngineScoped):
 
     def del_obj_by_name(self, name: str) -> None:
         # Does the object have any children? delete those
-        obj = self._name_to_objects[name]
+        obj = self._state.name_to_objects[name]
         if isinstance(obj, BaseNodeElement):
             children = obj.find_elements_by_type(BaseNodeElement)
             for child in children:
@@ -283,4 +294,4 @@ class ObjectManager(EngineScoped):
                 if isinstance(child, Parameter) and isinstance(obj, BaseNode):
                     self.engine.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
                     return
-        del self._name_to_objects[name]
+        del self._state.name_to_objects[name]

@@ -1261,8 +1261,13 @@ class WorkerManager(EngineScoped):
         One method because both halves are required: the named-key broadcast is what drains the
         orchestrator's pending-release queue, and the drop-all is what covers whatever a worker still holds.
         Two teardown sites call this; neither may take half of it.
+
+        While another workflow is open, the drop-all is skipped: it would take that workflow's objects
+        too. The last workflow's teardown sends it.
         """
         await self.broadcast_pending_local_object_releases()
+        if self.engine.another_workflow_runtime_holds_objects():
+            return
         await self.broadcast_drop_all_local_objects()
 
     async def broadcast_drop_all_local_objects(self) -> None:

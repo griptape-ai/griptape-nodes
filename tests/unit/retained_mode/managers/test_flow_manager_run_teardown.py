@@ -19,6 +19,7 @@ import pytest
 from griptape_nodes.retained_mode.managers import flow_manager as flow_manager_module
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+from tests.unit.mock_engine import mock_engine_with_workflow_runtime
 
 
 class _DoomedRun(NamedTuple):
@@ -36,7 +37,7 @@ def _doomed_run(monkeypatch: pytest.MonkeyPatch, *, cancel_also_fails: bool = Fa
     `reset_machine` drops the state the liveness check reads, the way the real one does, so the
     tests can assert on the check itself rather than on the call that is supposed to satisfy it.
     """
-    flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())
+    flow_manager = FlowManager(MagicMock(spec=EventManager), engine=mock_engine_with_workflow_runtime())
 
     machine = MagicMock()
     machine.current_state = MagicMock()  # Truthy and not CompleteState: a run in progress.
@@ -56,7 +57,7 @@ def _doomed_run(monkeypatch: pytest.MonkeyPatch, *, cancel_also_fails: bool = Fa
         machine.cancel_flow = AsyncMock()
 
     monkeypatch.setattr(flow_manager_module, "ControlFlowMachine", MagicMock(return_value=machine))
-    flow_manager._global_dag_builder.node_to_reference["Doomed"] = MagicMock()
+    flow_manager._state.global_dag_builder.node_to_reference["Doomed"] = MagicMock()
 
     return _DoomedRun(flow_manager=flow_manager, machine=machine)
 
@@ -66,7 +67,7 @@ def _assert_engine_is_restartable(flow_manager: FlowManager) -> None:
         "The engine still reports a run in progress, so the Run button stays lit and every later start is refused."
     )
     assert flow_manager.global_single_node_resolution is False
-    assert flow_manager._global_dag_builder.node_to_reference == {}
+    assert flow_manager._state.global_dag_builder.node_to_reference == {}
 
 
 class TestStartFlowCleansUpAfterAFailedRun:

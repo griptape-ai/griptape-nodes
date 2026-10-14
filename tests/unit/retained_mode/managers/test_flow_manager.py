@@ -386,7 +386,7 @@ class TestStartFlowFailureMessage:
         machine.resolution_machine.get_error_message.return_value = "Node 'n' encountered a problem: boom"
         with (
             patch.object(ready_flow_manager, "start_flow"),
-            patch.object(ready_flow_manager, "_global_control_flow_machine", machine),
+            patch.object(ready_flow_manager._state, "global_control_flow_machine", machine),
         ):
             result = await ready_flow_manager.on_start_flow_request(StartFlowRequest(flow_name="f"))
 

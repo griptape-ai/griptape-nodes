@@ -234,12 +234,12 @@ class TestFlowManagerDagBuilderIntegration:
         try:
             # Test basic FlowManager creation
             flow_manager = FlowManager(MagicMock(spec=EventManager))
-            assert hasattr(flow_manager, "_global_dag_builder")
+            assert hasattr(flow_manager, "global_dag_builder")
 
             # Test that DAG builder can be set
             mock_dag_builder = MagicMock(spec=DagBuilder)
-            flow_manager._global_dag_builder = mock_dag_builder
-            assert flow_manager._global_dag_builder is mock_dag_builder
+            flow_manager._state.global_dag_builder = mock_dag_builder
+            assert flow_manager._state.global_dag_builder is mock_dag_builder
 
             # Test basic functionality without async complexity
         except Exception:  # noqa: S110
@@ -256,14 +256,14 @@ class TestFlowManagerDagBuilderIntegration:
 
             # Create initial DAG builder
             initial_dag_builder = MagicMock(spec=DagBuilder)
-            flow_manager._global_dag_builder = initial_dag_builder
+            flow_manager._state.global_dag_builder = initial_dag_builder
 
             # Verify that the DAG builder is preserved
-            assert flow_manager._global_dag_builder is initial_dag_builder
+            assert flow_manager._state.global_dag_builder is initial_dag_builder
 
             # Test that it can be cleared and reset
-            flow_manager._global_dag_builder.clear()
-            assert flow_manager._global_dag_builder is not None
+            flow_manager._state.global_dag_builder.clear()
+            assert flow_manager._state.global_dag_builder is not None
 
         except Exception:  # noqa: S110
             # If FlowManager requires complex setup, skip this test
@@ -278,13 +278,13 @@ class TestFlowManagerDagBuilderIntegration:
             # Create FlowManager instance with existing DAG builder
             flow_manager = FlowManager(MagicMock(spec=EventManager))
             mock_dag_builder = MagicMock(spec=DagBuilder)
-            flow_manager._global_dag_builder = mock_dag_builder
+            flow_manager._state.global_dag_builder = mock_dag_builder
 
             # Create mock control flow machine
             mock_control_flow = MagicMock()
             mock_control_flow.reset_machine = MagicMock()
             mock_control_flow.context.flow_name = "test_flow"
-            flow_manager._global_control_flow_machine = mock_control_flow
+            flow_manager._state.global_control_flow_machine = mock_control_flow
 
             # Create mock flow with no nodes to avoid async complexity in test
             mock_flow = MagicMock()
@@ -298,7 +298,7 @@ class TestFlowManagerDagBuilderIntegration:
                 await flow_manager.cancel_flow_run()
 
                 # Verify DAG builder reference is cleared
-                assert flow_manager._global_dag_builder is None
+                assert flow_manager._state.global_dag_builder is None
 
         except Exception:  # noqa: S110
             # If FlowManager requires complex setup, skip this test
