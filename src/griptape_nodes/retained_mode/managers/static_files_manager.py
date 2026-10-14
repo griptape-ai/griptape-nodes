@@ -23,6 +23,7 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     GetPreviewForArtifactResultSuccess,
     PreviewGenerationPolicy,
 )
+from griptape_nodes.retained_mode.events.base_events import AppEvent
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
@@ -43,6 +44,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlRequest,
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
+    StaticFileChanged,
 )
 from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
     SidecarContent,
@@ -52,6 +54,7 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.managers.static_file_watcher import StaticFileWatcher, WatchedFileChange
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.servers.static import (
     ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV,
@@ -132,6 +135,10 @@ class StaticFilesManager(EngineScoped):
         # consumer that needs the answer waits on this instead of sampling mid-race. A
         # threading.Event because waiters and the resolver can sit on different event loops.
         self._base_url_settled = threading.Event()
+
+        # Watches the local files clients mint URLs for, while the refresh_previews_on_file_change
+        # setting is on. Its thread starts with the first watched file.
+        self.file_watcher = StaticFileWatcher(on_change=self._on_watched_file_changed)
 
         # Seed the driver with any configured override so URLs built before initialization
         # completes still point at the tunnel or proxy fronting the host's server. The handler re-reads
@@ -544,6 +551,9 @@ class StaticFilesManager(EngineScoped):
             msg = f"Failed to create presigned URL for file {file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
+        if bucket_id is None:
+            await self._watch_for_changes(file_path_for_driver, request.file_path)
+
         return CreateStaticFileDownloadUrlFromPathResultSuccess(
             url=url,
             file_url=driver.get_asset_url(file_path_for_driver),
@@ -551,6 +561,38 @@ class StaticFilesManager(EngineScoped):
             preview_failure_reason=resolution.preview_failure_reason,
             result_details="Successfully created static file download URL",
         )
+
+    async def _watch_for_changes(self, file_path: Path, requested_file_path: str) -> None:
+        """Watch a local file a client minted a URL for, so it hears when the file changes.
+
+        Args:
+            file_path: The path handed to the storage driver, possibly workspace-relative.
+            requested_file_path: The request's file_path as the client sent it.
+        """
+        # Under cloud storage, the client's URL points at the uploaded copy, not this file.
+        if not isinstance(self.storage_driver, LocalStorageDriver):
+            return
+        # Workers mint URLs for their own nodes. The orchestrator is the process the editor talks to.
+        if self.engine.library_manager.is_worker:
+            return
+        if not self._refresh_previews_on_file_change():
+            return
+        local_path = resolve_workspace_path(file_path, self.config_manager.workspace_path)
+        if not await anyio.Path(local_path).is_file():
+            return
+
+        self.file_watcher.watch_file(local_path, requested_file_path)
+
+    def _on_watched_file_changed(self, change: WatchedFileChange) -> None:
+        # Files watched before the setting was turned off stay watched, so check again here.
+        if not self._refresh_previews_on_file_change():
+            return
+        # Runs on the watcher's thread. put_event hands the event to the engine's loop.
+        payload = StaticFileChanged(file_path=str(change.path), requested_file_paths=change.requested_file_paths)
+        self.engine.event_manager.put_event(AppEvent(payload=payload))
+
+    def _refresh_previews_on_file_change(self) -> bool:
+        return self.config_manager.get_config_value("refresh_previews_on_file_change", default=True, cast_type=bool)
 
     def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
         # try/finally rather than settling per branch: whatever resolution reached before raising

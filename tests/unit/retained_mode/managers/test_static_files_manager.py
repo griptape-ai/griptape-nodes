@@ -1643,3 +1643,132 @@ class TestStaticServerUrlSettlement:
         started = time.monotonic()
         assert manager.wait_for_static_server_base_url(5.0) is None
         assert time.monotonic() - started < 1.0
+
+
+class TestStaticFilesManagerWatchesMintedFiles:
+    """Local files a client mints a URL for are watched while the refresh_previews_on_file_change setting is on."""
+
+    def _build_manager(self, *, setting_on: bool | None = None, is_worker: bool = False) -> StaticFilesManager:
+        # None leaves the setting out of the config, as for a user who never changed it.
+        config_values: dict[str, object] = {"storage_backend": "local"}
+        if setting_on is not None:
+            config_values["refresh_previews_on_file_change"] = setting_on
+        mock_config = Mock()
+        mock_config.get_config_value.side_effect = lambda key, default=None, **_kwargs: config_values.get(key, default)
+        mock_config.workspace_path = Path("/mock/workspace")
+        engine = Mock()
+        engine.library_manager.is_worker = is_worker
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            manager = StaticFilesManager(
+                config_manager=mock_config, secrets_manager=Mock(), event_manager=None, engine=engine
+            )
+        manager.storage_driver = Mock(spec=LocalStorageDriver)
+        manager.storage_driver.create_signed_download_url.return_value = "http://localhost/plate.png?v=a"
+        manager.storage_driver.get_asset_url.return_value = "file:///plate.png"
+        manager.file_watcher = Mock()
+        return manager
+
+    async def _mint(self, manager: StaticFilesManager, file_path: str) -> None:
+        from griptape_nodes.retained_mode.events.static_file_events import (
+            CreateStaticFileDownloadUrlFromPathRequest,
+            CreateStaticFileDownloadUrlFromPathResultSuccess,
+        )
+
+        result = await manager.on_handle_create_static_file_download_url_from_path_request(
+            CreateStaticFileDownloadUrlFromPathRequest(file_path=file_path)
+        )
+        assert isinstance(result, CreateStaticFileDownloadUrlFromPathResultSuccess)
+
+    @pytest.mark.asyncio
+    async def test_watches_the_file_with_the_path_the_client_sent(self, tmp_path: Path) -> None:
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        manager = self._build_manager()
+
+        await self._mint(manager, f"file://{image}")
+
+        manager.file_watcher.watch_file.assert_called_once_with(image, f"file://{image}")
+
+    @pytest.mark.asyncio
+    async def test_watches_the_resolved_file_for_a_macro_path(self, tmp_path: Path) -> None:
+        from griptape_nodes.retained_mode.events.project_events import GetPathForMacroResultSuccess
+
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        manager = self._build_manager()
+        manager.engine.handle_request = Mock(
+            return_value=GetPathForMacroResultSuccess(resolved_path=image, absolute_path=image, result_details="ok")
+        )
+
+        await self._mint(manager, "{inputs}/plate.png")
+
+        manager.file_watcher.watch_file.assert_called_once_with(image, "{inputs}/plate.png")
+
+    @pytest.mark.asyncio
+    async def test_does_not_watch_with_the_setting_off(self, tmp_path: Path) -> None:
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        manager = self._build_manager(setting_on=False)
+
+        await self._mint(manager, str(image))
+
+        manager.file_watcher.watch_file.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_does_not_watch_in_a_worker(self, tmp_path: Path) -> None:
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        manager = self._build_manager(is_worker=True)
+
+        await self._mint(manager, str(image))
+
+        manager.file_watcher.watch_file.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_does_not_watch_under_cloud_storage(self, tmp_path: Path) -> None:
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        manager = self._build_manager()
+        manager.storage_driver = Mock(spec=GriptapeCloudStorageDriver)
+        manager.storage_driver.create_signed_download_url.return_value = "https://signed.example/plate.png"
+        manager.storage_driver.get_asset_url.return_value = "https://cloud.example/plate.png"
+
+        await self._mint(manager, str(image))
+
+        manager.file_watcher.watch_file.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_does_not_watch_a_missing_file(self, tmp_path: Path) -> None:
+        manager = self._build_manager()
+
+        await self._mint(manager, str(tmp_path / "missing.png"))
+
+        manager.file_watcher.watch_file.assert_not_called()
+
+    def test_a_change_is_sent_to_clients_as_an_app_event(self) -> None:
+        from griptape_nodes.retained_mode.events.base_events import AppEvent
+        from griptape_nodes.retained_mode.events.static_file_events import StaticFileChanged
+        from griptape_nodes.retained_mode.managers.static_file_watcher import WatchedFileChange
+
+        manager = self._build_manager()
+
+        manager._on_watched_file_changed(
+            WatchedFileChange(path=Path("/work/plate.png"), requested_file_paths=["{inputs}/plate.png"])
+        )
+
+        event = manager.engine.event_manager.put_event.call_args.args[0]
+        assert isinstance(event, AppEvent)
+        assert event.payload == StaticFileChanged(
+            file_path=str(Path("/work/plate.png")), requested_file_paths=["{inputs}/plate.png"]
+        )
+
+    def test_a_change_is_not_sent_after_the_setting_is_turned_off(self) -> None:
+        from griptape_nodes.retained_mode.managers.static_file_watcher import WatchedFileChange
+
+        manager = self._build_manager(setting_on=False)
+
+        manager._on_watched_file_changed(
+            WatchedFileChange(path=Path("/work/plate.png"), requested_file_paths=["{inputs}/plate.png"])
+        )
+
+        manager.engine.event_manager.put_event.assert_not_called()

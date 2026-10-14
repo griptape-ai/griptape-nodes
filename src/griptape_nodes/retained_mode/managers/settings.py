@@ -729,6 +729,14 @@ class Settings(BaseModel):
         default=True,
         description="Enable file watching for synced workflows directory",
     )
+    refresh_previews_on_file_change: bool = Field(
+        category=FILE_SYSTEM,
+        default=True,
+        description=(
+            "Update image, video, and audio previews of files on your computer as soon as the file is saved, "
+            "including edits made in other apps"
+        ),
+    )
     mcp_servers: list[MCPServerConfig] = Field(
         category=MCP_SERVERS,
         default_factory=list,

@@ -124,3 +124,10 @@ class TestLibraryDependencyInstallBehavior:
 
     def test_default_is_always(self) -> None:
         assert Settings().library.dependency_install_behavior == LibraryDependencyInstallBehavior.ALWAYS
+
+
+class TestRefreshPreviewsOnFileChange:
+    """Previews refresh on file changes unless the user turns it off."""
+
+    def test_default_is_on(self) -> None:
+        assert Settings().refresh_previews_on_file_change is True
