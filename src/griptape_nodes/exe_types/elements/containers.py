@@ -286,12 +286,16 @@ class ParameterList(ParameterContainer):
         super()._custom_setter_for_property_type(value)
 
     def _custom_setter_for_property_input_types(self, value: list[str] | None) -> None:
-        # If we are setting a type, we need to propagate this to our children as well.
-        row_input_types = None if value is None else self._with_list_variants(value)
-        for child in self._children:
-            if isinstance(child, Parameter):
-                child.input_types = row_input_types
-        return super()._custom_setter_for_property_input_types(value)
+        super()._custom_setter_for_property_input_types(value)
+        rows = [child for child in self._children if isinstance(child, Parameter)]
+        if not rows:
+            # Also the case while the list is being constructed, before its types are all set.
+            return
+        # Existing rows get what add_child_parameter gives a new row. Read after the value is stored, so a
+        # cleared value resolves to the same default for both.
+        row_input_types = self._with_list_variants(super()._custom_getter_for_property_input_types())
+        for row in rows:
+            row.input_types = row_input_types
 
     @property
     def concatenates_list_rows(self) -> bool:

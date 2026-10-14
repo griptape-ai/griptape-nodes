@@ -42,6 +42,15 @@ class TestRowInputTypes:
 
         assert row.input_types == ["VideoUrlArtifact", "list[VideoUrlArtifact]", "list"]
 
+    def test_clearing_input_types_leaves_old_and_new_rows_alike(self, node: MockNode) -> None:
+        refs = _refs(node)
+        old_row = refs.add_child_parameter()
+
+        refs.input_types = None
+        new_row = refs.add_child_parameter()
+
+        assert old_row.input_types == new_row.input_types
+
 
 class TestConcatenation:
     def test_a_list_in_a_row_adds_its_items(self, node: MockNode) -> None:
