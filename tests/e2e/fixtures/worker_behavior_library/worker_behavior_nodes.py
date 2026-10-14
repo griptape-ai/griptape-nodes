@@ -274,6 +274,26 @@ class GrowsAnOutputListNode(DataNode):
             self.set_parameter_value(child.name, item)
 
 
+class ReadsAnInputListNode(DataNode):
+    """Echoes an input `ParameterList`, the shape of a node reading `reference_images`."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+        self.add_parameter(
+            ParameterList(
+                name="items",
+                input_types=["str"],
+                type="str",
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+        self.add_parameter(Parameter(name="echo", type="list", tooltip="", allowed_modes={ParameterMode.OUTPUT}))
+
+    def process(self) -> None:
+        self.parameter_output_values["echo"] = self.get_parameter_list_value("items")
+
+
 def _shout(value: Any) -> Any:
     """Converter: proves converters run where the node object is real."""
     if isinstance(value, str):

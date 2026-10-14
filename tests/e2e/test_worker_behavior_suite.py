@@ -40,7 +40,12 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
-from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
+    AddParameterToNodeResultSuccess,
+    RemoveParameterFromNodeRequest,
+    SetParameterValueRequest,
+)
 from griptape_nodes.retained_mode.events.project_events import ActivateWorkspaceProjectRequest
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
 from griptape_nodes.utils.version_utils import engine_version
@@ -425,6 +430,45 @@ class TestAnOutputListGrownWhileRunning:
         await _execute("GrowsAnOutputListNode", "LocalListGrower")
 
         assert node.get_parameter_value("clips") == ["clip0", "clip1"]
+
+
+class TestAnInputListFilledInTheEditor:
+    """A list the artist filled row by row, then edited, as the executor dispatches it."""
+
+    @pytest.mark.parametrize("is_worker", [False, True])
+    @pytest.mark.asyncio
+    async def test_the_node_reads_the_rows_it_has_now(self, *, is_worker: bool) -> None:
+        node = _make_in_flow("ReadsAnInputListNode", f"InputLister{is_worker}")
+        rows = []
+        for value in ("a", "b", "c"):
+            added = current_engine().handle_request(
+                AddParameterToNodeRequest(node_name=node.name, parent_container_name="items")
+            )
+            assert isinstance(added, AddParameterToNodeResultSuccess)
+            current_engine().handle_request(
+                SetParameterValueRequest(node_name=node.name, parameter_name=added.parameter_name, value=value)
+            )
+            rows.append(added.parameter_name)
+        current_engine().handle_request(RemoveParameterFromNodeRequest(node_name=node.name, parameter_name=rows[1]))
+        current_engine().library_manager._is_worker = is_worker
+
+        result = await _execute("ReadsAnInputListNode", node.name, **node._parameter_values_for_dispatch())
+
+        assert result.parameter_output_values["echo"] == ["a", "c"]
+
+    @pytest.mark.parametrize("is_worker", [False, True])
+    @pytest.mark.asyncio
+    async def test_a_list_set_whole_by_request(self, *, is_worker: bool) -> None:
+        """How an MCP client or a script sets a list."""
+        node = _make_in_flow("ReadsAnInputListNode", f"WholeLister{is_worker}")
+        current_engine().handle_request(
+            SetParameterValueRequest(node_name=node.name, parameter_name="items", value=["a", "b"])
+        )
+        current_engine().library_manager._is_worker = is_worker
+
+        result = await _execute("ReadsAnInputListNode", node.name, **node._parameter_values_for_dispatch())
+
+        assert result.parameter_output_values["echo"] == ["a", "b"]
 
 
 class TestEditorTimeBehaviorOnRealNodes:

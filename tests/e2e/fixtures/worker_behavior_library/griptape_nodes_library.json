@@ -150,6 +150,15 @@
         "description": "Derives parameter structure from a value",
         "display_name": "DerivedStructureNode"
       }
+    },
+    {
+      "class_name": "ReadsAnInputListNode",
+      "file_path": "worker_behavior_nodes.py",
+      "metadata": {
+        "category": "test",
+        "description": "Echoes an input list",
+        "display_name": "ReadsAnInputListNode"
+      }
     }
   ]
 }
