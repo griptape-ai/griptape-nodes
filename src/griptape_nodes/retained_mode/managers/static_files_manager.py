@@ -3,6 +3,7 @@ import binascii
 import logging
 import os
 import threading
+from functools import partial
 from pathlib import Path
 from typing import NamedTuple
 
@@ -14,10 +15,10 @@ from griptape_nodes.common.project_templates.situation import BuiltInSituation, 
 from griptape_nodes.drivers.cloud_credentials import MISSING_CREDENTIAL_MESSAGE, resolve_cloud_credential
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
-from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
+from griptape_nodes.drivers.storage.local_storage_driver import FileFingerprint, LocalStorageDriver
 from griptape_nodes.files.path_utils import FilenameParts, resolve_workspace_path
 from griptape_nodes.retained_mode.engine import Engine, EngineScoped
-from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete, ConfigChanged
 from griptape_nodes.retained_mode.events.artifact_events import (
     GetPreviewForArtifactRequest,
     GetPreviewForArtifactResultFailure,
@@ -55,11 +56,12 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.retained_mode.managers.static_file_watcher import (
-    MAX_WATCHED_FILES,
-    StaticFileWatcher,
-    WatchedFileChange,
+from griptape_nodes.retained_mode.managers.settings import (
+    DEFAULT_REFRESH_PREVIEWS_MAX_FILES,
+    REFRESH_PREVIEWS_MAX_FILES_KEY,
+    coerce_refresh_previews_max_files,
 )
+from griptape_nodes.retained_mode.managers.static_file_watcher import StaticFileWatcher, WatchedFileChange
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.servers.static import (
     ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV,
@@ -104,6 +106,22 @@ class PreviewResolution(NamedTuple):
     path_to_serve: Path
     artifact_metadata: dict | None = None
     preview_failure_reason: str | None = None
+
+
+class WatchTarget(NamedTuple):
+    """A local file to watch for a client, read before its URL was minted.
+
+    Attributes:
+        path: Absolute path of the file on disk.
+        baseline: Its fingerprint before the preview was resolved and the URL minted, so a save
+            landing in between still counts as a change.
+    """
+
+    path: Path
+    baseline: FileFingerprint | None
+
+
+REFRESH_PREVIEWS_ON_FILE_CHANGE_KEY = "refresh_previews_on_file_change"
 
 
 class StaticFilesManager(EngineScoped):
@@ -193,6 +211,7 @@ class StaticFilesManager(EngineScoped):
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
             )
+            event_manager.add_listener_to_app_event(ConfigChanged, self._on_config_changed)
 
     @property
     def static_server_base_url(self) -> str:
@@ -541,6 +560,10 @@ class StaticFilesManager(EngineScoped):
             # For local paths, convert URI to path
             file_path_for_driver = Path(uri_to_path(file_path))
 
+        watch_target: WatchTarget | None = None
+        if bucket_id is None:
+            watch_target = await self._watch_target(file_path_for_driver)
+
         # If preview requested, generate preview and get preview path + artifact metadata.
         # If metadata_only requested, extract metadata without generating a preview.
         resolution = await self._resolve_preview_path(
@@ -556,8 +579,12 @@ class StaticFilesManager(EngineScoped):
             msg = f"Failed to create presigned URL for file {file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
-        if bucket_id is None:
-            await self._watch_for_changes(file_path_for_driver, request.file_path)
+        if watch_target is not None:
+            # On a worker thread, like the stat in _watch_target, so the engine's loop never waits.
+            watch_file = partial(
+                self.file_watcher.watch_file, watch_target.path, request.file_path, baseline=watch_target.baseline
+            )
+            await anyio.to_thread.run_sync(watch_file)
 
         return CreateStaticFileDownloadUrlFromPathResultSuccess(
             url=url,
@@ -567,31 +594,46 @@ class StaticFilesManager(EngineScoped):
             result_details="Successfully created static file download URL",
         )
 
-    async def _watch_for_changes(self, file_path: Path, requested_file_path: str) -> None:
-        """Watch a local file a client minted a URL for, so it hears when the file changes.
+    async def _watch_target(self, file_path: Path) -> WatchTarget | None:
+        """The local file to watch for this request and its fingerprint now, or None to watch nothing.
+
+        Called before the preview is resolved and the URL minted. Reading the baseline afterwards
+        would take a save landing in between as the starting point, and it would never be reported.
 
         Args:
             file_path: The path handed to the storage driver, possibly workspace-relative.
-            requested_file_path: The request's file_path as the client sent it.
         """
         # Under cloud storage, the client's URL points at the uploaded copy, not this file.
         if not isinstance(self.storage_driver, LocalStorageDriver):
-            return
+            return None
         # Workers mint URLs for their own nodes. The orchestrator is the process the editor talks to.
         if self.engine.library_manager.is_worker:
-            return
+            return None
         if not self._refresh_previews_on_file_change():
-            return
+            return None
+        # ConfigChanged covers edits while running. A limit set in a config file before the engine
+        # started never sends one, so apply the current value here too.
+        self.file_watcher.set_max_files(self._refresh_previews_max_files())
         local_path = resolve_workspace_path(file_path, self.config_manager.workspace_path)
         if not await anyio.Path(local_path).is_file():
-            return
+            return None
 
-        self.file_watcher.max_files = self._refresh_previews_max_files()
-        # On a worker thread: watch_file stats the file, which can take seconds on a network drive.
-        await anyio.to_thread.run_sync(self.file_watcher.watch_file, local_path, requested_file_path)
+        # On a worker thread: a stat can take seconds on a network drive.
+        baseline = await anyio.to_thread.run_sync(StaticFileWatcher.read_fingerprint, local_path)
+        return WatchTarget(path=local_path, baseline=baseline)
+
+    def _on_config_changed(self, payload: ConfigChanged) -> None:
+        # An empty key means the whole config was replaced.
+        if payload.key not in ("", REFRESH_PREVIEWS_ON_FILE_CHANGE_KEY, REFRESH_PREVIEWS_MAX_FILES_KEY):
+            return
+        if not self._refresh_previews_on_file_change():
+            # Stop watching now, so turning the setting off sheds the load right away.
+            self.file_watcher.clear()
+            return
+        self.file_watcher.set_max_files(self._refresh_previews_max_files())
 
     def _on_watched_file_changed(self, change: WatchedFileChange) -> None:
-        # Files watched before the setting was turned off stay watched, so check again here.
+        # A change can be detected just before the watcher is cleared for the setting turning off.
         if not self._refresh_previews_on_file_change():
             return
         # Runs on the watcher's thread. put_event hands the event to the engine's loop.
@@ -599,19 +641,15 @@ class StaticFilesManager(EngineScoped):
         self.engine.event_manager.put_event(AppEvent(payload=payload))
 
     def _refresh_previews_on_file_change(self) -> bool:
-        return self.config_manager.get_config_value("refresh_previews_on_file_change", default=True, cast_type=bool)
+        return self.config_manager.get_config_value(REFRESH_PREVIEWS_ON_FILE_CHANGE_KEY, default=True, cast_type=bool)
 
     def _refresh_previews_max_files(self) -> int:
-        # Read without cast_type, which raises on a non-number. Anything but a whole number of at
-        # least 1 falls back to the default, so a typo in the config can't stop previews loading.
-        value = self.config_manager.get_config_value("refresh_previews_max_files", default=MAX_WATCHED_FILES)
-        if isinstance(value, bool):
-            return MAX_WATCHED_FILES
-        if not isinstance(value, int):
-            return MAX_WATCHED_FILES
-        if value < 1:
-            return MAX_WATCHED_FILES
-        return value
+        # Read without cast_type, which raises on a non-number. The merged config keeps raw values,
+        # so apply the same rule as the Settings validator here.
+        value = self.config_manager.get_config_value(
+            REFRESH_PREVIEWS_MAX_FILES_KEY, default=DEFAULT_REFRESH_PREVIEWS_MAX_FILES
+        )
+        return coerce_refresh_previews_max_files(value)
 
     def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
         # try/finally rather than settling per branch: whatever resolution reached before raising

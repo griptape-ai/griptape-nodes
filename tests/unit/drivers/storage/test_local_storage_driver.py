@@ -474,3 +474,26 @@ class TestDeterministicUrlVersioning:
         after = driver.create_signed_download_url(served)
 
         assert before == after
+
+
+class TestFingerprintFile:
+    """fingerprint_file is the identity both download URLs and the preview watcher use."""
+
+    def test_reads_inode_size_and_mtime(self, tmp_path: Path) -> None:
+        from griptape_nodes.drivers.storage.local_storage_driver import fingerprint_file
+
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        stat_result = image.stat()
+
+        fingerprint = fingerprint_file(image)
+
+        assert fingerprint is not None
+        assert fingerprint.inode == stat_result.st_ino
+        assert fingerprint.size == stat_result.st_size
+        assert fingerprint.mtime_ns == stat_result.st_mtime_ns
+
+    def test_is_none_for_a_missing_file(self, tmp_path: Path) -> None:
+        from griptape_nodes.drivers.storage.local_storage_driver import fingerprint_file
+
+        assert fingerprint_file(tmp_path / "missing.png") is None

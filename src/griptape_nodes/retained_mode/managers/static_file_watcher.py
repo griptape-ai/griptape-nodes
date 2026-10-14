@@ -1,7 +1,6 @@
 """Watch the local files behind minted download URLs and report when one changes on disk."""
 
 import logging
-import os
 import threading
 from collections import Counter, OrderedDict
 from collections.abc import Callable
@@ -11,16 +10,18 @@ from typing import NamedTuple
 
 from watchfiles import Change, watch
 
+from griptape_nodes.drivers.storage.local_storage_driver import FileFingerprint, fingerprint_file
 from griptape_nodes.files.path_utils import canonicalize_for_identity, canonicalize_for_io
+from griptape_nodes.retained_mode.managers.settings import DEFAULT_REFRESH_PREVIEWS_MAX_FILES
 
 logger = logging.getLogger("griptape_nodes")
 
-# Most files watched at once, unless the refresh_previews_max_files setting says otherwise. A long
+# Most files watched at once: the refresh_previews_max_files setting's default. A long
 # session mints a URL for every preview it shows, so the oldest fall off instead of letting the set,
 # and the directories under watch, grow without bound. The periodic re-check is the cost that grows
 # with this number: measured at about 0.2-0.4% of one CPU core for 1000 files and under 2% for
 # 10000, on macOS and Linux.
-MAX_WATCHED_FILES = 1000
+MAX_WATCHED_FILES = DEFAULT_REFRESH_PREVIEWS_MAX_FILES
 
 # How long to group filesystem events before reporting. Apps save in bursts (write a temp file,
 # rename it over the original), and one report per save is enough.
@@ -34,18 +35,6 @@ RECHECK_INTERVAL_MS = 5000
 # How long to wait before watching again after the watch itself failed, such as when a watched
 # directory was deleted between listing it and starting the watch.
 RETRY_DELAY_S = 5.0
-
-
-class FileFingerprint(NamedTuple):
-    """The file identity the local storage driver versions URLs by.
-
-    A new inode, size, or modification time means the next minted URL differs, so a change is
-    worth reporting. Matching fingerprints mean it is not.
-    """
-
-    inode: int
-    size: int
-    mtime_ns: int
 
 
 class WatchedFileChange(NamedTuple):
@@ -99,9 +88,7 @@ class StaticFileWatcher:
                 OS notifications, which network drives need.
         """
         self._on_change = on_change
-        # Public so the owner can apply a changed setting. A lower limit takes effect at the next
-        # watch_file call.
-        self.max_files = max_files
+        self._max_files = max_files
         self._debounce_ms = debounce_ms
         self._recheck_interval_ms = recheck_interval_ms
         self._force_polling = force_polling
@@ -116,23 +103,34 @@ class StaticFileWatcher:
         self._thread: threading.Thread | None = None
 
     @property
+    def max_files(self) -> int:
+        """Most files watched at once."""
+        return self._max_files
+
+    @property
     def watched_paths(self) -> list[Path]:
         """Canonical paths of the files under watch, least recently requested first."""
         with self._lock:
             return list(self._files)
 
-    def watch_file(self, path: Path, requested_file_path: str) -> None:
+    def watch_file(self, path: Path, requested_file_path: str, *, baseline: FileFingerprint | None = None) -> None:
         """Start watching a file, or record another spelling for one already watched.
 
         Args:
             path: Absolute path of the file on disk.
             requested_file_path: The path as the client sent it, reported back on change so the
                 client can match it to what it is showing.
+            baseline: The fingerprint read before the client's URL was minted, from
+                read_fingerprint. A save between that read and this call then still counts as a
+                change. None reads the file now.
         """
         key = canonicalize_for_identity(path)
         # Read before taking the lock. On a slow network drive a stat can take seconds, and the
         # watcher thread waits on the lock.
-        fingerprint = _fingerprint(key)
+        if baseline is None:
+            fingerprint = _fingerprint(key)
+        else:
+            fingerprint = baseline
         with self._lock:
             directories_changed = False
             watched = self._files.get(key)
@@ -143,21 +141,36 @@ class StaticFileWatcher:
                 if self._directory_counts[key.parent] == 1:
                     directories_changed = True
             else:
-                # The client just minted a URL from the file as it is now, so this is the
-                # baseline the next change is measured against.
+                # The client just minted a URL from the file as it was at the baseline, so that is
+                # what the next change is measured against.
                 watched.fingerprint = fingerprint
                 self._files.move_to_end(key)
             if requested_file_path not in watched.requested_file_paths:
                 watched.requested_file_paths.append(requested_file_path)
-            while len(self._files) > self.max_files:
-                evicted, _ = self._files.popitem(last=False)
-                self._directory_counts[evicted.parent] -= 1
-                if self._directory_counts[evicted.parent] == 0:
-                    del self._directory_counts[evicted.parent]
-                    directories_changed = True
+            if self._evict_over_limit():
+                directories_changed = True
             self._start_thread_if_needed()
 
         if directories_changed:
+            self._restart.set()
+
+    def set_max_files(self, max_files: int) -> None:
+        """Change how many files are watched at once, dropping the least recently requested now."""
+        with self._lock:
+            self._max_files = max_files
+            directories_changed = self._evict_over_limit()
+
+        if directories_changed:
+            self._restart.set()
+
+    def clear(self) -> None:
+        """Stop watching every file. The thread, if running, idles until the next watch_file."""
+        with self._lock:
+            had_files = bool(self._files)
+            self._files.clear()
+            self._directory_counts.clear()
+
+        if had_files:
             self._restart.set()
 
     def stop(self) -> None:
@@ -205,6 +218,21 @@ class StaticFileWatcher:
         # Outside the lock, so a callback that watches another file doesn't deadlock.
         for report in reports:
             self._on_change(report)
+
+    def _evict_over_limit(self) -> bool:
+        """Drop the least recently requested files past the limit. Call with the lock held.
+
+        Returns:
+            True when a folder lost its last watched file, so the watch has to restart.
+        """
+        directories_changed = False
+        while len(self._files) > self._max_files:
+            evicted, _ = self._files.popitem(last=False)
+            self._directory_counts[evicted.parent] -= 1
+            if self._directory_counts[evicted.parent] == 0:
+                del self._directory_counts[evicted.parent]
+                directories_changed = True
+        return directories_changed
 
     def _start_thread_if_needed(self) -> None:
         if self._thread is not None or self._shutdown.is_set():
@@ -260,10 +288,11 @@ class StaticFileWatcher:
                 )
                 self._restart.wait(RETRY_DELAY_S)
 
+    @staticmethod
+    def read_fingerprint(path: Path) -> FileFingerprint | None:
+        """Read the fingerprint watch_file compares against, to pass back to it as the baseline."""
+        return _fingerprint(canonicalize_for_identity(path))
+
 
 def _fingerprint(path: Path) -> FileFingerprint | None:
-    try:
-        stat_result = os.stat(canonicalize_for_io(path))  # noqa: PTH116
-    except OSError:
-        return None
-    return FileFingerprint(inode=stat_result.st_ino, size=stat_result.st_size, mtime_ns=stat_result.st_mtime_ns)
+    return fingerprint_file(canonicalize_for_io(path))

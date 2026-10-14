@@ -177,6 +177,58 @@ class TestRecheckDuringEviction:
         assert recorder.changes == []
 
 
+class TestBaseline:
+    def test_a_save_after_the_baseline_was_read_is_reported(
+        self, idle_watcher: StaticFileWatcher, recorder: Recorder, tmp_path: Path
+    ) -> None:
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        baseline = StaticFileWatcher.read_fingerprint(image)
+
+        # Saved while the client's URL was being minted from the old file.
+        rewrite(image, b"version two")
+        idle_watcher.watch_file(image, "plate", baseline=baseline)
+        idle_watcher.recheck_all()
+
+        assert [change.requested_file_paths for change in recorder.changes] == [["plate"]]
+
+
+class TestClear:
+    def test_stops_watching_every_file(
+        self, idle_watcher: StaticFileWatcher, recorder: Recorder, tmp_path: Path
+    ) -> None:
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        idle_watcher.watch_file(image, "plate")
+
+        idle_watcher.clear()
+        rewrite(image, b"version two")
+        idle_watcher.recheck_all()
+
+        assert idle_watcher.watched_paths == []
+        assert idle_watcher._directories() == set()
+        assert recorder.changes == []
+
+    def test_the_thread_idles_and_picks_up_the_next_file(
+        self, watcher: StaticFileWatcher, recorder: Recorder, tmp_path: Path
+    ) -> None:
+        first = tmp_path / "first.png"
+        first.write_bytes(b"v1")
+        watcher.watch_file(first, "first")
+        threading.Event().wait(0.3)
+        watcher.clear()
+        threading.Event().wait(0.3)
+
+        second = tmp_path / "second.png"
+        second.write_bytes(b"v1")
+        watcher.watch_file(second, "second")
+        threading.Event().wait(0.5)
+        rewrite(second, b"version two")
+
+        assert recorder.received.wait(timeout=10)
+        assert recorder.changes[0].requested_file_paths == ["second"]
+
+
 class TestWatchFile:
     def test_does_not_wait_for_a_recheck_stuck_on_a_slow_drive(
         self, idle_watcher: StaticFileWatcher, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -221,7 +273,7 @@ class TestWatchFile:
 
         assert len(idle_watcher.watched_paths) == 1
 
-    def test_a_lowered_limit_applies_at_the_next_request(self, idle_watcher: StaticFileWatcher, tmp_path: Path) -> None:
+    def test_a_lowered_limit_applies_at_once(self, idle_watcher: StaticFileWatcher, tmp_path: Path) -> None:
         paths = []
         for name in ("a.png", "b.png", "c.png"):
             path = tmp_path / name
@@ -229,10 +281,29 @@ class TestWatchFile:
             paths.append(path)
             idle_watcher.watch_file(path, name)
 
-        idle_watcher.max_files = 1
-        idle_watcher.watch_file(paths[2], "c.png")
+        # Asking for a.png again makes b.png the least recently requested.
+        idle_watcher.watch_file(paths[0], "a.png")
+        idle_watcher.set_max_files(1)
 
-        assert [path.name for path in idle_watcher.watched_paths] == ["c.png"]
+        assert idle_watcher.max_files == 1
+        assert [path.name for path in idle_watcher.watched_paths] == ["a.png"]
+
+    def test_a_lowered_limit_restarts_the_watch_when_a_folder_empties(
+        self, idle_watcher: StaticFileWatcher, tmp_path: Path
+    ) -> None:
+        first = tmp_path / "first" / "a.png"
+        second = tmp_path / "second" / "b.png"
+        for path in (first, second):
+            path.parent.mkdir()
+            path.write_bytes(b"x")
+        idle_watcher.watch_file(first, "a")
+        idle_watcher.watch_file(second, "b")
+        idle_watcher._restart.clear()
+
+        idle_watcher.set_max_files(1)
+
+        assert idle_watcher._restart.is_set()
+        assert idle_watcher._directories() == {canonicalize_for_identity(second.parent)}
 
     def test_stops_watching_a_folder_once_its_last_file_is_dropped(
         self, idle_watcher: StaticFileWatcher, tmp_path: Path
@@ -242,7 +313,7 @@ class TestWatchFile:
         for path in (first, second):
             path.parent.mkdir()
             path.write_bytes(b"x")
-        idle_watcher.max_files = 1
+        idle_watcher.set_max_files(1)
 
         idle_watcher.watch_file(first, "a")
         idle_watcher.watch_file(second, "b")

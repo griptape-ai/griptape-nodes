@@ -1710,7 +1710,8 @@ class TestStaticFilesManagerWatchesMintedFiles:
 
         await self._mint(manager, "{inputs}/plate.png")
 
-        manager.file_watcher.watch_file.assert_called_once_with(image, "{inputs}/plate.png")
+        manager.file_watcher.watch_file.assert_called_once()
+        assert manager.file_watcher.watch_file.call_args.args == (image, "{inputs}/plate.png")
 
     @pytest.mark.asyncio
     async def test_does_not_watch_with_the_setting_off(self, tmp_path: Path) -> None:
@@ -1789,12 +1790,12 @@ class TestStaticFilesManagerWatchesMintedFiles:
 
         await self._mint(manager, str(image))
 
-        assert manager.file_watcher.max_files == 250  # noqa: PLR2004
+        manager.file_watcher.set_max_files.assert_called_with(250)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("max_files", [None, "abc", 0, -5, True, 12.5])
     async def test_an_unusable_file_limit_falls_back_to_the_default(self, tmp_path: Path, max_files: object) -> None:
-        from griptape_nodes.retained_mode.managers.static_file_watcher import MAX_WATCHED_FILES
+        from griptape_nodes.retained_mode.managers.settings import DEFAULT_REFRESH_PREVIEWS_MAX_FILES
 
         image = tmp_path / "plate.png"
         image.write_bytes(b"v1")
@@ -1802,5 +1803,67 @@ class TestStaticFilesManagerWatchesMintedFiles:
 
         await self._mint(manager, str(image))
 
-        assert manager.file_watcher.max_files == MAX_WATCHED_FILES
+        manager.file_watcher.set_max_files.assert_called_with(DEFAULT_REFRESH_PREVIEWS_MAX_FILES)
         manager.file_watcher.watch_file.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reads_the_baseline_before_minting_the_url(self, tmp_path: Path) -> None:
+        from griptape_nodes.retained_mode.managers.static_file_watcher import StaticFileWatcher
+
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        before_mint = StaticFileWatcher.read_fingerprint(image)
+        manager = self._build_manager()
+
+        def mint_while_the_file_is_saved(_path: Path) -> str:
+            image.write_bytes(b"saved during the mint")
+            return "http://localhost/plate.png?v=a"
+
+        manager.storage_driver.create_signed_download_url.side_effect = mint_while_the_file_is_saved
+
+        await self._mint(manager, str(image))
+
+        baseline = manager.file_watcher.watch_file.call_args.kwargs["baseline"]
+        assert baseline == before_mint
+        assert baseline != StaticFileWatcher.read_fingerprint(image)
+
+    def test_turning_the_setting_off_stops_watching(self) -> None:
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+
+        manager = self._build_manager(setting_on=False)
+
+        manager._on_config_changed(
+            ConfigChanged(key="refresh_previews_on_file_change", old_value=True, new_value=False)
+        )
+
+        manager.file_watcher.clear.assert_called_once()
+        manager.file_watcher.set_max_files.assert_not_called()
+
+    def test_a_changed_file_limit_applies_at_once(self) -> None:
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+
+        manager = self._build_manager(max_files=50)
+
+        manager._on_config_changed(ConfigChanged(key="refresh_previews_max_files", old_value=1000, new_value=50))
+
+        manager.file_watcher.set_max_files.assert_called_once_with(50)
+        manager.file_watcher.clear.assert_not_called()
+
+    def test_a_replaced_config_is_applied(self) -> None:
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+
+        manager = self._build_manager(setting_on=False)
+
+        manager._on_config_changed(ConfigChanged(key="", old_value=None, new_value={}))
+
+        manager.file_watcher.clear.assert_called_once()
+
+    def test_other_config_changes_are_ignored(self) -> None:
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+
+        manager = self._build_manager(setting_on=False)
+
+        manager._on_config_changed(ConfigChanged(key="log_level", old_value="INFO", new_value="DEBUG"))
+
+        manager.file_watcher.clear.assert_not_called()
+        manager.file_watcher.set_max_files.assert_not_called()
