@@ -159,6 +159,10 @@ class LibraryRegistrar(EngineScoped):
             details = "Library loaded but library_name was not set during metadata loading"
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
+        # Its execution environment is built now, so its worker can start without waiting for the
+        # other libraries. Every way a library is registered passes through here, mid-session too.
+        await self.engine.library_manager.workers.start_worker_for_library(library_info.library_name)
+
         match library_info.fitness:
             case LibraryFitness.GOOD:
                 details = f"Successfully loaded Library '{library_info.library_name}' from JSON file at {file_path}"

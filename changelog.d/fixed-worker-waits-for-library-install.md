@@ -1,3 +1,4 @@
-- A library whose nodes run in a worker process no longer fails every run with a "No module named"
-  error after it is first installed, until the engine restarts. When the editor connected while the
-  library was still installing its dependencies, its worker started too early to see them.
+- A library whose nodes run in a worker process now starts its worker as soon as the library
+  finishes installing. Its runs no longer fail with a "No module named" error after a first install
+  until the engine restarts, and a library installed from Git while the editor is connected no
+  longer goes without a worker until **Refresh Libraries**.

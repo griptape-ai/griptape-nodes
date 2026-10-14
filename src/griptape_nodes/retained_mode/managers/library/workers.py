@@ -267,7 +267,9 @@ class LibraryWorkers(EngineScoped):
     async def start_worker_for_library(self, library_name: str) -> None:
         """Start the worker for one library, if it executes in one, leaving every other library alone.
 
-        Without an active session nothing starts here: `on_session_started` starts it with the rest.
+        Called as the library finishes registering, so its worker need not wait for every other
+        library to load. Without an active session nothing starts here: `on_session_started` starts
+        it with the rest.
         """
         if self.engine.library_manager.is_worker or not self.engine.get_session_id():
             return
@@ -280,7 +282,7 @@ class LibraryWorkers(EngineScoped):
         subsequent) so that worker creation is always tied to an active session.
 
         Args:
-            only_library_name: Consider only this library, for a caller that stopped one worker.
+            only_library_name: Consider only this library, for a caller starting one library's worker.
         """
         for library_info in self.engine.library_manager._library_file_path_to_info.values():
             if only_library_name is not None and library_info.library_name != only_library_name:
@@ -295,8 +297,8 @@ class LibraryWorkers(EngineScoped):
                 and not self.engine.library_manager.is_worker
             ):
                 # The worker is handed .venv-exec as PYTHONPATH at spawn, and registration finishes
-                # building it before LOADED. A session can start while libraries are still loading,
-                # so this one is started by the call that follows load_all_libraries_from_config.
+                # building it before LOADED. A session can start while libraries are still loading;
+                # registration starts this one's worker once it gets there.
                 if library_info.lifecycle_state != LibraryLifecycleState.LOADED:
                     logger.debug(
                         "Not starting a worker for library '%s' until it finishes loading.",
@@ -318,17 +320,6 @@ class LibraryWorkers(EngineScoped):
                         library_info.execution_unavailable_reason,
                     )
                     continue
-                # A worker already serving this library makes the whole block below wrong, not
-                # merely redundant: spawn_worker refuses the duplicate without raising, so the
-                # reset event below would never be set again and every later run would wait out
-                # the startup grace against a live, loaded worker. Reached whenever _start_workers
-                # runs twice for one session -- a second GUI client joining is enough.
-                if self.engine.worker_manager.get_worker_for_key(library_info.library_name) is not None:
-                    logger.debug(
-                        "Not restarting a worker for library '%s': one is already registered.",
-                        library_info.library_name,
-                    )
-                    continue
                 # The library's own nodes loaded locally already: the worker gates execution
                 # availability only, so registration must not block on the spawn.
                 #
@@ -348,11 +339,9 @@ class LibraryWorkers(EngineScoped):
                         library_info.library_name, build_failure
                     )
                     continue
-                # WorkerManager owns the gate execution routing waits on, and clears its own
-                # account of any previous attempt.
-                self.engine.library_manager._worker_manager.expect_worker(library_info.library_name)
                 # A fresh attempt, so an account of a previous one no longer applies. Not
                 # conditioned on the result: StartWorkerRequest only SCHEDULES the spawn, so one
-                # that dies records its own reason from _log_spawn_error.
+                # that dies records its own reason from _log_spawn_error. WorkerManager declares the
+                # worker coming, or does nothing when one already is.
                 library_info.execution_unavailable_reason = None
                 await self.engine.ahandle_request(StartWorkerRequest(library_name=library_info.library_name))

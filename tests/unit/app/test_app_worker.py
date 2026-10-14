@@ -18,7 +18,7 @@ import threading
 import time
 from pathlib import Path
 from typing import cast
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -1534,6 +1534,119 @@ class TestHandleStartWorkerRequest:
             result = await worker_manager.handle_start_worker_request(request)
 
         assert isinstance(result, worker_events.StartWorkerResultSuccess)
+
+    @pytest.mark.asyncio
+    async def test_a_second_request_while_the_first_is_pending_starts_nothing(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        """A library is requested as it registers and again as a session starts; one worker results.
+
+        The readiness gate is kept too: a run already waiting on it would otherwise never be released.
+        """
+        request = worker_events.StartWorkerRequest(library_name="Lib")
+
+        with patch.object(worker_manager, "_spawn_when_session_ready", new=AsyncMock()) as spawn:
+            await worker_manager.handle_start_worker_request(request)
+            gate = worker_manager._execution_ready["Lib"]
+            await worker_manager.handle_start_worker_request(request)
+            await asyncio.sleep(0)
+
+        spawn.assert_awaited_once_with("Lib")
+        assert worker_manager._execution_ready["Lib"] is gate
+
+    @pytest.mark.asyncio
+    async def test_a_request_once_the_spawn_finished_and_its_worker_is_gone_starts_another(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        request = worker_events.StartWorkerRequest(library_name="Lib")
+
+        with patch.object(worker_manager, "_spawn_when_session_ready", new=AsyncMock()) as spawn:
+            await worker_manager.handle_start_worker_request(request)
+            await worker_manager._requested_spawns["Lib"]
+            # Done-callbacks, which release the request, run on the next turn of the loop.
+            await asyncio.sleep(0)
+            await worker_manager.handle_start_worker_request(request)
+            await asyncio.sleep(0)
+
+        assert spawn.await_args_list == [call("Lib"), call("Lib")]
+
+    @pytest.mark.asyncio
+    async def test_a_request_for_a_running_worker_starts_nothing_and_keeps_its_gate(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        """A loaded worker's gate is already set; replacing it would leave every later run waiting."""
+        worker_manager.expect_worker("Lib")
+        worker_manager.note_library_loaded("Lib")
+        worker_manager._managed_worker_processes["Lib"] = _managed_proc_mock()
+
+        with patch.object(worker_manager, "_spawn_when_session_ready", new=AsyncMock()) as spawn:
+            await worker_manager.handle_start_worker_request(worker_events.StartWorkerRequest(library_name="Lib"))
+            await asyncio.sleep(0)
+
+        spawn.assert_not_awaited()
+        assert worker_manager.has_settled("Lib")
+
+    @pytest.mark.asyncio
+    async def test_a_request_for_a_registered_worker_starts_nothing(self, worker_manager: WorkerManager) -> None:
+        worker_manager._workers["eng-1"] = WorkerRegistration(
+            request_topic=f"sessions/{_SESSION}/workers/eng-1/request", worker_key="Lib"
+        )
+
+        with patch.object(worker_manager, "_spawn_when_session_ready", new=AsyncMock()) as spawn:
+            await worker_manager.handle_start_worker_request(worker_events.StartWorkerRequest(library_name="Lib"))
+            await asyncio.sleep(0)
+
+        spawn.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stop", ["reset_workers", "stop_worker_for_library"])
+    async def test_stopping_withdraws_a_pending_request(self, worker_manager: WorkerManager, stop: str) -> None:
+        """The pending spawn would start a worker after the stop, and the next request would be refused."""
+        never = asyncio.Event()
+
+        async def wait_for_a_session(_library_name: str) -> None:
+            await never.wait()
+
+        with patch.object(worker_manager, "_spawn_when_session_ready", side_effect=wait_for_a_session):
+            await worker_manager.handle_start_worker_request(worker_events.StartWorkerRequest(library_name="Lib"))
+            await asyncio.sleep(0)
+            pending = worker_manager._requested_spawns["Lib"]
+
+            if stop == "reset_workers":
+                await worker_manager.reset_workers()
+            else:
+                await worker_manager.stop_worker_for_library("Lib")
+            await asyncio.wait({pending}, timeout=1)
+
+            assert pending.cancelled()
+            # Whatever waited on the cancelled spawn is told why rather than timing out.
+            assert worker_manager.has_settled("Lib")
+            assert worker_manager.worker_unavailable_reason("Lib") is not None
+
+            await worker_manager.handle_start_worker_request(worker_events.StartWorkerRequest(library_name="Lib"))
+            assert worker_manager._requested_spawns["Lib"] is not pending
+            worker_manager._requested_spawns["Lib"].cancel()
+
+    @pytest.mark.asyncio
+    async def test_a_reset_leaves_a_spawn_already_under_way_to_finish(self, worker_manager: WorkerManager) -> None:
+        """Cancelled between creating its process and recording it, the spawn would leak the process."""
+        released = asyncio.Event()
+
+        async def claim_then_park(library_name: str) -> None:
+            worker_manager._spawns_in_flight[library_name] = asyncio.Event()
+            await released.wait()
+
+        with patch.object(worker_manager, "_spawn_when_session_ready", side_effect=claim_then_park):
+            await worker_manager.handle_start_worker_request(worker_events.StartWorkerRequest(library_name="Lib"))
+            await asyncio.sleep(0)
+            under_way = worker_manager._requested_spawns["Lib"]
+
+            await worker_manager.reset_workers()
+
+            assert not under_way.cancelled()
+            assert "Lib" not in worker_manager._requested_spawns
+            released.set()
+            await under_way
 
 
 class TestLogSpawnError:
