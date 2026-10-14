@@ -206,7 +206,12 @@ class TestNodeGroupRoundTrip:
         assert isinstance(original_exec_out, ControlParameterOutput)
         assert original_exec_in.display_name == "Flow In"
         assert original_exec_out.display_name == "Flow Out"
-        assert not any(parameter.name.startswith("exec_out_") for parameter in original_group.parameters)
+        control_parameter_names = {
+            parameter.name
+            for parameter in original_group.parameters
+            if isinstance(parameter, (ControlParameterInput, ControlParameterOutput))
+        }
+        assert control_parameter_names == {"group_exec_in", "group_exec_out", "exec_in", "exec_out"}
 
         commands = _serialize(engine, flow.flow_name)
 
@@ -223,6 +228,12 @@ class TestNodeGroupRoundTrip:
         assert isinstance(restored_exec_out, ControlParameterOutput)
         assert restored_exec_in.display_name == "Flow In"
         assert restored_exec_out.display_name == "Flow Out"
+        restored_control_parameter_names = {
+            parameter.name
+            for parameter in restored_group.parameters
+            if isinstance(parameter, (ControlParameterInput, ControlParameterOutput))
+        }
+        assert restored_control_parameter_names == {"group_exec_in", "group_exec_out", "exec_in", "exec_out"}
 
         edges = {
             f"{connection.source_node.name}.{connection.source_parameter.name}"
@@ -296,6 +307,23 @@ class TestNodeGroupRoundTrip:
             f"{restored_leaf}.exec_out->{restored_group.name}.exec_out",
             f"{restored_group.name}.exec_out->{restored_sink}.exec_in",
         } <= edges
+
+        boundary_state = {
+            (
+                connection.source_node.name,
+                connection.source_parameter.name,
+                connection.target_node.name,
+                connection.target_parameter.name,
+                connection.is_node_group_internal,
+            )
+            for connection in connections.connections.values()
+        }
+        assert {
+            (restored_source, "exec_out", restored_group.name, "exec_in", False),
+            (restored_group.name, "exec_in", restored_leaf, "exec_in", True),
+            (restored_leaf, "exec_out", restored_group.name, "exec_out", True),
+            (restored_group.name, "exec_out", restored_sink, "exec_in", False),
+        } <= boundary_state
 
         group_connections = engine.handle_request(ListConnectionsForNodeRequest(node_name=restored_group.name))
         assert isinstance(group_connections, ListConnectionsForNodeResultSuccess), group_connections

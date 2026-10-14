@@ -1931,7 +1931,7 @@ class NodeManager(EngineScoped):
             # Handle ParameterGroup parentage with potential to expand in future to other element types.
             if isinstance(parent_element, ParameterGroup):
                 parent_group = parent_element
-        if request.parameter_name is None or request.tooltip is None:
+        if request.parameter_name is None:
             details = f"Attempted to add Parameter to node '{node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
             result = AddParameterToNodeResultFailure(result_details=details)
             return result
@@ -1972,6 +1972,13 @@ class NodeManager(EngineScoped):
             result = AddParameterToNodeResultFailure(result_details=details)
             return result
 
+        if request.tooltip is None and not has_control_type:
+            details = f"Attempted to add Parameter to node '{node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
+            result = AddParameterToNodeResultFailure(result_details=details)
+            return result
+
+        # A control proxy bridges the group wall to an internal port, so its UI modes cover both
+        # sides. ControlParameterInput/Output shape and graph validation still enforce direction.
         allowed_modes = set()
         if request.mode_allowed_input:
             allowed_modes.add(ParameterMode.INPUT)
@@ -2021,25 +2028,27 @@ class NodeManager(EngineScoped):
             if input_shaped:
                 new_param = ControlParameterInput(
                     name=final_param_name,
-                    tooltip=request.tooltip,
                     tooltip_as_input=request.tooltip_as_input,
                     tooltip_as_property=request.tooltip_as_property,
                     tooltip_as_output=request.tooltip_as_output,
                     user_defined=request.is_user_defined,
                 )
+                if request.tooltip is not None:
+                    new_param.tooltip = request.tooltip
             elif output_shaped:
                 new_param = ControlParameterOutput(
                     name=final_param_name,
-                    tooltip=request.tooltip,
                     tooltip_as_input=request.tooltip_as_input,
                     tooltip_as_property=request.tooltip_as_property,
                     tooltip_as_output=request.tooltip_as_output,
                     user_defined=request.is_user_defined,
                 )
+                if request.tooltip is not None:
+                    new_param.tooltip = request.tooltip
             else:
                 new_param = ControlParameter(
                     name=final_param_name,
-                    tooltip=request.tooltip,
+                    tooltip=request.tooltip or "",
                     input_types=request.input_types,
                     output_type=request.output_type,
                     tooltip_as_input=request.tooltip_as_input,

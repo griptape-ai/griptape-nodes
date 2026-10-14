@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
-from unittest.mock import MagicMock, Mock, create_autospec
+from unittest.mock import MagicMock, Mock, call, create_autospec
 
 import pytest
 
 from griptape_nodes.exe_types.core_types import ControlParameterInput, ControlParameterOutput, Parameter, ParameterMode
+from griptape_nodes.exe_types.node_groups.base_iterative_node_group import BaseIterativeNodeGroup
+from griptape_nodes.exe_types.node_groups.base_while_node_group import BaseWhileNodeGroup
 from griptape_nodes.exe_types.node_groups.subflow_node_group import (
     LEFT_PARAMETERS_KEY,
     RIGHT_PARAMETERS_KEY,
@@ -16,6 +18,7 @@ from griptape_nodes.exe_types.node_groups.subflow_node_group import (
 from griptape_nodes.exe_types.node_types import BaseNode, Connection
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
+    CreateConnectionResultSuccess,
     DeleteConnectionRequest,
     DeleteConnectionResultSuccess,
 )
@@ -157,6 +160,92 @@ class TestSubflowNodeGroupProxyParameters:
         assert outgoing_proxy.allowed_modes == {ParameterMode.INPUT, ParameterMode.OUTPUT}
         assert ParameterMode.PROPERTY not in incoming_proxy.allowed_modes
         assert ParameterMode.PROPERTY not in outgoing_proxy.allowed_modes
+
+    def test_multi_port_loop_connections_keep_their_control_port_mapping(
+        self, engine: Engine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        source_groups = [_ProbeIterativeGroup(name=f"source_{index}") for index in range(6)]
+        create_requests: list[CreateConnectionRequest] = []
+        original_handle_request = engine.handle_request
+
+        def handle_request(request: Any) -> Any:
+            if isinstance(request, DeleteConnectionRequest):
+                return DeleteConnectionResultSuccess(result_details="deleted")
+            if isinstance(request, CreateConnectionRequest):
+                create_requests.append(request)
+                return CreateConnectionResultSuccess(result_details="created")
+            return original_handle_request(request)
+
+        monkeypatch.setattr(engine, "handle_request", handle_request)
+
+        for target_group, target_port_names in (
+            (
+                _ProbeIterativeGroup(name="foreach_target"),
+                ("exec_in", "loop_complete", "skip_iteration", "break_loop"),
+            ),
+            (_ProbeWhileGroup(name="retry_target"), ("done", "continue_loop")),
+        ):
+            group = _MiniSubflowGroup(name=f"outer_{target_group.name}")
+            engine.object_manager.add_object_by_name(group.name, group)
+
+            for index, target_port_name in enumerate(target_port_names):
+                source_group = source_groups[index]
+                source_parameter = source_group.on_each if index % 2 == 0 else source_group.exec_out
+                target_parameter = target_group.get_parameter_by_name(target_port_name)
+                assert isinstance(target_parameter, ControlParameterInput)
+                connection = Connection(source_group, source_parameter, target_group, target_parameter)
+
+                group._map_external_connections_group([connection], is_incoming=True)
+
+                proxy = group.get_parameter_by_name(target_port_name)
+                assert isinstance(proxy, ControlParameterInput)
+                assert proxy.name == target_port_name
+                first, second = create_requests[-2:]
+                assert (
+                    first.source_node_name,
+                    first.source_parameter_name,
+                    first.target_node_name,
+                    first.target_parameter_name,
+                    first.is_node_group_internal,
+                ) == (source_group.name, source_parameter.name, group.name, proxy.name, False)
+                assert (
+                    second.source_node_name,
+                    second.source_parameter_name,
+                    second.target_node_name,
+                    second.target_parameter_name,
+                    second.is_node_group_internal,
+                ) == (group.name, proxy.name, target_group.name, target_parameter.name, True)
+
+        output_group = _MiniSubflowGroup(name="outer_foreach_outputs")
+        engine.object_manager.add_object_by_name(output_group.name, output_group)
+        source_group = _ProbeIterativeGroup(name="foreach_output_source")
+        retry_target = _ProbeWhileGroup(name="retry_output_targets")
+        for source_port_name, target_port_name in (("on_each", "done"), ("exec_out", "continue_loop")):
+            source_parameter = source_group.get_parameter_by_name(source_port_name)
+            target_parameter = retry_target.get_parameter_by_name(target_port_name)
+            assert isinstance(source_parameter, ControlParameterOutput)
+            assert isinstance(target_parameter, ControlParameterInput)
+            connection = Connection(source_group, source_parameter, retry_target, target_parameter)
+
+            output_group._map_external_connections_group([connection], is_incoming=False)
+
+            proxy = output_group.get_parameter_by_name(source_port_name)
+            assert isinstance(proxy, ControlParameterOutput)
+            first, second = create_requests[-2:]
+            assert (
+                first.source_node_name,
+                first.source_parameter_name,
+                first.target_node_name,
+                first.target_parameter_name,
+                first.is_node_group_internal,
+            ) == (source_group.name, source_parameter.name, output_group.name, proxy.name, True)
+            assert (
+                second.source_node_name,
+                second.source_parameter_name,
+                second.target_node_name,
+                second.target_parameter_name,
+                second.is_node_group_internal,
+            ) == (output_group.name, proxy.name, retry_target.name, target_parameter.name, False)
 
     def test_control_port_serialization_preserves_directional_shape(self) -> None:
         incoming = ControlParameterInput(name="exec_in")
@@ -614,6 +703,41 @@ class TestSubflowNodeGroupProxyLifecycle:
         create_proxy.assert_not_called()
         create_connections.assert_called_once_with(proxy, connection, is_incoming=True)
 
+    def test_grouped_proxy_reuses_one_proxy_for_multiple_targets_sharing_source(
+        self, engine: Engine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        group = _MiniSubflowGroup(name="shared_source_group")
+        source_node = BaseNode(name="source")
+        source_parameter = ControlParameterOutput(name="source_exec")
+        first_target = BaseNode(name="first_target")
+        first_target_parameter = ControlParameterInput(name="first_exec")
+        second_target = BaseNode(name="second_target")
+        second_target_parameter = ControlParameterInput(name="second_exec")
+        first_connection = Connection(source_node, source_parameter, first_target, first_target_parameter)
+        second_connection = Connection(source_node, source_parameter, second_target, second_target_parameter)
+        proxy = Parameter(name="first_exec", tooltip="")
+        create_proxy = MagicMock(return_value=proxy)
+        create_connections = MagicMock()
+        monkeypatch.setattr(group, "_find_existing_proxy_for_source", MagicMock(return_value=None))
+        monkeypatch.setattr(group, "_create_proxy_parameter_for_connection", create_proxy)
+        monkeypatch.setattr(group, "_create_connections_for_proxy_single", create_connections)
+        monkeypatch.setattr(
+            engine,
+            "handle_request",
+            create_autospec(
+                engine.handle_request,
+                return_value=DeleteConnectionResultSuccess(result_details="deleted"),
+            ),
+        )
+
+        group._map_external_connections_group([first_connection, second_connection], is_incoming=True)
+
+        create_proxy.assert_called_once_with(first_target_parameter, is_incoming=True)
+        assert create_connections.call_args_list == [
+            call(proxy, first_connection, is_incoming=True),
+            call(proxy, second_connection, is_incoming=True),
+        ]
+
     def test_grouped_proxy_ignores_an_empty_connection_list(
         self,
         engine: Engine,
@@ -831,3 +955,17 @@ class _MiniSubflowGroup(SubflowNodeGroup):
 
     def process(self) -> Any:  # pragma: no cover - execution not exercised here
         return None
+
+
+class _ProbeIterativeGroup(BaseIterativeNodeGroup):
+    """Concrete iterative group exposing the standard ForEach control ports."""
+
+    def _get_iteration_items(self) -> list[Any]:
+        return []
+
+    def _get_current_item_value(self, iteration_index: int) -> Any:  # noqa: ARG002
+        return None
+
+
+class _ProbeWhileGroup(BaseWhileNodeGroup):
+    """Concrete while group exposing the standard Retry control ports."""

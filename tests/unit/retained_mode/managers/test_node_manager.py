@@ -201,6 +201,64 @@ class TestNodeManagerAddControlParameter:
         assert parameter.ui_options["custom_option"] == "kept"
         assert parameter.serializable is False
 
+    @pytest.mark.parametrize("expected_type", [ControlParameterInput, ControlParameterOutput])
+    def test_none_tooltip_keeps_directional_control_default(
+        self,
+        engine: Engine,
+        expected_type: type[ControlParameterInput] | type[ControlParameterOutput],
+    ) -> None:
+        if expected_type is ControlParameterInput:
+            input_types = [ParameterTypeBuiltin.CONTROL_TYPE.value]
+            output_type = None
+            mode_allowed_input = True
+            mode_allowed_output = False
+            tooltip = "Connection from previous node in the execution chain"
+        else:
+            input_types = None
+            output_type = ParameterTypeBuiltin.CONTROL_TYPE.value
+            mode_allowed_input = False
+            mode_allowed_output = True
+            tooltip = "Connection to the next node in the execution chain"
+
+        node = BaseNode(name="DefaultTooltipControlParameterNode")
+        engine.object_manager.add_object_by_name(node.name, node)
+
+        result = engine.node_manager.on_add_parameter_to_node_request(
+            AddParameterToNodeRequest(
+                node_name=node.name,
+                parameter_name="default_tooltip_control",
+                type=ParameterTypeBuiltin.CONTROL_TYPE.value,
+                input_types=input_types,
+                output_type=output_type,
+                mode_allowed_input=mode_allowed_input,
+                mode_allowed_property=False,
+                mode_allowed_output=mode_allowed_output,
+                tooltip=None,
+            )
+        )
+
+        assert isinstance(result, AddParameterToNodeResultSuccess)
+        parameter = node.get_parameter_by_name("default_tooltip_control")
+        assert isinstance(parameter, expected_type)
+        assert parameter.tooltip == tooltip
+
+    def test_non_control_parameter_still_requires_tooltip(self, engine: Engine) -> None:
+        node = BaseNode(name="RequiredTooltipParameterNode")
+        engine.object_manager.add_object_by_name(node.name, node)
+
+        result = engine.node_manager.on_add_parameter_to_node_request(
+            AddParameterToNodeRequest(
+                node_name=node.name,
+                parameter_name="missing_tooltip",
+                type=ParameterTypeBuiltin.STR.value,
+                tooltip=None,
+            )
+        )
+
+        assert isinstance(result, AddParameterToNodeResultFailure)
+        assert "tooltip" in str(result.result_details)
+        assert node.get_parameter_by_name("missing_tooltip") is None
+
     @pytest.mark.parametrize(
         ("mode_allowed_input", "mode_allowed_output", "expected_type"),
         [
