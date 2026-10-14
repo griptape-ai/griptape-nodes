@@ -1685,9 +1685,13 @@ class TestStaticFilesManagerWatchesMintedFiles:
         image.write_bytes(b"v1")
         manager = self._build_manager()
 
-        await self._mint(manager, f"file://{image}")
+        await self._mint(manager, image.as_uri())
 
-        manager.file_watcher.watch_file.assert_called_once_with(image, f"file://{image}")
+        manager.file_watcher.watch_file.assert_called_once()
+        watched_path, requested_file_path = manager.file_watcher.watch_file.call_args.args
+        # Compared as files: the path round-trips through a URI, and Windows may change its spelling.
+        assert watched_path.samefile(image)
+        assert requested_file_path == image.as_uri()
 
     @pytest.mark.asyncio
     async def test_watches_the_resolved_file_for_a_macro_path(self, tmp_path: Path) -> None:
