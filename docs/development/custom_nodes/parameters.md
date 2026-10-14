@@ -574,6 +574,34 @@ for tool in tools:
 **Important behavior note:** `get_parameter_list_value()` flattens nested iterables and **drops falsey items**
 (e.g. `0`, `False`, `""`, empty dicts/lists). If you need to preserve falsey values, use `get_parameter_value()` and handle flattening yourself.
 
+**Converting each item:** pass `item_converters` to change one item at a time, such as turning a file path into an
+artifact. They run on each item whether it is set in its own row or arrives in a whole list over a connection.
+`converters` run on the list as a whole.
+
+```python
+from functools import partial
+
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
+
+ParameterList(
+    name="images",
+    input_types=["ImageUrlArtifact", "list[ImageUrlArtifact]"],
+    tooltip="Images to combine",
+    allowed_modes={ParameterMode.INPUT},
+    item_converters=[
+        partial(normalize_artifact_input, artifact_type=ImageUrlArtifact, accepted_types=(ImageArtifact,))
+    ],
+)
+```
+
+**Setting a whole list:** a list nothing is connected to holds its items in rows, one per item. Setting a whole list
+with `SetParameterValueRequest` replaces the rows with one row per item. A node in a library whose `engine_version`
+is `0.105.0` or later gets the same behavior from `self.set_parameter_value("images", [...])`, except while the node
+is running. In a library declaring an earlier `engine_version`, the node's write is stored beside the rows and the
+node reads the rows. Don't rewrite a list from `after_value_set` to convert its items: use `item_converters`.
+
 ## Common Parameter Patterns
 
 ### Search Input with Placeholder

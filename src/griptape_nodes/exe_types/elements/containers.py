@@ -125,6 +125,7 @@ class ParameterList(ParameterContainer):
         element_id: str | None = None,
         element_type: str | None = None,
         max_items: int | None = None,
+        item_converters: list[Callable[[Any], Any]] | None = None,
         # UI convenience parameters
         collapsed: bool | None = None,
         child_prefix: str | None = None,
@@ -137,6 +138,7 @@ class ParameterList(ParameterContainer):
             self._original_traits = set()
 
         self._max_items = max_items
+        self._item_converters = list(item_converters or [])
         # Store the UI convenience parameters
         self._collapsed = collapsed
         self._child_prefix = child_prefix
@@ -172,6 +174,15 @@ class ParameterList(ParameterContainer):
     @property
     def max_items(self) -> int | None:
         return self._max_items
+
+    @property
+    def item_converters(self) -> list[Callable[[Any], Any]]:
+        """Converters run on each item, whether it arrives in a row or in a whole list.
+
+        `converters` run on the list as a whole, and rows inherit them as well. Use these to change one
+        item at a time, such as turning a path into an artifact.
+        """
+        return list(self._item_converters)
 
     @property
     def collapsed(self) -> bool | None:
@@ -338,6 +349,17 @@ class ParameterList(ParameterContainer):
         err_str = f"Attempted to get a Parameter List index {key}, which was out of range."
         raise KeyError(err_str)
 
+    def convert_items(self, value: Any) -> Any:
+        """Run `item_converters` on each item of a whole list. Anything that is not a list is returned as is."""
+        if not self._item_converters or not isinstance(value, list):
+            return value
+        converted = []
+        for item in value:
+            for converter in self._item_converters:
+                item = converter(item)  # noqa: PLW2901
+            converted.append(item)
+        return converted
+
     def add_child_parameter(self) -> Parameter:
         # Generate a name. This needs to be UNIQUE because children need
         # to be tracked as individuals and not as indices in the list.
@@ -361,7 +383,7 @@ class ParameterList(ParameterContainer):
             allowed_modes=self.allowed_modes,
             ui_options=self.ui_options,
             traits=self._original_traits,
-            converters=self.converters,
+            converters=[*self._item_converters, *self.converters],
             validators=self.validators,
             settable=self.settable,
             user_defined=True,
@@ -454,6 +476,10 @@ class ParameterList(ParameterContainer):
                 msg = f"Cannot add more items to {self.name}. Maximum {self._max_items} items allowed."
                 raise ValueError(msg)
 
+        if isinstance(child, Parameter):
+            # A row restored from a saved workflow is built without converters.
+            missing = [converter for converter in self._item_converters if converter not in child._converters]
+            child._converters = [*missing, *child._converters]
         super().add_child(child)
 
         # Mark the parent node as unresolved since the parameter structure changed

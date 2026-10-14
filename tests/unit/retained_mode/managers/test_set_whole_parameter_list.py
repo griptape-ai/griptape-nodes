@@ -5,10 +5,14 @@ A request that hands the list over in one piece (an MCP client, an agent, a scri
 in the same place, or the request succeeds and the node runs with an empty list.
 """
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import pytest
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, aprocess_scope
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.engine import Engine
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
@@ -383,3 +387,157 @@ class TestLoadingASavedWorkflow:
         )
 
         assert _rows(node) == []
+
+
+def _shout(value: object) -> object:
+    if isinstance(value, str):
+        return value.upper()
+    return value
+
+
+class _ConvertingListNode(BaseNode):
+    def __init__(self, name: str) -> None:
+        super().__init__(name=name)
+        self.add_parameter(
+            ParameterList(
+                name="items",
+                input_types=["str"],
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                item_converters=[_shout],
+            )
+        )
+
+    def process(self) -> None:
+        return None
+
+
+class TestItemConverters:
+    def test_a_whole_list_set_converts_each_row(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ConvertingListNode(name="Lister"), flow_name)
+
+        _set_items(engine, ["a", "b"])
+
+        assert [node.get_parameter_value(row.name) for row in _rows(node)] == ["A", "B"]
+        assert _get_items(engine) == ["A", "B"]
+
+    def test_a_row_set_by_the_editor_converts(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _ConvertingListNode(name="Lister"), flow_name)
+
+        _add_row(engine, "a")
+
+        assert _get_items(engine) == ["A"]
+
+    def test_a_row_restored_from_a_saved_workflow_converts(self, engine: Engine, flow_name: str) -> None:
+        """A saved row is rebuilt from its saved fields, and converters are not saved."""
+        node = _add(engine, _ConvertingListNode(name="Lister"), flow_name)
+        row_name = "items_ParameterListUniqueParamID_00000000000000000000000000000001"
+        engine.handle_request(
+            AddParameterToNodeRequest(
+                node_name="Lister",
+                parameter_name=row_name,
+                parent_container_name="items",
+                tooltip="",
+                input_types=["str"],
+                is_user_defined=True,
+                mode_allowed_property=True,
+                initial_setup=True,
+            )
+        )
+
+        engine.handle_request(SetParameterValueRequest(node_name="Lister", parameter_name=row_name, value="a"))
+
+        assert node.get_parameter_value(row_name) == "A"
+
+    def test_a_whole_list_over_a_connection_converts_each_item(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _Source(name="Source"), flow_name)
+        node = _add(engine, _ConvertingListNode(name="Lister"), flow_name)
+        engine.handle_request(
+            CreateConnectionRequest(
+                source_node_name="Source",
+                source_parameter_name="out",
+                target_node_name="Lister",
+                target_parameter_name="items",
+            )
+        )
+
+        engine.handle_request(
+            SetParameterValueRequest(
+                node_name="Lister",
+                parameter_name="items",
+                value=["a", "b"],
+                incoming_connection_source_node_name="Source",
+                incoming_connection_source_parameter_name="out",
+            )
+        )
+
+        assert node.get_parameter_value("items") == ["A", "B"]
+        assert _rows(node) == []
+
+
+class _NormalizingListNode(_ListNode):
+    """Rewrites its list in `after_value_set`, as libraries written for older engines do."""
+
+    def after_value_set(self, parameter: Parameter, value: object) -> None:
+        if parameter.name == "items" and isinstance(value, list):
+            shouted = [_shout(item) for item in value]
+            if shouted != value:
+                self.set_parameter_value("items", shouted)
+
+
+@pytest.fixture
+def opted_in() -> object:
+    """Treat every node as coming from a library that declares an engine version that fills rows."""
+    with patch.object(BaseNode, "_library_fills_list_rows", return_value=True):
+        yield
+
+
+class TestALibraryThatOptsIn:
+    @pytest.mark.usefixtures("opted_in")
+    def test_a_node_setting_its_own_list_fills_its_rows(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+
+        node.set_parameter_value("items", ["a", "b"])
+
+        assert [node.get_parameter_value(row.name) for row in _rows(node)] == ["a", "b"]
+        assert _get_items(engine) == ["a", "b"]
+
+    @pytest.mark.usefixtures("opted_in")
+    def test_a_running_node_keeps_writing_the_list(self, engine: Engine, flow_name: str) -> None:
+        """Rows a node adds while it runs in a worker would not reach the orchestrator."""
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+
+        with aprocess_scope(node=node):
+            node.set_parameter_value("items", ["a", "b"])
+
+        assert _rows(node) == []
+
+    @pytest.mark.usefixtures("opted_in")
+    def test_a_hook_rewriting_the_list_while_rows_fill_is_ignored(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _NormalizingListNode(name="Lister"), flow_name)
+
+        _set_items(engine, ["a", "b"])
+
+        assert [node.get_parameter_value(row.name) for row in _rows(node)] == ["a", "b"]
+        assert _get_items(engine) == ["a", "b"]
+
+
+class TestWhichLibrariesOptIn:
+    @pytest.mark.parametrize(
+        ("declared", "fills_rows"),
+        [("0.105.0", True), ("0.106.2", True), ("0.104.1", False), ("not a version", False)],
+    )
+    def test_it_follows_the_declared_engine_version(
+        self, engine: Engine, flow_name: str, declared: str, *, fills_rows: bool
+    ) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        node.metadata["library"] = "Some Library"
+        library = SimpleNamespace(get_metadata=lambda: SimpleNamespace(engine_version=declared))
+
+        with patch.object(LibraryRegistry, "get_library", return_value=library):
+            assert node._library_fills_list_rows() is fills_rows
+
+    def test_a_node_from_no_library_does_not(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+
+        assert node._library_fills_list_rows() is False
