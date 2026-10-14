@@ -131,3 +131,6 @@ class TestRefreshPreviewsOnFileChange:
 
     def test_default_is_on(self) -> None:
         assert Settings().refresh_previews_on_file_change is True
+
+    def test_watches_at_most_1000_files_by_default(self) -> None:
+        assert Settings().refresh_previews_max_files == 1000  # noqa: PLR2004

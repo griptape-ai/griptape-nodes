@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from watchfiles import Change
 
+from griptape_nodes.files.path_utils import canonicalize_for_identity
 from griptape_nodes.retained_mode.managers import static_file_watcher
 from griptape_nodes.retained_mode.managers.static_file_watcher import StaticFileWatcher, WatchedFileChange
 
@@ -219,6 +220,34 @@ class TestWatchFile:
         idle_watcher.watch_file(tmp_path / "sub" / ".." / "plate.png", "b")
 
         assert len(idle_watcher.watched_paths) == 1
+
+    def test_a_lowered_limit_applies_at_the_next_request(self, idle_watcher: StaticFileWatcher, tmp_path: Path) -> None:
+        paths = []
+        for name in ("a.png", "b.png", "c.png"):
+            path = tmp_path / name
+            path.write_bytes(name.encode())
+            paths.append(path)
+            idle_watcher.watch_file(path, name)
+
+        idle_watcher.max_files = 1
+        idle_watcher.watch_file(paths[2], "c.png")
+
+        assert [path.name for path in idle_watcher.watched_paths] == ["c.png"]
+
+    def test_stops_watching_a_folder_once_its_last_file_is_dropped(
+        self, idle_watcher: StaticFileWatcher, tmp_path: Path
+    ) -> None:
+        first = tmp_path / "first" / "a.png"
+        second = tmp_path / "second" / "b.png"
+        for path in (first, second):
+            path.parent.mkdir()
+            path.write_bytes(b"x")
+        idle_watcher.max_files = 1
+
+        idle_watcher.watch_file(first, "a")
+        idle_watcher.watch_file(second, "b")
+
+        assert idle_watcher._directories() == {canonicalize_for_identity(second.parent)}
 
     def test_drops_the_least_recently_requested_file_past_the_limit(self, recorder: Recorder, tmp_path: Path) -> None:
         file_watcher = StaticFileWatcher(on_change=recorder, max_files=2, force_polling=True)

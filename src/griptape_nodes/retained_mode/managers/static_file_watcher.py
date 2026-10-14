@@ -3,7 +3,7 @@
 import logging
 import os
 import threading
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,8 +15,11 @@ from griptape_nodes.files.path_utils import canonicalize_for_identity, canonical
 
 logger = logging.getLogger("griptape_nodes")
 
-# Most files watched at once. A long session mints a URL for every preview it shows, so the
-# oldest fall off instead of letting the set, and the directories under watch, grow without bound.
+# Most files watched at once, unless the refresh_previews_max_files setting says otherwise. A long
+# session mints a URL for every preview it shows, so the oldest fall off instead of letting the set,
+# and the directories under watch, grow without bound. The periodic re-check is the cost that grows
+# with this number: measured at about 0.2-0.4% of one CPU core for 1000 files and under 2% for
+# 10000, on macOS and Linux.
 MAX_WATCHED_FILES = 1000
 
 # How long to group filesystem events before reporting. Apps save in bursts (write a temp file,
@@ -96,12 +99,17 @@ class StaticFileWatcher:
                 OS notifications, which network drives need.
         """
         self._on_change = on_change
-        self._max_files = max_files
+        # Public so the owner can apply a changed setting. A lower limit takes effect at the next
+        # watch_file call.
+        self.max_files = max_files
         self._debounce_ms = debounce_ms
         self._recheck_interval_ms = recheck_interval_ms
         self._force_polling = force_polling
         self._lock = threading.Lock()
         self._files: OrderedDict[Path, WatchedFile] = OrderedDict()
+        # How many watched files each folder holds, kept alongside _files so watch_file can tell
+        # whether the set of folders changed without rebuilding it.
+        self._directory_counts: Counter[Path] = Counter()
         # Set to make the thread pick up a new set of directories. Also the watch's stop event.
         self._restart = threading.Event()
         self._shutdown = threading.Event()
@@ -126,11 +134,14 @@ class StaticFileWatcher:
         # watcher thread waits on the lock.
         fingerprint = _fingerprint(key)
         with self._lock:
-            directories_before = self._directories()
+            directories_changed = False
             watched = self._files.get(key)
             if watched is None:
                 watched = WatchedFile(fingerprint=fingerprint)
                 self._files[key] = watched
+                self._directory_counts[key.parent] += 1
+                if self._directory_counts[key.parent] == 1:
+                    directories_changed = True
             else:
                 # The client just minted a URL from the file as it is now, so this is the
                 # baseline the next change is measured against.
@@ -138,9 +149,12 @@ class StaticFileWatcher:
                 self._files.move_to_end(key)
             if requested_file_path not in watched.requested_file_paths:
                 watched.requested_file_paths.append(requested_file_path)
-            while len(self._files) > self._max_files:
-                self._files.popitem(last=False)
-            directories_changed = self._directories() != directories_before
+            while len(self._files) > self.max_files:
+                evicted, _ = self._files.popitem(last=False)
+                self._directory_counts[evicted.parent] -= 1
+                if self._directory_counts[evicted.parent] == 0:
+                    del self._directory_counts[evicted.parent]
+                    directories_changed = True
             self._start_thread_if_needed()
 
         if directories_changed:
@@ -199,7 +213,7 @@ class StaticFileWatcher:
         self._thread.start()
 
     def _directories(self) -> set[Path]:
-        return {path.parent for path in self._files}
+        return set(self._directory_counts)
 
     def _run(self) -> None:
         while not self._shutdown.is_set():

@@ -55,7 +55,11 @@ from griptape_nodes.retained_mode.file_metadata.sidecar_metadata import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.retained_mode.managers.static_file_watcher import StaticFileWatcher, WatchedFileChange
+from griptape_nodes.retained_mode.managers.static_file_watcher import (
+    MAX_WATCHED_FILES,
+    StaticFileWatcher,
+    WatchedFileChange,
+)
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.servers.static import (
     ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV,
@@ -582,6 +586,7 @@ class StaticFilesManager(EngineScoped):
         if not await anyio.Path(local_path).is_file():
             return
 
+        self.file_watcher.max_files = self._refresh_previews_max_files()
         # On a worker thread: watch_file stats the file, which can take seconds on a network drive.
         await anyio.to_thread.run_sync(self.file_watcher.watch_file, local_path, requested_file_path)
 
@@ -595,6 +600,18 @@ class StaticFilesManager(EngineScoped):
 
     def _refresh_previews_on_file_change(self) -> bool:
         return self.config_manager.get_config_value("refresh_previews_on_file_change", default=True, cast_type=bool)
+
+    def _refresh_previews_max_files(self) -> int:
+        # Read without cast_type, which raises on a non-number. Anything but a whole number of at
+        # least 1 falls back to the default, so a typo in the config can't stop previews loading.
+        value = self.config_manager.get_config_value("refresh_previews_max_files", default=MAX_WATCHED_FILES)
+        if isinstance(value, bool):
+            return MAX_WATCHED_FILES
+        if not isinstance(value, int):
+            return MAX_WATCHED_FILES
+        if value < 1:
+            return MAX_WATCHED_FILES
+        return value
 
     def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
         # try/finally rather than settling per branch: whatever resolution reached before raising

@@ -1648,11 +1648,15 @@ class TestStaticServerUrlSettlement:
 class TestStaticFilesManagerWatchesMintedFiles:
     """Local files a client mints a URL for are watched while the refresh_previews_on_file_change setting is on."""
 
-    def _build_manager(self, *, setting_on: bool | None = None, is_worker: bool = False) -> StaticFilesManager:
-        # None leaves the setting out of the config, as for a user who never changed it.
+    def _build_manager(
+        self, *, setting_on: bool | None = None, is_worker: bool = False, max_files: object = None
+    ) -> StaticFilesManager:
+        # None leaves a setting out of the config, as for a user who never changed it.
         config_values: dict[str, object] = {"storage_backend": "local"}
         if setting_on is not None:
             config_values["refresh_previews_on_file_change"] = setting_on
+        if max_files is not None:
+            config_values["refresh_previews_max_files"] = max_files
         mock_config = Mock()
         mock_config.get_config_value.side_effect = lambda key, default=None, **_kwargs: config_values.get(key, default)
         mock_config.workspace_path = Path("/mock/workspace")
@@ -1776,3 +1780,27 @@ class TestStaticFilesManagerWatchesMintedFiles:
         )
 
         manager.engine.event_manager.put_event.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_applies_the_configured_file_limit(self, tmp_path: Path) -> None:
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        manager = self._build_manager(max_files=250)
+
+        await self._mint(manager, str(image))
+
+        assert manager.file_watcher.max_files == 250  # noqa: PLR2004
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("max_files", [None, "abc", 0, -5, True, 12.5])
+    async def test_an_unusable_file_limit_falls_back_to_the_default(self, tmp_path: Path, max_files: object) -> None:
+        from griptape_nodes.retained_mode.managers.static_file_watcher import MAX_WATCHED_FILES
+
+        image = tmp_path / "plate.png"
+        image.write_bytes(b"v1")
+        manager = self._build_manager(max_files=max_files)
+
+        await self._mint(manager, str(image))
+
+        assert manager.file_watcher.max_files == MAX_WATCHED_FILES
+        manager.file_watcher.watch_file.assert_called_once()

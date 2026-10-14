@@ -737,6 +737,15 @@ class Settings(BaseModel):
             "including edits made in other apps"
         ),
     )
+    refresh_previews_max_files: int = Field(
+        category=FILE_SYSTEM,
+        default=1000,
+        description=(
+            "Most files watched at once for refresh_previews_on_file_change. Previews of the files shown least "
+            "recently stop refreshing first. Watching 1000 files uses well under 1% of one CPU core. Lower it on "
+            "a slow machine or network drive, or raise it for workflows that show more files than this"
+        ),
+    )
     mcp_servers: list[MCPServerConfig] = Field(
         category=MCP_SERVERS,
         default_factory=list,
