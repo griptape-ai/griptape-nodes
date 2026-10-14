@@ -2206,6 +2206,9 @@ class NodeManager(EngineScoped):
         if element is not None:
             with sanctioned_parameter_mutation():
                 node.remove_parameter_element(element)
+            if isinstance(element, Parameter) and element.parent_container_name is not None:
+                # The list lost an item, so what reads it has to run again.
+                self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
         else:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because element didn't exist."
 
@@ -2920,15 +2923,29 @@ class NodeManager(EngineScoped):
         # Otherwise use set_parameter_value. This calls our converters and validators.
         # Skip before_value_set since we already called it earlier in the flow
         old_value = node._get_raw_parameter_value(request.parameter_name)
-        node.set_parameter_value(
-            request.parameter_name, object_created, initial_setup=request.initial_setup, skip_before_value_set=True
-        )
+        if not self._set_whole_list_as_rows(request, node):
+            node.set_parameter_value(
+                request.parameter_name, object_created, initial_setup=request.initial_setup, skip_before_value_set=True
+            )
         # Get the "converted" value here.
         finalized_value = node._get_raw_parameter_value(request.parameter_name)
         if old_value != finalized_value:
             modified = True
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         return NodeManager.ModifiedReturnValue(finalized_value, modified)
+
+    def _set_whole_list_as_rows(self, request: SetParameterValueRequest, node: BaseNode) -> bool:
+        """Turn a caller's whole list for an unconnected list into rows. Returns whether it did.
+
+        Loading keeps the saved value as it is: a saved file sets the rows next, and a list saved
+        with no rows may hold items whose rows were removed.
+        """
+        if request.initial_setup or request.incoming_connection_source_node_name is not None:
+            return False
+        parameter = node.get_parameter_by_name(request.parameter_name)
+        if parameter is None:
+            return False
+        return node._set_list_as_rows_if_unconnected(parameter, request.value)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
@@ -3808,7 +3825,8 @@ class NodeManager(EngineScoped):
             deferred = {}
             made_progress = False
             for param_name, value in pending.items():
-                if node.get_parameter_by_name(param_name) is None:
+                parameter = node.get_parameter_by_name(param_name)
+                if parameter is None:
                     deferred[param_name] = value
                     continue
                 made_progress = True
@@ -3830,7 +3848,10 @@ class NodeManager(EngineScoped):
                         value.reason,
                     )
                 try:
-                    node.set_parameter_value(param_name, value)
+                    # A worker copy has no rows, so the list it runs with has to become them.
+                    is_list = isinstance(parameter, ParameterList)
+                    if not (is_list and node._set_list_as_rows_if_unconnected(parameter, value)):
+                        node.set_parameter_value(param_name, value)
                 except Exception as e:
                     return ExecuteNodeResultFailure(
                         result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
@@ -6035,9 +6056,11 @@ class NodeManager(EngineScoped):
         item_to_move = children[request.from_index]
         parameter_list._children.remove(item_to_move)
         parameter_list._children.insert(request.to_index, item_to_move)
+        node._refresh_list_value(parameter_list)
 
-        # Mark the node as unresolved since parameter structure changed
+        # Mark the node and what follows it as unresolved since the list's order changed
         node.state = NodeResolutionState.UNRESOLVED
+        self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
 
         # Manually add the reordered children structure to _changes so the event includes it
         parameter_list._changes["children"] = [child.to_dict() for child in parameter_list._children]

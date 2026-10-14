@@ -475,6 +475,8 @@ class ParameterList(ParameterContainer):
 
         # Mark the parent node as unresolved since the parameter structure changed
         if self._node_context is not None:
+            if isinstance(child, Parameter):
+                self._node_context._on_list_row_removed(self, child)
             # Import at runtime to avoid circular import
             from griptape_nodes.exe_types.node_types import NodeResolutionState
 

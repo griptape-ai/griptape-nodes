@@ -1883,12 +1883,129 @@ class BaseNode(ABC):
             return False
         return any(connection.target_parameter_name == param_name for connection in result.incoming_connections)
 
+    def _parameter_values_for_dispatch(self) -> dict[str, Any]:
+        """`parameter_values`, with each list as the node reads it, to send with `ExecuteNodeRequest`.
+
+        A worker copy has no rows and builds them from this. A list's own entry can still hold items
+        whose rows were removed, in a workflow saved before the entry followed its rows.
+        """
+        values = dict(self.parameter_values)
+        for parameter in self.parameters:
+            if isinstance(parameter, ParameterList) and parameter.name in values:
+                values[parameter.name] = self._get_raw_parameter_value(parameter.name)
+        return values
+
+    def _connected_parameter_names(self, parameter_names: set[str]) -> set[str]:
+        """Which of `parameter_names` have a connection in either direction."""
+        result = self.engine.handle_request(ListConnectionsForNodeRequest(node_name=self.name, broadcast_result=False))
+        if not isinstance(result, ListConnectionsForNodeResultSuccess):
+            return set()
+        connected = {connection.target_parameter_name for connection in result.incoming_connections}
+        connected.update(connection.source_parameter_name for connection in result.outgoing_connections)
+        return connected & parameter_names
+
+    def _set_list_as_rows_if_unconnected(self, parameter: Parameter, value: Any) -> bool:
+        """Write a whole list to the rows of an unconnected list. Returns whether it did.
+
+        The engine calls this where a value arrives from outside the node: a request, and a worker
+        copy receiving the list it runs with. An unconnected list is read from its rows, so a list
+        stored beside them would never be read. Node code keeps writing the list's own entry.
+
+        Raises:
+            TypeError: if `value` is not a list.
+            ValueError: if there are more items than `max_items`, or a row is connected to another node.
+        """
+        if not isinstance(parameter, ParameterList) or value is None:
+            # None is how a value is cleared, and keeps its old meaning.
+            return False
+        modes = parameter.allowed_modes
+        if ParameterMode.INPUT not in modes and ParameterMode.PROPERTY not in modes:
+            # An output-only list is built by its own node, row by row.
+            return False
+        if isinstance(value, list) and value == handle_container_parameter(self, parameter):
+            return False
+        if self._param_has_incoming_connection(parameter.name):
+            # A connected list is read whole, and keeps the value as it arrived.
+            return False
+        self._replace_list_rows(parameter, value)
+        return True
+
+    def _replace_list_rows(self, parameter_list: ParameterList, items: Any) -> None:
+        """Replace the list's rows with one row per item, the way the editor fills a list.
+
+        Each row is set through `set_parameter_value`, so the node's hooks fire for each one. If an item
+        is rejected, the old rows are put back and the error is raised.
+
+        Raises:
+            TypeError: if `items` is not a list.
+            ValueError: if there are more items than `max_items`, or a row is connected to another node.
+        """
+        list_label = f"'{self.name}.{parameter_list.name}'"
+        if not isinstance(items, list):
+            msg = f"Attempted to set list {list_label}. Failed because a list can only be set to a list, but got a value of type '{type(items).__name__}'."
+            raise TypeError(msg)
+        max_items = parameter_list.max_items
+        if max_items is not None and len(items) > max_items:
+            msg = f"Attempted to set list {list_label} to {len(items)} items. Failed because the list holds at most {max_items} items."
+            raise ValueError(msg)
+        old_rows = parameter_list.get_child_parameters()
+        if self._connected_parameter_names({row.name for row in old_rows}):
+            msg = f"Attempted to set list {list_label}. Failed because some of its items are connected to other nodes, and replacing the items would remove those connections. Disconnect them first."
+            raise ValueError(msg)
+
+        old_values = {
+            row.name: self.parameter_values[row.name] for row in old_rows if row.name in self.parameter_values
+        }
+        with sanctioned_parameter_mutation():
+            for row in old_rows:
+                self.remove_parameter_element(row)
+        try:
+            for item in items:
+                row = parameter_list.add_child_parameter()
+                self.set_parameter_value(row.name, item)
+        except Exception:
+            # Converters, validators and hooks may raise anything. Undo, then let it propagate unchanged.
+            self._restore_list_rows(parameter_list, old_rows, old_values)
+            raise
+        if not items:
+            # No row was set, so nothing refreshed the list or ran its hooks.
+            self.set_parameter_value(parameter_list.name, [])
+
+    def _restore_list_rows(self, parameter_list: ParameterList, rows: list[Parameter], values: dict[str, Any]) -> None:
+        """Put back the rows `_replace_list_rows` removed, with their values, and remove the ones it added."""
+        with sanctioned_parameter_mutation():
+            for row in parameter_list.get_child_parameters():
+                self.remove_parameter_element(row)
+        for row in rows:
+            parameter_list.add_child(row)
+        self.parameter_values.update(values)
+        # Written directly: rows are only replaced on a list nothing is connected to.
+        self.parameter_values[parameter_list.name] = handle_container_parameter(self, parameter_list)
+
+    def _on_list_row_removed(self, parameter_list: ParameterList, row: BaseNodeElement) -> None:
+        """Drop a removed row's value, and take it out of the list."""
+        self.parameter_values.pop(row.name, None)
+        self._refresh_list_value(parameter_list)
+
+    def _refresh_list_value(self, parameter_list: ParameterList) -> None:
+        """Rewrite the list's own entry from its rows, after a row was removed or moved.
+
+        The entry is what execution, saving and `GetParameterValueRequest` read. No hooks fire, since no
+        row's value changed.
+        """
+        if parameter_list.name not in self.parameter_values:
+            # Nothing stored, so reads and execution already take the list from its rows.
+            return
+        if self._param_has_incoming_connection(parameter_list.name):
+            # A connected list's entry is the value its connection delivered.
+            return
+        self.parameter_values[parameter_list.name] = handle_container_parameter(self, parameter_list)
+
     def _has_connected_whole_list_value(self, parameter_list: ParameterList) -> bool:
         """Whether a ParameterList was handed an entire list through a connection to the list itself.
 
-        Requiring the connection is what makes this safe to read: `parameter_values[list_name]` is a
-        write-through cache of the child rows that is NOT cleared when a row is removed, so a stale
-        entry can outlive its rows. Gating on the connection keeps that stale entry unreachable.
+        Without that connection, `parameter_values[list_name]` mirrors the child rows, and the rows
+        are read directly.
 
         Warns when the incoming list overrides manually-set rows or overruns `max_items`, since both
         are silent data loss otherwise.
