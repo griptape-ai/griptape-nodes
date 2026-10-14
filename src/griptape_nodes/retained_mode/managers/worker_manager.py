@@ -17,9 +17,10 @@ import anyio
 
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 from griptape_nodes.retained_mode.engine import EngineScoped
-from griptape_nodes.retained_mode.events import worker_events
+from griptape_nodes.retained_mode.events import converters, worker_events
 from griptape_nodes.retained_mode.events.app_events import ConfigChanged, CurrentProjectChanged, SecretChanged
-from griptape_nodes.retained_mode.events.base_events import RESULT_EVENT_TYPES, EventRequest, EventSerializationError
+from griptape_nodes.retained_mode.events.base_events import RESULT_EVENT_TYPES, EventRequest
+from griptape_nodes.retained_mode.events.converters import EventSerializationError
 from griptape_nodes.retained_mode.managers.external_environment import (
     WorkerCommandRefusal,
     provisioned_by_environment,
@@ -33,6 +34,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     WORKER_LIBRARY_LOAD_TIMEOUT_KEY,
 )
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.serialization.values import untag
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -143,8 +145,9 @@ class WorkerManager(EngineScoped):
 
         # Worker keys whose spawn has been claimed but has not yet reached the registry above,
         # each mapped to a token identifying the attempt that holds it. Keyed by attempt rather
-        # than by name alone so a spawn can only ever release its own claim.
-        self._spawns_in_flight: dict[str, object] = {}
+        # than by name alone so a spawn can only ever release its own claim. The claim is set once
+        # the attempt ends, so a caller that must not race the spawn can wait for it.
+        self._spawns_in_flight: dict[str, asyncio.Event] = {}
 
         # The event loop that spawned the worker subprocesses. asyncio.subprocess.Process
         # binds its exit Future to its creating loop, so proc.wait() is only legal on this
@@ -383,7 +386,7 @@ class WorkerManager(EngineScoped):
                 # and both charging that to the worker and leaving nothing to evict it are the
                 # orchestrator's problem becoming the worker's.
                 try:
-                    await self._tx.send_message("EventRequest", hb.json(), registration.request_topic)
+                    await self._tx.send_message("EventRequest", converters.engine.dumps(hb), registration.request_topic)
                 except Exception:
                     logger.warning(
                         "Could not challenge worker %s on '%s'; not counting it against the worker.",
@@ -450,7 +453,7 @@ class WorkerManager(EngineScoped):
         # entry cannot serve as this guard: it is written only once the subprocess exists, and the
         # work in between suspends. A second fork for one library leaves one of the two processes
         # untracked, holding that library's dependencies until its own heartbeat lapses.
-        claim = object()
+        claim = asyncio.Event()
         self._spawns_in_flight[worker_key] = claim
         try:
             # Spawn with the orchestrator's PRE-project environ so the worker boots with the
@@ -529,6 +532,7 @@ class WorkerManager(EngineScoped):
             # find the key belonging to the reload's spawn, and freeing that admits a third fork.
             if self._spawns_in_flight.get(worker_key) is claim:
                 del self._spawns_in_flight[worker_key]
+            claim.set()
         logger.debug("Spawned worker for key '%s' (pid %s)", worker_key, proc.pid)
 
     async def reset_workers(self) -> None:
@@ -544,41 +548,74 @@ class WorkerManager(EngineScoped):
             len(self._managed_worker_processes),
             list(self._managed_worker_processes.keys()),
         )
-        await asyncio.gather(
-            *(
-                self._terminate_via_spawn_loop(library_name, proc)
-                for library_name, proc in list(self._managed_worker_processes.items())
-            )
-        )
+        await self._stop_workers(library_names=None, action="reload")
+        # Cleared with the registry, not left behind: a spawn still inside its awaits holds this
+        # library's claim, and a claim surviving the reset refuses the reload's own spawn for it.
+        self._spawns_in_flight.clear()
+
+    async def stop_worker_for_library(self, library_name: str) -> None:
+        """Terminate the worker serving one library and forget it, leaving every other worker running.
+
+        A spawn already under way is waited out first and its process stopped with the rest, so once
+        this returns no worker for the library is running or about to start.
+        """
+        claim = self._spawns_in_flight.get(library_name)
+        if claim is not None:
+            await claim.wait()
+        await self._stop_workers(library_names={library_name}, action="reset")
+        self.note_worker_unavailable(library_name, "its worker process was stopped while the library is being reset.")
+
+    async def _stop_workers(self, *, library_names: set[str] | None, action: str) -> None:
+        """Terminate the named libraries' workers (every worker when None) and forget them.
+
+        Anything awaiting one of them is failed with the reason, and its response topic is
+        unsubscribed.
+        """
+        processes = [
+            (library_name, proc)
+            for library_name, proc in self._managed_worker_processes.items()
+            if library_names is None or library_name in library_names
+        ]
+        await asyncio.gather(*(self._terminate_via_spawn_loop(library_name, proc) for library_name, proc in processes))
+        # Read after the termination, not before: a worker can register while its process is being
+        # stopped, and an id missed here stays routable to a dead process.
+        worker_ids = [
+            wid
+            for wid, registration in self._workers.items()
+            if library_names is None or registration.worker_key in library_names
+        ]
         # Settle anything still awaiting one of these workers, BEFORE the registry is cleared.
         # Clearing it is what makes this the last chance: the heartbeat loop can only evict ids it
         # can still see, so after this nothing reaches these requests at all. route_to_worker has no
         # wall-clock ceiling, so a node dispatched into a worker this call terminates would await a
         # future that never settles.
         if self._transport is not None:
-            for wid in list(self._workers):
+            for wid in worker_ids:
                 registration = self._workers[wid]
                 await self._tx.request_client.fail_requests_by_tag(
                     wid,
                     worker_events.WorkerGoneError(
-                        f"worker '{wid}' was shut down to reload library '{registration.worker_key}'"
+                        f"worker '{wid}' was shut down to {action} library '{registration.worker_key}'"
                         if registration.worker_key
-                        else f"worker '{wid}' was shut down to reload libraries"
+                        else f"worker '{wid}' was shut down to {action} libraries"
                     ),
                 )
         session_id = self.engine.get_session_id()
         if session_id and self._transport is not None:
-            for wid in list(self._workers):
+            for wid in worker_ids:
                 response_topic = f"sessions/{session_id}/workers/{wid}/response"
                 try:
                     await self._tx.unsubscribe_from_topic(response_topic)
                 except Exception as e:
-                    logger.debug("Failed to unsubscribe from '%s' during reset: %s", response_topic, e)
-        self._managed_worker_processes.clear()
-        # Cleared with the registry, not left behind: a spawn still inside its awaits holds this
-        # library's claim, and a claim surviving the reset refuses the reload's own spawn for it.
-        self._spawns_in_flight.clear()
-        self._workers.clear()
+                    logger.debug("Failed to unsubscribe from '%s' while stopping workers: %s", response_topic, e)
+        if library_names is None:
+            self._managed_worker_processes.clear()
+            self._workers.clear()
+            return
+        for library_name, _proc in processes:
+            self._managed_worker_processes.pop(library_name, None)
+        for wid in worker_ids:
+            self._workers.pop(wid, None)
 
     async def route_to_worker(
         self,
@@ -1071,7 +1108,7 @@ class WorkerManager(EngineScoped):
         worker_response_topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
         forwarded = event.model_copy(update={"response_topic": worker_response_topic})
         logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
-        await self._tx.send_message("EventRequest", forwarded.json(), worker_request_topic)
+        await self._tx.send_message("EventRequest", converters.engine.dumps(forwarded), worker_request_topic)
 
     async def _on_config_changed(self, _event: ConfigChanged) -> None:
         """Fan out a ReloadConfigRequest after the orchestrator's config mutation succeeded.
@@ -1352,7 +1389,6 @@ class WorkerManager(EngineScoped):
         publish directly to the session response topic.
         """
         # Heartbeat responses update the last-seen timestamp but are not forwarded to the GUI.
-        # BaseEvent.dict() adds result_type at the outer level (not inside the result dict).
         result_event_type = payload.get("result_type", "")
         if result_event_type == worker_events.WorkerHeartbeatResultSuccess.__name__:
             response_topic = payload.get("response_topic", "")
@@ -1375,7 +1411,10 @@ class WorkerManager(EngineScoped):
         dest_socket = "success_result" if payload.get("event_type") == "EventResultSuccess" else "failure_result"
         payload["response_topic"] = session_response_topic
         logger.debug("Relaying %s to %s", payload.get("event_type"), session_response_topic)
-        await self._tx.send_message(dest_socket, json.dumps(payload), session_response_topic)
+        # Untags the JSON rather than reading the result back, since its payload class may live in a
+        # library only the worker has loaded. Only values carry tags, but a plain field holding its own
+        # "$type" key would lose it here.
+        await self._tx.send_message(dest_socket, json.dumps(untag(payload)), session_response_topic)
 
     def _determine_response_topic(self) -> str:
         """Determine the response topic based on current session and engine IDs."""

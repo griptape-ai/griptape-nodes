@@ -259,7 +259,7 @@ class TestUpdateLibraryRequestAgeGate:
             patch(f"{LIBRARY_MANAGER_MODULE}.is_on_tag", return_value=False),
             patch.object(
                 library_manager.git_operations,
-                "_reload_library_after_git_operation",
+                "reload_library",
                 new=AsyncMock(return_value="2.0.0"),
             ),
         ):
@@ -294,7 +294,7 @@ class TestUpdateLibraryRequestAgeGate:
             patch(f"{LIBRARY_MANAGER_MODULE}.is_on_tag", return_value=False),
             patch.object(
                 library_manager.git_operations,
-                "_reload_library_after_git_operation",
+                "reload_library",
                 new=AsyncMock(return_value="2.0.0"),
             ),
         ):
@@ -328,7 +328,7 @@ class TestUpdateLibraryRequestAgeGate:
             patch(f"{LIBRARY_MANAGER_MODULE}.is_on_tag", return_value=False),
             patch.object(
                 library_manager.git_operations,
-                "_reload_library_after_git_operation",
+                "reload_library",
                 new=AsyncMock(return_value="2.0.0"),
             ),
         ):

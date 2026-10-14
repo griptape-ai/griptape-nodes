@@ -24,12 +24,16 @@ import pytest
 
 from griptape_nodes.api_client.request_client import _PendingRequest
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
-from griptape_nodes.retained_mode.events import worker_events
+from griptape_nodes.retained_mode.events import converters, worker_events
 from griptape_nodes.retained_mode.events.app_events import CurrentProjectChanged
-from griptape_nodes.retained_mode.events.base_events import EventRequest
+from griptape_nodes.retained_mode.events.base_events import EventRequest, EventResultSuccess
 from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeRequest,
     ExecuteNodeResultSuccess,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    GetParameterValueRequest,
+    GetParameterValueResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 from griptape_nodes.retained_mode.managers.worker_manager import (
@@ -680,7 +684,6 @@ class TestGetMessageFilters:
 class TestRelayWorkerResult:
     @pytest.mark.asyncio
     async def test_heartbeat_success_updates_last_seen(self, worker_manager: WorkerManager) -> None:
-        # result_type lives at the outer level — set by BaseEvent.dict(), not inside result{}
         payload = {
             "event_type": "EventResultSuccess",
             "result_type": worker_events.WorkerHeartbeatResultSuccess.__name__,
@@ -717,6 +720,24 @@ class TestRelayWorkerResult:
         await worker_manager.relay_worker_result(payload)
 
         worker_manager._tx.send_message.assert_called_once()  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_values_reach_the_gui_without_type_tags(self, worker_manager: WorkerManager) -> None:
+        result = EventResultSuccess(
+            request=GetParameterValueRequest(node_name="n", parameter_name="pair"),
+            result=GetParameterValueResultSuccess(
+                input_types=["any"], type="any", output_type="any", value=(1, "b"), result_details="ok"
+            ),
+            request_id="r-1",
+            response_topic=_WORKER_RESPONSE_TOPIC,
+        )
+
+        await worker_manager.relay_worker_result(json.loads(converters.engine.dumps(result)))
+
+        relayed = json.loads(worker_manager._tx.send_message.call_args.args[1])  # type: ignore[union-attr]
+        assert relayed["result"]["value"] == [1, "b"]
+        assert relayed["request_id"] == "r-1"
+        assert relayed["response_topic"] == f"sessions/{_SESSION}/response"
 
 
 class TestEvictWorker:
@@ -948,7 +969,7 @@ class TestSpawnWorker:
             assert "My Library" in worker_manager._spawns_in_flight
 
             await worker_manager.reset_workers()
-            reload_claim = object()
+            reload_claim = asyncio.Event()
             worker_manager._spawns_in_flight["My Library"] = reload_claim
 
             released.set()
@@ -1148,7 +1169,7 @@ class TestResetWorkers:
         the next run would wait out the whole startup grace and then blame the library load.
         """
         worker_manager.engine.library_manager.environment.execution_site_packages.return_value = None  # type: ignore[union-attr]
-        worker_manager._spawns_in_flight["My Library"] = object()
+        worker_manager._spawns_in_flight["My Library"] = asyncio.Event()
 
         await worker_manager.reset_workers()
 
@@ -1228,6 +1249,124 @@ class TestResetWorkers:
         unsubscribed = {call.args[0] for call in worker_manager._tx.unsubscribe_from_topic.call_args_list}  # type: ignore[union-attr]
         assert f"sessions/{_SESSION}/workers/eng-1/response" in unsubscribed
         assert f"sessions/{_SESSION}/workers/eng-2/response" in unsubscribed
+
+
+class TestStopWorkerForLibrary:
+    """Stopping the worker of one library, as a library reset does before deleting its environment."""
+
+    @pytest.mark.asyncio
+    async def test_terminates_only_the_process_of_that_library(self, worker_manager: WorkerManager) -> None:
+        proc_a, proc_b = _managed_proc_mock(), _managed_proc_mock()
+        worker_manager._managed_worker_processes["Lib A"] = proc_a
+        worker_manager._managed_worker_processes["Lib B"] = proc_b
+
+        await worker_manager.stop_worker_for_library("Lib A")
+
+        proc_a.terminate.assert_called_once()
+        proc_b.terminate.assert_not_called()
+        assert list(worker_manager._managed_worker_processes) == ["Lib B"]
+
+    @pytest.mark.asyncio
+    async def test_forgets_only_the_registration_of_that_library(self, worker_manager: WorkerManager) -> None:
+        worker_manager._workers["eng-a"] = WorkerRegistration(
+            request_topic=f"sessions/{_SESSION}/workers/eng-a/request", worker_key="Lib A"
+        )
+        worker_manager._workers["eng-b"] = WorkerRegistration(
+            request_topic=f"sessions/{_SESSION}/workers/eng-b/request", worker_key="Lib B"
+        )
+
+        await worker_manager.stop_worker_for_library("Lib A")
+
+        assert list(worker_manager._workers) == ["eng-b"]
+        unsubscribed = [call.args[0] for call in worker_manager._tx.unsubscribe_from_topic.call_args_list]  # type: ignore[union-attr]
+        assert unsubscribed == [f"sessions/{_SESSION}/workers/eng-a/response"]
+
+    @pytest.mark.asyncio
+    async def test_waits_out_a_spawn_in_flight_and_stops_what_it_started(self, worker_manager: WorkerManager) -> None:
+        """A spawn parked between its claim and the registry write must not leave a live worker behind.
+
+        Without the wait, the stop would find nothing to terminate, and the spawn would then resume and
+        register a worker importing from the environment the caller is about to delete.
+        """
+        worker_manager.engine.library_manager.environment.execution_site_packages.return_value = None  # type: ignore[union-attr]
+        released = asyncio.Event()
+
+        async def park_until_released() -> None:
+            await released.wait()
+
+        proc = _managed_proc_mock()
+        with (
+            patch.object(worker_manager, "_orchestrator_static_server_base_url", park_until_released),
+            patch("asyncio.create_subprocess_exec", return_value=proc),
+        ):
+            spawn = asyncio.create_task(worker_manager.spawn_worker(["/usr/bin/gtn", "engine"], "Lib A"))
+            await asyncio.sleep(0.01)
+            stop = asyncio.create_task(worker_manager.stop_worker_for_library("Lib A"))
+            await asyncio.sleep(0.01)
+            assert not stop.done()
+
+            released.set()
+            await spawn
+            await stop
+
+        proc.terminate.assert_called_once()
+        assert "Lib A" not in worker_manager._managed_worker_processes
+        assert "Lib A" not in worker_manager._spawns_in_flight
+
+    @pytest.mark.asyncio
+    async def test_settles_requests_awaiting_that_worker(self, worker_manager: WorkerManager) -> None:
+        """A node running in the worker fails with the reason instead of waiting on a process that is gone."""
+        assert isinstance(worker_manager._tx.request_client, _FakeRequestClient)
+        worker_manager._workers = {_ENGINE: WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key="Lib")}
+        event_request = EventRequest(request=ExecuteNodeRequest(node_name="MyNode", parameter_values={}))
+
+        async def stop_mid_flight() -> None:
+            await asyncio.sleep(0)
+            await worker_manager.stop_worker_for_library("Lib")
+
+        asyncio.create_task(stop_mid_flight())  # noqa: RUF006
+
+        with pytest.raises(worker_events.WorkerGoneError, match="shut down to reset library 'Lib'"):
+            await worker_manager.route_to_worker(event_request, _ENGINE, _WORKER_REQUEST_TOPIC)
+
+    @pytest.mark.asyncio
+    async def test_forgets_a_worker_that_registers_while_its_process_is_stopping(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        """A booting worker can register during the termination await; it must not stay routable."""
+        worker_manager._managed_worker_processes["Lib A"] = _managed_proc_mock()
+
+        async def register_during_termination(_library_name: str, _proc: object) -> None:
+            worker_manager._workers["eng-late"] = WorkerRegistration(
+                request_topic=f"sessions/{_SESSION}/workers/eng-late/request", worker_key="Lib A"
+            )
+
+        with patch.object(worker_manager, "_terminate_via_spawn_loop", side_effect=register_during_termination):
+            await worker_manager.stop_worker_for_library("Lib A")
+
+        assert worker_manager.get_worker_for_key("Lib A") is None
+
+    @pytest.mark.asyncio
+    async def test_releases_anything_waiting_for_that_library_to_become_executable(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        """A node waiting on the readiness gate learns why instead of waiting out the load timeout."""
+        worker_manager.expect_worker("Lib A")
+
+        await worker_manager.stop_worker_for_library("Lib A")
+
+        assert worker_manager.has_settled("Lib A")
+        assert worker_manager.worker_unavailable_reason("Lib A") is not None
+
+    @pytest.mark.asyncio
+    async def test_is_a_no_op_for_a_library_without_a_worker(self, worker_manager: WorkerManager) -> None:
+        proc = _managed_proc_mock()
+        worker_manager._managed_worker_processes["Lib B"] = proc
+
+        await worker_manager.stop_worker_for_library("Lib A")
+
+        proc.terminate.assert_not_called()
+        assert list(worker_manager._managed_worker_processes) == ["Lib B"]
 
 
 class TestTerminateViaSpawnLoop:

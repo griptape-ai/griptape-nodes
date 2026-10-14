@@ -61,6 +61,7 @@ from griptape_nodes.retained_mode.managers.library.metadata_loading import Libra
 from griptape_nodes.retained_mode.managers.library.module_loading import STABLE_NAMESPACE_PREFIX, LibraryModuleLoading
 from griptape_nodes.retained_mode.managers.library.provisioning import LibraryProvisioning
 from griptape_nodes.retained_mode.managers.library.registration import LibraryRegistrar, RegisterLibraryPrerequisites
+from griptape_nodes.retained_mode.managers.library.reset import LibraryReset
 from griptape_nodes.retained_mode.managers.library.sandbox import (
     SANDBOX_CATEGORY_NAME,
     SANDBOX_LIBRARY_NAME,
@@ -158,6 +159,7 @@ class LibraryManager(EngineScoped):
         self.sync = LibrarySync(event_manager, engine=engine)
         self.discovery = LibraryDiscovery(event_manager, engine=engine)
         self.managed_environment = LibraryManagedEnvironment(engine)
+        self.reset = LibraryReset(event_manager, engine=engine)
         event_manager.register_request_handlers(self)
 
         event_manager.add_listener_to_app_event(
@@ -206,6 +208,9 @@ class LibraryManager(EngineScoped):
 
     def get_library_info_for_attempted_load(self, library_file_path: str) -> LibraryInfo:
         return self._library_file_path_to_info[library_file_path]
+
+    def find_library_info_for_attempted_load(self, library_file_path: str) -> LibraryInfo | None:
+        return self._library_file_path_to_info.get(library_file_path)
 
     def get_library_info_by_library_name(self, library_name: str) -> LibraryInfo | None:
         # A library name can have more than one entry: a duplicate install registers a second
@@ -486,6 +491,10 @@ class LibraryManager(EngineScoped):
         # When running as a dedicated library worker, restrict loading to those libraries.
         self._is_worker = payload.is_worker
         self._target_library_names = payload.libraries_to_register if payload.is_worker else None
+        # Before anything loads, since a loaded library holds its environment open. The
+        # orchestrator only: its workers start after it, and two processes must not race to delete.
+        if not self._is_worker and not payload.defer_pending_library_resets:
+            await self.reset.apply_pending_resets()
         reconcile_failures = await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
         # Soft boot: log reconcile failures and continue so the engine still starts and the
         # user can switch to a working project. Interactive activation hard-fails instead

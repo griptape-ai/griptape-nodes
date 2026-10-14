@@ -4694,7 +4694,7 @@ class TestLibraryManagerDuplicateEntryHygiene:
             patch.object(LibraryRegistry, "get_library", return_value=mock_library),
         ):
             result = asyncio.run(
-                library_manager.git_operations._reload_library_after_git_operation(
+                library_manager.git_operations.reload_library(
                     library_name="MyLib",
                     library_file_path=old_path,
                     failure_result_class=RegisterLibraryFromFileResultFailure,
