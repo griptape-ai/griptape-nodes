@@ -122,16 +122,19 @@ class StaticFileWatcher:
                 client can match it to what it is showing.
         """
         key = canonicalize_for_identity(path)
+        # Read before taking the lock. On a slow network drive a stat can take seconds, and the
+        # watcher thread waits on the lock.
+        fingerprint = _fingerprint(key)
         with self._lock:
             directories_before = self._directories()
             watched = self._files.get(key)
             if watched is None:
-                watched = WatchedFile(fingerprint=_fingerprint(key))
+                watched = WatchedFile(fingerprint=fingerprint)
                 self._files[key] = watched
             else:
                 # The client just minted a URL from the file as it is now, so this is the
                 # baseline the next change is measured against.
-                watched.fingerprint = _fingerprint(key)
+                watched.fingerprint = fingerprint
                 self._files.move_to_end(key)
             if requested_file_path not in watched.requested_file_paths:
                 watched.requested_file_paths.append(requested_file_path)
@@ -166,13 +169,18 @@ class StaticFileWatcher:
         A file that is missing right now is skipped. Atomic saves remove the original before
         renaming the new file into place, and the event for that rename reports the new file.
         """
+        with self._lock:
+            watched_paths = [path for path in paths if path in self._files]
+        # Stat outside the lock, so a slow drive doesn't hold up watch_file, which the URL request
+        # handler calls.
+        fingerprints = {path: _fingerprint(path) for path in watched_paths}
+
         reports: list[WatchedFileChange] = []
         with self._lock:
-            for path in paths:
+            for path, fingerprint in fingerprints.items():
                 watched = self._files.get(path)
                 if watched is None:
                     continue
-                fingerprint = _fingerprint(path)
                 if fingerprint is None:
                     continue
                 if fingerprint == watched.fingerprint:
@@ -199,7 +207,9 @@ class StaticFileWatcher:
             # event again and the watch below restarts to include it.
             self._restart.clear()
             with self._lock:
-                directories = sorted(directory for directory in self._directories() if directory.is_dir())
+                listed = sorted(self._directories())
+            # Checked outside the lock, for the same reason as the stats in _report_changed.
+            directories = [directory for directory in listed if directory.is_dir()]
             if not directories:
                 self._restart.wait()
                 continue
@@ -224,7 +234,9 @@ class StaticFileWatcher:
                         self.handle_changes(changes)
                     else:
                         self.recheck_all()
-            except OSError as e:
+            # watchfiles raises RuntimeError (WatchfilesRustInternalError) for errors during a running
+            # watch, such as a file name in a watched folder that isn't valid UTF-8.
+            except (OSError, RuntimeError) as e:
                 logger.warning(
                     "Attempted to watch %d folders for changes to previewed files. Failed due to %s. "
                     "Trying again in %.0f seconds.",

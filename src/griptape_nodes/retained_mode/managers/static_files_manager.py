@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import anyio
+import anyio.to_thread
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.common.project_templates.situation import BuiltInSituation, SituationFilePolicy
@@ -581,7 +582,8 @@ class StaticFilesManager(EngineScoped):
         if not await anyio.Path(local_path).is_file():
             return
 
-        self.file_watcher.watch_file(local_path, requested_file_path)
+        # On a worker thread: watch_file stats the file, which can take seconds on a network drive.
+        await anyio.to_thread.run_sync(self.file_watcher.watch_file, local_path, requested_file_path)
 
     def _on_watched_file_changed(self, change: WatchedFileChange) -> None:
         # Files watched before the setting was turned off stay watched, so check again here.

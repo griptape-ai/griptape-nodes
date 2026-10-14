@@ -148,7 +148,69 @@ class TestRecheckAll:
         assert [change.requested_file_paths for change in recorder.changes] == [["plate"]]
 
 
+class TestRecheckDuringEviction:
+    def test_does_not_report_a_file_dropped_while_it_was_checked(
+        self, recorder: Recorder, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(StaticFileWatcher, "_start_thread_if_needed", lambda _self: None)
+        file_watcher = StaticFileWatcher(on_change=recorder, max_files=1)
+        dropped = tmp_path / "dropped.png"
+        dropped.write_bytes(b"v1")
+        file_watcher.watch_file(dropped, "dropped")
+        rewrite(dropped, b"version two")
+        newer = tmp_path / "newer.png"
+        newer.write_bytes(b"newer")
+
+        real_fingerprint = static_file_watcher._fingerprint
+
+        def fingerprint(path: Path) -> Any:
+            if path.name == "dropped.png":
+                # While this file's stat runs outside the lock, a newer request pushes it out.
+                monkeypatch.setattr(static_file_watcher, "_fingerprint", real_fingerprint)
+                file_watcher.watch_file(newer, "newer")
+            return real_fingerprint(path)
+
+        monkeypatch.setattr(static_file_watcher, "_fingerprint", fingerprint)
+        file_watcher.recheck_all()
+
+        assert recorder.changes == []
+
+
 class TestWatchFile:
+    def test_does_not_wait_for_a_recheck_stuck_on_a_slow_drive(
+        self, idle_watcher: StaticFileWatcher, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        slow = tmp_path / "slow.png"
+        slow.write_bytes(b"slow")
+        idle_watcher.watch_file(slow, "slow")
+
+        stat_started = threading.Event()
+        release_stat = threading.Event()
+        real_fingerprint = static_file_watcher._fingerprint
+
+        def fingerprint(path: Path) -> Any:
+            if path.name == "slow.png":
+                stat_started.set()
+                release_stat.wait(timeout=10)
+            return real_fingerprint(path)
+
+        monkeypatch.setattr(static_file_watcher, "_fingerprint", fingerprint)
+        recheck = threading.Thread(target=idle_watcher.recheck_all)
+        recheck.start()
+        try:
+            assert stat_started.wait(timeout=5)
+
+            # The recheck is stuck on its stat. Watching another file must not wait for it.
+            other = tmp_path / "other.png"
+            other.write_bytes(b"other")
+            finished = threading.Event()
+            threading.Thread(target=lambda: (idle_watcher.watch_file(other, "other"), finished.set())).start()
+
+            assert finished.wait(timeout=2)
+        finally:
+            release_stat.set()
+            recheck.join(timeout=5)
+
     def test_two_spellings_of_one_file_share_one_entry(self, idle_watcher: StaticFileWatcher, tmp_path: Path) -> None:
         image = tmp_path / "plate.png"
         image.write_bytes(b"v1")
@@ -260,8 +322,21 @@ class TestWatcherThread:
         assert recorder.received.wait(timeout=10)
         assert recorder.changes[0].requested_file_paths == ["b"]
 
+    @pytest.mark.parametrize(
+        "error",
+        [
+            FileNotFoundError("No path was found."),
+            # watchfiles' WatchfilesRustInternalError, raised during a running watch, is a RuntimeError.
+            RuntimeError("Unable to decode path"),
+        ],
+    )
     def test_retries_after_the_watch_fails(
-        self, recorder: Recorder, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self,
+        recorder: Recorder,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        error: Exception,
     ) -> None:
         real_watch = static_file_watcher.watch
         calls = []
@@ -269,8 +344,7 @@ class TestWatcherThread:
         def watch_that_fails_once(*args: Any, **kwargs: Any) -> Any:
             calls.append(args)
             if len(calls) == 1:
-                msg = "No path was found."
-                raise FileNotFoundError(msg)
+                raise error
             return real_watch(*args, **kwargs)
 
         monkeypatch.setattr(static_file_watcher, "watch", watch_that_fails_once)
