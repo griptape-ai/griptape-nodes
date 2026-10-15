@@ -442,8 +442,6 @@ class BaseNode(ABC):
         self.parameter_values = {}
         # Lists whose rows `_replace_list_rows` is replacing, so a write from a hook during it is stored as is.
         self._lists_being_replaced: set[str] = set()
-        # Lists being rebuilt from their rows, whose items the rows' converters already converted.
-        self._lists_built_from_rows: set[str] = set()
         self.parameter_output_values = TrackedParameterOutputValues(self)
         self._local_objects = None
         self.root_ui_element = BaseNodeElement()
@@ -1144,9 +1142,7 @@ class BaseNode(ABC):
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
         # cause a calling object to alter its assumptions/behavior. The value requested
         # to be assigned will NOT be set.
-        candidate_value = self._convert_value(
-            parameter, value, items_converted=param_name in self._lists_built_from_rows
-        )
+        candidate_value = self._convert_value(parameter, value)
 
         # Validate the values next, based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
@@ -1174,35 +1170,16 @@ class BaseNode(ABC):
         else:
             self.parameter_values[param_name] = candidate_value
             self._also_record_as_result(parameter, candidate_value)
-        # handle with container parameters
         if parameter.parent_container_name is not None:
-            # Does it have a parent container
-            parent_parameter = self.get_parameter_by_name(parameter.parent_container_name)
-            # Does the parent container exist
-            if parent_parameter is not None:
-                # Get it's new value dependent on it's children
-                new_parent_value = handle_container_parameter(self, parent_parameter)
-                if new_parent_value is not None:
-                    # set that new value if it exists.
-                    self._lists_built_from_rows.add(parameter.parent_container_name)
-                    try:
-                        self.set_parameter_value(
-                            parameter.parent_container_name,
-                            new_parent_value,
-                            initial_setup=initial_setup,
-                            emit_change=False,
-                        )
-                    finally:
-                        self._lists_built_from_rows.discard(parameter.parent_container_name)
+            container = self.get_parameter_by_name(parameter.parent_container_name)
+            if isinstance(container, ParameterContainer):
+                self._rebuild_container_value(container, initial_setup=initial_setup)
 
     @staticmethod
-    def _convert_value(parameter: Parameter, value: Any, *, items_converted: bool = False) -> Any:
-        """Run the parameter's converters on `value`, and a list's item converters on each of its items first.
-
-        `items_converted` skips the item converters, for a list built from rows that already ran them.
-        """
+    def _convert_value(parameter: Parameter, value: Any) -> Any:
+        """Run the parameter's converters on `value`, and a list's item converters on each of its items first."""
         candidate_value = value
-        if isinstance(parameter, ParameterList) and not items_converted:
+        if isinstance(parameter, ParameterList):
             candidate_value = parameter.convert_items(candidate_value)
         for converter in parameter.converters:
             candidate_value = converter(candidate_value)
@@ -1370,18 +1347,8 @@ class BaseNode(ABC):
         if param_name in self.parameter_values:
             # Reset the parameter to default.
             default_val = parameter.default_value
+            # A row's set also stores its list again.
             self.set_parameter_value(param_name, default_val)
-
-            # special handling if it's in a container.
-            if parameter.parent_container_name and parameter.parent_container_name in self.parameter_values:
-                del self.parameter_values[parameter.parent_container_name]
-                # Raw: this copies the remaining rows along rather than reading them for use. Resolving
-                # here would raise on a key whose object sits in a worker, out of a connection delete and
-                # out of the run's finally, and would write live objects back into parameter_values.
-                new_val = self._get_raw_parameter_value(parameter.parent_container_name)
-                if new_val is not None:
-                    # Don't set the container to None (that would make it empty)
-                    self.set_parameter_value(parameter.parent_container_name, new_val)
         else:
             err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
             raise KeyError(err)
@@ -1989,6 +1956,7 @@ class BaseNode(ABC):
             # An output-only list is built by its own node, row by row.
             return False
         if isinstance(value, list) and value == handle_container_parameter(self, parameter):
+            # Already what the rows hold.
             return False
         if parameter.name in self._lists_being_replaced:
             # Storing it would leave the list's value and its rows disagreeing, and replacing the rows
@@ -2033,23 +2001,22 @@ class BaseNode(ABC):
         old_values = {
             row.name: self.parameter_values[row.name] for row in old_rows if row.name in self.parameter_values
         }
-        with sanctioned_parameter_mutation():
-            for row in old_rows:
-                self.remove_parameter_element(row)
+        # Registered first, so removing and setting rows leaves the list to be stored once, below.
         self._lists_being_replaced.add(parameter_list.name)
         try:
+            with sanctioned_parameter_mutation():
+                for row in old_rows:
+                    self.remove_parameter_element(row)
             for item in items:
                 row = parameter_list.add_child_parameter()
                 self.set_parameter_value(row.name, item)
+            self._store_container_value(parameter_list, initial_setup=False)
         except Exception:
             # Converters, validators and hooks may raise anything. Undo, then let it propagate unchanged.
             self._restore_list_rows(parameter_list, old_rows, old_values)
             raise
         finally:
             self._lists_being_replaced.discard(parameter_list.name)
-        if not items:
-            # No row was set, so nothing refreshed the list or ran its hooks.
-            self.set_parameter_value(parameter_list.name, [])
 
     def _restore_list_rows(self, parameter_list: ParameterList, rows: list[Parameter], values: dict[str, Any]) -> None:
         """Put back the rows `_replace_list_rows` removed, with their values, and remove the ones it added."""
@@ -2059,27 +2026,43 @@ class BaseNode(ABC):
         for row in rows:
             parameter_list.add_child(row)
         self.parameter_values.update(values)
-        # Written directly: rows are only replaced on a list nothing is connected to.
+        # Written without running hooks, which could raise again and hide the error being undone.
         self.parameter_values[parameter_list.name] = handle_container_parameter(self, parameter_list)
 
     def _on_list_row_removed(self, parameter_list: ParameterList, row: BaseNodeElement) -> None:
         """Drop a removed row's value, and take it out of the list."""
         self.parameter_values.pop(row.name, None)
-        self._refresh_list_value(parameter_list)
+        self._rebuild_container_value(parameter_list)
 
-    def _refresh_list_value(self, parameter_list: ParameterList) -> None:
-        """Rewrite the list's own entry from its rows, after a row was removed or moved.
+    def _rebuild_container_value(self, container: ParameterContainer, *, initial_setup: bool = False) -> None:
+        """Store a container's value again, built from its rows, after a row is set, removed or moved.
 
-        The entry is what execution, saving and `GetParameterValueRequest` read. No hooks fire, since no
-        row's value changed.
+        The stored value is what execution, saving and `GetParameterValueRequest` read.
         """
-        if parameter_list.name not in self.parameter_values:
-            # Nothing stored, so reads and execution already take the list from its rows.
+        if container.name in self._lists_being_replaced:
+            # `_replace_list_rows` stores it once every row is in place.
             return
-        if self._param_has_incoming_connection(parameter_list.name):
-            # A connected list's entry is the value its connection delivered.
+        if ParameterMode.INPUT in container.allowed_modes and self._param_has_incoming_connection(container.name):
+            # A connected list holds the value its connection delivered.
             return
-        self.parameter_values[parameter_list.name] = handle_container_parameter(self, parameter_list)
+        self._store_container_value(container, initial_setup=initial_setup)
+
+    def _store_container_value(self, container: ParameterContainer, *, initial_setup: bool) -> None:
+        """Build a container's value from its rows and store it, running what a set of that value would.
+
+        Its converters, validators and hooks run, but not a list's item converters: the rows ran those.
+        """
+        value = handle_container_parameter(self, container)
+        for converter in container.converters:
+            value = converter(value)
+        for validator in container.validators:
+            validator(container, value)
+        if not initial_setup:
+            value = self.before_value_set(parameter=container, value=value)
+        self.parameter_values[container.name] = value
+        self._also_record_as_result(container, value)
+        if not initial_setup:
+            self.after_value_set(parameter=container, value=value)
 
     def _has_connected_whole_list_value(self, parameter_list: ParameterList) -> bool:
         """Whether a ParameterList was handed an entire list through a connection to the list itself.

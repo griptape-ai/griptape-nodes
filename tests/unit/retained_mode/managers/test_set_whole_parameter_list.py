@@ -544,7 +544,9 @@ class TestWhichLibrariesOptIn:
 
 
 def _bracket(value: object) -> object:
-    """Not idempotent, so running it twice on an item shows."""
+    """Not idempotent, so running it twice on an item shows. Passes None through, as clearing a row sends it."""
+    if value is None:
+        return None
     return f"[{value}]"
 
 
@@ -615,3 +617,82 @@ class TestFillingRowsOnACopyWithNone:
         asked.assert_not_called()
         assert _get_items(engine) == ["a"]
         assert len(_rows(node)) == 1
+
+
+class _ListHookNode(_BracketingListNode):
+    """Records each value its list's `after_value_set` receives, as Path Join's output does."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name=name)
+        self.seen_lists: list[object] = []
+
+    def after_value_set(self, parameter: Parameter, value: object) -> None:
+        if parameter.name == "items":
+            self.seen_lists.append(value)
+
+
+class TestTheListHearsEveryRowEdit:
+    def test_removing_a_row(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListHookNode(name="Lister"), flow_name)
+        rows = [_add_row(engine, value) for value in ("a", "b")]
+        node.seen_lists.clear()
+
+        engine.handle_request(RemoveParameterFromNodeRequest(node_name="Lister", parameter_name=rows[0]))
+
+        assert node.seen_lists == [["[b]"]]
+
+    def test_moving_a_row(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListHookNode(name="Lister"), flow_name)
+        for value in ("a", "b"):
+            _add_row(engine, value)
+        node.seen_lists.clear()
+
+        engine.handle_request(
+            ReorderParameterListItemRequest(node_name="Lister", parameter_list_name="items", from_index=0, to_index=1)
+        )
+
+        assert node.seen_lists == [["[b]", "[a]"]]
+
+    def test_a_whole_list_set_is_heard_once(self, engine: Engine, flow_name: str) -> None:
+        """Not once per row with the list half filled."""
+        node = _add(engine, _ListHookNode(name="Lister"), flow_name)
+
+        _set_items(engine, ["a", "b"])
+
+        assert node.seen_lists == [["[a]", "[b]"]]
+
+    def test_clearing_a_row_value_converts_the_rest_once(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListHookNode(name="Lister"), flow_name)
+        rows = [_add_row(engine, value) for value in ("a", "b")]
+
+        node.remove_parameter_value(rows[0])
+
+        assert _get_items(engine) == ["[b]"]
+
+
+class TestARowEditOnAConnectedList:
+    def test_keeps_the_value_its_connection_delivered(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _Source(name="Source"), flow_name)
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        row = _add_row(engine, "manual")
+        engine.handle_request(
+            CreateConnectionRequest(
+                source_node_name="Source",
+                source_parameter_name="out",
+                target_node_name="Lister",
+                target_parameter_name="items",
+            )
+        )
+        engine.handle_request(
+            SetParameterValueRequest(
+                node_name="Lister",
+                parameter_name="items",
+                value=["x", "y"],
+                incoming_connection_source_node_name="Source",
+                incoming_connection_source_parameter_name="out",
+            )
+        )
+
+        engine.handle_request(RemoveParameterFromNodeRequest(node_name="Lister", parameter_name=row))
+
+        assert node.get_parameter_value("items") == ["x", "y"]

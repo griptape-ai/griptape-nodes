@@ -6052,11 +6052,7 @@ class NodeManager(EngineScoped):
                 result_details=ResultDetails(message=details, level=logging.DEBUG)
             )
 
-        # Perform the reorder by moving the item in the _children list
-        item_to_move = children[request.from_index]
-        parameter_list._children.remove(item_to_move)
-        parameter_list._children.insert(request.to_index, item_to_move)
-        node._refresh_list_value(parameter_list)
+        parameter_list.move_child(request.from_index, request.to_index)
 
         # Mark the node and what follows it as unresolved since the list's order changed
         node.state = NodeResolutionState.UNRESOLVED
