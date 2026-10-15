@@ -7,6 +7,9 @@ import pytest
 
 from griptape_nodes.retained_mode.engine import Engine
 from griptape_nodes.retained_mode.events.artifact_events import RegisterArtifactProviderRequest
+from griptape_nodes.retained_mode.managers.artifact_providers.audio.audio_artifact_provider import (
+    AudioArtifactProvider,
+)
 from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
     ImageArtifactProvider,
 )
@@ -28,6 +31,20 @@ def registry() -> ProviderRegistry:
 def image_provider(registry: ProviderRegistry) -> ImageArtifactProvider:
     """Provide an ImageArtifactProvider backed by a bare registry."""
     return ImageArtifactProvider(registry=registry)
+
+
+class TestBaseArtifactProviderDefaults:
+    """A provider that overrides neither hook embeds nothing and leaves the bytes alone."""
+
+    def test_collects_no_metadata(self, registry: ProviderRegistry) -> None:
+        assert AudioArtifactProvider(registry=registry).collect_metadata_for_write("clip.mp3") == {}
+
+    def test_returns_data_unchanged(self, registry: ProviderRegistry) -> None:
+        data = b"audio bytes"
+
+        result = AudioArtifactProvider(registry=registry).prepare_content_for_write(data, "clip.mp3", {"k": "v"})
+
+        assert result is data
 
 
 class TestImageArtifactProviderCollectMetadataForWrite:

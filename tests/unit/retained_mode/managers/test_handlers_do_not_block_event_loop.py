@@ -9,7 +9,9 @@ held, the question could not be answered until the step gave up waiting.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -23,6 +25,8 @@ from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.retained_mode.events.config_events import GetConfigValueRequest, GetConfigValueResultSuccess
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
+    ReadFileRequest,
+    ReadFileResultSuccess,
     WriteFileRequest,
     WriteFileResultSuccess,
 )
@@ -212,6 +216,81 @@ def _read_max_nodes_in_parallel(user_config: Path) -> int:
     return json.loads(user_config.read_text())["max_nodes_in_parallel"]
 
 
+class TestReadFileThumbnail:
+    """ReadFileRequest turns an image into a thumbnail data URL unless it is already in the workspace."""
+
+    @pytest.mark.asyncio
+    async def test_engine_answers_while_a_read_makes_its_thumbnail(
+        self, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        engine.config_manager.workspace_path = tmp_path / "workspace"
+        source = tmp_path / "source.png"
+        source.write_bytes(_png_bytes())
+        step = _SlowStep()
+        monkeypatch.setattr(
+            engine.os_manager, "_image_bytes_to_preview_data_url", lambda _data, _mime: step.run("data:thumb")
+        )
+
+        read = asyncio.create_task(engine.ahandle_request(ReadFileRequest(file_path=str(source), workspace_only=False)))
+        try:
+            await _assert_engine_answers_while_parked(engine, step)
+        finally:
+            step.release.set()
+            result = await asyncio.wait_for(read, timeout=_START_TIMEOUT_SECONDS)
+
+        assert not step.gave_up, "Making the thumbnail held the event loop until it gave up."
+        assert isinstance(result, ReadFileResultSuccess), result
+        assert result.content == "data:thumb"
+        assert step.thread_id != threading.get_ident()
+
+    @pytest.mark.asyncio
+    async def test_thumbnail_is_a_webp_data_url(self, engine: Engine, tmp_path: Path) -> None:
+        engine.config_manager.workspace_path = tmp_path / "workspace"
+        source = tmp_path / "source.png"
+        source.write_bytes(_png_bytes())
+
+        result = await engine.ahandle_request(ReadFileRequest(file_path=str(source), workspace_only=False))
+
+        assert isinstance(result, ReadFileResultSuccess), result
+        assert isinstance(result.content, str)
+        assert result.content.startswith("data:image/webp;base64,")
+
+    @pytest.mark.asyncio
+    async def test_unreadable_image_falls_back_to_its_full_data_url(self, engine: Engine, tmp_path: Path) -> None:
+        engine.config_manager.workspace_path = tmp_path / "workspace"
+        source = tmp_path / "broken.png"
+        broken = b"\x89PNG\r\n\x1a\n\x00\xff not really an image"
+        source.write_bytes(broken)
+
+        result = await engine.ahandle_request(ReadFileRequest(file_path=str(source), workspace_only=False))
+
+        assert isinstance(result, ReadFileResultSuccess), result
+        assert result.content == f"data:image/png;base64,{base64.b64encode(broken).decode('utf-8')}"
+
+    @pytest.mark.asyncio
+    async def test_workspace_check_runs_on_the_loop(
+        self, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An image already in the workspace gets a static URL, built from engine state on the loop."""
+        loop_thread = threading.get_ident()
+        threads: set[int] = set()
+
+        def base_url(_self: object) -> str:
+            threads.add(threading.get_ident())
+            return "http://static"
+
+        monkeypatch.setattr(type(engine.static_files_manager), "static_server_base_url", property(base_url))
+        engine.config_manager.workspace_path = tmp_path
+        source = tmp_path / "source.png"
+        source.write_bytes(_png_bytes())
+
+        result = await engine.ahandle_request(ReadFileRequest(file_path=str(source), workspace_only=False))
+
+        assert isinstance(result, ReadFileResultSuccess), result
+        assert result.content == "http://static/workspace/source.png"
+        assert threads == {loop_thread}
+
+
 class TestConfigWrites:
     """Config writes are sync callers of the async WriteFileRequest handler."""
 
@@ -230,6 +309,52 @@ class TestConfigWrites:
         assert engine.config_manager.set_config_value("max_nodes_in_parallel", 8)
 
         assert _read_max_nodes_in_parallel(isolate_user_config) == 8  # noqa: PLR2004
+
+    def test_config_write_reports_failure_when_the_write_raises(
+        self,
+        engine: Engine,
+        isolate_user_config: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A handler that raises comes back from the dispatcher as a generic failure, not a write failure."""
+        isolate_user_config.write_text(json.dumps({"max_nodes_in_parallel": 3}))
+
+        def fail_to_write(*_args: Any, **_kwargs: Any) -> Any:
+            msg = "disk unavailable"
+            raise RuntimeError(msg)
+
+        monkeypatch.setattr(engine.os_manager, "_attempt_atomic_file_write", fail_to_write)
+        monkeypatch.setattr(engine.os_manager, "_attempt_file_write", fail_to_write)
+
+        with caplog.at_level(logging.ERROR):
+            written = engine.config_manager._write_user_config_delta({"max_nodes_in_parallel": 9})
+
+        assert written is False
+        assert _read_max_nodes_in_parallel(isolate_user_config) == 3  # noqa: PLR2004
+        assert any("Attempted to write merged config" in record.message for record in caplog.records)
+
+    def test_config_write_reports_failure_when_creating_the_file_fails(
+        self,
+        engine: Engine,
+        isolate_user_config: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        isolate_user_config.unlink()
+
+        def fail_to_write(*_args: Any, **_kwargs: Any) -> Any:
+            msg = "disk unavailable"
+            raise RuntimeError(msg)
+
+        monkeypatch.setattr(engine.os_manager, "_attempt_file_write", fail_to_write)
+
+        with caplog.at_level(logging.ERROR):
+            written = engine.config_manager._write_user_config_delta({"max_nodes_in_parallel": 9})
+
+        assert written is False
+        assert not isolate_user_config.exists()
+        assert any("Attempted to create user config file" in record.message for record in caplog.records)
 
 
 def _make_generator(generator_type: type, engine: Engine, source: Path, destination_dir: Path) -> Any:
@@ -282,11 +407,12 @@ class TestPreviewGenerators:
     @pytest.mark.parametrize(
         "generator_type", [PILThumbnailGenerator, PILRoundedPreviewGenerator], ids=["thumbnail", "rounded"]
     )
+    @pytest.mark.parametrize("mode", ["RGB", "RGBA"])
     async def test_preview_is_still_rendered_from_the_source_image(
-        self, engine: Engine, tmp_path: Path, generator_type: type
+        self, engine: Engine, tmp_path: Path, generator_type: type, mode: str
     ) -> None:
         source = tmp_path / "source.png"
-        Image.new("RGB", (200, 100), "blue").save(source)
+        Image.new(mode, (200, 100), "blue").save(source)
         generator = _make_generator(generator_type, engine, source, tmp_path / "previews")
 
         file_name = await generator.attempt_generate_preview()
@@ -294,3 +420,24 @@ class TestPreviewGenerators:
         with Image.open(tmp_path / "previews" / file_name) as preview:
             assert preview.width == 32  # noqa: PLR2004
             assert preview.height <= 32  # noqa: PLR2004
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "generator_type", [PILThumbnailGenerator, PILRoundedPreviewGenerator], ids=["thumbnail", "rounded"]
+    )
+    async def test_preview_write_failure_raises(
+        self, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, generator_type: type
+    ) -> None:
+        source = tmp_path / "source.png"
+        source.write_bytes(_png_bytes())
+        generator = _make_generator(generator_type, engine, source, tmp_path / "previews")
+
+        def fail_to_write(*_args: Any, **_kwargs: Any) -> Any:
+            msg = "disk unavailable"
+            raise RuntimeError(msg)
+
+        monkeypatch.setattr(engine.os_manager, "_attempt_atomic_file_write", fail_to_write)
+        monkeypatch.setattr(engine.os_manager, "_attempt_file_write", fail_to_write)
+
+        with pytest.raises(OSError, match="Failed to write preview image"):
+            await generator.attempt_generate_preview()

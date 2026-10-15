@@ -2268,7 +2268,7 @@ class OSManager(EngineScoped):
 
             # Handle image thumbnail generation (if requested)
             if mime_type.startswith("image/") and request.should_transform_image_content_to_thumbnail and not is_text:
-                content = await to_thread(self._generate_thumbnail_from_image_content, content, location, mime_type)
+                content = await self._generate_thumbnail_from_image_content(content, location, mime_type)
                 # Thumbnail returns a string (URL or data URI), not bytes
                 decoded_content: str | bytes = content
                 encoding = None
@@ -2328,8 +2328,13 @@ class OSManager(EngineScoped):
         # Read via driver system (driver handles all validation and I/O)
         return await self._read_via_driver(location, request)
 
-    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path | str, mime_type: str) -> str:
+    async def _generate_thumbnail_from_image_content(
+        self, content: bytes, file_path: Path | str, mime_type: str
+    ) -> str:
         """Handle image content by creating previews or returning static URLs.
+
+        The workspace check reads engine state, so it runs on the loop; only the image encode
+        runs on a worker thread.
 
         Args:
             content: Image bytes
@@ -2369,8 +2374,13 @@ class OSManager(EngineScoped):
             # Not a valid local path (might be URL or data URI), continue to preview
             pass
 
+        return await to_thread(self._image_bytes_to_preview_data_url, original_image_bytes, mime_type)
+
+    @staticmethod
+    def _image_bytes_to_preview_data_url(image_bytes: bytes, mime_type: str) -> str:
+        """Encode a small WEBP preview of the image as a data URL. CPU-bound and touches no engine state."""
         preview_data_url = create_image_preview_from_bytes(
-            original_image_bytes,  # type: ignore[arg-type]
+            image_bytes,  # type: ignore[arg-type]
             max_width=200,
             max_height=200,
             quality=85,
@@ -2382,7 +2392,7 @@ class OSManager(EngineScoped):
             return preview_data_url
 
         # Fallback to data URL if preview creation fails
-        data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
+        data_url = f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
         logger.debug("Fallback to full image data URL")
         return data_url
 
