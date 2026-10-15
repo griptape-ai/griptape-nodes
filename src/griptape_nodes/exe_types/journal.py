@@ -2,9 +2,10 @@
 
 A transaction holds one user action's changes, in order. There are two kinds. Structural changes,
 such as a node added or a connection removed, are records the managers make through `apply`: the
-record carries out the change, so making it and redoing it are the same code. Changes inside a node,
-its values, metadata, and element tree, are written by library code directly, so the containers
-that hold them record each write themselves.
+record carries out the change, so making it and redoing it are the same code. The records are in
+`changes.py`, and `test_structural_ownership.py` checks that nothing changes structure without one.
+Changes inside a node, its values, metadata, and element tree, are written by library code directly,
+so the containers that hold them, and the element `__setattr__` hook, record each write themselves.
 
 Writes outside a transaction are not recorded: running a workflow, loading one, or the engine's own
 bookkeeping. Inside one, an element field's first assignment is skipped, since no one could have

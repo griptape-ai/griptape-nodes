@@ -65,7 +65,7 @@ class NodeChanges:
     structure: bool = False
     # The group the node ended up in, MISSING when its group did not change.
     group: BaseNode | None = MISSING
-    lock: bool | None = None
+    locked: bool | None = None
 
 
 @dataclass
@@ -78,13 +78,13 @@ class Summary:
     renamed: list[tuple[str, str]] = field(default_factory=list)
     connections_added: list[Connection] = field(default_factory=list)
     connections_removed: list[Connection] = field(default_factory=list)
-    nodes: dict[BaseNode, NodeChanges] = field(default_factory=lambda: defaultdict(NodeChanges))
+    changed_nodes: dict[BaseNode, NodeChanges] = field(default_factory=lambda: defaultdict(NodeChanges))
     # Every node the transaction changed, including both ends of each connection it changed.
     touched: list[BaseNode] = field(default_factory=list)
 
     def rerun_needed(self) -> set[BaseNode]:
         """Nodes whose inputs changed, so their results no longer hold."""
-        nodes = {node for node, changes in self.nodes.items() if changes.values or changes.structure}
+        nodes = {node for node, changes in self.changed_nodes.items() if changes.values or changes.structure}
         nodes.update(connection.target_node for connection in self.connections_added + self.connections_removed)
         return nodes
 
@@ -105,7 +105,9 @@ class _Summarizer:
         self._read_node_writes()
         summary = self._summary
         added_or_gone = {id(node) for node in summary.created + summary.deleted}
-        summary.nodes = {node: changes for node, changes in summary.nodes.items() if id(node) not in added_or_gone}
+        summary.changed_nodes = {
+            node: changes for node, changes in summary.changed_nodes.items() if id(node) not in added_or_gone
+        }
         summary.touched = [node for node in self._touched.values() if self._in_workflow(node)]
         return summary
 
@@ -123,7 +125,7 @@ class _Summarizer:
             or summary.renamed
             or summary.connections_added
             or summary.connections_removed
-            or summary.nodes
+            or summary.changed_nodes
             or any(isinstance(change, _UNLABELED_RECORDS) for change in self._changes)
         )
 
@@ -149,10 +151,10 @@ class _Summarizer:
             before = chain[0].group if isinstance(chain[0], GroupMemberRemoved) else None
             after = chain[-1].group if isinstance(chain[-1], GroupMemberAdded) else None
             if before is not after:
-                summary.nodes[chain[0].node].group = after
+                summary.changed_nodes[chain[0].node].group = after
         for chain in _chains(self._changes, LockChanged, lambda change: change.node):
             if chain[0].old != chain[-1].new:
-                summary.nodes[chain[0].node].lock = chain[-1].new
+                summary.changed_nodes[chain[0].node].locked = chain[-1].new
 
     def _read_node_writes(self) -> None:
         """Read the writes made inside nodes: their values, metadata, and elements."""
@@ -174,22 +176,22 @@ class _Summarizer:
             elif self._in_workflow(node):
                 self._summary.changed = True
                 self._touch(node)
-                self._summary.nodes[node].structure = True
+                self._summary.changed_nodes[node].structure = True
 
     def _read_write(self, node: BaseNode, target: object, key: Any) -> None:
         aspect = getattr(target, "aspect", None)
         if aspect is Aspect.VALUES:
-            self._summary.nodes[node].values.add(key)
+            self._summary.changed_nodes[node].values.add(key)
         elif aspect is Aspect.METADATA:
             metadata_key = key if target.root_key is MISSING else target.root_key  # type: ignore[attr-defined]
             if metadata_key not in LIBRARY_METADATA_KEYS:
-                self._summary.nodes[node].metadata.add(metadata_key)
+                self._summary.changed_nodes[node].metadata.add(metadata_key)
         elif isinstance(target, BaseNodeElement) or aspect in (
             Aspect.CHILDREN,
             Aspect.GROUP_PROXIES,
             Aspect.ADDED_PARAMETERS,
         ):
-            self._summary.nodes[node].structure = True
+            self._summary.changed_nodes[node].structure = True
 
     def _touch(self, node: BaseNode) -> None:
         self._touched.setdefault(id(node), node)
@@ -207,7 +209,7 @@ def describe(summary: Summary) -> str:  # noqa: C901, PLR0911
     The most telling change wins. Connecting a parameter also sets its value, for example, so a
     new connection outranks the value change that came with it.
     """
-    nodes = summary.nodes
+    nodes = summary.changed_nodes
     if summary.created and summary.deleted:
         return f"Edit {_count(len(summary.created) + len(summary.deleted), 'node')}"
     if summary.created:
@@ -253,9 +255,9 @@ def _describe_connections(summary: Summary) -> str:
 
 def _describe_layout_or_lock(nodes: dict[BaseNode, NodeChanges]) -> str | None:
     keys = set().union(*(changes.metadata for changes in nodes.values()))
-    locked = [node for node, changes in nodes.items() if changes.lock is not None]
+    locked = [node for node, changes in nodes.items() if changes.locked is not None]
     if locked and not keys:
-        verb = "Lock" if nodes[locked[0]].lock else "Unlock"
+        verb = "Lock" if nodes[locked[0]].locked else "Unlock"
         return f"{verb} {_name_list([node.name for node in locked])}"
     moved = sorted(node.name for node, changes in nodes.items() if changes.metadata)
     if keys == {"position"}:

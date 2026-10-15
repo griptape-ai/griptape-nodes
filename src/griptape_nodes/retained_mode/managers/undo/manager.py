@@ -311,7 +311,7 @@ class UndoManager(EngineScoped):
     def _invalidate_results(self, summary: Summary) -> None:
         """Clear what a run left behind that the restored workflow no longer matches, as an edit does."""
         connections = self.engine.flow_manager.get_connections()
-        for node, changes in summary.nodes.items():
+        for node, changes in summary.changed_nodes.items():
             if is_live(node):
                 for parameter_name in changes.values:
                     self.engine.node_manager.mark_value_changed(node, parameter_name)

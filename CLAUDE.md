@@ -208,3 +208,13 @@ PARALLEL_BRANCH_RESOLUTION = register_beta_feature(
 **Library registration flow** - Libraries are defined by `griptape_nodes_library.json` files and registered via the `LibraryRegistry`. Node creation flows through `LibraryRegistry.create_node()` -> `Library.create_node()`. `LibraryRegistry` is deliberately process-global: it hands out node classes imported into `sys.modules`, so per-engine copies would advertise isolation the module system does not provide. The workflow registry is engine-owned (`engine.workflow_registry`), since which workflows exist depends on the engine's workspace config. Node libraries reach it through the `WorkflowRegistry` classmethods, which forward to the current engine's registry and are banned in engine code (`TID251`).
 
 **Custom nodes** - Extend `BaseNode` from `exe_types/node_types.py`. Parameters, traits, groups, and messages live in `exe_types/elements/`, one module per concern; import them from `exe_types/core_types.py`, which is the surface node libraries bind to. Flows and connections are defined in `exe_types/flow.py` and `exe_types/connections.py`.
+
+## Undo
+
+Undo reverses an edit by reversing what it recorded, in `exe_types/journal.py`. Workflow state is in one of two layers, and each records differently.
+
+**Structure changes through a record** - Which nodes and flows exist, their names, flow parents, connections, group membership, and locks belong to the managers. Change them with `journal.apply(...)` and a record from `exe_types/changes.py`, such as `journal.apply(NodeAdded(node, flow_name))`. The record calls the owning method (`NodeManager.register_node`, `Connections.link`, `BaseNodeGroup.add_member`), so making a change and redoing it run the same code. Do not call an owning method or write its state directly; `test_structural_ownership.py` fails if you do. New structural state needs a record of its own.
+
+**A node's own state records itself** - Values, metadata, and the element tree are written by node library code, so their containers and the element `__setattr__` hook record each write. Nothing extra is needed for them, but state a library could change during an edit must live there, not in a plain attribute on the node, or undo will not restore it.
+
+**Undo keeps the rules handlers keep** - A rule that runs when something changes, such as marking a node to run again after its value changes, belongs in a method that both the handler and undo call (`NodeManager.mark_value_changed`). Do not copy it into the undo package.
