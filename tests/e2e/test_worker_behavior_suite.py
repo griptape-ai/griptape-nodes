@@ -455,7 +455,7 @@ class TestAnInputListFilledInTheEditor:
         current_engine().library_manager._is_worker = is_worker
 
         with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
-            result = await _execute("ReadsAnInputListNode", node.name, **node._parameter_values_for_dispatch())
+            result = await _execute("ReadsAnInputListNode", node.name, **node._list_rows.values_for_dispatch())
 
         assert result.parameter_output_values["echo"] == ["a", "c"]
         assert "does not exist on the executing copy" not in caplog.text
@@ -470,7 +470,7 @@ class TestAnInputListFilledInTheEditor:
         )
         current_engine().library_manager._is_worker = is_worker
 
-        result = await _execute("ReadsAnInputListNode", node.name, **node._parameter_values_for_dispatch())
+        result = await _execute("ReadsAnInputListNode", node.name, **node._list_rows.values_for_dispatch())
 
         assert result.parameter_output_values["echo"] == ["a", "b"]
 

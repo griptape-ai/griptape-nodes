@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.list_rows import ListRows, library_fills_list_rows
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, aprocess_scope
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.engine import Engine
@@ -350,7 +351,7 @@ class TestTheListFollowsItsRows:
         node = _add(engine, _ListNode(name="Lister"), flow_name)
         node.parameter_values["items"] = ["removed"]
 
-        assert node._parameter_values_for_dispatch()["items"] == []
+        assert node._list_rows.values_for_dispatch()["items"] == []
 
 
 class TestNodeCode:
@@ -488,7 +489,7 @@ class _NormalizingListNode(_ListNode):
 @pytest.fixture
 def opted_in() -> object:
     """Treat every node as coming from a library that declares an engine version that fills rows."""
-    with patch.object(BaseNode, "_library_fills_list_rows", return_value=True):
+    with patch("griptape_nodes.exe_types.node_types.library_fills_list_rows", return_value=True):
         yield
 
 
@@ -535,12 +536,12 @@ class TestWhichLibrariesOptIn:
         library = SimpleNamespace(get_metadata=lambda: SimpleNamespace(engine_version=declared))
 
         with patch.object(LibraryRegistry, "get_library", return_value=library):
-            assert node._library_fills_list_rows() is fills_rows
+            assert library_fills_list_rows("Some Library") is fills_rows
 
     def test_a_node_from_no_library_does_not(self, engine: Engine, flow_name: str) -> None:
         node = _add(engine, _ListNode(name="Lister"), flow_name)
 
-        assert node._library_fills_list_rows() is False
+        assert library_fills_list_rows(node.metadata.get("library")) is False
 
 
 def _bracket(value: object) -> object:
@@ -590,7 +591,7 @@ class TestDispatch:
         node = _add(engine, _ListNode(name="Lister"), flow_name)
         rows = [_add_row(engine, value) for value in ("a", "b")]
 
-        values = node._parameter_values_for_dispatch()
+        values = node._list_rows.values_for_dispatch()
 
         assert values["items"] == ["a", "b"]
         assert not set(rows) & set(values)
@@ -600,7 +601,7 @@ class TestDispatch:
         row = _add_row(engine, "a")
         del node.parameter_values["items"]
 
-        values = node._parameter_values_for_dispatch()
+        values = node._list_rows.values_for_dispatch()
 
         assert values["items"] == ["a"]
         assert row not in values
@@ -611,7 +612,7 @@ class TestFillingRowsOnACopyWithNone:
         """On a worker that question goes to the orchestrator, so it costs a round trip."""
         node = _add(engine, _ListNode(name="Lister"), flow_name)
 
-        with patch.object(BaseNode, "_connected_parameter_names", return_value=set()) as asked:
+        with patch.object(ListRows, "_connected_parameter_names", return_value=set()) as asked:
             _set_items(engine, ["a"])
 
         asked.assert_not_called()

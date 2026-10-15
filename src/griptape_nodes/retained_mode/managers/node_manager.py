@@ -55,8 +55,8 @@ from griptape_nodes.exe_types.node_types import (
     TransformedParameterValue,
     _values_differ,
     aprocess_scope,
-    sanctioned_parameter_mutation,
 )
+from griptape_nodes.exe_types.parameter_mutation import sanctioned_parameter_mutation
 from griptape_nodes.exe_types.trait_state import TraitStateEntry
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.node_library.library_declarations import (
@@ -2945,7 +2945,7 @@ class NodeManager(EngineScoped):
         parameter = node.get_parameter_by_name(request.parameter_name)
         if parameter is None:
             return False
-        return node._set_list_as_rows_if_unconnected(parameter, request.value)
+        return node._list_rows.set_as_rows_if_unconnected(parameter, request.value)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
@@ -3850,7 +3850,7 @@ class NodeManager(EngineScoped):
                 try:
                     # A worker copy has no rows, so the list it runs with has to become them.
                     is_list = isinstance(parameter, ParameterList)
-                    if not (is_list and node._set_list_as_rows_if_unconnected(parameter, value)):
+                    if not (is_list and node._list_rows.set_as_rows_if_unconnected(parameter, value)):
                         node.set_parameter_value(param_name, value)
                 except Exception as e:
                     return ExecuteNodeResultFailure(

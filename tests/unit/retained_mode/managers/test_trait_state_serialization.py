@@ -5,7 +5,8 @@ from typing import Any
 import pytest
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
-from griptape_nodes.exe_types.node_types import BaseNode, sanctioned_parameter_mutation
+from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.parameter_mutation import sanctioned_parameter_mutation
 from griptape_nodes.node_library.library_registry import (
     LibraryMetadata,
     LibraryRegistry,

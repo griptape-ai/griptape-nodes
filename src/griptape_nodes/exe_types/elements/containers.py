@@ -497,7 +497,7 @@ class ParameterList(ParameterContainer):
         self._children.remove(row)
         self._children.insert(to_index, row)
         if self._node_context is not None:
-            self._node_context._rebuild_container_value(self)
+            self._node_context._list_rows.rebuild(self)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
         """Override to mark parent node as unresolved when children are removed.
@@ -510,7 +510,7 @@ class ParameterList(ParameterContainer):
         # Mark the parent node as unresolved since the parameter structure changed
         if self._node_context is not None:
             if isinstance(child, Parameter):
-                self._node_context._on_list_row_removed(self, child)
+                self._node_context._list_rows.row_removed(self, child)
             # Import at runtime to avoid circular import
             from griptape_nodes.exe_types.node_types import NodeResolutionState
 
