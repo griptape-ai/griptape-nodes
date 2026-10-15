@@ -290,6 +290,9 @@ against stale state.
     no polling needed.
 - **Omit `flow_name` on `StartFlowRequest`** when you just finished building a
     single flow. The handler defaults to the current-context flow.
+- **A data input takes one connection.** Connecting a second source to it (or a
+    control output to a second target) replaces the existing connection.
+    `CreateConnectionResultSuccess.replaced_connection` names the one removed.
 - **Read the response, don't assume names.** `CreateNodeResultSuccess.node_name` is
     the authoritative handle for every later call. Pass it verbatim into
     `SetParameterValueRequest`, `CreateConnectionRequest`, and
