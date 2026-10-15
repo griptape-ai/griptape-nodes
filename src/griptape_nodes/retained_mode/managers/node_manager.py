@@ -2749,7 +2749,8 @@ class NodeManager(EngineScoped):
 
         # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
         try:
-            modified_value = node.before_value_set(parameter, parameter_value)
+            with node._list_rows.hooks_running(parameter.parent_container_name):
+                modified_value = node.before_value_set(parameter, parameter_value)
             if modified_value is not None:
                 # Check if it's a TransformedParameterValue (value + type)
                 if isinstance(modified_value, TransformedParameterValue):
@@ -3853,8 +3854,7 @@ class NodeManager(EngineScoped):
                     )
                 try:
                     # A worker copy has no rows, so the list it runs with has to become them.
-                    is_list = isinstance(parameter, ParameterList)
-                    if not (is_list and node._list_rows.set_as_rows_if_unconnected(parameter, value)):
+                    if not self._fill_list_rows_on_copy(node, parameter, value):
                         node.set_parameter_value(param_name, value)
                 except Exception as e:
                     return ExecuteNodeResultFailure(
@@ -3873,6 +3873,18 @@ class NodeManager(EngineScoped):
                 param_name,
             )
         return None
+
+    def _fill_list_rows_on_copy(self, node: BaseNode, parameter: Parameter, value: Any) -> bool:
+        """Build a list's rows from the value it arrived with. Returns False for anything but a list.
+
+        A worker skips asking whether the list is connected, which would cost a round trip to the
+        orchestrator for every list on every run.
+        """
+        if not isinstance(parameter, ParameterList):
+            return False
+        if self.engine.library_manager.is_worker:
+            return node._list_rows.fill_copy(parameter, value)
+        return node._list_rows.set_as_rows_if_unconnected(parameter, value)
 
     @staticmethod
     def _unencodable_value_names(values: dict[str, Any]) -> list[str]:

@@ -7,6 +7,8 @@ whole list it was handed.
 
 from __future__ import annotations
 
+import logging
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterList, ParameterMode
@@ -17,8 +19,12 @@ from griptape_nodes.retained_mode.events.connection_events import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from griptape_nodes.exe_types.core_types import BaseNodeElement
     from griptape_nodes.exe_types.node_types import BaseNode
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class ListRows:
@@ -28,8 +34,10 @@ class ListRows:
         self._node = node
         # Lists whose rows `_replace` is replacing. The node hears about each once, when every row is in place.
         self._being_replaced: set[str] = set()
-        # Lists whose own `before_value_set` / `after_value_set` hooks are running.
+        # Lists whose value hooks, or one of whose rows' value hooks, are running.
         self._in_hooks: set[str] = set()
+        # Lists a dropped hook write has already been warned about.
+        self._warned: set[str] = set()
 
     def holds_no_value(self, parameter: Parameter) -> bool:
         """Whether `parameter` is a list read from its rows, which keeps no value of its own."""
@@ -39,6 +47,18 @@ class ListRows:
             return True
         return not self._node._param_has_incoming_connection(parameter.name)
 
+    @contextmanager
+    def hooks_running(self, list_name: str | None) -> Iterator[None]:
+        """Mark `list_name` while a value hook on it or one of its rows runs. A no-op for None."""
+        if list_name is None or list_name in self._in_hooks:
+            yield
+            return
+        self._in_hooks.add(list_name)
+        try:
+            yield
+        finally:
+            self._in_hooks.discard(list_name)
+
     def write_from_node(self, parameter: Parameter, value: Any, *, initial_setup: bool, running: bool) -> bool:
         """Handle the node's own write to a list that keeps no value. Returns False for any other parameter.
 
@@ -47,8 +67,9 @@ class ListRows:
         - while the node is running, since rows it adds then don't reach the orchestrator's copy. Its
           result is recorded instead.
         - while loading, which sets the rows next.
-        - from the list's own hooks, which is where libraries written for older engines rewrite their
-          list to convert its items. Those use `item_converters` now.
+        - from a value hook on the list or one of its rows, which runs while a row is being set.
+          Replacing the rows there would remove the one being set. Libraries written for older
+          engines rewrite their list there to convert its items; those use `item_converters` now.
         """
         if not self.holds_no_value(parameter):
             return False
@@ -57,9 +78,28 @@ class ListRows:
         if running:
             self._node._also_record_as_result(parameter, value)
             return True
-        if initial_setup or name in self._being_replaced or name in self._in_hooks:
+        if name in self._in_hooks:
+            self._warn_hook_write(parameter, value)
+            return True
+        if initial_setup or name in self._being_replaced:
             return True
         self.set_as_rows_if_unconnected(parameter, value)
+        return True
+
+    def fill_copy(self, parameter: Parameter, value: Any) -> bool:
+        """Build the rows of a worker's copy of the node from the list it was sent. Returns whether it did.
+
+        Unlike `set_as_rows_if_unconnected`, this doesn't ask the orchestrator whether the list is
+        connected: a fresh copy has no rows to protect, and rows built from the list give the node the
+        same items either way.
+        """
+        if not isinstance(parameter, ParameterList) or not isinstance(value, list):
+            return False
+        modes = parameter.allowed_modes
+        if ParameterMode.INPUT not in modes and ParameterMode.PROPERTY not in modes:
+            return False
+        if value != handle_container_parameter(self._node, parameter):
+            self._replace(parameter, value)
         return True
 
     def set_as_rows_if_unconnected(self, parameter: Parameter, value: Any) -> bool:
@@ -191,12 +231,22 @@ class ListRows:
         node._also_record_as_result(container, value)
         if initial_setup:
             return
-        self._in_hooks.add(container.name)
-        try:
+        with self.hooks_running(container.name):
             node.before_value_set(parameter=container, value=value)
             node.after_value_set(parameter=container, value=value)
-        finally:
-            self._in_hooks.discard(container.name)
+
+    def _warn_hook_write(self, parameter: Parameter, value: Any) -> None:
+        """Warn, once per list, that a hook's write to it was ignored. Silent when it wouldn't change anything."""
+        name = parameter.name
+        if name in self._warned or value == handle_container_parameter(self._node, parameter):
+            return
+        self._warned.add(name)
+        logger.warning(
+            "Node '%s' set list '%s' from a value hook, which can't change a list's items, so the write was "
+            "ignored. To convert each item, give the list item_converters.",
+            self._node.name,
+            name,
+        )
 
     def _connected_parameter_names(self, parameter_names: set[str]) -> set[str]:
         """Which of `parameter_names` have a connection in either direction."""

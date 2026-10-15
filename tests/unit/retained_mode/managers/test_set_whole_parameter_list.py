@@ -700,3 +700,65 @@ class TestAnUnconnectedListStoresNothing:
         _set_items(engine, ["a", "b"])
 
         assert "items" not in node.parameter_values
+
+
+class _RowHookRewritesList(_ListNode):
+    """Rewrites its whole list from a row's hook, not the list's own."""
+
+    def after_value_set(self, parameter: Parameter, value: object) -> None:
+        if parameter.parent_container_name == "items" and isinstance(value, str) and not value.isupper():
+            self.set_parameter_value("items", [str(item).upper() for item in self.get_parameter_value("items")])
+
+
+class TestAHookWritingItsList:
+    def test_from_a_row_hook_leaves_the_rows(self, engine: Engine, flow_name: str) -> None:
+        """Replacing the rows there would remove the row being set."""
+        node = _add(engine, _RowHookRewritesList(name="Lister"), flow_name)
+
+        rows = [_add_row(engine, value) for value in ("a", "b")]
+
+        assert [row.name for row in _rows(node)] == rows
+        assert _get_items(engine) == ["a", "b"]
+
+    def test_is_warned_about_once(self, engine: Engine, flow_name: str, caplog: pytest.LogCaptureFixture) -> None:
+        _add(engine, _RowHookRewritesList(name="Lister"), flow_name)
+
+        with caplog.at_level("WARNING", logger="griptape_nodes"):
+            for value in ("a", "b"):
+                _add_row(engine, value)
+
+        warnings = [record for record in caplog.records if "from a value hook" in record.getMessage()]
+        assert len(warnings) == 1
+
+    def test_that_changes_nothing_is_not_warned_about(
+        self, engine: Engine, flow_name: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Libraries rewrite their list only when converting changed it."""
+        _add(engine, _NormalizingListNode(name="Lister"), flow_name)
+
+        with caplog.at_level("WARNING", logger="griptape_nodes"):
+            _add_row(engine, "A")
+
+        assert "from a value hook" not in caplog.text
+
+
+class TestAWorkerFillingItsCopy:
+    @pytest.fixture
+    def worker(self, engine: Engine) -> object:
+        engine.library_manager._is_worker = True
+        yield
+        engine.library_manager._is_worker = False
+
+    @pytest.mark.usefixtures("worker")
+    @pytest.mark.parametrize("items", [["a", "b", "c"], []])
+    def test_does_not_ask_the_orchestrator_about_connections(
+        self, engine: Engine, flow_name: str, items: list[str]
+    ) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+
+        with patch.object(BaseNode, "_param_has_incoming_connection", return_value=False) as asked:
+            failure = engine.node_manager._apply_hydrated_values(node, "Lister", {"items": items})
+
+        assert failure is None
+        asked.assert_not_called()
+        assert node.get_parameter_value("items") == items

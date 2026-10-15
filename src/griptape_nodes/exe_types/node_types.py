@@ -1126,17 +1126,18 @@ class BaseNode(ABC):
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         if not initial_setup:
-            if skip_before_value_set:
-                final_value = candidate_value
-            else:
-                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
-            # ACTUALLY SET THE NEW VALUE
-            self.parameter_values[param_name] = final_value
-            self._also_record_as_result(parameter, final_value)
+            # A row's hooks run while it is being set, so they mustn't replace its list's rows.
+            with self._list_rows.hooks_running(parameter.parent_container_name):
+                if skip_before_value_set:
+                    final_value = candidate_value
+                else:
+                    final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+                # ACTUALLY SET THE NEW VALUE
+                self.parameter_values[param_name] = final_value
+                self._also_record_as_result(parameter, final_value)
 
-            # If a parameter value has been set at the top level of a container, wipe all children.
-            # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-            self.after_value_set(parameter=parameter, value=final_value)
+                # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
+                self.after_value_set(parameter=parameter, value=final_value)
             if emit_change:
                 self._emit_parameter_lifecycle_event(parameter)
         else:
