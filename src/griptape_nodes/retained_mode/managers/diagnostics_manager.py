@@ -191,7 +191,6 @@ class DiagnosticsManager(EngineScoped):
             details = (
                 "Attempted to collect a diagnostics report. Failed because the engine's host could not be identified."
             )
-            logger.error(details)
             return GetDiagnosticsReportResultFailure(result_details=details)
 
         return GetDiagnosticsReportResultSuccess(
@@ -218,7 +217,6 @@ class DiagnosticsManager(EngineScoped):
             details = (
                 "Attempted to run health checks. Failed because the engine's own state could not be collected first."
             )
-            logger.error(details)
             return RunHealthChecksResultFailure(result_details=details)
 
         # Redacted like the bundle's copy: most of a verdict is quoted from the already-clean
@@ -248,7 +246,6 @@ class DiagnosticsManager(EngineScoped):
                 "Failed because that is a path rather than a file name. Give a name with no folders in "
                 "it, and use the output path to choose where the bundle goes."
             )
-            logger.error(details)
             return CollectDiagnosticsResultFailure(result_details=details)
 
         redactor = Redactor(
@@ -271,7 +268,6 @@ class DiagnosticsManager(EngineScoped):
                 report = await self._build_report(redactor, warnings, normalize_identity=request.normalize_identity)
                 if report is None:
                     details = "Attempted to collect a diagnostics bundle. Failed because the engine's host could not be identified."
-                    logger.error(details)
                     return CollectDiagnosticsResultFailure(result_details=details)
 
                 if request.include_health_checks:
@@ -294,7 +290,6 @@ class DiagnosticsManager(EngineScoped):
                 data = bundle.to_zip_bytes()
         except OSError as err:
             details = f"Attempted to collect a diagnostics bundle. Failed because it could not be assembled: {err}"
-            logger.error(details)
             return CollectDiagnosticsResultFailure(result_details=details)
 
         file_name = request.file_name or self._default_bundle_file_name(report)
@@ -332,7 +327,6 @@ class DiagnosticsManager(EngineScoped):
                 f"Attempted to write the diagnostics bundle to '{strip_windows_long_path_prefix(destination)}'. "
                 f"Failed because the file could not be written: {result.result_details}"
             )
-            logger.error(details)
             return CollectDiagnosticsResultFailure(result_details=details)
 
         written_path = strip_windows_long_path_prefix(result.final_file_path)
@@ -382,7 +376,6 @@ class DiagnosticsManager(EngineScoped):
                 f"Attempted to save the diagnostics bundle as '{file_name}'. "
                 f"Failed because it could not be written: {err}"
             )
-            logger.error(details)
             return CollectDiagnosticsResultFailure(result_details=details)
 
         written_name = self._file_name_from_url(url, fallback=file_name)
@@ -830,7 +823,6 @@ class DiagnosticsManager(EngineScoped):
                     lifecycle_state=lib_info.lifecycle_state.value,
                     enabled=lib_info.enabled,
                     is_sandbox=lib_info.is_sandbox,
-                    requires_worker=lib_info.requires_worker,
                     executes_in_worker=lib_info.executes_in_worker,
                     worker_ready=self._worker_ready(lib_info),
                     worker_unavailable_reason=self._worker_unavailable_reason(lib_info, redactor),
@@ -1071,7 +1063,7 @@ class DiagnosticsManager(EngineScoped):
 
     def _collated_problems(self, lib_info: LibraryManager.LibraryInfo, redactor: Redactor) -> str | None:
         """Return a library's problems as the engine already formats them, redacted."""
-        collated = self.engine.library_manager.collate_problems_for_lib_info(lib_info)
+        collated = self.engine.library_manager.catalog.collate_problems_for_lib_info(lib_info)
         if collated is None:
             return None
         return redactor.redact_text(collated)

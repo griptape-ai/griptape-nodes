@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
 from pydantic import ValidationError
-from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.common.log_capture import (
     DEFAULT_BUFFER_LINES,
@@ -76,9 +75,9 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import (
-    BETA_FEATURES_FROM_ENV_CONTEXT,
     DEFAULT_LIBRARIES_DIRECTORY,
     DISCOVERY_MAX_DEPTH_KEY,
+    FROM_ENV_CONTEXT,
     LIBRARIES_DIRECTORY_KEY,
     LOG_DIRECTORY_KEY,
     LOG_RETENTION_DAYS_KEY,
@@ -90,11 +89,12 @@ from griptape_nodes.retained_mode.managers.settings import (
 )
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.dict_utils import drop_blank_values, get_dot_value, merge_dicts, set_dot_value
+from griptape_nodes.utils.engine_dirs import engine_config_dir
 from griptape_nodes.utils.file_utils import DEFAULT_MAX_SEARCH_DEPTH
 
 logger = logging.getLogger("griptape_nodes")
 
-USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
+USER_CONFIG_PATH = engine_config_dir() / "griptape_nodes_config.json"
 
 # Distinguishes "this layer's dict has no entry for this key" from "this layer's dict has an
 # entry whose value happens to be None" (e.g. `project_file: str | None`).
@@ -1011,7 +1011,7 @@ class ConfigManager(EngineScoped):
         candidate = set_dot_value({}, config_key, raw_value)
 
         try:
-            validated = Settings.model_validate(candidate, context={BETA_FEATURES_FROM_ENV_CONTEXT: True})
+            validated = Settings.model_validate(candidate, context={FROM_ENV_CONTEXT: True})
         except ValidationError:
             return _REJECTED_BAD_VALUE
 
@@ -1583,12 +1583,12 @@ class ConfigManager(EngineScoped):
             result_details = "Attempted to get config value but no category or key was specified."
             return GetConfigValueResultFailure(result_details=result_details)
 
-        # See if we got something valid.
-        find_results = self.get_config_value(request.category_and_key)
-        if find_results is None:
+        key_path = tuple(request.category_and_key.split("."))
+        if self._layer_value_at(self.merged_config, key_path) is _KEY_NOT_IN_LAYER:
             result_details = f"Attempted to get config value for category.key '{request.category_and_key}'. Failed because no such category.key could be found."
             return GetConfigValueResultFailure(result_details=result_details)
 
+        find_results = self.get_config_value(request.category_and_key)
         source = self.value_source(request.category_and_key)
         result_details = f"Successfully returned the config value for section '{request.category_and_key}'."
         return GetConfigValueResultSuccess(

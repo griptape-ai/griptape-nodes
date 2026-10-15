@@ -1,15 +1,15 @@
 """Tests for FlowManager.on_extract_flow_commands_from_image_metadata."""
 
-import base64
 import itertools
-import pickle
+import json
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageFile
 from PIL.PngImagePlugin import PngInfo
 
 from griptape_nodes.exe_types.connections import Connections
@@ -19,6 +19,12 @@ from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode, DataNode, StartNode
 from griptape_nodes.machines.dag_builder import DagNodeCategories
 from griptape_nodes.retained_mode.engine import Engine
+from griptape_nodes.retained_mode.events.execution_events import (
+    StartFlowFromNodeRequest,
+    StartFlowFromNodeResultFailure,
+    StartFlowRequest,
+    StartFlowResultFailure,
+)
 from griptape_nodes.retained_mode.events.flow_events import (
     TRANSIENT_KEY,
     CreateFlowRequest,
@@ -27,11 +33,14 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ExtractFlowCommandsFromImageMetadataRequest,
     ExtractFlowCommandsFromImageMetadataResultFailure,
     ExtractFlowCommandsFromImageMetadataResultSuccess,
+    SerializedFlowCommands,
     SerializeFlowToCommandsRequest,
     SerializeFlowToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.events.validation_events import ValidateFlowDependenciesResultSuccess
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import FLOW_COMMANDS_KEY
+from griptape_nodes.serialization.commands import encode_commands
 
 
 def _data_parameter(name: str = "value") -> Parameter:
@@ -108,15 +117,29 @@ def image_with_unrelated_metadata() -> Generator[str, None, None]:
         Path(path).unlink(missing_ok=True)
 
 
-@pytest.fixture
-def image_with_flow_commands() -> Generator[str, None, None]:
-    """A PNG whose FLOW_COMMANDS_KEY payload is a valid pickle."""
-    payload = base64.b64encode(pickle.dumps({"sentinel": "flow"})).decode("ascii")
+def _image_with_flow_commands_text(text: str) -> str:
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
         info = PngInfo()
-        info.add_text(FLOW_COMMANDS_KEY, payload)
+        info.add_text(FLOW_COMMANDS_KEY, text)
         Image.new("RGB", (4, 4), color="blue").save(f, format="PNG", pnginfo=info)
-        path = f.name
+        return f.name
+
+
+@pytest.fixture
+def empty_flow_commands(engine: Engine) -> SerializedFlowCommands:
+    """Commands for a flow with nothing in it."""
+    engine.context_manager.push_workflow(workflow_name="image_metadata_workflow")
+    create_result = engine.handle_request(CreateFlowRequest(parent_flow_name=None, set_as_new_context=False))
+    assert isinstance(create_result, CreateFlowResultSuccess)
+    serialize_result = engine.handle_request(SerializeFlowToCommandsRequest(flow_name=create_result.flow_name))
+    assert isinstance(serialize_result, SerializeFlowToCommandsResultSuccess)
+    return serialize_result.serialized_flow_commands
+
+
+@pytest.fixture
+def image_with_flow_commands(empty_flow_commands: SerializedFlowCommands) -> Generator[str, None, None]:
+    """A PNG whose FLOW_COMMANDS_KEY payload is flow commands encoded as JSON."""
+    path = _image_with_flow_commands_text(json.dumps(encode_commands(empty_flow_commands)))
     try:
         yield path
     finally:
@@ -159,7 +182,7 @@ class TestExtractFlowCommandsFromImageMetadata:
         assert isinstance(result, ExtractFlowCommandsFromImageMetadataResultFailure)
 
     def test_returns_commands_when_flow_commands_key_present(
-        self, engine: Engine, image_with_flow_commands: str
+        self, engine: Engine, image_with_flow_commands: str, empty_flow_commands: SerializedFlowCommands
     ) -> None:
         flow_manager = engine.flow_manager
         request = ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=image_with_flow_commands)
@@ -167,8 +190,48 @@ class TestExtractFlowCommandsFromImageMetadata:
         result = flow_manager.on_extract_flow_commands_from_image_metadata(request)
 
         assert isinstance(result, ExtractFlowCommandsFromImageMetadataResultSuccess)
-        assert result.serialized_flow_commands == {"sentinel": "flow"}
+        assert result.serialized_flow_commands == empty_flow_commands
         assert result.altered_workflow_state is False
+
+    @pytest.mark.parametrize(
+        ("text", "reason"),
+        [
+            (json.dumps({"sentinel": "flow"}), "not in a layout Griptape Nodes writes"),
+            (json.dumps({"version": 1, "commands": {"flow_name": "x"}}), "incomplete or damaged"),
+            (json.dumps({"version": 2, "commands": {}}), "saved by a later version"),
+            ("not json or base64!", "neither JSON nor base64"),
+        ],
+    )
+    def test_returns_failure_when_flow_commands_are_unreadable(self, engine: Engine, text: str, reason: str) -> None:
+        path = _image_with_flow_commands_text(text)
+        try:
+            result = engine.flow_manager.on_extract_flow_commands_from_image_metadata(
+                ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=path)
+            )
+        finally:
+            Path(path).unlink(missing_ok=True)
+
+        assert isinstance(result, ExtractFlowCommandsFromImageMetadataResultFailure)
+        assert reason in str(result.result_details)
+
+    def test_closes_the_image_when_flow_commands_are_damaged(self, engine: Engine) -> None:
+        path = _image_with_flow_commands_text(json.dumps({"version": 1, "commands": {"flow_name": "x"}}))
+        opened: list[ImageFile.ImageFile] = []
+        real_open = Image.open
+
+        def _open(*args: Any, **kwargs: Any) -> ImageFile.ImageFile:
+            image = real_open(*args, **kwargs)
+            opened.append(image)
+            return image
+
+        with patch.object(Image, "open", _open):
+            engine.flow_manager.on_extract_flow_commands_from_image_metadata(
+                ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=path)
+            )
+
+        (image,) = opened
+        assert image.fp is None
+        Path(path).unlink()
 
 
 class TestStartFlowRequestDefaultsToCurrentContext:
@@ -291,6 +354,60 @@ class TestStartFlowRequestDefaultsToCurrentContext:
         get_flow.assert_called_once_with("derived_parent_flow")
 
         engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+
+class TestStartFlowFailureMessage:
+    """A failed run reports which flow failed and why."""
+
+    @pytest.fixture
+    def ready_flow_manager(self, engine: Engine) -> Generator[Any, None, None]:
+        flow_manager = engine.flow_manager
+        validated = ValidateFlowDependenciesResultSuccess(validation_succeeded=True, exceptions=[], result_details="ok")
+        with (
+            patch.object(flow_manager, "get_flow_by_name", return_value=MagicMock()),
+            patch.object(flow_manager, "check_for_existing_running_flow", return_value=False),
+            patch.object(flow_manager, "get_start_node_queue"),
+            patch.object(flow_manager, "on_validate_flow_dependencies_request", return_value=validated),
+        ):
+            yield flow_manager
+
+    @pytest.mark.asyncio
+    async def test_start_flow_reports_exception(self, ready_flow_manager: Any) -> None:
+        with patch.object(ready_flow_manager, "start_flow", side_effect=RuntimeError("boom")):
+            result = await ready_flow_manager.on_start_flow_request(StartFlowRequest(flow_name="f"))
+
+        assert isinstance(result, StartFlowResultFailure)
+        assert str(result.result_details) == "Attempted to run flow 'f'. Failed due to: boom"
+
+    @pytest.mark.asyncio
+    async def test_start_flow_reports_resolution_error(self, ready_flow_manager: Any) -> None:
+        machine = MagicMock()
+        machine.resolution_machine.is_errored.return_value = True
+        machine.resolution_machine.get_error_message.return_value = "Node 'n' encountered a problem: boom"
+        with (
+            patch.object(ready_flow_manager, "start_flow"),
+            patch.object(ready_flow_manager, "_global_control_flow_machine", machine),
+        ):
+            result = await ready_flow_manager.on_start_flow_request(StartFlowRequest(flow_name="f"))
+
+        assert isinstance(result, StartFlowResultFailure)
+        assert (
+            str(result.result_details)
+            == "Attempted to run flow 'f'. Failed due to: Node 'n' encountered a problem: boom"
+        )
+
+    @pytest.mark.asyncio
+    async def test_start_flow_from_node_reports_exception(self, ready_flow_manager: Any, engine: Engine) -> None:
+        with (
+            patch.object(engine.object_manager, "attempt_get_object_by_name_as_type", return_value=MagicMock()),
+            patch.object(ready_flow_manager, "start_flow", side_effect=RuntimeError("boom")),
+        ):
+            result = await ready_flow_manager.on_start_flow_from_node_request(
+                StartFlowFromNodeRequest(node_name="n", flow_name="f")
+            )
+
+        assert isinstance(result, StartFlowFromNodeResultFailure)
+        assert str(result.result_details) == "Attempted to run flow 'f'. Failed due to: boom"
 
 
 class TestListNodesInFlowRequest:

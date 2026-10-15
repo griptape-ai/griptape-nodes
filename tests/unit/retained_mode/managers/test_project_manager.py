@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
 from griptape_nodes.common.project_templates import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_path_safely
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -897,63 +898,46 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("staticfiles/output.txt")
 
-    def test_builtin_workflow_dir_unregistered_workflow_fails(
+    @pytest.mark.parametrize(
+        "macro", ["{workflow_dir}/staticfiles/output.txt", "{workflow_dir?:/}staticfiles/output.txt"]
+    )
+    @pytest.mark.parametrize("working_directory", [None, "/shows/my_show"])
+    def test_builtin_workflow_dir_unregistered_workflow_answers_save_folder(
         self,
         project_manager_with_template: ProjectManager,
+        caplog: pytest.LogCaptureFixture,
+        macro: str,
+        working_directory: str | None,
     ) -> None:
-        """Test that required {workflow_dir} fails when the workflow exists but is not registered (unsaved)."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = True
-        mock_context_manager.get_current_workflow_name.return_value = "workflow_5"
-        mock_context_manager.get_current_workflow_file_path.return_value = None
-        mock_context_manager.get_current_workflow_working_directory.return_value = None
-        project_manager_with_template._engine = MagicMock()
-        mock_workflow_registry = project_manager_with_template._engine.workflow_registry
-        project_manager_with_template._engine.context_manager = mock_context_manager
-
-        mock_workflow_registry.get_workflow_by_name.side_effect = KeyError("workflow_5")
-
-        parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
-        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
-
-        result = project_manager_with_template.on_get_path_for_macro_request(request)
-
-        assert isinstance(result, GetPathForMacroResultFailure)
-        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
-        from griptape_nodes.retained_mode.events.base_events import ResultDetails
-
-        assert isinstance(result.result_details, ResultDetails)
-        assert "workflow_5" in str(result.result_details)
-
-    def test_builtin_workflow_dir_optional_skipped_when_workflow_unregistered(
-        self,
-        project_manager_with_template: ProjectManager,
-    ) -> None:
-        """Test that optional {workflow_dir?:/} falls back gracefully when the workflow is not registered (unsaved)."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
         cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/workspace")
 
+        expected_folder = resolve_path_safely(Path("/workspace"))
+        if working_directory is not None:
+            expected_folder = resolve_path_safely(Path(working_directory))
+            working_directory = str(expected_folder)
+
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = True
         mock_context_manager.get_current_workflow_name.return_value = "workflow_5"
         mock_context_manager.get_current_workflow_file_path.return_value = None
-        mock_context_manager.get_current_workflow_working_directory.return_value = None
+        mock_context_manager.get_current_workflow_working_directory.return_value = working_directory
         project_manager_with_template._engine = MagicMock()
         mock_workflow_registry = project_manager_with_template._engine.workflow_registry
         project_manager_with_template._engine.context_manager = mock_context_manager
 
-        mock_workflow_registry.get_workflow_by_name.side_effect = KeyError("workflow_5")
+        mock_workflow_registry.has_workflow_with_name.return_value = False
 
-        parsed_macro = ParsedMacro("{workflow_dir?:/}staticfiles/output.txt")
+        parsed_macro = ParsedMacro(macro)
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
-        result = project_manager_with_template.on_get_path_for_macro_request(request)
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            result = project_manager_with_template.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
-        assert result.resolved_path == Path("staticfiles/output.txt")
+        assert result.resolved_path == expected_folder / "staticfiles/output.txt"
+        assert not [r for r in caplog.records if r.name == "griptape_nodes" and r.levelno >= logging.WARNING]
 
     def test_builtin_optional_degradation_is_logged(
         self,
@@ -12085,7 +12069,6 @@ class TestImportProject:
         resolvable too), so the exception is gone. The handler still coerces at
         the boundary, which keeps it safe for any payload that arrives unconverted.
         """
-        from griptape_nodes.retained_mode.events.event_converter import converter
         from griptape_nodes.retained_mode.events.project_events import (
             ExportProjectRequest,
             ExportProjectResultSuccess,
@@ -12096,6 +12079,8 @@ class TestImportProject:
             PreviewImportProjectRequest,
             PreviewImportProjectResultSuccess,
         )
+
+        converter = converters.engine
 
         pm = engine.project_manager
         project_yaml = _write_project_base_dir(tmp_path / "proj")
@@ -12581,13 +12566,13 @@ class TestProjectVariableResolution:
 
     def test_resolved_snapshot_serializes_cleanly(self) -> None:
         """Regression: the snapshot must survive cattrs unstructure (no live resolver attached)."""
-        from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
+        converter = converters.engine
 
         pm = self._pm()
         synthetic_ws = Path("/synthetic/ws")
         pm._config_manager.workspace_path = synthetic_ws
         variable = pm.resolve_project_variable("workspace_dir", project_id=None)
-        serialized = safe_unstructure(variable)
+        serialized = converter.unstructure(variable)
         assert serialized["name"] == "workspace_dir"
         # Compare via str(Path): Windows stringifies with backslash separators.
         assert serialized["value"] == str(synthetic_ws)
@@ -13297,9 +13282,7 @@ class TestUnsavedWorkflowDirFromSaveSituation:
     """Rung 4 of `_resolve_workflow_dir`: the folder a never-saved workflow would be saved into.
 
     Read from the `save_workflow` situation rather than assumed to be the workspace root, so a
-    template that anchors workflow saves elsewhere gets its own folder. Every test here drives a
-    workflow that is registered but has no file and no working directory, which is the state a
-    workflow created from the header menu is in before its first save.
+    template that anchors workflow saves elsewhere gets its own folder.
     """
 
     def _project_manager(
@@ -13358,7 +13341,7 @@ class TestUnsavedWorkflowDirFromSaveSituation:
         return str(resolve_path_safely(Path("/workspace", *parts)))
 
     def _resolve_workflow_dir(self, pm: ProjectManager, workflow_dir_requests: list[str] | None = None) -> str:
-        """Resolve `{workflow_dir}` through the registered-but-unsaved registry entry.
+        """Resolve `{workflow_dir}` without a saved file.
 
         Every request for the `workflow_dir` builtin made during the resolution is appended to
         `workflow_dir_requests`, so a test can bound how far the situation probe re-enters.
@@ -13384,13 +13367,16 @@ class TestUnsavedWorkflowDirFromSaveSituation:
 
         assert self._resolve_workflow_dir(pm) == self._expected_dir()
 
-    def test_relocated_macro_answers_its_own_folder(self) -> None:
+    @pytest.mark.parametrize("registered", [False, True])
+    def test_relocated_macro_answers_its_own_folder(self, *, registered: bool) -> None:
         """The point of reading the situation: a template that saves elsewhere is answered with it.
 
         Before, this returned the workspace root while the first save wrote to `workflows/`, so
         every `{workflow_dir}`-anchored path pointed somewhere the workflow was never going to be.
         """
         pm = self._project_manager("{workspace_dir}/workflows/{sub_dirs?:/}{file_name_base}.{file_extension}")
+        if not registered:
+            cast("MagicMock", pm._engine).workflow_registry.has_workflow_with_name.return_value = False
 
         assert self._resolve_workflow_dir(pm) == self._expected_dir("workflows")
 

@@ -31,6 +31,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.local_objects import LocalObjectScope
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.variable_resolver import VariableResolver
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -48,7 +49,6 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
 )
-from griptape_nodes.retained_mode.events.event_converter import safe_unstructure
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     RemoveElementEvent,
@@ -58,15 +58,14 @@ from griptape_nodes.retained_mode.events.resource_events import (
     GetExecutionDeviceRequest,
     GetExecutionDeviceResultSuccess,
 )
+from griptape_nodes.retained_mode.variable_types import VariableScope  # noqa: TC001 - read at runtime by the converter
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.widget import Widget
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
-    from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
     from griptape_nodes.retained_mode.engine import Engine
-    from griptape_nodes.retained_mode.variable_types import VariableScope
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -344,6 +343,8 @@ class BaseNode(ABC):
     parameter_output_values: TrackedParameterOutputValues
     _local_objects: LocalObjectScope | None
     stop_flow: bool = False
+    # False for a node built under ``LibraryRegistry.constructing_node(throwaway=True)``.
+    broadcasts_events: bool = True
     root_ui_element: BaseNodeElement
     _state: NodeResolutionState
     _tracked_parameters: list[BaseNodeElement]
@@ -351,6 +352,9 @@ class BaseNode(ABC):
         None  # The control input parameter used to enter this node during execution
     )
     lock: bool = False  # When lock is true, the node is locked and can't be modified. When lock is false, the node is unlocked and can be modified.
+    # True when the node reads RESOLVED only because a run passed through it while it was locked,
+    # not because it executed. Unlocking such a node unresolves it so the next run executes it.
+    resolved_while_locked: bool = False
     _cancellation_requested: threading.Event  # Event indicating if cancellation has been requested for this node
     _inputs_to_reset_after_execution: set[str]  # Input values a connection teardown deferred until this node finishes
     _deferred_inputs_were_reset: bool  # Whether one of those deferred resets actually fired
@@ -416,6 +420,7 @@ class BaseNode(ABC):
         self._engine = engine
         self.name = name
         self._state = state
+        self.broadcasts_events = not LibraryRegistry.is_constructing_throwaway_node()
         if metadata is None:
             self.metadata = {}
         else:
@@ -1665,9 +1670,6 @@ class BaseNode(ABC):
                 })
                 return deps
         """
-        # Lazy import to avoid circular dependency: library_registry imports BaseNode
-        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
-
         widget_libraries: set[LibraryNameAndVersion] = set()
 
         logger.debug("Getting dependencies for node: %s", self.name)
@@ -1751,7 +1753,7 @@ class BaseNode(ABC):
                 node_name=self.name,
                 parameter_name=parameter_name,
                 data_type=data_type,
-                value=safe_unstructure(self.get_display_value_for_output(parameter_name, value)),
+                value=self.get_display_value_for_output(parameter_name, value),
             )
 
             self.engine.event_manager.put_event(
@@ -2123,6 +2125,8 @@ class BaseNode(ABC):
 
     def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, *, remove: bool = False) -> None:
         """Emit an AlterElementEvent for parameter add/remove operations."""
+        if not self.broadcasts_events:
+            return
         from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
         from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
 
@@ -2367,6 +2371,8 @@ class TrackedParameterOutputValues(dict[str, Any]):
 
     def _emit_parameter_change_event(self, parameter_name: str, value: Any, *, deleted: bool = False) -> None:
         """Emit an AlterElementEvent for parameter output value changes."""
+        if not self._node.broadcasts_events:
+            return
         parameter = self._node.get_parameter_by_name(parameter_name)
         if parameter is not None:
             from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent

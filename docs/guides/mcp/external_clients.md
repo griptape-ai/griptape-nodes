@@ -119,6 +119,31 @@ npx -y @modelcontextprotocol/inspector
 
 Paste `http://localhost:8125/mcp/` into the URL field and pick **Streamable HTTP** as the transport. If the connection fails with `TypeError: NetworkError when attempting to fetch resource`, it's almost always CORS: the engine's MCP server does not currently emit `Access-Control-Allow-Origin` headers, so cross-origin browser fetches are blocked. Use the CLI command above instead, or run the inspector with browser security relaxed.
 
+## Parameter values
+
+Parameter and flow variable values arrive as plain JSON. Values of types JSON lacks arrive as
+their closest JSON form: tuples and sets as lists, enums as their value, paths as text, and
+artifacts and other objects as their fields:
+
+```json
+{"type": "ImageUrlArtifact", "value": "https://example.com/cat.png"}
+```
+
+Send values back as plain JSON too. Two kinds of dict arrive wrapped instead, and go back as they
+arrived. A dict with its own `"$type"` key is wrapped so the key isn't read as a type. A dict
+whose keys would collide as text, such as `1` and `"1"`, arrives as key-value pairs so no entry is
+lost:
+
+```json
+{"$type": "builtins:dict", "$value": {"$type": "app.bsky.feed.post", "text": "hi"}}
+{"$type": "builtins:dict", "$value": [[1, "a"], ["1", "b"]]}
+```
+
+A value that can't be written as JSON, such as an open file, is sent as its Python `str()` in
+fields that only show it, for example
+`"<_io.TextIOWrapper name='notes.txt' mode='r' encoding='UTF-8'>"`. Anywhere else the result
+can't be sent, and the request gets a failure whose message names the value instead.
+
 ## Install the workflow-construction skill
 
 The engine ships a [`griptape-nodes-workflows` skill](https://docs.griptapenodes.com/en/stable/skills/griptape-nodes-workflows/SKILL/) that teaches an agent how to drive the MCP tools described above (cold-start recipe, `EventRequestBatch`, common gotchas). Claude Code, Cursor, and VS Code natively load skills with the `name` + `description` frontmatter convention from [agentskills.io](https://agentskills.io), so installation is a directory drop.

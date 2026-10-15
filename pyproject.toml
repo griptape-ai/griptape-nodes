@@ -1,9 +1,9 @@
 [project]
 name = "griptape-nodes-engine"
-version = "0.104.0"
+version = "0.105.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12.0, <3.14"
+requires-python = ">=3.12.0, <3.16"
 dependencies = [
   "griptape>=1.10.2",
   "pydantic>=2.10.6",
@@ -30,7 +30,9 @@ dependencies = [
   "static-ffmpeg>=3.0",
   "watchfiles>=1.1.0",
   "typer>=0.15.0",
-  "huggingface-hub>=1.9.0",
+  # Ceiling: default libraries pin transformers/tokenizers that need huggingface-hub<2. Library
+  # installs floor at the engine's version, so 2.x here fails them and marks them FLAWED (issue 5752).
+  "huggingface-hub>=1.9.0,<2",
   "rich>=14.1.0",
   "semver>=3.0.4",
   "anyio>=4.0",
@@ -41,6 +43,7 @@ dependencies = [
   "tenacity>=9.0.0",
   "truststore>=0.10.1",
   "cattrs>=26.1.0",
+  "attrs>=25.4.0",
   "fileseq>=3.2.0",
   # Floor at 2.29.0: that release ("Support FastMCP 4 and MCP SDK v2 in `MCPToolset` alongside
   # FastMCP 3", pydantic/pydantic-ai#6738) is the first where the `[mcp]` extra's `fastmcp-slim`
@@ -55,6 +58,11 @@ dependencies = [
   # Ceiling below 3.0 so the next major cannot silently break the sidebar agent at
   # construction time the way 2.0.0 did (see issue 5491).
   "pydantic-ai-skills>=2.0,<3",
+  # Ceiling below 0.52: from 0.52 harness reads skills from a workspace on each run, and
+  # pydantic-ai-skills 2.1 answers that with `LocalWorkspaceBackend`, which raises on Windows.
+  # Lift once pydantic-ai-skills reads skills without a POSIX-only backend and the runner
+  # validates skills at run time (see issue 5881).
+  "pydantic-ai-harness>=0.28,<0.52",
 ]
 
 [project.optional-dependencies]
@@ -114,6 +122,7 @@ line-length = 120
 extend-exclude = [
   "libraries/**/templates/*.py",
   "tests/e2e/fixtures/**/*_workflow.py",
+  "tests/unit/**/fixtures/**/*_workflow.py",
 ]
 
 
@@ -149,6 +158,7 @@ ignore = [
 "libraries.griptape_nodes_library".msg = "Import from griptape_nodes_library instead of libraries.griptape_nodes_library"
 "libraries.griptape_nodes_advanced_media_library".msg = "Import from griptape_nodes_advanced_media_library instead of libraries.griptape_nodes_advanced_media_library"
 "libraries.griptape_cloud".msg = "Import from griptape_cloud instead of libraries.griptape_cloud"
+"pickle".msg = "Values cross process and file boundaries as plain data through griptape_nodes.serialization. Pickle runs code from whatever produced the bytes, and ties saved data to one Python process's class layout."
 "griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes".msg = "Engine-internal code should take an injected Engine (see griptape_nodes.retained_mode.engine) and reach peers via self.engine, not the process-wide GriptapeNodes facade. The facade exists for saved workflow files, node libraries, and process entry points; those are allowlisted in per-file-ignores."
 "griptape_nodes.node_library.workflow_registry.WorkflowRegistry".msg = "Engine-internal code should use engine.workflow_registry. WorkflowRegistry is the shim node libraries call without an engine reference."
 
@@ -161,9 +171,11 @@ ignore = [
 "tests/unit/retained_mode/test_engine.py" = ["TID251"]
 "tests/unit/retained_mode/managers/test_griptape_nodes.py" = ["TID251"]
 "tests/unit/node_library/test_workflow_registry.py" = ["TID251"]
+# Asserts the pickle-era reader's own behavior, so it has to build pickles to feed it.
+"tests/unit/serialization/test_legacy_pickle.py" = ["TID251"]
 "libraries/**/tests/**" = ["S101", "D104", "INP001"]
 "src/griptape_nodes/retained_mode/events/*" = ["TC001"]
-# Example libraries shipped with the Advanced Libraries doc. Authors copy these files
+# Example libraries and nodes shipped with the custom node docs. Authors copy these files
 # verbatim, so the exemptions live here rather than as noqa noise in the examples.
 # INP001: a docs folder is not an importable package.
 # N807: the dunder-named locals are the point -- module-level `__getattr__` is PEP 562,
@@ -175,6 +187,10 @@ ignore = [
   "INP001",
   "TID251",
 ]
+"docs/development/custom_nodes/example_node_error_node.py" = ["INP001", "TID251"]
+
+# The one reader of pickle-era data. Delete it, and this entry, to drop that support.
+"src/griptape_nodes/serialization/legacy_pickle.py" = ["TID251"]
 
 # TID251 allowlist for the GriptapeNodes facade. These are process entry points or the public
 # surface that separately-versioned callers bind to, so they have no Engine to be handed.
@@ -228,6 +244,7 @@ exclude = [
   # Engine-generated workflow files. The generator emits untyped request/result chains, so these are
   # checked by running them, not by pyright.
   "tests/e2e/fixtures/**/*_workflow.py",
+  "tests/unit/**/fixtures/**/*_workflow.py",
   ".venv",
   "GriptapeNodes",
   "**/node_modules",

@@ -1,4 +1,4 @@
-"""Tests for get_request_handlers() registration in _attempt_load_nodes_from_library (#4744)."""
+"""Tests for get_request_handlers() registration in attempt_load_nodes_from_library (#4744)."""
 
 from __future__ import annotations
 
@@ -10,10 +10,7 @@ from unittest.mock import MagicMock, patch
 from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
 from griptape_nodes.node_library.library_registry import Library, LibrarySchema
 from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
-from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
-    RequestHandlerRegistrationProblem,
-    RequestHandlersWorkerIncompatibleProblem,
-)
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries import RequestHandlerRegistrationProblem
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 if TYPE_CHECKING:
@@ -71,7 +68,7 @@ class TestRequestHandlerRegistration:
         lm = engine.library_manager
         event_manager = MagicMock()
         with patch.object(engine, "_event_manager", event_manager):
-            lm._attempt_load_nodes_from_library(
+            lm.module_loading.attempt_load_nodes_from_library(
                 library_data=library._library_data,
                 library=library,
                 base_dir=Path("/fake"),
@@ -93,7 +90,7 @@ class TestRequestHandlerRegistration:
         lm = engine.library_manager
         event_manager = MagicMock()
         with patch.object(engine, "_event_manager", event_manager):
-            lm._attempt_load_nodes_from_library(
+            lm.module_loading.attempt_load_nodes_from_library(
                 library_data=library._library_data,
                 library=library,
                 base_dir=Path("/fake"),
@@ -118,7 +115,7 @@ class TestRequestHandlerRegistration:
         lm = engine.library_manager
         event_manager = MagicMock()
         with patch.object(engine, "_event_manager", event_manager):
-            lm._attempt_load_nodes_from_library(
+            lm.module_loading.attempt_load_nodes_from_library(
                 library_data=library._library_data,
                 library=library,
                 base_dir=Path("/fake"),
@@ -136,7 +133,7 @@ class TestRequestHandlerRegistration:
         lm = engine.library_manager
         event_manager = MagicMock()
         with patch.object(engine, "_event_manager", event_manager):
-            lm._attempt_load_nodes_from_library(
+            lm.module_loading.attempt_load_nodes_from_library(
                 library_data=library._library_data,
                 library=library,
                 base_dir=Path("/fake"),
@@ -157,7 +154,7 @@ class TestRequestHandlerRegistration:
         lm = engine.library_manager
         event_manager = MagicMock()
         with patch.object(engine, "_event_manager", event_manager):
-            lm._attempt_load_nodes_from_library(
+            lm.module_loading.attempt_load_nodes_from_library(
                 library_data=library._library_data,
                 library=library,
                 base_dir=Path("/fake"),
@@ -166,8 +163,12 @@ class TestRequestHandlerRegistration:
 
         event_manager.assign_manager_to_request_type.assert_not_called()
 
-    def test_worker_mode_library_with_handlers_appends_incompatible_problem(self, engine: Engine) -> None:
-        """A library requiring worker mode that declares handlers should surface RequestHandlersWorkerIncompatibleProblem."""
+    def test_a_library_that_executes_in_a_worker_still_registers_its_handlers(self, engine: Engine) -> None:
+        """Handlers are registered by whichever process loaded the library, with no problem raised.
+
+        Both processes load the library, so each registers its own copy and serves the requests
+        dispatched to it. Where the nodes execute says nothing about that.
+        """
 
         class WorkerLib(AdvancedNodeLibrary):
             def get_request_handlers(self) -> list:
@@ -175,41 +176,17 @@ class TestRequestHandlerRegistration:
 
         library = _make_library(advanced_library=WorkerLib())
         library_info = _make_library_info()
-        library_info.requires_worker = True
+        library_info.executes_in_worker = True
 
         lm = engine.library_manager
         event_manager = MagicMock()
         with patch.object(engine, "_event_manager", event_manager):
-            lm._attempt_load_nodes_from_library(
+            lm.module_loading.attempt_load_nodes_from_library(
                 library_data=library._library_data,
                 library=library,
                 base_dir=Path("/fake"),
                 library_info=library_info,
             )
 
-        problem_types = [type(p) for p in library_info.problems]
-        assert RequestHandlersWorkerIncompatibleProblem in problem_types
-
-    def test_non_worker_library_with_handlers_no_incompatible_problem(self, engine: Engine) -> None:
-        """A non-worker library with handlers should NOT get RequestHandlersWorkerIncompatibleProblem."""
-
-        class OrchestratorLib(AdvancedNodeLibrary):
-            def get_request_handlers(self) -> list:
-                return [(_TestRequest, _handler)]
-
-        library = _make_library(advanced_library=OrchestratorLib())
-        library_info = _make_library_info()
-        library_info.requires_worker = False
-
-        lm = engine.library_manager
-        event_manager = MagicMock()
-        with patch.object(engine, "_event_manager", event_manager):
-            lm._attempt_load_nodes_from_library(
-                library_data=library._library_data,
-                library=library,
-                base_dir=Path("/fake"),
-                library_info=library_info,
-            )
-
-        problem_types = [type(p) for p in library_info.problems]
-        assert RequestHandlersWorkerIncompatibleProblem not in problem_types
+        event_manager.assign_manager_to_request_type.assert_called_once_with(_TestRequest, _handler)
+        assert library_info.problems == []

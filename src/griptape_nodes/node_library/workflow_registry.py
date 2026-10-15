@@ -109,7 +109,7 @@ class WorkflowShape(BaseModel):
 
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.20.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.21.0"
 
     name: str
     schema_version: str
@@ -232,7 +232,7 @@ def read_workflow_metadata(workflow_file_path: Path) -> WorkflowMetadata:
     """
     try:
         workflow_content = workflow_file_path.read_text(encoding="utf-8")
-    except OSError as err:
+    except (OSError, UnicodeDecodeError) as err:
         msg = (
             f"Attempted to read workflow metadata from '{workflow_file_path}'. "
             f"Failed because the file could not be read: {err}"

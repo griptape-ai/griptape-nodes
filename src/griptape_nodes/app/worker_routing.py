@@ -257,10 +257,12 @@ _LOCAL_ONLY_ARTIFACT_REQUESTS: frozenset[type[RequestPayload]] = frozenset(
 )
 
 
-# OpenAssociatedFileRequest is the one filesystem request deliberately NOT local: it hands a path to
-# the OS to open in the user's default application, and that side effect belongs where the user is,
-# not in a headless subprocess.
-_FORWARDING_FILESYSTEM_REQUESTS: frozenset[type[RequestPayload]] = frozenset({os_events.OpenAssociatedFileRequest})
+# The filesystem requests deliberately NOT local: each hands a path to an application on the user's
+# desktop (the OS default one, or the viewer they configured), and that side effect belongs where the
+# user is, not in a headless subprocess.
+_FORWARDING_FILESYSTEM_REQUESTS: frozenset[type[RequestPayload]] = frozenset(
+    {os_events.OpenAssociatedFileRequest, os_events.LaunchExternalViewerRequest}
+)
 
 
 # Swept wholesale, minus _FORWARDING_FILESYSTEM_REQUESTS: the workspace is shared on disk, so the
@@ -360,7 +362,9 @@ LOCAL_ONLY_REQUEST_TYPES: frozenset[type[RequestPayload]] = frozenset(
         #
         # All of os_events, because the workspace is shared on disk (OpenAssociatedFileRequest
         # excepted), plus the named artifact_events requests that answer out of this process's
-        # provider registry.
+        # provider registry. DeduceSequencesFromFileListRequest arrives here too but does no I/O: it
+        # groups a caller-supplied path list, so any process gives the same answer and forwarding
+        # would only add a round trip.
         *_LOCAL_ONLY_FILESYSTEM_REQUESTS,
         # The payload IS the file body, so forwarding would base64 a whole generated asset across
         # the boundary on every save. The worker writes it through its own storage driver instead and
@@ -390,17 +394,7 @@ LOCAL_ONLY_REQUEST_TYPES: frozenset[type[RequestPayload]] = frozenset(
         # share a machine, and wrong the moment a venue runs anywhere else.
         GetExecutionDeviceRequest,
         #
-        # --- 3. The wire cannot carry it today --------------------------------------------------
-        #
-        # One member, reaching the set through the splat rather than by name.
-        # DeduceSequencesFromFileListRequest does no filesystem I/O -- it groups a caller-supplied
-        # path list -- so shared-disk authority does not bind it; what does is its failure result
-        # declaring `SequenceScanFailureReason | FileIOFailureReason`, a union cattrs cannot
-        # disambiguate. Fix that and it can forward.
-        #
-        # Everything else the wire cannot carry also has a permanent reason and is filed under it.
-        #
-        # --- 4. Carries a live Python object ----------------------------------------------------
+        # --- 3. Carries a live Python object ----------------------------------------------------
         #
         # Carries a ResourceType instance, which `json.dumps(default=str)` turns into a string: the
         # orchestrator would register that string and the worker nothing, with no error either side.
@@ -424,8 +418,8 @@ class RemoteHandler:
 
     ``original`` is the handler this shim replaced and MUST be retained so the
     out-of-scope fallback can still service requests that bootstrap code makes
-    (e.g. ``self.add_parameter(...)`` issuing ``AddParameterToNodeRequest``
-    from a node's ``__init__`` under a LOAD_PROBE scope).
+    (e.g. ``self.add_parameter(...)`` issuing ``AddParameterToNodeRequest`` from
+    a node's ``__init__``, which runs before the execution scope opens).
     """
 
     original: Any  # HandlerCallback; typed loosely to avoid a runtime import cycle
@@ -506,7 +500,6 @@ async def _handle_drop_all_local_objects(
         details = (
             f"Attempted to release objects held for this worker's libraries. Failed because of {type(e).__name__}: {e}."
         )
-        logger.error(details)
         return DropAllLocalObjectsResultFailure(result_details=details)
     return DropAllLocalObjectsResultSuccess(result_details=f"Released {dropped} held object(s).")
 
@@ -539,7 +532,6 @@ async def _handle_drop_local_objects(
         dropped = await to_thread(release_all)
     except Exception as e:
         details = f"Attempted to release {len(request.keys)} held object(s). Failed because of {type(e).__name__}: {e}."
-        logger.error(details)
         return DropLocalObjectsResultFailure(result_details=details)
     return DropLocalObjectsResultSuccess(result_details=f"Released {dropped} of {len(request.keys)} named object(s).")
 
@@ -576,7 +568,6 @@ def register_broadcast_handlers(
             config_manager.load_configs()
         except Exception as e:
             details = f"Attempted to reload config from disk. Failed because of {type(e).__name__}: {e}."
-            logger.error(details)
             return ReloadConfigResultFailure(result_details=details)
         return ReloadConfigResultSuccess(result_details="Reloaded config from disk.")
 
@@ -585,7 +576,6 @@ def register_broadcast_handlers(
             secrets_manager.refresh_from_env_file()
         except Exception as e:
             details = f"Attempted to refresh secrets from shared .env file. Failed because of {type(e).__name__}: {e}."
-            logger.error(details)
             return RefreshSecretsResultFailure(result_details=details)
         return RefreshSecretsResultSuccess(result_details="Refreshed secrets from shared .env file.")
 
@@ -624,7 +614,6 @@ def register_broadcast_handlers(
                     f"Failed because the id is absent from the worker's registry even after "
                     f"reloading config and re-running registered-project discovery."
                 )
-                logger.error(details)
                 return ActivateProjectResultFailure(result_details=details)
 
             set_result = await project_manager.on_set_current_project_request(
@@ -635,7 +624,6 @@ def register_broadcast_handlers(
                     f"Attempted to adopt orchestrator project '{request.project_id}'. "
                     f"Failed with result: {set_result.result_details}"
                 )
-                logger.error(details)
                 return ActivateProjectResultFailure(result_details=details)
             project_manager.record_adopted_generation(request.generation)
             worker_settled.set()
