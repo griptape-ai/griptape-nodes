@@ -442,6 +442,8 @@ class BaseNode(ABC):
         self.parameter_values = {}
         # Lists whose rows `_replace_list_rows` is replacing, so a write from a hook during it is stored as is.
         self._lists_being_replaced: set[str] = set()
+        # Lists being rebuilt from their rows, whose items the rows' converters already converted.
+        self._lists_built_from_rows: set[str] = set()
         self.parameter_output_values = TrackedParameterOutputValues(self)
         self._local_objects = None
         self.root_ui_element = BaseNodeElement()
@@ -1142,7 +1144,9 @@ class BaseNode(ABC):
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
         # cause a calling object to alter its assumptions/behavior. The value requested
         # to be assigned will NOT be set.
-        candidate_value = self._convert_value(parameter, value)
+        candidate_value = self._convert_value(
+            parameter, value, items_converted=param_name in self._lists_built_from_rows
+        )
 
         # Validate the values next, based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
@@ -1180,18 +1184,25 @@ class BaseNode(ABC):
                 new_parent_value = handle_container_parameter(self, parent_parameter)
                 if new_parent_value is not None:
                     # set that new value if it exists.
-                    self.set_parameter_value(
-                        parameter.parent_container_name,
-                        new_parent_value,
-                        initial_setup=initial_setup,
-                        emit_change=False,
-                    )
+                    self._lists_built_from_rows.add(parameter.parent_container_name)
+                    try:
+                        self.set_parameter_value(
+                            parameter.parent_container_name,
+                            new_parent_value,
+                            initial_setup=initial_setup,
+                            emit_change=False,
+                        )
+                    finally:
+                        self._lists_built_from_rows.discard(parameter.parent_container_name)
 
     @staticmethod
-    def _convert_value(parameter: Parameter, value: Any) -> Any:
-        """Run the parameter's converters on `value`, and a list's item converters on each of its items first."""
+    def _convert_value(parameter: Parameter, value: Any, *, items_converted: bool = False) -> Any:
+        """Run the parameter's converters on `value`, and a list's item converters on each of its items first.
+
+        `items_converted` skips the item converters, for a list built from rows that already ran them.
+        """
         candidate_value = value
-        if isinstance(parameter, ParameterList):
+        if isinstance(parameter, ParameterList) and not items_converted:
             candidate_value = parameter.convert_items(candidate_value)
         for converter in parameter.converters:
             candidate_value = converter(candidate_value)
@@ -1932,15 +1943,22 @@ class BaseNode(ABC):
         return any(connection.target_parameter_name == param_name for connection in result.incoming_connections)
 
     def _parameter_values_for_dispatch(self) -> dict[str, Any]:
-        """`parameter_values`, with each list as the node reads it, to send with `ExecuteNodeRequest`.
+        """`parameter_values`, with each list as the node reads it and without its rows, to send with `ExecuteNodeRequest`.
 
-        A worker copy has no rows and builds them from this. A list's own entry can still hold items
-        whose rows were removed, in a workflow saved before the entry followed its rows.
+        A worker copy has no rows and builds its own, with new names, from the list. A list's own entry
+        can still hold items whose rows were removed, in a workflow saved before the entry followed its
+        rows.
         """
         values = dict(self.parameter_values)
         for parameter in self.parameters:
-            if isinstance(parameter, ParameterList) and parameter.name in values:
-                values[parameter.name] = self._get_raw_parameter_value(parameter.name)
+            if not isinstance(parameter, ParameterList):
+                continue
+            rows = parameter.get_child_parameters()
+            if parameter.name not in values and not rows:
+                continue
+            values[parameter.name] = self._get_raw_parameter_value(parameter.name)
+            for row in rows:
+                values.pop(row.name, None)
         return values
 
     def _connected_parameter_names(self, parameter_names: set[str]) -> set[str]:
@@ -2007,7 +2025,8 @@ class BaseNode(ABC):
             msg = f"Attempted to set list {list_label} to {len(items)} items. Failed because the list holds at most {max_items} items."
             raise ValueError(msg)
         old_rows = parameter_list.get_child_parameters()
-        if self._connected_parameter_names({row.name for row in old_rows}):
+        # Checked only when there are rows: on a worker the question goes to the orchestrator.
+        if old_rows and self._connected_parameter_names({row.name for row in old_rows}):
             msg = f"Attempted to set list {list_label}. Failed because some of its items are connected to other nodes, and replacing the items would remove those connections. Disconnect them first."
             raise ValueError(msg)
 

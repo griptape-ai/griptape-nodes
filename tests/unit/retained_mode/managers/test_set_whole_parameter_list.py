@@ -541,3 +541,77 @@ class TestWhichLibrariesOptIn:
         node = _add(engine, _ListNode(name="Lister"), flow_name)
 
         assert node._library_fills_list_rows() is False
+
+
+def _bracket(value: object) -> object:
+    """Not idempotent, so running it twice on an item shows."""
+    return f"[{value}]"
+
+
+class _BracketingListNode(BaseNode):
+    def __init__(self, name: str) -> None:
+        super().__init__(name=name)
+        self.add_parameter(
+            ParameterList(
+                name="items",
+                input_types=["str"],
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                item_converters=[_bracket],
+            )
+        )
+
+    def process(self) -> None:
+        return None
+
+
+class TestItemConvertersRunOncePerItem:
+    def test_a_row_set_by_the_editor(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _BracketingListNode(name="Lister"), flow_name)
+
+        row = _add_row(engine, "a")
+
+        assert node.get_parameter_value(row) == "[a]"
+        assert _get_items(engine) == ["[a]"]
+
+    def test_a_whole_list_set_by_request(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _BracketingListNode(name="Lister"), flow_name)
+
+        _set_items(engine, ["a", "b"])
+
+        assert _get_items(engine) == ["[a]", "[b]"]
+
+
+class TestDispatch:
+    def test_a_list_is_sent_without_its_rows(self, engine: Engine, flow_name: str) -> None:
+        """A worker builds its own rows, with new names, from the list."""
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        rows = [_add_row(engine, value) for value in ("a", "b")]
+
+        values = node._parameter_values_for_dispatch()
+
+        assert values["items"] == ["a", "b"]
+        assert not set(rows) & set(values)
+
+    def test_a_list_with_rows_but_no_stored_value_is_sent(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        row = _add_row(engine, "a")
+        del node.parameter_values["items"]
+
+        values = node._parameter_values_for_dispatch()
+
+        assert values["items"] == ["a"]
+        assert row not in values
+
+
+class TestFillingRowsOnACopyWithNone:
+    def test_it_does_not_ask_about_connections_to_rows_it_does_not_have(self, engine: Engine, flow_name: str) -> None:
+        """On a worker that question goes to the orchestrator, so it costs a round trip."""
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+
+        with patch.object(BaseNode, "_connected_parameter_names", return_value=set()) as asked:
+            _set_items(engine, ["a"])
+
+        asked.assert_not_called()
+        assert _get_items(engine) == ["a"]
+        assert len(_rows(node)) == 1
