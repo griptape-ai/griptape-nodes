@@ -160,6 +160,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.authorization_checkpoint import CheckpointDenial
 
 # File is not in static directory (or not a local file), create small preview
+from griptape_nodes.utils.async_utils import to_thread
 from griptape_nodes.utils.file_utils import atomic_write_bytes
 from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
 
@@ -2267,7 +2268,7 @@ class OSManager(EngineScoped):
 
             # Handle image thumbnail generation (if requested)
             if mime_type.startswith("image/") and request.should_transform_image_content_to_thumbnail and not is_text:
-                content = self._generate_thumbnail_from_image_content(content, location, mime_type)
+                content = await to_thread(self._generate_thumbnail_from_image_content, content, location, mime_type)
                 # Thumbnail returns a string (URL or data URI), not bytes
                 decoded_content: str | bytes = content
                 encoding = None
@@ -2496,8 +2497,17 @@ class OSManager(EngineScoped):
         )
 
     @handles(WriteFileRequest)
+    async def on_async_write_file_request(self, request: WriteFileRequest) -> ResultPayload:
+        """Handle a WriteFileRequest without holding the event loop.
+
+        Writing re-encodes image bytes to inject workflow metadata and then writes the whole file,
+        which takes seconds for a large image. `on_write_file_request` does the work and stays
+        synchronous for callers that are already off the loop or need the result inline.
+        """
+        return await to_thread(self.on_write_file_request, request)
+
     def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
-        """Handle a request to write content to a file with exclusive locking."""
+        """Write content to a file with exclusive locking, blocking until it is on disk."""
         # Initialize success tracking variables
         final_file_path: Path | None = None
         final_bytes_written: int | None = None
