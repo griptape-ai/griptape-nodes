@@ -433,15 +433,13 @@ class WorkflowSaver(EngineScoped):
                 self.engine.workflow_manager.variable_substitution.rekey(unsaved_source_key, registry_key)
                 rekeyed_workflow = self.engine.workflow_registry.get_workflow_by_name(registry_key)
                 rekeyed_workflow.file_path = relative_file_path
-            for workflow_context_state in self.engine.context_manager._state.workflow_stack:
-                if workflow_context_state._name == unsaved_source_key:
-                    workflow_context_state._name = registry_key
-                    # The context also retains the workflow's path, and `workflow_dir` prefers
-                    # it over a registry lookup. An unsaved context has no path; this save is
-                    # where it gets one, so record it here or the builtin keeps falling back to
-                    # the registry key -- the thing that goes stale on the next project switch.
-                    workflow_context_state._file_path = str(save_file_result.file_path)
+            # An unsaved context has no path; this save is where it gets one.
+            self.engine.context_manager.rekey_workflow(
+                unsaved_source_key, registry_key, str(save_file_result.file_path)
+            )
             registered_workflows = self.engine.workflow_registry.list_workflows()
+            # Listed under its new key from here on.
+            self.engine.open_workflows_manager.announce_change()
 
         if registry_key not in registered_workflows:
             self.engine.workflow_registry.generate_new_workflow(

@@ -752,14 +752,13 @@ class TestWorkflowManager:
         assert result.new_workflow_name == "subdir/my_workflow"
         mock_rekey.assert_not_called()
 
-    def test_on_move_workflow_request_updates_context_for_current_workflow(self, engine: Engine) -> None:
+    def test_on_move_workflow_request_rekeys_the_open_workflow(self, engine: Engine) -> None:
         workflow_manager = engine.workflow_manager
         request = MoveWorkflowRequest(workflow_name="my_workflow", target_directory="subdir")
 
         mock_workflow = MagicMock()
         mock_workflow.file_path = "my_workflow.py"
 
-        context_mgr = engine.context_manager
         config_mgr = engine.config_manager
         with (
             patch.object(engine.workflow_registry, "get_workflow_by_name", return_value=mock_workflow),
@@ -769,18 +768,16 @@ class TestWorkflowManager:
             patch.object(Path, "rename"),
             patch.object(engine.workflow_registry, "rekey_workflow"),
             patch.object(config_mgr, "delete_user_workflow"),
-            patch.object(context_mgr, "has_current_workflow", return_value=True),
-            patch.object(context_mgr, "get_current_workflow_name", return_value="my_workflow"),
-            patch.object(context_mgr, "set_current_workflow_name") as mock_set_name,
-            patch.object(context_mgr, "set_current_workflow_file_path") as mock_set_file_path,
+            patch.object(engine.open_workflows_manager, "rekey_open_workflow") as mock_rekey,
         ):
             result = workflow_manager.file_operations.on_move_workflow_request(request)
 
         assert isinstance(result, MoveWorkflowResultSuccess)
-        mock_set_name.assert_called_once_with("subdir/my_workflow")
         # The retained path travels with the key: `workflow_dir` reads it in preference to the
         # registry, so a rekey without a repoint leaves the builtin on the pre-move directory.
-        mock_set_file_path.assert_called_once_with(str(config_mgr.workspace_path / "subdir" / "my_workflow.py"))
+        mock_rekey.assert_called_once_with(
+            "my_workflow", "subdir/my_workflow", str(config_mgr.workspace_path / "subdir" / "my_workflow.py")
+        )
 
     def test_on_move_workflow_request_does_not_update_context_for_other_workflow(self, engine: Engine) -> None:
         workflow_manager = engine.workflow_manager
@@ -801,12 +798,12 @@ class TestWorkflowManager:
             patch.object(config_mgr, "delete_user_workflow"),
             patch.object(context_mgr, "has_current_workflow", return_value=True),
             patch.object(context_mgr, "get_current_workflow_name", return_value="other_workflow"),
-            patch.object(context_mgr, "set_current_workflow_name") as mock_set_name,
+            patch.object(context_mgr, "rekey_workflow") as mock_rekey,
         ):
             result = workflow_manager.file_operations.on_move_workflow_request(request)
 
         assert isinstance(result, MoveWorkflowResultSuccess)
-        mock_set_name.assert_not_called()
+        mock_rekey.assert_not_called()
 
     def test_on_move_workflow_request_updates_context_file_path_for_current_workflow(
         self, engine: Engine, tmp_path: Path
@@ -1158,6 +1155,10 @@ class TestWorkflowManager:
                     workflow_name=scenario.save_workflow_name,
                     result_details="ok",
                 )
+            msg = f"Unexpected request in rename test: {type(req).__name__}"
+            raise AssertionError(msg)
+
+        async def fake_forget_workflow(_name: str) -> object:
             return DeleteWorkflowResultSuccess(result_details="ok")
 
         with (
@@ -1165,6 +1166,7 @@ class TestWorkflowManager:
             patch.object(workflow_manager.engine.workflow_registry, "get_workflow_by_name", return_value=mock_source),
             patch.object(workflow_manager, "persist_external_workflow_registration") as mock_persist,
             patch.object(workflow_manager.engine, "ahandle_request", side_effect=fake_ahandle_request),
+            patch.object(workflow_manager.file_operations, "_forget_workflow", side_effect=fake_forget_workflow),
         ):
             result = asyncio.run(
                 workflow_manager.file_operations.on_rename_workflow_request(
@@ -1508,12 +1510,11 @@ class TestWorkflowManager:
     def test_rename_surfaces_delete_failure_from_bookkeeping(self, engine: Engine) -> None:
         """When the post-save delete of the old registry entry fails, rename surfaces RenameWorkflowResultFailure.
 
-        Save succeeds, but the follow-up DeleteWorkflowRequest for the old key comes back as
+        Save succeeds, but removing the old key's registry entry and file comes back as
         DeleteWorkflowResultFailure. The bookkeeping helper must translate that into a rename
         failure so the caller doesn't see a bogus success while the registry is half-migrated.
         """
         from griptape_nodes.retained_mode.events.workflow_events import (
-            DeleteWorkflowRequest,
             DeleteWorkflowResultFailure,
             RenameWorkflowRequest,
             RenameWorkflowResultFailure,
@@ -1533,16 +1534,18 @@ class TestWorkflowManager:
                     workflow_name="new",
                     result_details="ok",
                 )
-            if isinstance(req, DeleteWorkflowRequest):
-                return DeleteWorkflowResultFailure(result_details="registry locked")
             msg = f"Unexpected request in delete-failure test: {type(req).__name__}"
             raise AssertionError(msg)
+
+        async def fake_forget_workflow(_name: str) -> object:
+            return DeleteWorkflowResultFailure(result_details="registry locked")
 
         with (
             patch.object(engine.workflow_registry, "has_workflow_with_name", return_value=True),
             patch.object(engine.workflow_registry, "get_workflow_by_name", return_value=mock_source),
             patch.object(workflow_manager, "persist_external_workflow_registration"),
             patch.object(engine, "ahandle_request", side_effect=fake_ahandle_request),
+            patch.object(workflow_manager.file_operations, "_forget_workflow", side_effect=fake_forget_workflow),
         ):
             result = asyncio.run(
                 workflow_manager.file_operations.on_rename_workflow_request(

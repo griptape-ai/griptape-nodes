@@ -622,6 +622,18 @@ class ContextManager(EngineScoped):
 
         self._state.workflow_stack[-1]._name = new_name
 
+    def rekey_workflow(self, old_name: str, new_name: str, file_path: str) -> None:
+        """Give every context of the workflow keyed `old_name` its new registry key and file.
+
+        For a save, rename, or move, which change what the workflow is called and where it lives
+        but leave it open. The path matters as much as the name: `workflow_dir` prefers the
+        retained path over a registry lookup, so a stale one resolves to the folder the file left.
+        """
+        for workflow_context_state in self._state.workflow_stack:
+            if workflow_context_state._name == old_name:
+                workflow_context_state._name = new_name
+                workflow_context_state._file_path = file_path
+
     def set_current_workflow_file_path(self, new_file_path: str | None) -> None:
         """Update the file path retained on the current Workflow context.
 

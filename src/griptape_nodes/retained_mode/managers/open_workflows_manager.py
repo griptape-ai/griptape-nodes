@@ -141,6 +141,18 @@ class OpenWorkflowsManager(EngineScoped):
             if result.failed():
                 logger.warning("Could not reopen workflow '%s': %s", workflow_name, result.result_details)
 
+    def rekey_open_workflow(self, old_name: str, new_name: str, file_path: str) -> None:
+        """Keep the workflow open from `old_name` open under `new_name`, after a rename or move.
+
+        Its runtime and id stay as they are, so clients showing it keep showing it.
+        """
+        runtime = self.find_runtime_by_name(old_name)
+        if runtime is None:
+            return
+        with self.engine.bind_workflow_runtime(runtime):
+            self.engine.context_manager.rekey_workflow(old_name, new_name, file_path)
+        self.announce_change()
+
     def find_runtime_by_name(self, workflow_name: str) -> WorkflowRuntime | None:
         """The open runtime whose workflow has this registry key, if any."""
         for runtime in self.engine.workflow_runtimes:

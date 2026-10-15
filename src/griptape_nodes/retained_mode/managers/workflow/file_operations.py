@@ -60,10 +60,18 @@ class WorkflowFileOperations(EngineScoped):
             if failure is not None:
                 details = f"Attempted to delete workflow '{request.name}'. Failed to close it: {failure}"
                 return DeleteWorkflowResultFailure(result_details=details)
+        return await self._forget_workflow(request.name)
+
+    async def _forget_workflow(self, name: str) -> ResultPayload:
+        """Remove a workflow's registry entry, config entry, and file, leaving any open copy of it alone.
+
+        Rename calls this for the old name after saving under the new one: the open workflow is the
+        same workflow under its new name, so closing it would close what was just renamed.
+        """
         try:
-            workflow = self.engine.workflow_registry.delete_workflow_by_name(request.name)
+            workflow = self.engine.workflow_registry.delete_workflow_by_name(name)
         except Exception as e:
-            details = f"Failed to remove workflow from registry with name '{request.name}'. Exception: {e}"
+            details = f"Failed to remove workflow from registry with name '{name}'. Exception: {e}"
             return DeleteWorkflowResultFailure(result_details=details)
         # Unsaved workflows have no backing file or config entry; dropping the registry
         # entry is the entire operation.
@@ -71,14 +79,14 @@ class WorkflowFileOperations(EngineScoped):
         if workflow_file_path is None:
             return DeleteWorkflowResultSuccess(
                 result_details=ResultDetails(
-                    message=f"Successfully deleted unsaved workflow: {request.name}", level=logging.INFO
+                    message=f"Successfully deleted unsaved workflow: {name}", level=logging.INFO
                 )
             )
         config_manager = self.engine.config_manager
         try:
             config_manager.delete_user_workflow(workflow_file_path)
         except Exception as e:
-            details = f"Failed to remove workflow from user config with name '{request.name}'. Exception: {e}"
+            details = f"Failed to remove workflow from user config with name '{name}'. Exception: {e}"
             return DeleteWorkflowResultFailure(result_details=details)
         # delete the actual file
         full_path = config_manager.workspace_path.joinpath(workflow_file_path)
@@ -92,9 +100,9 @@ class WorkflowFileOperations(EngineScoped):
         if isinstance(delete_result, DeleteFileResultFailure):
             details = f"Failed to delete workflow file with path '{workflow_file_path}'. {delete_result.result_details}"
             return DeleteWorkflowResultFailure(result_details=details)
-        self.engine.workflow_manager.variable_substitution.drop(request.name)
+        self.engine.workflow_manager.variable_substitution.drop(name)
         return DeleteWorkflowResultSuccess(
-            result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level=logging.INFO)
+            result_details=ResultDetails(message=f"Successfully deleted workflow: {name}", level=logging.INFO)
         )
 
     @handles(RenameWorkflowRequest)
@@ -155,7 +163,7 @@ class WorkflowFileOperations(EngineScoped):
         )
 
     @handles(MoveWorkflowRequest)
-    def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911
         try:
             # Validate source workflow exists
             workflow = self.engine.workflow_registry.get_workflow_by_name(request.workflow_name)
@@ -225,17 +233,11 @@ class WorkflowFileOperations(EngineScoped):
             if old_registry_key != new_registry_key:
                 self.engine.workflow_registry.rekey_workflow(old_registry_key, new_registry_key)
                 self.engine.workflow_manager.variable_substitution.rekey(old_registry_key, new_registry_key)
-                context_manager = self.engine.context_manager
-                if (
-                    context_manager.has_current_workflow()
-                    and context_manager.get_current_workflow_name() == old_registry_key
-                ):
-                    context_manager.set_current_workflow_name(new_registry_key)
-                    # The context also retains the workflow's path, and that is what
-                    # `workflow_dir` answers with. Move is the one operation that changes the
-                    # directory, so without this the builtin keeps resolving to the folder the
-                    # file just left.
-                    context_manager.set_current_workflow_file_path(str(new_absolute_path))
+                # Whichever workflow is open from this file follows it, not just the one this
+                # request acts on: the library browser moves workflows that aren't on screen.
+                self.engine.open_workflows_manager.rekey_open_workflow(
+                    old_registry_key, new_registry_key, str(new_absolute_path)
+                )
 
         except OSError as e:
             error_messages = []
@@ -353,20 +355,18 @@ class WorkflowFileOperations(EngineScoped):
         # Also skip when the key is unchanged (e.g. renaming to the same on-disk name) so we
         # don't delete the file we just saved.
         if source is not None and new_workflow_name != old_workflow_name:
-            delete_workflow_result = await self.engine.ahandle_request(DeleteWorkflowRequest(name=old_workflow_name))
-            if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
+            forget_result = await self._forget_workflow(old_workflow_name)
+            if isinstance(forget_result, DeleteWorkflowResultFailure):
                 return (
                     f"Attempted to rename workflow '{old_workflow_name}' to '{new_workflow_name}'. "
                     "Failed while attempting to remove the original file name from the registry."
                 )
 
-        # If the renamed workflow is the current context, update the context name so the
-        # heartbeat and other callers reflect the new registry key immediately. The retained
-        # path moves with it: rename keeps the directory, so `workflow_dir` is unaffected, but
-        # the path itself would otherwise name a file that no longer exists.
+        # Rename saves the workflow this request acts on, which stays open under its new key. Its
+        # retained path moves with it: rename keeps the directory, so `workflow_dir` is unaffected,
+        # but the old path names a file that is gone.
         context_manager = self.engine.context_manager
         if context_manager.has_current_workflow() and context_manager.get_current_workflow_name() == old_workflow_name:
-            context_manager.set_current_workflow_name(new_workflow_name)
-            context_manager.set_current_workflow_file_path(str(save_result.file_path))
-
+            context_manager.rekey_workflow(old_workflow_name, new_workflow_name, str(save_result.file_path))
+            self.engine.open_workflows_manager.announce_change()
         return None
