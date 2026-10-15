@@ -1,4 +1,4 @@
-"""Tests for prepare_content_for_write on ImageArtifactProvider and ArtifactManager."""
+"""Tests for collect_metadata_for_write and prepare_content_for_write on ImageArtifactProvider and ArtifactManager."""
 
 import logging
 from unittest.mock import MagicMock, patch
@@ -30,11 +30,38 @@ def image_provider(registry: ProviderRegistry) -> ImageArtifactProvider:
     return ImageArtifactProvider(registry=registry)
 
 
+class TestImageArtifactProviderCollectMetadataForWrite:
+    """Tests for ImageArtifactProvider.collect_metadata_for_write."""
+
+    def test_collects_workflow_metadata_for_png(self, image_provider: ImageArtifactProvider) -> None:
+        metadata = {"gtn_saved_at": "2024-01-01T00:00:00+00:00"}
+
+        with patch(COLLECT_PATH, return_value=metadata):
+            result = image_provider.collect_metadata_for_write("image.png")
+
+        assert result == metadata
+
+    def test_skips_collecting_for_formats_without_metadata(self, image_provider: ImageArtifactProvider) -> None:
+        with patch(COLLECT_PATH) as mock_collect:
+            result = image_provider.collect_metadata_for_write("image.jpg")
+
+        mock_collect.assert_not_called()
+        assert result == {}
+
+    def test_returns_empty_and_warns_when_collecting_fails(
+        self, image_provider: ImageArtifactProvider, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with patch(COLLECT_PATH, side_effect=RuntimeError("collect failed")), caplog.at_level(logging.WARNING):
+            result = image_provider.collect_metadata_for_write("image.png")
+
+        assert result == {}
+        assert any("Attempted to collect workflow metadata" in record.message for record in caplog.records)
+
+
 class TestImageArtifactProviderPrepareContentForWrite:
     """Tests for ImageArtifactProvider.prepare_content_for_write."""
 
-    def test_delegates_to_injector_with_correct_args(self, image_provider: ImageArtifactProvider) -> None:
-        """Test that prepare_content_for_write calls collect_workflow_metadata and injects via driver."""
+    def test_injects_the_given_metadata_via_driver(self, image_provider: ImageArtifactProvider) -> None:
         original_bytes = b"fake png bytes"
         injected_bytes = b"fake png bytes with metadata"
         metadata = {"gtn_saved_at": "2024-01-01T00:00:00+00:00"}
@@ -45,64 +72,28 @@ class TestImageArtifactProviderPrepareContentForWrite:
         mock_driver.inject_metadata.return_value = injected_bytes
 
         with (
-            patch(COLLECT_PATH, return_value=metadata),
+            patch(COLLECT_PATH) as mock_collect,
             patch(IMAGE_OPEN_PATH, return_value=mock_image),
             patch(DRIVER_REGISTRY_PATH, return_value=mock_driver),
         ):
-            result = image_provider.prepare_content_for_write(original_bytes, "image.png")
+            result = image_provider.prepare_content_for_write(original_bytes, "image.png", metadata)
 
         assert result == injected_bytes
         mock_driver.inject_metadata.assert_called_once_with(mock_image, metadata)
+        # It runs on a worker thread, so it must not read engine state itself.
+        mock_collect.assert_not_called()
 
-    def test_returns_original_data_on_exception(
-        self, image_provider: ImageArtifactProvider, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Test that original data is returned and a warning is logged when injection raises."""
-        original_bytes = b"fake png bytes"
+    def test_returns_data_unchanged_without_metadata(self, image_provider: ImageArtifactProvider) -> None:
+        with patch(IMAGE_OPEN_PATH) as mock_open:
+            result = image_provider.prepare_content_for_write(b"fake png bytes", "image.png", {})
 
-        with patch(COLLECT_PATH, side_effect=RuntimeError("injection failed")), caplog.at_level(logging.WARNING):
-            result = image_provider.prepare_content_for_write(original_bytes, "image.png")
-
-        assert result == original_bytes
-        assert any("Attempted to collect workflow metadata" in record.message for record in caplog.records)
-
-
-class TestImageArtifactProviderPlanContentForWrite:
-    """Tests for the split of ImageArtifactProvider.prepare_content_for_write into plan and process."""
-
-    def test_reads_engine_state_when_planning_not_when_processing(self, image_provider: ImageArtifactProvider) -> None:
-        """The returned callable must not touch the engine, so it can run on a worker thread."""
-        metadata = {"gtn_saved_at": "2024-01-01T00:00:00+00:00"}
-        mock_image = MagicMock()
-        mock_image.format = "PNG"
-        mock_driver = MagicMock()
-        mock_driver.inject_metadata.return_value = b"processed"
-
-        with patch(COLLECT_PATH, return_value=metadata) as mock_collect:
-            process = image_provider.plan_content_for_write("image.png")
-            assert mock_collect.call_count == 1
-
-            with (
-                patch(IMAGE_OPEN_PATH, return_value=mock_image),
-                patch(DRIVER_REGISTRY_PATH, return_value=mock_driver),
-            ):
-                result = process(b"fake png bytes")
-
-        assert result == b"processed"
-        assert mock_collect.call_count == 1
+        assert result == b"fake png bytes"
+        mock_open.assert_not_called()
 
     def test_returns_empty_data_unchanged(self, image_provider: ImageArtifactProvider) -> None:
-        with patch(COLLECT_PATH, return_value={"gtn_saved_at": "2024-01-01T00:00:00+00:00"}):
-            process = image_provider.plan_content_for_write("image.png")
+        result = image_provider.prepare_content_for_write(b"", "image.png", {"gtn_saved_at": "x"})
 
-        assert process(b"") == b""
-
-    def test_skips_collecting_for_formats_without_metadata(self, image_provider: ImageArtifactProvider) -> None:
-        with patch(COLLECT_PATH) as mock_collect:
-            process = image_provider.plan_content_for_write("image.jpg")
-
-        mock_collect.assert_not_called()
-        assert process(b"jpeg bytes") == b"jpeg bytes"
+        assert result == b""
 
 
 class TestArtifactManagerPrepareContentForWrite:
@@ -113,7 +104,7 @@ class TestArtifactManagerPrepareContentForWrite:
         artifact_manager = engine.artifact_manager
         data = b"some binary data"
 
-        result = artifact_manager.prepare_content_for_write(data, "archive.xyz_unknown")
+        result = artifact_manager.prepare_content_for_write(data, "archive.xyz_unknown", {"k": "v"})
 
         assert result is data
 
@@ -122,12 +113,12 @@ class TestArtifactManagerPrepareContentForWrite:
         artifact_manager = engine.artifact_manager
         data = b"some binary data"
 
-        result = artifact_manager.prepare_content_for_write(data, "no_extension_file")
+        result = artifact_manager.prepare_content_for_write(data, "no_extension_file", {"k": "v"})
 
         assert result is data
 
     def test_dispatches_to_provider_for_known_extension(self, engine: Engine) -> None:
-        """Test that prepare_content_for_write dispatches to the image provider for .png files."""
+        """Test that both halves dispatch to the image provider for .png files."""
         artifact_manager = engine.artifact_manager
         artifact_manager.on_handle_register_artifact_provider_request(
             RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
@@ -146,7 +137,8 @@ class TestArtifactManagerPrepareContentForWrite:
             patch(IMAGE_OPEN_PATH, return_value=mock_image),
             patch(DRIVER_REGISTRY_PATH, return_value=mock_driver),
         ):
-            result = artifact_manager.prepare_content_for_write(original_bytes, "output.png")
+            collected = artifact_manager.collect_metadata_for_write("output.png")
+            result = artifact_manager.prepare_content_for_write(original_bytes, "output.png", collected)
 
         assert result == processed_bytes
         mock_driver.inject_metadata.assert_called_once_with(mock_image, metadata)

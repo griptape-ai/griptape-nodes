@@ -93,7 +93,10 @@ def slow_metadata_injection(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> 
     """Make the metadata injection a write does (a full image re-encode) wait for the test."""
     step = _SlowStep()
     engine.config_manager.set_config_value("auto_inject_workflow_metadata", True)
-    monkeypatch.setattr(engine.artifact_manager, "plan_content_for_write", lambda _name: step.run)
+    monkeypatch.setattr(engine.artifact_manager, "collect_metadata_for_write", lambda _name: {"k": "v"})
+    monkeypatch.setattr(
+        engine.artifact_manager, "prepare_content_for_write", lambda data, _name, _metadata: step.run(data)
+    )
     return step
 
 

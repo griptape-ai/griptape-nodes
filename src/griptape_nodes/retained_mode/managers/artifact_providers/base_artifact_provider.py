@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -15,8 +14,6 @@ from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
         BaseArtifactPreviewGenerator,
@@ -256,40 +253,31 @@ class BaseArtifactProvider(EngineScoped, ABC):
 
         return result
 
-    def prepare_content_for_write(self, data: bytes, file_name: str) -> bytes:  # noqa: ARG002
-        """Process content before writing to disk.
+    def collect_metadata_for_write(self, file_name: str) -> dict[str, str]:  # noqa: ARG002
+        """Collect the metadata to embed in a file of this format, or {} to embed none.
 
-        Override in subclasses for format-specific content processing
-        (e.g., metadata injection). Default implementation returns data unchanged.
+        Runs on the event loop, so it may read engine state. Default embeds nothing.
+
+        Args:
+            file_name: Resolved filename including extension (post-macro resolution and post-policy)
+        """
+        return {}
+
+    def prepare_content_for_write(self, data: bytes, file_name: str, metadata: dict[str, str]) -> bytes:  # noqa: ARG002
+        """Embed `metadata` from `collect_metadata_for_write` into the file's bytes.
+
+        Runs on a worker thread, because re-encoding a large file takes seconds. It must not read
+        engine state; anything it needs comes in through `metadata`. Default returns data unchanged.
 
         Args:
             data: Raw file bytes
             file_name: Resolved filename including extension (post-macro resolution and post-policy)
+            metadata: What `collect_metadata_for_write` returned for this file
 
         Returns:
             Processed bytes (or original bytes if no processing needed)
         """
         return data
-
-    def plan_content_for_write(self, file_name: str) -> Callable[[bytes], bytes]:
-        """Split ``prepare_content_for_write`` into a part that reads engine state and a part that does not.
-
-        The engine's state is only safe to read on the event loop, while re-encoding a large file
-        takes long enough to stall it. Override this to read whatever the processing needs from the
-        engine now, and return a callable that processes bytes without touching the engine: the write
-        runs that callable on a worker thread.
-
-        The default hands the whole of ``prepare_content_for_write`` to the callable, so a provider
-        that overrides only that hook has all of it run on the worker thread and must not read engine
-        state there.
-
-        Args:
-            file_name: Resolved filename including extension (post-macro resolution and post-policy)
-
-        Returns:
-            A callable taking the raw file bytes and returning the processed bytes.
-        """
-        return partial(self.prepare_content_for_write, file_name=file_name)
 
     @staticmethod
     def get_write_vetting_policy() -> WriteVettingPolicy | None:

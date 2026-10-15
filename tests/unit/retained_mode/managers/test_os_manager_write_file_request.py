@@ -17,7 +17,7 @@ from collections.abc import Generator
 from io import BytesIO
 from pathlib import Path
 from typing import IO
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import portalocker
 import portalocker.utils
@@ -522,7 +522,7 @@ class TestMetadataInjection:
         engine.config_manager.workspace_path = original_workspace
 
     def test_metadata_injected_for_bytes_content(self, engine: Engine, temp_dir: Path) -> None:
-        """Test that the content is planned and processed for bytes content."""
+        """Test that metadata is collected and embedded for bytes content."""
         os_manager = engine.os_manager
         file_path = temp_dir / "image.png"
         original_bytes = b"fake png bytes"
@@ -530,13 +530,18 @@ class TestMetadataInjection:
 
         request = WriteFileRequest(file_path=str(file_path), content=original_bytes)
 
-        prepare_content = MagicMock(return_value=injected_bytes)
-        with patch.object(engine.artifact_manager, "plan_content_for_write", return_value=prepare_content) as mock_plan:
+        metadata = {"gtn_saved_at": "2024-01-01T00:00:00+00:00"}
+        with (
+            patch.object(engine.artifact_manager, "collect_metadata_for_write", return_value=metadata) as mock_collect,
+            patch.object(
+                engine.artifact_manager, "prepare_content_for_write", return_value=injected_bytes
+            ) as mock_prepare,
+        ):
             result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
-        mock_plan.assert_called_once_with("image.png")
-        prepare_content.assert_called_once_with(original_bytes)
+        mock_collect.assert_called_once_with("image.png")
+        mock_prepare.assert_called_once_with(original_bytes, "image.png", metadata)
 
     def test_metadata_not_injected_when_skip_flag_set(self, engine: Engine, temp_dir: Path) -> None:
         """Test that injection is skipped when skip_metadata_injection=True."""
@@ -549,7 +554,7 @@ class TestMetadataInjection:
             skip_metadata_injection=True,
         )
 
-        with patch.object(engine.artifact_manager, "plan_content_for_write") as mock_prepare:
+        with patch.object(engine.artifact_manager, "collect_metadata_for_write") as mock_prepare:
             result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
@@ -570,7 +575,7 @@ class TestMetadataInjection:
                     False if key == "auto_inject_workflow_metadata" else kwargs.get("default")
                 ),
             ),
-            patch.object(engine.artifact_manager, "plan_content_for_write") as mock_prepare,
+            patch.object(engine.artifact_manager, "collect_metadata_for_write") as mock_prepare,
         ):
             result = os_manager.engine.handle_request(request)
 
@@ -584,7 +589,7 @@ class TestMetadataInjection:
 
         request = WriteFileRequest(file_path=str(file_path), content="text content")
 
-        with patch.object(engine.artifact_manager, "plan_content_for_write") as mock_prepare:
+        with patch.object(engine.artifact_manager, "collect_metadata_for_write") as mock_prepare:
             result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
@@ -619,8 +624,9 @@ class TestMetadataInjection:
 
         request = WriteFileRequest(file_path=str(file_path), content=original_bytes)
 
-        with patch.object(
-            engine.artifact_manager, "plan_content_for_write", return_value=MagicMock(return_value=injected_bytes)
+        with (
+            patch.object(engine.artifact_manager, "collect_metadata_for_write", return_value={"k": "v"}),
+            patch.object(engine.artifact_manager, "prepare_content_for_write", return_value=injected_bytes),
         ):
             result = os_manager.engine.handle_request(request)
 

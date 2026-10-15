@@ -2658,10 +2658,13 @@ class OSManager(EngineScoped):
             and not request.skip_metadata_injection
             and self.engine.config_manager.get_config_value("auto_inject_workflow_metadata")
         ):
-            # The provider reads engine state while planning, so that runs here; only the
-            # byte processing it returns (an image re-encode) goes to a worker thread.
-            prepare_content = self.engine.artifact_manager.plan_content_for_write(file_path.name)
-            content = await to_thread(prepare_content, content)
+            # Collecting reads engine state, so it stays on the loop; only the re-encode with
+            # the collected metadata goes to a worker thread.
+            metadata = self.engine.artifact_manager.collect_metadata_for_write(file_path.name)
+            if metadata:
+                content = await to_thread(
+                    self.engine.artifact_manager.prepare_content_for_write, content, file_path.name, metadata
+                )
 
         # Now attempt the write, based on our collision (existing file) policy.
         match request.existing_file_policy:

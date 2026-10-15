@@ -2,7 +2,6 @@
 
 import json
 import logging
-from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
@@ -117,10 +116,6 @@ from griptape_nodes.utils.keyed_mutex import KeyedMutex
 logger = logging.getLogger("griptape_nodes")
 
 
-def _return_bytes_unchanged(data: bytes) -> bytes:
-    return data
-
-
 class ResolvedPreviewPath(NamedTuple):
     """Resolved preview path components.
 
@@ -233,45 +228,36 @@ class ArtifactManager(EngineScoped):
                 return sniffed
         return None
 
-    def prepare_content_for_write(self, data: bytes, file_name: str) -> bytes:
-        """Process content before writing to disk by dispatching to the appropriate provider.
+    def collect_metadata_for_write(self, file_name: str) -> dict[str, str]:
+        """Collect the metadata the file's provider embeds on write, or {} if it embeds none.
 
-        Does both halves of ``plan_content_for_write`` in order, on the calling thread.
+        Reads engine state, so call it on the event loop.
+
+        Args:
+            file_name: Filename including extension
+        """
+        provider = self._provider_for_format(Path(file_name).suffix.lstrip(".").lower())
+        if provider is None:
+            return {}
+        return provider.collect_metadata_for_write(file_name)
+
+    def prepare_content_for_write(self, data: bytes, file_name: str, metadata: dict[str, str]) -> bytes:
+        """Embed `metadata` from `collect_metadata_for_write` into the file's bytes.
+
+        Touches no engine state, so it is safe on a worker thread.
 
         Args:
             data: Raw file bytes
             file_name: Filename including extension
+            metadata: What `collect_metadata_for_write` returned for this file
 
         Returns:
             Processed bytes, or original bytes if no provider handles this extension
         """
-        return self.plan_content_for_write(file_name)(data)
-
-    def plan_content_for_write(self, file_name: str) -> Callable[[bytes], bytes]:
-        """Look up the file's provider and read what it needs from the engine, returning the byte processing.
-
-        Everything that touches engine state (the provider registry, the workflow metadata) happens
-        before this returns, so the caller can run the returned callable on a worker thread while
-        the event loop keeps answering requests.
-
-        Args:
-            file_name: Filename including extension
-
-        Returns:
-            A callable taking the raw file bytes and returning processed bytes, or the bytes
-            unchanged if no provider handles this extension.
-        """
-        extension = Path(file_name).suffix.lstrip(".").lower()
-        if not extension:
-            return _return_bytes_unchanged
-        provider_classes = self._registry.get_provider_classes_by_format(extension)
-        if not provider_classes:
-            return _return_bytes_unchanged
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4027
-        # Handle ambiguity when multiple providers support the same extension
-        # (e.g., .mp4 could be handled by both video and audio providers).
-        provider = self._registry.get_or_create_provider_instance(provider_classes[0])
-        return provider.plan_content_for_write(file_name)
+        provider = self._provider_for_format(Path(file_name).suffix.lstrip(".").lower())
+        if provider is None:
+            return data
+        return provider.prepare_content_for_write(data, file_name, metadata)
 
     def get_write_vetting_policy(self, detected_format: str) -> WriteVettingPolicy | None:
         """Return the vetting mode the format's provider needs, or ``None``.
@@ -377,8 +363,8 @@ class ArtifactManager(EngineScoped):
 
         Centralizes the "which class wins when multiple providers claim the
         same format" decision so ``check_write_format_from_bytes``,
-        ``check_write_format_from_path``, ``check_read_permission``, and
-        (eventually) ``prepare_content_for_write`` don't drift on it.
+        ``check_write_format_from_path``, ``check_read_permission``,
+        ``collect_metadata_for_write``, and ``prepare_content_for_write`` don't drift on it.
         Currently just "first registered class wins" per the provider
         registry order; ambiguity handling is tracked at
         https://github.com/griptape-ai/griptape-nodes/issues/4027.

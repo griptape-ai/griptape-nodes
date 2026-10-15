@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from functools import partial
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -20,8 +19,6 @@ from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_prov
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
         BaseArtifactPreviewGenerator,
@@ -29,10 +26,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.provider_registry import ProviderRegistry
 
 logger = logging.getLogger("griptape_nodes")
-
-
-def _return_unchanged(data: bytes) -> bytes:
-    return data
 
 
 class ImageArtifactMetadata(BaseArtifactMetadata):
@@ -176,33 +169,21 @@ class ImageArtifactProvider(BaseArtifactProvider):
         """
         return {"png"}
 
-    def prepare_content_for_write(self, data: bytes, file_name: str) -> bytes:
-        return self.plan_content_for_write(file_name)(data)
-
-    def plan_content_for_write(self, file_name: str) -> Callable[[bytes], bytes]:
-        """Gather the workflow metadata now; the returned callable re-encodes the image with it.
-
-        Collecting the metadata reads engine state, so it happens here, on the caller's thread. The
-        callable only decodes and re-encodes the bytes it is given, which takes seconds for a large
-        image and is safe on a worker thread.
-        """
+    def collect_metadata_for_write(self, file_name: str) -> dict[str, str]:
         ext = Path(file_name).suffix.lstrip(".").lower()
         if ext not in self.get_metadata_formats():
-            return _return_unchanged
+            return {}
 
         try:
-            metadata = collect_workflow_metadata(self.engine)
+            return collect_workflow_metadata(self.engine)
         except Exception as e:
             logger.warning("Attempted to collect workflow metadata for %s. Failed because: %s", file_name, e)
-            return _return_unchanged
+            return {}
 
+    def prepare_content_for_write(self, data: bytes, file_name: str, metadata: dict[str, str]) -> bytes:  # noqa: PLR0911
         if not metadata:
-            return _return_unchanged
+            return data
 
-        return partial(self._inject_workflow_metadata, file_name=file_name, metadata=metadata)
-
-    @staticmethod
-    def _inject_workflow_metadata(data: bytes, *, file_name: str, metadata: dict[str, str]) -> bytes:
         if not data:
             logger.warning("Cannot inject metadata: empty data")
             return data
