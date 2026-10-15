@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, NamedTuple
 
+from griptape_nodes.exe_types import journal
+
 if TYPE_CHECKING:
     from queue import Queue
 
@@ -33,7 +35,9 @@ class ControlFlow:
     def __init__(self, name: str, engine: Engine, metadata: dict | None = None) -> None:
         self.name = name
         self.nodes = {}
-        self.metadata = metadata or {}
+        self.metadata = journal.JournaledDict(
+            metadata or {}, owner=self, aspect=journal.Aspect.FLOW_METADATA, deep=True
+        )
         self.engine = engine
 
     def add_node(self, node: BaseNode) -> None:

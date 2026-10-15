@@ -14,6 +14,15 @@ columns where the modifier keys differ.
 For a tour of the regions these shortcuts act on, see
 [The Editor](index.md).
 
+## Undo & redo
+
+| Action                      | macOS       | Windows / Linux        |
+| --------------------------- | ----------- | ---------------------- |
+| Undo the last change        | Cmd+Z       | Ctrl+Z                 |
+| Redo the last undone change | Shift+Cmd+Z | Shift+Ctrl+Z or Ctrl+Y |
+
+See [Undo and Redo](undo_and_redo.md) for what can be undone.
+
 ## Adding & editing nodes
 
 | Action                                                     | macOS              | Windows / Linux    |

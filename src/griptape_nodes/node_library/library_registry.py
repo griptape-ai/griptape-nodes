@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from griptape_nodes.exe_types import journal
 from griptape_nodes.node_library.library_declarations import (
     LibraryDeclaration,
     ModelCatalogLibraryProperty,
@@ -495,13 +496,16 @@ class LibraryRegistry:
         serializer's reference copy or a type probe. It sends no element
         events: saving an image serializes the whole flow into its metadata,
         one reference copy per node, so those events grew with nodes times
-        saved images.
+        saved images. It also records nothing for undo, since the node is never part of the workflow.
         """
         token = _constructing_node.set(True)
         throwaway_token = _constructing_throwaway_node.set(True) if throwaway else None
+        journal_token = journal.begin(None) if throwaway else None
         try:
             yield
         finally:
+            if journal_token is not None:
+                journal.end(journal_token)
             if throwaway_token is not None:
                 _constructing_throwaway_node.reset(throwaway_token)
             _constructing_node.reset(token)

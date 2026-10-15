@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 
+from griptape_nodes.exe_types import journal
 from griptape_nodes.exe_types.elements.badge import handle_badge_message, write_badge_fields
 
 if TYPE_CHECKING:
@@ -18,6 +19,9 @@ if TYPE_CHECKING:
 
 
 N = TypeVar("N", bound="BaseNodeElement")
+
+# Pending UI reports and status badges, not structure.
+_UNJOURNALED_ELEMENT_FIELDS = frozenset({"_changes", "_badge"})
 
 
 @dataclass(kw_only=True)
@@ -33,10 +37,6 @@ class BaseNodeElement:
     _parent: BaseNodeElement | None = field(default=None)
     _node_context: BaseNode | None = field(default=None)
     _badge: BadgeData | None = field(default=None)
-
-    @property
-    def children(self) -> list[BaseNodeElement]:
-        return self._children
 
     def __post_init__(self) -> None:
         # If there's currently an active element, add this new element as a child
@@ -63,6 +63,18 @@ class BaseNodeElement:
 
     def __repr__(self) -> str:
         return f"BaseNodeElement({self.children=})"
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        # An element's fields are the node's structure, so they write through the journal.
+        if name == "_children" and type(value) is list:
+            value = journal.JournaledList(value, owner=self, aspect=journal.Aspect.CHILDREN)
+        if name not in _UNJOURNALED_ELEMENT_FIELDS:
+            journal.record_attribute(self, name, value)
+        object.__setattr__(self, name, value)
+
+    @property
+    def children(self) -> list[BaseNodeElement]:
+        return self._children
 
     def get_changes(self) -> dict[str, Any]:
         return self._changes

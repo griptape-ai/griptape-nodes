@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from griptape_nodes.exe_types import journal
+from griptape_nodes.exe_types.changes import GroupMemberAdded, GroupMemberRemoved
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
@@ -79,8 +81,6 @@ class BaseNodeGroup(BaseNode):
         nodes = nodes + self._remove_nodes_from_existing_parents(nodes)
         self._add_nodes_to_group_dict(nodes)
 
-        self.metadata["node_names_in_group"] = list(self.nodes.keys())
-
         return nodes
 
     def contains_node(self, node: BaseNode) -> bool:
@@ -110,11 +110,8 @@ class BaseNodeGroup(BaseNode):
         for node in nodes:
             if node.name not in self.nodes:
                 continue
-            node.parent_group = None
-            del self.nodes[node.name]
+            journal.apply(GroupMemberRemoved(self, node))
             nodes_removed.append(node)
-
-        self.metadata["node_names_in_group"] = list(self.nodes.keys())
 
         return nodes_removed
 
@@ -133,9 +130,8 @@ class BaseNodeGroup(BaseNode):
             nodes: List of nodes being deleted
         """
         for node in nodes:
-            self.nodes.pop(node.name, None)
-
-        self.metadata["node_names_in_group"] = list(self.nodes.keys())
+            if node.name in self.nodes:
+                journal.apply(GroupMemberRemoved(self, node))
 
     def _remove_nodes_from_existing_parents(self, nodes: list[BaseNode]) -> list[BaseNode]:
         """Detach nodes from whichever group currently owns them before reparenting them here.
@@ -168,8 +164,19 @@ class BaseNodeGroup(BaseNode):
     def _add_nodes_to_group_dict(self, nodes: list[BaseNode]) -> None:
         """Add nodes to the group's node dictionary."""
         for node in nodes:
-            node.parent_group = self
-            self.nodes[node.name] = node
+            journal.apply(GroupMemberAdded(self, node))
+
+    def add_member(self, node: BaseNode) -> None:
+        """Make a node a member. Use `journal.apply(GroupMemberAdded(...))` so it can be undone."""
+        node.parent_group = self
+        self.nodes[node.name] = node
+        self.metadata["node_names_in_group"] = list(self.nodes.keys())
+
+    def remove_member(self, node: BaseNode) -> None:
+        """Stop a node being a member. Use `journal.apply(GroupMemberRemoved(...))` so it can be undone."""
+        node.parent_group = None
+        self.nodes.pop(node.name, None)
+        self.metadata["node_names_in_group"] = list(self.nodes.keys())
 
     def _validate_nodes_can_be_nested(self, nodes: list[BaseNode]) -> None:
         """Reject additions that would make a group contain itself.
@@ -212,16 +219,8 @@ class BaseNodeGroup(BaseNode):
         if old_name not in self.nodes:
             return
 
-        # Update the nodes dictionary
-        node = self.nodes.pop(old_name)
-        self.nodes[new_name] = node
-
-        # Update the metadata
-        node_names_in_group = self.metadata.get("node_names_in_group", [])
-        if old_name in node_names_in_group:
-            node_names_in_group.remove(old_name)
-            node_names_in_group.append(new_name)
-            self.metadata["node_names_in_group"] = node_names_in_group
+        self.nodes[new_name] = self.nodes.pop(old_name)
+        self.metadata["node_names_in_group"] = list(self.nodes.keys())
 
     @staticmethod
     def get_enclosing_groups(node: BaseNode) -> list[BaseNodeGroup]:

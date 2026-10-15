@@ -511,6 +511,12 @@ class ContextManager(EngineScoped):
         """Check if there is an active Workflow context."""
         return len(self._workflow_stack) > 0
 
+    def get_current_workflow_state(self) -> ContextManager.WorkflowContextState | None:
+        """The open workflow's context, which keeps its identity when saving or moving renames it."""
+        if not self._workflow_stack:
+            return None
+        return self._workflow_stack[-1]
+
     def has_current_flow(self) -> bool:
         """Check if there is an active Flow context within the current Workflow."""
         if not self.has_current_workflow():

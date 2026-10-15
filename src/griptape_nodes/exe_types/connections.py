@@ -3,7 +3,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import NamedTuple
 
+from griptape_nodes.exe_types import journal
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
+from griptape_nodes.exe_types.changes import ConnectionAdded, ConnectionRemoved
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
 
@@ -18,6 +20,11 @@ class Direction(StrEnum):
 class ConnectionData(NamedTuple):
     node: BaseNode
     parameter: Parameter
+
+
+class ConnectionSlot(NamedTuple):
+    outgoing: int
+    incoming: int
 
 
 @dataclass
@@ -60,18 +67,7 @@ class Connections:
                 target_parameter,
                 is_node_group_internal=is_node_group_internal,
             )
-            # New index management.
-            connection_id = id(connection)
-            # Add connection to our dict here
-            self.connections[connection_id] = connection
-            # Outgoing connection
-            self.outgoing_index.setdefault(source_node.name, {}).setdefault(source_parameter.name, []).append(
-                connection_id
-            )
-            # Incoming connection
-            self.incoming_index.setdefault(target_node.name, {}).setdefault(target_parameter.name, []).append(
-                connection_id
-            )
+            journal.apply(ConnectionAdded(self, connection))
             return connection
         msg = "Connection not allowed because of multiple connections on the same parameter input or control output parameter"
         raise ValueError(msg)
@@ -213,18 +209,9 @@ class Connections:
         Returns:
             True if connection was removed, False if not found
         """
-        conn_id = id(conn)
-
-        if conn_id not in self.connections:
+        if not self.contains(conn):
             return False
-
-        self._remove_connection(
-            conn_id,
-            conn.source_node.name,
-            conn.source_parameter.name,
-            conn.target_node.name,
-            conn.target_parameter.name,
-        )
+        journal.apply(ConnectionRemoved(self, conn, self.slot_of(conn)))
         return True
 
     def remove_connection(
@@ -245,16 +232,56 @@ class Connections:
             test_target_node = connection.target_node.name
             test_target_parameter = connection.target_parameter.name
             if test_target_node == target_node and test_target_parameter == target_parameter:
-                self._remove_connection(
-                    connection_id, source_node, source_parameter, test_target_node, test_target_parameter
-                )
+                journal.apply(ConnectionRemoved(self, connection, self.slot_of(connection)))
                 return True
         return False
 
-    def _remove_connection(
-        self, connection_id: int, source_node: str, source_param: str, target_node: str, target_param: str
-    ) -> None:
-        # Now delete from EVERYWHERE!
+    def contains(self, connection: Connection) -> bool:
+        return self.connections.get(id(connection)) is connection
+
+    def find_equivalent(self, connection: Connection) -> Connection | None:
+        """Another connection between the same two parameters, if there is one."""
+        for connection_id in self.outgoing_index.get(connection.source_node.name, {}).get(
+            connection.source_parameter.name, []
+        ):
+            other = self.connections[connection_id]
+            if (
+                other.target_node is connection.target_node
+                and other.target_parameter.name == connection.target_parameter.name
+            ):
+                return other
+        return None
+
+    def slot_of(self, connection: Connection) -> ConnectionSlot:
+        """Where a connection sits among the others on its source and target parameters."""
+        outgoing = self.outgoing_index[connection.source_node.name][connection.source_parameter.name]
+        incoming = self.incoming_index[connection.target_node.name][connection.target_parameter.name]
+        return ConnectionSlot(outgoing=outgoing.index(id(connection)), incoming=incoming.index(id(connection)))
+
+    def link(self, connection: Connection, slot: ConnectionSlot | None = None) -> None:
+        """Add a connection to the tables, last or at `slot`. Use `journal.apply(ConnectionAdded(...))`."""
+        connection_id = id(connection)
+        self.connections[connection_id] = connection
+        outgoing = self.outgoing_index.setdefault(connection.source_node.name, {}).setdefault(
+            connection.source_parameter.name, []
+        )
+        incoming = self.incoming_index.setdefault(connection.target_node.name, {}).setdefault(
+            connection.target_parameter.name, []
+        )
+        if slot is None:
+            outgoing.append(connection_id)
+            incoming.append(connection_id)
+            return
+        outgoing.insert(slot.outgoing, connection_id)
+        incoming.insert(slot.incoming, connection_id)
+
+    def unlink(self, connection: Connection) -> None:
+        """Remove a connection from the tables. Use `journal.apply(ConnectionRemoved(...))`."""
+        connection_id = id(connection)
+        source_node = connection.source_node.name
+        source_param = connection.source_parameter.name
+        target_node = connection.target_node.name
+        target_param = connection.target_parameter.name
         # delete the parameter from the node name dictionary
         self.outgoing_index[source_node][source_param].remove(connection_id)
         if not self.outgoing_index[source_node][source_param]:
@@ -297,6 +324,13 @@ class Connections:
                         internal_connections.append(conn)
 
         return internal_connections
+
+    def unresolve_node_and_future_nodes(self, node: BaseNode) -> None:
+        """Mark a node whose inputs changed, and every node downstream of it, to run again."""
+        node.make_node_unresolved(
+            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+        )
+        self.unresolve_future_nodes(node)
 
     # Used to check data connections for all future nodes to be BAD!
     def unresolve_future_nodes(self, node: BaseNode, _visited: set[str] | None = None) -> None:

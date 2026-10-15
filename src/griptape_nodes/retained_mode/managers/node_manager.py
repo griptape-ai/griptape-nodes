@@ -15,6 +15,14 @@ from griptape_nodes.common.strict_mode import (
     StrictModeScopeKind,
     StrictModeSeverity,
 )
+from griptape_nodes.exe_types import journal
+from griptape_nodes.exe_types.changes import (
+    LockChanged,
+    NodeAdded,
+    NodeMoved,
+    NodeRemoved,
+    ParameterRenamed,
+)
 from griptape_nodes.exe_types.local_objects import cache_outputs_for_egress
 
 if TYPE_CHECKING:
@@ -418,6 +426,25 @@ class NodeManager(EngineScoped):
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
+    def register_node(self, node: BaseNode, flow_name: str) -> None:
+        """Make a node part of a flow. Use `journal.apply(NodeAdded(...))` so it can be undone."""
+        self.engine.flow_manager.get_flow_by_name(flow_name).add_node(node)
+        self.engine.object_manager.add_object_by_name(node.name, node)
+        self._name_to_parent_flow_name[node.name] = flow_name
+
+    def unregister_node(self, node: BaseNode) -> None:
+        """Take a node out of the workflow. Use `journal.apply(NodeRemoved(...))` so it can be undone."""
+        flow_name = self._name_to_parent_flow_name.pop(node.name)
+        self.engine.flow_manager.get_flow_by_name(flow_name).remove_node(node.name)
+        self.engine.object_manager.del_obj_by_name(node.name)
+
+    def move_node_to_flow(self, node: BaseNode, flow_name: str) -> None:
+        """Move a node to another flow. Use `journal.apply(NodeMoved(...))` so it can be undone."""
+        flow_manager = self.engine.flow_manager
+        flow_manager.get_flow_by_name(self._name_to_parent_flow_name[node.name]).remove_node(node.name)
+        flow_manager.get_flow_by_name(flow_name).add_node(node)
+        self._name_to_parent_flow_name[node.name] = flow_name
+
     def _cleanup_node_on_failed_deserialization(self, node_name: str) -> None:
         """Clean up a node that failed during deserialization.
 
@@ -789,12 +816,7 @@ class NodeManager(EngineScoped):
                     return CreateNodeResultFailure(result_details=details)
             else:
                 return CreateNodeResultFailure(result_details=details)
-        # Add it to the Flow.
-        parent_flow.add_node(node)
-
-        # Record keeping.
-        obj_mgr.add_object_by_name(node.name, node)
-        self._name_to_parent_flow_name[node.name] = parent_flow_name
+        journal.apply(NodeAdded(node, parent_flow_name))
 
         # We don't want to start in a resolving state, bump it back to unresolved.
         state = request.resolution
@@ -1438,14 +1460,10 @@ class NodeManager(EngineScoped):
         if isinstance(node.parent_group, BaseNodeGroup):
             node.parent_group.delete_nodes_from_group([node])
 
-        parent_flow.remove_node(node.name)
-
         for key in releasable_handle_keys:
             node.local_objects.release_parked(key)
 
-        # Now remove the record keeping
-        self.engine.object_manager.del_obj_by_name(node_name)
-        del self._name_to_parent_flow_name[node_name]
+        journal.apply(NodeRemoved(node, parent_flow_name))
 
         # If we were part of the Current Context, pop it.
         if request.node_name is None:
@@ -1520,9 +1538,7 @@ class NodeManager(EngineScoped):
             details = f"Attempted to move Node '{node_name}' from Flow '{source_flow_name}'. Failed because Node is not in source flow."
             return MoveNodeToNewFlowResultFailure(result_details=details)
 
-        source_flow.remove_node(node_name)
-        target_flow.add_node(node)
-        self._name_to_parent_flow_name[node_name] = request.target_flow_name
+        journal.apply(NodeMoved(node, source_flow_name, target_flow.name))
 
         details = f"Successfully moved Node '{node_name}' from Flow '{source_flow_name}' to Flow '{request.target_flow_name}'."
         return MoveNodeToNewFlowResultSuccess(
@@ -1616,6 +1632,8 @@ class NodeManager(EngineScoped):
         # We can't completely overwrite metadata.
         for key, value in request.metadata.items():
             node.metadata[key] = value
+        for key in request.keys_to_remove or []:
+            node.metadata.pop(key, None)
         details = f"Successfully set metadata for a Node '{node_name}'."
         result = SetNodeMetadataResultSuccess(result_details=details)
         return result
@@ -2803,16 +2821,14 @@ class NodeManager(EngineScoped):
             return SetParameterValueResultFailure(result_details=details)
         if not request.initial_setup and modified:
             try:
-                self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+                if request.is_output:
+                    self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+                else:
+                    self.mark_value_changed(node, request.parameter_name, output_snapshot)
             except Exception as err:
                 details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
                 return SetParameterValueResultFailure(result_details=details)
         if request.initial_setup is False and not request.is_output and modified:
-            # Mark node as unresolved, broadcast an event
-            node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
-            if output_snapshot is not None:
-                self._discard_stale_output_value(node, request.parameter_name, output_snapshot)
-            # Get the flow
             # Pass the value through to connected downstream parameters!
             # Set incoming_connection_source fields to identify this as legitimate upstream value propagation
             # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
@@ -2877,7 +2893,27 @@ class NodeManager(EngineScoped):
         )
         return result
 
-    def _discard_stale_output_value(self, node: BaseNode, parameter_name: str, output_snapshot: dict[str, Any]) -> None:
+    def mark_value_changed(
+        self, node: BaseNode, parameter_name: str, output_snapshot: dict[str, Any] | None = None
+    ) -> None:
+        """Clear what a run left behind that a parameter's new value no longer matches.
+
+        The node and everything downstream of it are marked to run again, and the output a run
+        recorded under the parameter's name is dropped (see `_discard_stale_output_value`).
+
+        Args:
+            node: The node whose value changed.
+            parameter_name: The parameter whose value changed.
+            output_snapshot: The node's output values from before the change, so an output that
+                `after_value_set` recomputed is kept. None when no hook ran, such as on undo.
+        """
+        self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+        node.make_node_unresolved(current_states_to_trigger_change_event={NodeResolutionState.RESOLVED})
+        self._discard_stale_output_value(node, parameter_name, output_snapshot)
+
+    def _discard_stale_output_value(
+        self, node: BaseNode, parameter_name: str, output_snapshot: dict[str, Any] | None
+    ) -> None:
         """Discard the output value that the set we just applied has invalidated.
 
         A PROPERTY+OUTPUT parameter stores the typed value and the produced value under one name, and
@@ -2892,6 +2928,9 @@ class NodeManager(EngineScoped):
         detected; see `test_equal_value_recompute_is_not_yet_detected`.
         """
         if parameter_name not in node.parameter_output_values:
+            return
+        if output_snapshot is None:
+            del node.parameter_output_values[parameter_name]
             return
         if parameter_name not in output_snapshot:
             # Nothing was recorded here before the set, so whatever is here now was written during it.
@@ -5169,7 +5208,7 @@ class NodeManager(EngineScoped):
         return values
 
     @handles(RenameParameterRequest)
-    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: PLR0911
         """Handle renaming a parameter on a node.
 
         Args:
@@ -5219,36 +5258,8 @@ class NodeManager(EngineScoped):
             details = f"Failed to rename Parameter '{request.parameter_name}' to '{request.new_parameter_name}'. A Parameter with that name already exists."
             return RenameParameterResultFailure(result_details=details)
 
-        # Get all connections for this node
-        flow_name = self.get_node_parent_flow_by_name(node_name)
-        self.engine.flow_manager.get_flow_by_name(flow_name)
-        connections = self.engine.flow_manager.get_connections()
-
-        # Update connections that reference this parameter
-        if node_name in connections.incoming_index:
-            incoming_connections = connections.incoming_index[node_name]
-            if request.parameter_name in incoming_connections:
-                connection_ids = incoming_connections[request.parameter_name]
-                for connection_id in connection_ids:
-                    connection = connections.connections[connection_id]
-                    if connection.target_parameter.name == request.parameter_name:
-                        connection.target_parameter.name = request.new_parameter_name
-                # Update the index key from old name to new name
-                incoming_connections[request.new_parameter_name] = incoming_connections.pop(request.parameter_name)
-
-        if node_name in connections.outgoing_index:
-            outgoing_connections = connections.outgoing_index[node_name]
-            if request.parameter_name in outgoing_connections:
-                connection_ids = outgoing_connections[request.parameter_name]
-                for connection_id in connection_ids:
-                    connection = connections.connections[connection_id]
-                    if connection.source_parameter.name == request.parameter_name:
-                        connection.source_parameter.name = request.new_parameter_name
-                # Update the index key from old name to new name
-                outgoing_connections[request.new_parameter_name] = outgoing_connections.pop(request.parameter_name)
-
         old_name = parameter.name
-        self._apply_parameter_rename(node, parameter, request.new_parameter_name)
+        journal.apply(ParameterRenamed(node, parameter, old_name, request.new_parameter_name))
 
         return RenameParameterResultSuccess(
             old_parameter_name=old_name,
@@ -5256,6 +5267,16 @@ class NodeManager(EngineScoped):
             node_name=node_name,
             result_details=f"Successfully renamed parameter '{old_name}' to '{request.new_parameter_name}' on node '{node_name}'.",
         )
+
+    def rename_parameter(self, node: BaseNode, parameter: Parameter, new_name: str) -> None:
+        """Rename a parameter, along with its connections. Use `journal.apply(ParameterRenamed(...))`."""
+        old_name = parameter.name
+        connections = self.engine.flow_manager.get_connections()
+        for index in (connections.incoming_index, connections.outgoing_index):
+            by_parameter = index.get(node.name, {})
+            if old_name in by_parameter:
+                by_parameter[new_name] = by_parameter.pop(old_name)
+        self._apply_parameter_rename(node, parameter, new_name)
 
     def _apply_parameter_rename(self, node: BaseNode, parameter: Parameter, new_name: str) -> None:
         """Rename a parameter and carry the values stored under its old name across.
@@ -5299,8 +5320,7 @@ class NodeManager(EngineScoped):
             except ValueError as err:
                 details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
                 return SetLockNodeStateResultFailure(result_details=details)
-        node.lock = request.lock
-        self._unresolve_unlocked_node_left_unexecuted(node)
+        journal.apply(LockChanged(node, node.lock, request.lock))
         return SetLockNodeStateResultSuccess(
             node_name=node_name,
             locked=node.lock,
@@ -5317,8 +5337,7 @@ class NodeManager(EngineScoped):
             except ValueError as err:
                 failed[name] = f"Node not found. Error: {err}"
                 continue
-            node.lock = request.lock
-            self._unresolve_unlocked_node_left_unexecuted(node)
+            journal.apply(LockChanged(node, node.lock, request.lock))
             updated.append(name)
 
         if not updated:
@@ -5332,6 +5351,11 @@ class NodeManager(EngineScoped):
             failed_nodes=failed,
             result_details=details,
         )
+
+    def set_lock(self, node: BaseNode, *, lock: bool) -> None:
+        """Lock or unlock a node. Use `journal.apply(LockChanged(...))` so it can be undone."""
+        node.lock = lock
+        self._unresolve_unlocked_node_left_unexecuted(node)
 
     def _unresolve_unlocked_node_left_unexecuted(self, node: BaseNode) -> None:
         """Unresolve an unlocked node, and everything downstream, unless it resolved by executing.

@@ -124,12 +124,20 @@ class RequestPayload(Payload, ABC):
                 Framework fields (result_details, altered_workflow_state) are always
                 included regardless of what fields specifies. Filtering is skipped
                 entirely on failure results.
+        undo_group: Names the user action a request belongs to. Every edit made by requests that
+                share a group is undone as one step, including the follow-up requests a client
+                sends in reaction to its own results. A client starts a new group for each
+                discrete user input. A request without one is not recorded, so it cannot be
+                undone. Requests sharing the group of an UndoRequest or RedoRequest are the
+                client's reaction to it and are never recorded; the engine tags the requests it
+                issues to carry out an undo or redo with that group too.
     """
 
     broadcast_result: bool = True
     request_id: str | None = None
     failure_log_level: int | None = None
     fields: list[str] | None = None
+    undo_group: str | None = None
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.

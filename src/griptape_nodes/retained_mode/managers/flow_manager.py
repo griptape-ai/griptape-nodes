@@ -16,7 +16,9 @@ import httpx2
 from PIL import Image
 
 from griptape_nodes.common.node_executor import NodeExecutor
+from griptape_nodes.exe_types import journal
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
+from griptape_nodes.exe_types.changes import FlowAdded, FlowRemoved, FlowReparented
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -496,7 +498,25 @@ class FlowManager(EngineScoped):
                 raise ValueError(msg)
             ancestor = self._name_to_parent_name.get(ancestor)
 
-        self._name_to_parent_name[flow_name] = new_parent_flow_name
+        flow = self.get_flow_by_name(flow_name)
+        journal.apply(FlowReparented(flow, self._name_to_parent_name[flow_name], new_parent_flow_name))
+
+    def set_flow_parent(self, flow_name: str, parent_name: str | None) -> None:
+        """Move a flow under another parent. Use `journal.apply(FlowReparented(...))` so it can be undone."""
+        self._name_to_parent_name[flow_name] = parent_name
+
+    def register_flow(self, flow: ControlFlow, parent_name: str | None, referenced_workflow_name: str | None) -> None:
+        """Make a flow part of the workflow. Use `journal.apply(FlowAdded(...))` so it can be undone."""
+        self.engine.object_manager.add_object_by_name(name=flow.name, obj=flow)
+        self._name_to_parent_name[flow.name] = parent_name
+        if referenced_workflow_name is not None:
+            self._flow_to_referenced_workflow_name[flow] = referenced_workflow_name
+
+    def unregister_flow(self, flow: ControlFlow) -> None:
+        """Take a flow out of the workflow. Use `journal.apply(FlowRemoved(...))` so it can be undone."""
+        self.engine.object_manager.del_obj_by_name(flow.name)
+        del self._name_to_parent_name[flow.name]
+        self._flow_to_referenced_workflow_name.pop(flow, None)
 
     def is_referenced_workflow(self, flow: ControlFlow) -> bool:
         """Check if this flow was created by importing a referenced workflow.
@@ -672,13 +692,11 @@ class FlowManager(EngineScoped):
         # when serializing it. It may inform the editor to render it differently.
         workflow_manager = self.engine.workflow_manager
         flow = ControlFlow(name=final_flow_name, engine=self.engine, metadata=request.metadata)
-        self.engine.object_manager.add_object_by_name(name=final_flow_name, obj=flow)
-        self._name_to_parent_name[final_flow_name] = parent_name
-
         # Track referenced workflow if this flow was created within a referenced workflow context
+        referenced_workflow_name = None
         if workflow_manager.has_current_referenced_workflow():
             referenced_workflow_name = workflow_manager.get_current_referenced_workflow()
-            self._flow_to_referenced_workflow_name[flow] = referenced_workflow_name
+        journal.apply(FlowAdded(flow, parent_name, referenced_workflow_name))
 
         # See if we need to push it as the current context.
         if request.set_as_new_context:
@@ -781,13 +799,11 @@ class FlowManager(EngineScoped):
                     return result
 
             # If we've made it this far, we have deleted all the children Flows and their nodes.
-            # Remove the flow from our map.
-            obj_mgr.del_obj_by_name(flow.name)
-            del self._name_to_parent_name[flow.name]
-
-            # Clean up referenced workflow tracking
-            if flow in self._flow_to_referenced_workflow_name:
-                del self._flow_to_referenced_workflow_name[flow]
+            journal.apply(
+                FlowRemoved(
+                    flow, self._name_to_parent_name[flow.name], self._flow_to_referenced_workflow_name.get(flow)
+                )
+            )
 
             # Clean up ControlFlowMachine and DAG orchestrator only if this is the global flow.
             # Isolated subflows have their own machines and should not clear the global state.
@@ -1225,12 +1241,7 @@ class FlowManager(EngineScoped):
         # This ensures dependency graph changes propagate even if values don't change
         # Matches the pattern used in connection deletion (https://github.com/griptape-ai/griptape-nodes/blob/9f299338193edc4a10f60728172c1ad214d1eb46/src/griptape_nodes/retained_mode/managers/flow_manager.py#L1227)
         if not is_control_parameter and not request.initial_setup:
-            target_node.make_node_unresolved(
-                current_states_to_trigger_change_event=set(
-                    {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-                )
-            )
-            self._connections.unresolve_future_nodes(target_node)
+            self._connections.unresolve_node_and_future_nodes(target_node)
 
         # Check if either node is ErrorProxyNode and mark connection modification if not initial_setup
         if not request.initial_setup:
@@ -1386,14 +1397,7 @@ class FlowManager(EngineScoped):
                     # Only try to remove a value where one exists, otherwise it will generate errant warnings.
                     if target_param.name in target_node.parameter_values:
                         target_node.remove_parameter_value(target_param.name)
-                    # It removed it accurately
-                    # Unresolve future nodes that depended on that value
-                    self._connections.unresolve_future_nodes(target_node)
-                    target_node.make_node_unresolved(
-                        current_states_to_trigger_change_event=set(
-                            {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-                        )
-                    )
+                    self._connections.unresolve_node_and_future_nodes(target_node)
                 except KeyError as e:
                     logger.warning(e)
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.

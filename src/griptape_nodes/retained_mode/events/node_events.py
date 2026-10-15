@@ -283,6 +283,7 @@ class SetNodeMetadataRequest(RequestPayload):
     Args:
         metadata: Dictionary of metadata to set (position, display properties, custom data)
         node_name: Name of the node to update metadata for (None for current context node)
+        keys_to_remove: Metadata keys to delete. Applied after `metadata` is merged in.
 
     Results: SetNodeMetadataResultSuccess | SetNodeMetadataResultFailure (node not found, update error)
     """
@@ -290,6 +291,7 @@ class SetNodeMetadataRequest(RequestPayload):
     metadata: dict
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
+    keys_to_remove: list[str] | None = None
 
 
 @dataclass

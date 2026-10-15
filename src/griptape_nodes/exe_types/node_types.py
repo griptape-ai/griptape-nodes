@@ -6,6 +6,7 @@ import uuid
 import warnings
 from abc import ABC
 from collections.abc import Callable, Generator, Iterable, Iterator
+from collections.abc import Set as AbstractSet
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from griptape_nodes.common.strict_mode import STRICT_MODE
 from griptape_nodes.common.strict_mode_checks import RULES
+from griptape_nodes.exe_types import journal
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
@@ -335,11 +337,9 @@ def get_library_names_with_publish_handlers(engine: Engine) -> list[str]:
 class BaseNode(ABC):
     # Owned by a flow
     name: str
-    metadata: dict[Any, Any]
     _parent_group: BaseNode | None
     # Node Context Fields
     current_spotlight_parameter: Parameter | None = None
-    parameter_values: dict[str, Any]
     parameter_output_values: TrackedParameterOutputValues
     _local_objects: LocalObjectScope | None
     stop_flow: bool = False
@@ -358,7 +358,8 @@ class BaseNode(ABC):
     _cancellation_requested: threading.Event  # Event indicating if cancellation has been requested for this node
     _inputs_to_reset_after_execution: set[str]  # Input values a connection teardown deferred until this node finishes
     _deferred_inputs_were_reset: bool  # Whether one of those deferred resets actually fired
-    _parameters_added_after_construction: set[str]
+    # Keyed by parameter name, with no values, so undo records its writes like the node's other state.
+    _parameters_added_after_construction: dict[str, None]
     _parameters_added_during_execution: set[str]
     _engine: Engine | None
 
@@ -367,14 +368,14 @@ class BaseNode(ABC):
         return self.root_ui_element.find_elements_by_type(Parameter)
 
     @property
-    def parameters_added_after_construction(self) -> set[str]:
+    def parameters_added_after_construction(self) -> AbstractSet[str]:
         """Names of parameters the node grew outside its declarative ``__init__``.
 
         A parameter declared in ``__init__`` reappears whenever the node is recreated from its
         create command, even one built from the node's own metadata rather than hardcoded. One
         added later does not, so serialization has to recreate it by hand.
         """
-        return self._parameters_added_after_construction
+        return self._parameters_added_after_construction.keys()
 
     @property
     def parameters_added_during_execution(self) -> set[str]:
@@ -444,10 +445,36 @@ class BaseNode(ABC):
         self._cancellation_requested = threading.Event()
         self._inputs_to_reset_after_execution = set()
         self._deferred_inputs_were_reset = False
-        self._parameters_added_after_construction = set()
+        self._parameters_added_after_construction = journal.JournaledDict(
+            owner=self, aspect=journal.Aspect.ADDED_PARAMETERS
+        )
         self._parameters_added_during_execution = set()
         self._parent_group = None
         self.set_entry_control_parameter(None)
+
+    @property
+    def metadata(self) -> dict[Any, Any]:
+        return self._metadata
+
+    @metadata.setter
+    def metadata(self, value: dict[Any, Any]) -> None:
+        # Metadata is part of the workflow, so its writes are recorded for undo.
+        if type(value) is dict:
+            value = journal.JournaledDict(value, owner=self, aspect=journal.Aspect.METADATA, deep=True)
+        journal.record_attribute(self, "_metadata", value)
+        self._metadata = value
+
+    @property
+    def parameter_values(self) -> dict[str, Any]:
+        return self._parameter_values
+
+    @parameter_values.setter
+    def parameter_values(self, value: dict[str, Any]) -> None:
+        # Values are part of the workflow, so their writes are recorded for undo.
+        if type(value) is dict:
+            value = journal.JournaledDict(value, owner=self, aspect=journal.Aspect.VALUES)
+        journal.record_attribute(self, "_parameter_values", value)
+        self._parameter_values = value
 
     @property
     def engine(self) -> Engine:
@@ -862,7 +889,7 @@ class BaseNode(ABC):
 
     def remove_parameter_element(self, param: BaseNodeElement) -> None:
         self._report_parameter_mutation_if_in_aprocess(parameter_name=param.name, mutation="remove_parameter_element")
-        self._parameters_added_after_construction.discard(param.name)
+        self._parameters_added_after_construction.pop(param.name, None)
         self._parameters_added_during_execution.discard(param.name)
         # Emit event before removal if it's a Parameter
         if isinstance(param, Parameter):
@@ -2111,7 +2138,7 @@ class BaseNode(ABC):
 
         if LibraryRegistry.is_constructing_node():
             return
-        self._parameters_added_after_construction.add(parameter_name)
+        self._parameters_added_after_construction[parameter_name] = None
         if _in_aprocess.get() and not _sanctioned_mutation.get():
             self._parameters_added_during_execution.add(parameter_name)
 

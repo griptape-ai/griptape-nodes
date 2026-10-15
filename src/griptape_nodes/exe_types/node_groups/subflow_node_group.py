@@ -4,6 +4,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
+from griptape_nodes.exe_types import journal
+from griptape_nodes.exe_types.changes import GroupMemberRemoved
 from griptape_nodes.exe_types.core_types import (
     ControlParameter,
     ControlParameterInput,
@@ -107,7 +109,9 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         )
         self.add_parameter(self.execution_environment)
         # Track mapping from proxy parameter name to (original_node, original_param_name)
-        self._proxy_param_to_connections = {}
+        self._proxy_param_to_connections = journal.JournaledDict(
+            owner=self, aspect=journal.Aspect.GROUP_PROXIES, deep=True
+        )
         if "execution_environment" not in self.metadata:
             self.metadata["execution_environment"] = {}
         self.metadata["execution_environment"]["Griptape Nodes Library"] = {
@@ -819,7 +823,6 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         connections = self.engine.flow_manager.get_connections()
         node_names_in_group = set(self.nodes.keys())
-        self.metadata["node_names_in_group"] = list(node_names_in_group)
         self.remap_to_internal(nodes, connections)
         self._map_external_connections_for_nodes(nodes, connections, node_names_in_group)
 
@@ -943,9 +946,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             nodes: Every node the failed add tried to take on
         """
         for node in nodes:
-            node.parent_group = None
-            self.nodes.pop(node.name, None)
-        self.metadata["node_names_in_group"] = list(self.nodes.keys())
+            if node.name in self.nodes:
+                journal.apply(GroupMemberRemoved(self, node))
 
     def _discard_subflow_created_for_a_failed_add(self) -> None:
         """Tear down a subflow that only exists because of an add that then failed in full.
@@ -1269,12 +1271,9 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         connections = self.engine.flow_manager.get_connections()
         for node in nodes:
-            node.parent_group = None
-            self.nodes.pop(node.name)
+            journal.apply(GroupMemberRemoved(self, node))
         for node in nodes:
             self.unmap_node_connections(node, connections)
-
-        self.metadata["node_names_in_group"] = list(self.nodes.keys())
 
         remaining_nodes = list(self.nodes.values())
         if remaining_nodes:

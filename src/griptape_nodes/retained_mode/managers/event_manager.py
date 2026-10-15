@@ -1143,6 +1143,7 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
+        undo_scope = self.engine.undo_manager.begin_dispatch(request)
         try:
             try:
                 # Actually make the handler callback (support both sync and async):
@@ -1154,6 +1155,8 @@ class EventManager(EngineScoped):
                         self._flush_tracked_parameter_changes()
             except Exception as exc:
                 return self._result_for_handler_exception(request, exc, context=result_context)
+            finally:
+                self.engine.undo_manager.end_dispatch(undo_scope)
 
             return self._handle_request_core(
                 request,
@@ -1198,6 +1201,7 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
+        undo_scope = self.engine.undo_manager.begin_dispatch(request)
         try:
             try:
                 result_payload = self._invoke_handler_from_sync(callback, request)
@@ -1208,6 +1212,8 @@ class EventManager(EngineScoped):
                         self._flush_tracked_parameter_changes()
             except Exception as exc:
                 return self._result_for_handler_exception(request, exc, context=result_context)
+            finally:
+                self.engine.undo_manager.end_dispatch(undo_scope)
 
             return self._handle_request_core(
                 request,

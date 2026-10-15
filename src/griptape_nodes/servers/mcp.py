@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import socket
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -467,6 +468,8 @@ async def _call_tool_payload(name: str, arguments: dict[str, Any]) -> str:
         raise ValueError(msg)
 
     request_payload = SUPPORTED_REQUEST_EVENTS[name](**arguments)
+    # Each tool call is an action of its own, so an edit an agent makes can be undone.
+    request_payload.undo_group = request_payload.undo_group or _new_undo_group()
     result = await _dispatch_to_engine(request_payload, timeout_ms=_SINGLE_REQUEST_TIMEOUT_MS)
     mcp_server_logger.debug("Got result: %s", result)
     return json.dumps(_trim_response(result))
@@ -479,9 +482,18 @@ async def _dispatch_batch_to_engine(pairs: list[tuple[str, dict[str, Any]]], tim
     in their slot (return_exceptions semantics) so one bad inner request does not abort the rest;
     _trim_batch_results maps those exceptions to ok=false responses.
     """
-    coros = [_dispatch_to_engine(SUPPORTED_REQUEST_EVENTS[request_type](**payload)) for request_type, payload in pairs]
+    # One batch is one action, so it undoes as one step.
+    undo_group = _new_undo_group()
+    requests = [SUPPORTED_REQUEST_EVENTS[request_type](**payload) for request_type, payload in pairs]
+    for request in requests:
+        request.undo_group = request.undo_group or undo_group
+    coros = [_dispatch_to_engine(request) for request in requests]
     gather = asyncio.gather(*coros, return_exceptions=True)
     return await asyncio.wait_for(gather, timeout=timeout_ms / 1000)
+
+
+def _new_undo_group() -> str:
+    return f"mcp:{uuid.uuid4().hex}"
 
 
 def start_mcp_server(sock: socket.socket) -> None:

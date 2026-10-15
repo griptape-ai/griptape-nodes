@@ -3,6 +3,8 @@ import re
 from re import Pattern
 from typing import Any
 
+from griptape_nodes.exe_types import journal
+from griptape_nodes.exe_types.changes import ObjectRenamed
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     Parameter,
@@ -78,19 +80,10 @@ class ObjectManager(EngineScoped):
             # We'll use the next available name.
             final_name = next_name
 
-            # Let the object's manager know. TODO: https://github.com/griptape-ai/griptape-nodes/issues/869
-        match source_obj:
-            case ControlFlow():
-                self.engine.flow_manager.handle_flow_rename(old_name=request.object_name, new_name=final_name)
-            case BaseNode():
-                self.engine.node_manager.handle_node_rename(old_name=request.object_name, new_name=final_name)
-            case _:
-                details = f"Attempted to rename an object named '{request.object_name}', but that object wasn't of a type supported for rename."
-                return RenameObjectResultFailure(next_available_name=None, result_details=details)
-
-        # Update the object table.
-        self._name_to_objects[final_name] = source_obj
-        del self._name_to_objects[request.object_name]
+        if not isinstance(source_obj, ControlFlow | BaseNode):
+            details = f"Attempted to rename an object named '{request.object_name}', but that object wasn't of a type supported for rename."
+            return RenameObjectResultFailure(next_available_name=None, result_details=details)
+        journal.apply(ObjectRenamed(self, source_obj, request.object_name, final_name))
 
         details = f"Successfully renamed object '{request.object_name}' to '{final_name}'."
         log_level = logging.DEBUG
@@ -247,6 +240,17 @@ class ObjectManager(EngineScoped):
             raise ValueError(msg)
 
         return name_to_return
+
+    def rename_object(self, old_name: str, new_name: str) -> None:
+        """Rename a node or flow everywhere it is known by name. Use `journal.apply(ObjectRenamed(...))`."""
+        obj = self._name_to_objects[old_name]
+        # Let the object's manager know. TODO: https://github.com/griptape-ai/griptape-nodes/issues/869
+        if isinstance(obj, ControlFlow):
+            self.engine.flow_manager.handle_flow_rename(old_name=old_name, new_name=new_name)
+        else:
+            self.engine.node_manager.handle_node_rename(old_name=old_name, new_name=new_name)
+        self._name_to_objects[new_name] = obj
+        del self._name_to_objects[old_name]
 
     def add_object_by_name(self, name: str, obj: object) -> None:
         if name in self._name_to_objects:
