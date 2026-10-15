@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.app_events import EngineHeartbeatRequest, EngineHeartbeatResultSuccess
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
@@ -535,3 +536,29 @@ class TestHeartbeat:
         assert isinstance(result, EngineHeartbeatResultSuccess), result
         assert result.is_executing is False
         assert result.current_workflow is None
+
+
+class TestResultWireFormat:
+    def test_the_echoed_request_names_the_workflow_it_acted_on(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        queue = _queued_events(engine)
+        request = ListNodesInFlowRequest()
+
+        engine.handle_request(request)
+
+        result = next(e.wrapped_event for e in _drain(queue) if isinstance(e, GriptapeNodeEvent))
+        wire = converters.engine.unstructure(result)
+        assert wire["workflow_id"] == a.workflow_id
+        assert wire["request"]["workflow_id"] == a.workflow_id
+        assert request.workflow_id is None
+
+    def test_a_host_requests_echo_names_no_workflow(self, engine: Engine) -> None:
+        _open_new_workflow_with_note(engine, "NoteA")
+        queue = _queued_events(engine)
+
+        engine.handle_request(ListOpenWorkflowsRequest())
+
+        result = next(e.wrapped_event for e in _drain(queue) if isinstance(e, GriptapeNodeEvent))
+        wire = converters.engine.unstructure(result)
+        assert wire["scope"] == "host"
+        assert "workflow_id" not in wire["request"]

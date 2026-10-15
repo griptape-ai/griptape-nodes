@@ -25,6 +25,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultDetail,
     ResultPayload,
+    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.path_filter import apply_path_tree, build_path_tree
@@ -236,6 +237,11 @@ _RESULT_FRAMEWORK_FIELDS = frozenset(field.name for field in dataclass_fields(Re
 def _unstructure_result(event: EventResult, conv: Converter) -> dict[str, Any]:
     result = _envelope(event, exclude={"request", "result"})
     result["request"] = _unstructure(event.request, conv)
+    # The echoed request names the workflow it acted on, as the envelope does, for clients that see the
+    # echo but not the envelope: the editor's bridge forwards a result's request and body only. The
+    # request object itself is left as the caller built it.
+    if isinstance(event.request, WorkflowRequest) and event.workflow_id is not None:
+        result["request"]["workflow_id"] = event.workflow_id
     result_dict = _unstructure(event.result, conv)
     if event.request.fields is not None and event.result.succeeded():
         tree = build_path_tree(event.request.fields)
