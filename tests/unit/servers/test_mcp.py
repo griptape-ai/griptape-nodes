@@ -276,6 +276,13 @@ class TestListTools:
         assert {"CancelFlowRequest", "UnresolveFlowRequest"} <= names
 
     @pytest.mark.asyncio
+    async def test_advertises_flow_validation_request(self) -> None:
+        result = await list_tools(_NO_CONTEXT, None)
+
+        names = {tool.name for tool in result.tools}
+        assert "ValidateFlowDependenciesRequest" in names
+
+    @pytest.mark.asyncio
     async def test_every_tool_carries_an_object_input_schema(self) -> None:
         result = await list_tools(_NO_CONTEXT, None)
 
