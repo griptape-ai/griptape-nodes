@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeGuard
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterList, ParameterMode
 from griptape_nodes.exe_types.parameter_mutation import sanctioned_parameter_mutation
@@ -39,7 +39,7 @@ class ListRows:
         # Lists a dropped hook write has already been warned about.
         self._warned: set[str] = set()
 
-    def holds_no_value(self, parameter: Parameter) -> bool:
+    def holds_no_value(self, parameter: Parameter) -> TypeGuard[ParameterList]:
         """Whether `parameter` is a list read from its rows, which keeps no value of its own."""
         if not isinstance(parameter, ParameterList):
             return False
@@ -95,8 +95,7 @@ class ListRows:
         """
         if not isinstance(parameter, ParameterList) or not isinstance(value, list):
             return False
-        modes = parameter.allowed_modes
-        if ParameterMode.INPUT not in modes and ParameterMode.PROPERTY not in modes:
+        if not _accepts_whole_list(parameter):
             return False
         if value != handle_container_parameter(self._node, parameter):
             self._replace(parameter, value)
@@ -116,9 +115,7 @@ class ListRows:
         if not isinstance(parameter, ParameterList) or value is None:
             # None is how a value is cleared, and keeps its old meaning.
             return False
-        modes = parameter.allowed_modes
-        if ParameterMode.INPUT not in modes and ParameterMode.PROPERTY not in modes:
-            # An output-only list is built by its own node, row by row.
+        if not _accepts_whole_list(parameter):
             return False
         if isinstance(value, list) and value == handle_container_parameter(self._node, parameter):
             # Already what the rows hold.
@@ -235,7 +232,7 @@ class ListRows:
             node.before_value_set(parameter=container, value=value)
             node.after_value_set(parameter=container, value=value)
 
-    def _warn_hook_write(self, parameter: Parameter, value: Any) -> None:
+    def _warn_hook_write(self, parameter: ParameterList, value: Any) -> None:
         """Warn, once per list, that a hook's write to it was ignored. Silent when it wouldn't change anything."""
         name = parameter.name
         if name in self._warned or value == handle_container_parameter(self._node, parameter):
@@ -259,10 +256,14 @@ class ListRows:
         return connected & parameter_names
 
 
-def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> list[Any] | None:
-    """Build a container's value from its rows, or None if `parameter` is not a container."""
-    if not isinstance(parameter, ParameterContainer):
-        return None
+def _accepts_whole_list(parameter_list: ParameterList) -> bool:
+    """Whether a whole list can be written to the list's rows. An output-only list is built by its own node, row by row."""
+    modes = parameter_list.allowed_modes
+    return ParameterMode.INPUT in modes or ParameterMode.PROPERTY in modes
+
+
+def handle_container_parameter(current_node: BaseNode, parameter: ParameterContainer) -> list[Any]:
+    """Build a container's value from its rows."""
     build_parameter_value = []
     for child in parameter.find_elements_by_type(Parameter, find_recursively=False):
         # Raw, because what this builds is cached into the container's own entry in

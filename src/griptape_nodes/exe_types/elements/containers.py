@@ -176,15 +176,6 @@ class ParameterList(ParameterContainer):
         return self._max_items
 
     @property
-    def item_converters(self) -> list[Callable[[Any], Any]]:
-        """Converters run on each item, whether it arrives in a row or in a whole list.
-
-        `converters` run on the list as a whole, and rows inherit them as well. Use these to change one
-        item at a time, such as turning a path into an artifact.
-        """
-        return list(self._item_converters)
-
-    @property
     def collapsed(self) -> bool | None:
         return self._collapsed
 
@@ -383,7 +374,7 @@ class ParameterList(ParameterContainer):
             allowed_modes=self.allowed_modes,
             ui_options=self.ui_options,
             traits=self._original_traits,
-            converters=[*self._item_converters, *self.converters],
+            converters=self.converters,
             validators=self.validators,
             settable=self.settable,
             user_defined=True,
@@ -477,7 +468,7 @@ class ParameterList(ParameterContainer):
                 raise ValueError(msg)
 
         if isinstance(child, Parameter):
-            # A row restored from a saved workflow is built without converters.
+            # Rows get the item converters here, including rows restored from a saved workflow.
             missing = [converter for converter in self._item_converters if converter not in child._converters]
             child._converters = [*missing, *child._converters]
         super().add_child(child)

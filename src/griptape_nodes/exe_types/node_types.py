@@ -1245,9 +1245,7 @@ class BaseNode(ABC):
         if isinstance(param, ParameterList) and self._has_connected_whole_list_value(param):
             return self.parameter_values[param_name]
         if isinstance(param, ParameterContainer):
-            value = handle_container_parameter(self, param)
-            if value is not None:
-                return value
+            return handle_container_parameter(self, param)
         if param_name in self.parameter_values:
             value = self.parameter_values[param_name]
         else:
