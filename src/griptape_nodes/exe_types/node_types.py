@@ -27,7 +27,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.list_rows import ListRows, handle_container_parameter, library_fills_list_rows
+from griptape_nodes.exe_types.list_rows import ListRows, handle_container_parameter
 from griptape_nodes.exe_types.local_objects import LocalObjectScope
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.parameter_mutation import _sanctioned_mutation
@@ -1106,7 +1106,9 @@ class BaseNode(ABC):
         if parameter is None:
             err = f"Attempted to set value for Parameter '{param_name}' but no such Parameter could be found."
             raise KeyError(err)
-        if self._fill_list_rows_from_node_code(parameter, value, initial_setup=initial_setup):
+        if self._list_rows.write_from_node(
+            parameter, value, initial_setup=initial_setup, running=_running_node.get() is self
+        ):
             return
         # Perform any conversions to the value based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
@@ -1143,7 +1145,7 @@ class BaseNode(ABC):
         if parameter.parent_container_name is not None:
             container = self.get_parameter_by_name(parameter.parent_container_name)
             if isinstance(container, ParameterContainer):
-                self._list_rows.rebuild(container, initial_setup=initial_setup)
+                self._list_rows.rows_changed(container, initial_setup=initial_setup)
 
     @staticmethod
     def _convert_value(parameter: Parameter, value: Any) -> Any:
@@ -1154,21 +1156,6 @@ class BaseNode(ABC):
         for converter in parameter.converters:
             candidate_value = converter(candidate_value)
         return candidate_value
-
-    def _fill_list_rows_from_node_code(self, parameter: Parameter, value: Any, *, initial_setup: bool) -> bool:
-        """Turn a whole list this node writes into the list's rows, if its library opted in. Returns whether it did.
-
-        A library opts in by declaring an `engine_version` of at least `LIST_WRITES_FILL_ROWS_ENGINE_VERSION`.
-        Older libraries write a list beside its rows and read it back, so their writes keep doing that.
-        """
-        if initial_setup or not isinstance(parameter, ParameterList):
-            return False
-        if _running_node.get() is self:
-            # Rows added during a run do not reach the node's copy in the orchestrator.
-            return False
-        if not library_fills_list_rows(self.metadata.get("library")):
-            return False
-        return self._list_rows.set_as_rows_if_unconnected(parameter, value)
 
     def _also_record_as_result(self, parameter: Parameter, value: Any) -> None:
         """Additionally record `value` in `parameter_output_values` if it is something this run produced.
@@ -1299,10 +1286,13 @@ class BaseNode(ABC):
         if parameter is None:
             err = f"Attempted to remove value for Parameter '{param_name}' but parameter doesn't exist."
             raise KeyError(err)
-        if param_name in self.parameter_values:
+        if isinstance(parameter, ParameterContainer):
+            # Drops a value a connection handed the list, and leaves its rows as they are.
+            self.parameter_values.pop(param_name, None)
+        elif param_name in self.parameter_values:
             # Reset the parameter to default.
             default_val = parameter.default_value
-            # A row's set also stores its list again.
+            # A row's set also tells its list.
             self.set_parameter_value(param_name, default_val)
         else:
             err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
@@ -1867,8 +1857,7 @@ class BaseNode(ABC):
     def _has_connected_whole_list_value(self, parameter_list: ParameterList) -> bool:
         """Whether a ParameterList was handed an entire list through a connection to the list itself.
 
-        Without that connection, `parameter_values[list_name]` mirrors the child rows, and the rows
-        are read directly.
+        Without that connection the list has no stored value, and is read from its rows.
 
         Warns when the incoming list overrides manually-set rows or overruns `max_items`, since both
         are silent data loss otherwise.

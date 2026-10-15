@@ -1,21 +1,16 @@
-"""Keeps a node's list parameters and their rows in step.
+"""A node's list parameters and their rows.
 
-A list nothing is connected to holds its items in rows, one child parameter per item. Its own entry in
-`parameter_values` is built from those rows, and is what execution, saving and `GetParameterValueRequest`
-read, so every edit to the rows stores it again.
+A list nothing is connected to holds its items in rows, one child parameter per item, and has no value of
+its own: reading it builds it from the rows. Only a list fed by a connection to the list itself stores the
+whole list it was handed.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
-
-from packaging.version import InvalidVersion
-from packaging.version import Version as PackagingVersion
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterList, ParameterMode
 from griptape_nodes.exe_types.parameter_mutation import sanctioned_parameter_mutation
-from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
@@ -25,19 +20,47 @@ if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import BaseNodeElement
     from griptape_nodes.exe_types.node_types import BaseNode
 
-logger = logging.getLogger("griptape_nodes")
-
-# A library declaring this engine version or later has a whole list its nodes write become the list's rows.
-LIST_WRITES_FILL_ROWS_ENGINE_VERSION = PackagingVersion("0.105.0")
-
 
 class ListRows:
-    """The rows of one node's lists: replacing them, and storing each list again when they change."""
+    """The rows of one node's lists: replacing them, and telling the node when they change."""
 
     def __init__(self, node: BaseNode) -> None:
         self._node = node
-        # Lists whose rows `_replace` is replacing. They are stored once, when every row is in place.
+        # Lists whose rows `_replace` is replacing. The node hears about each once, when every row is in place.
         self._being_replaced: set[str] = set()
+        # Lists whose own `before_value_set` / `after_value_set` hooks are running.
+        self._in_hooks: set[str] = set()
+
+    def holds_no_value(self, parameter: Parameter) -> bool:
+        """Whether `parameter` is a list read from its rows, which keeps no value of its own."""
+        if not isinstance(parameter, ParameterList):
+            return False
+        if ParameterMode.INPUT not in parameter.allowed_modes:
+            return True
+        return not self._node._param_has_incoming_connection(parameter.name)
+
+    def write_from_node(self, parameter: Parameter, value: Any, *, initial_setup: bool, running: bool) -> bool:
+        """Handle the node's own write to a list that keeps no value. Returns False for any other parameter.
+
+        A whole list becomes the rows, as it does from a request, except where that would undo the rows:
+
+        - while the node is running, since rows it adds then don't reach the orchestrator's copy. Its
+          result is recorded instead.
+        - while loading, which sets the rows next.
+        - from the list's own hooks, which is where libraries written for older engines rewrite their
+          list to convert its items. Those use `item_converters` now.
+        """
+        if not self.holds_no_value(parameter):
+            return False
+        name = parameter.name
+        self._node.parameter_values.pop(name, None)
+        if running:
+            self._node._also_record_as_result(parameter, value)
+            return True
+        if initial_setup or name in self._being_replaced or name in self._in_hooks:
+            return True
+        self.set_as_rows_if_unconnected(parameter, value)
+        return True
 
     def set_as_rows_if_unconnected(self, parameter: Parameter, value: Any) -> bool:
         """Write a whole list to the rows of an unconnected list. Returns whether it did.
@@ -60,16 +83,6 @@ class ListRows:
         if isinstance(value, list) and value == handle_container_parameter(self._node, parameter):
             # Already what the rows hold.
             return False
-        if parameter.name in self._being_replaced:
-            # Storing it would leave the list's value and its rows disagreeing, and replacing the rows
-            # again would undo the rows being set.
-            logger.warning(
-                "Node '%s' set list '%s' while its items were being set, so the write was ignored. "
-                "Convert each item with the list's item_converters instead.",
-                self._node.name,
-                parameter.name,
-            )
-            return True
         if self._node._param_has_incoming_connection(parameter.name):
             # A connected list is read whole, and keeps the value as it arrived.
             return False
@@ -77,18 +90,18 @@ class ListRows:
         return True
 
     def row_removed(self, parameter_list: ParameterList, row: BaseNodeElement) -> None:
-        """Drop a removed row's value, and take it out of the list."""
+        """Drop a removed row's value, and tell the node its list changed."""
         self._node.parameter_values.pop(row.name, None)
-        self.rebuild(parameter_list)
+        self.rows_changed(parameter_list)
 
-    def rebuild(self, container: ParameterContainer, *, initial_setup: bool = False) -> None:
-        """Store a container's value again, built from its rows, after a row is set, removed or moved."""
+    def rows_changed(self, container: ParameterContainer, *, initial_setup: bool = False) -> None:
+        """Tell the node a container's rows changed: a row was set, removed or moved."""
         if container.name in self._being_replaced:
             return
-        if ParameterMode.INPUT in container.allowed_modes and self._node._param_has_incoming_connection(container.name):
-            # A connected list holds the value its connection delivered.
+        if not self.holds_no_value(container):
+            # A connected list holds the value its connection delivered, which the rows don't change.
             return
-        self._store(container, initial_setup=initial_setup)
+        self._notify(container, initial_setup=initial_setup)
 
     def values_for_dispatch(self) -> dict[str, Any]:
         """`parameter_values`, with each list as the node reads it and without its rows, to send with `ExecuteNodeRequest`.
@@ -146,7 +159,7 @@ class ListRows:
             for item in items:
                 row = parameter_list.add_child_parameter()
                 node.set_parameter_value(row.name, item)
-            self._store(parameter_list, initial_setup=False)
+            self._notify(parameter_list, initial_setup=False)
         except Exception:
             # Converters, validators and hooks may raise anything. Undo, then let it propagate unchanged.
             self._restore(parameter_list, old_rows, old_values)
@@ -162,27 +175,28 @@ class ListRows:
                 node.remove_parameter_element(row)
         for row in rows:
             parameter_list.add_child(row)
+        # Restored without running hooks, which could raise again and hide the error being undone.
         node.parameter_values.update(values)
-        # Written without running hooks, which could raise again and hide the error being undone.
-        node.parameter_values[parameter_list.name] = handle_container_parameter(node, parameter_list)
 
-    def _store(self, container: ParameterContainer, *, initial_setup: bool) -> None:
-        """Build a container's value from its rows and store it, running what a set of that value would.
+    def _notify(self, container: ParameterContainer, *, initial_setup: bool) -> None:
+        """Run the container's validators and hooks on the value its rows now build.
 
-        Its converters, validators and hooks run, but not a list's item converters: the rows ran those.
+        Its converters don't run: each row ran them on its own item. The value isn't stored, since
+        reading the list builds it again. A running node records it as its result.
         """
         node = self._node
         value = handle_container_parameter(node, container)
-        for converter in container.converters:
-            value = converter(value)
         for validator in container.validators:
             validator(container, value)
-        if not initial_setup:
-            value = node.before_value_set(parameter=container, value=value)
-        node.parameter_values[container.name] = value
         node._also_record_as_result(container, value)
-        if not initial_setup:
+        if initial_setup:
+            return
+        self._in_hooks.add(container.name)
+        try:
+            node.before_value_set(parameter=container, value=value)
             node.after_value_set(parameter=container, value=value)
+        finally:
+            self._in_hooks.discard(container.name)
 
     def _connected_parameter_names(self, parameter_names: set[str]) -> set[str]:
         """Which of `parameter_names` have a connection in either direction."""
@@ -193,21 +207,6 @@ class ListRows:
         connected = {connection.target_parameter_name for connection in result.incoming_connections}
         connected.update(connection.source_parameter_name for connection in result.outgoing_connections)
         return connected & parameter_names
-
-
-def library_fills_list_rows(library_name: str | None) -> bool:
-    """Whether a library declares an engine version where a whole list its nodes write fills the rows."""
-    if not library_name:
-        return False
-    try:
-        library = LibraryRegistry.get_library(library_name)
-    except KeyError:
-        return False
-    try:
-        declared = PackagingVersion(library.get_metadata().engine_version)
-    except InvalidVersion:
-        return False
-    return declared >= LIST_WRITES_FILL_ROWS_ENGINE_VERSION
 
 
 def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> list[Any] | None:

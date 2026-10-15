@@ -492,12 +492,12 @@ class ParameterList(ParameterContainer):
             )
 
     def move_child(self, from_index: int, to_index: int) -> None:
-        """Move the row at `from_index` to `to_index`, then store the list again in its new order."""
+        """Move the row at `from_index` to `to_index`, then tell the node its list changed."""
         row = self.get_child_parameters()[from_index]
         self._children.remove(row)
         self._children.insert(to_index, row)
         if self._node_context is not None:
-            self._node_context._list_rows.rebuild(self)
+            self._node_context._list_rows.rows_changed(self)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
         """Override to mark parent node as unresolved when children are removed.

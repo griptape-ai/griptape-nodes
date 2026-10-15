@@ -2628,6 +2628,9 @@ class NodeManager(EngineScoped):
         # Output values take priority (they represent the result of execution).
         if param_name in node.parameter_output_values:
             data_value = node.parameter_output_values[param_name]
+        elif isinstance(parameter, ParameterContainer):
+            # A list is read from its rows, unless a connection handed it a whole list.
+            data_value = node._get_raw_parameter_value(param_name)
         elif param_name in node.parameter_values:
             data_value = node.parameter_values[param_name]
         else:
@@ -3656,7 +3659,8 @@ class NodeManager(EngineScoped):
             for param in node.parameters:
                 if param.name in node.parameter_values:
                     continue
-                if param.default_value is None:
+                # A list is read from its rows, and a stored default would hide them.
+                if param.default_value is None or isinstance(param, ParameterContainer):
                     continue
                 node.parameter_values[param.name] = param.default_value
             if self.engine.library_manager.is_worker:

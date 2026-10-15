@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.local_objects import cache_outputs_for_egress
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_groups.subflow_node_group import SubflowNodeGroup
@@ -199,6 +199,23 @@ class _ComputedValueNode(DataNode):
         pass
 
 
+class _ListNode(DataNode):
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata)
+        self.add_parameter(
+            ParameterList(
+                name="items",
+                input_types=["str"],
+                type="str",
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+    def process(self) -> None:
+        return None
+
+
 class _GroupNode(BaseNodeGroup):
     """Minimal concrete BaseNodeGroup (not a SubflowNodeGroup) for group-serialization coverage."""
 
@@ -272,6 +289,7 @@ def library_name(engine: Engine) -> Generator[str, None, None]:
         _RunGrownParameterNode, NodeMetadata(category="test", description="d", display_name="Run Grown")
     )
     library.register_new_node_type(_GroupNode, NodeMetadata(category="test", description="d", display_name="Group"))
+    library.register_new_node_type(_ListNode, NodeMetadata(category="test", description="d", display_name="List"))
     engine.handle_request(
         EnsureWorkflowAndFlowRequest(workflow_name="serialization_wf", flow_name="serialization_flow")
     )
@@ -1061,3 +1079,22 @@ class TestLocalObjectIdentityIsNeverCopied:
 
         assert released == []
         assert engine.resource_manager.get_local_object(key, owner=original.local_objects.owner) is not None
+
+
+class TestAListRoundTrip:
+    """A list keeps no value of its own, so its rows alone have to carry it through a save."""
+
+    def test_its_items_come_back(self, engine: Engine, library_name: str) -> None:
+        result = engine.handle_request(
+            CreateNodeRequest(node_type="_ListNode", specific_library_name=library_name, node_name="Lister")
+        )
+        assert isinstance(result, CreateNodeResultSuccess), result
+        set_result = engine.handle_request(
+            SetParameterValueRequest(node_name="Lister", parameter_name="items", value=["a", "b"])
+        )
+        assert isinstance(set_result, SetParameterValueResultSuccess), set_result
+
+        copy = _round_trip(engine, "Lister")
+
+        assert copy.get_parameter_value("items") == ["a", "b"]
+        assert "items" not in copy.parameter_values
