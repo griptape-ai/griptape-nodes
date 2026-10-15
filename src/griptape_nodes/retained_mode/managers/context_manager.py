@@ -323,6 +323,7 @@ class ContextManager(EngineScoped):
                 return SetWorkflowContextFailure(result_details=msg)
 
         self.push_workflow(resolved_name, working_directory=working_directory)
+        self.engine.open_workflows_manager.announce_change()
         msg = f"Successfully set the Workflow '{resolved_name}' as the Current Context."
         return SetWorkflowContextSuccess(workflow_name=resolved_name, result_details=msg)
 

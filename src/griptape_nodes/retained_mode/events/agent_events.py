@@ -7,11 +7,11 @@ from griptape_nodes.drivers.cloud_models import ProviderCatalogEntry, ProviderID
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     HostRequest,
+    OptionalWorkflowRequest,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     SkipTheLineMixin,
     WorkflowNotAlteredMixin,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -79,7 +79,7 @@ class RunAgentRequestArtifact:
 
 @dataclass
 @PayloadRegistry.register
-class RunAgentRequest(WorkflowRequest):
+class RunAgentRequest(OptionalWorkflowRequest):
     """Run an agent with input and optional artifacts.
 
     Use when: Executing conversational AI interactions, processing user queries,
@@ -177,7 +177,7 @@ class ToolApprovalDecision:
 
 @dataclass
 @PayloadRegistry.register
-class ResolveToolApprovalsRequest(WorkflowRequest):
+class ResolveToolApprovalsRequest(OptionalWorkflowRequest):
     """Answer the tool calls a paused agent turn is waiting on, and continue the turn.
 
     Use when: The user picks "Approve once", "Approve for conversation", or "Deny"

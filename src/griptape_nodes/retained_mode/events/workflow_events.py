@@ -201,7 +201,7 @@ class RegisterWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class ImportWorkflowRequest(WorkflowRequest):
+class ImportWorkflowRequest(HostRequest):
     """Import and register a workflow from a file.
 
     Use when: Importing workflows from external sources, batch workflow imports,

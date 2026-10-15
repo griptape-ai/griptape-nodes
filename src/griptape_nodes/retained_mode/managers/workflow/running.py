@@ -263,6 +263,8 @@ class WorkflowRunner(EngineScoped):
                 await self.engine.object_manager.clear_current_workflow()
                 return RunWorkflowFromRegistryResultFailure(result_details=ResultDetails(*result_messages))
 
+        self.engine.open_workflows_manager.announce_change()
+
         # Success!
         result_messages = []
         if context_warning:

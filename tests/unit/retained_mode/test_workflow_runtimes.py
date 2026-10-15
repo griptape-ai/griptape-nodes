@@ -37,6 +37,7 @@ from griptape_nodes.retained_mode.events.open_workflow_events import (
     OpenWorkflowRequest,
     OpenWorkflowResultFailure,
     OpenWorkflowResultSuccess,
+    OpenWorkflowsChanged,
 )
 from griptape_nodes.retained_mode.events.os_events import GetFileInfoRequest
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
@@ -140,6 +141,16 @@ class TestOpenWorkflow:
         assert note_a is not note_b
         assert note_a.workflow_id == a.workflow_id
         assert note_b.workflow_id == b.workflow_id
+
+    def test_setting_a_workflow_context_announces_the_change(self, engine: Engine) -> None:
+        queue = _queued_events(engine)
+
+        context = engine.handle_request(SetWorkflowContextRequest(display_name="Single"))
+
+        assert context.succeeded(), context
+        assert any(
+            isinstance(event, AppEvent) and isinstance(event.payload, OpenWorkflowsChanged) for event in _drain(queue)
+        )
 
 
 class TestRequestTargeting:
