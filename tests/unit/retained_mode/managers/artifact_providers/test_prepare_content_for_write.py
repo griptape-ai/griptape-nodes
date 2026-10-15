@@ -113,49 +113,18 @@ class TestImageArtifactProviderPrepareContentForWrite:
         assert result == b""
 
 
-class TestArtifactManagerPrepareContentForWrite:
-    """Tests for ArtifactManager.prepare_content_for_write."""
+class TestArtifactManagerProviderForWrite:
+    """Tests for ArtifactManager.provider_for_write."""
 
-    def test_returns_data_unchanged_for_unknown_extension(self, engine: Engine) -> None:
-        """Test that data is returned unchanged when no provider handles the extension."""
-        artifact_manager = engine.artifact_manager
-        data = b"some binary data"
+    def test_returns_none_for_unknown_extension(self, engine: Engine) -> None:
+        assert engine.artifact_manager.provider_for_write("archive.xyz_unknown") is None
 
-        result = artifact_manager.prepare_content_for_write(data, "archive.xyz_unknown", {"k": "v"})
+    def test_returns_none_for_empty_extension(self, engine: Engine) -> None:
+        assert engine.artifact_manager.provider_for_write("no_extension_file") is None
 
-        assert result is data
-
-    def test_returns_data_unchanged_for_empty_extension(self, engine: Engine) -> None:
-        """Test that data is returned unchanged when filename has no extension."""
-        artifact_manager = engine.artifact_manager
-        data = b"some binary data"
-
-        result = artifact_manager.prepare_content_for_write(data, "no_extension_file", {"k": "v"})
-
-        assert result is data
-
-    def test_dispatches_to_provider_for_known_extension(self, engine: Engine) -> None:
-        """Test that both halves dispatch to the image provider for .png files."""
-        artifact_manager = engine.artifact_manager
-        artifact_manager.on_handle_register_artifact_provider_request(
+    def test_returns_the_image_provider_for_png(self, engine: Engine) -> None:
+        engine.artifact_manager.on_handle_register_artifact_provider_request(
             RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
         )
-        original_bytes = b"fake png bytes"
-        processed_bytes = b"fake png bytes with metadata"
-        metadata = {"gtn_saved_at": "2024-01-01T00:00:00+00:00"}
 
-        mock_image = MagicMock()
-        mock_image.format = "PNG"
-        mock_driver = MagicMock()
-        mock_driver.inject_metadata.return_value = processed_bytes
-
-        with (
-            patch(COLLECT_PATH, return_value=metadata),
-            patch(IMAGE_OPEN_PATH, return_value=mock_image),
-            patch(DRIVER_REGISTRY_PATH, return_value=mock_driver),
-        ):
-            collected = artifact_manager.collect_metadata_for_write("output.png")
-            result = artifact_manager.prepare_content_for_write(original_bytes, "output.png", collected)
-
-        assert result == processed_bytes
-        mock_driver.inject_metadata.assert_called_once_with(mock_image, metadata)
+        assert isinstance(engine.artifact_manager.provider_for_write("output.png"), ImageArtifactProvider)

@@ -228,36 +228,16 @@ class ArtifactManager(EngineScoped):
                 return sniffed
         return None
 
-    def collect_metadata_for_write(self, file_name: str) -> dict[str, str]:
-        """Collect the metadata the file's provider embeds on write, or {} if it embeds none.
+    def provider_for_write(self, file_name: str) -> BaseArtifactProvider | None:
+        """The provider that collects and embeds write metadata for `file_name`, or None.
 
-        Reads engine state, so call it on the event loop.
+        Reads the provider registry, so call it on the event loop. The caller collects metadata
+        with the provider on the loop and runs its `prepare_content_for_write` on a worker thread.
 
         Args:
             file_name: Filename including extension
         """
-        provider = self._provider_for_format(Path(file_name).suffix.lstrip(".").lower())
-        if provider is None:
-            return {}
-        return provider.collect_metadata_for_write(file_name)
-
-    def prepare_content_for_write(self, data: bytes, file_name: str, metadata: dict[str, str]) -> bytes:
-        """Embed `metadata` from `collect_metadata_for_write` into the file's bytes.
-
-        Touches no engine state, so it is safe on a worker thread.
-
-        Args:
-            data: Raw file bytes
-            file_name: Filename including extension
-            metadata: What `collect_metadata_for_write` returned for this file
-
-        Returns:
-            Processed bytes, or original bytes if no provider handles this extension
-        """
-        provider = self._provider_for_format(Path(file_name).suffix.lstrip(".").lower())
-        if provider is None:
-            return data
-        return provider.prepare_content_for_write(data, file_name, metadata)
+        return self._provider_for_format(Path(file_name).suffix.lstrip(".").lower())
 
     def get_write_vetting_policy(self, detected_format: str) -> WriteVettingPolicy | None:
         """Return the vetting mode the format's provider needs, or ``None``.
@@ -363,8 +343,8 @@ class ArtifactManager(EngineScoped):
 
         Centralizes the "which class wins when multiple providers claim the
         same format" decision so ``check_write_format_from_bytes``,
-        ``check_write_format_from_path``, ``check_read_permission``,
-        ``collect_metadata_for_write``, and ``prepare_content_for_write`` don't drift on it.
+        ``check_write_format_from_path``, ``check_read_permission``, and
+        ``provider_for_write`` don't drift on it.
         Currently just "first registered class wins" per the provider
         registry order; ambiguity handling is tracked at
         https://github.com/griptape-ai/griptape-nodes/issues/4027.

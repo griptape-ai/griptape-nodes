@@ -17,6 +17,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
+from unittest.mock import MagicMock
 
 import pytest
 from PIL import Image
@@ -97,10 +98,10 @@ def slow_metadata_injection(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> 
     """Make the metadata injection a write does (a full image re-encode) wait for the test."""
     step = _SlowStep()
     engine.config_manager.set_config_value("auto_inject_workflow_metadata", True)
-    monkeypatch.setattr(engine.artifact_manager, "collect_metadata_for_write", lambda _name: {"k": "v"})
-    monkeypatch.setattr(
-        engine.artifact_manager, "prepare_content_for_write", lambda data, _name, _metadata: step.run(data)
-    )
+    provider = MagicMock()
+    provider.collect_metadata_for_write.return_value = {"k": "v"}
+    provider.prepare_content_for_write.side_effect = lambda data, _name, _metadata: step.run(data)
+    monkeypatch.setattr(engine.artifact_manager, "provider_for_write", lambda _name: provider)
     return step
 
 
