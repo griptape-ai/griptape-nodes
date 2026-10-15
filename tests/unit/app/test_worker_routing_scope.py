@@ -18,12 +18,20 @@ import pytest
 from griptape_nodes.app.worker_routing import (
     LOCAL_ONLY_REQUEST_TYPES,
     RemoteHandler,
+    forwards_during_hydration,
     register_remote_handlers,
+    result_type_for,
 )
+from griptape_nodes.retained_mode.engine import current_engine
 from griptape_nodes.retained_mode.events.base_events import (
     EventResultSuccess,
     RequestPayload,
     ResultPayloadSuccess,
+)
+from griptape_nodes.retained_mode.events.config_events import (
+    GetConfigValueRequest,
+    SetConfigValueRequest,
+    SetConfigValueResultFailure,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
     DeleteConnectionRequest,
@@ -31,10 +39,16 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
 )
+from griptape_nodes.retained_mode.events.context_events import GetWorkflowContextRequest
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AddParameterToNodeResultFailure,
+    GetParameterValueRequest,
+    SetParameterValueRequest,
+    SetParameterValueResultFailure,
 )
+from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from griptape_nodes.retained_mode.events.secrets_events import GetSecretValueRequest
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 if TYPE_CHECKING:
@@ -266,6 +280,32 @@ class TestGraphEditsDuringHydration:
         assert forwarded == []
 
     @pytest.mark.asyncio
+    async def test_a_value_set_is_refused_during_hydration(self) -> None:
+        """On the orchestrator a set runs the real node's hooks and unresolves it and everything downstream."""
+        event_manager = EventManager()
+        forwarded: list[RequestPayload] = []
+        handler = _handler_recording_forwards(event_manager, forwarded)
+
+        with event_manager.node_execution_scope(), event_manager.hydration_scope():
+            result = await handler(SetParameterValueRequest(parameter_name="status", node_name="Tracker", value="x"))
+
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert forwarded == []
+
+    @pytest.mark.asyncio
+    async def test_a_request_whose_result_declares_nothing_is_refused_during_hydration(self) -> None:
+        """Nothing says it leaves the workflow alone, so it is treated as a change."""
+        event_manager = EventManager()
+        forwarded: list[RequestPayload] = []
+        handler = _handler_recording_forwards(event_manager, forwarded)
+
+        with event_manager.node_execution_scope(), event_manager.hydration_scope():
+            result = await handler(SetConfigValueRequest(category_and_key="a.b", value=1))
+
+        assert isinstance(result, SetConfigValueResultFailure)
+        assert forwarded == []
+
+    @pytest.mark.asyncio
     async def test_a_read_still_forwards_during_hydration(self) -> None:
         """Hooks still need the orchestrator's answers while hydrating, such as whether a list is connected."""
         event_manager = EventManager()
@@ -315,3 +355,41 @@ class TestGraphEditsDuringHydration:
 
         assert isinstance(result.result, DeleteConnectionResultFailure)
         assert forwarded == []
+
+
+def _every_registered_request_type() -> list[type[RequestPayload]]:
+    """Every request type, once the engine's managers have imported the modules that register them."""
+    current_engine()
+    return [
+        payload_type
+        for payload_type in PayloadRegistry.get_registry().values()
+        if issubclass(payload_type, RequestPayload)
+    ]
+
+
+class TestWhatForwardsDuringHydration:
+    """Whether a request forwards during hydration is read off its success result, not kept in a list."""
+
+    @pytest.mark.parametrize(
+        "request_type",
+        [
+            ListConnectionsForNodeRequest,
+            GetConfigValueRequest,
+            GetSecretValueRequest,
+            GetParameterValueRequest,
+            GetWorkflowContextRequest,
+        ],
+    )
+    def test_the_reads_hooks_make_while_hydrating_forward(self, request_type: type[RequestPayload]) -> None:
+        assert forwards_during_hydration(request_type)
+
+    def test_every_request_type_names_its_success_result(self) -> None:
+        """A result named off the convention would be refused during hydration whatever it declares."""
+        unnamed = sorted(
+            request_type.__name__
+            for request_type in _every_registered_request_type()
+            if result_type_for(request_type, "Success") is None
+        )
+
+        # Answers with the turn's own results, and a value hook has no reason to send it.
+        assert unnamed == ["ResolveToolApprovalsRequest"]
