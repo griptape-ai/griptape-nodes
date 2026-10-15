@@ -35,6 +35,9 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.events.workflow_events import (
+    CreateWorkflowFromTemplateRequest,
+    CreateWorkflowFromTemplateResultFailure,
+    CreateWorkflowFromTemplateResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultSuccess,
     ListCallableWorkflowsRequest,
@@ -277,6 +280,136 @@ async def test_two_workflow_nodes_run_independently(
     reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
 )
 @pytest.mark.asyncio
+async def test_registering_the_library_lists_the_backing_workflow(registered_library: Path, engine: Engine) -> None:
+    """A workflow the library ships is listed as library-provided before any node is placed."""
+    registry_key = (registered_library.parent / "shout_workflow").as_posix()
+
+    list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
+    assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
+    assert list_result.workflows[registry_key]["is_griptape_provided"] is True
+
+    callable_result = await engine.ahandle_request(ListCallableWorkflowsRequest())
+    assert isinstance(callable_result, ListCallableWorkflowsResultSuccess), callable_result
+    assert registry_key in callable_result.workflow_names
+
+    # A workspace refresh clears every workflow that is not library-provided.
+    await engine.workflow_manager.refresh_workflow_registry()
+
+    list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
+    assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
+    assert registry_key in list_result.workflows
+
+
+@pytest.fixture
+def installed_library(engine: Engine, materialize_library: Callable[..., Path]) -> Path:
+    """Register the fixture library from `<workspace>/libraries`, where libraries install by default."""
+    library_json = materialize_library(
+        engine.config_manager.workspace_path / "libraries" / "workflow-node-library",
+        template=FIXTURE_LIBRARY_JSON_TEMPLATE,
+        node_file=FIXTURE_NODE_FILE,
+        extra_files=[FIXTURE_WORKFLOW_FILE],
+    )
+    register_result = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
+    assert isinstance(register_result, RegisterLibraryFromFileResultSuccess), register_result
+    return library_json
+
+
+@pytest.mark.skipif(
+    not FIXTURE_WORKFLOW_FILE.exists(),
+    reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
+)
+@pytest.mark.asyncio
+async def test_a_library_installed_in_the_workspace_lists_its_backing_workflow(
+    installed_library: Path,  # noqa: ARG001
+    engine: Engine,
+    create_node: Callable[..., str],
+) -> None:
+    """A library in the default install location lists its workflow, keeps it through a refresh, and reuses it."""
+    registry_key = "libraries/workflow-node-library/shout_workflow"
+
+    list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
+    assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
+    assert list_result.workflows[registry_key]["is_griptape_provided"] is True
+
+    await engine.workflow_manager.refresh_workflow_registry()
+
+    engine.context_manager.push_workflow(workflow_name="workflow_node_e2e_installed")
+    flow_result = engine.handle_request(
+        CreateFlowRequest(parent_flow_name=None, flow_name="ParentFlow", set_as_new_context=False)
+    )
+    assert isinstance(flow_result, CreateFlowResultSuccess), flow_result
+    create_node(WORKFLOW_NODE_TYPE, "Shout It", flow_result.flow_name, library_name=LIBRARY_NAME)
+
+    listed = [key for key in engine.workflow_registry.list_workflows() if key.endswith("shout_workflow")]
+    assert listed == [registry_key]
+    assert engine.workflow_registry.get_workflow_by_name(registry_key).metadata.is_griptape_provided is True
+    node = engine.node_manager.get_node_by_name("Shout It")
+    assert node.metadata["_workflow_file_value"] == registry_key
+
+
+@pytest.fixture
+def template_library(tmp_path: Path, engine: Engine, materialize_library: Callable[..., Path]) -> Path:
+    """Register the fixture library with its workflow marked as a template; return the workflow path."""
+    library_json = materialize_library(
+        tmp_path / "library",
+        template=FIXTURE_LIBRARY_JSON_TEMPLATE,
+        node_file=FIXTURE_NODE_FILE,
+        extra_files=[FIXTURE_WORKFLOW_FILE],
+    )
+    workflow_file = library_json.parent / FIXTURE_WORKFLOW_FILE.name
+    workflow_file.write_text(workflow_file.read_text().replace("# is_template = false", "# is_template = true"))
+
+    register_result = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
+    assert isinstance(register_result, RegisterLibraryFromFileResultSuccess), register_result
+    return workflow_file
+
+
+@pytest.mark.skipif(
+    not FIXTURE_WORKFLOW_FILE.exists(),
+    reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
+)
+@pytest.mark.asyncio
+async def test_a_backing_workflow_marked_as_a_template_creates_a_workflow(
+    template_library: Path, engine: Engine
+) -> None:
+    """With `is_template = true` in its header, the library's workflow works as a template."""
+    template_name = template_library.with_suffix("").as_posix()
+
+    list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
+    assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
+    assert list_result.workflows[template_name]["is_template"] is True
+
+    create_result = await engine.ahandle_request(CreateWorkflowFromTemplateRequest(template_name=template_name))
+    assert isinstance(create_result, CreateWorkflowFromTemplateResultSuccess), create_result
+
+    # The copy lands in the workspace as the user's own workflow.
+    created = engine.workflow_registry.get_workflow_by_name(create_result.workflow_name)
+    assert created.metadata.is_griptape_provided is False
+    assert created.metadata.is_template is False
+
+
+@pytest.mark.skipif(
+    not FIXTURE_WORKFLOW_FILE.exists(),
+    reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
+)
+@pytest.mark.asyncio
+async def test_a_backing_workflow_without_the_template_flag_is_not_a_template(
+    registered_library: Path, engine: Engine
+) -> None:
+    """Without `is_template = true`, the workflow is listed but cannot be created from."""
+    template_name = (registered_library.parent / "shout_workflow").as_posix()
+
+    create_result = await engine.ahandle_request(CreateWorkflowFromTemplateRequest(template_name=template_name))
+
+    assert isinstance(create_result, CreateWorkflowFromTemplateResultFailure), create_result
+    assert "not marked as a template" in str(create_result.result_details)
+
+
+@pytest.mark.skipif(
+    not FIXTURE_WORKFLOW_FILE.exists(),
+    reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
+)
+@pytest.mark.asyncio
 async def test_workflow_node_reuses_the_key_the_workspace_scan_registered(
     workspace_backed_library: Path,  # noqa: ARG001
     engine: Engine,
@@ -295,6 +428,8 @@ async def test_workflow_node_reuses_the_key_the_workspace_scan_registered(
     list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
     assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
     assert [key for key in list_result.workflows if key.endswith("shout_workflow")] == ["nested/shout_workflow"]
+    # The user's own file in the workspace, so it is not marked library-provided.
+    assert list_result.workflows["nested/shout_workflow"]["is_griptape_provided"] is False
 
     callable_result = await engine.ahandle_request(ListCallableWorkflowsRequest())
     assert isinstance(callable_result, ListCallableWorkflowsResultSuccess), callable_result
@@ -324,7 +459,12 @@ def test_workflow_node_outside_the_workspace_keeps_its_full_path_as_the_key(
     create_node(WORKFLOW_NODE_TYPE, "Shout It", flow_result.flow_name, library_name=LIBRARY_NAME)
 
     node = engine.node_manager.get_node_by_name("Shout It")
-    assert node.metadata["_workflow_file_value"] == (registered_library.parent / "shout_workflow").as_posix()
+    registry_key = (registered_library.parent / "shout_workflow").as_posix()
+    assert node.metadata["_workflow_file_value"] == registry_key
+
+    # Placing the node reuses the key the library load registered rather than listing it again.
+    listed = [key for key in engine.workflow_registry.list_workflows() if key.endswith("shout_workflow")]
+    assert listed == [registry_key]
 
 
 @pytest.mark.skipif(
@@ -350,6 +490,8 @@ async def test_workflow_node_reached_through_a_link_keeps_the_link_as_its_key(
     list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
     assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
     assert [key for key in list_result.workflows if key.endswith("shout_workflow")] == ["linked/shout_workflow"]
+    # A link inside the workspace is the user's own entry, so it is not marked library-provided.
+    assert list_result.workflows["linked/shout_workflow"]["is_griptape_provided"] is False
 
     callable_result = await engine.ahandle_request(ListCallableWorkflowsRequest())
     assert isinstance(callable_result, ListCallableWorkflowsResultSuccess), callable_result
@@ -384,6 +526,7 @@ async def test_workflow_node_reached_through_a_linked_parent_folder_reuses_the_s
     list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
     assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
     assert [key for key in list_result.workflows if key.endswith("shout_workflow")] == ["nested/shout_workflow"]
+    assert list_result.workflows["nested/shout_workflow"]["is_griptape_provided"] is False
 
     node = engine.node_manager.get_node_by_name("Shout It")
     assert node.metadata["_workflow_file_value"] == "nested/shout_workflow"
