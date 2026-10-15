@@ -40,12 +40,19 @@ from griptape_nodes.retained_mode.events.open_workflow_events import (
     OpenWorkflowsChanged,
 )
 from griptape_nodes.retained_mode.events.os_events import GetFileInfoRequest
+from griptape_nodes.retained_mode.events.workflow_events import (
+    GetWorkflowMetadataRequest,
+    GetWorkflowMetadataResultSuccess,
+    SetWorkflowMetadataRequest,
+)
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 from griptape_nodes.retained_mode.run_scheduler import RunRefusedError, current_run
 from griptape_nodes.retained_mode.workflow_runtime import WorkflowNotNamedError
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
+    from pathlib import Path
 
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
@@ -151,6 +158,48 @@ class TestOpenWorkflow:
         assert any(
             isinstance(event, AppEvent) and isinstance(event.payload, OpenWorkflowsChanged) for event in _drain(queue)
         )
+
+    def test_renaming_an_open_workflow_shows_in_the_open_list(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        queue = _queued_events(engine)
+
+        result = engine.handle_request(
+            SetWorkflowMetadataRequest(workflow_name=a.workflow_name, workflow_metadata={"name": "Renamed"})  # type: ignore[arg-type]
+        )
+
+        assert result.succeeded(), result
+        assert [w.display_name for w in _listed(engine).workflows] == ["Renamed"]
+        assert any(
+            isinstance(event, AppEvent) and isinstance(event.payload, OpenWorkflowsChanged) for event in _drain(queue)
+        )
+
+    def test_metadata_of_an_unregistered_open_workflow_reads_its_file_while_several_are_open(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        _open_new_workflow_with_note(engine, "NoteA")
+        workflow_file = tmp_path / "outside_workspace.py"
+        workflow_file.write_text(
+            "\n".join(
+                [
+                    f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}",
+                    "# [tool.griptape-nodes]",
+                    '# name = "Outside Workspace"',
+                    '# schema_version = "0.21.0"',
+                    '# engine_version_created_with = "0.0.0"',
+                    "# node_libraries_referenced = []",
+                    "# ///",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with engine.bind_workflow(engine.open_workflow_runtime()):
+            workflow_name = engine.context_manager.push_workflow(file_path=str(workflow_file))
+
+        result = engine.handle_request(GetWorkflowMetadataRequest(workflow_name=workflow_name))
+
+        assert isinstance(result, GetWorkflowMetadataResultSuccess), result
+        assert result.workflow_metadata.name == "Outside Workspace"
 
 
 class TestRequestTargeting:

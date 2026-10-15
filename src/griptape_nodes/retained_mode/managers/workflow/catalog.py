@@ -199,6 +199,7 @@ class WorkflowCatalog(EngineScoped):
                     return SetWorkflowMetadataResultFailure(result_details=str(e))
                 merged.last_modified_date = datetime.now(tz=UTC)
                 workflow.metadata = merged
+                self._announce_if_open(request.workflow_name)
                 return SetWorkflowMetadataResultSuccess(
                     result_details=ResultDetails(
                         message=(
@@ -227,6 +228,7 @@ class WorkflowCatalog(EngineScoped):
 
         # Update registry
         resolution.workflow.metadata = new_metadata
+        self._announce_if_open(request.workflow_name)
 
         return SetWorkflowMetadataResultSuccess(
             result_details=ResultDetails(
@@ -246,18 +248,23 @@ class WorkflowCatalog(EngineScoped):
         not_found = GetWorkflowMetadataResultFailure(
             result_details=f"Failed to get metadata. Workflow '{workflow_name}' not found."
         )
-        context_manager = self.engine.context_manager
-        if not context_manager.has_current_workflow():
+        runtime = self.engine.open_workflows_manager.find_runtime_by_name(workflow_name)
+        if runtime is None:
             return not_found
-        if context_manager.get_current_workflow_name() != workflow_name:
-            return not_found
-        file_path = context_manager.get_current_workflow_file_path()
+        with self.engine.bind_workflow(runtime):
+            file_path = self.engine.context_manager.get_current_workflow_file_path()
         if file_path is None:
             return not_found
         try:
             return read_workflow_metadata(Path(file_path))
         except WorkflowMetadataError as err:
             return GetWorkflowMetadataResultFailure(result_details=str(err))
+
+    def _announce_if_open(self, workflow_name: str) -> None:
+        """Tell clients an open workflow's metadata changed, since the open list carries its display name."""
+        open_workflows = self.engine.open_workflows_manager
+        if open_workflows.find_runtime_by_name(workflow_name) is not None:
+            open_workflows.announce_change()
 
     def _build_workflow_info_key(self, file_path: str) -> str:
         """Build the key used to look up a workflow's load record.
