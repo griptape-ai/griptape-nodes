@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, NoReturn, TypeVar
+from typing import Any, ClassVar, Literal, NoReturn, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -101,10 +101,6 @@ class RequestPayload(Payload, ABC):
                           whose results are large or only relevant to the direct caller can
                           default this to False on the subclass to avoid unnecessary serialization
                           and transmission. Can also be set per-instance at construction time.
-        workflow_id: The open workflow this request acts on. Set it to target one; leave it unset
-                to act on the workflow the issuing request acts on, or else the active workflow. The
-                engine fills it in at dispatch, so the result a client receives names the workflow
-                it belongs to. A request naming a workflow that isn't open fails.
         fields: **Wire-only** dot-path filter applied to the broadcast JSON before it is sent
                 over the WebSocket. Has no effect on in-process/retained-mode callers, which
                 always receive the full result object. Like broadcast_result and failure_log_level,
@@ -134,7 +130,43 @@ class RequestPayload(Payload, ABC):
     request_id: str | None = None
     failure_log_level: int | None = None
     fields: list[str] | None = None
+
+
+@dataclass(kw_only=True)
+class HostRequest(RequestPayload, ABC):
+    """A request about the host rather than any one workflow: config, libraries, projects, secrets.
+
+    It never acts on a workflow, so it names none, and its result is a host event.
+    """
+
+
+@dataclass(kw_only=True)
+class WorkflowRequest(RequestPayload, ABC):
+    """A request that acts on one open workflow.
+
+    Args:
+        workflow_id: The open workflow to act on. A request issued while handling another acts on that
+            request's workflow when it names none. Otherwise it must name one, unless the engine holds
+            just one workflow open, which it then acts on. A request naming a workflow that isn't open
+            fails, and so does one that names none while several are open.
+    """
+
+    # Whether the request can run with no workflow at all. See OptionalWorkflowRequest.
+    workflow_optional: ClassVar[bool] = False
+
     workflow_id: str | None = None
+
+
+@dataclass(kw_only=True)
+class OptionalWorkflowRequest(WorkflowRequest, ABC):
+    """A request that works on its own but resolves paths and macros against a workflow it names.
+
+    `{workflow_dir}` and the project situations built on it depend on which workflow is asking. Naming
+    none while several are open runs the request with no workflow, the way an engine with none open
+    would, rather than failing.
+    """
+
+    workflow_optional: ClassVar[bool] = True
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
@@ -349,8 +381,27 @@ class EventRequestBatch(BaseEvent):
         raise NotImplementedError(msg)
 
 
-class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
-    """Abstract base class for result events."""
+# Whether an event belongs to one open workflow or to the host. Clients route a workflow event to the
+# workflow it names and never guess one for a host event.
+EventScope = Literal["host", "workflow"]
+
+
+class WorkflowScopedEvent(BaseModel):
+    """Envelope fields naming the workflow an event belongs to, or the host when it belongs to none."""
+
+    scope: EventScope = "host"
+    workflow_id: str | None = None
+
+    def scope_to_workflow(self, workflow_id: str) -> None:
+        self.scope = "workflow"
+        self.workflow_id = workflow_id
+
+
+class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, WorkflowScopedEvent, ABC):
+    """Abstract base class for result events.
+
+    A workflow request's result names the workflow it acted on; a host request's result is a host event.
+    """
 
     request: P
     result: R
@@ -419,11 +470,16 @@ RESULT_EVENT_TYPES = frozenset({EventResultSuccess.__name__, EventResultFailure.
 
 
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
-class ExecutionEvent[E: ExecutionPayload](BaseEvent):
+class ExecutionEvent[E: ExecutionPayload](BaseEvent, WorkflowScopedEvent):
+    """An event from a workflow's execution, naming the workflow and, while it runs, the run.
+
+    Named by its emitter: a node names the workflow it belongs to, and anything else the workflow its
+    work is bound to when the event is queued. An event emitted by nothing bound to a workflow is a
+    host event.
+    """
+
     payload: E
-    # The open workflow whose run emitted this event, so a client showing several workflows can route
-    # it. Stamped when the event is queued.
-    workflow_id: str | None = None
+    run_id: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an ExecutionEvent, inferring the generic type if needed."""
@@ -440,7 +496,9 @@ class ExecutionEvent[E: ExecutionPayload](BaseEvent):
 
 
 # Events sent as part of the lifecycle of the Griptape Nodes application.
-class AppEvent[A: AppPayload](BaseEvent):
+class AppEvent[A: AppPayload](BaseEvent, WorkflowScopedEvent):
+    """An event about the application. A host event unless its emitter names a workflow."""
+
     payload: A
 
     def __init__(self, **data) -> None:
@@ -478,5 +536,6 @@ class ProgressEvent:
     value: Any = field()
     node_name: str = field()
     parameter_name: str = field()
-    # The open workflow whose run streamed this, stamped when it is queued. See ExecutionEvent.
+    # The workflow and run that streamed this. See ExecutionEvent.
     workflow_id: str | None = field(default=None)
+    run_id: str | None = field(default=None)

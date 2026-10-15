@@ -38,6 +38,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from griptape_nodes.app.worker_routing import naming_its_workflow
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 if TYPE_CHECKING:
@@ -75,7 +76,8 @@ class InProcessWorkerHarness:
         """
 
         async def _forward(request: RequestPayload) -> ResultPayload:
-            result_event = await self.orchestrator.ahandle_request(request)
+            forwarded = naming_its_workflow(request, self.worker.engine)
+            result_event = await self.orchestrator.ahandle_request(forwarded)
             return result_event.result
 
         original = self.worker.get_manager_for_request_type(request_type)

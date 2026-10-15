@@ -38,7 +38,6 @@ from griptape_nodes.retained_mode.events.library_events import (
     ReloadAllLibrariesResultSuccess,
     UnloadLibraryFromRegistryRequest,
 )
-from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.managers.library.catalog import LibraryCatalog
 from griptape_nodes.retained_mode.managers.library.common import (
     LIBRARY_CONFIG_FILENAME,
@@ -568,15 +567,14 @@ class LibraryManager(EngineScoped):
                     break
         return workflow_files
 
-    async def _run_reload_libraries(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
-        # Start with a clean slate: every open workflow holds nodes built from the old library classes.
-        # The saved ones are opened again once the libraries are back; unsaved ones have no file to
-        # rebuild them from.
-        workflows_to_reopen = self.engine.open_workflows_manager.saved_open_workflow_names()
-        clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-        clear_all_result = await self.engine.ahandle_request(clear_all_request)
-        if not clear_all_result.succeeded():
-            details = "Failed to clear the existing object state when preparing to reload all libraries."
+    async def _run_reload_libraries(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002, C901
+        # Every open workflow holds nodes built from the old library classes, so each is emptied now and
+        # rebuilt once the libraries are back. They stay open in their runtimes, so their ids survive.
+        open_workflows = self.engine.open_workflows_manager
+        try:
+            suspended_workflows = await open_workflows.suspend_open_workflows()
+        except RuntimeError as e:
+            details = f"Attempted to reload all libraries. Failed while clearing the open workflows: {e}"
             return ReloadAllLibrariesResultFailure(result_details=details)
 
         # Unload all libraries now.
@@ -640,7 +638,7 @@ class LibraryManager(EngineScoped):
                 )
             )
 
-        await self.engine.open_workflows_manager.reopen_workflows(workflows_to_reopen)
+        rebuild_failures = await open_workflows.resume_open_workflows(suspended_workflows)
 
         # Hard activation: a reload is interactive (project switch / explicit reload), so a
         # reconcile failure (bad engine_version gate or a sourced library that could not be
@@ -649,8 +647,11 @@ class LibraryManager(EngineScoped):
         if reconcile_failures:
             details = "Reloaded libraries but reconcile reported problem(s): " + "; ".join(reconcile_failures)
             return ReloadAllLibrariesResultFailure(result_details=details)
+        if rebuild_failures:
+            details = "Reloaded libraries, but some open workflows could not be rebuilt: " + "; ".join(
+                f"'{failure.workflow_name}': {failure.details}" for failure in rebuild_failures
+            )
+            return ReloadAllLibrariesResultFailure(result_details=details)
 
-        details = (
-            "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
-        )
+        details = "Successfully reloaded all libraries and rebuilt the open workflows with them."
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))

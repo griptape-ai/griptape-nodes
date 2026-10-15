@@ -1,4 +1,4 @@
-"""Opening, listing, and closing the workflows an engine holds at once.
+"""Opening, listing, closing, and rebuilding the workflows an engine holds at once.
 
 The engine owns the runtimes (see `retained_mode/workflow_runtime.py`); this manager decides what goes
 in them. Opening a workflow builds it in a fresh runtime with the same requests a single-workflow
@@ -8,12 +8,21 @@ engine uses, bound to that runtime, so nothing that builds a workflow needs to k
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import AppEvent
 from griptape_nodes.retained_mode.events.context_events import SetWorkflowContextRequest, SetWorkflowContextSuccess
-from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest
+from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowRequest,
+    DeserializeFlowFromCommandsRequest,
+    GetTopLevelFlowRequest,
+    GetTopLevelFlowResultSuccess,
+    SerializedFlowCommands,
+    SerializeFlowToCommandsRequest,
+    SerializeFlowToCommandsResultSuccess,
+)
 from griptape_nodes.retained_mode.events.open_workflow_events import (
     CloseWorkflowRequest,
     CloseWorkflowResultFailure,
@@ -42,6 +51,32 @@ logger = logging.getLogger("griptape_nodes")
 _OPEN_WORKFLOWS_KEY = "open-workflows"
 
 
+@dataclass
+class SuspendedWorkflow:
+    """What it takes to rebuild an open workflow in its own runtime after its objects were cleared.
+
+    Args:
+        runtime: The runtime it stays open in, so its id survives the rebuild.
+        workflow_name: Its registry key.
+        working_directory: The folder an unsaved workflow belongs to, if it was given one.
+        commands: Its graph as it was in memory, unsaved edits included, or None when it could not be
+            serialized. A saved workflow is then rebuilt from its file instead.
+    """
+
+    runtime: WorkflowRuntime
+    workflow_name: str
+    working_directory: str | None
+    commands: SerializedFlowCommands | None
+
+
+@dataclass
+class WorkflowRebuildFailure:
+    """An open workflow that could not be rebuilt. It stays open, with whatever could be built."""
+
+    workflow_name: str
+    details: str
+
+
 class OpenWorkflowsManager(EngineScoped):
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
@@ -60,7 +95,7 @@ class OpenWorkflowsManager(EngineScoped):
     async def on_close_workflow_request(self, request: CloseWorkflowRequest) -> ResultPayload:  # noqa: ARG002
         async with self._mutex.locked(_OPEN_WORKFLOWS_KEY):
             # Dispatch bound this request to the workflow it names.
-            runtime = self.engine.workflow_runtime
+            runtime = self.engine.current_workflow
             workflow_name = self.workflow_name_in(runtime) or "the workflow"
             failure = await self.close_workflow_runtime(runtime)
         if failure is not None:
@@ -70,36 +105,30 @@ class OpenWorkflowsManager(EngineScoped):
 
     @handles(ListOpenWorkflowsRequest)
     def on_list_open_workflows_request(self, request: ListOpenWorkflowsRequest) -> ResultPayload:  # noqa: ARG002
-        engine = self.engine
+        workflows = self.list_open_workflows()
+        return ListOpenWorkflowsResultSuccess(workflows=workflows, result_details=f"{len(workflows)} workflow(s) open.")
+
+    def list_open_workflows(self) -> list[OpenWorkflow]:
+        """The open workflows, in the order they were opened."""
         workflows = []
-        for runtime in engine.workflow_runtimes:
+        for runtime in self.engine.workflow_runtimes:
             name = self.workflow_name_in(runtime)
             if name is None:
                 continue
-            with engine.bind_workflow_runtime(runtime):
-                is_running = engine.flow_manager.check_for_existing_running_flow()
             workflows.append(
                 OpenWorkflow(
                     workflow_id=runtime.workflow_id,
                     workflow_name=name,
                     display_name=self._display_name_of(name),
-                    is_running=is_running,
+                    is_running=self.engine.is_workflow_running(runtime),
                 )
             )
-
-        active_workflow_id = None
-        if self.workflow_name_in(engine.active_workflow_runtime) is not None:
-            active_workflow_id = engine.active_workflow_runtime.workflow_id
-        return ListOpenWorkflowsResultSuccess(
-            workflows=workflows,
-            active_workflow_id=active_workflow_id,
-            result_details=f"{len(workflows)} workflow(s) open.",
-        )
+        return workflows
 
     async def close_workflow_runtime(self, runtime: WorkflowRuntime) -> str | None:
         """Clear a runtime's objects and forget it. Returns why it failed, or None."""
         engine = self.engine
-        with engine.bind_workflow_runtime(runtime):
+        with engine.bind_workflow(runtime):
             failure = await engine.object_manager.clear_current_workflow()
         if failure is not None:
             return failure
@@ -111,35 +140,40 @@ class OpenWorkflowsManager(EngineScoped):
         """Tell clients the set of open workflows changed."""
         self.engine.event_manager.put_event(AppEvent(payload=OpenWorkflowsChanged()))
 
-    def saved_open_workflow_names(self) -> list[str]:
-        """Registry keys of the open workflows saved to a file, the active one last.
+    async def suspend_open_workflows(self) -> list[SuspendedWorkflow]:
+        """Record each open workflow as it is, then clear its objects, keeping its runtime and id.
 
-        What `reopen_workflows` needs to restore the open workflows after a change that closes them.
+        For a library reload: every open workflow holds nodes built from the old library classes, so
+        each is emptied before the libraries are unloaded and rebuilt by `resume_open_workflows` once
+        they are back.
+
+        Raises:
+            RuntimeError: A workflow could not be cleared.
         """
-        engine = self.engine
-        registry = engine.workflow_registry
-        names = []
-        active_name = None
-        for runtime in engine.workflow_runtimes:
-            name = self.workflow_name_in(runtime)
-            if name is None or not registry.has_workflow_with_name(name):
-                continue
-            if not registry.get_workflow_by_name(name).is_saved:
-                continue
-            if runtime is engine.active_workflow_runtime:
-                active_name = name
-            else:
-                names.append(name)
-        if active_name is not None:
-            names.append(active_name)
-        return names
+        suspended = []
+        for runtime in self.engine.workflow_runtimes:
+            with self.engine.bind_workflow(runtime):
+                record = await self._snapshot_current_workflow(runtime)
+                failure = await self.engine.object_manager.clear_current_workflow(keep_variables=True)
+            if failure is not None:
+                msg = f"Attempted to clear workflow '{self.workflow_name_in(runtime)}' for a rebuild. Failed due to: {failure}"
+                raise RuntimeError(msg)
+            if record is not None:
+                suspended.append(record)
+        return suspended
 
-    async def reopen_workflows(self, workflow_names: list[str]) -> None:
-        """Open each workflow from its file, leaving the last one active. One that fails is logged and skipped."""
-        for workflow_name in workflow_names:
-            result = await self.engine.ahandle_request(OpenWorkflowRequest(workflow_name=workflow_name))
-            if result.failed():
-                logger.warning("Could not reopen workflow '%s': %s", workflow_name, result.result_details)
+    async def resume_open_workflows(self, suspended: list[SuspendedWorkflow]) -> list[WorkflowRebuildFailure]:
+        """Rebuild each suspended workflow in its own runtime. Returns the ones that failed."""
+        failures = []
+        for record in suspended:
+            if record.runtime not in self.engine.workflow_runtimes:
+                continue
+            with self.engine.bind_workflow(record.runtime), self.engine.workflow_manager.squelch_workflow_altered():
+                failure = await self._rebuild_current_workflow(record)
+            if failure is not None:
+                failures.append(WorkflowRebuildFailure(workflow_name=record.workflow_name, details=failure))
+        self.announce_change()
+        return failures
 
     def rekey_open_workflow(self, old_name: str, new_name: str, file_path: str) -> None:
         """Keep the workflow open from `old_name` open under `new_name`, after a rename or move.
@@ -149,7 +183,7 @@ class OpenWorkflowsManager(EngineScoped):
         runtime = self.find_runtime_by_name(old_name)
         if runtime is None:
             return
-        with self.engine.bind_workflow_runtime(runtime):
+        with self.engine.bind_workflow(runtime):
             self.engine.context_manager.rekey_workflow(old_name, new_name, file_path)
         self.announce_change()
 
@@ -163,17 +197,23 @@ class OpenWorkflowsManager(EngineScoped):
     def workflow_name_in(self, runtime: WorkflowRuntime) -> str | None:
         """The registry key of the workflow open in `runtime`, or None when it is empty."""
         engine = self.engine
-        with engine.bind_workflow_runtime(runtime):
+        with engine.bind_workflow(runtime):
             if not engine.context_manager.has_current_workflow():
                 return None
             return engine.context_manager.get_current_workflow_name()
+
+    def display_name_in(self, runtime: WorkflowRuntime) -> str | None:
+        """The name users see for the workflow open in `runtime`, or None when it is empty."""
+        name = self.workflow_name_in(runtime)
+        if name is None:
+            return None
+        return self._display_name_of(name)
 
     async def _open_workflow(self, request: OpenWorkflowRequest) -> ResultPayload:
         engine = self.engine
         if request.workflow_name is not None:
             existing = self.find_runtime_by_name(request.workflow_name)
             if existing is not None:
-                engine.activate_workflow_runtime(existing)
                 return OpenWorkflowResultSuccess(
                     workflow_id=existing.workflow_id,
                     workflow_name=request.workflow_name,
@@ -187,9 +227,8 @@ class OpenWorkflowsManager(EngineScoped):
                 )
                 return OpenWorkflowResultFailure(result_details=details)
 
-        previous = engine.active_workflow_runtime
-        runtime = engine.create_workflow_runtime()
-        with engine.bind_workflow_runtime(runtime):
+        runtime = engine.open_workflow_runtime()
+        with engine.bind_workflow(runtime):
             failure = await self._build_workflow(request)
             if failure is not None:
                 await engine.object_manager.clear_current_workflow()
@@ -203,12 +242,6 @@ class OpenWorkflowsManager(EngineScoped):
             details = "Attempted to open a workflow. Failed because nothing was loaded."
             return OpenWorkflowResultFailure(result_details=details)
 
-        engine.activate_workflow_runtime(runtime)
-        # An engine starts with an empty runtime for requests to act on. Once a workflow is open, it has
-        # no further use.
-        # It may be gone already, if clearing every workflow ran while this one was building.
-        if previous in engine.workflow_runtimes and self.workflow_name_in(previous) is None:
-            engine.remove_workflow_runtime(previous)
         self.announce_change()
         return OpenWorkflowResultSuccess(
             workflow_id=runtime.workflow_id,
@@ -222,12 +255,7 @@ class OpenWorkflowsManager(EngineScoped):
         engine = self.engine
         name = request.workflow_name
         if name is not None and engine.workflow_registry.get_workflow_by_name(name).is_saved:
-            result = await engine.ahandle_request(
-                RunWorkflowFromRegistryRequest(workflow_name=name, run_with_clean_slate=False)
-            )
-            if result.failed():
-                return f"Attempted to open workflow '{name}'. Failed due to: {result.result_details}"
-            return None
+            return await self._build_from_file(name)
 
         # A new workflow, or an unsaved one whose nodes lived only in a previous engine's memory: name
         # it, and give it an empty flow to build in.
@@ -238,9 +266,71 @@ class OpenWorkflowsManager(EngineScoped):
         )
         if not isinstance(context_result, SetWorkflowContextSuccess):
             return f"Attempted to start a new workflow. Failed due to: {context_result.result_details}"
-        flow_result = await engine.ahandle_request(CreateFlowRequest(parent_flow_name=None, set_as_new_context=True))
+        return await self._create_empty_flow()
+
+    async def _build_from_file(self, workflow_name: str) -> str | None:
+        result = await self.engine.ahandle_request(
+            RunWorkflowFromRegistryRequest(workflow_name=workflow_name, run_with_clean_slate=False)
+        )
+        if result.failed():
+            return f"Attempted to open workflow '{workflow_name}'. Failed due to: {result.result_details}"
+        return None
+
+    async def _create_empty_flow(self) -> str | None:
+        flow_result = await self.engine.ahandle_request(
+            CreateFlowRequest(parent_flow_name=None, set_as_new_context=True)
+        )
         if flow_result.failed():
             return f"Attempted to start a new workflow. Failed due to: {flow_result.result_details}"
+        return None
+
+    async def _snapshot_current_workflow(self, runtime: WorkflowRuntime) -> SuspendedWorkflow | None:
+        """Record the current workflow for `resume_open_workflows`, or None when the runtime is empty."""
+        engine = self.engine
+        context_manager = engine.context_manager
+        if not context_manager.has_current_workflow():
+            return None
+        workflow_name = context_manager.get_current_workflow_name()
+        working_directory = context_manager.get_current_workflow_working_directory()
+
+        commands = None
+        top_level = await engine.ahandle_request(GetTopLevelFlowRequest())
+        if isinstance(top_level, GetTopLevelFlowResultSuccess) and top_level.flow_name is not None:
+            serialized = await engine.ahandle_request(SerializeFlowToCommandsRequest(flow_name=top_level.flow_name))
+            if isinstance(serialized, SerializeFlowToCommandsResultSuccess):
+                commands = serialized.serialized_flow_commands
+            else:
+                logger.warning(
+                    "Could not record workflow '%s' as it is before rebuilding it: %s",
+                    workflow_name,
+                    serialized.result_details,
+                )
+        return SuspendedWorkflow(
+            runtime=runtime, workflow_name=workflow_name, working_directory=working_directory, commands=commands
+        )
+
+    async def _rebuild_current_workflow(self, record: SuspendedWorkflow) -> str | None:
+        """Rebuild a suspended workflow in the current runtime. Returns why it failed, or None."""
+        engine = self.engine
+        registry = engine.workflow_registry
+        is_saved = registry.has_workflow_with_name(record.workflow_name) and (
+            registry.get_workflow_by_name(record.workflow_name).is_saved
+        )
+        if record.commands is None and is_saved:
+            # The file creates the variables it records.
+            engine.variables_manager.clear_object_state()
+            return await self._build_from_file(record.workflow_name)
+
+        engine.context_manager.push_workflow(
+            workflow_name=record.workflow_name, working_directory=record.working_directory
+        )
+        if record.commands is None:
+            return await self._create_empty_flow()
+        result = await engine.ahandle_request(
+            DeserializeFlowFromCommandsRequest(serialized_flow_commands=record.commands, pop_flow_context_after=False)
+        )
+        if result.failed():
+            return f"Attempted to rebuild workflow '{record.workflow_name}'. Failed due to: {result.result_details}"
         return None
 
     def _display_name_of(self, workflow_name: str) -> str:

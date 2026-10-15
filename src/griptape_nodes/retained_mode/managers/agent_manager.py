@@ -162,6 +162,7 @@ from griptape_nodes.retained_mode.events.mcp_events import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.workflow_runtime import bound_workflow_id
 from griptape_nodes.servers import bind_free_socket
 from griptape_nodes.servers.mcp import GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT, start_mcp_server
 from griptape_nodes.utils.budget_refusal import BUDGET_REPLY_HALT_PREFIX, refusal_from_exception
@@ -258,10 +259,25 @@ def _compose_server_rules(configs: Sequence[Mapping[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
-def _compose_run_instructions(server_rules: str) -> str:
-    """Join the instructions that apply to one run: MCP server rules, then approval rules."""
-    parts = [server_rules, _TOOL_APPROVAL_INSTRUCTIONS]
+def _compose_run_instructions(server_rules: str, workflow_id: str | None) -> str:
+    """Join the instructions that apply to one run: its workflow, MCP server rules, then approval rules."""
+    parts = [_workflow_instruction(workflow_id), server_rules, _TOOL_APPROVAL_INSTRUCTIONS]
     return "\n\n".join(part for part in parts if part)
+
+
+def _workflow_instruction(workflow_id: str | None) -> str:
+    """Tell the model which open workflow the conversation is about.
+
+    The engine can hold several workflows open, and the tool calls reach it over MCP, outside the
+    request that started the turn. A tool call that names no workflow fails while several are open, so
+    the model has to name this one.
+    """
+    if workflow_id is None:
+        return ""
+    return (
+        f"The user is working in the open workflow with workflow_id '{workflow_id}'. Pass that workflow_id on "
+        "every GriptapeNodes tool call that takes one, unless the user asks you to work in another workflow."
+    )
 
 
 def _plan_tool_approvals(
@@ -776,6 +792,8 @@ class AgentManager(EngineScoped):
             model_name=model_name,
         )
         attribution_headers = await self._attribution_headers(provider_name)
+        # The workflow the request that started the turn acts on.
+        workflow_id = bound_workflow_id()
 
         event_manager = self.engine.event_manager
 
@@ -801,7 +819,7 @@ class AgentManager(EngineScoped):
                 persist_prompt=persist_prompt,
                 history_rehydrator=_rehydrate_history,
                 extra_toolsets=mcp.lease.toolsets,
-                extra_instructions=_compose_run_instructions(mcp.instructions),
+                extra_instructions=_compose_run_instructions(mcp.instructions, workflow_id),
                 extra_headers=attribution_headers,
                 approval=approval,
                 deferred_tool_results=deferred_tool_results,

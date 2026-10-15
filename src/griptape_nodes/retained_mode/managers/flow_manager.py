@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import functools
 import json
 import logging
 from dataclasses import dataclass, field, replace
@@ -9,7 +10,7 @@ from enum import StrEnum
 from io import BytesIO
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, Concatenate, NamedTuple, cast
 from uuid import uuid4
 
 import httpx2
@@ -182,12 +183,15 @@ from griptape_nodes.retained_mode.managers.workflow.shape import (
     extract_parameter_shape_info,
 )
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.run_scheduler import run_scope
 from griptape_nodes.retained_mode.variable_types import VariableScope
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands
 from griptape_nodes.serialization.legacy_pickle import LegacyPickleError, read_legacy_image_flow_commands
 from griptape_nodes.serialization.values import Unencodable, decode_value, encodable_default, try_encode, value_key
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -310,6 +314,38 @@ class DeserializedFlowNodes:
         self.original_flow_name_to_flow_name.update(other.original_flow_name_to_flow_name)
 
 
+def _drives_run[**P, R](
+    method: Callable[Concatenate[FlowManager, P], Awaitable[R]],
+) -> Callable[Concatenate[FlowManager, P], Awaitable[R]]:
+    """Admit the current workflow's run through the host scheduler, and attribute the work to it.
+
+    Every way of starting or advancing a run goes through a method marked with this, so the scheduler
+    sees them all. A method advancing a run already in progress joins that run.
+    """
+
+    @functools.wraps(method)
+    async def admitted(self: FlowManager, *args: P.args, **kwargs: P.kwargs) -> R:
+        run = self.engine.run_scheduler.admit(self.engine.current_workflow)
+        with run_scope(run):
+            return await method(self, *args, **kwargs)
+
+    return admitted
+
+
+def _in_current_run[**P, R](
+    method: Callable[Concatenate[FlowManager, P], Awaitable[R]],
+) -> Callable[Concatenate[FlowManager, P], Awaitable[R]]:
+    """Attribute the work to the current workflow's latest run, without admitting a new one."""
+
+    @functools.wraps(method)
+    async def attributed(self: FlowManager, *args: P.args, **kwargs: P.kwargs) -> R:
+        run = self.engine.run_scheduler.run_of(self.engine.current_workflow)
+        with run_scope(run):
+            return await method(self, *args, **kwargs)
+
+    return attributed
+
+
 class FlowManager(EngineScoped):
     class WorkflowState:
         """The flow hierarchy, connections, and execution state of one open workflow."""
@@ -333,7 +369,7 @@ class FlowManager(EngineScoped):
 
     @property
     def _state(self) -> FlowManager.WorkflowState:
-        return self.engine.workflow_runtime.state(
+        return self.engine.current_workflow.state(
             FlowManager.WorkflowState, lambda: FlowManager.WorkflowState(self.engine)
         )
 
@@ -352,14 +388,6 @@ class FlowManager(EngineScoped):
     @property
     def node_executor(self) -> NodeExecutor:
         return self._node_executor
-
-    def raise_if_another_workflow_is_running(self) -> None:
-        """Refuse to start a run while a different open workflow is running."""
-        running = self.engine.workflow_running_elsewhere()
-        if running is None:
-            return
-        msg = f"Workflow '{running}' is running. Only one workflow can run at a time. Wait for it to finish or cancel it, then run this one."
-        raise RuntimeError(msg)
 
     def get_connections(self) -> Connections:
         """Get the connections instance."""
@@ -4507,6 +4535,7 @@ class FlowManager(EngineScoped):
             msg = f"Failed while restoring the saved value of '{node.name}.{parameter_name}'."
             raise FlowDeserializationError(msg)
 
+    @_drives_run
     async def start_flow(
         self,
         flow: ControlFlow,
@@ -4518,7 +4547,6 @@ class FlowManager(EngineScoped):
             # If flow already exists, throw an error
             errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
             raise RuntimeError(errormsg)
-        self.raise_if_another_workflow_is_running()
 
         if start_node is None:
             if self._state.global_flow_queue.empty():
@@ -4701,6 +4729,7 @@ class FlowManager(EngineScoped):
             or self._state.global_control_flow_machine.resolution_machine.is_advancing
         )
 
+    @_in_current_run
     async def cancel_flow_run(self) -> None:
         if not self.check_for_existing_running_flow():
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
@@ -4850,8 +4879,8 @@ class FlowManager(EngineScoped):
             if machine is not None:
                 await machine.start_flow(start_node, debug_mode=debug_mode)
 
+    @_drives_run
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
-        self.raise_if_another_workflow_is_running()
         # We are now going to have different behavior depending on how the node is behaving.
         if self.check_for_existing_running_flow():
             # Now we know something is running, it's ParallelResolutionMachine, and that we are in single_node_resolution.
@@ -4932,6 +4961,7 @@ class FlowManager(EngineScoped):
                 ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
             )
 
+    @_drives_run
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
         await self._handle_flow_start_if_not_running(
@@ -4951,6 +4981,7 @@ class FlowManager(EngineScoped):
         if self._state.global_control_flow_machine.resolution_machine.is_complete():
             self._state.global_single_node_resolution = False
 
+    @_drives_run
     async def single_node_step(self, flow: ControlFlow) -> None:
         # It won't call single_node_step without an existing flow running from US.
         await self._handle_flow_start_if_not_running(
@@ -4973,6 +5004,7 @@ class FlowManager(EngineScoped):
         # Start the next resolution step now please.
         await self._handle_post_execution_queue_processing(debug_mode=True)
 
+    @_drives_run
     async def continue_executing(self, flow: ControlFlow) -> None:
         await self._handle_flow_start_if_not_running(
             flow, debug_mode=False, error_message="Flow has not yet been started. Cannot step while no flow has begun."

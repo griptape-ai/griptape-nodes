@@ -2,6 +2,7 @@
   even while one runs. See
   [Working with several workflows](docs/guides/editor/running_workflows.md#working-with-several-workflows).
   `OpenWorkflowRequest`, `ListOpenWorkflowsRequest`, and `CloseWorkflowRequest` manage the open
-  workflows, and any request can act on one by naming its `workflow_id`. The engine names the
-  workflow on every result and run event, and runs one workflow at a time. **Reload Libraries**
-  reopens the saved workflows that were open.
+  workflows. A request about one workflow takes its `workflow_id`, and with several open, one that
+  names none fails instead of guessing. Results and run events carry `scope`, `workflow_id`, and
+  `run_id`. One workflow runs at a time, and **Reload Libraries**, renaming, moving, and saving keep
+  each workflow open with the same `workflow_id`.

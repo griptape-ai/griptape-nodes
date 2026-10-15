@@ -169,6 +169,8 @@ def test_serialized_key_order_puts_payload_last() -> None:
     rather than treating every consumer of the golden fixture as an incidental lock on it.
     """
     assert list(converters.engine.unstructure(_events()["EventResultSuccess"])) == [
+        "scope",
+        "workflow_id",
         "request_id",
         "response_topic",
         "retained_mode",
@@ -179,7 +181,9 @@ def test_serialized_key_order_puts_payload_last() -> None:
         "result",
     ]
     assert list(converters.engine.unstructure(_events()["ExecutionEvent"])) == [
+        "scope",
         "workflow_id",
+        "run_id",
         "event_type",
         "payload_type",
         "payload",

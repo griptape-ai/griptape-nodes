@@ -4,7 +4,7 @@ from griptape_nodes.common.macro_parser import MacroVariables
 from griptape_nodes.common.project_templates.situation import BuiltInSituation
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
-    RequestPayload,
+    OptionalWorkflowRequest,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
@@ -14,7 +14,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 @dataclass
 @PayloadRegistry.register
-class CreateStaticFileRequest(RequestPayload):
+class CreateStaticFileRequest(OptionalWorkflowRequest):
     """Create a static file from content.
 
     Use when: Generating files from workflow outputs, creating downloadable content,
@@ -57,7 +57,7 @@ class CreateStaticFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class CreateStaticFileUploadUrlRequest(RequestPayload):
+class CreateStaticFileUploadUrlRequest(OptionalWorkflowRequest):
     """Create a presigned URL for uploading a static file via HTTP PUT.
 
     Use when: Implementing file upload functionality, allowing direct client uploads,
@@ -109,7 +109,7 @@ class CreateStaticFileUploadUrlResultFailure(WorkflowNotAlteredMixin, ResultPayl
 
 @dataclass
 @PayloadRegistry.register
-class CreateStaticFileDownloadUrlRequest(RequestPayload):
+class CreateStaticFileDownloadUrlRequest(OptionalWorkflowRequest):
     """Create a presigned URL for downloading a static file from the staticfiles directory via HTTP GET.
 
     Use when: Providing secure file access to files in the staticfiles directory,
@@ -130,7 +130,7 @@ class CreateStaticFileDownloadUrlRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
+class CreateStaticFileDownloadUrlFromPathRequest(OptionalWorkflowRequest):
     """Create a presigned URL for downloading a file from an arbitrary path.
 
     Use when: Need to create download URLs for files outside the staticfiles directory,

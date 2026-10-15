@@ -10,7 +10,7 @@ act on.
 from dataclasses import dataclass, field
 
 from griptape_nodes.retained_mode.events.base_events import (
-    RequestPayload,
+    HostRequest,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
@@ -23,7 +23,7 @@ ATTRIBUTION_SCHEMA_VERSION = 1
 
 @dataclass
 @PayloadRegistry.register
-class GetAttributionContextRequest(RequestPayload):
+class GetAttributionContextRequest(HostRequest):
     """Describe the current project so an outbound call can be attributed to it.
 
     The result carries project ids and no credential. Ids are user-influenced -- usually a slug

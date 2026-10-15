@@ -4,12 +4,13 @@ from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
-    RequestPayload,
+    HostRequest,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     SkipTheLineMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.open_workflow_events import OpenWorkflow
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
@@ -47,7 +48,7 @@ class UserInfo:
 
 @dataclass
 @PayloadRegistry.register
-class AppStartSessionRequest(RequestPayload):
+class AppStartSessionRequest(HostRequest):
     """Start a new application session.
 
     Use when: Initializing client connections, beginning new workflow sessions,
@@ -77,7 +78,7 @@ class AppStartSessionResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class AppGetSessionRequest(RequestPayload):
+class AppGetSessionRequest(HostRequest):
     """Get the current session information.
 
     Use when: Checking session status, retrieving session details,
@@ -232,7 +233,7 @@ class LibraryLoadedNotification(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ReportLibraryLoadedRequest(RequestPayload, SkipTheLineMixin):
+class ReportLibraryLoadedRequest(HostRequest, SkipTheLineMixin):
     """Sent by a worker to the orchestrator to report how a library loaded in the worker.
 
     It is what releases anything waiting to route execution to that worker.
@@ -332,7 +333,7 @@ class CurrentProjectChanged(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetEngineVersionRequest(RequestPayload):
+class GetEngineVersionRequest(HostRequest):
     """Get the engine version information.
 
     Use when: Checking compatibility, displaying version info,
@@ -366,7 +367,7 @@ class GetEngineVersionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class AppEndSessionRequest(RequestPayload):
+class AppEndSessionRequest(HostRequest):
     """End the current application session.
 
     Use when: Closing client connections, cleaning up session resources,
@@ -396,7 +397,7 @@ class AppEndSessionResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SessionHeartbeatRequest(RequestPayload, SkipTheLineMixin):
+class SessionHeartbeatRequest(HostRequest, SkipTheLineMixin):
     """Request clients can use ensure the engine session is still active."""
 
 
@@ -414,7 +415,7 @@ class SessionHeartbeatResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class EngineHeartbeatRequest(RequestPayload, SkipTheLineMixin):
+class EngineHeartbeatRequest(HostRequest, SkipTheLineMixin):
     """Request clients can use to discover active engines and their status.
 
     Attributes:
@@ -440,9 +441,12 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
         instance_region: Cloud instance region (None if not applicable)
         instance_provider: Cloud provider name (None if not applicable)
         deployment_type: Type of deployment (None if not applicable)
-        current_workflow: Name of active workflow (None if none)
-        workflow_file_path: Path to workflow file (None if none)
-        has_active_flow: Whether there's an active flow running
+        current_workflow: Deprecated, read open_workflows. The running workflow's name, else the only
+            open workflow's, else None.
+        workflow_file_path: Deprecated, with current_workflow. That workflow's file, if it is saved.
+        has_active_flow: Deprecated, with current_workflow. Whether that workflow has a flow.
+        open_workflows: Every workflow the engine holds open, and whether each is running.
+        is_executing: Whether any open workflow is running.
         engine_name: Human-readable engine name
         engine_os: Platform StrEnum value where the engine is running (windows, darwin, linux)
         user: User information including ID, email, and name (None if not logged in)
@@ -485,6 +489,9 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
     # always fills this in, so the "" default means the heartbeat came from an engine too old
     # to report it -- a client should show nothing rather than guess.
     engine_os: str = ""
+    # Defaulted for backward compatibility with older clients.
+    open_workflows: list[OpenWorkflow] = field(default_factory=list)
+    is_executing: bool = False
 
 
 @dataclass
@@ -501,7 +508,7 @@ class EngineHeartbeatResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SetEngineNameRequest(RequestPayload):
+class SetEngineNameRequest(HostRequest):
     """Set the human-readable engine name.
 
     Use when: Customizing engine identification, setting up engine instances,
@@ -542,7 +549,7 @@ class SetEngineNameResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetEngineNameRequest(RequestPayload):
+class GetEngineNameRequest(HostRequest):
     """Get the current engine name.
 
     Use when: Displaying engine information, checking engine identity,

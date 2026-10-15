@@ -424,6 +424,7 @@ class TestWorkflowStateClearReleasesObjects:
     def test_tearing_down_a_workflow_releases_every_library(self, engine: Engine) -> None:
         manager = engine.resource_manager
         released: list[str] = []
+        engine.context_manager.push_workflow("wf")
         for library, label in (("Lib A", "a"), ("Lib B", "b")):
             manager.put_local_object(
                 Held(label),
@@ -431,9 +432,9 @@ class TestWorkflowStateClearReleasesObjects:
                 source="N",
                 key="N-slot",
                 on_drop=lambda value: released.append(value.label),
+                workflow_id=engine.current_workflow.workflow_id,
             )
 
-        engine.context_manager.push_workflow("wf")
         engine.clear_current_workflow_data()
 
         assert sorted(released) == ["a", "b"]
@@ -512,6 +513,7 @@ class TestWorkflowStateClearReleasesObjects:
         """The hook sits on the teardown, which this handler is only one route into."""
         manager = engine.resource_manager
         released: list[str] = []
+        engine.context_manager.push_workflow("wf")
         manager.put_local_object(
             Held("x"),
             owner="Lib A",
@@ -519,8 +521,8 @@ class TestWorkflowStateClearReleasesObjects:
             source="N",
             key="N-slot",
             on_drop=lambda value: released.append(value.label),
+            workflow_id=engine.current_workflow.workflow_id,
         )
-        engine.context_manager.push_workflow("wf")
 
         engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
 

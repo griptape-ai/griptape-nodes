@@ -405,8 +405,13 @@ class ResourceManager(EngineScoped):
         slot: str | None = None,
         group: str | None = None,
         on_drop: Callable[[Any], None] | None = None,
+        workflow_id: str | None = None,
     ) -> str:
         """Hold `value` in this process and return the key that refers to it.
+
+        `workflow_id` is the open workflow it is held for, taken from the node that holds it rather than
+        from whatever the calling thread is bound to. Closing that workflow releases it; an object held
+        for none is released only by the drops that name it.
 
         The key is namespaced by `owner`, so two owners choosing the same suffix scheme cannot collide.
         `group` labels the entry for `drop_objects_for_group`, which is how one of several sources sharing
@@ -426,7 +431,7 @@ class ResourceManager(EngineScoped):
             slot=slot,
             group=group,
             on_drop=on_drop,
-            workflow_id=self.engine.workflow_binding.workflow_id,
+            workflow_id=workflow_id,
         )
         with self._local_objects_lock:
             displaced = self._local_objects.get(full_key)

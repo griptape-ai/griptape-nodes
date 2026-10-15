@@ -134,8 +134,9 @@ spinner until it finishes. Only one workflow runs at a time, so while one runs,
 A dot on a tab means it has unsaved changes. Closing a tab with **×** asks first if
 it does, and closing it discards them. You can't close a tab while it runs.
 
-**Reload Libraries** reopens the saved workflows you had open. A workflow you never
-saved is closed, because there's no file to rebuild it from.
+**Reload Libraries** rebuilds every open workflow with the reloaded libraries and
+keeps its tab, including changes you haven't saved yet. Renaming, moving, or saving
+a workflow keeps its tab too.
 
 ## Reading execution state on the canvas
 

@@ -6,11 +6,12 @@ from pydantic import BaseModel, field_validator
 from griptape_nodes.drivers.cloud_models import ProviderCatalogEntry, ProviderID
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
-    RequestPayload,
+    HostRequest,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     SkipTheLineMixin,
     WorkflowNotAlteredMixin,
+    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -78,7 +79,7 @@ class RunAgentRequestArtifact:
 
 @dataclass
 @PayloadRegistry.register
-class RunAgentRequest(RequestPayload):
+class RunAgentRequest(WorkflowRequest):
     """Run an agent with input and optional artifacts.
 
     Use when: Executing conversational AI interactions, processing user queries,
@@ -176,7 +177,7 @@ class ToolApprovalDecision:
 
 @dataclass
 @PayloadRegistry.register
-class ResolveToolApprovalsRequest(RequestPayload):
+class ResolveToolApprovalsRequest(WorkflowRequest):
     """Answer the tool calls a paused agent turn is waiting on, and continue the turn.
 
     Use when: The user picks "Approve once", "Approve for conversation", or "Deny"
@@ -206,7 +207,7 @@ class ResolveToolApprovalsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ClearToolGrantsRequest(RequestPayload):
+class ClearToolGrantsRequest(HostRequest):
     """Forget every "Approve for conversation" choice made in a thread.
 
     Use when: The user wants the chat agent to ask again before running things in
@@ -241,7 +242,7 @@ class ClearToolGrantsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 
 @dataclass
 @PayloadRegistry.register
-class CancelAgentRequest(RequestPayload, SkipTheLineMixin):
+class CancelAgentRequest(HostRequest, SkipTheLineMixin):
     """Cancel an in-flight agent run for a thread.
 
     Use when: The user stops a running chat turn. Signals cooperative
@@ -290,7 +291,7 @@ class CancelAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetConversationMemoryRequest(RequestPayload):
+class GetConversationMemoryRequest(HostRequest):
     """Get the agent's conversation memory.
 
     Use when: Reviewing conversation history, implementing memory inspection,
@@ -331,7 +332,7 @@ class GetConversationMemoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass
 @PayloadRegistry.register
-class ConfigureAgentRequest(RequestPayload):
+class ConfigureAgentRequest(HostRequest):
     """Configure agent settings and behavior.
 
     Use when: Setting up agent parameters, changing model configurations,
@@ -363,7 +364,7 @@ class ConfigureAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class CreateThreadRequest(RequestPayload):
+class CreateThreadRequest(HostRequest):
     """Create a new conversation thread.
 
     Use when: Starting a new conversation, initializing thread storage,
@@ -406,7 +407,7 @@ class CreateThreadResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ListThreadsRequest(RequestPayload):
+class ListThreadsRequest(HostRequest):
     """List all conversation threads.
 
     Use when: Displaying thread list, retrieving available conversations,
@@ -463,7 +464,7 @@ class ListThreadsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetThreadMetadataRequest(RequestPayload):
+class GetThreadMetadataRequest(HostRequest):
     """Fetch full metadata for a single thread, including per-run provider/model info.
 
     Use when: Opening a thread to display its message history and run details.
@@ -497,7 +498,7 @@ class GetThreadMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailu
 
 @dataclass
 @PayloadRegistry.register
-class DeleteThreadRequest(RequestPayload):
+class DeleteThreadRequest(HostRequest):
     """Delete a conversation thread permanently.
 
     Use when: Removing unwanted conversations, cleaning up storage,
@@ -532,7 +533,7 @@ class DeleteThreadResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class RenameThreadRequest(RequestPayload):
+class RenameThreadRequest(HostRequest):
     """Rename an existing thread.
 
     Use when: Updating thread titles, organizing conversations,
@@ -573,7 +574,7 @@ class RenameThreadResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ArchiveThreadRequest(RequestPayload):
+class ArchiveThreadRequest(HostRequest):
     """Archive a conversation thread.
 
     Use when: Organizing conversations, hiding inactive threads,
@@ -610,7 +611,7 @@ class ArchiveThreadResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class UnarchiveThreadRequest(RequestPayload):
+class UnarchiveThreadRequest(HostRequest):
     """Unarchive a conversation thread.
 
     Use when: Restoring archived conversations, resuming old threads,
@@ -742,7 +743,7 @@ class AgentThinkingEvent(AgentExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListAgentModelsRequest(RequestPayload):
+class ListAgentModelsRequest(HostRequest):
     """List the prompt and image models available to the chat sidebar agent.
 
     Use when: Populating the chat sidebar's model-picker dropdowns. The
@@ -786,7 +787,7 @@ class ListAgentModelsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 
 @dataclass
 @PayloadRegistry.register
-class ListProviderModelsRequest(RequestPayload):
+class ListProviderModelsRequest(HostRequest):
     """List models available from a specific provider endpoint.
 
     For ``griptape_cloud`` returns the static curated catalog. For all other
@@ -827,7 +828,7 @@ class ListProviderModelsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 @PayloadRegistry.register
-class GetAgentConfigRequest(RequestPayload):
+class GetAgentConfigRequest(HostRequest):
     """Get the current agent configuration.
 
     Use when: Populating the agent settings panel with the current provider,
@@ -867,7 +868,7 @@ class GetAgentConfigResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class ListAgentProvidersRequest(RequestPayload):
+class ListAgentProvidersRequest(HostRequest):
     """List all configured agent providers.
 
     Use when: Populating the provider management UI, letting users see and
@@ -900,7 +901,7 @@ class ListAgentProvidersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 @PayloadRegistry.register
-class CreateAgentProviderRequest(RequestPayload):
+class CreateAgentProviderRequest(HostRequest):
     """Create a new named agent provider configuration.
 
     Use when: Adding a new agent provider (Ollama instance, custom endpoint,
@@ -937,7 +938,7 @@ class CreateAgentProviderResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class UpdateAgentProviderRequest(RequestPayload):
+class UpdateAgentProviderRequest(HostRequest):
     """Update an existing named agent provider configuration.
 
     Use when: Editing an agent provider's model, base URL, API key, or metadata.
@@ -968,7 +969,7 @@ class UpdateAgentProviderResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class DeleteAgentProviderRequest(RequestPayload):
+class DeleteAgentProviderRequest(HostRequest):
     """Delete a named agent provider configuration.
 
     The ``griptape_cloud`` provider cannot be deleted.

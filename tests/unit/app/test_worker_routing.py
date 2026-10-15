@@ -59,7 +59,9 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
+    from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import ResultContext
+    from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
 
 
 @dataclass(kw_only=True)
@@ -314,16 +316,19 @@ class TestDropWorkflowLocalObjectsHandler:
         Freeing under a running forward pass is what must not happen; forgetting where the object is cannot
         hurt a node that already holds it. Declining both would report success for work nothing re-issues.
         """
+        runtime = engine.open_workflow_runtime()
         released: list[str] = []
         key = engine.resource_manager.put_local_object(
-            object(), owner="Lib A", source="N", key="cfg", on_drop=lambda _v: released.append("gone")
+            object(),
+            owner="Lib A",
+            source="N",
+            key="cfg",
+            on_drop=lambda _v: released.append("gone"),
+            workflow_id=runtime.workflow_id,
         )
 
         with engine.event_manager.node_execution_scope():
-            result = await _handle_drop_workflow_local_objects(
-                DropWorkflowLocalObjectsRequest(workflow_id=engine.workflow_binding.workflow_id),
-                event_manager=engine.event_manager,
-            )
+            result = await _drop_for(engine, runtime)
             assert isinstance(result, DropWorkflowLocalObjectsResultSuccess)
             assert engine.resource_manager.entry_for(key) is None
             assert released == []
@@ -334,6 +339,7 @@ class TestDropWorkflowLocalObjectsHandler:
     @pytest.mark.asyncio
     async def test_releases_off_the_event_loop(self, engine: Engine) -> None:
         """A worker whose loop is blocked past the heartbeat timeout is evicted mid-load."""
+        runtime = engine.open_workflow_runtime()
         release_threads: list[int] = []
         engine.resource_manager.put_local_object(
             object(),
@@ -341,12 +347,10 @@ class TestDropWorkflowLocalObjectsHandler:
             source="N",
             key="cfg",
             on_drop=lambda _value: release_threads.append(threading.get_ident()),
+            workflow_id=runtime.workflow_id,
         )
 
-        result = await _handle_drop_workflow_local_objects(
-            DropWorkflowLocalObjectsRequest(workflow_id=engine.workflow_binding.workflow_id),
-            event_manager=engine.event_manager,
-        )
+        result = await _drop_for(engine, runtime)
 
         assert isinstance(result, DropWorkflowLocalObjectsResultSuccess)
         assert release_threads
@@ -354,11 +358,9 @@ class TestDropWorkflowLocalObjectsHandler:
 
     @pytest.mark.asyncio
     async def test_reports_failure_rather_than_raising_at_the_transport(self, engine: Engine) -> None:
+        runtime = engine.open_workflow_runtime()
         with patch.object(engine.resource_manager, "drop_local_objects_for_workflow", side_effect=RuntimeError("boom")):
-            result = await _handle_drop_workflow_local_objects(
-                DropWorkflowLocalObjectsRequest(workflow_id=engine.workflow_binding.workflow_id),
-                event_manager=engine.event_manager,
-            )
+            result = await _drop_for(engine, runtime)
 
         assert isinstance(result, DropWorkflowLocalObjectsResultFailure)
 
@@ -366,19 +368,37 @@ class TestDropWorkflowLocalObjectsHandler:
     async def test_keeps_the_objects_of_other_workflows(self, engine: Engine) -> None:
         """A worker serves every open workflow, so closing one must not empty another's cache."""
         manager = engine.resource_manager
-        kept = manager.put_local_object(object(), owner="Lib A", source="N", key="kept")
-        closing = engine.create_workflow_runtime()
-        closing_id = closing.workflow_id
-        with engine.bind_workflow_runtime(closing):
-            dropped = manager.put_local_object(object(), owner="Lib A", source="N", key="dropped")
-
-        result = await _handle_drop_workflow_local_objects(
-            DropWorkflowLocalObjectsRequest(workflow_id=closing_id), event_manager=engine.event_manager
+        staying = engine.open_workflow_runtime()
+        closing = engine.open_workflow_runtime()
+        kept = manager.put_local_object(
+            object(), owner="Lib A", source="N", key="kept", workflow_id=staying.workflow_id
         )
+        dropped = manager.put_local_object(
+            object(), owner="Lib A", source="N", key="dropped", workflow_id=closing.workflow_id
+        )
+
+        result = await _drop_for(engine, closing)
 
         assert isinstance(result, DropWorkflowLocalObjectsResultSuccess)
         assert manager.entry_for(dropped) is None
         assert manager.entry_for(kept) is not None
+
+    @pytest.mark.asyncio
+    async def test_forgets_the_namespace_kept_for_the_workflow(self, engine: Engine) -> None:
+        """The orchestrator cleared the workflow, so the worker's namespace for it goes too."""
+        runtime = engine.open_workflow_runtime()
+
+        await _drop_for(engine, runtime)
+
+        assert runtime not in engine.workflow_runtimes
+
+
+async def _drop_for(engine: Engine, runtime: WorkflowRuntime) -> ResultPayload:
+    """Run the drop handler the way dispatch does: bound to the workflow the request names."""
+    with engine.bind_workflow(runtime):
+        return await _handle_drop_workflow_local_objects(
+            DropWorkflowLocalObjectsRequest(workflow_id=runtime.workflow_id), event_manager=engine.event_manager
+        )
 
 
 class TestDropLocalObjectsHandler:

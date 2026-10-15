@@ -35,6 +35,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
     ResultPayloadFailure,
+    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
@@ -43,8 +44,11 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.run_scheduler import RunScheduler
 from griptape_nodes.retained_mode.workflow_runtime import (
-    WorkflowBinding,
+    NO_WORKFLOW,
+    NoWorkflow,
+    WorkflowNotNamedError,
     WorkflowNotOpenError,
     WorkflowRuntime,
     bound_workflow,
@@ -185,7 +189,7 @@ class Engine:
     _workflow_registry: _WorkflowRegistry
     _open_workflows_manager: OpenWorkflowsManager
     _workflow_runtimes: list[WorkflowRuntime]
-    _active_workflow_runtime: WorkflowRuntime
+    _run_scheduler: RunScheduler
 
     def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.access_manager import AccessManager
@@ -232,9 +236,14 @@ class Engine:
             WorkflowManager,
         )
 
-        # Created before the managers, which keep their per-workflow state in the active runtime.
-        self._active_workflow_runtime = WorkflowRuntime(owner=self)
-        self._workflow_runtimes = [self._active_workflow_runtime]
+        # No workflow is open until something opens one: OpenWorkflowRequest, or the first workflow
+        # request from a client that works on a single workflow (see `runtime_for_request`).
+        self._workflow_runtimes = []
+        self._run_scheduler = RunScheduler(
+            is_running=self.is_workflow_running, display_name_of=self._workflow_display_name
+        )
+        # Unbound reads of the current workflow resolved through the compatibility path, reported once.
+        self._warned_unbound_workflow_read = False
 
         self._event_manager = EventManager(engine=self)
         self._resource_manager = ResourceManager(self._event_manager, engine=self)
@@ -405,27 +414,49 @@ class Engine:
         return self._workflow_registry
 
     @property
-    def workflow_runtime(self) -> WorkflowRuntime:
-        """The runtime the current work acts on."""
-        return self.workflow_binding.runtime
-
-    @property
-    def workflow_binding(self) -> WorkflowBinding:
-        """The workflow the current work acts on: the one it was bound to, else the active one."""
-        bound = bound_workflow.get()
-        if bound is not None and bound.runtime.owner is self:
-            return bound
-        return WorkflowBinding(self._active_workflow_runtime, self._active_workflow_runtime.workflow_id)
-
-    @property
-    def active_workflow_runtime(self) -> WorkflowRuntime:
-        """The runtime that requests naming no workflow act on, for clients that don't track workflows."""
-        return self._active_workflow_runtime
+    def run_scheduler(self) -> RunScheduler:
+        return self._run_scheduler
 
     @property
     def workflow_runtimes(self) -> list[WorkflowRuntime]:
         """Every open runtime, in the order they were opened."""
         return list(self._workflow_runtimes)
+
+    @property
+    def current_workflow(self) -> WorkflowRuntime:
+        """The runtime the current work acts on.
+
+        The one it is bound to: the workflow its request named, or the one the request that issued it
+        acts on. Unbound work, such as a saved workflow file run on its own, acts on the engine's only
+        open workflow, and opens one when none is open, as a workflow request naming none does.
+
+        Raises:
+            WorkflowNotOpenError: The work is bound to no workflow.
+            WorkflowNotNamedError: The work is unbound and several workflows are open.
+        """
+        bound = bound_workflow.get()
+        if bound is NO_WORKFLOW:
+            msg = "Attempted to act on the current workflow. Failed because this work acts on no workflow."
+            raise WorkflowNotOpenError(msg)
+        runtime = self.current_workflow_or_none()
+        if runtime is None:
+            return self.open_workflow_runtime()
+        return runtime
+
+    def current_workflow_or_none(self) -> WorkflowRuntime | None:
+        """Like `current_workflow`, but None when no workflow is open or the work is bound to none.
+
+        For asking whether there is a current workflow, which must not open one.
+
+        Raises:
+            WorkflowNotNamedError: The work is unbound and several workflows are open.
+        """
+        bound = bound_workflow.get()
+        if bound is NO_WORKFLOW:
+            return None
+        if isinstance(bound, WorkflowRuntime) and bound.owner is self:
+            return bound
+        return self._resolve_unbound_workflow()
 
     def find_workflow_runtime(self, workflow_id: str) -> WorkflowRuntime | None:
         for runtime in self._workflow_runtimes:
@@ -433,67 +464,162 @@ class Engine:
                 return runtime
         return None
 
-    def binding_for_request(self, request: RequestPayload) -> WorkflowBinding:
-        """The workflow `request` acts on.
+    def runtime_for_request(self, request: RequestPayload) -> WorkflowRuntime | NoWorkflow | None:
+        """What dispatch binds `request` to: a runtime, NO_WORKFLOW, or None to leave the binding alone.
 
-        Its `workflow_id` when it names one, otherwise the workflow the current work is bound to.
+        A host request leaves it alone. A workflow request acts on the workflow it names, else the one
+        the current work is bound to, else the engine's only open workflow. A client that works on a
+        single workflow never names one, so its first workflow request opens one when none is open.
 
         Raises:
-            WorkflowNotOpenError: The request names a workflow this engine doesn't hold open.
+            WorkflowNotOpenError: The request names a workflow that isn't open.
+            WorkflowNotNamedError: The request names none and none can be chosen for it.
         """
-        if request.workflow_id is None:
-            return self.workflow_binding
-        runtime = self.find_workflow_runtime(request.workflow_id)
+        if not isinstance(request, WorkflowRequest):
+            return None
+        if request.workflow_id is not None:
+            return self._runtime_named_by(request, request.workflow_id)
+        return self._runtime_for_unnamed(request)
+
+    def open_workflow_runtime(self, workflow_id: str | None = None) -> WorkflowRuntime:
+        """Open an empty runtime, with the given id or a fresh one."""
+        runtime = WorkflowRuntime(owner=self, workflow_id=workflow_id)
+        self._workflow_runtimes.append(runtime)
+        return runtime
+
+    def remove_workflow_runtime(self, runtime: WorkflowRuntime) -> None:
+        """Forget a runtime whose objects the caller has cleared."""
+        self._workflow_runtimes.remove(runtime)
+        self._run_scheduler.release(runtime)
+
+    @contextmanager
+    def bind_workflow(self, runtime: WorkflowRuntime | NoWorkflow) -> Iterator[None]:
+        """Act on `runtime`, or on no workflow, for the duration of the block and in tasks it spawns."""
+        token = bound_workflow.set(runtime)
+        try:
+            yield
+        finally:
+            bound_workflow.reset(token)
+
+    def is_workflow_running(self, runtime: WorkflowRuntime) -> bool:
+        """Whether `runtime`'s run is in progress, by its own execution state."""
+        with self.bind_workflow(runtime):
+            return self._flow_manager.check_for_existing_running_flow()
+
+    def describe_open_workflows(self) -> dict[str, Any]:
+        """Describe the open workflows for a heartbeat or discovery record, as the heartbeat's fields.
+
+        Every open workflow, and whether any is running, so a client never mistakes a run in a workflow
+        it isn't showing for an idle engine. The single-workflow fields older clients read describe the
+        running workflow, else the only one open.
+        """
+        workflows = self._open_workflows_manager.list_open_workflows()
+        running = [workflow for workflow in workflows if workflow.is_running]
+        workflow_info: dict[str, Any] = {
+            "open_workflows": workflows,
+            "is_executing": bool(running),
+            "current_workflow": None,
+            "workflow_file_path": None,
+            "has_active_flow": False,
+        }
+
+        described = None
+        if running:
+            described = running[0]
+        elif len(workflows) == 1:
+            described = workflows[0]
+        if described is None:
+            return workflow_info
+
+        workflow_info["current_workflow"] = described.workflow_name
+        runtime = self.find_workflow_runtime(described.workflow_id)
         if runtime is not None:
-            return WorkflowBinding(runtime, request.workflow_id)
-        # A worker runs nodes for workflows the orchestrator holds. It keeps their id, so the requests it
-        # forwards back reach the right workflow, and acts in its own runtime.
+            with self.bind_workflow(runtime):
+                workflow_info["has_active_flow"] = self._context_manager.has_current_flow()
+        # None for an unsaved workflow.
+        if self._workflow_registry.has_workflow_with_name(described.workflow_name):
+            workflow = self._workflow_registry.get_workflow_by_name(described.workflow_name)
+            if workflow.file_path is not None:
+                workflow_info["workflow_file_path"] = self._workflow_registry.get_complete_file_path(workflow.file_path)
+        return workflow_info
+
+    def _runtime_named_by(self, request: WorkflowRequest, workflow_id: str) -> WorkflowRuntime:
+        runtime = self.find_workflow_runtime(workflow_id)
+        if runtime is not None:
+            return runtime
         if self._library_manager.is_worker:
-            return WorkflowBinding(self.workflow_runtime, request.workflow_id)
+            # A worker holds none of the orchestrator's workflows. It keeps a namespace for each one it
+            # runs nodes for, under the orchestrator's id, made here on first use and dropped by
+            # DropWorkflowLocalObjectsRequest when the orchestrator clears that workflow.
+            return self.open_workflow_runtime(workflow_id)
         msg = (
             f"Attempted to handle '{type(request).__name__}' in a workflow. "
             "Failed because that workflow isn't open anymore."
         )
         raise WorkflowNotOpenError(msg)
 
-    def create_workflow_runtime(self) -> WorkflowRuntime:
-        """Open an empty runtime. It does not become active."""
-        runtime = WorkflowRuntime(owner=self)
-        self._workflow_runtimes.append(runtime)
-        return runtime
+    def _runtime_for_unnamed(self, request: WorkflowRequest) -> WorkflowRuntime | NoWorkflow:
+        optional = type(request).workflow_optional
+        bound = bound_workflow.get()
+        if isinstance(bound, WorkflowRuntime) and bound.owner is self:
+            return bound
+        if bound is NO_WORKFLOW:
+            if optional:
+                return NO_WORKFLOW
+            raise WorkflowNotNamedError(self._unnamed_workflow_message(request))
 
-    def activate_workflow_runtime(self, runtime: WorkflowRuntime) -> None:
-        if runtime not in self._workflow_runtimes:
-            msg = f"Attempted to activate workflow runtime '{runtime.workflow_id}', which this engine does not hold."
-            raise ValueError(msg)
-        self._active_workflow_runtime = runtime
-
-    def remove_workflow_runtime(self, runtime: WorkflowRuntime) -> None:
-        """Forget a runtime whose objects the caller has cleared.
-
-        Removing the active runtime makes the most recently opened remaining one active, or a fresh empty
-        one when it was the last, so there is always one for requests to act on.
-        """
-        self._workflow_runtimes.remove(runtime)
-        if runtime is not self._active_workflow_runtime:
-            return
-        if not self._workflow_runtimes:
-            self._workflow_runtimes.append(WorkflowRuntime(owner=self))
-        self._active_workflow_runtime = self._workflow_runtimes[-1]
-
-    def reset_workflow_runtimes(self) -> None:
-        """Forget every runtime, whose objects the caller has cleared, and make a fresh empty one active."""
-        self._active_workflow_runtime = WorkflowRuntime(owner=self)
-        self._workflow_runtimes = [self._active_workflow_runtime]
-
-    @contextmanager
-    def bind_workflow_runtime(self, runtime: WorkflowRuntime) -> Iterator[WorkflowRuntime]:
-        """Act on `runtime` for the duration of the block, and in tasks it spawns."""
-        token = bound_workflow.set(WorkflowBinding(runtime, runtime.workflow_id))
         try:
-            yield runtime
-        finally:
-            bound_workflow.reset(token)
+            runtime = self._resolve_unbound_workflow()
+        except WorkflowNotNamedError:
+            if optional:
+                return NO_WORKFLOW
+            raise WorkflowNotNamedError(self._unnamed_workflow_message(request)) from None
+        if runtime is not None:
+            return runtime
+        if optional:
+            return NO_WORKFLOW
+        # A client that works on a single workflow never names one, so its first workflow request
+        # opens one.
+        return self.open_workflow_runtime()
+
+    def _resolve_unbound_workflow(self) -> WorkflowRuntime | None:
+        """The workflow unbound work acts on: the only one open, or None when none is.
+
+        Raises:
+            WorkflowNotNamedError: Several are open.
+        """
+        if len(self._workflow_runtimes) == 1:
+            return self._workflow_runtimes[0]
+        if not self._workflow_runtimes:
+            return None
+        # Compatibility for library code that starts its own threads without copying the context, and so
+        # reads the current workflow with nothing bound. One workflow runs at a time, so the running one is
+        # where that code came from. To be removed once libraries have had a release to copy the context
+        # (contextvars.copy_context) or emit through their node.
+        running = self._run_scheduler.running_runtime()
+        if running is not None:
+            if not self._warned_unbound_workflow_read:
+                self._warned_unbound_workflow_read = True
+                logger.warning(
+                    "Code running outside the request that started it asked for the current workflow while "
+                    "several are open, and was given the running one. Start threads with "
+                    "contextvars.copy_context().run so they keep their workflow; this fallback will be removed."
+                )
+            return running
+        msg = (
+            "Attempted to act on the current workflow. Failed because several workflows are open and this "
+            "work names none of them."
+        )
+        raise WorkflowNotNamedError(msg)
+
+    def _unnamed_workflow_message(self, request: RequestPayload) -> str:
+        return (
+            f"Attempted to handle '{type(request).__name__}'. Failed because several workflows are open and the "
+            "request names none of them. Name one in its workflow_id."
+        )
+
+    def _workflow_display_name(self, runtime: WorkflowRuntime) -> str:
+        return self._open_workflows_manager.display_name_in(runtime) or "Untitled"
 
     # Node libraries and saved workflows do `app = GriptapeNodes()` and then call these
     # PascalCase accessors on the result. `GriptapeNodes()` hands back an `Engine`, so
@@ -710,27 +836,9 @@ class Engine:
         # teardown shares: deleting the open workflow reaches this without going through that handler.
         # This covers only the objects in this process; ObjectManager and WorkflowManager tell the
         # workers about theirs.
-        dropped = self._resource_manager.drop_local_objects_for_workflow(self.workflow_binding.workflow_id)
+        dropped = self._resource_manager.drop_local_objects_for_workflow(self.current_workflow.workflow_id)
         if dropped:
             logger.debug("Released %d held object(s) while tearing down the workflow.", dropped)
-
-    def workflow_running_elsewhere(self) -> str | None:
-        """The name of an open workflow other than the current one that is running, if any.
-
-        Runs are serialized across workflows: workers, the GPU, and the resource manager are shared,
-        and none of them tell runs apart yet.
-        """
-        current = self.workflow_runtime
-        for runtime in self._workflow_runtimes:
-            if runtime is current:
-                continue
-            with self.bind_workflow_runtime(runtime):
-                if not self._flow_manager.check_for_existing_running_flow():
-                    continue
-                if self._context_manager.has_current_workflow():
-                    return self._context_manager.get_current_workflow_name()
-                return "another workflow"
-        return None
 
     @handles(GetEngineVersionRequest)
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
@@ -757,7 +865,7 @@ class Engine:
             instance_info = self._get_instance_info()
 
             # Get current workflow information
-            workflow_info = self._get_current_workflow_info()
+            workflow_info = self.describe_open_workflows()
 
             # Get engine name
             engine_name = self._engine_identity_manager.engine_name
@@ -803,38 +911,6 @@ class Engine:
         instance_info["deployment_type"] = "griptape_hosted" if any(instance_info.values()) else "local"
 
         return instance_info
-
-    def _get_current_workflow_info(self) -> dict[str, Any]:
-        """Get information about the currently loaded workflow.
-
-        Returns workflow name, file path, and status information if available.
-        """
-        workflow_info = {
-            "current_workflow": None,
-            "workflow_file_path": None,
-            "has_active_flow": False,
-        }
-
-        try:
-            context_manager = self._context_manager
-
-            # Check if there's an active workflow
-            if context_manager.has_current_workflow():
-                workflow_name = context_manager.get_current_workflow_name()
-                workflow_info["current_workflow"] = workflow_name
-                workflow_info["has_active_flow"] = context_manager.has_current_flow()
-
-                # Get workflow file path from registry (None for unsaved workflows).
-                if self._workflow_registry.has_workflow_with_name(workflow_name):
-                    workflow = self._workflow_registry.get_workflow_by_name(workflow_name)
-                    if workflow.file_path is not None:
-                        absolute_path = self._workflow_registry.get_complete_file_path(workflow.file_path)
-                        workflow_info["workflow_file_path"] = absolute_path
-
-        except Exception as err:
-            logger.warning("Failed to get current workflow info: %s", err)
-
-        return workflow_info
 
 
 def current_engine() -> Engine:

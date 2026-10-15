@@ -368,16 +368,20 @@ A typo here surfaces as an opaque validation error from pydantic, not a friendly
 ### Several workflows can be open, and one runs at a time
 
 `OpenWorkflowRequest(workflow_name=...)` opens a saved workflow alongside the open
-ones; with no `workflow_name` it starts a new one. Either way it becomes the active
-workflow, which every request that names no workflow acts on. To act on another open
-workflow, pass its `workflow_id` (from `OpenWorkflowRequest` or
-`ListOpenWorkflowsRequest`) on the request. `CloseWorkflowRequest(workflow_id=...)`
-closes one. Only one workflow runs at a time: starting a run while another workflow
-runs fails.
+ones; with no `workflow_name` it starts a new one. It returns the workflow's
+`workflow_id`, which stays the same until it is closed, through saves, renames, and
+library reloads. `ListOpenWorkflowsRequest` lists the open ones and their ids.
 
-`SetWorkflowContextRequest` refuses if the active workflow is already set; open
-another instead. `ClearAllObjectStateRequest(i_know_what_im_doing=True)` closes
-EVERY open workflow.
+Requests about one workflow (nodes, flows, connections, parameters, runs, saving)
+take a `workflow_id`. Pass it whenever more than one workflow is open: with several
+open, such a request that names none fails rather than guessing. With exactly one
+open you may leave it out. Requests about the engine as a whole (config, libraries,
+projects, secrets, listing workflows) take no `workflow_id`.
+
+`CloseWorkflowRequest(workflow_id=...)` closes one. Only one workflow runs at a
+time: starting a run while another workflow runs fails. `SetWorkflowContextRequest`
+refuses if the workflow already has a context; open another instead.
+`ClearAllObjectStateRequest(i_know_what_im_doing=True)` closes EVERY open workflow.
 
 ### Agents cannot be interrupted mid-run
 

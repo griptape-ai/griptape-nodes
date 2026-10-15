@@ -35,6 +35,8 @@
     ]
   },
   "EventResultSuccess": {
+    "scope": "host",
+    "workflow_id": null,
     "request_id": "r1",
     "response_topic": null,
     "retained_mode": "m",
@@ -77,6 +79,8 @@
     }
   },
   "EventResultFailure": {
+    "scope": "host",
+    "workflow_id": null,
     "request_id": "r2",
     "response_topic": null,
     "retained_mode": null,
@@ -106,7 +110,9 @@
     }
   },
   "ExecutionEvent": {
+    "scope": "host",
     "workflow_id": null,
+    "run_id": null,
     "event_type": "ExecutionEvent",
     "payload_type": "CurrentControlNodeEvent",
     "payload": {
@@ -114,6 +120,8 @@
     }
   },
   "AppEvent": {
+    "scope": "host",
+    "workflow_id": null,
     "event_type": "AppEvent",
     "payload_type": "AppInitializationComplete",
     "payload": {

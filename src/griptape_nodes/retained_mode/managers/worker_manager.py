@@ -1284,7 +1284,7 @@ class WorkerManager(EngineScoped):
 
         if self._transport is None or not self._workers:
             return
-        request = DropWorkflowLocalObjectsRequest(workflow_id=self.engine.workflow_binding.workflow_id)
+        request = DropWorkflowLocalObjectsRequest(workflow_id=self.engine.current_workflow.workflow_id)
         try:
             await self.broadcast_to_workers(EventRequest(request=request))
         except Exception as e:

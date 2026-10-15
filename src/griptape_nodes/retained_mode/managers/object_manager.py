@@ -47,7 +47,18 @@ class ObjectManager(EngineScoped):
 
     @property
     def _state(self) -> "ObjectManager.WorkflowState":
-        return self.engine.workflow_runtime.state(ObjectManager.WorkflowState, ObjectManager.WorkflowState)
+        return self.engine.current_workflow.state(ObjectManager.WorkflowState, ObjectManager.WorkflowState)
+
+    @property
+    def _objects_to_read(self) -> dict[str, object]:
+        """The current workflow's objects for a lookup, which finds none when no workflow is open.
+
+        Only lookups read through here. Adding or removing an object needs a workflow to hold it.
+        """
+        runtime = self.engine.current_workflow_or_none()
+        if runtime is None:
+            return {}
+        return runtime.state(ObjectManager.WorkflowState, ObjectManager.WorkflowState).name_to_objects
 
     @handles(RenameObjectRequest)
     def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
@@ -118,23 +129,26 @@ class ObjectManager(EngineScoped):
 
         engine = self.engine
         for runtime in engine.workflow_runtimes:
-            with engine.bind_workflow_runtime(runtime):
+            with engine.bind_workflow(runtime):
                 failure = await self.clear_current_workflow()
             if failure is not None:
                 return ClearAllObjectStateResultFailure(result_details=failure)
+            engine.remove_workflow_runtime(runtime)
 
-        # Every workflow is closed; requests that name none act on a fresh empty one.
-        engine.reset_workflow_runtimes()
         engine.open_workflows_manager.announce_change()
         engine.event_manager.clear_event_suppression()
 
         details = "Successfully cleared all object state (deleted everything)."
         return ClearAllObjectStateResultSuccess(result_details=details)
 
-    async def clear_current_workflow(self) -> str | None:
+    async def clear_current_workflow(self, *, keep_variables: bool = False) -> str | None:
         """Delete everything in the workflow the current work acts on, leaving its runtime empty.
 
         The other open workflows are untouched. Returns why it failed, or None.
+
+        Args:
+            keep_variables: Keep the workflow's variables and settings, for a rebuild in the same runtime
+                from a graph that doesn't record them.
         """
         engine = self.engine
         # Cancel any in-flight run before tearing its bookkeeping down: the reset
@@ -179,6 +193,8 @@ class ObjectManager(EngineScoped):
         if self._state.name_to_objects:
             return f"Attempted to clear all object state, but {len(self._state.name_to_objects)} object(s) remained after workflow teardown."
 
+        if keep_variables:
+            return None
         engine.variables_manager.clear_object_state()
         if workflow_name is not None:
             engine.workflow_manager.clear_object_state(workflow_name)
@@ -186,7 +202,7 @@ class ObjectManager(EngineScoped):
 
     def has_objects(self) -> bool:
         """Whether the current workflow has any flows or nodes."""
-        return bool(self._state.name_to_objects)
+        return bool(self._objects_to_read)
 
     def get_filtered_subset[T](
         self,
@@ -208,7 +224,7 @@ class ObjectManager(EngineScoped):
         if name and isinstance(name, str):
             name = re.compile(name)
 
-        for key, value in self._state.name_to_objects.items():
+        for key, value in self._objects_to_read.items():
             # Check key pattern if provided
             key_match = True
             if name:
@@ -282,14 +298,14 @@ class ObjectManager(EngineScoped):
         self._state.name_to_objects[name] = obj
 
     def get_object_by_name(self, name: str) -> object:
-        return self._state.name_to_objects[name]
+        return self._objects_to_read[name]
 
     def has_object_with_name(self, name: str) -> bool:
-        has_it = name in self._state.name_to_objects
+        has_it = name in self._objects_to_read
         return has_it
 
     def attempt_get_object_by_name(self, name: str) -> Any | None:
-        return self._state.name_to_objects.get(name, None)
+        return self._objects_to_read.get(name, None)
 
     def attempt_get_object_by_name_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
         obj = self.attempt_get_object_by_name(name)

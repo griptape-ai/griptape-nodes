@@ -1,18 +1,18 @@
 from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
-    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
+    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
 @PayloadRegistry.register
-class SetWorkflowContextRequest(RequestPayload):
+class SetWorkflowContextRequest(WorkflowRequest):
     """Set the current workflow context.
 
     Use when: Switching between workflows, initializing workflow sessions,
@@ -71,7 +71,7 @@ class SetWorkflowContextFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowContextRequest(RequestPayload):
+class GetWorkflowContextRequest(WorkflowRequest):
     """Get the current workflow context.
 
     Use when: Checking which workflow is active, displaying current workflow info,
@@ -104,7 +104,7 @@ class GetWorkflowContextFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class EnsureWorkflowAndFlowRequest(RequestPayload):
+class EnsureWorkflowAndFlowRequest(WorkflowRequest):
     """Ensure a workflow + flow context exists, creating scratch ones if needed.
 
     Use when: Bootstrapping from a cold engine state. This is the typical opening call from

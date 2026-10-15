@@ -23,6 +23,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     EventResultFailure,
     EventResultSuccess,
+    ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     ExecutionPayload,
     ProgressEvent,
@@ -30,6 +31,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
     ResultPayload,
     StrictModeViolationDetail,
+    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -39,7 +41,14 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointFailure,
 )
 from griptape_nodes.retained_mode.request_handlers import handled_request_types
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowNotOpenError, bound_workflow
+from griptape_nodes.retained_mode.run_scheduler import current_run
+from griptape_nodes.retained_mode.workflow_runtime import (
+    NoWorkflow,
+    WorkflowNotNamedError,
+    WorkflowNotOpenError,
+    WorkflowRuntime,
+    bound_workflow,
+)
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 if TYPE_CHECKING:
@@ -173,6 +182,8 @@ def _running_loop() -> asyncio.AbstractEventLoop | None:
 class ResultContext(TypedDict, total=False):
     response_topic: str | None
     request_id: str | None
+    # The workflow the request acted on, named on its result event. Set by dispatch, not by callers.
+    workflow_id: str | None
 
 
 class EventManager(EngineScoped):
@@ -335,7 +346,7 @@ class EventManager(EngineScoped):
         if self._event_queue is None:
             return
 
-        self._stamp_workflow(event)
+        self._scope_run_event(event)
 
         if self._is_cross_thread_call() and self._event_loop is not None:
             # We're in a different thread from the event loop, use thread-safe method
@@ -361,7 +372,7 @@ class EventManager(EngineScoped):
         if self._event_queue is None:
             return
 
-        self._stamp_workflow(event)
+        self._scope_run_event(event)
 
         if self._is_cross_thread_call() and self._event_loop is not None:
             # We're in a different thread from the event loop, use thread-safe method
@@ -375,18 +386,31 @@ class EventManager(EngineScoped):
         # queue after its triggering event (see put_event).
         self._dispatch_to_execution_listeners(event)
 
-    def _stamp_workflow(self, event: Any) -> None:
-        """Tag a run event with the workflow it came from.
+    def _scope_run_event(self, event: Any) -> None:
+        """Name the workflow and run of a run event its emitter left unnamed.
 
-        Runs in the emitting task, which is bound to its workflow, so this names the workflow that
-        emitted the event even when a client has switched to another since.
+        Runs in the emitting task, so the workflow is the one that task is bound to, even when a client
+        has since moved on to another. An event emitted by nothing bound to a workflow stays a host event:
+        naming no workflow is better than naming the wrong one.
         """
         if isinstance(event, ExecutionGriptapeNodeEvent):
-            execution_event = event.wrapped_event
-            if execution_event.workflow_id is None:
-                execution_event.workflow_id = self.engine.workflow_binding.workflow_id
-        elif isinstance(event, ProgressEvent) and event.workflow_id is None:
-            event.workflow_id = self.engine.workflow_binding.workflow_id
+            target: ExecutionEvent | ProgressEvent = event.wrapped_event
+        elif isinstance(event, ProgressEvent):
+            target = event
+        else:
+            return
+        if target.workflow_id is not None:
+            return
+        bound = bound_workflow.get()
+        if not isinstance(bound, WorkflowRuntime) or bound.owner is not self.engine:
+            return
+        run = current_run.get()
+        if isinstance(target, ExecutionEvent):
+            target.scope_to_workflow(bound.workflow_id)
+        else:
+            target.workflow_id = bound.workflow_id
+        if run is not None and run.workflow_id == bound.workflow_id:
+            target.run_id = run.run_id
 
     def add_pre_dispatch_hook(
         self,
@@ -544,6 +568,8 @@ class EventManager(EngineScoped):
             return
 
         active = _active_post_dispatch_hooks.get()
+        # The hook runs in a fresh context, so it is handed the workflow the request acted on.
+        binding = bound_workflow.get()
         for callback in hooks:
             # Identity, not `(request_type, callback) in active`: membership compares with
             # `__eq__`, and a callable `@dataclass` compares by field value, so a hook
@@ -556,7 +582,7 @@ class EventManager(EngineScoped):
                     request_type.__name__,
                 )
                 continue
-            self._schedule_post_dispatch_hook(request_type, callback, request, result, active)
+            self._schedule_post_dispatch_hook(request_type, callback, request, result, active, binding)
 
     def _scrub_omitted_request_fields(self, request: RequestPayload) -> None:
         """Null out the request fields marked `omit_from_result`, in place.
@@ -568,13 +594,14 @@ class EventManager(EngineScoped):
             if field.metadata.get("omit_from_result", False):
                 setattr(request, field.name, None)
 
-    def _schedule_post_dispatch_hook(
+    def _schedule_post_dispatch_hook(  # noqa: PLR0913, PLR0917
         self,
         request_type: type[RequestPayload],
         callback: PostDispatchHook,
         request: RequestPayload,
         result: ResultPayload,
         inherited_chain: tuple[tuple[type[RequestPayload], Any], ...],
+        binding: WorkflowRuntime | NoWorkflow | None,
     ) -> None:
         """Hand one hook to the engine loop, or run it inline if there is no live loop.
 
@@ -603,6 +630,7 @@ class EventManager(EngineScoped):
                     request,
                     result,
                     inherited_chain,
+                    binding,
                 )
             except RuntimeError:
                 # Lost the race with loop shutdown between the check and the call; fall
@@ -611,7 +639,7 @@ class EventManager(EngineScoped):
             else:
                 return
 
-        self._run_post_dispatch_hook_inline(request_type, callback, request, result, inherited_chain)
+        self._run_post_dispatch_hook_inline(request_type, callback, request, result, inherited_chain, binding)
 
     def _spawn_post_dispatch_hook_task(  # noqa: PLR0913, PLR0917
         self,
@@ -621,10 +649,11 @@ class EventManager(EngineScoped):
         request: RequestPayload,
         result: ResultPayload,
         inherited_chain: tuple[tuple[type[RequestPayload], Any], ...],
+        binding: WorkflowRuntime | NoWorkflow | None,
     ) -> None:
         """Create the detached hook task. Runs on `loop`'s own thread."""
         task = loop.create_task(
-            self._run_post_dispatch_hook(request_type, callback, request, result, inherited_chain),
+            self._run_post_dispatch_hook(request_type, callback, request, result, inherited_chain, binding),
             context=contextvars.Context(),
         )
         self._inflight_post_dispatch_hook_tasks.add(task)
@@ -649,13 +678,14 @@ class EventManager(EngineScoped):
         if exception is not None:
             logging.getLogger("griptape_nodes").error("Post-dispatch hook task failed.", exc_info=exception)
 
-    async def _run_post_dispatch_hook(
+    async def _run_post_dispatch_hook(  # noqa: PLR0913, PLR0917
         self,
         request_type: type[RequestPayload],
         callback: PostDispatchHook,
         request: RequestPayload,
         result: ResultPayload,
         inherited_chain: tuple[tuple[type[RequestPayload], Any], ...],
+        binding: WorkflowRuntime | NoWorkflow | None,
     ) -> None:
         """Invoke one hook, isolated from the context that dispatched the request.
 
@@ -669,10 +699,13 @@ class EventManager(EngineScoped):
         `current_request_type()` from reporting the dispatching request inside the hook.
 
         A fresh context drops the engine binding too, so it is re-established here from
-        the manager's own engine reference. It also drops the re-entrancy marker, which is
-        why the chain is passed in explicitly rather than read from the context here.
+        the manager's own engine reference, and so does the workflow binding, which is passed
+        in so a request the hook issues acts on the workflow the original request did. It also
+        drops the re-entrancy marker, which is why the chain is passed in explicitly rather
+        than read from the context here.
         """
         _active_post_dispatch_hooks.set((*inherited_chain, (request_type, callback)))
+        bound_workflow.set(binding)
 
         with engine_scope(self.engine):
             try:
@@ -692,13 +725,14 @@ class EventManager(EngineScoped):
                     request_type.__name__,
                 )
 
-    def _run_post_dispatch_hook_inline(
+    def _run_post_dispatch_hook_inline(  # noqa: PLR0913, PLR0917
         self,
         request_type: type[RequestPayload],
         callback: PostDispatchHook,
         request: RequestPayload,
         result: ResultPayload,
         inherited_chain: tuple[tuple[type[RequestPayload], Any], ...],
+        binding: WorkflowRuntime | NoWorkflow | None,
     ) -> None:
         """Run a hook synchronously, blocking the caller's thread until it finishes.
 
@@ -712,7 +746,7 @@ class EventManager(EngineScoped):
         on those paths, and dropping the hook would make the feature "fires, except
         sometimes."
         """
-        coro = self._run_post_dispatch_hook(request_type, callback, request, result, inherited_chain)
+        coro = self._run_post_dispatch_hook(request_type, callback, request, result, inherited_chain, binding)
         try:
             if _running_loop() is not None:
                 # Both branches must start the hook from an empty context, for the
@@ -1102,6 +1136,10 @@ class EventManager(EngineScoped):
                     response_topic=context.get("response_topic"),
                 )
 
+        workflow_id = context.get("workflow_id")
+        if workflow_id is not None:
+            result_event.scope_to_workflow(workflow_id)
+
         # Fired here rather than in the two dispatch methods because every path that
         # produces a result event -- sync, async, and pre-dispatch short-circuit -- runs
         # through this method. Deliberately outside the operation-depth context above, so
@@ -1125,6 +1163,36 @@ class EventManager(EngineScoped):
             GenericResultFailure(exception=exception, result_details=result_details),
             context=context,
         )
+
+    def _result_for_unroutable_request(
+        self, request: RP, exception: Exception, *, context: ResultContext
+    ) -> EventResultSuccess | EventResultFailure:
+        """Build the failure for a request that names a workflow that isn't open, or none when it must.
+
+        The result names the workflow the request named, so a client showing it can route the failure.
+        """
+        workflow_id = None
+        if isinstance(request, WorkflowRequest):
+            workflow_id = request.workflow_id
+        return self._handle_request_core(
+            request,
+            GenericResultFailure(exception=exception, result_details=str(exception)),
+            context=self._with_workflow(context, workflow_id),
+        )
+
+    @staticmethod
+    def _result_context_for(binding: WorkflowRuntime | NoWorkflow | None, context: ResultContext) -> ResultContext:
+        """The caller's result context, plus the workflow the request acts on, for its result event."""
+        if isinstance(binding, WorkflowRuntime):
+            return EventManager._with_workflow(context, binding.workflow_id)
+        return context
+
+    @staticmethod
+    def _with_workflow(context: ResultContext, workflow_id: str | None) -> ResultContext:
+        """A copy of `context` naming `workflow_id`. A copy, since the caller may reuse its own."""
+        scoped = ResultContext(**context)
+        scoped["workflow_id"] = workflow_id
+        return scoped
 
     async def ahandle_request(
         self,
@@ -1150,27 +1218,28 @@ class EventManager(EngineScoped):
             raise TypeError(msg)
 
         try:
-            binding = self.engine.binding_for_request(request)
-        except WorkflowNotOpenError as exc:
-            return self._result_for_handler_exception(request, exc, context=result_context)
-        # Recorded on the request, so the result a client receives names the workflow it belongs to.
-        request.workflow_id = binding.workflow_id
+            binding = self.engine.runtime_for_request(request)
+        except (WorkflowNotOpenError, WorkflowNotNamedError) as exc:
+            return self._result_for_unroutable_request(request, exc, context=result_context)
+        result_context = self._result_context_for(binding, result_context)
 
-        # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
-        # the manager callback runs.
-        short_circuit = self._run_pre_dispatch_hooks(request, result_context)
-        if short_circuit is not None:
-            return self._handle_request_core(
-                request,
-                short_circuit,
-                context=result_context,
-            )
-
+        # Act on that workflow in the hooks, the handler, and every task it spawns.
+        binding_token = None
+        if binding is not None:
+            binding_token = bound_workflow.set(binding)
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
-        # Act on that workflow in the handler and in every task it spawns.
-        binding_token = bound_workflow.set(binding)
         try:
+            # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+            # the manager callback runs.
+            short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+            if short_circuit is not None:
+                return self._handle_request_core(
+                    request,
+                    short_circuit,
+                    context=result_context,
+                )
+
             try:
                 # Actually make the handler callback (support both sync and async):
                 result_payload: ResultPayload = await call_function(callback, request)
@@ -1188,8 +1257,9 @@ class EventManager(EngineScoped):
                 context=result_context,
             )
         finally:
-            bound_workflow.reset(binding_token)
             _active_request_type.reset(token)
+            if binding_token is not None:
+                bound_workflow.reset(binding_token)
 
     def handle_request(
         self,
@@ -1215,27 +1285,28 @@ class EventManager(EngineScoped):
             raise TypeError(msg)
 
         try:
-            binding = self.engine.binding_for_request(request)
-        except WorkflowNotOpenError as exc:
-            return self._result_for_handler_exception(request, exc, context=result_context)
-        # Recorded on the request, so the result a client receives names the workflow it belongs to.
-        request.workflow_id = binding.workflow_id
+            binding = self.engine.runtime_for_request(request)
+        except (WorkflowNotOpenError, WorkflowNotNamedError) as exc:
+            return self._result_for_unroutable_request(request, exc, context=result_context)
+        result_context = self._result_context_for(binding, result_context)
 
-        # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
-        # the manager callback runs.
-        short_circuit = self._run_pre_dispatch_hooks(request, result_context)
-        if short_circuit is not None:
-            return self._handle_request_core(
-                request,
-                short_circuit,
-                context=result_context,
-            )
-
+        # Act on that workflow in the hooks, the handler, and every task it spawns.
+        binding_token = None
+        if binding is not None:
+            binding_token = bound_workflow.set(binding)
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
-        # Act on that workflow in the handler and in every task it spawns.
-        binding_token = bound_workflow.set(binding)
         try:
+            # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+            # the manager callback runs.
+            short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+            if short_circuit is not None:
+                return self._handle_request_core(
+                    request,
+                    short_circuit,
+                    context=result_context,
+                )
+
             try:
                 result_payload = self._invoke_handler_from_sync(callback, request)
 
@@ -1252,8 +1323,9 @@ class EventManager(EngineScoped):
                 context=result_context,
             )
         finally:
-            bound_workflow.reset(binding_token)
             _active_request_type.reset(token)
+            if binding_token is not None:
+                bound_workflow.reset(binding_token)
 
     def _invoke_handler_from_sync(self, callback: Callable, request: RequestPayload) -> ResultPayload:
         """Call a request handler from sync code, bridging async handlers onto a loop."""
@@ -1472,6 +1544,12 @@ class EventManager(EngineScoped):
             )
 
     def _flush_tracked_parameter_changes(self) -> None:
+        """Emit what the nodes of the workflow the request acted on changed while it ran.
+
+        A host request acts on no workflow, so it changed no node and there is nothing to flush.
+        """
+        if not isinstance(bound_workflow.get(), WorkflowRuntime):
+            return
         obj_manager = self.engine.object_manager
         # Get all flows and their nodes
         nodes = obj_manager.get_filtered_subset(type=BaseNode)

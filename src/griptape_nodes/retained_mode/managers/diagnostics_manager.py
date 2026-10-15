@@ -914,7 +914,12 @@ class DiagnosticsManager(EngineScoped):
 
         workflow_name = None
         workflow_path = None
+        flow_count = 0
+        node_count = 0
+        # The workflow the request names, if it names one: with several open, the one the user is on.
         if context_manager.has_current_workflow():
+            flow_count = len(object_manager.get_filtered_subset(type=ControlFlow))
+            node_count = len(object_manager.get_filtered_subset(type=BaseNode))
             # Redacted even though it is a "name": a workflow saved outside the workspace is keyed
             # by its absolute path, so one saved to the desktop is named `/Users/sam/Desktop/flow`.
             workflow_name = redactor.redact_text(context_manager.get_current_workflow_name())
@@ -932,8 +937,8 @@ class DiagnosticsManager(EngineScoped):
         return SessionDiagnostics(
             current_workflow_name=workflow_name,
             current_workflow_path=workflow_path,
-            flow_count=len(object_manager.get_filtered_subset(type=ControlFlow)),
-            node_count=len(object_manager.get_filtered_subset(type=BaseNode)),
+            flow_count=flow_count,
+            node_count=node_count,
             registered_workflow_count=registered_count,
         )
 

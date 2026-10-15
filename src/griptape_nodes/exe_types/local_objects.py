@@ -129,6 +129,7 @@ class LocalObjectScope:
             key=self._namespaced(key),
             group=self._library,
             on_drop=on_drop,
+            workflow_id=self._node.workflow_id,
         )
 
     def _park_for_egress(self, parameter: Parameter, value: Any, *, travels_as_data: bool) -> Any:
@@ -180,6 +181,7 @@ class LocalObjectScope:
             slot=slot if slot is not None else parameter_name,
             group=self._library,
             on_drop=on_drop,
+            workflow_id=self._node.workflow_id,
         )
 
     def look_up(self, value: Any) -> KeyLookup:

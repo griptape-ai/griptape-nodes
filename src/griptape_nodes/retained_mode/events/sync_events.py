@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
-    RequestPayload,
+    HostRequest,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
@@ -12,7 +12,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 @dataclass
 @PayloadRegistry.register
-class StartSyncAllCloudWorkflowsRequest(RequestPayload):
+class StartSyncAllCloudWorkflowsRequest(HostRequest):
     """Start syncing all cloud workflows to local synced_workflows directory.
 
     Use when: Initiating download of all workflow files from cloud storage, keeping local sync directory updated,

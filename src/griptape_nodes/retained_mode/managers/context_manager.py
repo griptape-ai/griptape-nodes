@@ -273,7 +273,7 @@ class ContextManager(EngineScoped):
 
     @property
     def _state(self) -> ContextManager.WorkflowState:
-        return self.engine.workflow_runtime.state(ContextManager.WorkflowState, ContextManager.WorkflowState)
+        return self.engine.current_workflow.state(ContextManager.WorkflowState, ContextManager.WorkflowState)
 
     @handles(SetWorkflowContextRequest)
     def on_set_workflow_context_request(self, request: SetWorkflowContextRequest) -> ResultPayload:
@@ -515,8 +515,15 @@ class ContextManager(EngineScoped):
         self._state.workflow_stack[-1] = state
 
     def has_current_workflow(self) -> bool:
-        """Check if there is an active Workflow context."""
-        return len(self._state.workflow_stack) > 0
+        """Check if there is an active Workflow context.
+
+        False, rather than an error, when no workflow is open for the current work: asking is how
+        callers find out whether there is one.
+        """
+        runtime = self.engine.current_workflow_or_none()
+        if runtime is None:
+            return False
+        return len(runtime.state(ContextManager.WorkflowState, ContextManager.WorkflowState).workflow_stack) > 0
 
     def has_current_flow(self) -> bool:
         """Check if there is an active Flow context within the current Workflow."""

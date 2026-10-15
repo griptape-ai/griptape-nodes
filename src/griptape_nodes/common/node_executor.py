@@ -120,6 +120,7 @@ from griptape_nodes.retained_mode.managers.event_manager import (
     EventSuppressionContext,
     EventTranslationContext,
 )
+from griptape_nodes.retained_mode.run_scheduler import current_run
 from griptape_nodes.retained_mode.variable_types import VariableScope
 
 if TYPE_CHECKING:
@@ -340,6 +341,11 @@ class NodeExecutor(EngineScoped):
             # a worker would answer from an empty context and silently degrade the paths its node
             # writes to. Harmless on the local route, where these are this process's own values.
             workflow_context = self.engine.project_manager.workflow_context_for_dispatch()
+            # Named on the request rather than left to the binding: a worker has no binding of ours.
+            run = current_run.get()
+            run_id = None
+            if run is not None:
+                run_id = run.run_id
             # Single entry point for both local and worker execution. The
             # ExecuteNodeRequest handler routes to a worker subprocess when the
             # node's library requires it, otherwise runs aprocess in-process.
@@ -353,6 +359,8 @@ class NodeExecutor(EngineScoped):
                     workflow_name=workflow_context.name,
                     workflow_file_path=workflow_context.file_path,
                     workflow_working_directory=workflow_context.working_directory,
+                    workflow_id=self.engine.current_workflow.workflow_id,
+                    run_id=run_id,
                     # The failure is raised below and reported by whoever started the run.
                     failure_log_level=logging.DEBUG,
                 )

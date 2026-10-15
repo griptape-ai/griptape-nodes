@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, TypedDict
 
 from griptape_nodes.retained_mode.events.base_events import (
-    RequestPayload,
+    HostRequest,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
@@ -60,7 +60,7 @@ class MCPServerInfo(TypedDict, total=False):
 # Capability Discovery Events
 @dataclass
 @PayloadRegistry.register
-class DiscoverMCPServerCapabilitiesRequest(RequestPayload):
+class DiscoverMCPServerCapabilitiesRequest(HostRequest):
     """Discover capabilities from a running MCP server.
 
     Args:
@@ -91,7 +91,7 @@ class DiscoverMCPServerCapabilitiesResultFailure(WorkflowNotAlteredMixin, Result
 
 @dataclass
 @PayloadRegistry.register
-class ListMCPServersRequest(RequestPayload):
+class ListMCPServersRequest(HostRequest):
     """List all configured MCP servers.
 
     Args:
@@ -117,7 +117,7 @@ class ListMCPServersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class GetMCPServerRequest(RequestPayload):
+class GetMCPServerRequest(HostRequest):
     """Get configuration for a specific MCP server.
 
     Args:
@@ -143,7 +143,7 @@ class GetMCPServerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CreateMCPServerRequest(RequestPayload):
+class CreateMCPServerRequest(HostRequest):
     """Create a new MCP server configuration.
 
     Args:
@@ -207,7 +207,7 @@ class CreateMCPServerResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class UpdateMCPServerRequest(RequestPayload):
+class UpdateMCPServerRequest(HostRequest):
     """Update an existing MCP server configuration.
 
     Args:
@@ -272,7 +272,7 @@ class UpdateMCPServerResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteMCPServerRequest(RequestPayload):
+class DeleteMCPServerRequest(HostRequest):
     """Delete an MCP server configuration.
 
     Args:
@@ -298,7 +298,7 @@ class DeleteMCPServerResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class EnableMCPServerRequest(RequestPayload):
+class EnableMCPServerRequest(HostRequest):
     """Enable an MCP server.
 
     Args:
@@ -324,7 +324,7 @@ class EnableMCPServerResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DisableMCPServerRequest(RequestPayload):
+class DisableMCPServerRequest(HostRequest):
     """Disable an MCP server.
 
     Args:
@@ -350,7 +350,7 @@ class DisableMCPServerResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetEnabledMCPServersRequest(RequestPayload):
+class GetEnabledMCPServersRequest(HostRequest):
     """Get all enabled MCP servers."""
 
 

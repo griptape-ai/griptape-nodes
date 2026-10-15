@@ -2,10 +2,11 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from griptape_nodes.retained_mode.events.base_events import (
-    RequestPayload,
+    HostRequest,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
+    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.managers.authorization_checkpoint import CheckpointDenial
@@ -58,7 +59,7 @@ class ModelAccessVerdict:
 
 @dataclass
 @PayloadRegistry.register
-class QueryModelAccessRequest(RequestPayload):
+class QueryModelAccessRequest(HostRequest):
     """The bare form: 'are these model ids allowed?' No node, no catalog scope.
 
     Use from non-node callers (sidebar agent, ``ModelManager`` Hugging Face
@@ -92,7 +93,7 @@ class QueryModelAccessResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 
 @dataclass
 @PayloadRegistry.register
-class QueryModelAccessForNodeRequest(RequestPayload):
+class QueryModelAccessForNodeRequest(WorkflowRequest):
     """Node-attributed: 'on behalf of this node, are these ids allowed?'.
 
     The checkpoint carries ``ID`` (the model id), ``NODE_TYPE = node_type``, and
@@ -147,7 +148,7 @@ class QueryModelAccessForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 @dataclass
 @PayloadRegistry.register
-class QueryModelAccessForCatalogRequest(RequestPayload):
+class QueryModelAccessForCatalogRequest(HostRequest):
     """Catalog-scoped: caller has a library in mind but no node.
 
     The checkpoint carries ``ID`` (the model id) and (when the id resolves against
@@ -205,7 +206,7 @@ class CodecAccessVerdict:
 
 @dataclass
 @PayloadRegistry.register
-class QueryCodecAccessRequest(RequestPayload):
+class QueryCodecAccessRequest(HostRequest):
     """'Are these codecs allowed for this direction?': the codec analogue of QueryModelAccess.
 
     Use to filter a node's codec dropdown against the same policy that gates

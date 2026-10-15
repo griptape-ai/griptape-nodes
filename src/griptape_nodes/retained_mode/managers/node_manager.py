@@ -247,6 +247,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
+from griptape_nodes.retained_mode.run_scheduler import Run, RunRefusedError, current_run, run_scope
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
 from griptape_nodes.serialization.legacy_pickle import (
     LegacyPickleError,
@@ -377,7 +378,7 @@ class NodeManager(EngineScoped):
 
     @property
     def _state(self) -> NodeManager.WorkflowState:
-        return self.engine.workflow_runtime.state(NodeManager.WorkflowState, NodeManager.WorkflowState)
+        return self.engine.current_workflow.state(NodeManager.WorkflowState, NodeManager.WorkflowState)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -798,9 +799,11 @@ class NodeManager(EngineScoped):
         # Add it to the Flow.
         parent_flow.add_node(node)
 
-        # Record keeping.
+        # Record keeping. The node keeps its workflow too: built by a client that names none, it was
+        # constructed with nothing bound and resolved its workflow only here.
         obj_mgr.add_object_by_name(node.name, node)
         self._state.name_to_parent_flow_name[node.name] = parent_flow_name
+        node.workflow_runtime = self.engine.current_workflow
 
         # We don't want to start in a resolving state, bump it back to unresolved.
         state = request.resolution
@@ -3194,10 +3197,15 @@ class NodeManager(EngineScoped):
         return node
 
     def get_node_parent_flow_by_name(self, node_name: str) -> str:
-        if node_name not in self._state.name_to_parent_flow_name:
+        # A lookup, which finds nothing when no workflow is open.
+        runtime = self.engine.current_workflow_or_none()
+        parents = {}
+        if runtime is not None:
+            parents = runtime.state(NodeManager.WorkflowState, NodeManager.WorkflowState).name_to_parent_flow_name
+        if node_name not in parents:
             msg = f"Node '{node_name}' could not be found."
             raise KeyError(msg)
-        return self._state.name_to_parent_flow_name[node_name]
+        return parents[node_name]
 
     @handles(ResolveNodeRequest)
     async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
@@ -3235,10 +3243,11 @@ class NodeManager(EngineScoped):
 
         # Check for existing running flow
         flow_mgr = self.engine.flow_manager
-        running_elsewhere = self.engine.workflow_running_elsewhere()
-        if running_elsewhere is not None:
-            errormsg = f"Attempted to run '{node.name}'. Failed because workflow '{running_elsewhere}' is running, and only one workflow can run at a time."
-            return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
+        # Refused before anything below changes the graph. resolve_singular_node admits the run.
+        try:
+            self.engine.run_scheduler.raise_if_refused(self.engine.current_workflow)
+        except RunRefusedError as e:
+            return ResolveNodeResultFailure(validation_exceptions=[e], result_details=str(e))
         if flow_mgr.check_for_existing_running_flow() and not flow_mgr.global_single_node_resolution:
             # Behavior should also match if the flow running is a Control Flow, and not a singular node resolution.
             errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
@@ -3350,7 +3359,8 @@ class NodeManager(EngineScoped):
             library_name=library_name,
             is_worker=is_worker,
         ) as (ctx, scope):
-            ctx.result = await self._hydrate_and_run_node(node, request)
+            with run_scope(self._run_for_execution(request)):
+                ctx.result = await self._hydrate_and_run_node(node, request)
             # Worker-side correctness policy: an ExecuteNodeResultSuccess that
             # carries an ERROR-severity violation must be promoted to a
             # failure. Worker output gets shipped back to the orchestrator,
@@ -3364,6 +3374,16 @@ class NodeManager(EngineScoped):
                     result_details=f"Node '{request.node_name}' violated strict-mode rule(s) [{rules}].",
                 )
         return ctx.result
+
+    def _run_for_execution(self, request: ExecuteNodeRequest) -> Run | None:
+        """The run a node execution belongs to.
+
+        The run bound here, except on a worker, which has no binding of the orchestrator's and takes
+        the run the request names.
+        """
+        if not self.engine.library_manager.is_worker or request.run_id is None:
+            return current_run.get()
+        return Run(run_id=request.run_id, workflow_id=self.engine.current_workflow.workflow_id)
 
     def _materialize_transient_node_from_metadata(
         self, request: ExecuteNodeRequest

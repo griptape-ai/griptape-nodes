@@ -143,14 +143,17 @@ class VariablesManager(EngineScoped):
 
     @property
     def _state(self) -> "VariablesManager.WorkflowState":
-        return self.engine.workflow_runtime.state(VariablesManager.WorkflowState, VariablesManager.WorkflowState)
+        return self.engine.current_workflow.state(VariablesManager.WorkflowState, VariablesManager.WorkflowState)
 
     def clear_object_state(self) -> None:
         """Clear all flow and global variables.
 
         Project variable layers are deliberately NOT cleared: they track project
-        lifecycle (template load/unregister), not workflow state.
+        lifecycle (template load/unregister), not workflow state. With no workflow open there
+        is nothing to clear.
         """
+        if self.engine.current_workflow_or_none() is None:
+            return
         self._state.flow_layers.clear()
         self._state.global_layer.clear()
 

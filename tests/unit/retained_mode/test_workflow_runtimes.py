@@ -3,14 +3,29 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import threading
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
-from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+from griptape_nodes.retained_mode.events.app_events import EngineHeartbeatRequest, EngineHeartbeatResultSuccess
+from griptape_nodes.retained_mode.events.base_events import (
+    AppEvent,
+    EventResultFailure,
+    EventResultSuccess,
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
+    GriptapeNodeEvent,
+)
+from griptape_nodes.retained_mode.events.context_events import SetWorkflowContextRequest
 from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
-from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest, ListNodesInFlowResultSuccess
+from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowRequest,
+    ListNodesInFlowRequest,
+    ListNodesInFlowResultSuccess,
+)
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.open_workflow_events import (
@@ -22,25 +37,31 @@ from griptape_nodes.retained_mode.events.open_workflow_events import (
     OpenWorkflowResultFailure,
     OpenWorkflowResultSuccess,
 )
+from griptape_nodes.retained_mode.events.os_events import GetFileInfoRequest
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+from griptape_nodes.retained_mode.run_scheduler import RunRefusedError, current_run
+from griptape_nodes.retained_mode.workflow_runtime import WorkflowNotNamedError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from contextlib import AbstractContextManager
 
     from griptape_nodes.retained_mode.engine import Engine
+    from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
 
 
 def _open_new_workflow_with_note(engine: Engine, note_name: str) -> OpenWorkflowResultSuccess:
-    """Open a new workflow and put one note in its flow."""
+    """Open a new workflow and put one node in its flow."""
     opened = engine.handle_request(OpenWorkflowRequest(display_name=note_name))
     assert isinstance(opened, OpenWorkflowResultSuccess), opened
-    node = engine.handle_request(CreateNodeRequest(node_type="Note", node_name=note_name))
+    node = engine.handle_request(
+        CreateNodeRequest(node_type="Note", node_name=note_name, workflow_id=opened.workflow_id)
+    )
     assert isinstance(node, CreateNodeResultSuccess), node
     return opened
 
 
-def _node_names(engine: Engine, workflow_id: str | None = None) -> set[str]:
-    """The nodes in the current flow of a workflow, by default the active one."""
+def _node_names(engine: Engine, workflow_id: str | None) -> set[str]:
+    """The nodes in the current flow of a workflow."""
     result = engine.handle_request(ListNodesInFlowRequest(workflow_id=workflow_id))
     assert isinstance(result, ListNodesInFlowResultSuccess), result
     return set(result.node_names)
@@ -52,26 +73,51 @@ def _listed(engine: Engine) -> ListOpenWorkflowsResultSuccess:
     return result
 
 
+def _runtime(engine: Engine, workflow_id: str) -> WorkflowRuntime:
+    runtime = engine.find_workflow_runtime(workflow_id)
+    assert runtime is not None
+    return runtime
+
+
+def _running_only(engine: Engine, running: WorkflowRuntime | None) -> AbstractContextManager[object]:
+    """Stand in for each workflow's own execution state, reporting only `running` as running."""
+    return patch.object(
+        FlowManager, "check_for_existing_running_flow", lambda _flow_manager: engine.current_workflow is running
+    )
+
+
+def _queued_events(engine: Engine) -> asyncio.Queue:
+    queue: asyncio.Queue = asyncio.Queue()
+    engine.event_manager.initialize_queue(queue)
+    return queue
+
+
+def _drain(queue: asyncio.Queue) -> list[object]:
+    events = []
+    while not queue.empty():
+        events.append(queue.get_nowait())
+    return events
+
+
 class TestOpenWorkflow:
     def test_opening_another_keeps_the_first(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
         b = _open_new_workflow_with_note(engine, "NoteB")
 
-        assert _node_names(engine) == {"NoteB"}
         assert _node_names(engine, a.workflow_id) == {"NoteA"}
+        assert _node_names(engine, b.workflow_id) == {"NoteB"}
         assert [w.workflow_id for w in _listed(engine).workflows] == [a.workflow_id, b.workflow_id]
 
-    def test_opening_an_open_workflow_activates_it(self, engine: Engine) -> None:
+    def test_opening_an_open_workflow_returns_its_id(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
-        _open_new_workflow_with_note(engine, "NoteB")
+        b = _open_new_workflow_with_note(engine, "NoteB")
 
         result = engine.handle_request(OpenWorkflowRequest(workflow_name=a.workflow_name))
 
         assert isinstance(result, OpenWorkflowResultSuccess), result
         assert result.already_open is True
         assert result.workflow_id == a.workflow_id
-        assert _listed(engine).active_workflow_id == a.workflow_id
-        assert _node_names(engine) == {"NoteA"}
+        assert [w.workflow_id for w in _listed(engine).workflows] == [a.workflow_id, b.workflow_id]
 
     def test_a_workflow_not_in_the_registry_fails_and_changes_nothing(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
@@ -85,22 +131,20 @@ class TestOpenWorkflow:
         a = _open_new_workflow_with_note(engine, "Note")
         b = _open_new_workflow_with_note(engine, "Note")
 
-        runtime_a = engine.find_workflow_runtime(a.workflow_id)
-        runtime_b = engine.find_workflow_runtime(b.workflow_id)
-        assert runtime_a is not None
-        assert runtime_b is not None
-        with engine.bind_workflow_runtime(runtime_a):
+        with engine.bind_workflow(_runtime(engine, a.workflow_id)):
             note_a = engine.node_manager.get_node_by_name("Note")
-        with engine.bind_workflow_runtime(runtime_b):
+        with engine.bind_workflow(_runtime(engine, b.workflow_id)):
             note_b = engine.node_manager.get_node_by_name("Note")
 
         assert note_a is not note_b
+        assert note_a.workflow_id == a.workflow_id
+        assert note_b.workflow_id == b.workflow_id
 
 
 class TestRequestTargeting:
     def test_a_request_acts_on_the_workflow_it_names(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
-        _open_new_workflow_with_note(engine, "NoteB")
+        b = _open_new_workflow_with_note(engine, "NoteB")
 
         created = engine.handle_request(
             CreateNodeRequest(node_type="Note", node_name="Added", workflow_id=a.workflow_id)
@@ -108,62 +152,196 @@ class TestRequestTargeting:
 
         assert isinstance(created, CreateNodeResultSuccess), created
         assert _node_names(engine, a.workflow_id) == {"NoteA", "Added"}
-        assert _node_names(engine) == {"NoteB"}
+        assert _node_names(engine, b.workflow_id) == {"NoteB"}
+
+    def test_a_workflow_request_naming_none_fails_while_several_are_open(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        b = _open_new_workflow_with_note(engine, "NoteB")
+
+        result = engine.handle_request(CreateNodeRequest(node_type="Note", node_name="Stray"))
+
+        assert result.failed()
+        assert isinstance(getattr(result, "exception", None), WorkflowNotNamedError)
+        assert _node_names(engine, a.workflow_id) == {"NoteA"}
+        assert _node_names(engine, b.workflow_id) == {"NoteB"}
+
+    def test_a_workflow_request_naming_none_acts_on_the_only_open_workflow(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+
+        created = engine.handle_request(CreateNodeRequest(node_type="Note", node_name="Added"))
+
+        assert isinstance(created, CreateNodeResultSuccess), created
+        assert _node_names(engine, a.workflow_id) == {"NoteA", "Added"}
+
+    def test_a_workflow_request_with_none_open_opens_one(self, engine: Engine) -> None:
+        context = engine.handle_request(SetWorkflowContextRequest(display_name="Single"))
+        created = engine.handle_request(CreateFlowRequest(parent_flow_name=None))
+
+        assert context.succeeded(), context
+        assert created.succeeded(), created
+        assert len(engine.workflow_runtimes) == 1
+
+    def test_a_host_request_needs_no_workflow(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        b = _open_new_workflow_with_note(engine, "NoteB")
+
+        assert [w.workflow_id for w in _listed(engine).workflows] == [a.workflow_id, b.workflow_id]
+
+    def test_an_optional_workflow_request_runs_with_no_workflow_when_none_is_named(self, engine: Engine) -> None:
+        _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+
+        result = engine.handle_request(GetFileInfoRequest(path="no_such_file.txt"))
+
+        assert not isinstance(getattr(result, "exception", None), WorkflowNotNamedError), result
 
     def test_a_request_naming_a_closed_workflow_fails(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
-        _open_new_workflow_with_note(engine, "NoteB")
+        b = _open_new_workflow_with_note(engine, "NoteB")
         engine.handle_request(CloseWorkflowRequest(workflow_id=a.workflow_id))
 
         result = engine.handle_request(CreateNodeRequest(node_type="Note", workflow_id=a.workflow_id))
 
         assert result.failed()
-        assert _node_names(engine) == {"NoteB"}
+        assert _node_names(engine, b.workflow_id) == {"NoteB"}
 
-    def test_the_engine_records_the_workflow_a_request_acted_on(self, engine: Engine) -> None:
-        b = _open_new_workflow_with_note(engine, "NoteB")
-        request = ListOpenWorkflowsRequest()
+    def test_dispatch_leaves_the_request_as_it_was(self, engine: Engine) -> None:
+        _open_new_workflow_with_note(engine, "NoteA")
+        request = CreateNodeRequest(node_type="Note", node_name="Added")
 
         engine.handle_request(request)
 
-        assert request.workflow_id == b.workflow_id
+        assert request.workflow_id is None
+
+    def test_a_workflow_result_names_its_workflow_and_a_host_result_names_none(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        queue = _queued_events(engine)
+
+        engine.handle_request(ListNodesInFlowRequest(workflow_id=a.workflow_id))
+        engine.handle_request(ListOpenWorkflowsRequest())
+
+        results = [e.wrapped_event for e in _drain(queue) if isinstance(e, GriptapeNodeEvent)]
+        workflow_result, host_result = results[-2], results[-1]
+        assert isinstance(workflow_result, EventResultSuccess)
+        assert (workflow_result.scope, workflow_result.workflow_id) == ("workflow", a.workflow_id)
+        assert (host_result.scope, host_result.workflow_id) == ("host", None)
+
+    def test_a_failure_for_a_closed_workflow_names_that_workflow(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        engine.handle_request(CloseWorkflowRequest(workflow_id=a.workflow_id))
+        queue = _queued_events(engine)
+
+        engine.handle_request(ListNodesInFlowRequest(workflow_id=a.workflow_id))
+
+        failure = next(
+            e.wrapped_event
+            for e in _drain(queue)
+            if isinstance(e, GriptapeNodeEvent) and isinstance(e.wrapped_event, EventResultFailure)
+        )
+        assert (failure.scope, failure.workflow_id) == ("workflow", a.workflow_id)
 
     @pytest.mark.asyncio
     async def test_a_task_keeps_the_workflow_its_request_acted_on(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
-        b = _open_new_workflow_with_note(engine, "NoteB")
-        switched = asyncio.Event()
-        tasks: list[asyncio.Task[set[str]]] = []
+        _open_new_workflow_with_note(engine, "NoteB")
+        started = asyncio.Event()
 
-        async def read_after_switch() -> set[str]:
-            await switched.wait()
+        async def read_later() -> set[str]:
+            await started.wait()
             return {node.name for node in engine.context_manager.get_current_flow().nodes.values()}
 
-        runtime_a = engine.find_workflow_runtime(a.workflow_id)
-        assert runtime_a is not None
-        with engine.bind_workflow_runtime(runtime_a):
-            tasks.append(asyncio.create_task(read_after_switch()))
-        await engine.ahandle_request(OpenWorkflowRequest(workflow_name=b.workflow_name))
-        switched.set()
+        with engine.bind_workflow(_runtime(engine, a.workflow_id)):
+            task = asyncio.create_task(read_later())
+        started.set()
 
-        assert await tasks[0] == {"NoteA"}
+        assert await task == {"NoteA"}
 
-    def test_run_events_name_their_workflow(self, engine: Engine) -> None:
+    @pytest.mark.asyncio
+    async def test_a_post_dispatch_hook_acts_on_the_workflow_of_its_request(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        seen: list[str] = []
+        done = asyncio.Event()
+
+        def hook(_request: object, _result: object) -> None:
+            seen.append(engine.current_workflow.workflow_id)
+            done.set()
+
         engine.event_manager.initialize_queue(asyncio.Queue())
+        engine.event_manager.add_post_dispatch_hook(ListNodesInFlowRequest, hook)
+        await engine.ahandle_request(ListNodesInFlowRequest(workflow_id=a.workflow_id))
+        await asyncio.wait_for(done.wait(), timeout=5)
+
+        assert seen == [a.workflow_id]
+
+
+class TestRunEvents:
+    def test_an_event_emitted_while_handling_a_request_names_its_workflow(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        _queued_events(engine)
         event = ExecutionGriptapeNodeEvent(
             wrapped_event=ExecutionEvent(
                 payload=ParameterValueUpdateEvent(node_name="NoteA", parameter_name="p", data_type="str", value="v")
             )
         )
 
-        engine.event_manager.put_event(event)
+        with engine.bind_workflow(_runtime(engine, a.workflow_id)):
+            engine.event_manager.put_event(event)
 
-        assert event.wrapped_event.workflow_id == a.workflow_id
+        assert (event.wrapped_event.scope, event.wrapped_event.workflow_id) == ("workflow", a.workflow_id)
+
+    def test_an_event_from_an_unbound_thread_is_a_host_event(self, engine: Engine) -> None:
+        _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        _queued_events(engine)
+        event = ExecutionGriptapeNodeEvent(
+            wrapped_event=ExecutionEvent(
+                payload=ParameterValueUpdateEvent(node_name="NoteA", parameter_name="p", data_type="str", value="v")
+            )
+        )
+
+        thread = threading.Thread(target=engine.event_manager.put_event, args=(event,))
+        thread.start()
+        thread.join()
+
+        assert (event.wrapped_event.scope, event.wrapped_event.workflow_id) == ("host", None)
+
+    def test_a_node_names_its_workflow_from_an_unbound_thread(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        with engine.bind_workflow(_runtime(engine, a.workflow_id)):
+            node = engine.node_manager.get_node_by_name("NoteA")
+        events: list[ExecutionGriptapeNodeEvent] = []
+
+        def emit() -> None:
+            events.append(
+                node.execution_event(
+                    ParameterValueUpdateEvent(node_name="NoteA", parameter_name="p", data_type="str", value="v")
+                )
+            )
+
+        thread = threading.Thread(target=emit)
+        thread.start()
+        thread.join()
+
+        assert events[0].wrapped_event.workflow_id == a.workflow_id
+
+    def test_app_events_are_host_events(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        queue = _queued_events(engine)
+
+        with engine.bind_workflow(_runtime(engine, a.workflow_id)):
+            engine.open_workflows_manager.announce_change()
+
+        app_event = next(e for e in _drain(queue) if isinstance(e, AppEvent))
+        assert (app_event.scope, app_event.workflow_id) == ("host", None)
 
 
 class TestCloseWorkflow:
-    def test_closing_an_inactive_workflow_keeps_the_active_one(self, engine: Engine) -> None:
+    def test_closing_one_keeps_the_others(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
         b = _open_new_workflow_with_note(engine, "NoteB")
 
@@ -171,24 +349,15 @@ class TestCloseWorkflow:
 
         assert isinstance(result, CloseWorkflowResultSuccess), result
         assert [w.workflow_id for w in _listed(engine).workflows] == [b.workflow_id]
-        assert _node_names(engine) == {"NoteB"}
-
-    def test_closing_the_active_workflow_activates_the_last_opened(self, engine: Engine) -> None:
-        a = _open_new_workflow_with_note(engine, "NoteA")
-        b = _open_new_workflow_with_note(engine, "NoteB")
-
-        engine.handle_request(CloseWorkflowRequest(workflow_id=b.workflow_id))
-
-        assert _listed(engine).active_workflow_id == a.workflow_id
+        assert _node_names(engine, b.workflow_id) == {"NoteB"}
 
     def test_closing_the_last_workflow_leaves_none_open(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
 
         engine.handle_request(CloseWorkflowRequest(workflow_id=a.workflow_id))
 
-        listed = _listed(engine)
-        assert listed.workflows == []
-        assert listed.active_workflow_id is None
+        assert _listed(engine).workflows == []
+        assert engine.workflow_runtimes == []
 
     def test_clear_all_closes_every_workflow(self, engine: Engine) -> None:
         _open_new_workflow_with_note(engine, "NoteA")
@@ -197,53 +366,172 @@ class TestCloseWorkflow:
         engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
 
         assert _listed(engine).workflows == []
-        assert len(engine.workflow_runtimes) == 1
+        assert engine.workflow_runtimes == []
 
 
-class TestOneRunAtATime:
-    @pytest.mark.asyncio
-    async def test_a_second_workflow_cannot_start_while_one_runs(self, engine: Engine) -> None:
+class TestRunScheduler:
+    def test_a_second_workflow_cannot_start_while_one_runs(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
         b = _open_new_workflow_with_note(engine, "NoteB")
-        runtime_a = engine.find_workflow_runtime(a.workflow_id)
-        assert runtime_a is not None
+        runtime_a = _runtime(engine, a.workflow_id)
+        runtime_b = _runtime(engine, b.workflow_id)
 
-        with patch.object(FlowManager, "check_for_existing_running_flow", _running_in(engine, b.workflow_id)):
+        with _running_only(engine, runtime_a):
+            engine.run_scheduler.admit(runtime_a)
             listed = _listed(engine)
-            with engine.bind_workflow_runtime(runtime_a):
-                flow = engine.context_manager.get_current_flow()
-                with pytest.raises(RuntimeError, match="is running"):
-                    await engine.flow_manager.start_flow(flow)
+            with pytest.raises(RunRefusedError, match="is running"):
+                engine.run_scheduler.admit(runtime_b)
 
         assert {w.workflow_id: w.is_running for w in listed.workflows} == {
-            a.workflow_id: False,
-            b.workflow_id: True,
+            a.workflow_id: True,
+            b.workflow_id: False,
         }
 
+    def test_advancing_a_running_workflow_joins_its_run(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        runtime_a = _runtime(engine, a.workflow_id)
 
-def _running_in(engine: Engine, workflow_id: str) -> Callable[[FlowManager], bool]:
-    """A stand-in for `check_for_existing_running_flow` that reports only one workflow as running."""
+        with _running_only(engine, runtime_a):
+            first = engine.run_scheduler.admit(runtime_a)
+            again = engine.run_scheduler.admit(runtime_a)
 
-    def check(_flow_manager: FlowManager) -> bool:
-        return engine.workflow_binding.workflow_id == workflow_id
+        assert again == first
 
-    return check
+    def test_each_run_gets_its_own_id(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        runtime_a = _runtime(engine, a.workflow_id)
 
+        first = engine.run_scheduler.admit(runtime_a)
+        second = engine.run_scheduler.admit(runtime_a)
 
-class TestReopenAfterReset:
-    @pytest.mark.asyncio
-    async def test_saved_workflows_are_listed_with_the_active_one_last(self, engine: Engine) -> None:
+        assert first.run_id != second.run_id
+
+    def test_closing_the_running_workflow_lets_another_run(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
         b = _open_new_workflow_with_note(engine, "NoteB")
-        engine.handle_request(OpenWorkflowRequest(workflow_name=a.workflow_name))
+        runtime_a = _runtime(engine, a.workflow_id)
 
-        with patch.object(engine.workflow_registry, "get_workflow_by_name") as get_workflow:
-            get_workflow.return_value.is_saved = True
-            names = engine.open_workflows_manager.saved_open_workflow_names()
+        with _running_only(engine, runtime_a):
+            engine.run_scheduler.admit(runtime_a)
+            engine.remove_workflow_runtime(runtime_a)
+            run = engine.run_scheduler.admit(_runtime(engine, b.workflow_id))
 
-        assert names == [b.workflow_name, a.workflow_name]
+        assert run.workflow_id == b.workflow_id
 
-    def test_unsaved_workflows_are_not_listed(self, engine: Engine) -> None:
+    @pytest.mark.asyncio
+    async def test_a_run_names_itself_on_the_events_it_emits(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        runtime_a = _runtime(engine, a.workflow_id)
+        _queued_events(engine)
+        event = ExecutionGriptapeNodeEvent(
+            wrapped_event=ExecutionEvent(
+                payload=ParameterValueUpdateEvent(node_name="NoteA", parameter_name="p", data_type="str", value="v")
+            )
+        )
+        run = engine.run_scheduler.admit(runtime_a)
+
+        token = current_run.set(run)
+        try:
+            with engine.bind_workflow(runtime_a):
+                engine.event_manager.put_event(event)
+        finally:
+            current_run.reset(token)
+
+        assert event.wrapped_event.run_id == run.run_id
+
+
+class TestUnboundReads:
+    def test_an_unbound_read_while_several_are_open_fails(self, engine: Engine) -> None:
         _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        errors: list[BaseException] = []
 
-        assert engine.open_workflows_manager.saved_open_workflow_names() == []
+        def read() -> None:
+            try:
+                _ = engine.current_workflow
+            except WorkflowNotNamedError as e:
+                errors.append(e)
+
+        thread = threading.Thread(target=read)
+        thread.start()
+        thread.join()
+
+        assert len(errors) == 1
+
+    def test_an_unbound_read_during_a_run_gets_the_running_workflow(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        runtime_a = _runtime(engine, a.workflow_id)
+        seen: list[str] = []
+
+        def read() -> None:
+            seen.append(engine.current_workflow.workflow_id)
+
+        with _running_only(engine, runtime_a):
+            engine.run_scheduler.admit(runtime_a)
+            thread = threading.Thread(target=read)
+            thread.start()
+            thread.join()
+
+        assert seen == [a.workflow_id]
+
+    def test_a_thread_started_with_a_copied_context_keeps_its_workflow(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        seen: list[str] = []
+
+        def read() -> None:
+            seen.append(engine.current_workflow.workflow_id)
+
+        with engine.bind_workflow(_runtime(engine, a.workflow_id)):
+            context = contextvars.copy_context()
+        thread = threading.Thread(target=context.run, args=(read,))
+        thread.start()
+        thread.join()
+
+        assert seen == [a.workflow_id]
+
+
+class TestRebuildInPlace:
+    @pytest.mark.asyncio
+    async def test_a_rebuild_keeps_each_workflow_its_id_and_graph(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        b = _open_new_workflow_with_note(engine, "NoteB")
+        open_workflows = engine.open_workflows_manager
+
+        suspended = await open_workflows.suspend_open_workflows()
+        failures = await open_workflows.resume_open_workflows(suspended)
+
+        assert failures == []
+        assert [w.workflow_id for w in _listed(engine).workflows] == [a.workflow_id, b.workflow_id]
+        assert [w.workflow_name for w in _listed(engine).workflows] == [a.workflow_name, b.workflow_name]
+        assert _node_names(engine, a.workflow_id) == {"NoteA"}
+        assert _node_names(engine, b.workflow_id) == {"NoteB"}
+
+
+class TestHeartbeat:
+    def test_it_reports_every_open_workflow_and_whether_any_runs(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        b = _open_new_workflow_with_note(engine, "NoteB")
+        runtime_b = _runtime(engine, b.workflow_id)
+
+        with _running_only(engine, runtime_b):
+            result = engine.handle_request(EngineHeartbeatRequest(heartbeat_id="h"))
+
+        assert isinstance(result, EngineHeartbeatResultSuccess), result
+        assert [(w.workflow_id, w.is_running) for w in result.open_workflows] == [
+            (a.workflow_id, False),
+            (b.workflow_id, True),
+        ]
+        assert result.is_executing is True
+        assert result.current_workflow == b.workflow_name
+
+    def test_several_idle_workflows_name_no_current_one(self, engine: Engine) -> None:
+        _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+
+        result = engine.handle_request(EngineHeartbeatRequest(heartbeat_id="h"))
+
+        assert isinstance(result, EngineHeartbeatResultSuccess), result
+        assert result.is_executing is False
+        assert result.current_workflow is None

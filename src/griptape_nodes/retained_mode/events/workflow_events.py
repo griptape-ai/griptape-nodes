@@ -8,11 +8,13 @@ from pydantic import BaseModel
 
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
-    RequestPayload,
+    HostRequest,
+    OptionalWorkflowRequest,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
+    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.execution_events import ExecutionPayload
 from griptape_nodes.retained_mode.events.flow_events import (
@@ -35,7 +37,7 @@ class WorkflowStatus(StrEnum):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowFromScratchRequest(RequestPayload):
+class RunWorkflowFromScratchRequest(WorkflowRequest):
     """Run a workflow from file, starting with a clean state.
 
     Use when: Loading and executing saved workflows, testing workflows from files,
@@ -73,7 +75,7 @@ class RunWorkflowFromScratchResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowWithCurrentStateRequest(RequestPayload):
+class RunWorkflowWithCurrentStateRequest(WorkflowRequest):
     """Run a workflow from file, preserving current state.
 
     Use when: Loading workflows into a prepared but unpopulated workflow context,
@@ -122,7 +124,7 @@ class RunWorkflowWithCurrentStateResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowFromRegistryRequest(RequestPayload):
+class RunWorkflowFromRegistryRequest(WorkflowRequest):
     """Run a workflow from the registry.
 
     Use when: Executing registered workflows, running workflows by name,
@@ -162,7 +164,7 @@ class RunWorkflowFromRegistryResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterWorkflowRequest(RequestPayload):
+class RegisterWorkflowRequest(HostRequest):
     """Register a workflow in the registry.
 
     Use when: Publishing workflows for reuse, creating workflow templates,
@@ -199,7 +201,7 @@ class RegisterWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class ImportWorkflowRequest(RequestPayload):
+class ImportWorkflowRequest(WorkflowRequest):
     """Import and register a workflow from a file.
 
     Use when: Importing workflows from external sources, batch workflow imports,
@@ -234,7 +236,7 @@ class ImportWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class ListAllWorkflowsRequest(RequestPayload):
+class ListAllWorkflowsRequest(HostRequest):
     """List all workflows in the registry.
 
     Use when: Displaying workflow catalogs, browsing available workflows,
@@ -264,7 +266,7 @@ class ListAllWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class ListCallableWorkflowsRequest(RequestPayload):
+class ListCallableWorkflowsRequest(HostRequest):
     """List workflows that have a workflow_shape (i.e. contain StartFlow and EndFlow nodes)."""
 
 
@@ -282,7 +284,7 @@ class ListCallableWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass
 @PayloadRegistry.register
-class DeleteWorkflowRequest(RequestPayload):
+class DeleteWorkflowRequest(HostRequest):
     """Delete a workflow from the registry.
 
     Use when: Removing obsolete workflows, cleaning up workflow libraries,
@@ -333,7 +335,7 @@ class RenameDisplayNameBehavior(StrEnum):
 
 @dataclass
 @PayloadRegistry.register
-class RenameWorkflowRequest(RequestPayload):
+class RenameWorkflowRequest(WorkflowRequest):
     """Rename a workflow in the registry.
 
     Use when: Updating workflow names, organizing workflow libraries,
@@ -379,7 +381,7 @@ class RenameWorkflowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SaveWorkflowRequest(RequestPayload):
+class SaveWorkflowRequest(WorkflowRequest):
     """Save the current workflow to a file.
 
     Use when: Persisting workflow changes, creating workflow backups,
@@ -457,7 +459,7 @@ class SaveWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class LoadWorkflowMetadata(RequestPayload):
+class LoadWorkflowMetadata(HostRequest):
     """Load workflow metadata from a file.
 
     Use when: Inspecting workflow properties, validating workflow files,
@@ -492,7 +494,7 @@ class LoadWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowRunCommandRequest(RequestPayload):
+class GetWorkflowRunCommandRequest(OptionalWorkflowRequest):
     """Get a command-line string to run a workflow using the engine's Python.
 
     Use when: Showing users how to run a workflow from a terminal, copying a run command,
@@ -559,7 +561,7 @@ class PublishOptionField(BaseModel):
 
 @dataclass
 @PayloadRegistry.register
-class GetPublishOptionsRequest(RequestPayload):
+class GetPublishOptionsRequest(HostRequest):
     """Get publisher-specific options to display in the publish dialog before publishing.
 
     Use when: Opening the publish dialog for a specific publisher, refreshing dependent
@@ -633,7 +635,7 @@ class PublishWorkflowRegisteredEventData:
 
 @dataclass
 @PayloadRegistry.register
-class PublishWorkflowRequest(RequestPayload):
+class PublishWorkflowRequest(HostRequest):
     """Publish a workflow for distribution.
 
     Use when: Sharing workflows with others, creating workflow packages,
@@ -688,7 +690,7 @@ class PublishWorkflowProgressEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
-class BranchWorkflowRequest(RequestPayload):
+class BranchWorkflowRequest(HostRequest):
     """Create a branch (copy) of an existing workflow with branch tracking.
 
     Use when: Creating workflow variants, branching workflows for experimentation,
@@ -731,7 +733,7 @@ class BranchWorkflowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CreateWorkflowFromTemplateRequest(RequestPayload):
+class CreateWorkflowFromTemplateRequest(HostRequest):
     """Create a new workflow file from a template (Griptape-provided or user-provided).
 
     Use when: User selects a template from a list and wants to create a new workflow
@@ -771,7 +773,7 @@ class CreateWorkflowFromTemplateResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class MergeWorkflowBranchRequest(RequestPayload):
+class MergeWorkflowBranchRequest(HostRequest):
     """Merge a branch back into its source workflow, removing the branch when complete.
 
     Use when: Integrating branch changes back into the original workflow, consolidating
@@ -806,7 +808,7 @@ class MergeWorkflowBranchResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ResetWorkflowBranchRequest(RequestPayload):
+class ResetWorkflowBranchRequest(HostRequest):
     """Reset a branch to match its source workflow, discarding branch changes.
 
     Use when: Discarding branch modifications, reverting branch to source state,
@@ -841,7 +843,7 @@ class ResetWorkflowBranchResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CompareWorkflowsRequest(RequestPayload):
+class CompareWorkflowsRequest(HostRequest):
     """Compare two workflows to determine if one is ahead, behind, or up-to-date relative to the other.
 
     Use when: Checking if branched workflows need updates, determining if local changes exist,
@@ -888,7 +890,7 @@ class CompareWorkflowsResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class MoveWorkflowRequest(RequestPayload):
+class MoveWorkflowRequest(HostRequest):
     """Move a workflow to a different directory in the workspace.
 
     Use when: Organizing workflows into directories, restructuring workflow hierarchies,
@@ -927,7 +929,7 @@ class MoveWorkflowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowMetadataRequest(RequestPayload):
+class GetWorkflowMetadataRequest(HostRequest):
     """Get selected metadata for a workflow by name from the registry."""
 
     workflow_name: str
@@ -977,7 +979,7 @@ class WorkflowDependencyInfo:
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowInfoRequest(RequestPayload):
+class GetWorkflowInfoRequest(HostRequest):
     """Get fitness/health information for a workflow.
 
     Use when: Displaying workflow health warnings in the UI, checking whether a workflow
@@ -1039,7 +1041,7 @@ class WorkflowInfoSummary:
 
 @dataclass
 @PayloadRegistry.register
-class ListAllWorkflowInfoRequest(RequestPayload):
+class ListAllWorkflowInfoRequest(HostRequest):
     """Get fitness/health information for all registered workflows in a single request.
 
     Use when: Populating the workflow list UI with health indicators for every workflow
@@ -1070,7 +1072,7 @@ class ListAllWorkflowInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class SetWorkflowMetadataRequest(RequestPayload):
+class SetWorkflowMetadataRequest(HostRequest):
     """Replace the workflow's metadata entirely and persist to file."""
 
     workflow_name: str
@@ -1091,7 +1093,7 @@ class SetWorkflowMetadataResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class RefreshWorkflowRegistryRequest(RequestPayload):
+class RefreshWorkflowRegistryRequest(HostRequest):
     """Rescan the workspace and config for workflow files and refresh the in-memory registry.
 
     Use when: Workflows have been added or removed on disk outside of the engine,
@@ -1115,7 +1117,7 @@ class RefreshWorkflowRegistryResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 @dataclass
 @PayloadRegistry.register
-class RegisterWorkflowsFromConfigRequest(RequestPayload):
+class RegisterWorkflowsFromConfigRequest(HostRequest):
     """Register workflows from configuration section.
 
     Use when: Loading workflows from configuration after library initialization,
@@ -1152,7 +1154,7 @@ class RegisterWorkflowsFromConfigResultFailure(WorkflowNotAlteredMixin, ResultPa
 
 @dataclass
 @PayloadRegistry.register
-class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
+class SaveWorkflowFileFromSerializedFlowRequest(HostRequest):
     """Save a workflow file from serialized flow commands without registry overhead.
 
     Use when: Creating workflow files from user-supplied subsets of existing workflows,
@@ -1218,7 +1220,7 @@ class SaveWorkflowFileFromSerializedFlowResultFailure(WorkflowNotAlteredMixin, R
 
 @dataclass
 @PayloadRegistry.register
-class SaveSubflowToWorkflowRequest(RequestPayload):
+class SaveSubflowToWorkflowRequest(WorkflowRequest):
     """Serialize a subflow and save it back to its original workflow file.
 
     Use when: Persisting changes made to a subflow in a modal editor back to
@@ -1257,7 +1259,7 @@ class SaveSubflowToWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass
 @PayloadRegistry.register
-class GetVariableSubstitutionEnabledRequest(RequestPayload):
+class GetVariableSubstitutionEnabledRequest(WorkflowRequest):
     """Get whether inline variable substitution is enabled for the current workflow.
 
     Results: GetVariableSubstitutionEnabledResultSuccess | GetVariableSubstitutionEnabledResultFailure
@@ -1284,7 +1286,7 @@ class GetVariableSubstitutionEnabledResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SetVariableSubstitutionEnabledRequest(RequestPayload):
+class SetVariableSubstitutionEnabledRequest(WorkflowRequest):
     """Enable or disable inline variable substitution for the current workflow.
 
     The setting is stored in memory and, when the workflow is saved, is baked into

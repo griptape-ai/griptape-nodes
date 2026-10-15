@@ -28,18 +28,21 @@ routing metadata.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeGuard, cast
 
 from griptape_nodes.retained_mode.events import artifact_events, os_events
 from griptape_nodes.retained_mode.events.base_events import (
+    HostRequest,
     RequestPayload,
     ResultPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     SkipTheLineMixin,
     WorkflowNotAlteredMixin,
+    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelExecuteNodeRequest,
@@ -80,6 +83,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from types import ModuleType
 
+    from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
@@ -91,7 +95,7 @@ HandlerCallback = "Callable[[RequestPayload], ResultPayload | Awaitable[ResultPa
 
 @dataclass
 @PayloadRegistry.register
-class ReloadConfigRequest(RequestPayload, SkipTheLineMixin):
+class ReloadConfigRequest(HostRequest, SkipTheLineMixin):
     """Sent by the orchestrator to each registered worker after a config mutation succeeds.
 
     On the same machine orchestrator and workers share
@@ -119,7 +123,7 @@ class ReloadConfigResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DropWorkflowLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
+class DropWorkflowLocalObjectsRequest(WorkflowRequest, SkipTheLineMixin):
     """Sent by the orchestrator to each registered worker when a workflow's object state is cleared.
 
     Clearing a workflow deletes its nodes and so every key referring to an object held for it, leaving
@@ -136,7 +140,7 @@ class DropWorkflowLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
 
 @dataclass
 @PayloadRegistry.register
-class DropLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
+class DropLocalObjectsRequest(HostRequest, SkipTheLineMixin):
     """Sent by the orchestrator when named held objects stop being referenced.
 
     A handle parameter's value is a key. When that value is replaced or the node carrying it is deleted,
@@ -176,7 +180,7 @@ class DropWorkflowLocalObjectsResultFailure(WorkflowNotAlteredMixin, ResultPaylo
 
 @dataclass
 @PayloadRegistry.register
-class RefreshSecretsRequest(RequestPayload, SkipTheLineMixin):
+class RefreshSecretsRequest(HostRequest, SkipTheLineMixin):
     """Sent by the orchestrator to each registered worker after a secret mutation succeeds.
 
     The global .env at ~/.config/griptape_nodes/.env is shared across
@@ -204,7 +208,7 @@ class RefreshSecretsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class ActivateProjectRequest(RequestPayload, SkipTheLineMixin):
+class ActivateProjectRequest(HostRequest, SkipTheLineMixin):
     """Sent by the orchestrator to each registered worker after it switches projects.
 
     The orchestrator is the single source of truth for the current project, but a
@@ -430,9 +434,23 @@ class RemoteHandler:
 
     async def __call__(self, request: RequestPayload) -> ResultPayload:
         if self.event_manager.in_node_execution():
-            event_result = await self.event_manager.forward_to_orchestrator(request, ResultContext())
+            forwarded = naming_its_workflow(request, self.event_manager.engine)
+            event_result = await self.event_manager.forward_to_orchestrator(forwarded, ResultContext())
             return cast("ResultPayload", event_result.result)
         return await call_function(self.original, request)
+
+
+def naming_its_workflow(request: RequestPayload, engine: Engine) -> RequestPayload:
+    """The request a worker forwards: a workflow request names the workflow it acts on here.
+
+    A node's request names no workflow, and the worker bound it to the namespace of the workflow the node
+    runs for, whose id is the orchestrator's. Named on a copy, so the node's request is unchanged.
+    """
+    if not isinstance(request, WorkflowRequest) or request.workflow_id is not None:
+        return request
+    forwarded = copy.copy(request)
+    forwarded.workflow_id = engine.current_workflow.workflow_id
+    return forwarded
 
 
 def schedule_broadcast(broadcast_type: type[RequestPayload]) -> None:
@@ -479,7 +497,7 @@ def register_remote_handlers(event_manager: EventManager) -> None:
 
 
 async def _handle_drop_workflow_local_objects(
-    request: DropWorkflowLocalObjectsRequest,
+    request: DropWorkflowLocalObjectsRequest,  # noqa: ARG001
     *,
     event_manager: EventManager,
 ) -> ResultPayload:
@@ -493,13 +511,11 @@ async def _handle_drop_workflow_local_objects(
     Takes the event manager because that is how it reaches this engine; the process-global engine would
     silently no-op for an engine an embedder built directly.
     """
-    resource_manager = event_manager.engine.resource_manager
-    # Set at dispatch: a worker keeps the orchestrator's id for the workflow it acts on.
-    workflow_id = request.workflow_id
-    if workflow_id is None:
-        return DropWorkflowLocalObjectsResultFailure(
-            result_details="Attempted to release objects held for a workflow. Failed because no workflow was named."
-        )
+    engine = event_manager.engine
+    resource_manager = engine.resource_manager
+    # Dispatch bound this request to the worker's namespace for the workflow it names.
+    runtime = engine.current_workflow
+    workflow_id = runtime.workflow_id
 
     try:
         # Off the loop: a release hook is `del model` plus a CUDA cache flush, and blocking the
@@ -510,6 +526,9 @@ async def _handle_drop_workflow_local_objects(
             f"Attempted to release objects held for this worker's libraries. Failed because of {type(e).__name__}: {e}."
         )
         return DropWorkflowLocalObjectsResultFailure(result_details=details)
+    # The orchestrator cleared the workflow, so the namespace kept for it goes too. A later node from
+    # the same workflow makes a fresh one.
+    engine.remove_workflow_runtime(runtime)
     return DropWorkflowLocalObjectsResultSuccess(result_details=f"Released {dropped} held object(s).")
 
 

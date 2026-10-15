@@ -1,8 +1,8 @@
-"""Requests a worker forwards while running a node act on the workflow that ran it.
+"""A worker keeps a namespace per orchestrator workflow, and requests it forwards name their workflow.
 
-The orchestrator can hold several workflows open, and the user can switch to another while a node
-runs in a worker. The worker doesn't hold the orchestrator's workflows, so it must carry the id of the
-workflow it is running for onto everything it sends back.
+The orchestrator can hold several workflows open, and runs nodes for any of them in a worker. The
+worker holds none of the orchestrator's workflows. It binds the namespace it keeps under the
+orchestrator's id, so a request a node makes mid-run reaches the workflow that ran it.
 """
 
 from __future__ import annotations
@@ -12,24 +12,24 @@ from dataclasses import dataclass
 import pytest
 
 from griptape_nodes.retained_mode.engine import Engine
-from griptape_nodes.retained_mode.events.base_events import EventRequest, RequestPayload, ResultPayloadSuccess
+from griptape_nodes.retained_mode.events.base_events import EventRequest, ResultPayloadSuccess, WorkflowRequest
 from griptape_nodes.retained_mode.events.open_workflow_events import OpenWorkflowRequest, OpenWorkflowResultSuccess
 from tests.unit.worker.harness import InProcessWorkerHarness
 
 
 @dataclass(kw_only=True)
-class _RunNodeProbe(RequestPayload):
+class _RunNodeProbe(WorkflowRequest):
     """Stands in for ExecuteNodeRequest: the worker runs a node, which calls back to the orchestrator."""
 
 
 @dataclass(kw_only=True)
-class _CallbackProbe(RequestPayload):
-    """A request a node makes mid-run, which the worker forwards to the orchestrator."""
+class _CallbackProbe(WorkflowRequest):
+    """A request a node makes mid-run, naming no workflow, which the worker forwards to the orchestrator."""
 
 
 @dataclass(kw_only=True)
 class _ProbeResult(ResultPayloadSuccess):
-    workflow_id: str | None = None
+    pass
 
 
 class TestWorkerForwarding:
@@ -40,20 +40,23 @@ class TestWorkerForwarding:
         worker.library_manager._is_worker = True
 
         running = orchestrator.handle_request(OpenWorkflowRequest(display_name="Running"))
-        on_screen = orchestrator.handle_request(OpenWorkflowRequest(display_name="On screen"))
+        other = orchestrator.handle_request(OpenWorkflowRequest(display_name="Other"))
         assert isinstance(running, OpenWorkflowResultSuccess)
-        assert isinstance(on_screen, OpenWorkflowResultSuccess)
+        assert isinstance(other, OpenWorkflowResultSuccess)
 
         harness = InProcessWorkerHarness(orchestrator=orchestrator.event_manager, worker=worker.event_manager)
         seen_by_orchestrator: list[str] = []
+        seen_by_worker: list[str] = []
+        callback = _CallbackProbe()
 
         def on_callback(_request: _CallbackProbe) -> _ProbeResult:
-            seen_by_orchestrator.append(orchestrator.workflow_binding.workflow_id)
+            seen_by_orchestrator.append(orchestrator.current_workflow.workflow_id)
             return _ProbeResult(result_details="ok")
 
         async def run_node(_request: _RunNodeProbe) -> _ProbeResult:
+            seen_by_worker.append(worker.current_workflow.workflow_id)
             with worker.event_manager.node_execution_scope():
-                await worker.ahandle_request(_CallbackProbe())
+                await worker.ahandle_request(callback)
             return _ProbeResult(result_details="ok")
 
         orchestrator.event_manager.assign_manager_to_request_type(_CallbackProbe, on_callback)
@@ -62,10 +65,31 @@ class TestWorkerForwarding:
 
         await harness.start()
         try:
-            # The orchestrator names the workflow on the requests it sends, as dispatch does.
             await harness.route_to_worker(EventRequest(request=_RunNodeProbe(workflow_id=running.workflow_id)))
         finally:
             await harness.stop()
 
+        assert seen_by_worker == [running.workflow_id]
         assert seen_by_orchestrator == [running.workflow_id]
-        assert orchestrator.active_workflow_runtime.workflow_id == on_screen.workflow_id
+        # The worker named the workflow on a copy; the node's own request is unchanged.
+        assert callback.workflow_id is None
+
+    @pytest.mark.asyncio
+    async def test_a_worker_keeps_a_namespace_per_workflow(self) -> None:
+        worker = Engine()
+        worker.library_manager._is_worker = True
+        seen: list[object] = []
+
+        def run_node(_request: _RunNodeProbe) -> _ProbeResult:
+            seen.append(worker.current_workflow)
+            return _ProbeResult(result_details="ok")
+
+        worker.event_manager.assign_manager_to_request_type(_RunNodeProbe, run_node)
+
+        await worker.ahandle_request(_RunNodeProbe(workflow_id="workflow-a"))
+        await worker.ahandle_request(_RunNodeProbe(workflow_id="workflow-b"))
+        await worker.ahandle_request(_RunNodeProbe(workflow_id="workflow-a"))
+
+        assert [runtime.workflow_id for runtime in worker.workflow_runtimes] == ["workflow-a", "workflow-b"]
+        assert seen[0] is seen[2]
+        assert seen[0] is not seen[1]
