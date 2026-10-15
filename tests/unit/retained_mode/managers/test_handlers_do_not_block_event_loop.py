@@ -9,20 +9,24 @@ held, the question could not be answered until the step gave up waiting.
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from PIL import Image
 
+from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.retained_mode.events.config_events import GetConfigValueRequest, GetConfigValueResultSuccess
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     WriteFileRequest,
     WriteFileResultSuccess,
 )
+from griptape_nodes.retained_mode.events.project_events import MacroPath
 from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators.pil_rounded_preview_generator import (
     PILRoundedPreviewGenerator,
 )
@@ -89,7 +93,7 @@ def slow_metadata_injection(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> 
     """Make the metadata injection a write does (a full image re-encode) wait for the test."""
     step = _SlowStep()
     engine.config_manager.set_config_value("auto_inject_workflow_metadata", True)
-    monkeypatch.setattr(engine.artifact_manager, "prepare_content_for_write", lambda data, _name: step.run(data))
+    monkeypatch.setattr(engine.artifact_manager, "plan_content_for_write", lambda _name: step.run)
     return step
 
 
@@ -144,16 +148,85 @@ class TestWriteFileRequest:
         assert isinstance(result, WriteFileResultSuccess), result
         assert target.exists()
 
-    def test_direct_sync_call_still_writes_the_file(self, engine: Engine, tmp_path: Path) -> None:
-        """Storage drivers and the config manager call the synchronous method directly."""
-        target = tmp_path / "direct.bin"
-
-        result = engine.os_manager.on_write_file_request(
-            WriteFileRequest(file_path=str(target), content=b"abc", existing_file_policy=ExistingFilePolicy.OVERWRITE)
+    def test_sync_request_from_a_worker_thread_writes_the_file(self, engine: Engine, tmp_path: Path) -> None:
+        """Storage drivers and the config manager send their writes through the sync request path."""
+        target = tmp_path / "worker_thread.bin"
+        request = WriteFileRequest(
+            file_path=str(target), content=b"abc", existing_file_policy=ExistingFilePolicy.OVERWRITE
         )
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(engine.handle_request, request).result(timeout=_START_TIMEOUT_SECONDS)
 
         assert isinstance(result, WriteFileResultSuccess), result
         assert target.read_bytes() == b"abc"
+
+    @pytest.mark.asyncio
+    async def test_engine_state_is_read_on_the_loop_and_only_the_disk_write_leaves_it(
+        self, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Manager state has no locks, so path resolution and the index scan must stay on the loop."""
+        loop_thread = threading.get_ident()
+        threads: dict[str, set[int]] = {"macro resolution": set(), "index scan": set(), "disk write": set()}
+        os_manager = engine.os_manager
+
+        def record(step: str, method_name: str) -> None:
+            original = getattr(os_manager, method_name)
+
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
+                threads[step].add(threading.get_ident())
+                return original(*args, **kwargs)
+
+            monkeypatch.setattr(os_manager, method_name, wrapper)
+
+        record("macro resolution", "_resolve_macro_path_to_string")
+        record("index scan", "_scan_for_next_available_index")
+        record("disk write", "_attempt_file_write")
+        engine.config_manager.workspace_path = tmp_path
+        (tmp_path / "taken.txt").write_text("already here")
+
+        macro_result = await engine.ahandle_request(
+            WriteFileRequest(file_path=MacroPath(ParsedMacro("{workspace_dir}/from_macro.txt"), {}), content="macro")
+        )
+        indexed_result = await engine.ahandle_request(
+            WriteFileRequest(
+                file_path=str(tmp_path / "taken.txt"),
+                content="indexed",
+                existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+            )
+        )
+
+        assert isinstance(macro_result, WriteFileResultSuccess), macro_result
+        assert isinstance(indexed_result, WriteFileResultSuccess), indexed_result
+        assert (tmp_path / "taken_1.txt").read_text() == "indexed"
+        assert threads["macro resolution"] == {loop_thread}
+        assert threads["index scan"] == {loop_thread}
+        assert threads["disk write"], "The write never reached the disk step."
+        assert loop_thread not in threads["disk write"]
+
+
+def _read_max_nodes_in_parallel(user_config: Path) -> int:
+    return json.loads(user_config.read_text())["max_nodes_in_parallel"]
+
+
+class TestConfigWrites:
+    """Config writes are sync callers of the async WriteFileRequest handler."""
+
+    def test_config_write_without_a_running_loop_reaches_the_user_config(
+        self, engine: Engine, isolate_user_config: Path
+    ) -> None:
+        assert engine.config_manager.set_config_value("max_nodes_in_parallel", 7)
+
+        assert _read_max_nodes_in_parallel(isolate_user_config) == 7  # noqa: PLR2004
+
+    @pytest.mark.asyncio
+    async def test_config_write_on_the_loop_thread_reaches_the_user_config(
+        self, engine: Engine, isolate_user_config: Path
+    ) -> None:
+        """The sync caller blocks the loop thread, so the write must run on a loop of its own."""
+        assert engine.config_manager.set_config_value("max_nodes_in_parallel", 8)
+
+        assert _read_max_nodes_in_parallel(isolate_user_config) == 8  # noqa: PLR2004
 
 
 def _make_generator(generator_type: type, engine: Engine, source: Path, destination_dir: Path) -> Any:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import StrEnum
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -14,6 +15,8 @@ from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
         BaseArtifactPreviewGenerator,
@@ -267,6 +270,26 @@ class BaseArtifactProvider(EngineScoped, ABC):
             Processed bytes (or original bytes if no processing needed)
         """
         return data
+
+    def plan_content_for_write(self, file_name: str) -> Callable[[bytes], bytes]:
+        """Split ``prepare_content_for_write`` into a part that reads engine state and a part that does not.
+
+        The engine's state is only safe to read on the event loop, while re-encoding a large file
+        takes long enough to stall it. Override this to read whatever the processing needs from the
+        engine now, and return a callable that processes bytes without touching the engine: the write
+        runs that callable on a worker thread.
+
+        The default hands the whole of ``prepare_content_for_write`` to the callable, so a provider
+        that overrides only that hook has all of it run on the worker thread and must not read engine
+        state there.
+
+        Args:
+            file_name: Resolved filename including extension (post-macro resolution and post-policy)
+
+        Returns:
+            A callable taking the raw file bytes and returning the processed bytes.
+        """
+        return partial(self.prepare_content_for_write, file_name=file_name)
 
     @staticmethod
     def get_write_vetting_policy() -> WriteVettingPolicy | None:

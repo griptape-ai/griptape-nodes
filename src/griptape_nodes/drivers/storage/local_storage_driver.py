@@ -78,7 +78,7 @@ class LocalStorageDriver(BaseStorageDriver):
         *,
         file_metadata: SidecarContent | None = None,  # noqa: ARG002
     ) -> CreateSignedUploadUrlResponse:
-        # on_write_file_request seems to work most reliably with an absolute path.
+        # WriteFileRequest seems to work most reliably with an absolute path.
         absolute_path = resolve_workspace_path(path, self.workspace_directory)
 
         # Always delegate the write for file path resolution and policy handling.
@@ -91,7 +91,7 @@ class LocalStorageDriver(BaseStorageDriver):
             existing_file_policy=existing_file_policy,
             skip_metadata_injection=True,
         )
-        result = self._os_manager.on_write_file_request(write_request)
+        result = self._os_manager.engine.handle_request(write_request)
 
         if not result.succeeded():
             msg = f"WriteFileRequest failed: {result.result_details}"
@@ -154,7 +154,7 @@ class LocalStorageDriver(BaseStorageDriver):
         """
         absolute_path = resolve_workspace_path(path, self.workspace_directory)
 
-        result = self._os_manager.on_write_file_request(
+        result = self._os_manager.engine.handle_request(
             WriteFileRequest(
                 file_path=str(absolute_path),
                 content=file_content,

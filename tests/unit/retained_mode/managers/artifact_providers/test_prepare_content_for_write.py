@@ -67,6 +67,44 @@ class TestImageArtifactProviderPrepareContentForWrite:
         assert any("Attempted to collect workflow metadata" in record.message for record in caplog.records)
 
 
+class TestImageArtifactProviderPlanContentForWrite:
+    """Tests for the split of ImageArtifactProvider.prepare_content_for_write into plan and process."""
+
+    def test_reads_engine_state_when_planning_not_when_processing(self, image_provider: ImageArtifactProvider) -> None:
+        """The returned callable must not touch the engine, so it can run on a worker thread."""
+        metadata = {"gtn_saved_at": "2024-01-01T00:00:00+00:00"}
+        mock_image = MagicMock()
+        mock_image.format = "PNG"
+        mock_driver = MagicMock()
+        mock_driver.inject_metadata.return_value = b"processed"
+
+        with patch(COLLECT_PATH, return_value=metadata) as mock_collect:
+            process = image_provider.plan_content_for_write("image.png")
+            assert mock_collect.call_count == 1
+
+            with (
+                patch(IMAGE_OPEN_PATH, return_value=mock_image),
+                patch(DRIVER_REGISTRY_PATH, return_value=mock_driver),
+            ):
+                result = process(b"fake png bytes")
+
+        assert result == b"processed"
+        assert mock_collect.call_count == 1
+
+    def test_returns_empty_data_unchanged(self, image_provider: ImageArtifactProvider) -> None:
+        with patch(COLLECT_PATH, return_value={"gtn_saved_at": "2024-01-01T00:00:00+00:00"}):
+            process = image_provider.plan_content_for_write("image.png")
+
+        assert process(b"") == b""
+
+    def test_skips_collecting_for_formats_without_metadata(self, image_provider: ImageArtifactProvider) -> None:
+        with patch(COLLECT_PATH) as mock_collect:
+            process = image_provider.plan_content_for_write("image.jpg")
+
+        mock_collect.assert_not_called()
+        assert process(b"jpeg bytes") == b"jpeg bytes"
+
+
 class TestArtifactManagerPrepareContentForWrite:
     """Tests for ArtifactManager.prepare_content_for_write."""
 

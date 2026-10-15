@@ -2497,17 +2497,15 @@ class OSManager(EngineScoped):
         )
 
     @handles(WriteFileRequest)
-    async def on_async_write_file_request(self, request: WriteFileRequest) -> ResultPayload:
-        """Handle a WriteFileRequest without holding the event loop.
+    async def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
+        """Write content to a file with exclusive locking, returning once it is on disk.
 
-        Writing re-encodes image bytes to inject workflow metadata and then writes the whole file,
-        which takes seconds for a large image. `on_write_file_request` does the work and stays
-        synchronous for callers that are already off the loop or need the result inline.
+        Everything that reads engine state runs on the thread driving this coroutine: macro
+        resolution, the config read, the codec vet, the index scan, and the collision policy.
+        Manager state has no locks, so none of that may move to a worker thread. Only the two
+        steps that touch no engine state and take seconds for a large file are handed to a worker
+        thread: re-encoding image bytes with workflow metadata, and writing the bytes to disk.
         """
-        return await to_thread(self.on_write_file_request, request)
-
-    def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
-        """Write content to a file with exclusive locking, blocking until it is on disk."""
         # Initialize success tracking variables
         final_file_path: Path | None = None
         final_bytes_written: int | None = None
@@ -2660,7 +2658,10 @@ class OSManager(EngineScoped):
             and not request.skip_metadata_injection
             and self.engine.config_manager.get_config_value("auto_inject_workflow_metadata")
         ):
-            content = self.engine.artifact_manager.prepare_content_for_write(content, file_path.name)
+            # The provider reads engine state while planning, so that runs here; only the
+            # byte processing it returns (an image re-encode) goes to a worker thread.
+            prepare_content = self.engine.artifact_manager.plan_content_for_write(file_path.name)
+            content = await to_thread(prepare_content, content)
 
         # Now attempt the write, based on our collision (existing file) policy.
         match request.existing_file_policy:
@@ -2681,7 +2682,8 @@ class OSManager(EngineScoped):
                     # portalocker as the concurrency mechanism here: concurrent
                     # overwrites are last-rename-wins, and writer interleaving is
                     # impossible because each writer fills a private sibling.
-                    result = self._attempt_atomic_file_write(
+                    result = await to_thread(
+                        self._attempt_atomic_file_write,
                         normalized_path=Path(normalized_path),
                         content=content,
                         encoding=request.encoding,
@@ -2695,7 +2697,8 @@ class OSManager(EngineScoped):
                     # the FAIL policy) gets its atomicity from O_EXCL, and its
                     # FileExistsError signal plus the debris cleanup around it are
                     # load-bearing for the CREATE_NEW candidate walk.
-                    result = self._attempt_file_write(
+                    result = await to_thread(
+                        self._attempt_file_write,
                         normalized_path=Path(normalized_path),
                         content=content,
                         encoding=request.encoding,
@@ -2719,7 +2722,8 @@ class OSManager(EngineScoped):
                 # Path already validated and ready to use (handled at method top)
 
                 # TRY-FIRST: Attempt to write to the requested path
-                result = self._attempt_file_write(
+                result = await to_thread(
+                    self._attempt_file_write,
                     normalized_path=Path(normalized_path),
                     content=content,
                     encoding=request.encoding,
@@ -2917,7 +2921,8 @@ class OSManager(EngineScoped):
                         normalized_candidate_path = normalize_path_for_platform(candidate_path)
 
                         # Try to write this indexed candidate using helper
-                        result = self._attempt_file_write(
+                        result = await to_thread(
+                            self._attempt_file_write,
                             normalized_path=Path(normalized_candidate_path),
                             content=content,
                             encoding=request.encoding,
