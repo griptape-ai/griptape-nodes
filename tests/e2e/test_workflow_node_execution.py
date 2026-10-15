@@ -301,6 +301,53 @@ async def test_registering_the_library_lists_the_backing_workflow(registered_lib
 
 
 @pytest.fixture
+def installed_library(engine: Engine, materialize_library: Callable[..., Path]) -> Path:
+    """Register the fixture library from `<workspace>/libraries`, where libraries install by default."""
+    library_json = materialize_library(
+        engine.config_manager.workspace_path / "libraries" / "workflow-node-library",
+        template=FIXTURE_LIBRARY_JSON_TEMPLATE,
+        node_file=FIXTURE_NODE_FILE,
+        extra_files=[FIXTURE_WORKFLOW_FILE],
+    )
+    register_result = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
+    assert isinstance(register_result, RegisterLibraryFromFileResultSuccess), register_result
+    return library_json
+
+
+@pytest.mark.skipif(
+    not FIXTURE_WORKFLOW_FILE.exists(),
+    reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
+)
+@pytest.mark.asyncio
+async def test_a_library_installed_in_the_workspace_lists_its_backing_workflow(
+    installed_library: Path,  # noqa: ARG001
+    engine: Engine,
+    create_node: Callable[..., str],
+) -> None:
+    """A library in the default install location lists its workflow, keeps it through a refresh, and reuses it."""
+    registry_key = "libraries/workflow-node-library/shout_workflow"
+
+    list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
+    assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
+    assert list_result.workflows[registry_key]["is_griptape_provided"] is True
+
+    await engine.workflow_manager.refresh_workflow_registry()
+
+    engine.context_manager.push_workflow(workflow_name="workflow_node_e2e_installed")
+    flow_result = engine.handle_request(
+        CreateFlowRequest(parent_flow_name=None, flow_name="ParentFlow", set_as_new_context=False)
+    )
+    assert isinstance(flow_result, CreateFlowResultSuccess), flow_result
+    create_node(WORKFLOW_NODE_TYPE, "Shout It", flow_result.flow_name, library_name=LIBRARY_NAME)
+
+    listed = [key for key in engine.workflow_registry.list_workflows() if key.endswith("shout_workflow")]
+    assert listed == [registry_key]
+    assert engine.workflow_registry.get_workflow_by_name(registry_key).metadata.is_griptape_provided is True
+    node = engine.node_manager.get_node_by_name("Shout It")
+    assert node.metadata["_workflow_file_value"] == registry_key
+
+
+@pytest.fixture
 def template_library(tmp_path: Path, engine: Engine, materialize_library: Callable[..., Path]) -> Path:
     """Register the fixture library with its workflow marked as a template; return the workflow path."""
     library_json = materialize_library(

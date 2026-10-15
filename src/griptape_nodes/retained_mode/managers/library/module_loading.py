@@ -935,10 +935,11 @@ class LibraryModuleLoading(EngineScoped):
 
         # A workflow the library ships is listed now, as library-provided, like the workflows in the
         # library's `workflows` list: browsable before any node is placed, and kept when a workspace
-        # refresh clears the user's workflows. A workflow in the workspace is the user's own file,
-        # so it stays editable and the workspace scan lists it.
+        # refresh clears the user's workflows. A workflow elsewhere in the workspace is the user's own
+        # file, so it stays editable and the workspace scan lists it. The scan skips everything under
+        # a non-sandbox library's directory, which includes libraries installed into the workspace.
         workspace_path = self.engine.config_manager.workspace_path
-        if relative_to_keeping_or_following_links(node_class.workflow_file_path, workspace_path) is not None:
+        if self._is_users_workflow(node_class.workflow_file_path, workspace_path, library_info):
             return True
         node_class.workflow_metadata.is_griptape_provided = True
         try:
@@ -956,3 +957,17 @@ class LibraryModuleLoading(EngineScoped):
                 workflow_node_definition.node_type,
             )
         return True
+
+    @staticmethod
+    def _is_users_workflow(workflow_file_path: Path, workspace_path: Path, library_info: LibraryInfo) -> bool:
+        """Whether a library's workflow is a file the workspace scan lists as the user's own.
+
+        Mirrors the scan's rule: it lists files in the workspace, except those under a non-sandbox
+        library's directory.
+        """
+        if relative_to_keeping_or_following_links(workflow_file_path, workspace_path) is None:
+            return False
+        if library_info.is_sandbox:
+            return True
+        library_dir = Path(library_info.library_path).parent
+        return relative_to_keeping_or_following_links(workflow_file_path, library_dir) is None
