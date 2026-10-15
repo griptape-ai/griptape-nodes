@@ -161,7 +161,15 @@ class TestOpenWorkflows:
 
         engine.event_manager.put_event(event)
 
-        assert event.wrapped_event.workflow_name == "wf_a"
+        assert event.wrapped_event.source_workflow_name == "wf_a"
+
+    def test_handled_requests_name_their_workflow(self, engine: Engine) -> None:
+        _open_workflow_with_note(engine, "wf_a", "NoteA")
+        request = ListOpenWorkflowsRequest()
+
+        engine.handle_request(request)
+
+        assert request.source_workflow_name == "wf_a"
 
 
 def _running_in(engine: Engine, workflow_name: str) -> Callable[[FlowManager], bool]:

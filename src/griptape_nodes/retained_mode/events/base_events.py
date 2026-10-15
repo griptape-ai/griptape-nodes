@@ -101,6 +101,9 @@ class RequestPayload(Payload, ABC):
                           whose results are large or only relevant to the direct caller can
                           default this to False on the subclass to avoid unnecessary serialization
                           and transmission. Can also be set per-instance at construction time.
+        source_workflow_name: Set by the engine when it handles the request, to the registry key of
+                the workflow it acted on. Sent back with the result so a client can tell which open
+                workflow a broadcast result belongs to. Callers leave it unset.
         fields: **Wire-only** dot-path filter applied to the broadcast JSON before it is sent
                 over the WebSocket. Has no effect on in-process/retained-mode callers, which
                 always receive the full result object. Like broadcast_result and failure_log_level,
@@ -130,6 +133,9 @@ class RequestPayload(Payload, ABC):
     request_id: str | None = None
     failure_log_level: int | None = None
     fields: list[str] | None = None
+    # The workflow the engine handled this request in. Set at dispatch, so the result a client is
+    # sent names it, and a client showing a different open workflow can ignore it.
+    source_workflow_name: str | None = None
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
@@ -418,7 +424,7 @@ class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     payload: E
     # The workflow whose run emitted this event, so a client showing a different open workflow can
     # ignore it. Stamped when the event is queued; None for events from outside any workflow.
-    workflow_name: str | None = None
+    source_workflow_name: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an ExecutionEvent, inferring the generic type if needed."""

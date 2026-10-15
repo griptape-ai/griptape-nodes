@@ -384,11 +384,14 @@ class EventManager(EngineScoped):
         if not isinstance(event, ExecutionGriptapeNodeEvent):
             return
         execution_event = event.wrapped_event
-        if execution_event.workflow_name is not None:
-            return
+        if execution_event.source_workflow_name is None:
+            execution_event.source_workflow_name = self._current_workflow_name()
+
+    def _current_workflow_name(self) -> str | None:
         context_manager = self.engine.context_manager
-        if context_manager.has_current_workflow():
-            execution_event.workflow_name = context_manager.get_current_workflow_name()
+        if not context_manager.has_current_workflow():
+            return None
+        return context_manager.get_current_workflow_name()
 
     def add_pre_dispatch_hook(
         self,
@@ -1163,8 +1166,11 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
-        # Pin the request, and any tasks it spawns, to the workflow that is active now.
+        # Pin the request, and any tasks it spawns, to the workflow that is active now, and record it
+        # on the request so its broadcast result names that workflow.
         runtime_token = bound_workflow_runtime.set(self.engine.workflow_runtime)
+        if request.source_workflow_name is None:
+            request.source_workflow_name = self._current_workflow_name()
         try:
             try:
                 # Actually make the handler callback (support both sync and async):
@@ -1221,8 +1227,11 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
-        # Pin the request, and any tasks it spawns, to the workflow that is active now.
+        # Pin the request, and any tasks it spawns, to the workflow that is active now, and record it
+        # on the request so its broadcast result names that workflow.
         runtime_token = bound_workflow_runtime.set(self.engine.workflow_runtime)
+        if request.source_workflow_name is None:
+            request.source_workflow_name = self._current_workflow_name()
         try:
             try:
                 result_payload = self._invoke_handler_from_sync(callback, request)
