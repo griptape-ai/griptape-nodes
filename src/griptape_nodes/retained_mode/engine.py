@@ -43,7 +43,12 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
 from griptape_nodes.retained_mode.request_handlers import handles
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime, bound_workflow_runtime
+from griptape_nodes.retained_mode.workflow_runtime import (
+    WorkflowBinding,
+    WorkflowNotOpenError,
+    WorkflowRuntime,
+    bound_workflow,
+)
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
@@ -73,6 +78,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.model_manager import ModelManager
     from griptape_nodes.retained_mode.managers.node_manager import NodeManager
     from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
+    from griptape_nodes.retained_mode.managers.open_workflows_manager import OpenWorkflowsManager
     from griptape_nodes.retained_mode.managers.operation_manager import (
         OperationDepthManager,
     )
@@ -177,6 +183,7 @@ class Engine:
     _diagnostics_manager: DiagnosticsManager
     _worker_manager: WorkerManager
     _workflow_registry: _WorkflowRegistry
+    _open_workflows_manager: OpenWorkflowsManager
     _workflow_runtimes: list[WorkflowRuntime]
     _active_workflow_runtime: WorkflowRuntime
 
@@ -200,6 +207,7 @@ class Engine:
         from griptape_nodes.retained_mode.managers.model_manager import ModelManager
         from griptape_nodes.retained_mode.managers.node_manager import NodeManager
         from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
+        from griptape_nodes.retained_mode.managers.open_workflows_manager import OpenWorkflowsManager
         from griptape_nodes.retained_mode.managers.operation_manager import (
             OperationDepthManager,
         )
@@ -238,6 +246,7 @@ class Engine:
         self._node_manager = NodeManager(self._event_manager, engine=self)
         self._flow_manager = FlowManager(self._event_manager, engine=self)
         self._context_manager = ContextManager(self._event_manager, engine=self)
+        self._open_workflows_manager = OpenWorkflowsManager(self._event_manager, engine=self)
         self._worker_manager = WorkerManager(engine=self, event_manager=self._event_manager)
         self._library_manager = LibraryManager(self._event_manager, worker_manager=self._worker_manager, engine=self)
         self._model_manager = ModelManager(self._event_manager, engine=self)
@@ -298,6 +307,10 @@ class Engine:
     @property
     def context_manager(self) -> ContextManager:
         return self._context_manager
+
+    @property
+    def open_workflows_manager(self) -> OpenWorkflowsManager:
+        return self._open_workflows_manager
 
     @property
     def library_manager(self) -> LibraryManager:
@@ -393,20 +406,55 @@ class Engine:
 
     @property
     def workflow_runtime(self) -> WorkflowRuntime:
-        """The runtime the current request acts on: the one it was bound to, else the active one."""
-        bound = bound_workflow_runtime.get()
-        if bound is not None and bound.owner is self:
+        """The runtime the current work acts on."""
+        return self.workflow_binding.runtime
+
+    @property
+    def workflow_binding(self) -> WorkflowBinding:
+        """The workflow the current work acts on: the one it was bound to, else the active one."""
+        bound = bound_workflow.get()
+        if bound is not None and bound.runtime.owner is self:
             return bound
-        return self._active_workflow_runtime
+        return WorkflowBinding(self._active_workflow_runtime, self._active_workflow_runtime.workflow_id)
 
     @property
     def active_workflow_runtime(self) -> WorkflowRuntime:
+        """The runtime that requests naming no workflow act on, for clients that don't track workflows."""
         return self._active_workflow_runtime
 
     @property
     def workflow_runtimes(self) -> list[WorkflowRuntime]:
         """Every open runtime, in the order they were opened."""
         return list(self._workflow_runtimes)
+
+    def find_workflow_runtime(self, workflow_id: str) -> WorkflowRuntime | None:
+        for runtime in self._workflow_runtimes:
+            if runtime.workflow_id == workflow_id:
+                return runtime
+        return None
+
+    def binding_for_request(self, request: RequestPayload) -> WorkflowBinding:
+        """The workflow `request` acts on.
+
+        Its `workflow_id` when it names one, otherwise the workflow the current work is bound to.
+
+        Raises:
+            WorkflowNotOpenError: The request names a workflow this engine doesn't hold open.
+        """
+        if request.workflow_id is None:
+            return self.workflow_binding
+        runtime = self.find_workflow_runtime(request.workflow_id)
+        if runtime is not None:
+            return WorkflowBinding(runtime, request.workflow_id)
+        # A worker runs nodes for workflows the orchestrator holds. It keeps their id, so the requests it
+        # forwards back reach the right workflow, and acts in its own runtime.
+        if self._library_manager.is_worker:
+            return WorkflowBinding(self.workflow_runtime, request.workflow_id)
+        msg = (
+            f"Attempted to handle '{type(request).__name__}' in a workflow. "
+            "Failed because that workflow isn't open anymore."
+        )
+        raise WorkflowNotOpenError(msg)
 
     def create_workflow_runtime(self) -> WorkflowRuntime:
         """Open an empty runtime. It does not become active."""
@@ -416,31 +464,36 @@ class Engine:
 
     def activate_workflow_runtime(self, runtime: WorkflowRuntime) -> None:
         if runtime not in self._workflow_runtimes:
-            msg = f"Attempted to activate workflow runtime '{runtime.runtime_id}', which this engine does not hold."
+            msg = f"Attempted to activate workflow runtime '{runtime.workflow_id}', which this engine does not hold."
             raise ValueError(msg)
         self._active_workflow_runtime = runtime
 
     def remove_workflow_runtime(self, runtime: WorkflowRuntime) -> None:
-        """Forget a runtime. The caller clears its objects first; the active runtime can't be removed."""
-        if runtime is self._active_workflow_runtime:
-            msg = f"Attempted to remove workflow runtime '{runtime.runtime_id}'. Failed because it is the active one."
-            raise ValueError(msg)
+        """Forget a runtime whose objects the caller has cleared.
+
+        Removing the active runtime makes the most recently opened remaining one active, or a fresh empty
+        one when it was the last, so there is always one for requests to act on.
+        """
         self._workflow_runtimes.remove(runtime)
+        if runtime is not self._active_workflow_runtime:
+            return
+        if not self._workflow_runtimes:
+            self._workflow_runtimes.append(WorkflowRuntime(owner=self))
+        self._active_workflow_runtime = self._workflow_runtimes[-1]
+
+    def reset_workflow_runtimes(self) -> None:
+        """Forget every runtime, whose objects the caller has cleared, and make a fresh empty one active."""
+        self._active_workflow_runtime = WorkflowRuntime(owner=self)
+        self._workflow_runtimes = [self._active_workflow_runtime]
 
     @contextmanager
-    def bind_workflow_runtime(self, runtime: WorkflowRuntime | None = None) -> Iterator[WorkflowRuntime]:
-        """Pin the block, and tasks it spawns, to `runtime`.
-
-        With no runtime, keeps an existing binding or binds the active runtime. Request dispatch
-        calls it that way, so a request finishes on the workflow it started on.
-        """
-        if runtime is None:
-            runtime = self.workflow_runtime
-        token = bound_workflow_runtime.set(runtime)
+    def bind_workflow_runtime(self, runtime: WorkflowRuntime) -> Iterator[WorkflowRuntime]:
+        """Act on `runtime` for the duration of the block, and in tasks it spawns."""
+        token = bound_workflow.set(WorkflowBinding(runtime, runtime.workflow_id))
         try:
             yield runtime
         finally:
-            bound_workflow_runtime.reset(token)
+            bound_workflow.reset(token)
 
     # Node libraries and saved workflows do `app = GriptapeNodes()` and then call these
     # PascalCase accessors on the result. `GriptapeNodes()` hands back an `Engine`, so
@@ -657,12 +710,7 @@ class Engine:
         # teardown shares: deleting the open workflow reaches this without going through that handler.
         # This covers only the objects in this process; ObjectManager and WorkflowManager tell the
         # workers about theirs.
-        #
-        # Held objects aren't tracked by workflow, so while another workflow is open they stay, and
-        # the last workflow's teardown releases them all.
-        if self.another_workflow_runtime_holds_objects():
-            return
-        dropped = self._resource_manager.drop_all_local_objects()
+        dropped = self._resource_manager.drop_local_objects_for_workflow(self.workflow_binding.workflow_id)
         if dropped:
             logger.debug("Released %d held object(s) while tearing down the workflow.", dropped)
 
@@ -683,17 +731,6 @@ class Engine:
                     return self._context_manager.get_current_workflow_name()
                 return "another workflow"
         return None
-
-    def another_workflow_runtime_holds_objects(self) -> bool:
-        """Whether an open workflow other than the current one still has flows or nodes."""
-        current = self.workflow_runtime
-        for runtime in self._workflow_runtimes:
-            if runtime is current:
-                continue
-            with self.bind_workflow_runtime(runtime):
-                if self._object_manager.has_objects():
-                    return True
-        return False
 
     @handles(GetEngineVersionRequest)
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002

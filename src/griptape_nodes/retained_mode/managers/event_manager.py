@@ -39,7 +39,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointFailure,
 )
 from griptape_nodes.retained_mode.request_handlers import handled_request_types
-from griptape_nodes.retained_mode.workflow_runtime import bound_workflow_runtime
+from griptape_nodes.retained_mode.workflow_runtime import WorkflowNotOpenError, bound_workflow
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 if TYPE_CHECKING:
@@ -378,20 +378,15 @@ class EventManager(EngineScoped):
     def _stamp_workflow(self, event: Any) -> None:
         """Tag a run event with the workflow it came from.
 
-        Runs in the emitting task, which is pinned to its workflow, so the active workflow at this
-        point is the one that emitted it even if a client has switched to another since.
+        Runs in the emitting task, which is bound to its workflow, so this names the workflow that
+        emitted the event even when a client has switched to another since.
         """
-        if not isinstance(event, ExecutionGriptapeNodeEvent):
-            return
-        execution_event = event.wrapped_event
-        if execution_event.source_workflow_name is None:
-            execution_event.source_workflow_name = self._current_workflow_name()
-
-    def _current_workflow_name(self) -> str | None:
-        context_manager = self.engine.context_manager
-        if not context_manager.has_current_workflow():
-            return None
-        return context_manager.get_current_workflow_name()
+        if isinstance(event, ExecutionGriptapeNodeEvent):
+            execution_event = event.wrapped_event
+            if execution_event.workflow_id is None:
+                execution_event.workflow_id = self.engine.workflow_binding.workflow_id
+        elif isinstance(event, ProgressEvent) and event.workflow_id is None:
+            event.workflow_id = self.engine.workflow_binding.workflow_id
 
     def add_pre_dispatch_hook(
         self,
@@ -1154,6 +1149,13 @@ class EventManager(EngineScoped):
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
+        try:
+            binding = self.engine.binding_for_request(request)
+        except WorkflowNotOpenError as exc:
+            return self._result_for_handler_exception(request, exc, context=result_context)
+        # Recorded on the request, so the result a client receives names the workflow it belongs to.
+        request.workflow_id = binding.workflow_id
+
         # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
         # the manager callback runs.
         short_circuit = self._run_pre_dispatch_hooks(request, result_context)
@@ -1166,11 +1168,8 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
-        # Pin the request, and any tasks it spawns, to the workflow that is active now, and record it
-        # on the request so its broadcast result names that workflow.
-        runtime_token = bound_workflow_runtime.set(self.engine.workflow_runtime)
-        if request.source_workflow_name is None:
-            request.source_workflow_name = self._current_workflow_name()
+        # Act on that workflow in the handler and in every task it spawns.
+        binding_token = bound_workflow.set(binding)
         try:
             try:
                 # Actually make the handler callback (support both sync and async):
@@ -1189,7 +1188,7 @@ class EventManager(EngineScoped):
                 context=result_context,
             )
         finally:
-            bound_workflow_runtime.reset(runtime_token)
+            bound_workflow.reset(binding_token)
             _active_request_type.reset(token)
 
     def handle_request(
@@ -1215,6 +1214,13 @@ class EventManager(EngineScoped):
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
+        try:
+            binding = self.engine.binding_for_request(request)
+        except WorkflowNotOpenError as exc:
+            return self._result_for_handler_exception(request, exc, context=result_context)
+        # Recorded on the request, so the result a client receives names the workflow it belongs to.
+        request.workflow_id = binding.workflow_id
+
         # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
         # the manager callback runs.
         short_circuit = self._run_pre_dispatch_hooks(request, result_context)
@@ -1227,11 +1233,8 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
-        # Pin the request, and any tasks it spawns, to the workflow that is active now, and record it
-        # on the request so its broadcast result names that workflow.
-        runtime_token = bound_workflow_runtime.set(self.engine.workflow_runtime)
-        if request.source_workflow_name is None:
-            request.source_workflow_name = self._current_workflow_name()
+        # Act on that workflow in the handler and in every task it spawns.
+        binding_token = bound_workflow.set(binding)
         try:
             try:
                 result_payload = self._invoke_handler_from_sync(callback, request)
@@ -1249,7 +1252,7 @@ class EventManager(EngineScoped):
                 context=result_context,
             )
         finally:
-            bound_workflow_runtime.reset(runtime_token)
+            bound_workflow.reset(binding_token)
             _active_request_type.reset(token)
 
     def _invoke_handler_from_sync(self, callback: Callable, request: RequestPayload) -> ResultPayload:

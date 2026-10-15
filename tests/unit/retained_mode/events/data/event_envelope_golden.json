@@ -9,7 +9,7 @@
       "request_id": null,
       "failure_log_level": null,
       "fields": null,
-      "source_workflow_name": null,
+      "workflow_id": null,
       "parameter_name": "p",
       "node_name": "n"
     }
@@ -27,7 +27,7 @@
           "request_id": null,
           "failure_log_level": null,
           "fields": null,
-          "source_workflow_name": null,
+          "workflow_id": null,
           "parameter_name": "p",
           "node_name": "n"
         }
@@ -46,7 +46,7 @@
       "request_id": null,
       "failure_log_level": null,
       "fields": null,
-      "source_workflow_name": null,
+      "workflow_id": null,
       "parameter_name": "p",
       "node_name": "n"
     },
@@ -88,7 +88,7 @@
       "request_id": null,
       "failure_log_level": null,
       "fields": null,
-      "source_workflow_name": null,
+      "workflow_id": null,
       "parameter_name": "p",
       "node_name": "n"
     },
@@ -106,7 +106,7 @@
     }
   },
   "ExecutionEvent": {
-    "source_workflow_name": null,
+    "workflow_id": null,
     "event_type": "ExecutionEvent",
     "payload_type": "CurrentControlNodeEvent",
     "payload": {

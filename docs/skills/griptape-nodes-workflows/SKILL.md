@@ -365,11 +365,19 @@ read the returned `node_name` from `CreateNodeResultSuccess` and reuse it verbat
 A typo here surfaces as an opaque validation error from pydantic, not a friendly
 "unknown field" message.
 
-### Only one workflow in context at a time
+### Several workflows can be open, and one runs at a time
 
-`SetWorkflowContextRequest` refuses if a workflow is already in context. To swap,
-`ClearAllObjectStateRequest(i_know_what_im_doing=True)` first — this wipes
-EVERYTHING (nodes, flows, connections, workflow). There is no softer reset today.
+`OpenWorkflowRequest(workflow_name=...)` opens a saved workflow alongside the open
+ones; with no `workflow_name` it starts a new one. Either way it becomes the active
+workflow, which every request that names no workflow acts on. To act on another open
+workflow, pass its `workflow_id` (from `OpenWorkflowRequest` or
+`ListOpenWorkflowsRequest`) on the request. `CloseWorkflowRequest(workflow_id=...)`
+closes one. Only one workflow runs at a time: starting a run while another workflow
+runs fails.
+
+`SetWorkflowContextRequest` refuses if the active workflow is already set; open
+another instead. `ClearAllObjectStateRequest(i_know_what_im_doing=True)` closes
+EVERY open workflow.
 
 ### Agents cannot be interrupted mid-run
 

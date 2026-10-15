@@ -19,7 +19,6 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
 )
-from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.os_events import (
     GetFileInfoRequest,
     GetFileInfoResultFailure,
@@ -157,10 +156,9 @@ class WorkflowRunner(EngineScoped):
                 details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
                 return RunWorkflowFromScratchResultFailure(result_details=details)
 
-            # Start with a clean slate.
-            clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-            clear_all_result = await self.engine.ahandle_request(clear_all_request)
-            if not clear_all_result.succeeded():
+            # Start with a clean slate. Other open workflows are left alone.
+            clear_failure = await self.engine.object_manager.clear_current_workflow()
+            if clear_failure is not None:
                 details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
                 return RunWorkflowFromScratchResultFailure(result_details=details)
 
@@ -243,10 +241,9 @@ class WorkflowRunner(EngineScoped):
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it.
         with self.engine.workflow_manager.squelch_workflow_altered():
             if request.run_with_clean_slate:
-                # Start with a clean slate.
-                clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-                clear_all_result = await self.engine.ahandle_request(clear_all_request)
-                if not clear_all_result.succeeded():
+                # Start with a clean slate. Other open workflows are left alone.
+                clear_failure = await self.engine.object_manager.clear_current_workflow()
+                if clear_failure is not None:
                     details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
                     return RunWorkflowFromRegistryResultFailure(result_details=details)
 
@@ -261,11 +258,9 @@ class WorkflowRunner(EngineScoped):
                     result_messages.append(ResultDetail(message=context_warning, level=logging.WARNING))
                 result_messages.extend(execution_result_details(execution_result, level=logging.ERROR))
 
-                # Attempt to clear everything out, as we modified the engine state getting here.
-                clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-                clear_all_result = await self.engine.ahandle_request(clear_all_request)
-
-                # The clear-all above here wipes the ContextManager, so no need to do a pop_workflow().
+                # Clear out what this attempt built in its workflow. That also pops the context
+                # pushed above.
+                await self.engine.object_manager.clear_current_workflow()
                 return RunWorkflowFromRegistryResultFailure(result_details=ResultDetails(*result_messages))
 
         # Success!

@@ -120,6 +120,23 @@ matter how many credits are left, until an administrator lifts the freeze.
 Budgets are set, raised and unfrozen on Griptape Cloud, not in the editor.
 Bring the budget names from the bar to your Griptape administrator.
 
+## Working with several workflows
+
+Each workflow you open gets a tab above the canvas, and **+** at the end of the tabs
+starts a new one. Opening a workflow, or starting one, keeps the workflows already
+open as they were, so switching back to a tab shows its nodes, values, and outputs
+without loading anything again.
+
+You can switch tabs while a workflow runs. The run carries on, and its tab shows a
+spinner until it finishes. Only one workflow runs at a time, so while one runs,
+**Run Workflow** and the other run buttons are disabled in the other tabs.
+
+A dot on a tab means it has unsaved changes. Closing a tab with **×** asks first if
+it does, and closing it discards them. You can't close a tab while it runs.
+
+**Reload Libraries** reopens the saved workflows you had open. A workflow you never
+saved is closed, because there's no file to rebuild it from.
+
 ## Reading execution state on the canvas
 
 Every node shows a status pill in its header while it's involved in the

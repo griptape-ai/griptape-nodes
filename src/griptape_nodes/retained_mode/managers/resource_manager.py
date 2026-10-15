@@ -81,6 +81,9 @@ class LocalObjectEntry:
     # what it parked, and an owner-chosen key can look like anything.
     slot: str | None = None
     on_drop: Callable[[Any], None] | None = None
+    # The open workflow this was parked for, so closing that workflow releases it and leaves the
+    # objects of the others alone.
+    workflow_id: str | None = None
 
     @property
     def is_slot_bound(self) -> bool:
@@ -423,6 +426,7 @@ class ResourceManager(EngineScoped):
             slot=slot,
             group=group,
             on_drop=on_drop,
+            workflow_id=self.engine.workflow_binding.workflow_id,
         )
         with self._local_objects_lock:
             displaced = self._local_objects.get(full_key)
@@ -650,6 +654,22 @@ class ResourceManager(EngineScoped):
             self._local_objects.clear()
 
         self._invoke_hooks_once_per_object(doomed)
+        return len(doomed)
+
+    def drop_local_objects_for_workflow(self, workflow_id: str) -> int:
+        """Release everything parked for one open workflow, returning how many went.
+
+        For closing or clearing that workflow: its nodes are gone, so nothing can reach these keys
+        anymore. The other open workflows keep their objects. An object two workflows share stays
+        until the last one lets it go.
+        """
+        with self._local_objects_lock:
+            doomed = {key: entry for key, entry in self._local_objects.items() if entry.workflow_id == workflow_id}
+            for key in doomed:
+                del self._local_objects[key]
+            to_release = {key: entry for key, entry in doomed.items() if not self._value_still_held_locked(entry.value)}
+
+        self._invoke_hooks_once_per_object(to_release)
         return len(doomed)
 
     def drop_objects_for_group(self, group: str | None) -> int:

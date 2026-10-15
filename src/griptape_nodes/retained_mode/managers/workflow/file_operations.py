@@ -50,25 +50,16 @@ class WorkflowFileOperations(EngineScoped):
 
     @handles(DeleteWorkflowRequest)
     async def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
-        # If the deleted workflow is the active one, tear down its flows/nodes and
-        # pop the context stack BEFORE removing the registry entry, so downstream
-        # `DeleteFlowRequest` calls can still push a flow context (they require an
-        # active workflow). Non-active deletes (e.g. published-workflow subprocess
-        # cleanup) skip this and go straight to the registry/file cleanup.
-        context_manager = self.engine.context_manager
-        if context_manager.has_current_workflow() and context_manager.get_current_workflow_name() == request.name:
-            self.engine.clear_current_workflow_data()
-            # clear_current_workflow_data releases what THIS process holds; the worker half must be
-            # awaited, so it belongs here in the async handler rather than in that sync method.
-            await self.engine.worker_manager.broadcast_local_object_teardown()
-        else:
-            # Open, but not the active workflow.
-            open_runtime = context_manager.find_open_workflow_runtime(request.name)
-            if open_runtime is not None:
-                failure = await context_manager.close_workflow_runtime(open_runtime)
-                if failure is not None:
-                    details = f"Attempted to delete workflow '{request.name}'. Failed to close it: {failure}"
-                    return DeleteWorkflowResultFailure(result_details=details)
+        # Close it first if it is open, while its registry entry still exists: the teardown deletes
+        # its flows, which resolves paths through that entry. A delete of a workflow that isn't open
+        # (e.g. published-workflow subprocess cleanup) goes straight to the registry and file cleanup.
+        open_workflows = self.engine.open_workflows_manager
+        open_runtime = open_workflows.find_runtime_by_name(request.name)
+        if open_runtime is not None:
+            failure = await open_workflows.close_workflow_runtime(open_runtime)
+            if failure is not None:
+                details = f"Attempted to delete workflow '{request.name}'. Failed to close it: {failure}"
+                return DeleteWorkflowResultFailure(result_details=details)
         try:
             workflow = self.engine.workflow_registry.delete_workflow_by_name(request.name)
         except Exception as e:

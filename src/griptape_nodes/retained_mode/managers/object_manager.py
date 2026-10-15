@@ -116,6 +116,27 @@ class ObjectManager(EngineScoped):
             details = "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
             return ClearAllObjectStateResultFailure(result_details=details)
 
+        engine = self.engine
+        for runtime in engine.workflow_runtimes:
+            with engine.bind_workflow_runtime(runtime):
+                failure = await self.clear_current_workflow()
+            if failure is not None:
+                return ClearAllObjectStateResultFailure(result_details=failure)
+
+        # Every workflow is closed; requests that name none act on a fresh empty one.
+        engine.reset_workflow_runtimes()
+        engine.open_workflows_manager.announce_change()
+        engine.event_manager.clear_event_suppression()
+
+        details = "Successfully cleared all object state (deleted everything)."
+        return ClearAllObjectStateResultSuccess(result_details=details)
+
+    async def clear_current_workflow(self) -> str | None:
+        """Delete everything in the workflow the current work acts on, leaving its runtime empty.
+
+        The other open workflows are untouched. Returns why it failed, or None.
+        """
+        engine = self.engine
         # Cancel any in-flight run before tearing its bookkeeping down: the reset
         # below makes the flow look idle, so the cancel in
         # clear_current_workflow_data is skipped and the previous run's node tasks
@@ -125,48 +146,43 @@ class ObjectManager(EngineScoped):
         # Best-effort: a node that refuses to cancel must not block the teardown.
         # A driver still parked holds its FSM claim until it wakes and abandons the
         # run; harmless here because deleting the flows drops the machine it holds.
-        if self.engine.flow_manager.check_for_existing_running_flow():
+        if engine.flow_manager.check_for_existing_running_flow():
             try:
-                await self.engine.flow_manager.cancel_flow_run()
+                await engine.flow_manager.cancel_flow_run()
             except Exception as e:
                 logger.warning("Could not cancel the running workflow before clearing it. Continuing anyway: %s", e)
 
         try:
             # Eliminate all execution references before deletion
-            self.engine.flow_manager.reset_global_execution_state()
+            engine.flow_manager.reset_global_execution_state()
         except Exception as e:
-            details = f"Attempted to reset global execution state. Failed with exception: {e}"
-            return ClearAllObjectStateResultFailure(result_details=details)
+            return f"Attempted to reset global execution state. Failed with exception: {e}"
 
-        # Tear down each active workflow: cancel its running flows, delete its child
-        # flows, drain its context substack, pop it. Stack depth is typically 1.
+        workflow_name = None
+        if engine.context_manager.has_current_workflow():
+            workflow_name = engine.context_manager.get_current_workflow_name()
+
+        # Cancel its running flows, delete its child flows, drain its context substack, pop it.
         try:
-            context_mgr = self.engine.context_manager
-            while context_mgr.has_current_workflow():
-                self.engine.clear_current_workflow_data()
+            while engine.context_manager.has_current_workflow():
+                engine.clear_current_workflow_data()
         except Exception as e:
-            details = f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
-            return ClearAllObjectStateResultFailure(result_details=details)
+            return f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
         finally:
             # clear_current_workflow_data releases the objects this process holds; the workers hold their
             # own. The fan-out has to be awaited, which is why it is here and not in that sync method.
             #
             # In the finally because nothing retries this request, so a worker that was never told keeps
             # its objects for the life of the process.
-            await self.engine.worker_manager.broadcast_local_object_teardown()
+            await engine.worker_manager.broadcast_local_object_teardown()
 
         if self._state.name_to_objects:
-            details = f"Attempted to clear all object state, but {len(self._state.name_to_objects)} object(s) remained after workflow teardown."
-            return ClearAllObjectStateResultFailure(result_details=details)
+            return f"Attempted to clear all object state, but {len(self._state.name_to_objects)} object(s) remained after workflow teardown."
 
-        # Clear all local workflow variables
-        self.engine.variables_manager.clear_object_state()
-        self.engine.workflow_manager.clear_object_state()
-        # Clear all event suppression
-        self.engine.event_manager.clear_event_suppression()
-
-        details = "Successfully cleared all object state (deleted everything)."
-        return ClearAllObjectStateResultSuccess(result_details=details)
+        engine.variables_manager.clear_object_state()
+        if workflow_name is not None:
+            engine.workflow_manager.clear_object_state(workflow_name)
+        return None
 
     def has_objects(self) -> bool:
         """Whether the current workflow has any flows or nodes."""

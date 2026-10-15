@@ -119,12 +119,15 @@ class ReloadConfigResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DropAllLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
-    """Sent by the orchestrator to each registered worker when workflow object state is cleared.
+class DropWorkflowLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
+    """Sent by the orchestrator to each registered worker when a workflow's object state is cleared.
 
-    Clearing workflow state deletes every node and so every key referring to a held object, leaving
+    Clearing a workflow deletes its nodes and so every key referring to an object held for it, leaving
     those objects unreachable while still holding what they hold. A broadcast rather than a local hook
     because the worker, not the orchestrator, is the process holding them.
+
+    Acts on the workflow named by `workflow_id`, like any request. The worker releases what it parked
+    while running that workflow's nodes and keeps the objects of the other open workflows.
 
     SkipTheLineMixin for the same reason as its siblings: the alternative is a queued ExecuteNodeRequest
     running against objects belonging to a workflow that is already gone.
@@ -161,13 +164,13 @@ class DropLocalObjectsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class DropAllLocalObjectsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class DropWorkflowLocalObjectsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Worker released every object it was holding for its libraries."""
 
 
 @dataclass
 @PayloadRegistry.register
-class DropAllLocalObjectsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class DropWorkflowLocalObjectsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Worker failed to release the objects it was holding."""
 
 
@@ -355,7 +358,7 @@ LOCAL_ONLY_REQUEST_TYPES: frozenset[type[RequestPayload]] = frozenset(
         # held them, so a forwarded drop succeeds having freed nothing and the worker keeps a pipeline
         # that may be gigabytes. Both skip the line, so they arrive mid-execution, which is exactly when
         # a RemoteHandler forwards.
-        DropAllLocalObjectsRequest,
+        DropWorkflowLocalObjectsRequest,
         DropLocalObjectsRequest,
         #
         # --- 2. The worker's own answer is the correct one ---------------------------------------
@@ -475,12 +478,12 @@ def register_remote_handlers(event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(request_type, remote)
 
 
-async def _handle_drop_all_local_objects(
-    request: DropAllLocalObjectsRequest,  # noqa: ARG001
+async def _handle_drop_workflow_local_objects(
+    request: DropWorkflowLocalObjectsRequest,
     *,
     event_manager: EventManager,
 ) -> ResultPayload:
-    """Release every object this process is holding for its libraries.
+    """Release every object this process is holding for one workflow's nodes.
 
     Accepted while a node is executing, like its targeted sibling: the store takes the entries out now and
     holds their release hooks back until nothing is running, so a forward pass mid-flight keeps the object
@@ -491,17 +494,23 @@ async def _handle_drop_all_local_objects(
     silently no-op for an engine an embedder built directly.
     """
     resource_manager = event_manager.engine.resource_manager
+    # Set at dispatch: a worker keeps the orchestrator's id for the workflow it acts on.
+    workflow_id = request.workflow_id
+    if workflow_id is None:
+        return DropWorkflowLocalObjectsResultFailure(
+            result_details="Attempted to release objects held for a workflow. Failed because no workflow was named."
+        )
 
     try:
         # Off the loop: a release hook is `del model` plus a CUDA cache flush, and blocking the
         # worker's loop past the heartbeat timeout gets it evicted mid-load.
-        dropped = await to_thread(resource_manager.drop_all_local_objects)
+        dropped = await to_thread(resource_manager.drop_local_objects_for_workflow, workflow_id)
     except Exception as e:
         details = (
             f"Attempted to release objects held for this worker's libraries. Failed because of {type(e).__name__}: {e}."
         )
-        return DropAllLocalObjectsResultFailure(result_details=details)
-    return DropAllLocalObjectsResultSuccess(result_details=f"Released {dropped} held object(s).")
+        return DropWorkflowLocalObjectsResultFailure(result_details=details)
+    return DropWorkflowLocalObjectsResultSuccess(result_details=f"Released {dropped} held object(s).")
 
 
 async def _handle_drop_local_objects(
@@ -641,10 +650,10 @@ def register_broadcast_handlers(
 def _register_local_object_handlers(event_manager: EventManager) -> None:
     """Wire the two teardown requests that free objects this worker is holding."""
 
-    async def handle_drop_all_local_objects(request: DropAllLocalObjectsRequest) -> ResultPayload:
-        return await _handle_drop_all_local_objects(request, event_manager=event_manager)
+    async def handle_drop_workflow_local_objects(request: DropWorkflowLocalObjectsRequest) -> ResultPayload:
+        return await _handle_drop_workflow_local_objects(request, event_manager=event_manager)
 
-    event_manager.assign_manager_to_request_type(DropAllLocalObjectsRequest, handle_drop_all_local_objects)
+    event_manager.assign_manager_to_request_type(DropWorkflowLocalObjectsRequest, handle_drop_workflow_local_objects)
 
     async def handle_drop_local_objects(request: DropLocalObjectsRequest) -> ResultPayload:
         return await _handle_drop_local_objects(request, event_manager=event_manager)

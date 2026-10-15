@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from griptape_nodes.app.worker_routing import DropAllLocalObjectsRequest, DropLocalObjectsRequest
+from griptape_nodes.app.worker_routing import DropLocalObjectsRequest, DropWorkflowLocalObjectsRequest
 from griptape_nodes.exe_types.core_types import ParameterType
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.engine import Engine
@@ -501,12 +501,12 @@ class TestWorkflowStateClearReleasesObjects:
             patch.object(worker_manager, "_transport", object()),
             patch.object(worker_manager, "_workers", {"w1": object()}),
         ):
-            asyncio.run(worker_manager.broadcast_drop_all_local_objects())
+            asyncio.run(worker_manager.broadcast_drop_workflow_local_objects())
 
         assert fan_out.await_count == 1
         assert fan_out.await_args is not None
         sent = fan_out.await_args.args[0]
-        assert isinstance(sent.request, DropAllLocalObjectsRequest)
+        assert isinstance(sent.request, DropWorkflowLocalObjectsRequest)
 
     def test_clearing_all_object_state_reaches_the_same_teardown(self, engine: Engine) -> None:
         """The hook sits on the teardown, which this handler is only one route into."""
@@ -745,7 +745,7 @@ class TestTeardownBroadcastPairing:
             ),
             patch.object(
                 worker_manager,
-                "broadcast_drop_all_local_objects",
+                "broadcast_drop_workflow_local_objects",
                 AsyncMock(side_effect=lambda: order.append("drop_all")),
             ),
         ):

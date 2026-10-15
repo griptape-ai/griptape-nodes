@@ -569,9 +569,10 @@ class LibraryManager(EngineScoped):
         return workflow_files
 
     async def _run_reload_libraries(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
-        # Start with a clean slate. Open workflows other than the active one hold nodes built from
-        # the old library classes, and only the active one is reloaded afterwards, so close them.
-        await self.engine.context_manager.close_inactive_workflow_runtimes()
+        # Start with a clean slate: every open workflow holds nodes built from the old library classes.
+        # The saved ones are opened again once the libraries are back; unsaved ones have no file to
+        # rebuild them from.
+        workflows_to_reopen = self.engine.open_workflows_manager.saved_open_workflow_names()
         clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
         clear_all_result = await self.engine.ahandle_request(clear_all_request)
         if not clear_all_result.succeeded():
@@ -638,6 +639,8 @@ class LibraryManager(EngineScoped):
                     )
                 )
             )
+
+        await self.engine.open_workflows_manager.reopen_workflows(workflows_to_reopen)
 
         # Hard activation: a reload is interactive (project switch / explicit reload), so a
         # reconcile failure (bad engine_version gate or a sourced library that could not be

@@ -82,6 +82,11 @@ from griptape_nodes.retained_mode.events.object_events import (
     ClearAllObjectStateRequest,
     RenameObjectRequest,
 )
+from griptape_nodes.retained_mode.events.open_workflow_events import (
+    CloseWorkflowRequest,
+    ListOpenWorkflowsRequest,
+    OpenWorkflowRequest,
+)
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     GetConnectionsForParameterRequest,
@@ -107,6 +112,10 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "SetWorkflowContextRequest": SetWorkflowContextRequest,
     "GetWorkflowContextRequest": GetWorkflowContextRequest,
     "EnsureWorkflowAndFlowRequest": EnsureWorkflowAndFlowRequest,
+    # Open workflows
+    "OpenWorkflowRequest": OpenWorkflowRequest,
+    "ListOpenWorkflowsRequest": ListOpenWorkflowsRequest,
+    "CloseWorkflowRequest": CloseWorkflowRequest,
     # Libraries
     "ListRegisteredLibrariesRequest": ListRegisteredLibrariesRequest,
     "ListNodeTypesInLibraryRequest": ListNodeTypesInLibraryRequest,

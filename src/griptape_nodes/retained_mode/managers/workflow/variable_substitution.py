@@ -32,10 +32,6 @@ class VariableSubstitution(EngineScoped):
         self._enabled: dict[str, bool] = {}
         event_manager.register_request_handlers(self)
 
-    def clear(self) -> None:
-        """Clear all per-workflow substitution settings."""
-        self._enabled.clear()
-
     def drop(self, workflow_key: str) -> None:
         """Remove the substitution flag when a workflow is permanently deleted."""
         self._enabled.pop(workflow_key, None)

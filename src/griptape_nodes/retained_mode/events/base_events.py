@@ -101,9 +101,10 @@ class RequestPayload(Payload, ABC):
                           whose results are large or only relevant to the direct caller can
                           default this to False on the subclass to avoid unnecessary serialization
                           and transmission. Can also be set per-instance at construction time.
-        source_workflow_name: Set by the engine when it handles the request, to the registry key of
-                the workflow it acted on. Sent back with the result so a client can tell which open
-                workflow a broadcast result belongs to. Callers leave it unset.
+        workflow_id: The open workflow this request acts on. Set it to target one; leave it unset
+                to act on the workflow the issuing request acts on, or else the active workflow. The
+                engine fills it in at dispatch, so the result a client receives names the workflow
+                it belongs to. A request naming a workflow that isn't open fails.
         fields: **Wire-only** dot-path filter applied to the broadcast JSON before it is sent
                 over the WebSocket. Has no effect on in-process/retained-mode callers, which
                 always receive the full result object. Like broadcast_result and failure_log_level,
@@ -133,9 +134,7 @@ class RequestPayload(Payload, ABC):
     request_id: str | None = None
     failure_log_level: int | None = None
     fields: list[str] | None = None
-    # The workflow the engine handled this request in. Set at dispatch, so the result a client is
-    # sent names it, and a client showing a different open workflow can ignore it.
-    source_workflow_name: str | None = None
+    workflow_id: str | None = None
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
@@ -422,9 +421,9 @@ RESULT_EVENT_TYPES = frozenset({EventResultSuccess.__name__, EventResultFailure.
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
 class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     payload: E
-    # The workflow whose run emitted this event, so a client showing a different open workflow can
-    # ignore it. Stamped when the event is queued; None for events from outside any workflow.
-    source_workflow_name: str | None = None
+    # The open workflow whose run emitted this event, so a client showing several workflows can route
+    # it. Stamped when the event is queued.
+    workflow_id: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an ExecutionEvent, inferring the generic type if needed."""
@@ -479,3 +478,5 @@ class ProgressEvent:
     value: Any = field()
     node_name: str = field()
     parameter_name: str = field()
+    # The open workflow whose run streamed this, stamped when it is queued. See ExecutionEvent.
+    workflow_id: str | None = field(default=None)

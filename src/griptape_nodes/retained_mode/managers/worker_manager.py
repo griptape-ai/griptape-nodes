@@ -1207,7 +1207,7 @@ class WorkerManager(EngineScoped):
         """Fan the keys out, putting them back on the queue if the send fails.
 
         They were drained before this ran, so without the re-queue a task that dies with a transient side
-        loop -- the case `broadcast_drop_all_local_objects` documents below -- would take them with it and
+        loop -- the case `broadcast_drop_workflow_local_objects` documents below -- would take them with it and
         nothing would ever retry.
 
         `broadcast_pending_local_object_releases` does not re-queue, because the drop-all after teardown
@@ -1260,18 +1260,14 @@ class WorkerManager(EngineScoped):
 
         One method because both halves are required: the named-key broadcast is what drains the
         orchestrator's pending-release queue, and the drop-all is what covers whatever a worker still holds.
-        Two teardown sites call this; neither may take half of it.
-
-        While another workflow is open, the drop-all is skipped: it would take that workflow's objects
-        too. The last workflow's teardown sends it.
+        Two teardown sites call this; neither may take half of it. Both act on the current workflow, so
+        the objects of the other open workflows stay.
         """
         await self.broadcast_pending_local_object_releases()
-        if self.engine.another_workflow_runtime_holds_objects():
-            return
-        await self.broadcast_drop_all_local_objects()
+        await self.broadcast_drop_workflow_local_objects()
 
-    async def broadcast_drop_all_local_objects(self) -> None:
-        """Tell every worker to release the objects its libraries parked in it.
+    async def broadcast_drop_workflow_local_objects(self) -> None:
+        """Tell every worker to release the objects its libraries parked for the current workflow.
 
         Awaited rather than scheduled, for the reason recorded on `_on_config_changed` above: this one is
         called from a workflow teardown that can be dispatched synchronously, and a task created on a
@@ -1284,12 +1280,13 @@ class WorkerManager(EngineScoped):
         Lazy import breaks the same cycle as its siblings: `app.worker_routing` imports `EventManager`
         from this package.
         """
-        from griptape_nodes.app.worker_routing import DropAllLocalObjectsRequest
+        from griptape_nodes.app.worker_routing import DropWorkflowLocalObjectsRequest
 
         if self._transport is None or not self._workers:
             return
+        request = DropWorkflowLocalObjectsRequest(workflow_id=self.engine.workflow_binding.workflow_id)
         try:
-            await self.broadcast_to_workers(EventRequest(request=DropAllLocalObjectsRequest()))
+            await self.broadcast_to_workers(EventRequest(request=request))
         except Exception as e:
             logger.warning(
                 "Could not tell the workers to release the objects held for their libraries: %s. "

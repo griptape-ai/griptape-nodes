@@ -26,16 +26,16 @@ import pytest
 from griptape_nodes.app.worker_routing import (
     LOCAL_ONLY_REQUEST_TYPES,
     ActivateProjectRequest,
-    DropAllLocalObjectsRequest,
-    DropAllLocalObjectsResultFailure,
-    DropAllLocalObjectsResultSuccess,
     DropLocalObjectsRequest,
     DropLocalObjectsResultFailure,
     DropLocalObjectsResultSuccess,
+    DropWorkflowLocalObjectsRequest,
+    DropWorkflowLocalObjectsResultFailure,
+    DropWorkflowLocalObjectsResultSuccess,
     ReloadAllLibrariesRequest,
     RemoteHandler,
-    _handle_drop_all_local_objects,
     _handle_drop_local_objects,
+    _handle_drop_workflow_local_objects,
     register_broadcast_handlers,
     register_remote_handlers,
 )
@@ -300,8 +300,8 @@ class TestInstallRemoteHandlersSwap:
         assert len(local_calls) == 1
 
 
-class TestDropAllLocalObjectsHandler:
-    """The worker half of workflow teardown: release what this process is holding.
+class TestDropWorkflowLocalObjectsHandler:
+    """The worker half of workflow teardown: release what this process is holding for that workflow.
 
     This is the process with the pipeline the orchestrator has no torch to hold, so what this handler
     accepts decides whether gigabytes stay resident.
@@ -320,10 +320,11 @@ class TestDropAllLocalObjectsHandler:
         )
 
         with engine.event_manager.node_execution_scope():
-            result = await _handle_drop_all_local_objects(
-                DropAllLocalObjectsRequest(), event_manager=engine.event_manager
+            result = await _handle_drop_workflow_local_objects(
+                DropWorkflowLocalObjectsRequest(workflow_id=engine.workflow_binding.workflow_id),
+                event_manager=engine.event_manager,
             )
-            assert isinstance(result, DropAllLocalObjectsResultSuccess)
+            assert isinstance(result, DropWorkflowLocalObjectsResultSuccess)
             assert engine.resource_manager.entry_for(key) is None
             assert released == []
 
@@ -342,20 +343,42 @@ class TestDropAllLocalObjectsHandler:
             on_drop=lambda _value: release_threads.append(threading.get_ident()),
         )
 
-        result = await _handle_drop_all_local_objects(DropAllLocalObjectsRequest(), event_manager=engine.event_manager)
+        result = await _handle_drop_workflow_local_objects(
+            DropWorkflowLocalObjectsRequest(workflow_id=engine.workflow_binding.workflow_id),
+            event_manager=engine.event_manager,
+        )
 
-        assert isinstance(result, DropAllLocalObjectsResultSuccess)
+        assert isinstance(result, DropWorkflowLocalObjectsResultSuccess)
         assert release_threads
         assert release_threads[0] != threading.get_ident()
 
     @pytest.mark.asyncio
     async def test_reports_failure_rather_than_raising_at_the_transport(self, engine: Engine) -> None:
-        with patch.object(engine.resource_manager, "drop_all_local_objects", side_effect=RuntimeError("boom")):
-            result = await _handle_drop_all_local_objects(
-                DropAllLocalObjectsRequest(), event_manager=engine.event_manager
+        with patch.object(engine.resource_manager, "drop_local_objects_for_workflow", side_effect=RuntimeError("boom")):
+            result = await _handle_drop_workflow_local_objects(
+                DropWorkflowLocalObjectsRequest(workflow_id=engine.workflow_binding.workflow_id),
+                event_manager=engine.event_manager,
             )
 
-        assert isinstance(result, DropAllLocalObjectsResultFailure)
+        assert isinstance(result, DropWorkflowLocalObjectsResultFailure)
+
+    @pytest.mark.asyncio
+    async def test_keeps_the_objects_of_other_workflows(self, engine: Engine) -> None:
+        """A worker serves every open workflow, so closing one must not empty another's cache."""
+        manager = engine.resource_manager
+        kept = manager.put_local_object(object(), owner="Lib A", source="N", key="kept")
+        closing = engine.create_workflow_runtime()
+        closing_id = closing.workflow_id
+        with engine.bind_workflow_runtime(closing):
+            dropped = manager.put_local_object(object(), owner="Lib A", source="N", key="dropped")
+
+        result = await _handle_drop_workflow_local_objects(
+            DropWorkflowLocalObjectsRequest(workflow_id=closing_id), event_manager=engine.event_manager
+        )
+
+        assert isinstance(result, DropWorkflowLocalObjectsResultSuccess)
+        assert manager.entry_for(dropped) is None
+        assert manager.entry_for(kept) is not None
 
 
 class TestDropLocalObjectsHandler:

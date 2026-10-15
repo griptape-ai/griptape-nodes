@@ -3022,8 +3022,6 @@ class ProjectManager(EngineScoped):
         # that claimed otherwise would leave the client showing a workflow the engine has
         # dropped, which is the state this teardown exists to prevent.
         if workspace_changed:
-            # Every open workflow belongs to the old workspace, not just the active one.
-            await self.engine.context_manager.close_inactive_workflow_runtimes()
             clear_result = await self.engine.ahandle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
             if not clear_result.succeeded():
                 return SetCurrentProjectResultFailure(

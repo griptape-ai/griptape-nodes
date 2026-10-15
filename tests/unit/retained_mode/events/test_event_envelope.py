@@ -179,7 +179,7 @@ def test_serialized_key_order_puts_payload_last() -> None:
         "result",
     ]
     assert list(converters.engine.unstructure(_events()["ExecutionEvent"])) == [
-        "source_workflow_name",
+        "workflow_id",
         "event_type",
         "payload_type",
         "payload",

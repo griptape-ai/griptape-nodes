@@ -9,24 +9,15 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.context_events import (
-    ActivateWorkflowRequest,
-    ActivateWorkflowResultSuccess,
-    CloseWorkflowRequest,
-    CloseWorkflowResultFailure,
-    CloseWorkflowResultSuccess,
     EnsureWorkflowAndFlowRequest,
     EnsureWorkflowAndFlowResultFailure,
     EnsureWorkflowAndFlowResultSuccess,
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
-    ListOpenWorkflowsRequest,
-    ListOpenWorkflowsResultSuccess,
-    OpenWorkflow,
     SetWorkflowContextFailure,
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
 )
-from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
@@ -37,7 +28,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -287,9 +277,9 @@ class ContextManager(EngineScoped):
 
     @handles(SetWorkflowContextRequest)
     def on_set_workflow_context_request(self, request: SetWorkflowContextRequest) -> ResultPayload:
-        # As of today, we only allow a single Workflow context at a time. This may change in the future.
+        # One workflow per runtime. OpenWorkflowRequest opens another one alongside.
         if self.has_current_workflow():
-            msg = f"Attempted to set the Workflow '{request.workflow_name}' as the Current Context. Failed because an existing workflow, '{self.get_current_workflow_name()}', is already in the Current Context. In order to clear the existing workflow and remove all objects and references to it, issue a ClearAllObjectState request."
+            msg = f"Attempted to set the Workflow '{request.workflow_name}' as the Current Context. Failed because an existing workflow, '{self.get_current_workflow_name()}', is already in the Current Context. To work on another workflow alongside it, open it with an OpenWorkflowRequest."
             return SetWorkflowContextFailure(result_details=msg)
 
         # Normalized here rather than at read time so `workflow_dir` never has to care whether
@@ -420,125 +410,6 @@ class ContextManager(EngineScoped):
                 f"(created_workflow={created_workflow}, created_flow={created_flow})."
             ),
         )
-
-    @handles(ActivateWorkflowRequest)
-    def on_activate_workflow_request(self, request: ActivateWorkflowRequest) -> ResultPayload:
-        engine = self.engine
-        target = None
-        if request.workflow_name is not None:
-            target = self.find_open_workflow_runtime(request.workflow_name)
-        active = engine.active_workflow_runtime
-        if target is active:
-            return ActivateWorkflowResultSuccess(
-                workflow_name=request.workflow_name,
-                already_open=True,
-                result_details=f"Workflow '{request.workflow_name}' is already the active workflow.",
-            )
-
-        # A running workflow can be left: its run is pinned to it, and its events name it, so a
-        # client can tell them apart from the workflow it switches to.
-        already_open = target is not None
-        if target is None:
-            target = self._find_empty_workflow_runtime() or engine.create_workflow_runtime()
-        engine.activate_workflow_runtime(target)
-
-        if already_open:
-            details = f"Switched to open workflow '{request.workflow_name}'."
-        elif request.workflow_name is None:
-            details = "An empty workflow is active."
-        else:
-            details = f"Workflow '{request.workflow_name}' isn't open. An empty workflow is active for it to load into."
-        return ActivateWorkflowResultSuccess(
-            workflow_name=request.workflow_name, already_open=already_open, result_details=details
-        )
-
-    @handles(ListOpenWorkflowsRequest)
-    def on_list_open_workflows_request(self, request: ListOpenWorkflowsRequest) -> ResultPayload:  # noqa: ARG002
-        engine = self.engine
-        workflows = []
-        active_workflow_name = None
-        for runtime in engine.workflow_runtimes:
-            name = self._workflow_name_in(runtime)
-            if name is None:
-                continue
-            with engine.bind_workflow_runtime(runtime):
-                is_running = engine.flow_manager.check_for_existing_running_flow()
-            workflows.append(
-                OpenWorkflow(workflow_name=name, display_name=self._display_name_of(name), is_running=is_running)
-            )
-            if runtime is engine.active_workflow_runtime:
-                active_workflow_name = name
-        return ListOpenWorkflowsResultSuccess(
-            workflows=workflows,
-            active_workflow_name=active_workflow_name,
-            result_details=f"{len(workflows)} workflow(s) open.",
-        )
-
-    @handles(CloseWorkflowRequest)
-    async def on_close_workflow_request(self, request: CloseWorkflowRequest) -> ResultPayload:
-        runtime = self.find_open_workflow_runtime(request.workflow_name)
-        if runtime is None:
-            details = f"Attempted to close workflow '{request.workflow_name}'. Failed because it isn't open."
-            return CloseWorkflowResultFailure(result_details=details)
-
-        failure = await self.close_workflow_runtime(runtime)
-        if failure is not None:
-            details = f"Attempted to close workflow '{request.workflow_name}'. Failed due to: {failure}"
-            return CloseWorkflowResultFailure(result_details=details)
-        return CloseWorkflowResultSuccess(result_details=f"Closed workflow '{request.workflow_name}'.")
-
-    def find_open_workflow_runtime(self, workflow_name: str) -> WorkflowRuntime | None:
-        """The open runtime whose workflow has this registry key, if any."""
-        for runtime in self.engine.workflow_runtimes:
-            if self._workflow_name_in(runtime) == workflow_name:
-                return runtime
-        return None
-
-    async def close_workflow_runtime(self, runtime: WorkflowRuntime) -> str | None:
-        """Clear a runtime's objects and forget it. Returns why it failed, or None.
-
-        The active runtime is kept, empty, so there is always one for requests to act on.
-        """
-        engine = self.engine
-        with engine.bind_workflow_runtime(runtime):
-            clear_result = await engine.ahandle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
-        if clear_result.failed():
-            return str(clear_result.result_details)
-        if runtime is not engine.active_workflow_runtime:
-            engine.remove_workflow_runtime(runtime)
-        return None
-
-    async def close_inactive_workflow_runtimes(self) -> None:
-        """Close every open workflow except the active one.
-
-        For changes that invalidate every loaded workflow, such as reloading libraries or switching
-        projects, which then reload the active one themselves.
-        """
-        engine = self.engine
-        for runtime in engine.workflow_runtimes:
-            if runtime is engine.active_workflow_runtime:
-                continue
-            failure = await self.close_workflow_runtime(runtime)
-            if failure is not None:
-                logger.warning("Could not close workflow '%s': %s", self._workflow_name_in(runtime), failure)
-
-    def _display_name_of(self, workflow_name: str) -> str:
-        registry = self.engine.workflow_registry
-        if not registry.has_workflow_with_name(workflow_name):
-            return workflow_name
-        return registry.get_workflow_by_name(workflow_name).metadata.name or workflow_name
-
-    def _find_empty_workflow_runtime(self) -> WorkflowRuntime | None:
-        for runtime in self.engine.workflow_runtimes:
-            if self._workflow_name_in(runtime) is None:
-                return runtime
-        return None
-
-    def _workflow_name_in(self, runtime: WorkflowRuntime) -> str | None:
-        with self.engine.bind_workflow_runtime(runtime):
-            if not self.has_current_workflow():
-                return None
-            return self.get_current_workflow_name()
 
     def workflow(self, workflow_name: str) -> ContextManager.WorkflowContext:
         """Create a context manager for a Workflow context.

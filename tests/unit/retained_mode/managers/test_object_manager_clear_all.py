@@ -14,15 +14,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from griptape_nodes.retained_mode.events.object_events import (
-    ClearAllObjectStateRequest,
-    ClearAllObjectStateResultSuccess,
-)
 from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
 from tests.unit.mock_engine import mock_engine_with_workflow_runtime
 
 
-class TestClearAllObjectStateCancelsFirst:
+class TestClearingAWorkflowCancelsFirst:
     @pytest.mark.asyncio
     async def test_running_flow_is_cancelled_before_execution_state_is_reset(self) -> None:
         calls: list[str] = []
@@ -36,11 +32,9 @@ class TestClearAllObjectStateCancelsFirst:
         engine.context_manager.has_current_workflow.return_value = False
 
         object_manager = ObjectManager(MagicMock(), engine=engine)
-        result = await object_manager.on_clear_all_object_state_request(
-            ClearAllObjectStateRequest(i_know_what_im_doing=True)
-        )
+        failure = await object_manager.clear_current_workflow()
 
-        assert isinstance(result, ClearAllObjectStateResultSuccess)
+        assert failure is None
         assert calls == ["cancel", "reset"], "the reset must not run ahead of the cancel"
 
     @pytest.mark.asyncio
@@ -52,10 +46,8 @@ class TestClearAllObjectStateCancelsFirst:
         engine.context_manager.has_current_workflow.return_value = False
 
         object_manager = ObjectManager(MagicMock(), engine=engine)
-        result = await object_manager.on_clear_all_object_state_request(
-            ClearAllObjectStateRequest(i_know_what_im_doing=True)
-        )
+        failure = await object_manager.clear_current_workflow()
 
-        assert isinstance(result, ClearAllObjectStateResultSuccess)
+        assert failure is None
         engine.flow_manager.cancel_flow_run.assert_not_awaited()
         engine.flow_manager.reset_global_execution_state.assert_called_once()
