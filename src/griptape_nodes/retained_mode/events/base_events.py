@@ -131,6 +131,9 @@ class RequestPayload(Payload, ABC):
                 undone. Requests sharing the group of an UndoRequest or RedoRequest are the
                 client's reaction to it and are never recorded; the engine tags the requests it
                 issues to carry out an undo or redo with that group too.
+        undo_label: Names the user action in the undo history, such as "Delete 2 nodes". The last
+                label sent in a group wins. When no request in a group sends one, the engine names
+                the action from what it changed.
     """
 
     broadcast_result: bool = True
@@ -138,6 +141,7 @@ class RequestPayload(Payload, ABC):
     failure_log_level: int | None = None
     fields: list[str] | None = None
     undo_group: str | None = None
+    undo_label: str | None = None
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.

@@ -68,6 +68,8 @@ class Edit:
     transaction: journal.Transaction = field(default_factory=journal.Transaction)
     in_flight: int = 0
     entry: HistoryEntry | None = None
+    # What the client called the action, if it named it.
+    label: str | None = None
 
 
 # Nested requests inherit the edit through the context variable.
@@ -221,6 +223,8 @@ class UndoManager(EngineScoped):
                 self._edits[request.undo_group] = edit
             edit.in_flight += 1
             edit.transaction.accepting = True
+            if request.undo_label:
+                edit.label = request.undo_label
         return DispatchScope(token=_current_edit.set(edit), journal_token=journal.begin(edit.transaction), edit=edit)
 
     def _not_recording(self) -> DispatchScope:
@@ -248,7 +252,7 @@ class UndoManager(EngineScoped):
             self._edits.pop(edit.group, None)
             return
 
-        label = describe(summary)
+        label = edit.label or describe(summary)
         relabeled = edit.entry is not None and edit.entry.label != label
         if edit.entry is None:
             edit.entry = HistoryEntry(label=label, transaction=edit.transaction)

@@ -287,6 +287,23 @@ class TestRecording:
         assert _node(engine, "A").metadata.get("position") != {"x": 1, "y": 1}  # type: ignore[union-attr]
         assert _node(engine, "B").metadata.get("position") != {"x": 2, "y": 2}  # type: ignore[union-attr]
 
+    def test_the_last_label_a_client_sends_names_the_step(self, engine: Engine) -> None:
+        _create(engine, "A")
+        _create(engine, "B")
+        first = SetNodeMetadataRequest(node_name="A", metadata={"position": {"x": 1, "y": 1}}, undo_label="Nudge")
+        second = SetNodeMetadataRequest(node_name="B", metadata={"position": {"x": 2, "y": 2}}, undo_label="Align")
+        _edit(engine, first, "align")
+        _edit(engine, second, "align")
+        _edit(engine, SetNodeMetadataRequest(node_name="A", metadata={"position": {"x": 3, "y": 3}}), "align")
+
+        assert _history(engine).undo_labels[-1] == "Align"
+
+    def test_a_label_does_not_record_an_action_that_changed_nothing(self, engine: Engine) -> None:
+        _create(engine, "A")
+        _edit(engine, GetNodeMetadataRequest(node_name="A", undo_label="Look"))
+
+        assert _history(engine).undo_labels == ["Add 'A'"]
+
     def test_requests_without_a_group_are_not_recorded(self, engine: Engine) -> None:
         """A library process forwards the requests its nodes make with a request id but no group."""
         engine.event_manager.handle_request(
