@@ -2941,8 +2941,8 @@ class NodeManager(EngineScoped):
     def _set_whole_list_as_rows(self, request: SetParameterValueRequest, node: BaseNode) -> bool:
         """Turn a caller's whole list for an unconnected list into rows. Returns whether it did.
 
-        Loading keeps the saved value as it is: a saved file sets the rows next, and a list saved
-        with no rows may hold items whose rows were removed.
+        Loading leaves the rows to the saved file, which sets each row next. A whole list saved for
+        an unconnected list is dropped, and its items don't become rows.
         """
         if request.initial_setup or request.incoming_connection_source_node_name is not None:
             return False

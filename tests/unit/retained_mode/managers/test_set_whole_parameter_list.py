@@ -366,8 +366,8 @@ class TestLoadingASavedWorkflow:
         assert [r.name for r in _rows(node)] == [row]
         assert node.get_parameter_value("items") == ["saved"]
 
-    def test_a_list_saved_without_rows_loads_as_before(self, engine: Engine, flow_name: str) -> None:
-        """Its items may be ones whose rows were removed, so they must not come back as rows."""
+    def test_a_list_saved_without_rows_gets_no_rows(self, engine: Engine, flow_name: str) -> None:
+        """Only saved rows become rows."""
         node = _add(engine, _ListNode(name="Lister"), flow_name)
 
         engine.handle_request(
@@ -762,3 +762,16 @@ class TestAWorkerFillingItsCopy:
         assert failure is None
         asked.assert_not_called()
         assert node.get_parameter_value("items") == items
+
+    @pytest.mark.usefixtures("worker")
+    def test_a_connected_list_over_max_items_runs_with_every_item(self, engine: Engine, flow_name: str) -> None:
+        """The orchestrator warns and runs with the whole list, so the worker must too."""
+        node = _add(engine, _ListNode(name="Lister", max_items=2), flow_name)
+
+        with patch.object(BaseNode, "_param_has_incoming_connection", return_value=True):
+            failure = engine.node_manager._apply_hydrated_values(node, "Lister", {"items": ["a", "b", "c"]})
+            value = node.get_parameter_value("items")
+
+        assert failure is None
+        assert value == ["a", "b", "c"]
+        assert _rows(node) == []

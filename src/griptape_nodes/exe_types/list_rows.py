@@ -68,8 +68,8 @@ class ListRows:
           result is recorded instead.
         - while loading, which sets the rows next.
         - from a value hook on the list or one of its rows, which runs while a row is being set.
-          Replacing the rows there would remove the one being set. Libraries written for older
-          engines rewrite their list there to convert its items; those use `item_converters` now.
+          Replacing the rows there would remove the one being set. To convert items, a list uses
+          `item_converters` instead.
         """
         if not self.holds_no_value(parameter):
             return False
@@ -92,10 +92,16 @@ class ListRows:
         Unlike `set_as_rows_if_unconnected`, this doesn't ask the orchestrator whether the list is
         connected: a fresh copy has no rows to protect, and rows built from the list give the node the
         same items either way.
+
+        A list longer than `max_items` can only have come over a connection, and doesn't fit in rows.
+        It is stored whole instead, so the node runs with every item as it does on the orchestrator.
         """
         if not isinstance(parameter, ParameterList) or not isinstance(value, list):
             return False
         if not _accepts_whole_list(parameter):
+            return False
+        max_items = parameter.max_items
+        if max_items is not None and len(value) > max_items:
             return False
         if value != handle_container_parameter(self._node, parameter):
             self._replace(parameter, value)
@@ -143,9 +149,7 @@ class ListRows:
     def values_for_dispatch(self) -> dict[str, Any]:
         """`parameter_values`, with each list as the node reads it and without its rows, to send with `ExecuteNodeRequest`.
 
-        A worker copy has no rows and builds its own, with new names, from the list. A list's own entry
-        can still hold items whose rows were removed, in a workflow saved before the entry followed its
-        rows.
+        A worker copy has no rows and builds its own, with new names, from the list.
         """
         node = self._node
         values = dict(node.parameter_values)
