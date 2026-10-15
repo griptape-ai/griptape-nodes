@@ -1,9 +1,10 @@
 import os
 import platform
+import subprocess
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
 import pytest
@@ -37,6 +38,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     GetNextVersionIndexRequest,
     GetNextVersionIndexResultFailure,
     GetNextVersionIndexResultSuccess,
+    LaunchExternalViewerRequest,
+    LaunchExternalViewerResultFailure,
+    LaunchExternalViewerResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -45,6 +49,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     MakeDirectoryRequest,
     MakeDirectoryResultFailure,
     MakeDirectoryResultSuccess,
+    OpenAssociatedFileRequest,
+    OpenAssociatedFileResultFailure,
+    OpenAssociatedFileResultSuccess,
     ReadFileRequest,
     ReadFileResultFailure,
     ReadFileResultSuccess,
@@ -87,7 +94,7 @@ class TestWriteFileRequest:
         file_path = temp_dir / "test.txt"
         request = WriteFileRequest(file_path=str(file_path), content="Hello, World!")
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # Compare resolved paths to handle symlinks (e.g., /var -> /private/var on macOS)
@@ -102,7 +109,7 @@ class TestWriteFileRequest:
         content = b"\x00\x01\x02\x03"
         request = WriteFileRequest(file_path=str(file_path), content=content)
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # Compare resolved paths to handle symlinks (e.g., /var -> /private/var on macOS)
@@ -117,7 +124,7 @@ class TestWriteFileRequest:
         file_path.write_text("Initial content\n")
 
         request = WriteFileRequest(file_path=str(file_path), content="Appended content\n", append=True)
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.read_text() == "Initial content\nAppended content\n"
@@ -131,7 +138,7 @@ class TestWriteFileRequest:
         request = WriteFileRequest(
             file_path=str(file_path), content="New content", existing_file_policy=ExistingFilePolicy.OVERWRITE
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.read_text() == "New content"
@@ -145,7 +152,7 @@ class TestWriteFileRequest:
         request = WriteFileRequest(
             file_path=str(file_path), content="New content", existing_file_policy=ExistingFilePolicy.FAIL
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.POLICY_NO_OVERWRITE
@@ -159,7 +166,7 @@ class TestWriteFileRequest:
         file_path = temp_dir / "subdir" / "nested" / "test.txt"
         request = WriteFileRequest(file_path=str(file_path), content="Content", create_parents=True)
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.exists()
@@ -171,7 +178,7 @@ class TestWriteFileRequest:
         file_path = temp_dir / "nonexistent" / "test.txt"
         request = WriteFileRequest(file_path=str(file_path), content="Content", create_parents=False)
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS
@@ -185,7 +192,7 @@ class TestWriteFileRequest:
 
         request = WriteFileRequest(file_path=str(dir_path), content="Content")
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         # Attempting to write to a directory path should fail
@@ -208,7 +215,7 @@ class TestWriteFileRequest:
             "griptape_nodes.retained_mode.managers.os_manager.atomic_write_bytes",
             side_effect=PermissionError("Permission denied"),
         ):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
@@ -1336,7 +1343,7 @@ class TestWindowsLongPathHandling:
         file_path = subdir / "test.txt"
 
         request = WriteFileRequest(file_path=str(file_path), content="Content", create_parents=True)
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # The returned path should not contain \\?\ prefix
@@ -1838,7 +1845,7 @@ class TestCreateNewFilePolicy:
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # First file should use requested name (test.txt) since it's available
@@ -1857,7 +1864,7 @@ class TestCreateNewFilePolicy:
             content="File 1",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result1 = os_manager.on_write_file_request(request1)
+        result1 = os_manager.engine.handle_request(request1)
         assert isinstance(result1, WriteFileResultSuccess)
         assert (temp_dir / "output.txt").exists()
 
@@ -1867,7 +1874,7 @@ class TestCreateNewFilePolicy:
             content="File 2",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result2 = os_manager.on_write_file_request(request2)
+        result2 = os_manager.engine.handle_request(request2)
         assert isinstance(result2, WriteFileResultSuccess)
         assert (temp_dir / "output_1.txt").exists()
 
@@ -1877,7 +1884,7 @@ class TestCreateNewFilePolicy:
             content="File 3",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result3 = os_manager.on_write_file_request(request3)
+        result3 = os_manager.engine.handle_request(request3)
         assert isinstance(result3, WriteFileResultSuccess)
         assert (temp_dir / "output_2.txt").exists()
 
@@ -1897,7 +1904,7 @@ class TestCreateNewFilePolicy:
             content="File 2",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
         assert isinstance(result, WriteFileResultSuccess)
         expected_path = temp_dir / "render_2.png"
         assert Path(result.final_file_path).resolve() == expected_path.resolve()
@@ -1933,7 +1940,7 @@ class TestCreateNewFilePolicy:
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         # EXPECTED: Should succeed and create render_1.png
         # ACTUAL: Currently fails with WriteFileResultFailure
@@ -2409,3 +2416,189 @@ class TestPlatformName:
         # Reporting something beats reporting nothing, so the result is never empty.
         monkeypatch.setattr("griptape_nodes.files.os_utils.sys.platform", "freebsd14")
         assert OSManager.platform_name() == "freebsd14"
+
+
+class TestLaunchExternalViewerRequest:
+    """LaunchExternalViewerRequest launches the configured viewer detached, or opts into the OS default."""
+
+    _POPEN = "griptape_nodes.retained_mode.managers.os_manager.subprocess.Popen"
+
+    @pytest.fixture
+    def image_file(self) -> Generator[Path, None, None]:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "render.exr"
+            path.write_bytes(b"exr")
+            yield path
+
+    @pytest.fixture
+    def set_viewer(self, engine: Engine) -> Generator[MagicMock, None, None]:
+        """Returns a setter for the `openexr` viewer settings; other keys read the real config."""
+        real_get = engine.config_manager.get_config_value
+        configured: dict[str, str] = {}
+
+        def fake_get(key: str, **kwargs: object) -> object:
+            if key in configured:
+                return configured[key]
+            return real_get(key, **kwargs)  # pyright: ignore[reportArgumentType]
+
+        def set_settings(executable: str, args: str = "") -> None:
+            configured["openexr.viewer_executable"] = executable
+            configured["openexr.viewer_args"] = args
+
+        with patch.object(engine.config_manager, "get_config_value", side_effect=fake_get):
+            yield MagicMock(side_effect=set_settings)
+
+    def _launch(self, engine: Engine, image_file: Path, *, fallback: bool = False) -> object:
+        return engine.os_manager.on_launch_external_viewer_request(
+            LaunchExternalViewerRequest(
+                path_to_file=str(image_file), config_category="openexr", fallback_to_os_default=fallback
+            )
+        )
+
+    def test_configured_viewer_launches_detached_on_posix(
+        self, engine: Engine, image_file: Path, set_viewer: MagicMock
+    ) -> None:
+        set_viewer("/opt/viewer/bin/viewer", "--single")
+
+        with patch.object(OSManager, "is_windows", return_value=False), patch(self._POPEN) as popen:
+            result = self._launch(engine, image_file)
+
+        assert isinstance(result, LaunchExternalViewerResultSuccess)
+        assert result.used_fallback is False
+        popen.assert_called_once_with(
+            ["/opt/viewer/bin/viewer", "--single", os.fspath(image_file)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    def test_executable_path_with_spaces_is_passed_verbatim(
+        self, engine: Engine, image_file: Path, set_viewer: MagicMock
+    ) -> None:
+        set_viewer("  /Applications/My Viewer.app/Contents/MacOS/viewer  ")
+
+        with patch.object(OSManager, "is_windows", return_value=False), patch(self._POPEN) as popen:
+            self._launch(engine, image_file)
+
+        assert popen.call_args.args[0] == ["/Applications/My Viewer.app/Contents/MacOS/viewer", os.fspath(image_file)]
+
+    def test_quoted_args_split_and_go_before_the_file(
+        self, engine: Engine, image_file: Path, set_viewer: MagicMock
+    ) -> None:
+        set_viewer("/opt/viewer/bin/viewer", "--hdr --title 'My Render'")
+
+        with patch.object(OSManager, "is_windows", return_value=False), patch(self._POPEN) as popen:
+            self._launch(engine, image_file)
+
+        assert popen.call_args.args[0] == [
+            "/opt/viewer/bin/viewer",
+            "--hdr",
+            "--title",
+            "My Render",
+            os.fspath(image_file),
+        ]
+
+    def test_configured_viewer_launches_detached_on_windows(
+        self, engine: Engine, image_file: Path, set_viewer: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The flags only exist on Windows, so they are planted for hosts that lack them.
+        monkeypatch.setattr(subprocess, "DETACHED_PROCESS", 0x8, raising=False)
+        monkeypatch.setattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, raising=False)
+        set_viewer(r"C:\Program Files\DJV\bin\djv.exe", r'--title "My Render" --lut C:\luts\aces.cube')
+
+        with patch.object(OSManager, "is_windows", return_value=True), patch(self._POPEN) as popen:
+            result = self._launch(engine, image_file)
+
+        assert isinstance(result, LaunchExternalViewerResultSuccess)
+        assert popen.call_args.args[0] == [
+            r"C:\Program Files\DJV\bin\djv.exe",
+            "--title",
+            "My Render",
+            "--lut",
+            r"C:\luts\aces.cube",
+            os.fspath(image_file),
+        ]
+        assert popen.call_args.kwargs["creationflags"] == 0x8 | 0x200
+        assert "start_new_session" not in popen.call_args.kwargs
+
+    def test_unconfigured_viewer_fails_without_fallback(
+        self, engine: Engine, image_file: Path, set_viewer: MagicMock
+    ) -> None:
+        set_viewer("   ", "--hdr")
+
+        with patch(self._POPEN) as popen:
+            result = self._launch(engine, image_file)
+
+        assert isinstance(result, LaunchExternalViewerResultFailure)
+        assert result.failure_reason == FileIOFailureReason.NOT_CONFIGURED
+        assert "openexr.viewer_executable" in str(result.result_details)
+        popen.assert_not_called()
+
+    def test_unconfigured_viewer_opens_with_os_default_when_fallback_requested(
+        self, engine: Engine, image_file: Path, set_viewer: MagicMock
+    ) -> None:
+        set_viewer("")
+
+        with (
+            patch.object(
+                engine.os_manager,
+                "on_open_associated_file_request",
+                return_value=OpenAssociatedFileResultSuccess(result_details="opened"),
+            ) as open_associated,
+            patch(self._POPEN) as popen,
+        ):
+            result = self._launch(engine, image_file, fallback=True)
+
+        assert isinstance(result, LaunchExternalViewerResultSuccess)
+        assert result.used_fallback is True
+        open_associated.assert_called_once_with(OpenAssociatedFileRequest(path_to_file=os.fspath(image_file)))
+        popen.assert_not_called()
+
+    def test_fallback_failure_is_reported_as_a_launch_failure(
+        self, engine: Engine, image_file: Path, set_viewer: MagicMock
+    ) -> None:
+        set_viewer("")
+
+        with patch.object(
+            engine.os_manager,
+            "on_open_associated_file_request",
+            return_value=OpenAssociatedFileResultFailure(
+                failure_reason=FileIOFailureReason.IO_ERROR, result_details="no association"
+            ),
+        ):
+            result = self._launch(engine, image_file, fallback=True)
+
+        assert isinstance(result, LaunchExternalViewerResultFailure)
+        assert result.failure_reason == FileIOFailureReason.IO_ERROR
+
+    def test_missing_file_fails_before_launching(self, engine: Engine, image_file: Path, set_viewer: MagicMock) -> None:
+        set_viewer("/opt/viewer/bin/viewer")
+
+        with patch(self._POPEN) as popen:
+            result = self._launch(engine, image_file.with_name("missing.exr"))
+
+        assert isinstance(result, LaunchExternalViewerResultFailure)
+        assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
+        popen.assert_not_called()
+
+    def test_viewer_not_found_fails(self, engine: Engine, image_file: Path, set_viewer: MagicMock) -> None:
+        set_viewer("/opt/viewer/bin/viewer")
+
+        with patch(self._POPEN, side_effect=FileNotFoundError("viewer")):
+            result = self._launch(engine, image_file)
+
+        assert isinstance(result, LaunchExternalViewerResultFailure)
+        assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
+        assert "/opt/viewer/bin/viewer" in str(result.result_details)
+
+    def test_unbalanced_quotes_in_args_fail(self, engine: Engine, image_file: Path, set_viewer: MagicMock) -> None:
+        set_viewer("/opt/viewer/bin/viewer", '--title "My Render')
+
+        with patch.object(OSManager, "is_windows", return_value=False), patch(self._POPEN) as popen:
+            result = self._launch(engine, image_file)
+
+        assert isinstance(result, LaunchExternalViewerResultFailure)
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
+        assert "openexr.viewer_args" in str(result.result_details)
+        popen.assert_not_called()

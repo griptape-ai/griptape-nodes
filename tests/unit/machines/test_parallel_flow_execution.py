@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from griptape_nodes.common.directed_graph import DirectedGraph
+from griptape_nodes.common.node_executor import ExecuteNodeFailedError
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.machines.control_flow import ControlFlowMachine
@@ -21,6 +23,8 @@ from griptape_nodes.machines.parallel_resolution import (
     ParallelResolutionContext,
     ParallelResolutionMachine,
 )
+from griptape_nodes.retained_mode.events.execution_events import NodeErrorEvent
+from griptape_nodes.retained_mode.events.node_error_details import NodeErrorDetails
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
@@ -664,7 +668,48 @@ class TestParallelResolutionNodeDoneWhenTaskCompletes:
         assert task not in context.task_to_node
         assert dag_node.node_state == NodeState.ERRORED
         assert context.workflow_state == WorkflowState.ERRORED
-        assert context.error_message is not None
+        assert context.error_message == "Node 'n' encountered a problem: boom"
+
+    @pytest.mark.asyncio
+    async def test_errored_task_sends_the_node_error_in_parts(self) -> None:
+        """The NodeErrorEvent keeps its flattened message and adds the node's own words and type."""
+        node = MagicMock(spec=BaseNode)
+        node.name = "n"
+        node.lock = False
+        node.state = NodeResolutionState.RESOLVING
+        graph = DirectedGraph()
+        graph.add_node("n")
+        dag_builder = DagBuilder()
+        dag_builder.graphs["n"] = graph
+        dag_builder.node_to_reference["n"] = DagNode(node_reference=node, node_state=NodeState.PROCESSING)
+        engine = MagicMock()
+        engine.event_manager.aput_event = AsyncMock()
+        context = ParallelResolutionContext("flow", max_nodes_in_parallel=5, dag_builder=dag_builder, engine=engine)
+
+        raised = KeyError("n: Key 'b' not found")
+        flattened = "Node 'n' execution failed: Attempted to execute node 'n'. Failed with error: \"n: Key 'b'\""
+
+        async def _boom() -> None:
+            details = NodeErrorDetails(message="Key 'b' not found", exception_type="builtins.KeyError")
+            raise ExecuteNodeFailedError(flattened, details=details) from raised
+
+        task = asyncio.ensure_future(_boom())
+        await asyncio.sleep(0)
+        context.task_to_node[task] = dag_builder.node_to_reference["n"]
+        context.running_tasks_count = 1
+
+        await ExecuteDagState.on_update(context)
+
+        await_args = engine.event_manager.aput_event.await_args
+        assert await_args is not None
+        payload = await_args.args[0].wrapped_event.payload
+        assert isinstance(payload, NodeErrorEvent)
+        assert payload.error_message == flattened
+        assert payload.error is not None
+        assert payload.error.message == "Key 'b' not found"
+        assert payload.error.exception_type == "builtins.KeyError"
+        # ExecuteNodeFailedError already names the node, so the run's message adds no second prefix.
+        assert context.error_message == flattened
 
 
 class TestLockedNodeIsNeverQueuedOrExecuted:
@@ -728,3 +773,83 @@ class TestLockedNodeIsNeverQueuedOrExecuted:
 
         assert result.leaf_nodes == {"locked"}
         assert context.node_to_reference["locked"].node_state == NodeState.WAITING
+
+
+class TestLockedNodeRecordsResolvingWithoutExecuting:
+    """A run passing through a locked node marks it RESOLVED without executing it.
+
+    The node records when that pass is the only reason it reads RESOLVED, so that unlocking it can
+    unresolve it and the next downstream run executes it.
+    """
+
+    @staticmethod
+    def _context_with_done_node(node: MagicMock) -> ParallelResolutionContext:
+        graph = DirectedGraph()
+        graph.add_node(node.name)
+
+        dag_builder = DagBuilder()
+        dag_builder.graphs[node.name] = graph
+        dag_builder.node_to_reference[node.name] = DagNode(node_reference=node, node_state=NodeState.DONE)
+
+        context = ParallelResolutionContext(
+            "flow", max_nodes_in_parallel=5, dag_builder=dag_builder, engine=MagicMock()
+        )
+        context.engine.event_manager.aput_event = AsyncMock()
+        return context
+
+    @staticmethod
+    def _node(
+        state: NodeResolutionState,
+        *,
+        lock: bool,
+        resolved_while_locked: bool = False,
+        spec: type[BaseNode] = BaseNode,
+    ) -> MagicMock:
+        node = MagicMock(spec=spec)
+        node.name = "node"
+        node.lock = lock
+        node.state = state
+        node.resolved_while_locked = resolved_while_locked
+        node.parameter_values = {}
+        node.parameter_output_values = {}
+        node.consume_deferred_reset_flag.return_value = False
+        return node
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("lock", "state", "resolved_while_locked", "expected"),
+        [
+            pytest.param(True, NodeResolutionState.UNRESOLVED, False, True, id="locked-never-ran"),
+            pytest.param(True, NodeResolutionState.RESOLVED, False, False, id="locked-after-running"),
+            pytest.param(True, NodeResolutionState.RESOLVED, True, True, id="locked-passed-through-again"),
+            pytest.param(False, NodeResolutionState.RESOLVING, True, False, id="unlocked-executed"),
+        ],
+    )
+    async def test_records_whether_the_node_resolved_without_executing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        lock: bool,
+        state: NodeResolutionState,
+        resolved_while_locked: bool,
+        expected: bool,
+    ) -> None:
+        node = self._node(state, lock=lock, resolved_while_locked=resolved_while_locked)
+        context = self._context_with_done_node(node)
+        monkeypatch.setattr(ExecuteDagState, "get_next_control_graph", MagicMock())
+        monkeypatch.setattr(ExecuteDagState, "check_for_new_start_nodes", MagicMock())
+
+        await ExecuteDagState.handle_done_nodes(context, context.node_to_reference["node"], "node")
+
+        assert node.state == NodeResolutionState.RESOLVED
+        assert node.resolved_while_locked is expected
+
+    @pytest.mark.asyncio
+    async def test_records_it_for_a_locked_iterative_start_node(self) -> None:
+        node = self._node(NodeResolutionState.UNRESOLVED, lock=True, spec=BaseIterativeStartNode)
+        context = self._context_with_done_node(node)
+
+        await ExecuteDagState.handle_done_nodes(context, context.node_to_reference["node"], "node")
+
+        assert node.state == NodeResolutionState.RESOLVED
+        assert node.resolved_while_locked is True

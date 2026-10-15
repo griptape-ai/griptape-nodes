@@ -55,8 +55,8 @@ from griptape_nodes.exe_types.node_types import (
     TransformedParameterValue,
     _values_differ,
     aprocess_scope,
-    sanctioned_parameter_mutation,
 )
+from griptape_nodes.exe_types.parameter_mutation import sanctioned_parameter_mutation
 from griptape_nodes.exe_types.trait_state import TraitStateEntry
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.node_library.library_declarations import (
@@ -70,6 +70,7 @@ from griptape_nodes.node_library.library_declarations import (
 )
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.engine import EngineScoped
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     ResultDetails,
@@ -108,6 +109,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
 )
+from griptape_nodes.retained_mode.events.node_error_details import build_node_error_details
 from griptape_nodes.retained_mode.events.node_events import (
     AddNodesToNodeGroupRequest,
     AddNodesToNodeGroupResultFailure,
@@ -246,7 +248,6 @@ from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
-from griptape_nodes.serialization.converter import converter, dump_json
 from griptape_nodes.serialization.legacy_pickle import (
     LegacyPickleError,
     read_legacy_clipboard_commands,
@@ -258,6 +259,7 @@ from griptape_nodes.serialization.values import (
     Unencodable,
     ValueEncodeError,
     decode_value,
+    dump_json,
     encodable_default,
     try_encode,
     value_key,
@@ -1994,6 +1996,7 @@ class NodeManager(EngineScoped):
             parent_element_name=parent_group.name if parent_group is not None else None,
             settable=request.settable,
             allow_variable_substitution=request.allow_variable_substitution,
+            serializable=request.serializable,
         )
         # Hand saved state to the traits so their converters, validators, and rendered
         # options match what was saved.
@@ -2203,6 +2206,9 @@ class NodeManager(EngineScoped):
         if element is not None:
             with sanctioned_parameter_mutation():
                 node.remove_parameter_element(element)
+            if isinstance(element, Parameter) and element.parent_container_name is not None:
+                # The list lost an item, so what reads it has to run again.
+                self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
         else:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because element didn't exist."
 
@@ -2492,7 +2498,7 @@ class NodeManager(EngineScoped):
                 # Early return with warning - we're just preserving the original changes
                 details = f"Parameter '{request.parameter_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
 
-                result_details = ResultDetails(message=details, level=logging.WARNING)
+                result_details = ResultDetails(message=details, level=logging.DEBUG)
                 return AlterParameterDetailsResultSuccess(result_details=result_details)
 
             # Reject runtime parameter alterations on ErrorProxy
@@ -2569,7 +2575,7 @@ class NodeManager(EngineScoped):
             if request.initial_setup:
                 node.record_initialization_request(request)
                 details = f"ParameterGroup '{request.group_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
-                result_details = ResultDetails(message=details, level=logging.WARNING)
+                result_details = ResultDetails(message=details, level=logging.DEBUG)
                 return AlterParameterGroupDetailsResultSuccess(result_details=result_details)
 
             details = f"Cannot modify ParameterGroup '{request.group_name}' on placeholder node '{node_name}'. This placeholder preserves your workflow structure but doesn't allow modifications."
@@ -2622,6 +2628,9 @@ class NodeManager(EngineScoped):
         # Output values take priority (they represent the result of execution).
         if param_name in node.parameter_output_values:
             data_value = node.parameter_output_values[param_name]
+        elif isinstance(parameter, ParameterContainer):
+            # A list is read from its rows, unless a connection handed it a whole list.
+            data_value = node._get_raw_parameter_value(param_name)
         elif param_name in node.parameter_values:
             data_value = node.parameter_values[param_name]
         else:
@@ -2740,7 +2749,8 @@ class NodeManager(EngineScoped):
 
         # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
         try:
-            modified_value = node.before_value_set(parameter, parameter_value)
+            with node._list_rows.hooks_running(parameter.parent_container_name):
+                modified_value = node.before_value_set(parameter, parameter_value)
             if modified_value is not None:
                 # Check if it's a TransformedParameterValue (value + type)
                 if isinstance(modified_value, TransformedParameterValue):
@@ -2917,15 +2927,29 @@ class NodeManager(EngineScoped):
         # Otherwise use set_parameter_value. This calls our converters and validators.
         # Skip before_value_set since we already called it earlier in the flow
         old_value = node._get_raw_parameter_value(request.parameter_name)
-        node.set_parameter_value(
-            request.parameter_name, object_created, initial_setup=request.initial_setup, skip_before_value_set=True
-        )
+        if not self._set_whole_list_as_rows(request, node):
+            node.set_parameter_value(
+                request.parameter_name, object_created, initial_setup=request.initial_setup, skip_before_value_set=True
+            )
         # Get the "converted" value here.
         finalized_value = node._get_raw_parameter_value(request.parameter_name)
         if old_value != finalized_value:
             modified = True
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         return NodeManager.ModifiedReturnValue(finalized_value, modified)
+
+    def _set_whole_list_as_rows(self, request: SetParameterValueRequest, node: BaseNode) -> bool:
+        """Turn a caller's whole list for an unconnected list into rows. Returns whether it did.
+
+        Loading leaves the rows to the saved file, which sets each row next. A whole list saved for
+        an unconnected list is dropped, and its items don't become rows.
+        """
+        if request.initial_setup or request.incoming_connection_source_node_name is not None:
+            return False
+        parameter = node.get_parameter_by_name(request.parameter_name)
+        if parameter is None:
+            return False
+        return node._list_rows.set_as_rows_if_unconnected(parameter, request.value)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
@@ -3212,7 +3236,6 @@ class NodeManager(EngineScoped):
 
         # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
         if node.name in flow_mgr._global_dag_builder.node_to_reference:
-            logger.error("Node %s is already executing. Cannot start execution.", node.name)
             return ResolveNodeResultFailure(
                 validation_exceptions=[],
                 result_details=f"Node {node.name} is already executing. Cannot start execution.",
@@ -3492,7 +3515,6 @@ class NodeManager(EngineScoped):
                 f"Attempted to run node '{request.node_name}' in a separate process. Failed because "
                 f"{err} Editing the node still works and your workflow keeps it."
             )
-            logger.error(details)
             return ExecuteNodeResultFailure(result_details=details, exception=err)
         finally:
             # Drop the tracking entry regardless of success, failure, or cancellation
@@ -3508,8 +3530,8 @@ class NodeManager(EngineScoped):
         # worker-frame surfacing in
         # ``NodeExecutor._format_node_failure_message``.
         if result_type_name == ExecuteNodeResultSuccess.__name__:
-            return cast("ExecuteNodeResultSuccess", converter.structure(result_data, ExecuteNodeResultSuccess))
-        return cast("ExecuteNodeResultFailure", converter.structure(result_data, ExecuteNodeResultFailure))
+            return cast("ExecuteNodeResultSuccess", converters.engine.structure(result_data, ExecuteNodeResultSuccess))
+        return cast("ExecuteNodeResultFailure", converters.engine.structure(result_data, ExecuteNodeResultFailure))
 
     async def cancel_worker_execution(self, node_name: str) -> None:
         """Dispatch CancelExecuteNodeRequest to the worker running node_name.
@@ -3638,7 +3660,8 @@ class NodeManager(EngineScoped):
             for param in node.parameters:
                 if param.name in node.parameter_values:
                     continue
-                if param.default_value is None:
+                # A list is read from its rows, and a stored default would hide them.
+                if param.default_value is None or isinstance(param, ParameterContainer):
                     continue
                 node.parameter_values[param.name] = param.default_value
             if self.engine.library_manager.is_worker:
@@ -3660,6 +3683,7 @@ class NodeManager(EngineScoped):
                         f"{'; '.join(str(exception) for exception in validation_exceptions)}"
                     ),
                     validation_exceptions=validation_exceptions,
+                    error=build_node_error_details(node_name, validation_exceptions),
                 )
 
             try:
@@ -3704,11 +3728,14 @@ class NodeManager(EngineScoped):
         """Report a node whose `aprocess` raised, as a budget halt when Griptape Cloud refused its call."""
         budget_halt = self._budget_halt_for(exc, node_name)
         if budget_halt is not None:
+            # The engine words the halt, so it carries no node-built details.
             return ExecuteNodeResultFailure(result_details=str(budget_halt), exception=budget_halt)
-        # The raised exception itself, so its traceback crosses the worker boundary.
+        # The raised exception itself, so its traceback crosses the worker boundary. The details are
+        # built here, where the real exception and anything it attached still exist.
         return ExecuteNodeResultFailure(
             result_details=f"Attempted to execute node '{node_name}'. Failed with error: {exc}",
             exception=exc,
+            error=build_node_error_details(node_name, exc),
         )
 
     def _budget_halt_for(self, exc: Exception, node_name: str) -> BudgetExceededError | None:
@@ -3803,7 +3830,8 @@ class NodeManager(EngineScoped):
             deferred = {}
             made_progress = False
             for param_name, value in pending.items():
-                if node.get_parameter_by_name(param_name) is None:
+                parameter = node.get_parameter_by_name(param_name)
+                if parameter is None:
                     deferred[param_name] = value
                     continue
                 made_progress = True
@@ -3825,7 +3853,9 @@ class NodeManager(EngineScoped):
                         value.reason,
                     )
                 try:
-                    node.set_parameter_value(param_name, value)
+                    # A worker copy has no rows, so the list it runs with has to become them.
+                    if not self._fill_list_rows_on_copy(node, parameter, value):
+                        node.set_parameter_value(param_name, value)
                 except Exception as e:
                     return ExecuteNodeResultFailure(
                         result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
@@ -3843,6 +3873,18 @@ class NodeManager(EngineScoped):
                 param_name,
             )
         return None
+
+    def _fill_list_rows_on_copy(self, node: BaseNode, parameter: Parameter, value: Any) -> bool:
+        """Build a list's rows from the value it arrived with. Returns False for anything but a list.
+
+        A worker skips asking whether the list is connected, which would cost a round trip to the
+        orchestrator for every list on every run.
+        """
+        if not isinstance(parameter, ParameterList):
+            return False
+        if self.engine.library_manager.is_worker:
+            return node._list_rows.fill_copy(parameter, value)
+        return node._list_rows.set_as_rows_if_unconnected(parameter, value)
 
     @staticmethod
     def _unencodable_value_names(values: dict[str, Any]) -> list[str]:
@@ -3925,7 +3967,6 @@ class NodeManager(EngineScoped):
         )
 
         if not isinstance(group_result, SerializeNodeToCommandsResultSuccess):
-            logger.error("Failed to serialize group node '%s'", group_name)
             msg = f"Failed to serialize children and group node '{group_name}'"
             raise RuntimeError(msg)  # noqa: TRY004 Type Error doesn't make sense here, this is a runtime error.
 
@@ -3951,7 +3992,6 @@ class NodeManager(EngineScoped):
             )
 
             if not isinstance(child_result, SerializeNodeToCommandsResultSuccess):
-                logger.error("%s failed to serialize child node '%s'", group_name, child_name)
                 msg = f"Failed to serialize child node '{child_name}'"
                 raise RuntimeError(msg)  # noqa: TRY004 Type Error doesn't make sense here, this is a runtime error.
 
@@ -4095,7 +4135,8 @@ class NodeManager(EngineScoped):
                     specific_library_name=serialized_library_name,
                     metadata=metadata_copy,
                     # If it is actively resolving, mark as unresolved.
-                    resolution=node.state.value,
+                    # A node resolved only by a locked pass-through never ran, so it reloads unresolved.
+                    resolution=NodeResolutionState.UNRESOLVED.value if node.resolved_while_locked else node.state.value,
                     initial_setup=True,
                 )
 
@@ -4112,7 +4153,7 @@ class NodeManager(EngineScoped):
             if isinstance(node, ErrorProxyNode):
                 reference_node = None
             else:
-                with LibraryRegistry.constructing_node():
+                with LibraryRegistry.constructing_node(throwaway=True):
                     reference_node = type(node)(
                         name="REFERENCE NODE",
                         metadata={
@@ -4671,9 +4712,8 @@ class NodeManager(EngineScoped):
             if metadata and "_parent_group_uuid" in metadata:
                 parent_group_uuid = metadata["_parent_group_uuid"]
                 if parent_group_uuid not in node_uuid_to_name:
-                    logger.error("Parent group UUID %s not found in UUID mapping", parent_group_uuid)
                     return DeserializeSelectedNodesFromCommandsResultFailure(
-                        result_details="Parent group UUID not found in UUID mapping"
+                        result_details=f"Parent group UUID {parent_group_uuid} not found in UUID mapping"
                     )
                 node_command.create_node_command.parent_group_name = node_uuid_to_name[parent_group_uuid]
                 del metadata["_parent_group_uuid"]
@@ -5297,6 +5337,7 @@ class NodeManager(EngineScoped):
                 details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
                 return SetLockNodeStateResultFailure(result_details=details)
         node.lock = request.lock
+        self._unresolve_unlocked_node_left_unexecuted(node)
         return SetLockNodeStateResultSuccess(
             node_name=node_name,
             locked=node.lock,
@@ -5314,6 +5355,7 @@ class NodeManager(EngineScoped):
                 failed[name] = f"Node not found. Error: {err}"
                 continue
             node.lock = request.lock
+            self._unresolve_unlocked_node_left_unexecuted(node)
             updated.append(name)
 
         if not updated:
@@ -5327,6 +5369,22 @@ class NodeManager(EngineScoped):
             failed_nodes=failed,
             result_details=details,
         )
+
+    def _unresolve_unlocked_node_left_unexecuted(self, node: BaseNode) -> None:
+        """Unresolve an unlocked node, and everything downstream, unless it resolved by executing.
+
+        While locked, a node is passed through without running, and that pass marks it RESOLVED even
+        if it never ran. Its consumers resolve on whatever it held. Once it is unlocked, both must run
+        again, or the next run stops at them and never reaches it.
+        """
+        if node.lock:
+            return
+        if node.state == NodeResolutionState.RESOLVED and not node.resolved_while_locked:
+            return
+
+        node.resolved_while_locked = False
+        node.make_node_unresolved(current_states_to_trigger_change_event={NodeResolutionState.RESOLVED})
+        self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
 
     @handles(SendNodeMessageRequest)
     def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:
@@ -5925,7 +5983,7 @@ class NodeManager(EngineScoped):
         )
         rename_result = self.engine.object_manager.on_rename_object_request(rename_request)
         if not isinstance(rename_result, RenameObjectResultSuccess):
-            details = f"Attempted to reset Node '{node_name}'. Failed to rename new node to original name."
+            details = f"Attempted to reset Node '{node_name}'. Failed to rename new node to original name: {rename_result.result_details}"
             return ResetNodeToDefaultsResultFailure(result_details=details)
 
         # SUCCESS PATH
@@ -6007,16 +6065,14 @@ class NodeManager(EngineScoped):
         if request.from_index == request.to_index:
             details = f"Item in ParameterList '{request.parameter_list_name}' on Node '{node_name}' is already at index {request.from_index}. No reordering needed."
             return ReorderParameterListItemResultSuccess(
-                result_details=ResultDetails(message=details, level=logging.WARNING)
+                result_details=ResultDetails(message=details, level=logging.DEBUG)
             )
 
-        # Perform the reorder by moving the item in the _children list
-        item_to_move = children[request.from_index]
-        parameter_list._children.remove(item_to_move)
-        parameter_list._children.insert(request.to_index, item_to_move)
+        parameter_list.move_child(request.from_index, request.to_index)
 
-        # Mark the node as unresolved since parameter structure changed
+        # Mark the node and what follows it as unresolved since the list's order changed
         node.state = NodeResolutionState.UNRESOLVED
+        self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
 
         # Manually add the reordered children structure to _changes so the event includes it
         parameter_list._changes["children"] = [child.to_dict() for child in parameter_list._children]

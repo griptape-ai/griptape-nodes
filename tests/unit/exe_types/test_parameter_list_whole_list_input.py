@@ -1,7 +1,7 @@
 """A ParameterList fed by a connection to the list itself yields the whole incoming list.
 
-Without a connection the list is still built from its child rows, which is what keeps a stale
-`parameter_values` entry (not cleared when a row is removed) from becoming visible.
+Without a connection the list keeps no value of its own: it is built from its child rows, and a whole
+list set on it becomes rows.
 """
 
 from collections.abc import Iterator
@@ -45,11 +45,13 @@ def disconnected() -> Iterator[None]:
 
 class TestWholeListInput:
     @pytest.mark.usefixtures("disconnected")
-    def test_without_connection_the_child_rows_win(self, node: MockNode) -> None:
-        """A value set with no connection is ignored, because it may be a stale row cache."""
+    def test_without_connection_the_value_becomes_rows(self, node: MockNode) -> None:
         node.set_parameter_value("refs", ["a", "b", "c"])
 
-        assert node.get_parameter_value("refs") == []
+        refs = node.get_parameter_by_name("refs")
+        assert isinstance(refs, ParameterList)
+        assert [node.get_parameter_value(row.name) for row in refs.get_child_parameters()] == ["a", "b", "c"]
+        assert "refs" not in node.parameter_values
 
     @pytest.mark.usefixtures("connected")
     def test_connection_delivers_the_whole_list(self, node: MockNode) -> None:
@@ -82,17 +84,13 @@ class TestWholeListInput:
         assert node.get_parameter_value("refs") == ["a", "b"]
 
     def test_removed_row_value_does_not_resurrect(self, node: MockNode) -> None:
-        """The regression the connection gate exists to prevent.
-
-        `parameter_values['refs']` is a write-through cache of the rows and is NOT cleared when a
-        row is removed, so gating on "no children" would expose the deleted row's value.
-        """
+        """An unconnected list keeps no value of its own, so nothing is left behind to read."""
         refs = node.get_parameter_by_name("refs")
         assert isinstance(refs, ParameterList)
         with patch.object(MockNode, "_param_has_incoming_connection", return_value=False):
             child = refs.add_child_parameter()
             node.set_parameter_value(child.name, "manual")
-            assert node.parameter_values["refs"] == ["manual"]
+            assert "refs" not in node.parameter_values
 
             refs.remove_child(child)
 

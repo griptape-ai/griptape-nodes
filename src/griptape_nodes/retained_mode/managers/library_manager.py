@@ -56,10 +56,12 @@ from griptape_nodes.retained_mode.managers.library.discovery import (
 )
 from griptape_nodes.retained_mode.managers.library.environment import LibraryEnvironment
 from griptape_nodes.retained_mode.managers.library.git_operations import LibraryGitOperations
+from griptape_nodes.retained_mode.managers.library.managed_environment import LibraryManagedEnvironment
 from griptape_nodes.retained_mode.managers.library.metadata_loading import LibraryMetadataLoading
 from griptape_nodes.retained_mode.managers.library.module_loading import STABLE_NAMESPACE_PREFIX, LibraryModuleLoading
 from griptape_nodes.retained_mode.managers.library.provisioning import LibraryProvisioning
 from griptape_nodes.retained_mode.managers.library.registration import LibraryRegistrar, RegisterLibraryPrerequisites
+from griptape_nodes.retained_mode.managers.library.reset import LibraryReset
 from griptape_nodes.retained_mode.managers.library.sandbox import (
     SANDBOX_CATEGORY_NAME,
     SANDBOX_LIBRARY_NAME,
@@ -156,6 +158,8 @@ class LibraryManager(EngineScoped):
         self.git_operations = LibraryGitOperations(event_manager, engine=engine)
         self.sync = LibrarySync(event_manager, engine=engine)
         self.discovery = LibraryDiscovery(event_manager, engine=engine)
+        self.managed_environment = LibraryManagedEnvironment(engine)
+        self.reset = LibraryReset(event_manager, engine=engine)
         event_manager.register_request_handlers(self)
 
         event_manager.add_listener_to_app_event(
@@ -167,7 +171,6 @@ class LibraryManager(EngineScoped):
             self.workers.on_session_started,
         )
 
-        worker_manager.register_worker_evicted_callback(self.workers.on_worker_evicted)
         self._pre_reload_callbacks.append(worker_manager.reset_workers)
 
     def is_initializing(self) -> bool:
@@ -206,6 +209,9 @@ class LibraryManager(EngineScoped):
     def get_library_info_for_attempted_load(self, library_file_path: str) -> LibraryInfo:
         return self._library_file_path_to_info[library_file_path]
 
+    def find_library_info_for_attempted_load(self, library_file_path: str) -> LibraryInfo | None:
+        return self._library_file_path_to_info.get(library_file_path)
+
     def get_library_info_by_library_name(self, library_name: str) -> LibraryInfo | None:
         # A library name can have more than one entry: a duplicate install registers a second
         # copy that fails with DuplicateLibraryProblem but is deliberately kept in the dict
@@ -218,6 +224,11 @@ class LibraryManager(EngineScoped):
         matches = [info for info in self._library_file_path_to_info.values() if info.library_name == library_name]
         if not matches:
             return None
+        # A configured copy the environment does not provide is never the one to act on while the
+        # environment's own copy of the same library is known.
+        provided = [info for info in matches if not self.managed_environment.is_not_provided_by_environment(info)]
+        if provided:
+            matches = provided
         for library_info in matches:
             if library_info.lifecycle_state == LibraryLifecycleState.LOADED:
                 return library_info
@@ -275,6 +286,11 @@ class LibraryManager(EngineScoped):
                 logger.error("Failed to discover libraries: %s", discover_result.result_details)
                 return reconcile_failures
 
+            # A worker's libraries_directory mirrors the orchestrator's, so the hint would
+            # otherwise repeat once per worker; only the orchestrator needs to tell the user.
+            if not self._is_worker:
+                await self.discovery.log_unregistered_libraries(discover_result.libraries_discovered)
+
             # A worker is told which library it serves, but that library's declared library
             # dependencies are part of what it needs to run: CorridorKey's OCIO path reaches into
             # the OpenEXR library, which loaded on the orchestrator and was absent from the worker,
@@ -311,9 +327,12 @@ class LibraryManager(EngineScoped):
 
                 await self._load_and_track_library(lib_path, current_library_index, total_libraries)
 
-            # Remove any missing libraries AFTER we've loaded them for the user.
-            user_libraries_section = LIBRARIES_TO_REGISTER_KEY
-            self.discovery.remove_missing_libraries_from_config(config_category=user_libraries_section)
+            # Remove any missing libraries AFTER we've loaded them for the user. Not when the
+            # environment provides the libraries: the config's entries were not what loaded, and a
+            # studio launch must leave the artist's own settings as it found them.
+            if not self.managed_environment.provisioned_by_environment():
+                user_libraries_section = LIBRARIES_TO_REGISTER_KEY
+                self.discovery.remove_missing_libraries_from_config(config_category=user_libraries_section)
 
             return reconcile_failures
         finally:
@@ -472,6 +491,10 @@ class LibraryManager(EngineScoped):
         # When running as a dedicated library worker, restrict loading to those libraries.
         self._is_worker = payload.is_worker
         self._target_library_names = payload.libraries_to_register if payload.is_worker else None
+        # Before anything loads, since a loaded library holds its environment open. The
+        # orchestrator only: its workers start after it, and two processes must not race to delete.
+        if not self._is_worker and not payload.defer_pending_library_resets:
+            await self.reset.apply_pending_resets()
         reconcile_failures = await self.load_all_libraries_from_config(target_library_names=self._target_library_names)
         # Soft boot: log reconcile failures and continue so the engine still starts and the
         # user can switch to a working project. Interactive activation hard-fails instead
@@ -487,14 +510,6 @@ class LibraryManager(EngineScoped):
         # send AppStartSessionRequest again, so workers must be started here.
         await self.workers.maybe_start_workers_for_existing_session()
 
-        # Wait for workers only when restarting into an existing session (workers were just
-        # spawned above). On a fresh boot there is no session yet -- workers start later
-        # when AppStartSessionRequest arrives and will finish before the user can open a
-        # workflow. Awaiting here on fresh boot would wait the full worker-startup grace
-        # period for workers that haven't started yet.
-        if self.engine.get_session_id():
-            await self.workers.await_pending_workers()
-
         # Register all secrets now that libraries are loaded and settings are merged
         self.engine.secrets_manager.register_all_secrets()
 
@@ -506,8 +521,8 @@ class LibraryManager(EngineScoped):
         # table and "engine ready" banner, and other consumers (the GUI, the
         # desktop app) can react to the same event. Only the orchestrator
         # announces readiness; dedicated library workers do not. Presentation is
-        # owned by the app, not the engine. The library statuses reflect real
-        # fitness because workers have already reported back above.
+        # owned by the app, not the engine. The statuses are the orchestrator's own
+        # verdicts, derived from loading each library's real node modules here.
         if not self._is_worker:
             self.engine.event_manager.put_event(
                 AppEvent(
@@ -565,7 +580,6 @@ class LibraryManager(EngineScoped):
         all_libraries_result = await self.engine.ahandle_request(all_libraries_request)
         if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
             details = "When preparing to reload all libraries, failed to get registered libraries."
-            logger.error(details)
             return ReloadAllLibrariesResultFailure(result_details=details)
 
         # Close the gate before the registry is emptied, and not any earlier: the
@@ -582,7 +596,6 @@ class LibraryManager(EngineScoped):
                 unload_library_result = self.engine.handle_request(unload_library_request)
                 if not unload_library_result.succeeded():
                     details = f"When preparing to reload all libraries, failed to unload library '{library_name}'."
-                    logger.error(details)
                     return ReloadAllLibrariesResultFailure(result_details=details)
 
             # Notify pre-reload callbacks (e.g. to terminate worker processes) before
@@ -610,14 +623,9 @@ class LibraryManager(EngineScoped):
         # Re-spawn workers for libraries that require them; reset_workers terminated them above.
         await self.workers.maybe_start_workers_for_existing_session()
 
-        # Wait for worker-delegated libraries to finish loading before returning. The GUI
-        # opens the current workflow immediately on receiving the result, so all node types
-        # must be registered before we respond.
-        await self.workers.await_pending_workers()
-
-        # Signal readiness again so the app re-renders the library status table with real
-        # fitness now that workers have reported back. is_initial_start=False so the app
-        # refreshes the table without re-showing the startup banner. Orchestrator only.
+        # Signal readiness again so the app re-renders the library status table against the
+        # reloaded set. is_initial_start=False so the app refreshes the table without
+        # re-showing the startup banner. Orchestrator only.
         if not self._is_worker:
             self.engine.event_manager.put_event(
                 AppEvent(

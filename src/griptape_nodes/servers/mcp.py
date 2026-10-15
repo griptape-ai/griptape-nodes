@@ -23,6 +23,7 @@ from mcp.types import (
 from pydantic import TypeAdapter
 from starlette.types import Receive, Scope, Send
 
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import (
     EventResultFailure,
     EventResultSuccess,
@@ -43,10 +44,12 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextRequest,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    CancelFlowRequest,
     ExecuteNodeRequest,
     ResolveNodeRequest,
     StartFlowFromNodeRequest,
     StartFlowRequest,
+    UnresolveFlowRequest,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     AutoLayoutFlowRequest,
@@ -117,6 +120,8 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "ExecuteNodeRequest": ExecuteNodeRequest,
     "StartFlowRequest": StartFlowRequest,
     "StartFlowFromNodeRequest": StartFlowFromNodeRequest,
+    "CancelFlowRequest": CancelFlowRequest,
+    "UnresolveFlowRequest": UnresolveFlowRequest,
     # Flows
     "CreateFlowRequest": CreateFlowRequest,
     "DeleteFlowRequest": DeleteFlowRequest,
@@ -383,7 +388,7 @@ async def _handle_request_on_engine_loop(request_payload: RequestPayload) -> dic
         )
     else:
         result_event = EventResultFailure(request=request_payload, result=result_payload)
-    return json.loads(result_event.json())
+    return json.loads(converters.client.dumps_result(result_event).text)
 
 
 async def _dispatch_to_engine(request_payload: RequestPayload, timeout_ms: int | None = None) -> dict[str, Any]:

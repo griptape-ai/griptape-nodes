@@ -27,6 +27,7 @@ import pytest
 from griptape_nodes.exe_types.local_objects import is_reference
 from griptape_nodes.node_library.library_registry import LibraryRegistry, LibrarySchema
 from griptape_nodes.retained_mode.engine import current_engine
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultPayloadFailure
 from griptape_nodes.retained_mode.events.execution_events import (
@@ -39,7 +40,12 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
-from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
+    AddParameterToNodeResultSuccess,
+    RemoveParameterFromNodeRequest,
+    SetParameterValueRequest,
+)
 from griptape_nodes.retained_mode.events.project_events import ActivateWorkspaceProjectRequest
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
 from griptape_nodes.utils.version_utils import engine_version
@@ -279,11 +285,12 @@ class TestStateAccessFromAWorker:
         bytes come back as mojibake rather than raising -- which is why the corruption was silent.
         """
         from griptape_nodes.retained_mode.events.os_events import WriteFileRequest
-        from griptape_nodes.serialization.converter import converter
+
+        converter = converters.engine
 
         original = b"\x89PNG\r\n\x1a\n\x00\xff\xfe"
-        wire = json.loads(json.dumps(converter.unstructure(WriteFileRequest(file_path="x.png", content=original))))
-        round_tripped = converter.structure(wire, WriteFileRequest).content
+        sent = json.loads(json.dumps(converter.unstructure(WriteFileRequest(file_path="x.png", content=original))))
+        round_tripped = converter.structure(sent, WriteFileRequest).content
 
         assert round_tripped != original, "if this now round-trips, file I/O could safely forward"
         assert isinstance(round_tripped, str)
@@ -423,6 +430,49 @@ class TestAnOutputListGrownWhileRunning:
         await _execute("GrowsAnOutputListNode", "LocalListGrower")
 
         assert node.get_parameter_value("clips") == ["clip0", "clip1"]
+
+
+class TestAnInputListFilledInTheEditor:
+    """A list the artist filled row by row, then edited, as the executor dispatches it."""
+
+    @pytest.mark.parametrize("is_worker", [False, True])
+    @pytest.mark.asyncio
+    async def test_the_node_reads_the_rows_it_has_now(
+        self, caplog: pytest.LogCaptureFixture, *, is_worker: bool
+    ) -> None:
+        node = _make_in_flow("ReadsAnInputListNode", f"InputLister{is_worker}")
+        rows = []
+        for value in ("a", "b", "c"):
+            added = current_engine().handle_request(
+                AddParameterToNodeRequest(node_name=node.name, parent_container_name="items")
+            )
+            assert isinstance(added, AddParameterToNodeResultSuccess)
+            current_engine().handle_request(
+                SetParameterValueRequest(node_name=node.name, parameter_name=added.parameter_name, value=value)
+            )
+            rows.append(added.parameter_name)
+        current_engine().handle_request(RemoveParameterFromNodeRequest(node_name=node.name, parameter_name=rows[1]))
+        current_engine().library_manager._is_worker = is_worker
+
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            result = await _execute("ReadsAnInputListNode", node.name, **node._list_rows.values_for_dispatch())
+
+        assert result.parameter_output_values["echo"] == ["a", "c"]
+        assert "does not exist on the executing copy" not in caplog.text
+
+    @pytest.mark.parametrize("is_worker", [False, True])
+    @pytest.mark.asyncio
+    async def test_a_list_set_whole_by_request(self, *, is_worker: bool) -> None:
+        """How an MCP client or a script sets a list."""
+        node = _make_in_flow("ReadsAnInputListNode", f"WholeLister{is_worker}")
+        current_engine().handle_request(
+            SetParameterValueRequest(node_name=node.name, parameter_name="items", value=["a", "b"])
+        )
+        current_engine().library_manager._is_worker = is_worker
+
+        result = await _execute("ReadsAnInputListNode", node.name, **node._list_rows.values_for_dispatch())
+
+        assert result.parameter_output_values["echo"] == ["a", "b"]
 
 
 class TestEditorTimeBehaviorOnRealNodes:

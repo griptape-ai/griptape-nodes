@@ -176,6 +176,10 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import FLOW_COMMANDS_KEY
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
+from griptape_nodes.retained_mode.managers.workflow.shape import (
+    build_workflow_shape_from_parameter_info,
+    extract_parameter_shape_info,
+)
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.variable_types import VariableScope
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands
@@ -186,7 +190,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowShapeNodes
+    from griptape_nodes.retained_mode.managers.workflow.shape import WorkflowShapeNodes
     from griptape_nodes.retained_mode.variable_types import FlowVariable
 
 logger = logging.getLogger("griptape_nodes")
@@ -1574,7 +1578,7 @@ class FlowManager(EngineScoped):
         )
 
         # Build WorkflowShape from collected parameter shape data
-        workflow_shape = self.engine.workflow_manager.build_workflow_shape_from_parameter_info(
+        workflow_shape = build_workflow_shape_from_parameter_info(
             input_node_params=start_node_result.input_shape_data,
             output_node_params=end_node_packaging_result.output_shape_data,
         )
@@ -1874,7 +1878,6 @@ class FlowManager(EngineScoped):
 
             if serialized_node is None:
                 error_msg = f"Data integrity error: Could not find serialized node for package node '{package_node.name}'. This indicates a logic error in the serialization process."
-                logger.error(error_msg)
                 raise RuntimeError(error_msg)
 
             package_alter_parameter_commands = []
@@ -2262,9 +2265,7 @@ class FlowManager(EngineScoped):
         )
 
         # Extract parameter shape info for workflow shape (outputs to external consumers)
-        param_shape_info = self.engine.workflow_manager.extract_parameter_shape_info(
-            parameter, include_control_params=True
-        )
+        param_shape_info = extract_parameter_shape_info(parameter, include_control_params=True)
         if param_shape_info is not None:
             if end_node_name not in output_shape_data:
                 output_shape_data[end_node_name] = {}
@@ -2567,9 +2568,7 @@ class FlowManager(EngineScoped):
                 return PackageNodesAsSerializedFlowResultFailure(result_details=details)
 
             # Extract parameter shape info for workflow shape (inputs from external sources)
-            param_shape_info = self.engine.workflow_manager.extract_parameter_shape_info(
-                source_param, include_control_params=True
-            )
+            param_shape_info = extract_parameter_shape_info(source_param, include_control_params=True)
             if param_shape_info is not None:
                 if start_node_name not in input_shape_data:
                     input_shape_data[start_node_name] = {}
@@ -2831,14 +2830,14 @@ class FlowManager(EngineScoped):
                 debug_mode=request.debug_mode,
             )
         except Exception as e:
-            details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
+            details = f"Attempted to run flow '{flow_name}'. Failed due to: {e}"
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
 
         if self._global_control_flow_machine:
             resolution_machine = self._global_control_flow_machine.resolution_machine
             if resolution_machine.is_errored():
                 error_message = resolution_machine.get_error_message()
-                result_details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {error_message} "
+                result_details = f"Attempted to run flow '{flow_name}'. Failed due to: {error_message}"
                 exception = RuntimeError(error_message)
                 # Pass through the error message without adding extra wrapping
                 return StartFlowResultFailure(
@@ -2909,7 +2908,7 @@ class FlowManager(EngineScoped):
                 debug_mode=request.debug_mode,
             )
         except Exception as e:
-            details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
+            details = f"Attempted to run flow '{flow_name}'. Failed due to: {e}"
             return StartFlowFromNodeResultFailure(validation_exceptions=[e], result_details=details)
 
         if self._global_control_flow_machine:
@@ -4684,8 +4683,11 @@ class FlowManager(EngineScoped):
         self._global_flow_queue.queue.clear()
 
         # Request cancellation on all nodes and wait for them to complete
+        run_seconds = None
         if self._global_control_flow_machine is not None:
             await self._global_control_flow_machine.cancel_flow()
+            # Read before the reset below clears the run's start time.
+            run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
 
         # Reset control flow machine
         if self._global_control_flow_machine is not None:
@@ -4698,7 +4700,9 @@ class FlowManager(EngineScoped):
             ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
         )
         self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds))
+            )
         )
 
     async def _abandon_running_flow(self) -> None:
@@ -4727,7 +4731,9 @@ class FlowManager(EngineScoped):
             # cancel_flow_run already reset the machine and told the editor the run is over.
             return
 
+        run_seconds = None
         if self._global_control_flow_machine is not None:
+            run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
             self._global_control_flow_machine.reset_machine(cancel=True)
         self._global_single_node_resolution = False
         self._global_dag_builder.clear()
@@ -4735,7 +4741,9 @@ class FlowManager(EngineScoped):
             ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
         )
         self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds))
+            )
         )
 
     def reset_global_execution_state(self) -> None:
@@ -4878,7 +4886,6 @@ class FlowManager(EngineScoped):
 
             if resolution_machine.is_errored():
                 error_message = resolution_machine.get_error_message()
-                logger.error("Node '%s' failed: %s", node.name, error_message)
                 self._global_single_node_resolution = False
                 self._global_control_flow_machine.context.current_nodes = []
                 self.engine.event_manager.put_event(
