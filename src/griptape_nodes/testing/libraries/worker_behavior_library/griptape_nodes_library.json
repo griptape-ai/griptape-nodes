@@ -116,6 +116,15 @@
       }
     },
     {
+      "class_name": "ProcessInfoNode",
+      "file_path": "worker_behavior_nodes.py",
+      "metadata": {
+        "category": "test",
+        "description": "Reports the process that executed it and that process's parent",
+        "display_name": "ProcessInfoNode"
+      }
+    },
+    {
       "class_name": "UnshippableOutputNode",
       "file_path": "worker_behavior_nodes.py",
       "metadata": {
