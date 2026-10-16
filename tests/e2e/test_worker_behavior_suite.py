@@ -54,7 +54,6 @@ if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
 
 
-
 @pytest.fixture(autouse=True)
 def _register_library(tmp_path: Path) -> None:
     library_json = materialize_worker_behavior_library(tmp_path)
@@ -64,7 +63,9 @@ def _register_library(tmp_path: Path) -> None:
 
 def _make(node_type: str, name: str) -> BaseNode:
     """Create a node directly, for tests that only execute it."""
-    node = LibraryRegistry.create_node(node_type=node_type, name=name, specific_library_name=WORKER_BEHAVIOR_LIBRARY_NAME)
+    node = LibraryRegistry.create_node(
+        node_type=node_type, name=name, specific_library_name=WORKER_BEHAVIOR_LIBRARY_NAME
+    )
     current_engine().object_manager.add_object_by_name(name, node)
     return node
 
