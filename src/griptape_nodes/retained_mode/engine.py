@@ -467,15 +467,22 @@ class Engine:
     def runtime_for_request(self, request: RequestPayload) -> WorkflowRuntime | NoWorkflow | None:
         """What dispatch binds `request` to: a runtime, NO_WORKFLOW, or None to leave the binding alone.
 
-        A host request leaves it alone. A workflow request acts on the workflow it names, else the one
-        the current work is bound to, else the engine's only open workflow. A client that works on a
-        single workflow never names one, so its first workflow request opens one when none is open.
+        A host request issued from inside other work keeps that work's binding, so a host request made
+        while handling a workflow request still acts within that workflow. A host request from a client
+        acts on no workflow, so a host handler that reads the current workflow fails on its first test
+        instead of working only while one workflow is open.
+
+        A workflow request acts on the workflow it names, else the one the current work is bound to, else
+        the engine's only open workflow. A client that works on a single workflow never names one, so its
+        first workflow request opens one when none is open.
 
         Raises:
             WorkflowNotOpenError: The request names a workflow that isn't open.
             WorkflowNotNamedError: The request names none and none can be chosen for it.
         """
         if not isinstance(request, WorkflowRequest):
+            if bound_workflow.get() is None:
+                return NO_WORKFLOW
             return None
         if request.workflow_id is not None:
             return self._runtime_named_by(request, request.workflow_id)
@@ -569,7 +576,7 @@ class Engine:
             raise WorkflowNotNamedError(self._unnamed_workflow_message(request))
 
         try:
-            runtime = self._resolve_unbound_workflow()
+            runtime = self._only_open_workflow()
         except WorkflowNotNamedError:
             if optional:
                 return NO_WORKFLOW
@@ -583,15 +590,18 @@ class Engine:
         return self.open_workflow_runtime()
 
     def _resolve_unbound_workflow(self) -> WorkflowRuntime | None:
-        """The workflow unbound work acts on: the only one open, or None when none is.
+        """The workflow an unbound read of the current workflow gets: the only one open, or the running one.
+
+        Only for reads by code that lost its binding, never for dispatch: a request that names no workflow
+        while several are open fails rather than landing on whichever one runs.
 
         Raises:
-            WorkflowNotNamedError: Several are open.
+            WorkflowNotNamedError: Several are open and none runs.
         """
-        if len(self._workflow_runtimes) == 1:
-            return self._workflow_runtimes[0]
-        if not self._workflow_runtimes:
-            return None
+        try:
+            return self._only_open_workflow()
+        except WorkflowNotNamedError:
+            pass
         # Compatibility for library code that starts its own threads without copying the context, and so
         # reads the current workflow with nothing bound. One workflow runs at a time, so the running one is
         # where that code came from. To be removed once libraries have had a release to copy the context
@@ -606,6 +616,22 @@ class Engine:
                     "contextvars.copy_context().run so they keep their workflow; this fallback will be removed."
                 )
             return running
+        msg = (
+            "Attempted to act on the current workflow. Failed because several workflows are open and this "
+            "work names none of them."
+        )
+        raise WorkflowNotNamedError(msg)
+
+    def _only_open_workflow(self) -> WorkflowRuntime | None:
+        """The engine's only open workflow, or None when none is open.
+
+        Raises:
+            WorkflowNotNamedError: Several are open.
+        """
+        if len(self._workflow_runtimes) == 1:
+            return self._workflow_runtimes[0]
+        if not self._workflow_runtimes:
+            return None
         msg = (
             "Attempted to act on the current workflow. Failed because several workflows are open and this "
             "work names none of them."

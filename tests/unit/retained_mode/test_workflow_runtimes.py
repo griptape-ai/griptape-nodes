@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import threading
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -19,6 +20,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
+    HostRequest,
+    ResultPayload,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.context_events import SetWorkflowContextRequest
 from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
@@ -48,7 +52,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 from griptape_nodes.retained_mode.run_scheduler import RunRefusedError, current_run
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowNotNamedError
+from griptape_nodes.retained_mode.workflow_runtime import NO_WORKFLOW, WorkflowNotNamedError, bound_workflow
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
@@ -106,6 +110,28 @@ def _drain(queue: asyncio.Queue) -> list[object]:
     while not queue.empty():
         events.append(queue.get_nowait())
     return events
+
+
+@dataclass
+class _ProbeHostRequest(HostRequest):
+    """A host request whose handler records the workflow binding it ran under."""
+
+
+@dataclass
+class _ProbeResult(ResultPayloadSuccess):
+    pass
+
+
+def _probe_binding(engine: Engine) -> list[object]:
+    """Handle _ProbeHostRequest by recording `bound_workflow` as the handler sees it."""
+    seen: list[object] = []
+
+    def handle(_request: _ProbeHostRequest) -> ResultPayload:
+        seen.append(bound_workflow.get())
+        return _ProbeResult(result_details="probed")
+
+    engine.event_manager.assign_manager_to_request_type(_ProbeHostRequest, handle)
+    return seen
 
 
 class TestOpenWorkflow:
@@ -225,6 +251,38 @@ class TestRequestTargeting:
         assert isinstance(getattr(result, "exception", None), WorkflowNotNamedError)
         assert _node_names(engine, a.workflow_id) == {"NoteA"}
         assert _node_names(engine, b.workflow_id) == {"NoteB"}
+
+    def test_a_workflow_request_naming_none_fails_while_another_workflow_runs(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        b = _open_new_workflow_with_note(engine, "NoteB")
+        runtime_b = _runtime(engine, b.workflow_id)
+
+        with _running_only(engine, runtime_b):
+            engine.run_scheduler.admit(runtime_b)
+            result = engine.handle_request(CreateNodeRequest(node_type="Note", node_name="Stray"))
+
+        assert result.failed()
+        assert isinstance(getattr(result, "exception", None), WorkflowNotNamedError)
+        assert _node_names(engine, a.workflow_id) == {"NoteA"}
+        assert _node_names(engine, b.workflow_id) == {"NoteB"}
+
+    def test_a_host_request_from_a_client_acts_on_no_workflow(self, engine: Engine) -> None:
+        _open_new_workflow_with_note(engine, "NoteA")
+        seen = _probe_binding(engine)
+
+        engine.handle_request(_ProbeHostRequest())
+
+        assert seen == [NO_WORKFLOW]
+
+    def test_a_host_request_issued_within_a_workflow_keeps_it(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        runtime_a = _runtime(engine, a.workflow_id)
+        seen = _probe_binding(engine)
+
+        with engine.bind_workflow(runtime_a):
+            engine.handle_request(_ProbeHostRequest())
+
+        assert seen == [runtime_a]
 
     def test_a_workflow_request_naming_none_acts_on_the_only_open_workflow(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
