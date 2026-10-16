@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -52,6 +51,8 @@ from griptape_nodes.testing.libraries import WORKER_BEHAVIOR_LIBRARY_DIR
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from griptape_nodes.exe_types.node_types import BaseNode
 
 FIXTURE_DIR = WORKER_BEHAVIOR_LIBRARY_DIR
