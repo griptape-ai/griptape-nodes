@@ -176,9 +176,10 @@ _HTTP_ERROR_STATUS = 400
 _HTTP_TOO_MANY_REQUESTS = 429
 _HTTP_SERVER_ERROR_STATUS = 500
 _MAX_BODY_TEXT_CHARS = 2000
-# "API key", "api_key", "api-key" or "apikey" in a provider's message, as a word, such as a 422
-# with "Invalid API key format".
-_API_KEY_MENTION = re.compile(r"\bapi[ _-]?key\b", re.IGNORECASE)
+# "API key", "api_key", "api-key" or "apikey", singular or plural, in a provider's message, such as
+# a 422 with "Invalid API key format" or the code "invalid_api_key". Only a letter next to it rules a
+# match out, because "_" and digits often join the words in error codes.
+_API_KEY_MENTION = re.compile(r"(?<![a-z])api[ _-]?keys?(?![a-z])", re.IGNORECASE)
 
 # Response headers providers use for the ID of a request, in the order they are checked.
 _REQUEST_ID_HEADERS = ("x-request-id", "request-id", "x-trace-id", "x-amzn-requestid", "cf-ray")

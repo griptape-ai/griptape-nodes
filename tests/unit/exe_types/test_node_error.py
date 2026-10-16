@@ -96,7 +96,10 @@ class TestFromHttpResponse:
         assert str(error) == "Invalid API key format"
         assert error.links[0].label == "Update the API key"
 
-    @pytest.mark.parametrize("reason", ["Invalid api_key", "Bad apiKey header", "API-key format is wrong"])
+    @pytest.mark.parametrize(
+        "reason",
+        ["Invalid api_key", "Bad apiKey header", "API-key format is wrong", "API keys are disabled", "invalid_api_key"],
+    )
     def test_other_spellings_of_api_key_link_to_the_secret(self, reason: str) -> None:
         error = NodeError.from_http_response(
             FakeResponse(422, {"detail": reason}), provider="Acme", secret_name="ACME_KEY"
