@@ -1744,7 +1744,7 @@ class TestWorkflowManager:
 
         with patch.object(
             engine.library_manager,
-            "_collect_library_workflow_files",
+            "collect_library_workflow_files",
             AsyncMock(return_value=[str(template_path)]),
         ):
             # Startup: library templates register, then the workspace scan runs.
@@ -1757,13 +1757,13 @@ class TestWorkflowManager:
             await workflow_manager.refresh_workflow_registry()
 
         templates = [
-            workflow
-            for workflow in engine.workflow_registry._workflows.values()
-            if workflow.metadata.is_griptape_provided
+            metadata
+            for metadata in engine.workflow_registry.list_workflows().values()
+            if metadata["is_griptape_provided"]
         ]
         assert len(templates) == 1
-        assert templates[0].file_path is not None
-        resolved = Path(engine.workflow_registry.get_complete_file_path(templates[0].file_path))
+        assert templates[0]["file_path"] is not None
+        resolved = Path(engine.workflow_registry.get_complete_file_path(templates[0]["file_path"]))
         assert resolved == template_path
 
     @pytest.mark.asyncio

@@ -1823,8 +1823,8 @@ class TestCollectLibraryWorkflowFiles:
             ),
             patch.object(LibraryRegistry, "get_library", return_value=library),
         ):
-            first = await library_manager._collect_library_workflow_files()
-            second = await library_manager._collect_library_workflow_files()
+            first = await library_manager.collect_library_workflow_files()
+            second = await library_manager.collect_library_workflow_files()
 
         assert first == second == [str(tmp_path / "templates/demo.py")]
         assert sys.path[0] == base_dir

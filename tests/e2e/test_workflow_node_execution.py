@@ -292,7 +292,7 @@ async def test_registering_the_library_lists_the_backing_workflow(registered_lib
     assert isinstance(callable_result, ListCallableWorkflowsResultSuccess), callable_result
     assert registry_key in callable_result.workflow_names
 
-    # A workspace refresh clears every workflow that is not library-provided.
+    # A workspace refresh clears every workflow, then lists the library's workflows again.
     await engine.workflow_manager.refresh_workflow_registry()
 
     list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
@@ -364,13 +364,13 @@ async def test_a_library_installed_in_the_workspace_lists_its_backing_workflow_a
     await engine.workflow_manager.refresh_workflow_registry()
 
     listed = [
-        workflow
-        for key, workflow in engine.workflow_registry._workflows.items()
-        if key.endswith("shout_workflow") and workflow.metadata.is_griptape_provided
+        metadata
+        for key, metadata in engine.workflow_registry.list_workflows().items()
+        if key.endswith("shout_workflow") and metadata["is_griptape_provided"]
     ]
     assert len(listed) == 1
-    assert listed[0].file_path is not None
-    resolved = Path(engine.workflow_registry.get_complete_file_path(listed[0].file_path))
+    assert listed[0]["file_path"] is not None
+    resolved = Path(engine.workflow_registry.get_complete_file_path(listed[0]["file_path"]))
     assert resolved == workflow_file.resolve()
 
 

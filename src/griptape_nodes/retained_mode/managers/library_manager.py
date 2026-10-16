@@ -533,7 +533,7 @@ class LibraryManager(EngineScoped):
                 )
             )
 
-    async def _collect_library_workflow_files(self) -> list[str]:
+    async def collect_library_workflow_files(self) -> list[str]:
         """Collect workflow file paths declared by all registered libraries.
 
         Returns absolute paths to workflow files, adding each library's base directory
@@ -567,13 +567,14 @@ class LibraryManager(EngineScoped):
                     break
         return workflow_files
 
-    def _register_library_workflow_node_workflows(self) -> None:
+    def register_library_workflow_node_workflows(self) -> None:
         """List the workflows behind every registered library's workflow nodes in the workflow registry."""
+        current_sandbox_dir = self.sandbox.get_sandbox_directory()
         for library_info in self._library_file_path_to_info.values():
-            # Sandbox workflows are the user's own; the workspace scan lists them. A project switch
-            # that keeps the libraries loaded leaves the old project's sandbox in place, outside
-            # the new workspace, where listing would mark them library-provided.
-            if library_info.is_sandbox:
+            # A project switch that keeps the libraries loaded can leave the old project's sandbox
+            # loaded too; list only the sandbox the current config points at. A sandbox inside the
+            # workspace is the user's own, and list_workflow_node_workflow leaves it to the scan.
+            if library_info.is_sandbox and Path(library_info.library_path).parent != current_sandbox_dir:
                 continue
             for node_class in library_info.workflow_node_classes:
                 self.module_loading.list_workflow_node_workflow(node_class, library_info)

@@ -381,7 +381,7 @@ class TestListWorkflowOnRegistryRefresh:
         engine.config_manager.workspace_path = other_workspace
         engine.workflow_registry.clear_all_workflows()
 
-        engine.library_manager._register_library_workflow_node_workflows()
+        engine.library_manager.register_library_workflow_node_workflows()
 
         workflow = engine.workflow_registry.get_workflow_by_name(derive_registry_key(str(workflow_path)))
         assert workflow.metadata.is_griptape_provided is True
@@ -403,6 +403,27 @@ class TestListWorkflowOnRegistryRefresh:
         engine.config_manager.workspace_path = other_workspace
         engine.workflow_registry.clear_all_workflows()
 
-        engine.library_manager._register_library_workflow_node_workflows()
+        engine.library_manager.register_library_workflow_node_workflows()
 
         assert derive_registry_key(str(workflow_path)) not in engine.workflow_registry.list_workflows()
+
+    @pytest.mark.usefixtures("workspace")
+    def test_lists_sandbox_workflows_when_the_sandbox_is_outside_the_workspace(
+        self, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        library_dir = tmp_path / "local_sandbox"
+        library_dir.mkdir()
+        workflow_path = _write_workflow(library_dir, shape=_SHAPE)
+        engine.config_manager.set_config_value("sandbox_library_directory", str(library_dir))
+        library_info = _register(
+            engine,
+            library_dir,
+            _library_info(str(library_dir / "griptape_nodes_library.json"), is_sandbox=True),
+        )
+        monkeypatch.setitem(engine.library_manager._library_file_path_to_info, library_info.library_path, library_info)
+        engine.workflow_registry.clear_all_workflows()
+
+        engine.library_manager.register_library_workflow_node_workflows()
+
+        workflow = engine.workflow_registry.get_workflow_by_name(derive_registry_key(str(workflow_path)))
+        assert workflow.metadata.is_griptape_provided is True
