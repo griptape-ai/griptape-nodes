@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.exceptions import ApprovalRequired
+from pydantic_ai.exceptions import ApprovalRequired, UsageLimitExceeded
 from pydantic_ai.messages import (
     BinaryContent,
     ImageUrl,
@@ -38,6 +38,7 @@ from griptape_nodes.agents.pydantic_ai.runner import (
     TextDelta,
     ToolCall,
     ToolResult,
+    _run_messages,
 )
 from griptape_nodes.agents.pydantic_ai.tool_approval import pending_tool_calls
 from griptape_nodes.drivers.cloud_models import MODEL_SETTINGS
@@ -283,6 +284,69 @@ async def test_resumed_turn_at_request_limit_saves_its_answers_once(tmp_path: Pa
     saved_returns = sorted(p.tool_call_id for m in history for p in m.parts if isinstance(p, ToolReturnPart))
     assert saved_returns == sorted(call_ids)
     assert pending_tool_calls(history) == []
+
+
+@pytest.mark.asyncio
+async def test_run_at_request_limit_before_any_tool_result_saves_nothing(tmp_path: Path) -> None:
+    """A turn stopped before it has any tool results to keep re-raises and leaves the thread untouched."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    threads_dir = tmp_path / "threads"
+    runner = _runner_with_function_model(workspace, threads_dir, _endless_tool_caller([]), extra_tools=[ping])
+    runner.usage_limits = UsageLimits(request_limit=0)
+    thread_id, _ = runner.storage.create_thread()
+
+    with pytest.raises(UsageLimitExceeded):
+        await runner.run("Build it.", thread_id=thread_id)
+
+    assert runner.storage.load_history(thread_id) == []
+
+
+@pytest.mark.asyncio
+async def test_run_at_request_limit_sets_the_notice_apart_from_streamed_text(tmp_path: Path) -> None:
+    """Text the turn already streamed is followed by the notice on its own paragraph."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    threads_dir = tmp_path / "threads"
+    call_ids: list[str] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[Any]:
+        yield "Working."
+        async for chunk in _endless_tool_caller(call_ids)(messages, info):
+            yield chunk
+
+    runner = _runner_with_function_model(workspace, threads_dir, stream, extra_tools=[ping])
+    runner.usage_limits = UsageLimits(request_limit=2)
+
+    received: list[str] = []
+    result = await runner.run("Build it.", token_sink=received.append)
+
+    notice = f"\n\n{USAGE_LIMIT_NOTICE}"
+    assert result.output == "Working." * len(call_ids) + notice
+    assert received[-1] == notice
+
+
+@pytest.mark.asyncio
+async def test_run_at_request_limit_saves_the_persist_prompt(tmp_path: Path) -> None:
+    """A turn stopped at the limit stores `persist_prompt`, not the live prompt."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    threads_dir = tmp_path / "threads"
+    runner = _runner_with_function_model(workspace, threads_dir, _endless_tool_caller([]), extra_tools=[ping])
+    runner.usage_limits = UsageLimits(request_limit=2)
+
+    result = await runner.run("Build it with these bytes.", persist_prompt="Build it.")
+
+    history = runner.storage.load_history(result.thread_id)
+    prompts = [p.content for m in history for p in m.parts if isinstance(p, UserPromptPart)]
+    assert prompts == ["Build it."]
+
+
+def test_run_messages_is_empty_when_the_last_message_has_no_run_id() -> None:
+    """Messages with no `run_id` can't be told apart from loaded history, so none count as the run's."""
+    messages: list[ModelMessage] = [ModelRequest(parts=[UserPromptPart(content="hi")])]
+
+    assert _run_messages(messages) == []
 
 
 @pytest.mark.asyncio
