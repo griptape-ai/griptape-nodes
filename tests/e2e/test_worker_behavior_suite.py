@@ -48,12 +48,13 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.retained_mode.events.project_events import ActivateWorkspaceProjectRequest
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
+from griptape_nodes.testing.libraries import WORKER_BEHAVIOR_LIBRARY_DIR
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
 
-FIXTURE_DIR = Path(__file__).parent / "fixtures" / "worker_behavior_library"
+FIXTURE_DIR = WORKER_BEHAVIOR_LIBRARY_DIR
 LIBRARY = "Worker Behavior Library"
 
 
