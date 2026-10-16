@@ -244,7 +244,7 @@ class TestValidation:
 
     def test_dropped_marker_is_removed_when_another_response_is_kept(self) -> None:
         kept = NodeError("Kept", response={"status": "A"})
-        dropped = NodeError("Dropped", response={"image": "A" * MAX_RESPONSE_BYTES})
+        dropped = NodeError("Dropped", response=_unshrinkable_response())
 
         orders: list[list[Exception]] = [[kept, dropped], [dropped, kept]]
         for exceptions in orders:
@@ -254,12 +254,17 @@ class TestValidation:
             assert RESPONSE_DROPPED_FIELD not in details.fields
 
     def test_dropped_marker_stays_when_no_response_is_kept(self) -> None:
-        dropped = NodeError("Dropped", response={"image": "A" * MAX_RESPONSE_BYTES})
+        dropped = NodeError("Dropped", response=_unshrinkable_response())
 
         details = build_node_error_details(NODE_NAME, [ValueError("Prompt is required."), dropped])
 
         assert details.response is None
         assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
+
+
+def _unshrinkable_response() -> dict[str, str]:
+    """A response over the cap whose strings are each too short to cut."""
+    return {f"key_{index}": "A" * 1000 for index in range(MAX_RESPONSE_BYTES // 1000 + 1)}
 
 
 class TestErrorMessageUnchanged:
@@ -299,11 +304,27 @@ class TestNodeErrorAttachments:
         assert details.fields == {"status_code": "400"}
 
     def test_oversized_response_is_dropped_with_a_marker(self, failed_while_running: Any) -> None:
-        result = failed_while_running(self._node_error(response={"image": "A" * MAX_RESPONSE_BYTES}))
+        result = failed_while_running(self._node_error(response=_unshrinkable_response()))
 
         for details in _both_paths(result):
             assert details.response is None
             assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
+
+    def test_oversized_response_keeps_the_start_of_long_strings(self) -> None:
+        response = {
+            "status": "ERRORED",
+            "image": "A" * MAX_RESPONSE_BYTES,
+            "inline": "data:image/png;base64," + "B" * 50_000,
+        }
+
+        details = build_node_error_details(NODE_NAME, self._node_error(response=response))
+
+        assert details.response is not None
+        assert details.response["status"] == "ERRORED"
+        assert details.response["image"].startswith("A" * 2000)
+        assert details.response["image"].endswith(f"[{MAX_RESPONSE_BYTES} chars total]")
+        assert details.response["inline"] == "data:image/png;base64,[50000 chars]"
+        assert RESPONSE_DROPPED_FIELD not in details.fields
 
     def test_unserializable_response_is_dropped_without_failing(self) -> None:
         details = build_node_error_details(NODE_NAME, self._node_error(response={"when": object()}))

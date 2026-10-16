@@ -6,11 +6,12 @@ ones real APIs return.
 
 - "Provider failure": the service accepted the job and reported it failed. Raises `NodeError` with
   labelled fields, the response body, and a link.
-- "Service rejected the request": an HTTP call raised. Catches the SDK's exception and raises
-  `NodeError` from it, with the status code, request ID, and response body attached.
+- "Service rejected the request": an HTTP call raised. Catches the exception and raises
+  `NodeError.from_request_exception` from it, which attaches the status code, request ID, and
+  response body.
 - "Unsupported format": the input can't be used. Raises `NodeError` with links that explain the fix.
-- "Missing API key": checked before the node runs, using the real secrets lookup. Fails unless
-  `EXAMPLE_SERVICE_API_KEY` is set.
+- "Missing API key": checked before the node runs, using the real secrets lookup. Fails with
+  `NodeError.missing_secret` unless `EXAMPLE_SERVICE_API_KEY` is set.
 - "Missing preset setting": raises a plain `KeyError`. The editor still shows its message and type.
 - "Validation problems": returns two exceptions from `validate_before_node_run`, so the node never
   runs and the editor lists both problems.
@@ -21,7 +22,6 @@ Copy this file into your sandbox library folder to try it in the editor.
 from __future__ import annotations
 
 from typing import Any, NoReturn
-from urllib.parse import quote
 
 import httpx
 
@@ -107,34 +107,18 @@ class ExampleNodeErrorNode(DataNode):
         )
         if isinstance(result, GetSecretValueResultSuccess) and result.value:
             return None
-        # Name the exact setting and where to find it, so the message still helps in logs. A
-        # validation exception can be a NodeError too, so it can carry a link. A link starting with
-        # "#" opens a place in the editor: this one opens API Keys & Secrets filtered to the key.
-        msg = f"{self.API_KEY_NAME} is not set. Add it in Settings → API Keys & Secrets, then run the node again."
-        return [
-            NodeError(
-                msg,
-                # URL-encode values in the query, so a key name with "&" or "#" can't break the link.
-                links=[
-                    NodeErrorLink(label="Add the API key", url=f"#settings-secrets?filter={quote(self.API_KEY_NAME)}")
-                ],
-            )
-        ]
+        # A validation exception can be a NodeError too. `missing_secret` names the exact setting,
+        # says where to add it, and links to it in Settings.
+        return [NodeError.missing_secret(self.API_KEY_NAME)]
 
     def _send_request(self) -> None:
         try:
             self._call_service()
-        except httpx.HTTPStatusError as e:
-            # Raise from the original so its traceback stays in the logs. Use the provider's own
-            # explanation as the message, and attach what support needs instead of pasting the
-            # whole error text in.
-            body = e.response.json()
-            error = body["error"]
-            fields = {"status_code": e.response.status_code, "error_code": error["code"], "parameter": error["param"]}
-            request_id = e.response.headers.get("x-request-id")
-            if request_id is not None:
-                fields["request_id"] = request_id
-            raise NodeError(error["message"], fields=fields, response=body) from e
+        except httpx.HTTPError as e:
+            # Raise from the original so its traceback stays in the logs. `from_request_exception`
+            # turns a response into the provider's own message with the status code, request ID,
+            # and body attached, and gives a timeout or a failed connection a plain message.
+            raise NodeError.from_request_exception(e, provider="Example Service") from e
 
     def _call_service(self) -> None:
         """Stand-in for a real call such as ``client.post(...)``: the 400 a chat API sends for a bad parameter."""
@@ -159,8 +143,7 @@ class ExampleNodeErrorNode(DataNode):
         response = self._fake_provider_response()
         detail = response["status_detail"]["details"]
         # Put the reason in the message, and attach the rest instead of pasting the response in.
-        # Remove base64 image data from a response before attaching it. A response over 16 KB is
-        # dropped, and the user only sees that there was one.
+        # A response over 16 KB is shrunk by the engine, so base64 image data can stay in it.
         msg = f"The image service could not process the request: {detail}."
         raise NodeError(
             msg,

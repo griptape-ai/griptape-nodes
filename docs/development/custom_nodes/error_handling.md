@@ -273,11 +273,11 @@ raise NodeError(
 `NodeError` takes three optional keyword arguments. The editor shows each one in its own place in
 the error panel:
 
-| Argument   | What it's for                                                                                                          | Limits                                                                                  |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `fields`   | Labelled values a user may need to quote to support, such as a request ID.                                             | Text or number values.                                                                  |
-| `response` | The provider's response body, so the details are there if someone needs them.                                          | Body only, never headers. Dropped if over 16 KB or not JSON.                            |
-| `links`    | `NodeErrorLink(label=..., url=...)` pages that explain the failure, or places in the editor where the user can fix it. | Up to 3. `http`, `https`, or `#` for a place in the editor. Labels up to 80 characters. |
+| Argument   | What it's for                                                                                                          | Limits                                                                                                   |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `fields`   | Labelled values a user may need to quote to support, such as a request ID.                                             | Text or number values.                                                                                   |
+| `response` | The provider's response body, so the details are there if someone needs them.                                          | Body only, never headers. Over 16 KB, long strings are cut down. Dropped if still too large or not JSON. |
+| `links`    | `NodeErrorLink(label=..., url=...)` pages that explain the failure, or places in the editor where the user can fix it. | Up to 3. `http`, `https`, or `#` for a place in the editor. Labels up to 80 characters.                  |
 
 ```python
 raise NodeError(
@@ -293,6 +293,40 @@ works the same way when the node runs in a worker. Other exception types still w
 message and type are shown, but the editor only reads `fields`, `response`, and `links` from a
 `NodeError`.
 
+#### Helpers for provider calls
+
+Don't write these yourself. `NodeError` has a constructor for each failure that every provider call
+shares:
+
+| Helper                                                 | Use it when                                                                              |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `NodeError.missing_secret(name, key_url=...)`          | The API key is not set. Links to the secret in Settings.                                 |
+| `NodeError.from_http_response(response, provider=...)` | A response came back that the node can't use. Takes a `requests` or `httpx` response.    |
+| `NodeError.from_request_exception(e, provider=...)`    | A call raised. Handles an exception with a response, a timeout, and a failed connection. |
+| `NodeErrorLink.for_secret(name, label)`                | You are writing your own message and want the "open this secret in Settings" link.       |
+
+```python
+def validate_before_node_run(self) -> list[Exception] | None:
+    if not self._api_key():
+        return [NodeError.missing_secret("ACME_API_KEY", key_url="https://acme.example/keys")]
+    return None
+
+
+try:
+    response = requests.post(url, json=payload, timeout=60)
+    response.raise_for_status()
+except requests.RequestException as e:
+    raise NodeError.from_request_exception(e, provider="Acme", secret_name="ACME_API_KEY") from e
+```
+
+`from_http_response` takes the status code, the request ID (from a header or the body) and the
+error code into `fields`, and attaches the JSON body as `response`, or the start of the text when
+the body is not JSON. The message is the provider's own explanation when the body has one,
+including a list of validation problems. Otherwise it is a plain sentence for the status. A 401 or
+403 says the key was refused and, with `secret_name`, links to "Update the API key". Pass
+`fields={"job_id": ...}` for anything else a user may need to quote. If a 2xx body is not JSON, call
+`from_http_response` on it too, so it isn't reported as a connection failure.
+
 #### Common failures
 
 - **A call to a service raises.** Catch the SDK's own exception and re-raise it with
@@ -307,8 +341,9 @@ message and type are shown, but the editor only reads `fields`, `response`, and 
     follows ones that go somewhere, never ones that change anything.
 - **Polling gives up.** Say how long the node waited and what to do next. Put the job or
     generation ID in `fields` so the user can check on it later.
-- **The response contains image data.** Remove base64 data from a response before attaching it.
-    A response over 16 KB is dropped, and the user only sees that there was one.
+- **The response contains image data.** Attach it as is. A response over 16 KB is shrunk by the
+    engine: base64 data becomes its length and strings over 2000 characters are cut. It is dropped
+    only if it is still too large.
 - **The user clicks "Stop".** That isn't a failure, so don't report it as one. Don't catch
     `asyncio.CancelledError` or `BaseException`. `except Exception` lets cancellation through.
 
