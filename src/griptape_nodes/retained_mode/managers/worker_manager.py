@@ -149,6 +149,11 @@ class WorkerManager(EngineScoped):
         # the attempt ends, so a caller that must not race the spawn can wait for it.
         self._spawns_in_flight: dict[str, asyncio.Event] = {}
 
+        # The spawn task each accepted StartWorkerRequest scheduled, by library, until it finishes. A
+        # library's worker is requested when it finishes registering and again when a session starts,
+        # and the two can overlap; finding the first here is what makes the second start nothing.
+        self._requested_spawns: dict[str, asyncio.Task] = {}
+
         # The event loop that spawned the worker subprocesses. asyncio.subprocess.Process
         # binds its exit Future to its creating loop, so proc.wait() is only legal on this
         # loop. Eviction can run on a different loop (the websocket-tasks loop), which is
@@ -571,6 +576,7 @@ class WorkerManager(EngineScoped):
         Anything awaiting one of them is failed with the reason, and its response topic is
         unsubscribed.
         """
+        self._withdraw_spawn_requests(library_names=library_names, action=action)
         processes = [
             (library_name, proc)
             for library_name, proc in self._managed_worker_processes.items()
@@ -616,6 +622,22 @@ class WorkerManager(EngineScoped):
             self._managed_worker_processes.pop(library_name, None)
         for wid in worker_ids:
             self._workers.pop(wid, None)
+
+    def _withdraw_spawn_requests(self, *, library_names: set[str] | None, action: str) -> None:
+        """Forget the named libraries' spawn requests (every library's when None), so a later one is honored.
+
+        A spawn that has not begun is cancelled, or it would start a worker after the stop, and a run
+        waiting on it is told why. One already spawning is left to finish: cancelling it mid-way could
+        leave its process running untracked.
+        """
+        for library_name, task in list(self._requested_spawns.items()):
+            if library_names is not None and library_name not in library_names:
+                continue
+            del self._requested_spawns[library_name]
+            if library_name in self._spawns_in_flight or task.done():
+                continue
+            task.cancel()
+            self.note_worker_unavailable(library_name, f"its worker was stopped to {action} it before it started.")
 
     async def route_to_worker(
         self,
@@ -865,13 +887,34 @@ class WorkerManager(EngineScoped):
     async def handle_start_worker_request(
         self, request: worker_events.StartWorkerRequest
     ) -> worker_events.StartWorkerResultSuccess | worker_events.StartWorkerResultFailure:
-        """Schedule a worker subprocess spawn for the given library.
+        """Schedule a worker subprocess spawn for the given library, unless one is already coming.
 
         Returns immediately; the actual spawn runs once a session becomes available.
         """
-        task = asyncio.get_running_loop().create_task(self._spawn_when_session_ready(request.library_name))
-        task.add_done_callback(functools.partial(self._log_spawn_error, library_name=request.library_name))
+        library_name = request.library_name
+        # Checked, declared, and scheduled with no await between, so two requests cannot both pass.
+        # Declaring again would be worse than redundant: expect_worker replaces the readiness gate, and
+        # a run already waiting on the old one would wait out the whole load timeout.
+        if (
+            library_name in self._requested_spawns
+            or library_name in self._managed_worker_processes
+            or self.get_worker_for_key(library_name) is not None
+        ):
+            logger.debug("Not starting another worker for library '%s': one is starting or running.", library_name)
+            return worker_events.StartWorkerResultSuccess(
+                result_details=f"A worker for library '{library_name}' is already starting or running."
+            )
+        self.expect_worker(library_name)
+        task = asyncio.get_running_loop().create_task(self._spawn_when_session_ready(library_name))
+        self._requested_spawns[library_name] = task
+        task.add_done_callback(functools.partial(self._release_spawn_request, library_name=library_name))
+        task.add_done_callback(functools.partial(self._log_spawn_error, library_name=library_name))
         return worker_events.StartWorkerResultSuccess(result_details="Worker spawn scheduled.")
+
+    def _release_spawn_request(self, task: asyncio.Task, library_name: str) -> None:
+        """Forget a finished spawn request, unless stopping the library's workers already withdrew it."""
+        if self._requested_spawns.get(library_name) is task:
+            del self._requested_spawns[library_name]
 
     async def _spawn_when_session_ready(self, library_name: str) -> None:
         """Wait for an active session then spawn a worker subprocess for the given library."""
@@ -891,8 +934,8 @@ class WorkerManager(EngineScoped):
             return
         # The worker is handed its library's execution environment as PYTHONPATH, so that directory
         # has to exist before the process starts. It does: the orchestrator builds it while
-        # registering the library, and a library whose build failed is never asked for a worker --
-        # LibraryManager knows its own build result and does not request one.
+        # registering the library, and LibraryManager asks for no worker until that registration has
+        # finished, nor for one whose build failed.
         command = [
             sys.executable,
             "-m",
@@ -944,7 +987,7 @@ class WorkerManager(EngineScoped):
     def expect_worker(self, library_name: str) -> None:
         """Declare that a worker is coming for `library_name`, so callers can wait for it.
 
-        Called before the spawn is requested. Installs a fresh readiness gate and drops any account
+        Called as the spawn is scheduled. Installs a fresh readiness gate and drops any account
         of a previous attempt, which no longer describes the situation. Every attempt gets one: a
         worker registers BEFORE it loads libraries, so execution routing has to wait for the load
         rather than for the registration.

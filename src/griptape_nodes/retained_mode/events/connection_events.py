@@ -41,9 +41,27 @@ class CreateConnectionRequest(RequestPayload):
 
 
 @dataclass
+class ReplacedConnection:
+    """A connection that was deleted to make room for a new one."""
+
+    source_node_name: str
+    source_parameter_name: str
+    target_node_name: str
+    target_parameter_name: str
+
+
+@dataclass
 @PayloadRegistry.register
 class CreateConnectionResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Connection created successfully between parameters."""
+    """Connection created successfully between parameters.
+
+    Args:
+        replaced_connection: The existing connection that was deleted to make room for this one,
+            because the target input or source output allows only one connection (None if nothing
+            was replaced)
+    """
+
+    replaced_connection: ReplacedConnection | None = None
 
 
 @dataclass

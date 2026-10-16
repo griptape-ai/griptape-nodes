@@ -437,7 +437,9 @@ class TestAnInputListFilledInTheEditor:
 
     @pytest.mark.parametrize("is_worker", [False, True])
     @pytest.mark.asyncio
-    async def test_the_node_reads_the_rows_it_has_now(self, *, is_worker: bool) -> None:
+    async def test_the_node_reads_the_rows_it_has_now(
+        self, caplog: pytest.LogCaptureFixture, *, is_worker: bool
+    ) -> None:
         node = _make_in_flow("ReadsAnInputListNode", f"InputLister{is_worker}")
         rows = []
         for value in ("a", "b", "c"):
@@ -452,9 +454,11 @@ class TestAnInputListFilledInTheEditor:
         current_engine().handle_request(RemoveParameterFromNodeRequest(node_name=node.name, parameter_name=rows[1]))
         current_engine().library_manager._is_worker = is_worker
 
-        result = await _execute("ReadsAnInputListNode", node.name, **node._parameter_values_for_dispatch())
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            result = await _execute("ReadsAnInputListNode", node.name, **node._list_rows.values_for_dispatch())
 
         assert result.parameter_output_values["echo"] == ["a", "c"]
+        assert "does not exist on the executing copy" not in caplog.text
 
     @pytest.mark.parametrize("is_worker", [False, True])
     @pytest.mark.asyncio
@@ -466,7 +470,7 @@ class TestAnInputListFilledInTheEditor:
         )
         current_engine().library_manager._is_worker = is_worker
 
-        result = await _execute("ReadsAnInputListNode", node.name, **node._parameter_values_for_dispatch())
+        result = await _execute("ReadsAnInputListNode", node.name, **node._list_rows.values_for_dispatch())
 
         assert result.parameter_output_values["echo"] == ["a", "b"]
 

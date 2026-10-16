@@ -12,9 +12,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
-from packaging.version import InvalidVersion
-from packaging.version import Version as PackagingVersion
-
 from griptape_nodes.common.strict_mode import STRICT_MODE
 from griptape_nodes.common.strict_mode_checks import RULES
 from griptape_nodes.exe_types.core_types import (
@@ -24,15 +21,16 @@ from griptape_nodes.exe_types.core_types import (
     NodeMessageResult,
     Parameter,
     ParameterContainer,
-    ParameterDictionary,
     ParameterGroup,
     ParameterList,
     ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
 )
+from griptape_nodes.exe_types.list_rows import ListRows, handle_container_parameter
 from griptape_nodes.exe_types.local_objects import LocalObjectScope
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
+from griptape_nodes.exe_types.parameter_mutation import _sanctioned_mutation
 from griptape_nodes.exe_types.variable_resolver import VariableResolver
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -117,15 +115,6 @@ PRIVATE_EXECUTION = "Private Execution"
 CONTROL_INPUT_PARAMETER = "Control Input Selection"
 
 
-# Per-task flag: when set, parameter mutations on a node are explicitly
-# sanctioned by a request handler (AddParameterToNodeRequest /
-# RemoveParameterFromNodeRequest) and the parameter-mutation-during-aprocess
-# detector should not fire. The handler-side path is the legitimate way to
-# mutate parameters because it propagates the change back to the orchestrator
-# via the request bus; direct add_parameter / remove_parameter_element calls
-# from inside aprocess do not, and that is what the rule catches.
-_sanctioned_mutation: ContextVar[bool] = ContextVar("_node_types_sanctioned_mutation", default=False)
-
 # Per-task flag: True only while ``await node.aprocess()`` is on the stack.
 # The detector uses this to distinguish actual aprocess execution from the
 # surrounding RUNTIME_EXECUTE scope, which also wraps input hydration.
@@ -140,9 +129,6 @@ _in_aprocess: ContextVar[bool] = ContextVar("_node_types_in_aprocess", default=F
 # records a result needs the identity as well: a running node can set a value on a *different*
 # node, and on that node the value is an ordinary authored one, not something it produced.
 _running_node: ContextVar[BaseNode | None] = ContextVar("_node_types_running_node", default=None)
-
-# A library declaring this engine version or later has a whole list its nodes write become the list's rows.
-LIST_WRITES_FILL_ROWS_ENGINE_VERSION = PackagingVersion("0.105.0")
 
 
 class _PreservedTemplate(NamedTuple):
@@ -178,21 +164,6 @@ def _differs(raw_value: Any, output_value: Any) -> bool:
         return bool(raw_value != output_value)
     except Exception:
         return False
-
-
-@contextmanager
-def sanctioned_parameter_mutation() -> Iterator[None]:
-    """Mark the enclosed block as a request-driven parameter mutation.
-
-    Wraps add_parameter / remove_parameter_element calls inside
-    AddParameterToNodeRequest and RemoveParameterFromNodeRequest handlers
-    so the parameter-mutation-during-aprocess detector skips them.
-    """
-    token = _sanctioned_mutation.set(True)
-    try:
-        yield
-    finally:
-        _sanctioned_mutation.reset(token)
 
 
 @contextmanager
@@ -440,8 +411,7 @@ class BaseNode(ABC):
         # its own prior objects.
         self.local_object_source = f"{name}@{uuid.uuid4().hex[:8]}"
         self.parameter_values = {}
-        # Lists whose rows `_replace_list_rows` is replacing, so a write from a hook during it is stored as is.
-        self._lists_being_replaced: set[str] = set()
+        self._list_rows = ListRows(self)
         self.parameter_output_values = TrackedParameterOutputValues(self)
         self._local_objects = None
         self.root_ui_element = BaseNodeElement()
@@ -1136,7 +1106,9 @@ class BaseNode(ABC):
         if parameter is None:
             err = f"Attempted to set value for Parameter '{param_name}' but no such Parameter could be found."
             raise KeyError(err)
-        if self._fill_list_rows_from_node_code(parameter, value, initial_setup=initial_setup):
+        if self._list_rows.write_from_node(
+            parameter, value, initial_setup=initial_setup, running=_running_node.get() is self
+        ):
             return
         # Perform any conversions to the value based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
@@ -1154,38 +1126,27 @@ class BaseNode(ABC):
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         if not initial_setup:
-            if skip_before_value_set:
-                final_value = candidate_value
-            else:
-                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
-            # ACTUALLY SET THE NEW VALUE
-            self.parameter_values[param_name] = final_value
-            self._also_record_as_result(parameter, final_value)
+            # A row's hooks run while it is being set, so they mustn't replace its list's rows.
+            with self._list_rows.hooks_running(parameter.parent_container_name):
+                if skip_before_value_set:
+                    final_value = candidate_value
+                else:
+                    final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+                # ACTUALLY SET THE NEW VALUE
+                self.parameter_values[param_name] = final_value
+                self._also_record_as_result(parameter, final_value)
 
-            # If a parameter value has been set at the top level of a container, wipe all children.
-            # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-            self.after_value_set(parameter=parameter, value=final_value)
+                # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
+                self.after_value_set(parameter=parameter, value=final_value)
             if emit_change:
                 self._emit_parameter_lifecycle_event(parameter)
         else:
             self.parameter_values[param_name] = candidate_value
             self._also_record_as_result(parameter, candidate_value)
-        # handle with container parameters
         if parameter.parent_container_name is not None:
-            # Does it have a parent container
-            parent_parameter = self.get_parameter_by_name(parameter.parent_container_name)
-            # Does the parent container exist
-            if parent_parameter is not None:
-                # Get it's new value dependent on it's children
-                new_parent_value = handle_container_parameter(self, parent_parameter)
-                if new_parent_value is not None:
-                    # set that new value if it exists.
-                    self.set_parameter_value(
-                        parameter.parent_container_name,
-                        new_parent_value,
-                        initial_setup=initial_setup,
-                        emit_change=False,
-                    )
+            container = self.get_parameter_by_name(parameter.parent_container_name)
+            if isinstance(container, ParameterContainer):
+                self._list_rows.rows_changed(container, initial_setup=initial_setup)
 
     @staticmethod
     def _convert_value(parameter: Parameter, value: Any) -> Any:
@@ -1196,36 +1157,6 @@ class BaseNode(ABC):
         for converter in parameter.converters:
             candidate_value = converter(candidate_value)
         return candidate_value
-
-    def _fill_list_rows_from_node_code(self, parameter: Parameter, value: Any, *, initial_setup: bool) -> bool:
-        """Turn a whole list this node writes into the list's rows, if its library opted in. Returns whether it did.
-
-        A library opts in by declaring an `engine_version` of at least `LIST_WRITES_FILL_ROWS_ENGINE_VERSION`.
-        Older libraries write a list beside its rows and read it back, so their writes keep doing that.
-        """
-        if initial_setup or not isinstance(parameter, ParameterList):
-            return False
-        if _running_node.get() is self:
-            # Rows added during a run do not reach the node's copy in the orchestrator.
-            return False
-        if not self._library_fills_list_rows():
-            return False
-        return self._set_list_as_rows_if_unconnected(parameter, value)
-
-    def _library_fills_list_rows(self) -> bool:
-        """Whether this node's library declares an engine version where a whole list it writes fills the rows."""
-        library_name = self.metadata.get("library")
-        if not library_name:
-            return False
-        try:
-            library = LibraryRegistry.get_library(library_name)
-        except KeyError:
-            return False
-        try:
-            declared = PackagingVersion(library.get_metadata().engine_version)
-        except InvalidVersion:
-            return False
-        return declared >= LIST_WRITES_FILL_ROWS_ENGINE_VERSION
 
     def _also_record_as_result(self, parameter: Parameter, value: Any) -> None:
         """Additionally record `value` in `parameter_output_values` if it is something this run produced.
@@ -1314,9 +1245,7 @@ class BaseNode(ABC):
         if isinstance(param, ParameterList) and self._has_connected_whole_list_value(param):
             return self.parameter_values[param_name]
         if isinstance(param, ParameterContainer):
-            value = handle_container_parameter(self, param)
-            if value is not None:
-                return value
+            return handle_container_parameter(self, param)
         if param_name in self.parameter_values:
             value = self.parameter_values[param_name]
         else:
@@ -1356,21 +1285,14 @@ class BaseNode(ABC):
         if parameter is None:
             err = f"Attempted to remove value for Parameter '{param_name}' but parameter doesn't exist."
             raise KeyError(err)
-        if param_name in self.parameter_values:
+        if isinstance(parameter, ParameterContainer):
+            # Drops a value a connection handed the list, and leaves its rows as they are.
+            self.parameter_values.pop(param_name, None)
+        elif param_name in self.parameter_values:
             # Reset the parameter to default.
             default_val = parameter.default_value
+            # A row's set also tells its list.
             self.set_parameter_value(param_name, default_val)
-
-            # special handling if it's in a container.
-            if parameter.parent_container_name and parameter.parent_container_name in self.parameter_values:
-                del self.parameter_values[parameter.parent_container_name]
-                # Raw: this copies the remaining rows along rather than reading them for use. Resolving
-                # here would raise on a key whose object sits in a worker, out of a connection delete and
-                # out of the run's finally, and would write live objects back into parameter_values.
-                new_val = self._get_raw_parameter_value(parameter.parent_container_name)
-                if new_val is not None:
-                    # Don't set the container to None (that would make it empty)
-                    self.set_parameter_value(parameter.parent_container_name, new_val)
         else:
             err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
             raise KeyError(err)
@@ -1931,142 +1853,10 @@ class BaseNode(ABC):
             return False
         return any(connection.target_parameter_name == param_name for connection in result.incoming_connections)
 
-    def _parameter_values_for_dispatch(self) -> dict[str, Any]:
-        """`parameter_values`, with each list as the node reads it, to send with `ExecuteNodeRequest`.
-
-        A worker copy has no rows and builds them from this. A list's own entry can still hold items
-        whose rows were removed, in a workflow saved before the entry followed its rows.
-        """
-        values = dict(self.parameter_values)
-        for parameter in self.parameters:
-            if isinstance(parameter, ParameterList) and parameter.name in values:
-                values[parameter.name] = self._get_raw_parameter_value(parameter.name)
-        return values
-
-    def _connected_parameter_names(self, parameter_names: set[str]) -> set[str]:
-        """Which of `parameter_names` have a connection in either direction."""
-        result = self.engine.handle_request(ListConnectionsForNodeRequest(node_name=self.name, broadcast_result=False))
-        if not isinstance(result, ListConnectionsForNodeResultSuccess):
-            return set()
-        connected = {connection.target_parameter_name for connection in result.incoming_connections}
-        connected.update(connection.source_parameter_name for connection in result.outgoing_connections)
-        return connected & parameter_names
-
-    def _set_list_as_rows_if_unconnected(self, parameter: Parameter, value: Any) -> bool:
-        """Write a whole list to the rows of an unconnected list. Returns whether it did.
-
-        The engine calls this where a value arrives from outside the node: a request, and a worker
-        copy receiving the list it runs with. An unconnected list is read from its rows, so a list
-        stored beside them would never be read. Node code keeps writing the list's own entry.
-
-        Raises:
-            TypeError: if `value` is not a list.
-            ValueError: if there are more items than `max_items`, or a row is connected to another node.
-        """
-        if not isinstance(parameter, ParameterList) or value is None:
-            # None is how a value is cleared, and keeps its old meaning.
-            return False
-        modes = parameter.allowed_modes
-        if ParameterMode.INPUT not in modes and ParameterMode.PROPERTY not in modes:
-            # An output-only list is built by its own node, row by row.
-            return False
-        if isinstance(value, list) and value == handle_container_parameter(self, parameter):
-            return False
-        if parameter.name in self._lists_being_replaced:
-            # Storing it would leave the list's value and its rows disagreeing, and replacing the rows
-            # again would undo the rows being set.
-            logger.warning(
-                "Node '%s' set list '%s' while its items were being set, so the write was ignored. "
-                "Convert each item with the list's item_converters instead.",
-                self.name,
-                parameter.name,
-            )
-            return True
-        if self._param_has_incoming_connection(parameter.name):
-            # A connected list is read whole, and keeps the value as it arrived.
-            return False
-        self._replace_list_rows(parameter, value)
-        return True
-
-    def _replace_list_rows(self, parameter_list: ParameterList, items: Any) -> None:
-        """Replace the list's rows with one row per item, the way the editor fills a list.
-
-        Each row is set through `set_parameter_value`, so the node's hooks fire for each one. If an item
-        is rejected, the old rows are put back and the error is raised.
-
-        Raises:
-            TypeError: if `items` is not a list.
-            ValueError: if there are more items than `max_items`, or a row is connected to another node.
-        """
-        list_label = f"'{self.name}.{parameter_list.name}'"
-        if not isinstance(items, list):
-            msg = f"Attempted to set list {list_label}. Failed because a list can only be set to a list, but got a value of type '{type(items).__name__}'."
-            raise TypeError(msg)
-        max_items = parameter_list.max_items
-        if max_items is not None and len(items) > max_items:
-            msg = f"Attempted to set list {list_label} to {len(items)} items. Failed because the list holds at most {max_items} items."
-            raise ValueError(msg)
-        old_rows = parameter_list.get_child_parameters()
-        if self._connected_parameter_names({row.name for row in old_rows}):
-            msg = f"Attempted to set list {list_label}. Failed because some of its items are connected to other nodes, and replacing the items would remove those connections. Disconnect them first."
-            raise ValueError(msg)
-
-        old_values = {
-            row.name: self.parameter_values[row.name] for row in old_rows if row.name in self.parameter_values
-        }
-        with sanctioned_parameter_mutation():
-            for row in old_rows:
-                self.remove_parameter_element(row)
-        self._lists_being_replaced.add(parameter_list.name)
-        try:
-            for item in items:
-                row = parameter_list.add_child_parameter()
-                self.set_parameter_value(row.name, item)
-        except Exception:
-            # Converters, validators and hooks may raise anything. Undo, then let it propagate unchanged.
-            self._restore_list_rows(parameter_list, old_rows, old_values)
-            raise
-        finally:
-            self._lists_being_replaced.discard(parameter_list.name)
-        if not items:
-            # No row was set, so nothing refreshed the list or ran its hooks.
-            self.set_parameter_value(parameter_list.name, [])
-
-    def _restore_list_rows(self, parameter_list: ParameterList, rows: list[Parameter], values: dict[str, Any]) -> None:
-        """Put back the rows `_replace_list_rows` removed, with their values, and remove the ones it added."""
-        with sanctioned_parameter_mutation():
-            for row in parameter_list.get_child_parameters():
-                self.remove_parameter_element(row)
-        for row in rows:
-            parameter_list.add_child(row)
-        self.parameter_values.update(values)
-        # Written directly: rows are only replaced on a list nothing is connected to.
-        self.parameter_values[parameter_list.name] = handle_container_parameter(self, parameter_list)
-
-    def _on_list_row_removed(self, parameter_list: ParameterList, row: BaseNodeElement) -> None:
-        """Drop a removed row's value, and take it out of the list."""
-        self.parameter_values.pop(row.name, None)
-        self._refresh_list_value(parameter_list)
-
-    def _refresh_list_value(self, parameter_list: ParameterList) -> None:
-        """Rewrite the list's own entry from its rows, after a row was removed or moved.
-
-        The entry is what execution, saving and `GetParameterValueRequest` read. No hooks fire, since no
-        row's value changed.
-        """
-        if parameter_list.name not in self.parameter_values:
-            # Nothing stored, so reads and execution already take the list from its rows.
-            return
-        if self._param_has_incoming_connection(parameter_list.name):
-            # A connected list's entry is the value its connection delivered.
-            return
-        self.parameter_values[parameter_list.name] = handle_container_parameter(self, parameter_list)
-
     def _has_connected_whole_list_value(self, parameter_list: ParameterList) -> bool:
         """Whether a ParameterList was handed an entire list through a connection to the list itself.
 
-        Without that connection, `parameter_values[list_name]` mirrors the child rows, and the rows
-        are read directly.
+        Without that connection the list has no stored value, and is read from its rows.
 
         Warns when the incoming list overrides manually-set rows or overruns `max_items`, since both
         are silent data loss otherwise.
@@ -3113,37 +2903,3 @@ class Connection:
 
     def get_source_node(self) -> BaseNode:
         return self.source_node
-
-
-def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> Any:
-    """Process container parameters and build appropriate data structures.
-
-    This function handles ParameterContainer objects by collecting values from their child
-    parameters and constructing either a list or dictionary based on the container type.
-
-    Args:
-        current_node: The node containing parameter values
-        parameter: The parameter to process, which may be a container
-
-    Returns:
-        A list of parameter values if parameter is a ParameterContainer,
-        or None if the parameter is not a container
-    """
-    # if it's a container and it's value isn't already set.
-    if isinstance(parameter, ParameterContainer):
-        children = parameter.find_elements_by_type(Parameter, find_recursively=False)
-        if isinstance(parameter, ParameterList):
-            build_parameter_value = []
-        elif isinstance(parameter, ParameterDictionary):
-            build_parameter_value = {}
-        build_parameter_value = []
-        for child in children:
-            # Raw, because what this builds is cached into the container's own entry in
-            # `parameter_values`, and that dict is the payload of an ExecuteNodeRequest. Translating here
-            # would put a live object in it and send it to a worker as JSON. The node still sees objects:
-            # its read resolves the whole list on the way out.
-            value = current_node._get_raw_parameter_value(child.name)
-            if value is not None:
-                build_parameter_value.append(value)
-        return build_parameter_value
-    return None

@@ -576,7 +576,7 @@ for tool in tools:
 
 **Converting each item:** pass `item_converters` to change one item at a time, such as turning a file path into an
 artifact. They run on each item whether it is set in its own row or arrives in a whole list over a connection.
-`converters` run on the list as a whole.
+`converters` run on each row, and on a whole list a connection hands the list, but not on a value built from rows.
 
 ```python
 from functools import partial
@@ -596,11 +596,13 @@ ParameterList(
 )
 ```
 
-**Setting a whole list:** a list nothing is connected to holds its items in rows, one per item. Setting a whole list
-with `SetParameterValueRequest` replaces the rows with one row per item. A node in a library whose `engine_version`
-is `0.105.0` or later gets the same behavior from `self.set_parameter_value("images", [...])`, except while the node
-is running. In a library declaring an earlier `engine_version`, the node's write is stored beside the rows and the
-node reads the rows. Don't rewrite a list from `after_value_set` to convert its items: use `item_converters`.
+**Setting a whole list:** a list nothing is connected to holds its items in rows, one per item, and has no value of
+its own: reading it builds it from the rows. Setting a whole list, with `SetParameterValueRequest` or with
+`self.set_parameter_value("images", [...])`, replaces the rows with one row per item. Three writes leave the rows
+alone: one made while the node is running (it is recorded as the node's result), one made while a workflow loads,
+and one made from `before_value_set` or `after_value_set` on the list or one of its rows, which logs a warning.
+Don't rewrite a list from those hooks to convert its items: use `item_converters`. A list fed by a connection to the list itself holds the whole list it was
+handed.
 
 ## Common Parameter Patterns
 

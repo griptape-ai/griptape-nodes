@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from griptape_nodes.exe_types.workflow_node import WorkflowNode
+from griptape_nodes.files.path_utils import derive_registry_key
 from griptape_nodes.node_library.library_registry import (
     Library,
     LibraryMetadata,
@@ -20,6 +22,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import Wor
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from griptape_nodes.retained_mode.engine import Engine
@@ -32,12 +35,12 @@ _SHAPE = {
 }
 
 
-def _library_info() -> LibraryManager.LibraryInfo:
+def _library_info(library_path: str = "/fake/path", *, is_sandbox: bool = False) -> LibraryManager.LibraryInfo:
     return LibraryManager.LibraryInfo(
         lifecycle_state=LibraryManager.LibraryLifecycleState.EVALUATED,
         fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
-        library_path="/fake/path",
-        is_sandbox=False,
+        library_path=library_path,
+        is_sandbox=is_sandbox,
         library_name="TestLib",
         library_version="1.0.0",
     )
@@ -69,7 +72,7 @@ def _definition(workflow_path: str) -> WorkflowNodeDefinition:
     )
 
 
-def _write_workflow(tmp_path: Path, *, shape: dict[str, Any] | None) -> Path:
+def _write_workflow(tmp_path: Path, *, shape: dict[str, Any] | None, is_template: bool = False) -> Path:
     lines = [
         "# /// script",
         "# [tool.griptape-nodes]",
@@ -77,6 +80,8 @@ def _write_workflow(tmp_path: Path, *, shape: dict[str, Any] | None) -> Path:
         f'# schema_version = "{WorkflowMetadata.LATEST_SCHEMA_VERSION}"',
         '# engine_version_created_with = "0.0.0"',
         "# node_libraries_referenced = []",
+        "# is_griptape_provided = false",
+        f"# is_template = {str(is_template).lower()}",
     ]
     if shape is not None:
         encoded = json.dumps(json.dumps(shape, separators=(",", ":")))
@@ -152,6 +157,165 @@ class TestRegisterWorkflowNode:
         problem = library_info.problems[0]
         assert isinstance(problem, WorkflowNodeLoadProblem)
         assert "no saved input and output shape" in problem.error_message
+
+
+@pytest.fixture
+def workspace(engine: Engine, tmp_path: Path) -> Iterator[Path]:
+    """Point the engine's workspace at a fresh directory beside the test's library files."""
+    original = engine.config_manager.workspace_path
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    engine.config_manager.workspace_path = workspace_path
+    yield workspace_path
+    engine.config_manager.workspace_path = original
+
+
+def _register(
+    engine: Engine, workflow_dir: Path, library_info: LibraryManager.LibraryInfo | None = None
+) -> LibraryManager.LibraryInfo:
+    library = _library([_definition("demo_workflow.py")])
+    if library_info is None:
+        library_info = _library_info()
+    engine.library_manager.module_loading._register_workflow_node(
+        library.get_library_data().workflow_nodes[0],  # type: ignore[index]
+        workflow_dir,
+        library,
+        library_info,
+    )
+    return library_info
+
+
+class TestListWorkflowAtLoad:
+    """The workflow behind a `workflow_nodes` entry is listed when its library loads."""
+
+    def test_workflow_outside_the_workspace_is_listed_as_library_provided(
+        self, engine: Engine, tmp_path: Path, workspace: Path
+    ) -> None:
+        library_dir = tmp_path / "library"
+        library_dir.mkdir()
+        workflow_path = _write_workflow(library_dir, shape=_SHAPE)
+        assert not workflow_path.is_relative_to(workspace)
+
+        _register(engine, library_dir)
+
+        workflow = engine.workflow_registry.get_workflow_by_name(derive_registry_key(str(workflow_path)))
+        assert workflow.metadata.is_griptape_provided is True
+
+    def test_the_file_on_disk_is_not_rewritten(self, engine: Engine, tmp_path: Path, workspace: Path) -> None:  # noqa: ARG002
+        library_dir = tmp_path / "library"
+        library_dir.mkdir()
+        workflow_path = _write_workflow(library_dir, shape=_SHAPE)
+        original_text = workflow_path.read_text(encoding="utf-8")
+
+        _register(engine, library_dir)
+
+        assert workflow_path.read_text(encoding="utf-8") == original_text
+
+    @pytest.mark.parametrize("is_template", [True, False])
+    def test_template_status_comes_from_the_header(
+        self,
+        engine: Engine,
+        tmp_path: Path,
+        workspace: Path,  # noqa: ARG002
+        *,
+        is_template: bool,
+    ) -> None:
+        library_dir = tmp_path / "library"
+        library_dir.mkdir()
+        workflow_path = _write_workflow(library_dir, shape=_SHAPE, is_template=is_template)
+
+        _register(engine, library_dir)
+
+        workflow = engine.workflow_registry.get_workflow_by_name(derive_registry_key(str(workflow_path)))
+        assert workflow.metadata.is_template is is_template
+
+    def test_workflow_in_the_workspace_is_left_to_the_workspace_scan(self, engine: Engine, workspace: Path) -> None:
+        workflow_path = _write_workflow(workspace, shape=_SHAPE)
+
+        _register(engine, workspace)
+
+        registry_keys = engine.workflow_registry.list_workflows()
+        assert derive_registry_key(workflow_path.name) not in registry_keys
+        assert derive_registry_key(str(workflow_path)) not in registry_keys
+
+    def test_library_installed_in_the_workspace_is_listed_as_library_provided(
+        self, engine: Engine, workspace: Path
+    ) -> None:
+        """Libraries install to `<workspace>/libraries` by default, and the workspace scan skips them."""
+        library_dir = workspace / "libraries" / "demo-library"
+        library_dir.mkdir(parents=True)
+        _write_workflow(library_dir, shape=_SHAPE)
+
+        _register(engine, library_dir, _library_info(str(library_dir / "griptape_nodes_library.json")))
+
+        workflow = engine.workflow_registry.get_workflow_by_name("libraries/demo-library/demo_workflow")
+        assert workflow.metadata.is_griptape_provided is True
+
+    def test_sandbox_library_workflow_is_left_to_the_workspace_scan(self, engine: Engine, workspace: Path) -> None:
+        """The scan lists sandbox workflows as the user's own, so the library load leaves them to it."""
+        library_dir = workspace / "sandbox_library"
+        library_dir.mkdir()
+        _write_workflow(library_dir, shape=_SHAPE)
+
+        _register(
+            engine,
+            library_dir,
+            _library_info(str(library_dir / "griptape_nodes_library.json"), is_sandbox=True),
+        )
+
+        assert "sandbox_library/demo_workflow" not in engine.workflow_registry.list_workflows()
+
+    def test_loading_the_library_again_keeps_one_listing(
+        self,
+        engine: Engine,
+        tmp_path: Path,
+        workspace: Path,  # noqa: ARG002
+    ) -> None:
+        library_dir = tmp_path / "library"
+        library_dir.mkdir()
+        workflow_path = _write_workflow(library_dir, shape=_SHAPE)
+
+        _register(engine, library_dir)
+        second_info = _register(engine, library_dir)
+
+        assert second_info.problems == []
+        registry_key = derive_registry_key(str(workflow_path))
+        assert [key for key in engine.workflow_registry.list_workflows() if key == registry_key] == [registry_key]
+
+    def test_a_listing_failure_keeps_the_node_type(
+        self,
+        engine: Engine,
+        tmp_path: Path,
+        workspace: Path,  # noqa: ARG002
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        library_dir = tmp_path / "library"
+        library_dir.mkdir()
+        _write_workflow(library_dir, shape=_SHAPE)
+
+        def _vanished(*_args: object, **_kwargs: object) -> str:
+            msg = "File path does not exist."
+            raise ValueError(msg)
+
+        monkeypatch.setattr(
+            "griptape_nodes.retained_mode.managers.library.module_loading.ensure_workflow_registered", _vanished
+        )
+        library = _library([_definition("demo_workflow.py")])
+        library_info = _library_info()
+
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            registered = engine.library_manager.module_loading._register_workflow_node(
+                library.get_library_data().workflow_nodes[0],  # type: ignore[index]
+                library_dir,
+                library,
+                library_info,
+            )
+
+        assert registered is True
+        assert library.has_node_type(NODE_TYPE)
+        assert library_info.problems == []
+        assert "could not list the workflow" in caplog.text
 
 
 class TestWorkflowNodeLoadProblemDisplay:

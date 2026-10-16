@@ -17,7 +17,7 @@ from collections.abc import Generator
 from io import BytesIO
 from pathlib import Path
 from typing import IO
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import portalocker
 import portalocker.utils
@@ -30,7 +30,7 @@ from griptape_nodes.common.project_templates.situation import SituationFilePolic
 from griptape_nodes.files.file import File, FileDestination, FileLoadError, FileWriteError
 from griptape_nodes.retained_mode.engine import Engine
 from griptape_nodes.retained_mode.events.artifact_events import RegisterArtifactProviderRequest
-from griptape_nodes.retained_mode.events.base_events import ResultDetails
+from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayloadFailure
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     FileIOFailureReason,
@@ -91,7 +91,7 @@ class TestCreateNewWarningLevelResultDetails:
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         # Should succeed but with indexed filename
         assert isinstance(result, WriteFileResultSuccess)
@@ -119,7 +119,7 @@ class TestCreateNewWarningLevelResultDetails:
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         # Should succeed with requested filename
         assert isinstance(result, WriteFileResultSuccess)
@@ -146,7 +146,7 @@ class TestCreateNewWarningLevelResultDetails:
             content="Content 1",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result1 = os_manager.on_write_file_request(request1)
+        result1 = os_manager.engine.handle_request(request1)
         assert isinstance(result1, WriteFileResultSuccess)
         assert isinstance(result1.result_details, ResultDetails)
         assert result1.result_details.result_details[0].level == logging.DEBUG
@@ -157,7 +157,7 @@ class TestCreateNewWarningLevelResultDetails:
             content="Content 2",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result2 = os_manager.on_write_file_request(request2)
+        result2 = os_manager.engine.handle_request(request2)
         assert isinstance(result2, WriteFileResultSuccess)
         assert isinstance(result2.result_details, ResultDetails)
         assert result2.result_details.result_details[0].level == logging.DEBUG
@@ -189,7 +189,7 @@ class TestBlanketExceptionHandling:
 
         # Mock _resolve_file_path to raise unexpected exception (not ValueError/RuntimeError)
         with patch.object(os_manager, "_resolve_file_path", side_effect=TypeError("Unexpected type error")):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.IO_ERROR
@@ -208,7 +208,7 @@ class TestBlanketExceptionHandling:
             "griptape_nodes.retained_mode.managers.os_manager.atomic_write_bytes",
             side_effect=OSError("Unexpected I/O error"),
         ):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.IO_ERROR
@@ -230,7 +230,7 @@ class TestBlanketExceptionHandling:
         file_path = temp_dir / "text.txt"
         request = WriteFileRequest(file_path=str(file_path), content="line one\nline two\n")
 
-        result = engine.os_manager.on_write_file_request(request)
+        result = engine.os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.read_bytes() == b"line one\r\nline two\r\n"
@@ -240,7 +240,7 @@ class TestBlanketExceptionHandling:
         file_path = temp_dir / "text.txt"
         request = WriteFileRequest(file_path=str(file_path), content="naïve café", encoding="ascii")
 
-        result = engine.os_manager.on_write_file_request(request)
+        result = engine.os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.ENCODING_ERROR
@@ -254,7 +254,7 @@ class TestBlanketExceptionHandling:
             "griptape_nodes.retained_mode.managers.os_manager.atomic_write_bytes",
             side_effect=IsADirectoryError("that is a directory"),
         ):
-            result = engine.os_manager.on_write_file_request(request)
+            result = engine.os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.IS_DIRECTORY
@@ -270,7 +270,7 @@ class TestBlanketExceptionHandling:
             "griptape_nodes.retained_mode.managers.os_manager.atomic_write_bytes",
             side_effect=locked_error,
         ):
-            result = engine.os_manager.on_write_file_request(request)
+            result = engine.os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.FILE_LOCKED
@@ -295,7 +295,7 @@ class TestBlanketExceptionHandling:
             "griptape_nodes.retained_mode.managers.os_manager.atomic_write_bytes",
             side_effect=OSError(errno.ENOSPC, "No space left on device"),
         ):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.DISK_FULL
@@ -327,7 +327,7 @@ class TestBlanketExceptionHandling:
             raise TypeError(msg)
 
         with patch.object(ParsedMacro, "resolve", mock_resolve):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.IO_ERROR
@@ -363,7 +363,7 @@ class TestParentDirectoryMatchCase:
         with patch.object(
             os_manager, "_ensure_parent_directory_ready", return_value=FileIOFailureReason.PERMISSION_DENIED
         ):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
@@ -379,7 +379,7 @@ class TestParentDirectoryMatchCase:
 
         request = WriteFileRequest(file_path=str(file_path), content="Content", create_parents=False)
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS
@@ -398,7 +398,7 @@ class TestParentDirectoryMatchCase:
 
         # Mock _ensure_parent_directory_ready to return IO_ERROR (not permission or policy)
         with patch.object(os_manager, "_ensure_parent_directory_ready", return_value=FileIOFailureReason.IO_ERROR):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.IO_ERROR
@@ -452,7 +452,7 @@ class TestOnDemandCandidateGeneration:
             return original_resolve(self, *args, **kwargs)  # type: ignore[arg-type]
 
         with patch.object(ParsedMacro, "resolve", counting_resolve):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert (temp_dir / "output_5.txt").exists()
@@ -491,7 +491,7 @@ class TestOnDemandCandidateGeneration:
             return original_write(*args, **kwargs)  # type: ignore[arg-type]
 
         with patch.object(os_manager, "_write_with_portalocker", tracking_write):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
 
@@ -522,7 +522,7 @@ class TestMetadataInjection:
         engine.config_manager.workspace_path = original_workspace
 
     def test_metadata_injected_for_bytes_content(self, engine: Engine, temp_dir: Path) -> None:
-        """Test that prepare_content_for_write is called for bytes content."""
+        """Test that metadata is collected and embedded for bytes content."""
         os_manager = engine.os_manager
         file_path = temp_dir / "image.png"
         original_bytes = b"fake png bytes"
@@ -530,13 +530,17 @@ class TestMetadataInjection:
 
         request = WriteFileRequest(file_path=str(file_path), content=original_bytes)
 
-        with patch.object(
-            engine.artifact_manager, "prepare_content_for_write", return_value=injected_bytes
-        ) as mock_prepare:
-            result = os_manager.on_write_file_request(request)
+        metadata = {"gtn_saved_at": "2024-01-01T00:00:00+00:00"}
+        provider = MagicMock()
+        provider.collect_metadata_for_write.return_value = metadata
+        provider.prepare_content_for_write.return_value = injected_bytes
+        with patch.object(engine.artifact_manager, "provider_for_write", return_value=provider) as mock_lookup:
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
-        mock_prepare.assert_called_once_with(original_bytes, "image.png")
+        mock_lookup.assert_called_once_with("image.png")
+        provider.collect_metadata_for_write.assert_called_once_with("image.png")
+        provider.prepare_content_for_write.assert_called_once_with(original_bytes, "image.png", metadata)
 
     def test_metadata_not_injected_when_skip_flag_set(self, engine: Engine, temp_dir: Path) -> None:
         """Test that injection is skipped when skip_metadata_injection=True."""
@@ -549,8 +553,8 @@ class TestMetadataInjection:
             skip_metadata_injection=True,
         )
 
-        with patch.object(engine.artifact_manager, "prepare_content_for_write") as mock_prepare:
-            result = os_manager.on_write_file_request(request)
+        with patch.object(engine.artifact_manager, "provider_for_write") as mock_prepare:
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         mock_prepare.assert_not_called()
@@ -570,9 +574,9 @@ class TestMetadataInjection:
                     False if key == "auto_inject_workflow_metadata" else kwargs.get("default")
                 ),
             ),
-            patch.object(engine.artifact_manager, "prepare_content_for_write") as mock_prepare,
+            patch.object(engine.artifact_manager, "provider_for_write") as mock_prepare,
         ):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         mock_prepare.assert_not_called()
@@ -584,8 +588,8 @@ class TestMetadataInjection:
 
         request = WriteFileRequest(file_path=str(file_path), content="text content")
 
-        with patch.object(engine.artifact_manager, "prepare_content_for_write") as mock_prepare:
-            result = os_manager.on_write_file_request(request)
+        with patch.object(engine.artifact_manager, "provider_for_write") as mock_prepare:
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         mock_prepare.assert_not_called()
@@ -604,7 +608,7 @@ class TestMetadataInjection:
         request = WriteFileRequest(file_path=str(file_path), content=original_bytes)
 
         with patch(self.INJECT_PATH, side_effect=RuntimeError("injection failed")), caplog.at_level(logging.WARNING):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.read_bytes() == original_bytes
@@ -619,8 +623,11 @@ class TestMetadataInjection:
 
         request = WriteFileRequest(file_path=str(file_path), content=original_bytes)
 
-        with patch.object(engine.artifact_manager, "prepare_content_for_write", return_value=injected_bytes):
-            result = os_manager.on_write_file_request(request)
+        provider = MagicMock()
+        provider.collect_metadata_for_write.return_value = {"k": "v"}
+        provider.prepare_content_for_write.return_value = injected_bytes
+        with patch.object(engine.artifact_manager, "provider_for_write", return_value=provider):
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.read_bytes() == injected_bytes
@@ -669,7 +676,7 @@ class TestSidecarMetadata:
         file_path = temp_dir / "output.txt"
 
         request = WriteFileRequest(file_path=str(file_path), content="hello")
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
@@ -686,7 +693,7 @@ class TestSidecarMetadata:
         )
 
         request = WriteFileRequest(file_path=str(file_path), content="hello", file_metadata=file_metadata)
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         sidecar_path = temp_dir / ".griptape-nodes-metadata" / "output.txt.json"
@@ -710,7 +717,7 @@ class TestSidecarMetadata:
         )
 
         request = WriteFileRequest(file_path=str(file_path), content=b"", file_metadata=file_metadata)
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         sidecar_path = temp_dir / ".griptape-nodes-metadata" / "image.png.json"
@@ -737,7 +744,7 @@ class TestSidecarMetadata:
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
             file_metadata=file_metadata,
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         actual_path = Path(result.final_file_path)
@@ -776,7 +783,7 @@ class TestSidecarMetadata:
             content=_jpeg_bytes(),
             file_metadata=file_metadata,
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # File landed at the caller's requested suffix (alias -> no swap).
@@ -835,7 +842,7 @@ class TestExtensionCoercion:
 
         request = WriteFileRequest(file_path=str(requested_path), content=_jpeg_bytes())
         with caplog.at_level(logging.WARNING):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         coerced_path = temp_dir / "image.jpg"
@@ -854,7 +861,7 @@ class TestExtensionCoercion:
             content=_jpeg_bytes(),
             coerce_extension_to_match_bytes=False,
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.EXTENSION_MISMATCH
@@ -867,7 +874,7 @@ class TestExtensionCoercion:
         requested_path = temp_dir / "image.png"
 
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert Path(result.final_file_path) == requested_path
@@ -882,7 +889,7 @@ class TestExtensionCoercion:
 
         request = WriteFileRequest(file_path=str(requested_path), content=b"\x00\x01\x02\x03 not a known format")
         with caplog.at_level(logging.WARNING):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert Path(result.final_file_path) == requested_path
@@ -906,7 +913,7 @@ class TestExtensionCoercion:
             content=_jpeg_bytes(),
             file_metadata=file_metadata,
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # The mutation happens before write_sidecar runs, so the in-memory metadata
@@ -922,7 +929,7 @@ class TestExtensionCoercion:
         requested_path = temp_dir / "notes.png"
 
         request = WriteFileRequest(file_path=str(requested_path), content="just some text")
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert Path(result.final_file_path) == requested_path
@@ -985,7 +992,7 @@ class TestOSWritePermissionVet:
         os_manager = engine.os_manager
         requested_path = temp_dir / "image.png"
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.CODEC_NOT_PERMITTED
@@ -1004,7 +1011,7 @@ class TestOSWritePermissionVet:
         requested_path = temp_dir / "image.png"
 
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert Path(result.final_file_path) == requested_path
@@ -1028,7 +1035,7 @@ class TestOSWritePermissionVet:
         requested_path = temp_dir / "blob.dat"
 
         request = WriteFileRequest(file_path=str(requested_path), content=b"\x00\x01 not a known format")
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert called == []
@@ -1067,7 +1074,7 @@ class TestOSWritePermissionVet:
         # this would return Success and leave the file on disk.
         requested_path = temp_dir / "movie"
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.CODEC_NOT_PERMITTED
@@ -1091,7 +1098,7 @@ class TestOSWritePermissionVet:
         requested_path.write_bytes(_png_bytes())
 
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes(), append=True)
-        os_manager.on_write_file_request(request)
+        os_manager.engine.handle_request(request)
 
         assert called == []
 
@@ -1113,9 +1120,11 @@ class TestOSWritePermissionVet:
         os_manager = engine.os_manager
         requested_path = temp_dir / "image.png"
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
-        with pytest.raises(RuntimeError, match="Unrecognized WriteVettingPolicy"):
-            os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
+        assert isinstance(result, ResultPayloadFailure)
+        assert isinstance(result.exception, RuntimeError)
+        assert "Unrecognized WriteVettingPolicy" in str(result.exception)
         assert not requested_path.exists()
 
     def test_from_path_policy_stages_bytes_and_provides_path_to_provider(
@@ -1146,7 +1155,7 @@ class TestOSWritePermissionVet:
         os_manager = engine.os_manager
         requested_path = temp_dir / "image.png"
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         # Allowed: the write proceeds to the real destination.
         assert isinstance(result, WriteFileResultSuccess)
@@ -1189,7 +1198,7 @@ class TestOSWritePermissionVet:
 
         requested_path = temp_dir / "image.png"
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.CODEC_NOT_PERMITTED
@@ -1254,7 +1263,7 @@ class TestOSWritePermissionVet:
 
         requested_path = temp_dir / "image.png"
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
-        result = engine.os_manager.on_write_file_request(request)
+        result = engine.os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # Exactly one DeleteFileRequest for the staged temp; not more (would
@@ -1341,14 +1350,14 @@ class TestExtensionCoercionDoesNotClobberPriorSave:
         os_manager = engine.os_manager
         requested_path = outputs_dir / "output.png"
 
-        first_result = os_manager.on_write_file_request(
+        first_result = os_manager.engine.handle_request(
             WriteFileRequest(
                 file_path=str(requested_path),
                 content=_jpeg_bytes(),
                 existing_file_policy=ExistingFilePolicy.CREATE_NEW,
             )
         )
-        second_result = os_manager.on_write_file_request(
+        second_result = os_manager.engine.handle_request(
             WriteFileRequest(
                 file_path=str(requested_path),
                 content=_jpeg_bytes(),
@@ -2304,7 +2313,7 @@ class TestFailedWriteLeavesNoLitter:
         self._fail_lock_times(monkeypatch, count=None)
         target = outputs_dir / "single.png"
 
-        result = engine.os_manager.on_write_file_request(
+        result = engine.os_manager.engine.handle_request(
             WriteFileRequest(
                 file_path=str(target),
                 content=b"payload",
@@ -2328,7 +2337,7 @@ class TestFailedWriteLeavesNoLitter:
         monkeypatch.setattr("griptape_nodes.retained_mode.managers.os_manager.os.fsync", exploding_fsync)
         target = outputs_dir / "partial.png"
 
-        result = engine.os_manager.on_write_file_request(
+        result = engine.os_manager.engine.handle_request(
             WriteFileRequest(
                 file_path=str(target),
                 content=b"A" * 4096,
@@ -2379,7 +2388,7 @@ class TestFailedWriteLeavesNoLitter:
 
         monkeypatch.setattr("griptape_nodes.utils.file_utils.os.fsync", failing_fsync)
 
-        result = engine.os_manager.on_write_file_request(
+        result = engine.os_manager.engine.handle_request(
             WriteFileRequest(
                 file_path=str(target),
                 content=b"replacement",
@@ -2399,7 +2408,7 @@ class TestMacroFailureMessageIsReadable:
     def test_failure_details_show_template_not_dataclass_repr(self, engine: Engine) -> None:
         template = "{outputs}/{file_name_base}_v{###}.{file_extension}"
 
-        result = engine.os_manager.on_write_file_request(
+        result = engine.os_manager.engine.handle_request(
             WriteFileRequest(
                 file_path=MacroPath(ParsedMacro(template), {}),
                 content=b"payload",

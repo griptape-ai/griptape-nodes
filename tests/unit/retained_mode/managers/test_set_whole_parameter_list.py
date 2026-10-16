@@ -5,14 +5,13 @@ A request that hands the list over in one piece (an MCP client, an agent, a scri
 in the same place, or the request succeeds and the node runs with an empty list.
 """
 
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.list_rows import ListRows
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, aprocess_scope
-from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.engine import Engine
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
@@ -350,18 +349,7 @@ class TestTheListFollowsItsRows:
         node = _add(engine, _ListNode(name="Lister"), flow_name)
         node.parameter_values["items"] = ["removed"]
 
-        assert node._parameter_values_for_dispatch()["items"] == []
-
-
-class TestNodeCode:
-    def test_a_node_setting_its_own_list_keeps_writing_the_list(self, engine: Engine, flow_name: str) -> None:
-        """Libraries normalize a list in `after_value_set` and read the entry back, so rows stay as they are."""
-        node = _add(engine, _ListNode(name="Lister"), flow_name)
-
-        node.set_parameter_value("items", ["a", "b"])
-
-        assert _rows(node) == []
-        assert node.parameter_values["items"] == ["a", "b"]
+        assert node._list_rows.values_for_dispatch()["items"] == []
 
 
 class TestLoadingASavedWorkflow:
@@ -378,8 +366,8 @@ class TestLoadingASavedWorkflow:
         assert [r.name for r in _rows(node)] == [row]
         assert node.get_parameter_value("items") == ["saved"]
 
-    def test_a_list_saved_without_rows_loads_as_before(self, engine: Engine, flow_name: str) -> None:
-        """Its items may be ones whose rows were removed, so they must not come back as rows."""
+    def test_a_list_saved_without_rows_gets_no_rows(self, engine: Engine, flow_name: str) -> None:
+        """Only saved rows become rows."""
         node = _add(engine, _ListNode(name="Lister"), flow_name)
 
         engine.handle_request(
@@ -485,25 +473,17 @@ class _NormalizingListNode(_ListNode):
                 self.set_parameter_value("items", shouted)
 
 
-@pytest.fixture
-def opted_in() -> object:
-    """Treat every node as coming from a library that declares an engine version that fills rows."""
-    with patch.object(BaseNode, "_library_fills_list_rows", return_value=True):
-        yield
-
-
-class TestALibraryThatOptsIn:
-    @pytest.mark.usefixtures("opted_in")
-    def test_a_node_setting_its_own_list_fills_its_rows(self, engine: Engine, flow_name: str) -> None:
+class TestNodeCodeWritingItsList:
+    def test_it_fills_the_rows(self, engine: Engine, flow_name: str) -> None:
         node = _add(engine, _ListNode(name="Lister"), flow_name)
+        _add_row(engine, "a")
 
-        node.set_parameter_value("items", ["a", "b"])
+        node.set_parameter_value("items", ["x", "y"])
 
-        assert [node.get_parameter_value(row.name) for row in _rows(node)] == ["a", "b"]
-        assert _get_items(engine) == ["a", "b"]
+        assert [node.get_parameter_value(row.name) for row in _rows(node)] == ["x", "y"]
+        assert "items" not in node.parameter_values
 
-    @pytest.mark.usefixtures("opted_in")
-    def test_a_running_node_keeps_writing_the_list(self, engine: Engine, flow_name: str) -> None:
+    def test_a_running_node_leaves_the_rows(self, engine: Engine, flow_name: str) -> None:
         """Rows a node adds while it runs in a worker would not reach the orchestrator."""
         node = _add(engine, _ListNode(name="Lister"), flow_name)
 
@@ -512,8 +492,33 @@ class TestALibraryThatOptsIn:
 
         assert _rows(node) == []
 
-    @pytest.mark.usefixtures("opted_in")
-    def test_a_hook_rewriting_the_list_while_rows_fill_is_ignored(self, engine: Engine, flow_name: str) -> None:
+    def test_a_hook_rewriting_its_list_after_a_row_edit_changes_nothing(self, engine: Engine, flow_name: str) -> None:
+        """A row edit from the editor fires the list's hook, and a rewrite there would replace every row."""
+        node = _add(engine, _NormalizingListNode(name="Lister"), flow_name)
+        row = _add_row(engine, "a")
+
+        assert [r.name for r in _rows(node)] == [row]
+        assert _get_items(engine) == ["a"]
+
+    def test_clearing_its_value_leaves_the_rows(self, engine: Engine, flow_name: str) -> None:
+        """Disconnecting a list handed a whole list clears its value this way."""
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        _add_row(engine, "a")
+
+        node.remove_parameter_value("items")
+
+        assert _get_items(engine) == ["a"]
+
+    def test_a_running_node_records_its_output_list(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _OutputListNode(name="Lister"), flow_name)
+
+        with aprocess_scope(node=node):
+            node.set_parameter_value("items", ["a", "b"])
+
+        assert node.parameter_output_values["items"] == ["a", "b"]
+
+    def test_a_hook_rewriting_the_list_while_rows_fill_changes_nothing(self, engine: Engine, flow_name: str) -> None:
+        """Libraries written for older engines normalize their list this way."""
         node = _add(engine, _NormalizingListNode(name="Lister"), flow_name)
 
         _set_items(engine, ["a", "b"])
@@ -522,22 +527,251 @@ class TestALibraryThatOptsIn:
         assert _get_items(engine) == ["a", "b"]
 
 
-class TestWhichLibrariesOptIn:
-    @pytest.mark.parametrize(
-        ("declared", "fills_rows"),
-        [("0.105.0", True), ("0.106.2", True), ("0.104.1", False), ("not a version", False)],
-    )
-    def test_it_follows_the_declared_engine_version(
-        self, engine: Engine, flow_name: str, declared: str, *, fills_rows: bool
+def _bracket(value: object) -> object:
+    """Not idempotent, so running it twice on an item shows. Passes None through, as clearing a row sends it."""
+    if value is None:
+        return None
+    return f"[{value}]"
+
+
+class _BracketingListNode(BaseNode):
+    def __init__(self, name: str) -> None:
+        super().__init__(name=name)
+        self.add_parameter(
+            ParameterList(
+                name="items",
+                input_types=["str"],
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                item_converters=[_bracket],
+            )
+        )
+
+    def process(self) -> None:
+        return None
+
+
+class TestItemConvertersRunOncePerItem:
+    def test_a_row_set_by_the_editor(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _BracketingListNode(name="Lister"), flow_name)
+
+        row = _add_row(engine, "a")
+
+        assert node.get_parameter_value(row) == "[a]"
+        assert _get_items(engine) == ["[a]"]
+
+    def test_a_whole_list_set_by_request(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _BracketingListNode(name="Lister"), flow_name)
+
+        _set_items(engine, ["a", "b"])
+
+        assert _get_items(engine) == ["[a]", "[b]"]
+
+
+class TestDispatch:
+    def test_a_list_is_sent_without_its_rows(self, engine: Engine, flow_name: str) -> None:
+        """A worker builds its own rows, with new names, from the list."""
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        rows = [_add_row(engine, value) for value in ("a", "b")]
+
+        values = node._list_rows.values_for_dispatch()
+
+        assert values["items"] == ["a", "b"]
+        assert not set(rows) & set(values)
+
+    def test_a_list_built_from_its_rows_is_sent(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        row = _add_row(engine, "a")
+        assert "items" not in node.parameter_values
+
+        values = node._list_rows.values_for_dispatch()
+
+        assert values["items"] == ["a"]
+        assert row not in values
+
+
+class TestFillingRowsOnACopyWithNone:
+    def test_it_does_not_ask_about_connections_to_rows_it_does_not_have(self, engine: Engine, flow_name: str) -> None:
+        """On a worker that question goes to the orchestrator, so it costs a round trip."""
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+
+        with patch.object(ListRows, "_connected_parameter_names", return_value=set()) as asked:
+            _set_items(engine, ["a"])
+
+        asked.assert_not_called()
+        assert _get_items(engine) == ["a"]
+        assert len(_rows(node)) == 1
+
+
+class _ListHookNode(_BracketingListNode):
+    """Records each value its list's `after_value_set` receives, as Path Join's output does."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name=name)
+        self.seen_lists: list[object] = []
+
+    def after_value_set(self, parameter: Parameter, value: object) -> None:
+        if parameter.name == "items":
+            self.seen_lists.append(value)
+
+
+class TestTheListHearsEveryRowEdit:
+    def test_removing_a_row(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListHookNode(name="Lister"), flow_name)
+        rows = [_add_row(engine, value) for value in ("a", "b")]
+        node.seen_lists.clear()
+
+        engine.handle_request(RemoveParameterFromNodeRequest(node_name="Lister", parameter_name=rows[0]))
+
+        assert node.seen_lists == [["[b]"]]
+
+    def test_moving_a_row(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListHookNode(name="Lister"), flow_name)
+        for value in ("a", "b"):
+            _add_row(engine, value)
+        node.seen_lists.clear()
+
+        engine.handle_request(
+            ReorderParameterListItemRequest(node_name="Lister", parameter_list_name="items", from_index=0, to_index=1)
+        )
+
+        assert node.seen_lists == [["[b]", "[a]"]]
+
+    def test_a_whole_list_set_is_heard_once(self, engine: Engine, flow_name: str) -> None:
+        """Not once per row with the list half filled."""
+        node = _add(engine, _ListHookNode(name="Lister"), flow_name)
+
+        _set_items(engine, ["a", "b"])
+
+        assert node.seen_lists == [["[a]", "[b]"]]
+
+    def test_clearing_a_row_value_converts_the_rest_once(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListHookNode(name="Lister"), flow_name)
+        rows = [_add_row(engine, value) for value in ("a", "b")]
+
+        node.remove_parameter_value(rows[0])
+
+        assert _get_items(engine) == ["[b]"]
+
+
+class TestARowEditOnAConnectedList:
+    def test_keeps_the_value_its_connection_delivered(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _Source(name="Source"), flow_name)
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        row = _add_row(engine, "manual")
+        engine.handle_request(
+            CreateConnectionRequest(
+                source_node_name="Source",
+                source_parameter_name="out",
+                target_node_name="Lister",
+                target_parameter_name="items",
+            )
+        )
+        engine.handle_request(
+            SetParameterValueRequest(
+                node_name="Lister",
+                parameter_name="items",
+                value=["x", "y"],
+                incoming_connection_source_node_name="Source",
+                incoming_connection_source_parameter_name="out",
+            )
+        )
+
+        engine.handle_request(RemoveParameterFromNodeRequest(node_name="Lister", parameter_name=row))
+
+        assert node.get_parameter_value("items") == ["x", "y"]
+
+
+class TestAnUnconnectedListStoresNothing:
+    def test_after_rows_are_set_removed_and_moved(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        rows = [_add_row(engine, value) for value in ("a", "b", "c")]
+        engine.handle_request(RemoveParameterFromNodeRequest(node_name="Lister", parameter_name=rows[0]))
+        engine.handle_request(
+            ReorderParameterListItemRequest(node_name="Lister", parameter_list_name="items", from_index=0, to_index=1)
+        )
+
+        assert "items" not in node.parameter_values
+        assert _get_items(engine) == ["c", "b"]
+
+    def test_after_a_whole_list_set(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+
+        _set_items(engine, ["a", "b"])
+
+        assert "items" not in node.parameter_values
+
+
+class _RowHookRewritesList(_ListNode):
+    """Rewrites its whole list from a row's hook, not the list's own."""
+
+    def after_value_set(self, parameter: Parameter, value: object) -> None:
+        if parameter.parent_container_name == "items" and isinstance(value, str) and not value.isupper():
+            self.set_parameter_value("items", [str(item).upper() for item in self.get_parameter_value("items")])
+
+
+class TestAHookWritingItsList:
+    def test_from_a_row_hook_leaves_the_rows(self, engine: Engine, flow_name: str) -> None:
+        """Replacing the rows there would remove the row being set."""
+        node = _add(engine, _RowHookRewritesList(name="Lister"), flow_name)
+
+        rows = [_add_row(engine, value) for value in ("a", "b")]
+
+        assert [row.name for row in _rows(node)] == rows
+        assert _get_items(engine) == ["a", "b"]
+
+    def test_is_warned_about_once(self, engine: Engine, flow_name: str, caplog: pytest.LogCaptureFixture) -> None:
+        _add(engine, _RowHookRewritesList(name="Lister"), flow_name)
+
+        with caplog.at_level("WARNING", logger="griptape_nodes"):
+            for value in ("a", "b"):
+                _add_row(engine, value)
+
+        warnings = [record for record in caplog.records if "from a value hook" in record.getMessage()]
+        assert len(warnings) == 1
+
+    def test_that_changes_nothing_is_not_warned_about(
+        self, engine: Engine, flow_name: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Libraries rewrite their list only when converting changed it."""
+        _add(engine, _NormalizingListNode(name="Lister"), flow_name)
+
+        with caplog.at_level("WARNING", logger="griptape_nodes"):
+            _add_row(engine, "A")
+
+        assert "from a value hook" not in caplog.text
+
+
+class TestAWorkerFillingItsCopy:
+    @pytest.fixture
+    def worker(self, engine: Engine) -> object:
+        engine.library_manager._is_worker = True
+        yield
+        engine.library_manager._is_worker = False
+
+    @pytest.mark.usefixtures("worker")
+    @pytest.mark.parametrize("items", [["a", "b", "c"], []])
+    def test_does_not_ask_the_orchestrator_about_connections(
+        self, engine: Engine, flow_name: str, items: list[str]
     ) -> None:
         node = _add(engine, _ListNode(name="Lister"), flow_name)
-        node.metadata["library"] = "Some Library"
-        library = SimpleNamespace(get_metadata=lambda: SimpleNamespace(engine_version=declared))
 
-        with patch.object(LibraryRegistry, "get_library", return_value=library):
-            assert node._library_fills_list_rows() is fills_rows
+        with patch.object(BaseNode, "_param_has_incoming_connection", return_value=False) as asked:
+            failure = engine.node_manager._apply_hydrated_values(node, "Lister", {"items": items})
 
-    def test_a_node_from_no_library_does_not(self, engine: Engine, flow_name: str) -> None:
-        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        assert failure is None
+        asked.assert_not_called()
+        assert node.get_parameter_value("items") == items
 
-        assert node._library_fills_list_rows() is False
+    @pytest.mark.usefixtures("worker")
+    def test_a_connected_list_over_max_items_runs_with_every_item(self, engine: Engine, flow_name: str) -> None:
+        """The orchestrator warns and runs with the whole list, so the worker must too."""
+        node = _add(engine, _ListNode(name="Lister", max_items=2), flow_name)
+
+        with patch.object(BaseNode, "_param_has_incoming_connection", return_value=True):
+            failure = engine.node_manager._apply_hydrated_values(node, "Lister", {"items": ["a", "b", "c"]})
+            value = node.get_parameter_value("items")
+
+        assert failure is None
+        assert value == ["a", "b", "c"]
+        assert _rows(node) == []

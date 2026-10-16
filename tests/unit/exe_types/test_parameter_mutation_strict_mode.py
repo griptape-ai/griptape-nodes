@@ -13,7 +13,8 @@ import pytest
 
 from griptape_nodes.common.strict_mode import STRICT_MODE, StrictModeScopeKind
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import aprocess_scope, sanctioned_parameter_mutation
+from griptape_nodes.exe_types.node_types import aprocess_scope
+from griptape_nodes.exe_types.parameter_mutation import sanctioned_parameter_mutation
 from griptape_nodes.node_library.library_registry import LibraryRegistry, _constructing_node
 
 from .mocks import MockNode

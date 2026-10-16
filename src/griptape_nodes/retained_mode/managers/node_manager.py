@@ -55,8 +55,8 @@ from griptape_nodes.exe_types.node_types import (
     TransformedParameterValue,
     _values_differ,
     aprocess_scope,
-    sanctioned_parameter_mutation,
 )
+from griptape_nodes.exe_types.parameter_mutation import sanctioned_parameter_mutation
 from griptape_nodes.exe_types.trait_state import TraitStateEntry
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.node_library.library_declarations import (
@@ -2628,6 +2628,9 @@ class NodeManager(EngineScoped):
         # Output values take priority (they represent the result of execution).
         if param_name in node.parameter_output_values:
             data_value = node.parameter_output_values[param_name]
+        elif isinstance(parameter, ParameterContainer):
+            # A list is read from its rows, unless a connection handed it a whole list.
+            data_value = node._get_raw_parameter_value(param_name)
         elif param_name in node.parameter_values:
             data_value = node.parameter_values[param_name]
         else:
@@ -2746,7 +2749,8 @@ class NodeManager(EngineScoped):
 
         # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
         try:
-            modified_value = node.before_value_set(parameter, parameter_value)
+            with node._list_rows.hooks_running(parameter.parent_container_name):
+                modified_value = node.before_value_set(parameter, parameter_value)
             if modified_value is not None:
                 # Check if it's a TransformedParameterValue (value + type)
                 if isinstance(modified_value, TransformedParameterValue):
@@ -2937,15 +2941,15 @@ class NodeManager(EngineScoped):
     def _set_whole_list_as_rows(self, request: SetParameterValueRequest, node: BaseNode) -> bool:
         """Turn a caller's whole list for an unconnected list into rows. Returns whether it did.
 
-        Loading keeps the saved value as it is: a saved file sets the rows next, and a list saved
-        with no rows may hold items whose rows were removed.
+        Loading leaves the rows to the saved file, which sets each row next. A whole list saved for
+        an unconnected list is dropped, and its items don't become rows.
         """
         if request.initial_setup or request.incoming_connection_source_node_name is not None:
             return False
         parameter = node.get_parameter_by_name(request.parameter_name)
         if parameter is None:
             return False
-        return node._set_list_as_rows_if_unconnected(parameter, request.value)
+        return node._list_rows.set_as_rows_if_unconnected(parameter, request.value)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
@@ -3657,7 +3661,8 @@ class NodeManager(EngineScoped):
             for param in node.parameters:
                 if param.name in node.parameter_values:
                     continue
-                if param.default_value is None:
+                # A list is read from its rows, and a stored default would hide them.
+                if param.default_value is None or isinstance(param, ParameterContainer):
                     continue
                 node.parameter_values[param.name] = param.default_value
             if self.engine.library_manager.is_worker:
@@ -3850,8 +3855,7 @@ class NodeManager(EngineScoped):
                     )
                 try:
                     # A worker copy has no rows, so the list it runs with has to become them.
-                    is_list = isinstance(parameter, ParameterList)
-                    if not (is_list and node._set_list_as_rows_if_unconnected(parameter, value)):
+                    if not self._fill_list_rows_on_copy(node, parameter, value):
                         node.set_parameter_value(param_name, value)
                 except Exception as e:
                     return ExecuteNodeResultFailure(
@@ -3870,6 +3874,18 @@ class NodeManager(EngineScoped):
                 param_name,
             )
         return None
+
+    def _fill_list_rows_on_copy(self, node: BaseNode, parameter: Parameter, value: Any) -> bool:
+        """Build a list's rows from the value it arrived with. Returns False for anything but a list.
+
+        A worker skips asking whether the list is connected, which would cost a round trip to the
+        orchestrator for every list on every run.
+        """
+        if not isinstance(parameter, ParameterList):
+            return False
+        if self.engine.library_manager.is_worker:
+            return node._list_rows.fill_copy(parameter, value)
+        return node._list_rows.set_as_rows_if_unconnected(parameter, value)
 
     @staticmethod
     def _unencodable_value_names(values: dict[str, Any]) -> list[str]:
@@ -6053,11 +6069,7 @@ class NodeManager(EngineScoped):
                 result_details=ResultDetails(message=details, level=logging.DEBUG)
             )
 
-        # Perform the reorder by moving the item in the _children list
-        item_to_move = children[request.from_index]
-        parameter_list._children.remove(item_to_move)
-        parameter_list._children.insert(request.to_index, item_to_move)
-        node._refresh_list_value(parameter_list)
+        parameter_list.move_child(request.from_index, request.to_index)
 
         # Mark the node and what follows it as unresolved since the list's order changed
         node.state = NodeResolutionState.UNRESOLVED

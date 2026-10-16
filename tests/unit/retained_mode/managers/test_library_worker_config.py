@@ -18,10 +18,16 @@ from griptape_nodes.retained_mode.events.app_events import (
     ReportLibraryLoadedResultFailure,
     ReportLibraryLoadedResultSuccess,
 )
+from griptape_nodes.retained_mode.events.library_events import (
+    RegisterLibraryFromFileRequest,
+    RegisterLibraryFromFileResultFailure,
+)
+from griptape_nodes.retained_mode.events.worker_events import StartWorkerRequest
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     IncompatibleRequirementsProblem,
 )
 from griptape_nodes.retained_mode.managers.library.dependencies import parse_dependency_url
+from griptape_nodes.retained_mode.managers.library.registration import RegisterLibraryPrerequisites
 from griptape_nodes.retained_mode.managers.library.workers import resolve_executes_in_worker
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
@@ -423,8 +429,6 @@ class TestSpawnSkipForUnmetRequirements:
         engine = MagicMock()
         _use_engine(manager, engine)
         engine.ahandle_request = AsyncMock()
-        # No worker registered yet, which is what makes this a first spawn rather than a restart.
-        engine.worker_manager.get_worker_for_key.return_value = None
         info = LibraryManager.LibraryInfo(
             lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
             fitness=LibraryManager.LibraryFitness.GOOD,
@@ -456,14 +460,12 @@ class TestSpawnSkipForUnmetRequirements:
         info = manager._library_file_path_to_info["/some/path.json"]
         info.execution_env_failure = "its execution dependencies could not be installed (no solution found)."
         # The manager it collaborates with, not the one hung off the replacement mock engine: it
-        # reaches `self._worker_manager` for this, and `self.engine.worker_manager` only for the
-        # registration lookup.
+        # reaches `self._worker_manager` for this.
         worker_manager = cast("MagicMock", manager._worker_manager)
 
         await manager.workers._start_workers()
 
         cast("MagicMock", manager._engine).ahandle_request.assert_not_awaited()
-        worker_manager.expect_worker.assert_not_called()
         # Recorded where a spawn refusal is read from, so the next run says why.
         reason = worker_manager.note_worker_unavailable.call_args.args[1]
         assert "could not be installed" in reason
@@ -479,20 +481,28 @@ class TestSpawnSkipForUnmetRequirements:
         assert info.execution_unavailable_reason is not None, "the local refusal must survive"
 
     @pytest.mark.asyncio
-    async def test_a_library_whose_worker_is_registered_is_not_re_expected(self) -> None:
-        """_start_workers runs again per session join, and spawn_worker refuses the duplicate.
+    @pytest.mark.parametrize(
+        "state",
+        [
+            LibraryManager.LibraryLifecycleState.METADATA_LOADED,
+            LibraryManager.LibraryLifecycleState.EVALUATED,
+            LibraryManager.LibraryLifecycleState.DEPENDENCIES_INSTALLED,
+        ],
+    )
+    async def test_a_library_still_loading_is_not_spawned(self, state: LibraryManager.LibraryLifecycleState) -> None:
+        """A session can start mid-load, and the worker takes .venv-exec as PYTHONPATH at spawn.
 
-        Re-declaring a worker as coming would install a fresh gate with nothing left to set it, so
-        every later run against a live, loaded worker would wait out the whole startup grace and
-        then blame its library load.
+        Spawned before registration has built it, the worker gets no PYTHONPATH and can never
+        import the library's execution dependencies. Nothing is recorded as unavailable either:
+        registration starts this worker once the library loads.
         """
         manager = self._manager(unmet=False)
-        cast("MagicMock", manager._engine).worker_manager.get_worker_for_key.return_value = ("w-1", "t/w-1")
+        manager._library_file_path_to_info["/some/path.json"].lifecycle_state = state
 
         await manager.workers._start_workers()
 
         cast("MagicMock", manager._engine).ahandle_request.assert_not_awaited()
-        cast("MagicMock", manager._worker_manager).expect_worker.assert_not_called()
+        cast("MagicMock", manager._worker_manager).note_worker_unavailable.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_a_library_with_met_requirements_spawns(self) -> None:
@@ -527,6 +537,80 @@ class TestSpawnSkipForUnmetRequirements:
         await manager.workers.start_worker_for_library("Lib")
 
         engine.ahandle_request.assert_not_awaited()
+
+
+class TestALibraryStartsItsWorkerWhenItFinishesRegistering:
+    """A library's worker is requested as the library finishes registering, if a session is active.
+
+    A library installed mid-session has no other moment that starts its worker, and one loading at
+    startup would otherwise wait for every library registered after it.
+    """
+
+    def _manager(self, *, progression: RegisterLibraryFromFileResultFailure | None) -> LibraryManager:
+        manager = _make_library_manager()
+        engine = cast("MagicMock", manager._engine)
+        engine.ahandle_request = AsyncMock()
+        engine.get_session_id.return_value = "session-1"
+        manager._is_worker = False
+        info = LibraryManager.LibraryInfo(
+            lifecycle_state=LibraryManager.LibraryLifecycleState.DEPENDENCIES_INSTALLED,
+            fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
+            library_path="/some/path.json",
+            is_sandbox=False,
+            library_name="Lib",
+            executes_in_worker=True,
+        )
+        manager._library_file_path_to_info["/some/path.json"] = info
+
+        async def progress(**_kwargs: object) -> RegisterLibraryFromFileResultFailure | None:
+            if progression is None:
+                info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
+                info.fitness = LibraryManager.LibraryFitness.GOOD
+            return progression
+
+        registration = manager.registration
+        registration._establish_register_library_prerequisites = AsyncMock(  # type: ignore[method-assign]
+            return_value=RegisterLibraryPrerequisites(library_info=info, file_path="/some/path.json")
+        )
+        registration._progress_library_through_lifecycle = progress  # type: ignore[method-assign]
+        manager.managed_environment.provisioned_by_environment = MagicMock(return_value=False)  # type: ignore[method-assign]
+        return manager
+
+    def _start_requests(self, manager: LibraryManager) -> list[StartWorkerRequest]:
+        awaited = cast("MagicMock", manager._engine).ahandle_request.await_args_list
+        return [call.args[0] for call in awaited if isinstance(call.args[0], StartWorkerRequest)]
+
+    @pytest.mark.asyncio
+    async def test_a_library_that_loads_during_a_session_requests_its_worker(self) -> None:
+        manager = self._manager(progression=None)
+
+        await manager.registration.register_library_from_file_request(
+            RegisterLibraryFromFileRequest(file_path="/some/path.json")
+        )
+
+        assert [request.library_name for request in self._start_requests(manager)] == ["Lib"]
+
+    @pytest.mark.asyncio
+    async def test_a_library_that_fails_to_register_requests_no_worker(self) -> None:
+        manager = self._manager(progression=RegisterLibraryFromFileResultFailure(result_details="no"))
+
+        await manager.registration.register_library_from_file_request(
+            RegisterLibraryFromFileRequest(file_path="/some/path.json")
+        )
+
+        assert self._start_requests(manager) == []
+
+    @pytest.mark.asyncio
+    async def test_a_library_that_loads_before_any_session_waits_for_one(self) -> None:
+        """on_session_started starts it with the rest."""
+        manager = self._manager(progression=None)
+        cast("MagicMock", manager._engine).get_session_id.return_value = None
+
+        await manager.registration.register_library_from_file_request(
+            RegisterLibraryFromFileRequest(file_path="/some/path.json")
+        )
+
+        assert self._start_requests(manager) == []
 
 
 class TestLibraryDependencyResolution:

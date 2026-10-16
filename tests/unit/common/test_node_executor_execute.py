@@ -53,7 +53,7 @@ def _make_node(
     # parameter answers truthy to is_process_local, which would swap every value for a mock key.
     node.get_parameter_by_name.return_value = None
     # No lists, so what is dispatched is the values themselves.
-    node._parameter_values_for_dispatch.side_effect = lambda: dict(node.parameter_values)
+    node._list_rows.values_for_dispatch.side_effect = lambda: dict(node.parameter_values)
     return node
 
 
