@@ -18,14 +18,12 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 from griptape_nodes.exe_types.local_objects import is_reference
-from griptape_nodes.node_library.library_registry import LibraryRegistry, LibrarySchema
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.engine import current_engine
 from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
@@ -48,33 +46,26 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.retained_mode.events.project_events import ActivateWorkspaceProjectRequest
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
-from griptape_nodes.utils.version_utils import engine_version
+from griptape_nodes.testing.libraries import WORKER_BEHAVIOR_LIBRARY_NAME, materialize_worker_behavior_library
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.node_types import BaseNode
+    from pathlib import Path
 
-FIXTURE_DIR = Path(__file__).parent / "fixtures" / "worker_behavior_library"
-LIBRARY = "Worker Behavior Library"
+    from griptape_nodes.exe_types.node_types import BaseNode
 
 
 @pytest.fixture(autouse=True)
 def _register_library(tmp_path: Path) -> None:
-    library_dir = tmp_path / "worker_behavior_library"
-    library_dir.mkdir()
-    schema = json.loads((FIXTURE_DIR / "griptape_nodes_library.json").read_text())
-    schema["library_schema_version"] = LibrarySchema.LATEST_SCHEMA_VERSION
-    schema["metadata"]["engine_version"] = engine_version
-    (library_dir / "griptape_nodes_library.json").write_text(json.dumps(schema, indent=2))
-    shutil.copy(FIXTURE_DIR / "worker_behavior_nodes.py", library_dir / "worker_behavior_nodes.py")
-    result = current_engine().handle_request(
-        RegisterLibraryFromFileRequest(file_path=str(library_dir / "griptape_nodes_library.json"))
-    )
+    library_json = materialize_worker_behavior_library(tmp_path)
+    result = current_engine().handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
     assert isinstance(result, RegisterLibraryFromFileResultSuccess), getattr(result, "result_details", result)
 
 
 def _make(node_type: str, name: str) -> BaseNode:
     """Create a node directly, for tests that only execute it."""
-    node = LibraryRegistry.create_node(node_type=node_type, name=name, specific_library_name=LIBRARY)
+    node = LibraryRegistry.create_node(
+        node_type=node_type, name=name, specific_library_name=WORKER_BEHAVIOR_LIBRARY_NAME
+    )
     current_engine().object_manager.add_object_by_name(name, node)
     return node
 
@@ -93,7 +84,7 @@ def _make_in_flow(node_type: str, name: str) -> BaseNode:
     create_result = current_engine().handle_request(
         CreateNodeRequest(
             node_type=node_type,
-            specific_library_name=LIBRARY,
+            specific_library_name=WORKER_BEHAVIOR_LIBRARY_NAME,
             node_name=name,
             override_parent_flow_name=flow_result.flow_name,
         )
@@ -107,7 +98,7 @@ async def _execute(node_type: str, name: str, **parameter_values: object) -> Exe
         ExecuteNodeRequest(
             node_name=name,
             parameter_values=dict(parameter_values),
-            node_metadata={"node_type": node_type, "library": LIBRARY},
+            node_metadata={"node_type": node_type, "library": WORKER_BEHAVIOR_LIBRARY_NAME},
         )
     )
     assert isinstance(result, ExecuteNodeResultSuccess), getattr(result, "result_details", result)
@@ -526,7 +517,7 @@ class TestUnshippableOutputsAreKept:
             ExecuteNodeRequest(
                 node_name="Unshippable",
                 parameter_values={},
-                node_metadata={"node_type": "UnshippableOutputNode", "library": LIBRARY},
+                node_metadata={"node_type": "UnshippableOutputNode", "library": WORKER_BEHAVIOR_LIBRARY_NAME},
             )
         )
 

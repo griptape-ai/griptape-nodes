@@ -167,6 +167,7 @@ ignore = [
 # Fixture node libraries and saved workflow files under the e2e suite. Node libraries and
 # generated workflows are the intended facade audience, exactly as the ban message says.
 "tests/e2e/fixtures/**" = ["TID251"]
+"src/griptape_nodes/testing/libraries/**" = ["TID251"]
 # These assert the facade's and the WorkflowRegistry shim's own behavior, so they have to name them.
 "tests/unit/retained_mode/test_engine.py" = ["TID251"]
 "tests/unit/retained_mode/managers/test_griptape_nodes.py" = ["TID251"]
