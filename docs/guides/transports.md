@@ -1,8 +1,8 @@
-# Transports: Connecting Tools to the Engine
+# Transports: Connecting into the Engine
 
 The Griptape Nodes engine is the program that runs your workflows. The editor is one way to talk to it, but not the only one: pipeline scripts, a panel inside your DCC, a studio dashboard, or a command in a terminal can all send the engine requests and read back the results.
 
-A **transport** is the connection such a tool uses to reach the engine. If you have set up an [MCP server](mcp/index.md), you have already picked a transport there (stdio, SSE, streamable HTTP, WebSocket); engine transports are the same idea, pointed the other way. Instead of the engine connecting out to a tool, a tool connects in to the engine.
+A **transport** is the connection an external program uses to reach the engine. If you have set up an [MCP server](mcp/index.md), you have already picked a transport there (stdio, SSE, streamable HTTP, WebSocket); engine transports are the same idea, pointed the other way. Instead of the engine connecting out to a server, your program connects in to the engine.
 
 ## Choosing a transport
 
@@ -16,7 +16,7 @@ A **transport** is the connection such a tool uses to reach the engine. If you h
 A few rules of thumb:
 
 - **Staying on one machine?** Use `local_socket` or `websocket_direct`. Nothing leaves the machine.
-- **Just need to kick something off?** Use `http_direct`. Any tool that can send an HTTP POST can use it, with nothing to keep open.
+- **Just need to kick something off?** Use `http_direct`. Any program that can send an HTTP POST can use it, with nothing to keep open.
 - **Need the answer back?** Use `local_socket` or `websocket_direct`. `http_direct` only receives: it confirms your request arrived, and the result is delivered over a transport that can send (see [Getting results back](#getting-results-back)).
 - **Editor and engine on different machines?** Use `websocket_api`. See [How the editor reaches the application](../architecture.md#how-the-editor-reaches-the-application).
 
@@ -56,7 +56,7 @@ GTN_CONFIG_TRANSPORTS__WEBSOCKET_DIRECT__PORT=19125 gtn
 | `transports.websocket_direct.enabled`       | `false`                              | Serve the local WebSocket.                                                                                                                                  |
 | `transports.websocket_direct.host`          | `127.0.0.1`                          | Address to listen on.                                                                                                                                       |
 | `transports.websocket_direct.port`          | `18125`                              | Port to listen on.                                                                                                                                          |
-| `transports.websocket_direct.advertise_url` | none                                 | The `ws://` or `wss://` address other tools should use to reach this engine, when that differs from the listen address (see below).                         |
+| `transports.websocket_direct.advertise_url` | none                                 | The `ws://` or `wss://` address other programs should use to reach this engine, when that differs from the listen address (see below).                      |
 | `transports.http_direct.enabled`            | `false`                              | Serve the local HTTP endpoint.                                                                                                                              |
 | `transports.http_direct.host`               | `127.0.0.1`                          | Address to listen on.                                                                                                                                       |
 | `transports.http_direct.port`               | `18126`                              | Port to listen on.                                                                                                                                          |
@@ -90,7 +90,7 @@ Every transport carries the same requests: the ones the editor sends to create n
         "event_type": "EventRequest",
         "request_type": "ListFlowsInCurrentContextRequest",
         "request_id": "my-request-1",
-        "response_topic": "my-tool/response",
+        "response_topic": "my-app/response",
         "request": {}
     }
 }
@@ -98,7 +98,7 @@ Every transport carries the same requests: the ones the editor sends to create n
 
 - `request_type` names the request, and `request` holds its fields. For example, `StartFlowRequest` with `{}` runs the flow that's currently open, and `ListFlowsInCurrentContextRequest` lists the flows you can name instead.
 - `request_id` is any string you choose. The result carries it back so you can match the two.
-- `response_topic` is where the result is sent. Choose a name for your tool and listen on it (see the next section).
+- `response_topic` is where the result is sent. Choose a name for your program and listen on it (see the next section).
 
 [Retained Mode Scripting](../development/retained_mode.md) describes the same operations from Python inside the editor.
 
@@ -107,7 +107,7 @@ Every transport carries the same requests: the ones the editor sends to create n
 Results are delivered on the `response_topic` you named, to every connection that has subscribed to it. On `websocket_direct` and `local_socket`, subscribe by sending:
 
 ```json
-{"type": "subscribe", "topic": "my-tool/response", "payload": {}}
+{"type": "subscribe", "topic": "my-app/response", "payload": {}}
 ```
 
 Results then arrive as messages whose `type` is `success_result` or `failure_result`, with your `request_id` inside `payload`.
@@ -118,7 +118,7 @@ If your organization uses license keys, the engine checks each request against y
 
 ### Send a request from the terminal
 
-`local_socket` is easiest to use through the `gtn request` command. For your own tools, `websocket_direct` is simpler to connect to.
+`local_socket` is easiest to use through the `gtn request` command. For your own scripts and apps, `websocket_direct` is simpler to connect to.
 
 The `gtn request` command sends one request over `local_socket` to the engine running on your machine and prints the result. It finds the engine and handles subscribing for you, so there is nothing to configure:
 
@@ -126,7 +126,7 @@ The `gtn request` command sends one request over `local_socket` to the engine ru
 gtn request '{"request_type": "ListFlowsInCurrentContextRequest"}'
 ```
 
-Put the request's fields beside `request_type`. This is the simplest way to try a request before building it into a tool, and it works well from shell scripts and local agents.
+Put the request's fields beside `request_type`. This is the simplest way to try a request before building it into a script, and it works well from shell scripts and local agents.
 
 ### Kick off a workflow from a pipeline script
 
@@ -155,7 +155,7 @@ The engine answers `202` as soon as it has the request:
 
 This runs the flow that's currently open in the engine. To run a different loaded flow, add its name to `request`, as in `{"flow_name": "..."}`, using a name from `ListFlowsInCurrentContextRequest`.
 
-`202` means *accepted*, not *finished*. If the flow can't start, the failure goes to `farm/response`, so if the script needs the outcome, have another tool subscribed to `farm/response` over `websocket_direct` or `local_socket`.
+`202` means *accepted*, not *finished*. If the flow can't start, the failure goes to `farm/response`, so if the script needs the outcome, have another program subscribed to `farm/response` over `websocket_direct` or `local_socket`.
 
 ### Connect a DCC panel or custom frontend
 
@@ -212,7 +212,7 @@ A browser page, such as a small studio dashboard with a "Run" button, can POST t
 }
 ```
 
-An origin is the scheme, host, and port only (`https://dashboard.example.com`, not `https://dashboard.example.com/tools/`). `*` is not allowed, since it would let any web page you visit send requests to your engine. An entry that isn't a plain origin, including `*` or one with a path, turns `http_direct` off with a warning.
+An origin is the scheme, host, and port only (`https://dashboard.example.com`, not `https://dashboard.example.com/admin/`). `*` is not allowed, since it would let any web page you visit send requests to your engine. An entry that isn't a plain origin, including `*` or one with a path, turns `http_direct` off with a warning.
 
 From the page:
 
@@ -233,7 +233,7 @@ await fetch("http://127.0.0.1:18126/events", {
 });
 ```
 
-The engine refuses a page from any other origin with `403`. The browser reports this to the page as a network error; the browser's developer tools show the `403` and the setting that would allow the page. Scripts and tools outside a browser, such as `curl`, aren't affected by `allowed_origins`.
+The engine refuses a page from any other origin with `403`. The browser reports this to the page as a network error; the browser's developer tools show the `403` and the setting that would allow the page. Scripts and programs outside a browser, such as `curl`, aren't affected by `allowed_origins`.
 
 ### Reach an engine on another machine
 

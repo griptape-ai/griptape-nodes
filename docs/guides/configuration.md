@@ -260,7 +260,7 @@ The published value reflects the settings that describe where this engine keeps 
 
 ## Transports
 
-Tools other than the editor, such as pipeline scripts, DCC panels, and the `gtn request` command, reach the engine over transports, set under the `transports` key. See [Transports](transports.md) for what each one is for and how to turn it on.
+Programs other than the editor, such as pipeline scripts, DCC panels, and the `gtn request` command, reach the engine over transports, set under the `transports` key. See [Transports](transports.md) for what each one is for and how to turn it on.
 
 ## Static File Server Configuration
 
