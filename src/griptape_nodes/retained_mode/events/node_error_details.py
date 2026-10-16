@@ -229,12 +229,16 @@ def _deeper_than(value: Any, limit: int) -> bool:
     pending: list[tuple[Any, int]] = [(value, 1)]
     while pending:
         item, depth = pending.pop()
+        # Only dicts and lists are levels. A plain value inside the deepest one adds none.
+        if isinstance(item, dict):
+            children = item.values()
+        elif isinstance(item, list | tuple):
+            children = item
+        else:
+            continue
         if depth > limit:
             return True
-        if isinstance(item, dict):
-            pending.extend((child, depth + 1) for child in item.values())
-        elif isinstance(item, list | tuple):
-            pending.extend((child, depth + 1) for child in item)
+        pending.extend((child, depth + 1) for child in children)
     return False
 
 

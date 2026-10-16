@@ -264,12 +264,13 @@ class TestValidation:
 
 
 def _nested(depth: int) -> dict[str, Any]:
-    """A dict nested `depth` levels deep, counting the outermost one."""
+    """A dict nested `depth` levels deep, counting the outermost one, with a value in the innermost."""
     nested: dict[str, Any] = {}
     innermost = nested
     for _ in range(depth - 1):
         innermost["next"] = {}
         innermost = innermost["next"]
+    innermost["status"] = "ERRORED"
     return nested
 
 
