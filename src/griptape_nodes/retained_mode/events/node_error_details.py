@@ -198,7 +198,13 @@ def _sanitize_response(value: Any) -> dict[str, Any] | None:
         return None
     if serialized_size <= MAX_RESPONSE_BYTES:
         return value
-    shrunk = _shrink(value)
+    try:
+        shrunk = _shrink(value)
+    # A response nested deeper than the recursion limit can pass json.dumps, whose encoder has its
+    # own limit, and still overflow here. Dropping it beats replacing the node's error with a crash.
+    except RecursionError:
+        logger.debug("Dropped node error response too deeply nested to shrink", exc_info=True)
+        return None
     shrunk_size = _serialized_size(shrunk)
     if shrunk_size is None or shrunk_size > MAX_RESPONSE_BYTES:
         logger.debug("Dropped node error response over the %d byte cap", MAX_RESPONSE_BYTES)

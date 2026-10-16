@@ -338,6 +338,19 @@ class TestNodeErrorAttachments:
             assert details.response is None
             assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
 
+    def test_response_that_overflows_while_shrinking_is_dropped_without_failing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def overflow(_value: Any) -> Any:
+            raise RecursionError
+
+        monkeypatch.setattr("griptape_nodes.retained_mode.events.node_error_details._shrink", overflow)
+
+        details = build_node_error_details(NODE_NAME, self._node_error(response=_unshrinkable_response()))
+
+        assert details.response is None
+        assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
+
     def test_deeply_nested_response_is_dropped_without_failing(self) -> None:
         # Deep enough to exceed the C JSON encoder's own recursion limit, which is higher than
         # sys.getrecursionlimit().

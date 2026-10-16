@@ -141,3 +141,30 @@ class TestFromRequestException:
         error = NodeError.from_request_exception(ValueError("odd"), provider="Acme")
 
         assert str(error) == "The request to Acme failed: odd"
+
+
+class TestStreamedHttpxResponse:
+    def test_unread_stream_gives_status_only_fields(self) -> None:
+        with (
+            httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(401, content=iter([b"x"])))) as client,
+            client.stream("GET", "https://x") as response,
+        ):
+            error = NodeError.from_http_response(response, provider="Acme")
+
+        assert str(error) == "Acme refused the API key."
+        assert error.fields == {"status_code": 401}
+        assert error.response is None
+
+
+class TestRequestExceptionKeyRefused:
+    def test_key_refused_false_is_forwarded(self) -> None:
+        exc = httpx.HTTPStatusError(
+            "bad",
+            request=httpx.Request("GET", "https://x"),
+            response=httpx.Response(401, json={"message": "No permission"}),
+        )
+
+        error = NodeError.from_request_exception(exc, provider="Acme", secret_name="ACME_KEY", key_refused=False)
+
+        assert str(error) == "No permission"
+        assert error.links == []

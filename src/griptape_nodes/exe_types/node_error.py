@@ -133,6 +133,7 @@ class NodeError(Exception):
         *,
         provider: str,
         secret_name: str | None = None,
+        key_refused: bool | None = None,
         fields: dict[str, str | int | float | bool] | None = None,
     ) -> NodeError:
         """The error for a failed call to a provider, from a `requests` or `httpx` exception.
@@ -151,7 +152,9 @@ class NodeError(Exception):
         """
         response = getattr(exc, "response", None)
         if response is not None:
-            return cls.from_http_response(response, provider=provider, secret_name=secret_name, fields=fields)
+            return cls.from_http_response(
+                response, provider=provider, secret_name=secret_name, key_refused=key_refused, fields=fields
+            )
 
         class_names = {klass.__name__ for klass in type(exc).__mro__}
         if class_names & _TIMEOUT_CLASS_NAMES:
@@ -180,7 +183,8 @@ _REQUEST_ID_HEADERS = ("x-request-id", "request-id", "x-trace-id", "x-amzn-reque
 def _json_object(response: Any) -> dict[str, Any] | None:
     try:
         body = response.json()
-    except ValueError:
+    # RuntimeError for an httpx stream whose body was never read.
+    except (ValueError, RuntimeError):
         return None
     if isinstance(body, dict) and body:
         return body
@@ -190,7 +194,10 @@ def _json_object(response: Any) -> dict[str, Any] | None:
 def _response_body(response: Any, body: dict[str, Any] | None) -> dict[str, Any] | None:
     if body is not None:
         return body
-    text = response.text
+    try:
+        text = response.text
+    except RuntimeError:
+        return None
     if not isinstance(text, str) or not text.strip():
         return None
     return {"body": text[:_MAX_BODY_TEXT_CHARS]}

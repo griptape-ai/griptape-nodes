@@ -114,10 +114,17 @@ class ExampleNodeErrorNode(DataNode):
     def _send_request(self) -> None:
         try:
             self._call_service()
-        except httpx.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             # Raise from the original so its traceback stays in the logs. `from_request_exception`
-            # turns a response into the provider's own message with the status code, request ID,
-            # and body attached, and gives a timeout or a failed connection a plain message.
+            # turns the response into the provider's own message with the status code, request ID,
+            # and body attached. A value only this provider sends, such as the parameter it
+            # rejected, goes in `fields`.
+            parameter = e.response.json()["error"]["param"]
+            raise NodeError.from_request_exception(
+                e, provider="Example Service", fields={"parameter": parameter}
+            ) from e
+        except httpx.HTTPError as e:
+            # A timeout or a failed connection has no response. It gets a plain message.
             raise NodeError.from_request_exception(e, provider="Example Service") from e
 
     def _call_service(self) -> None:
