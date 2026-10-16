@@ -29,6 +29,9 @@ RESPONSE_DROPPED_FIELD = "response_dropped"
 # A string longer than this is cut when the response is over the cap, so one long value does not
 # hide the rest of it.
 MAX_RESPONSE_STRING_CHARS = 2000
+# A response nested deeper than this is dropped before it is serialized or shrunk, so neither can
+# overflow the stack. Provider responses are a few levels deep.
+MAX_RESPONSE_DEPTH = 100
 _DATA_URI = re.compile(r"^(data:[^;,]+;base64,)(.+)$", re.DOTALL)
 
 
@@ -193,18 +196,15 @@ def _sanitize_response(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         logger.debug("Dropped node error response of type %s; expected a dict", type(value).__name__)
         return None
+    if _deeper_than(value, MAX_RESPONSE_DEPTH):
+        logger.debug("Dropped node error response nested deeper than %d levels", MAX_RESPONSE_DEPTH)
+        return None
     serialized_size = _serialized_size(value)
     if serialized_size is None:
         return None
     if serialized_size <= MAX_RESPONSE_BYTES:
         return value
-    try:
-        shrunk = _shrink(value)
-    # A response nested deeper than the recursion limit can pass json.dumps, whose encoder has its
-    # own limit, and still overflow here. Dropping it beats replacing the node's error with a crash.
-    except RecursionError:
-        logger.debug("Dropped node error response too deeply nested to shrink", exc_info=True)
-        return None
+    shrunk = _shrink(value)
     shrunk_size = _serialized_size(shrunk)
     if shrunk_size is None or shrunk_size > MAX_RESPONSE_BYTES:
         logger.debug("Dropped node error response over the %d byte cap", MAX_RESPONSE_BYTES)
@@ -218,15 +218,33 @@ def _serialized_size(value: dict[str, Any]) -> int | None:
         # allow_nan=False because NaN and Infinity are not JSON: the editor's JSON.parse would
         # reject the whole event, not just the response.
         serialized = json.dumps(value, allow_nan=False)
-    # RecursionError from a deeply nested response. This runs while reporting a failure, so
-    # letting it escape would replace the node's error with an engine crash.
-    except (TypeError, ValueError, RecursionError):
+    except (TypeError, ValueError):
         logger.debug("Dropped node error response that is not JSON-serializable", exc_info=True)
         return None
     return len(serialized.encode("utf-8"))
 
 
+def _deeper_than(value: Any, limit: int) -> bool:
+    """Whether dicts and lists in the value nest more than `limit` levels. A loop, not recursion."""
+    pending: list[tuple[Any, int]] = [(value, 1)]
+    while pending:
+        item, depth = pending.pop()
+        if depth > limit:
+            return True
+        if isinstance(item, dict):
+            pending.extend((child, depth + 1) for child in item.values())
+        elif isinstance(item, list | tuple):
+            pending.extend((child, depth + 1) for child in item)
+    return False
+
+
 def _shrink(value: Any) -> Any:
+    """Make an oversized response fit the cap while keeping its structure.
+
+    Base64 data becomes its length and strings over MAX_RESPONSE_STRING_CHARS are cut, so one image
+    or log in a response doesn't push out the status and message beside it. Libraries attach the
+    provider's body as it is, and this keeps it readable instead of dropping it whole.
+    """
     if isinstance(value, dict):
         return {key: _shrink(item) for key, item in value.items()}
     if isinstance(value, list):

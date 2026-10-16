@@ -11,7 +11,7 @@ ones real APIs return.
   response body.
 - "Unsupported format": the input can't be used. Raises `NodeError` with links that explain the fix.
 - "Missing API key": checked before the node runs, using the real secrets lookup. Fails with
-  `NodeError.missing_secret` unless `EXAMPLE_SERVICE_API_KEY` is set.
+  `NodeError.from_missing_secret` unless `EXAMPLE_SERVICE_API_KEY` is set.
 - "Missing preset setting": raises a plain `KeyError`. The editor still shows its message and type.
 - "Validation problems": returns two exceptions from `validate_before_node_run`, so the node never
   runs and the editor lists both problems.
@@ -107,9 +107,9 @@ class ExampleNodeErrorNode(DataNode):
         )
         if isinstance(result, GetSecretValueResultSuccess) and result.value:
             return None
-        # A validation exception can be a NodeError too. `missing_secret` names the exact setting,
+        # A validation exception can be a NodeError too. `from_missing_secret` names the exact setting,
         # says where to add it, and links to it in Settings.
-        return [NodeError.missing_secret(self.API_KEY_NAME)]
+        return [NodeError.from_missing_secret(self.API_KEY_NAME)]
 
     def _send_request(self) -> None:
         try:

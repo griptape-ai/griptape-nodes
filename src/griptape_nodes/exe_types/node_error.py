@@ -10,6 +10,23 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
+# Class names rather than types, so this works for requests and httpx without importing either.
+_TIMEOUT_CLASS_NAMES = frozenset({"Timeout", "TimeoutException", "TimeoutError"})
+_CONNECTION_CLASS_NAMES = frozenset({"ConnectionError", "ConnectError", "NetworkError"})
+
+_KEY_REFUSED_STATUSES = (401, 403)
+_HTTP_ERROR_STATUS = 400
+_HTTP_TOO_MANY_REQUESTS = 429
+_HTTP_SERVER_ERROR_STATUS = 500
+_MAX_BODY_TEXT_CHARS = 2000
+# "API key", "api_key", "api-key" or "apikey", singular or plural, in a provider's message, such as
+# a 422 with "Invalid API key format" or the code "invalid_api_key". Only a letter next to it rules a
+# match out, because "_" and digits often join the words in error codes.
+_API_KEY_MENTION = re.compile(r"(?<![a-z])api[ _-]?keys?(?![a-z])", re.IGNORECASE)
+
+# Response headers providers use for the ID of a request, in the order they are checked.
+_REQUEST_ID_HEADERS = ("x-request-id", "request-id", "x-trace-id", "x-amzn-requestid", "cf-ray")
+
 
 @dataclass
 class NodeErrorLink:
@@ -24,7 +41,7 @@ class NodeErrorLink:
     opens, and only follows routes that navigate, never ones that change anything."""
 
     @classmethod
-    def for_secret(cls, secret_name: str, label: str = "Add the API key") -> NodeErrorLink:
+    def from_secret(cls, secret_name: str, label: str = "Add the API key") -> NodeErrorLink:
         """A link that opens Settings → API Keys & Secrets filtered to one secret."""
         return cls(label=label, url=f"#settings-secrets?filter={quote(secret_name)}")
 
@@ -65,7 +82,7 @@ class NodeError(Exception):
         self.links = links or []
 
     @classmethod
-    def missing_secret(cls, secret_name: str, *, key_url: str | None = None) -> NodeError:
+    def from_missing_secret(cls, secret_name: str, *, key_url: str | None = None) -> NodeError:
         """The error for a secret that is not set, linking to it in Settings.
 
         Raise it from `validate_before_node_run` so the node fails before it starts.
@@ -74,7 +91,7 @@ class NodeError(Exception):
             secret_name: The secret, e.g. "OPENAI_API_KEY".
             key_url: The provider's page for getting a key, added as a second link.
         """
-        links = [NodeErrorLink.for_secret(secret_name)]
+        links = [NodeErrorLink.from_secret(secret_name)]
         if key_url:
             links.append(NodeErrorLink(label="Get an API key", url=key_url))
         return cls(
@@ -120,7 +137,7 @@ class NodeError(Exception):
 
         links: list[NodeErrorLink] = []
         if key_refused and secret_name:
-            links.append(NodeErrorLink.for_secret(secret_name, "Update the API key"))
+            links.append(NodeErrorLink.from_secret(secret_name, "Update the API key"))
 
         message = _status_message(provider, status, reason, key_refused=key_refused, secret_name=secret_name)
         all_fields = _response_fields(response, body)
@@ -165,24 +182,6 @@ class NodeError(Exception):
         else:
             message = f"The request to {provider} failed: {exc}"
         return cls(message, fields=fields)
-
-
-# Class names rather than types, so this works for requests and httpx without importing either.
-_TIMEOUT_CLASS_NAMES = frozenset({"Timeout", "TimeoutException", "TimeoutError"})
-_CONNECTION_CLASS_NAMES = frozenset({"ConnectionError", "ConnectError", "NetworkError"})
-
-_KEY_REFUSED_STATUSES = (401, 403)
-_HTTP_ERROR_STATUS = 400
-_HTTP_TOO_MANY_REQUESTS = 429
-_HTTP_SERVER_ERROR_STATUS = 500
-_MAX_BODY_TEXT_CHARS = 2000
-# "API key", "api_key", "api-key" or "apikey", singular or plural, in a provider's message, such as
-# a 422 with "Invalid API key format" or the code "invalid_api_key". Only a letter next to it rules a
-# match out, because "_" and digits often join the words in error codes.
-_API_KEY_MENTION = re.compile(r"(?<![a-z])api[ _-]?keys?(?![a-z])", re.IGNORECASE)
-
-# Response headers providers use for the ID of a request, in the order they are checked.
-_REQUEST_ID_HEADERS = ("x-request-id", "request-id", "x-trace-id", "x-amzn-requestid", "cf-ray")
 
 
 def _mentions_api_key(reason: str | None) -> bool:

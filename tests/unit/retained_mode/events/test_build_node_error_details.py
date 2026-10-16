@@ -20,6 +20,7 @@ from griptape_nodes.retained_mode.events.base_events import ForwardedException
 from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeResultFailure, NodeErrorEvent
 from griptape_nodes.retained_mode.events.node_error_details import (
     MAX_RESPONSE_BYTES,
+    MAX_RESPONSE_DEPTH,
     RESPONSE_DROPPED_FIELD,
     NodeErrorDetails,
     build_node_error_details,
@@ -262,6 +263,16 @@ class TestValidation:
         assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
 
 
+def _nested(depth: int) -> dict[str, Any]:
+    """A dict nested `depth` levels deep, counting the outermost one."""
+    nested: dict[str, Any] = {}
+    innermost = nested
+    for _ in range(depth - 1):
+        innermost["next"] = {}
+        innermost = innermost["next"]
+    return nested
+
+
 def _unshrinkable_response() -> dict[str, str]:
     """A response over the cap whose strings are each too short to cut."""
     return {f"key_{index}": "A" * 1000 for index in range(MAX_RESPONSE_BYTES // 1000 + 1)}
@@ -338,18 +349,18 @@ class TestNodeErrorAttachments:
             assert details.response is None
             assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
 
-    def test_response_that_overflows_while_shrinking_is_dropped_without_failing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        def overflow(_value: Any) -> Any:
-            raise RecursionError
-
-        monkeypatch.setattr("griptape_nodes.retained_mode.events.node_error_details._shrink", overflow)
-
-        details = build_node_error_details(NODE_NAME, self._node_error(response=_unshrinkable_response()))
+    def test_response_nested_past_the_depth_limit_is_dropped_with_a_marker(self) -> None:
+        details = build_node_error_details(NODE_NAME, self._node_error(response=_nested(MAX_RESPONSE_DEPTH + 1)))
 
         assert details.response is None
         assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
+
+    def test_response_at_the_depth_limit_is_kept(self) -> None:
+        response = _nested(MAX_RESPONSE_DEPTH)
+
+        details = build_node_error_details(NODE_NAME, self._node_error(response=response))
+
+        assert details.response == response
 
     def test_deeply_nested_response_is_dropped_without_failing(self) -> None:
         # Deep enough to exceed the C JSON encoder's own recursion limit, which is higher than

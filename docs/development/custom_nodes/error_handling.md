@@ -295,20 +295,20 @@ message and type are shown, but the editor only reads `fields`, `response`, and 
 
 #### Helpers for provider calls
 
-Don't write these yourself. `NodeError` has a constructor for each failure that every provider call
-shares:
+`NodeError` has a constructor for each failure that every provider call shares. Use them instead of
+writing your own helpers:
 
 | Helper                                                 | Use it when                                                                              |
 | ------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `NodeError.missing_secret(name, key_url=...)`          | The API key is not set. Links to the secret in Settings.                                 |
+| `NodeError.from_missing_secret(name, key_url=...)`     | The API key is not set. Links to the secret in Settings.                                 |
 | `NodeError.from_http_response(response, provider=...)` | A response came back that the node can't use. Takes a `requests` or `httpx` response.    |
 | `NodeError.from_request_exception(e, provider=...)`    | A call raised. Handles an exception with a response, a timeout, and a failed connection. |
-| `NodeErrorLink.for_secret(name, label)`                | You are writing your own message and want the "open this secret in Settings" link.       |
+| `NodeErrorLink.from_secret(name, label)`               | You are writing your own message and want the "open this secret in Settings" link.       |
 
 ```python
 def validate_before_node_run(self) -> list[Exception] | None:
     if not self._api_key():
-        return [NodeError.missing_secret("ACME_API_KEY", key_url="https://acme.example/keys")]
+        return [NodeError.from_missing_secret("ACME_API_KEY", key_url="https://acme.example/keys")]
     return None
 
 

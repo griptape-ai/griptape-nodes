@@ -28,7 +28,7 @@ class FakeResponse:
 
 class TestMissingSecret:
     def test_links_to_the_secret_and_the_key_page(self) -> None:
-        error = NodeError.missing_secret("MY KEY", key_url="https://example.com/keys")
+        error = NodeError.from_missing_secret("MY KEY", key_url="https://example.com/keys")
 
         assert "MY KEY is not set" in str(error)
         assert error.links[0] == NodeErrorLink(label="Add the API key", url="#settings-secrets?filter=MY%20KEY")
@@ -38,7 +38,7 @@ class TestMissingSecret:
         class MineError(NodeError, ValueError):
             pass
 
-        assert isinstance(MineError.missing_secret("K"), MineError)
+        assert isinstance(MineError.from_missing_secret("K"), MineError)
 
 
 class TestFromHttpResponse:
