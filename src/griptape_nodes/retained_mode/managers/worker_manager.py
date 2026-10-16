@@ -160,6 +160,10 @@ class WorkerManager(EngineScoped):
         # why termination is hopped back here. Captured in spawn_worker.
         self._spawn_loop: asyncio.AbstractEventLoop | None = None
 
+        # One task per spawned process, waiting for it to exit; held here so the loop's weak-ref to
+        # tasks does not GC a watcher before its process ends.
+        self._exit_watchers: set[asyncio.Task] = set()
+
         # Worker-side: monotonic timestamp of last heartbeat received from the orchestrator
         self._worker_heartbeat_last_received_at: float = 0.0
 
@@ -530,6 +534,10 @@ class WorkerManager(EngineScoped):
             # All spawns run on the engine event-queue loop, so this is idempotent.
             self._spawn_loop = asyncio.get_running_loop()
             self._managed_worker_processes[worker_key] = proc
+            # Started on this loop, the only one that may await proc.wait().
+            watcher = self._spawn_loop.create_task(self._settle_when_worker_exits_early(worker_key, proc))
+            self._exit_watchers.add(watcher)
+            watcher.add_done_callback(self._exit_watchers.discard)
         finally:
             # Released even when the fork raises, or the claim would silently refuse every later
             # attempt for this library -- but only while this attempt still holds it. A reset drops
@@ -539,6 +547,37 @@ class WorkerManager(EngineScoped):
                 del self._spawns_in_flight[worker_key]
             claim.set()
         logger.debug("Spawned worker for key '%s' (pid %s)", worker_key, proc.pid)
+
+    async def _settle_when_worker_exits_early(self, worker_key: str, proc: asyncio.subprocess.Process) -> None:
+        """Release the runs waiting on `worker_key` if its process exits before it has loaded.
+
+        Every other way a worker ends is noticed through the registry: it unregisters, or it stops
+        answering heartbeats and is evicted. A worker that dies while starting up -- refused a
+        license session, a crash on import -- never registered, so neither happens, and the runs
+        waiting on it would wait out the whole load timeout before blaming a load that never began.
+        The process exiting is the fact itself, so it is read from the process.
+        """
+        returncode = await proc.wait()
+        # A process this manager stopped itself was dropped from the records first, and whoever
+        # stopped it records the reason.
+        if self._managed_worker_processes.get(worker_key) is not proc:
+            return
+        # Loaded, then exited: the heartbeat loop evicts it and says so.
+        if self.has_settled(worker_key):
+            return
+        del self._managed_worker_processes[worker_key]
+        logger.error(
+            "Worker for key '%s' (pid %s) exited with code %s before it finished loading. Its own log "
+            "lines above say why.",
+            worker_key,
+            proc.pid,
+            returncode,
+        )
+        self.note_worker_unavailable(
+            worker_key,
+            f"the worker process that runs it stopped while starting up (exit code {returncode}). "
+            "The engine log has the details.",
+        )
 
     async def reset_workers(self) -> None:
         """Terminate all managed worker processes, unsubscribe response topics, clear state.
@@ -582,6 +621,10 @@ class WorkerManager(EngineScoped):
             for library_name, proc in self._managed_worker_processes.items()
             if library_names is None or library_name in library_names
         ]
+        # Dropped from the records before they are stopped, so the exit this causes reads as this
+        # manager's doing and not as a worker dying on its own.
+        for library_name, _proc in processes:
+            self._managed_worker_processes.pop(library_name, None)
         await asyncio.gather(*(self._terminate_via_spawn_loop(library_name, proc) for library_name, proc in processes))
         # Read after the termination, not before: a worker can register while its process is being
         # stopped, and an id missed here stays routable to a dead process.
@@ -618,8 +661,6 @@ class WorkerManager(EngineScoped):
             self._managed_worker_processes.clear()
             self._workers.clear()
             return
-        for library_name, _proc in processes:
-            self._managed_worker_processes.pop(library_name, None)
         for wid in worker_ids:
             self._workers.pop(wid, None)
 
