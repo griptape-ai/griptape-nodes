@@ -356,3 +356,53 @@ class TestSchemaDefaults:
         )
 
         assert schema.workflow_nodes is None
+
+
+class TestListWorkflowOnRegistryRefresh:
+    """A registry refresh lists the workflows behind workflow nodes again, keyed for the current workspace."""
+
+    def test_relists_against_the_current_workspace(
+        self, engine: Engine, tmp_path: Path, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        library_dir = workspace / "libraries" / "demo-library"
+        library_dir.mkdir(parents=True)
+        workflow_path = _write_workflow(library_dir, shape=_SHAPE)
+        library = _library([_definition("demo_workflow.py")])
+        library_info = _library_info(str(library_dir / "griptape_nodes_library.json"))
+        engine.library_manager.module_loading._register_workflow_node(
+            library.get_library_data().workflow_nodes[0],  # type: ignore[index]
+            library_dir,
+            library,
+            library_info,
+        )
+        monkeypatch.setitem(engine.library_manager._library_file_path_to_info, library_info.library_path, library_info)
+        other_workspace = tmp_path / "other_workspace"
+        other_workspace.mkdir()
+        engine.config_manager.workspace_path = other_workspace
+        engine.workflow_registry.clear_all_workflows()
+
+        engine.library_manager._register_library_workflow_node_workflows()
+
+        workflow = engine.workflow_registry.get_workflow_by_name(derive_registry_key(str(workflow_path)))
+        assert workflow.metadata.is_griptape_provided is True
+
+    def test_leaves_sandbox_workflows_to_the_workspace_scan(
+        self, engine: Engine, tmp_path: Path, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        library_dir = workspace / "sandbox_library"
+        library_dir.mkdir()
+        workflow_path = _write_workflow(library_dir, shape=_SHAPE)
+        library_info = _register(
+            engine,
+            library_dir,
+            _library_info(str(library_dir / "griptape_nodes_library.json"), is_sandbox=True),
+        )
+        monkeypatch.setitem(engine.library_manager._library_file_path_to_info, library_info.library_path, library_info)
+        other_workspace = tmp_path / "other_workspace"
+        other_workspace.mkdir()
+        engine.config_manager.workspace_path = other_workspace
+        engine.workflow_registry.clear_all_workflows()
+
+        engine.library_manager._register_library_workflow_node_workflows()
+
+        assert derive_registry_key(str(workflow_path)) not in engine.workflow_registry.list_workflows()

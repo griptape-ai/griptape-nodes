@@ -567,6 +567,17 @@ class LibraryManager(EngineScoped):
                     break
         return workflow_files
 
+    def _register_library_workflow_node_workflows(self) -> None:
+        """List the workflows behind every registered library's workflow nodes in the workflow registry."""
+        for library_info in self._library_file_path_to_info.values():
+            # Sandbox workflows are the user's own; the workspace scan lists them. A project switch
+            # that keeps the libraries loaded leaves the old project's sandbox in place, outside
+            # the new workspace, where listing would mark them library-provided.
+            if library_info.is_sandbox:
+                continue
+            for node_class in library_info.workflow_node_classes:
+                self.module_loading.list_workflow_node_workflow(node_class, library_info)
+
     async def _run_reload_libraries(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         # Start with a clean slate.
         clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)

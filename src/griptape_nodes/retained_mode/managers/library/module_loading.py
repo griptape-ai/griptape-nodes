@@ -933,14 +933,22 @@ class LibraryModuleLoading(EngineScoped):
             library_info.problems.append(library_problem)
             return True
 
-        # A workflow the library ships is listed now, as library-provided, like the workflows in the
-        # library's `workflows` list: browsable before any node is placed, and kept when a workspace
-        # refresh clears the user's workflows. A workflow elsewhere in the workspace is the user's own
-        # file, so it stays editable and the workspace scan lists it. The scan skips everything under
-        # a non-sandbox library's directory, which includes libraries installed into the workspace.
+        library_info.workflow_node_classes.append(node_class)
+        self.list_workflow_node_workflow(node_class, library_info)
+        return True
+
+    def list_workflow_node_workflow(self, node_class: type[WorkflowNode], library_info: LibraryInfo) -> None:
+        """List the workflow behind a library's workflow node in the registry as library-provided.
+
+        Listed like the workflows in the library's `workflows` list: browsable before any node is
+        placed. A registry refresh clears every workflow and calls this again, so the key follows the
+        current workspace. A workflow elsewhere in the workspace is the user's own file, so it stays
+        editable and the workspace scan lists it. The scan skips everything under a non-sandbox
+        library's directory, which includes libraries installed into the workspace.
+        """
         workspace_path = self.engine.config_manager.workspace_path
         if self._is_users_workflow(node_class.workflow_file_path, workspace_path, library_info):
-            return True
+            return
         node_class.workflow_metadata.is_griptape_provided = True
         try:
             ensure_workflow_registered(
@@ -952,11 +960,10 @@ class LibraryModuleLoading(EngineScoped):
         except (KeyError, ValueError):
             logger.warning(
                 "Library '%s' could not list the workflow '%s' behind node type '%s'.",
-                library.get_library_data().name,
+                library_info.library_name,
                 node_class.workflow_file_path,
-                workflow_node_definition.node_type,
+                node_class.__name__,
             )
-        return True
 
     @staticmethod
     def _is_users_workflow(workflow_file_path: Path, workspace_path: Path, library_info: LibraryInfo) -> bool:

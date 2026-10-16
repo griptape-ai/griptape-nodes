@@ -247,9 +247,10 @@ class WorkflowManager(EngineScoped):
 
             if workflows_to_register is None:
                 # Library-declared workflows go first so they claim their registry keys before
-                # the workspace scan.
+                # the workspace scan, then the workflows behind library workflow nodes.
                 library_workflow_files = await self.engine.library_manager._collect_library_workflow_files()
                 await self._process_workflows_for_registration(library_workflow_files)
+                self.engine.library_manager._register_library_workflow_node_workflows()
 
                 workflows_to_register = []
 

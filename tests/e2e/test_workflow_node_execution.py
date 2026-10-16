@@ -347,6 +347,33 @@ async def test_a_library_installed_in_the_workspace_lists_its_backing_workflow(
     assert node.metadata["_workflow_file_value"] == registry_key
 
 
+@pytest.mark.skipif(
+    not FIXTURE_WORKFLOW_FILE.exists(),
+    reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
+)
+@pytest.mark.asyncio
+async def test_a_library_installed_in_the_workspace_lists_its_backing_workflow_after_a_project_switch(
+    installed_library: Path, engine: Engine, tmp_path: Path
+) -> None:
+    """After the workspace changes, the backing workflow is listed under a key that resolves to its file."""
+    workflow_file = installed_library.parent / FIXTURE_WORKFLOW_FILE.name
+    other_workspace = tmp_path / "other_project"
+    other_workspace.mkdir()
+
+    engine.config_manager.workspace_path = other_workspace
+    await engine.workflow_manager.refresh_workflow_registry()
+
+    listed = [
+        workflow
+        for key, workflow in engine.workflow_registry._workflows.items()
+        if key.endswith("shout_workflow") and workflow.metadata.is_griptape_provided
+    ]
+    assert len(listed) == 1
+    assert listed[0].file_path is not None
+    resolved = Path(engine.workflow_registry.get_complete_file_path(listed[0].file_path))
+    assert resolved == workflow_file.resolve()
+
+
 @pytest.fixture
 def template_library(tmp_path: Path, engine: Engine, materialize_library: Callable[..., Path]) -> Path:
     """Register the fixture library with its workflow marked as a template; return the workflow path."""
