@@ -513,13 +513,8 @@ class LibraryManager(EngineScoped):
         # Register all secrets now that libraries are loaded and settings are merged
         self.engine.secrets_manager.register_all_secrets()
 
-        # We have to load all libraries before we attempt to load workflows.
-
-        # This will (attempts to) load all workflows specified by LIBRARIES. User workflows are loaded later.
-        library_workflow_files_to_register = await self._collect_library_workflow_files()
-        await self.engine.workflow_manager.register_list_of_workflows(library_workflow_files_to_register)
-
-        # Go tell the Workflow Manager that it's turn is now.
+        # We have to load all libraries before we attempt to load workflows. The refresh registers
+        # library-declared workflows first, then user workflows.
         await self.engine.workflow_manager.refresh_workflow_registry()
 
         # Signal readiness so the application layer can render its library status
@@ -538,7 +533,7 @@ class LibraryManager(EngineScoped):
                 )
             )
 
-    async def _collect_library_workflow_files(self) -> list[str]:
+    async def collect_library_workflow_files(self) -> list[str]:
         """Collect workflow file paths declared by all registered libraries.
 
         Returns absolute paths to workflow files, adding each library's base directory
@@ -562,11 +557,27 @@ class LibraryManager(EngineScoped):
                 if library_info.library_name == library_name:
                     library_path = Path(library_info.library_path)
                     base_dir = library_path.parent.absolute()
-                    # Add the directory to the Python path to allow for relative imports.
+                    # Put the directory first on the Python path to allow for relative imports.
+                    # Every registry refresh collects again, so drop an earlier entry rather
+                    # than stacking duplicates.
+                    if str(base_dir) in sys.path:
+                        sys.path.remove(str(base_dir))
                     sys.path.insert(0, str(base_dir))
                     workflow_files.extend(str(base_dir / workflow) for workflow in library_data.workflows)
                     break
         return workflow_files
+
+    def register_library_workflow_node_workflows(self) -> None:
+        """List the workflows behind every registered library's workflow nodes in the workflow registry."""
+        current_sandbox_dir = self.sandbox.get_sandbox_directory()
+        for library_info in self._library_file_path_to_info.values():
+            # A project switch that keeps the libraries loaded can leave the old project's sandbox
+            # loaded too; list only the sandbox the current config points at. A sandbox inside the
+            # workspace is the user's own, and list_workflow_node_workflow leaves it to the scan.
+            if library_info.is_sandbox and Path(library_info.library_path).parent != current_sandbox_dir:
+                continue
+            for node_class in library_info.workflow_node_classes:
+                self.module_loading.list_workflow_node_workflow(node_class, library_info)
 
     async def _run_reload_libraries(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         # Start with a clean slate.
