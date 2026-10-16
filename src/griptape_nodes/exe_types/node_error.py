@@ -5,6 +5,7 @@ Node libraries import ``NodeError`` and ``NodeErrorLink`` from ``griptape_nodes.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -115,7 +116,7 @@ class NodeError(Exception):
         body = _json_object(response)
         reason = _provider_reason(body)
         if key_refused is None:
-            key_refused = status in _KEY_REFUSED_STATUSES or (reason is not None and "api key" in reason.lower())
+            key_refused = status in _KEY_REFUSED_STATUSES or _mentions_api_key(reason)
 
         links: list[NodeErrorLink] = []
         if key_refused and secret_name:
@@ -171,13 +172,22 @@ _TIMEOUT_CLASS_NAMES = frozenset({"Timeout", "TimeoutException", "TimeoutError"}
 _CONNECTION_CLASS_NAMES = frozenset({"ConnectionError", "ConnectError", "NetworkError"})
 
 _KEY_REFUSED_STATUSES = (401, 403)
-HTTP_ERROR_STATUS = 400
-HTTP_TOO_MANY_REQUESTS = 429
-HTTP_SERVER_ERROR_STATUS = 500
+_HTTP_ERROR_STATUS = 400
+_HTTP_TOO_MANY_REQUESTS = 429
+_HTTP_SERVER_ERROR_STATUS = 500
 _MAX_BODY_TEXT_CHARS = 2000
+# "API key", "api_key", "api-key" or "apikey" in a provider's message, as a word, such as a 422
+# with "Invalid API key format".
+_API_KEY_MENTION = re.compile(r"\bapi[ _-]?key\b", re.IGNORECASE)
 
 # Response headers providers use for the ID of a request, in the order they are checked.
 _REQUEST_ID_HEADERS = ("x-request-id", "request-id", "x-trace-id", "x-amzn-requestid", "cf-ray")
+
+
+def _mentions_api_key(reason: str | None) -> bool:
+    if reason is None:
+        return False
+    return _API_KEY_MENTION.search(reason) is not None
 
 
 def _json_object(response: Any) -> dict[str, Any] | None:
@@ -302,10 +312,10 @@ def _key_refused_message(provider: str, secret_name: str | None) -> str:
 
 
 def _fallback_message(provider: str, status: int) -> str:
-    if status < HTTP_ERROR_STATUS:
+    if status < _HTTP_ERROR_STATUS:
         return f"{provider} sent a response the node could not read (HTTP {status})."
-    if status == HTTP_TOO_MANY_REQUESTS:
+    if status == _HTTP_TOO_MANY_REQUESTS:
         return f"{provider} is rate-limiting requests. Wait a moment and run the node again."
-    if status >= HTTP_SERVER_ERROR_STATUS:
+    if status >= _HTTP_SERVER_ERROR_STATUS:
         return f"{provider} had a server error (HTTP {status}). Run the node again in a few minutes."
     return f"{provider} returned HTTP {status}."

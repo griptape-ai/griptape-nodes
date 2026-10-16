@@ -96,6 +96,22 @@ class TestFromHttpResponse:
         assert str(error) == "Invalid API key format"
         assert error.links[0].label == "Update the API key"
 
+    @pytest.mark.parametrize("reason", ["Invalid api_key", "Bad apiKey header", "API-key format is wrong"])
+    def test_other_spellings_of_api_key_link_to_the_secret(self, reason: str) -> None:
+        error = NodeError.from_http_response(
+            FakeResponse(422, {"detail": reason}), provider="Acme", secret_name="ACME_KEY"
+        )
+
+        assert str(error) == reason
+        assert error.links[0].label == "Update the API key"
+
+    def test_a_word_containing_apikey_is_not_a_mention(self) -> None:
+        error = NodeError.from_http_response(
+            FakeResponse(422, {"detail": "Unknown field 'rapikeyword'"}), provider="Acme", secret_name="ACME_KEY"
+        )
+
+        assert error.links == []
+
     def test_body_that_is_not_json_is_attached_as_text(self) -> None:
         error = NodeError.from_http_response(FakeResponse(502, text="x" * 5000), provider="Acme")
 
