@@ -294,9 +294,16 @@ class ObjectManager(EngineScoped):
         del self._name_to_objects[name]
 
     def take_nodes_with_queued_changes(self) -> list[BaseNode]:
-        """Return the registered nodes with queued UI changes and forget them."""
-        nodes = list(self._nodes_with_queued_changes.values())
-        self._nodes_with_queued_changes.clear()
+        """Return the registered nodes with queued UI changes, in queue order, and forget them.
+
+        Drained one atomic ``popitem`` at a time: a node can queue a change from another thread
+        mid-drain, and copying then clearing would drop it while its element stays queued.
+        """
+        nodes = []
+        while self._nodes_with_queued_changes:
+            _, node = self._nodes_with_queued_changes.popitem()
+            nodes.append(node)
+        nodes.reverse()
         return nodes
 
     def _note_queued_changes(self, node: BaseNode) -> None:

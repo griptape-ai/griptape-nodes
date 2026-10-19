@@ -56,3 +56,15 @@ class TestQueuedChanges:
         other.track_change("tooltip", "Changed")
 
         assert object_manager.take_nodes_with_queued_changes() == [node]
+
+    def test_nodes_are_returned_in_the_order_they_queued(self) -> None:
+        object_manager = ObjectManager(MagicMock(), engine=MagicMock())
+        first, first_parameter = _node_with_parameter("A")
+        second, second_parameter = _node_with_parameter("B")
+        object_manager.add_object_by_name("A", first)
+        object_manager.add_object_by_name("B", second)
+
+        first_parameter.track_change("tooltip", "Changed")
+        second_parameter.track_change("tooltip", "Changed")
+
+        assert object_manager.take_nodes_with_queued_changes() == [first, second]
