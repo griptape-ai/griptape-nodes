@@ -180,6 +180,10 @@ class ReportUsageRequest(RequestPayload):
         output_tokens: The provider's output token count
         cache_read_tokens: The cached share of `input_tokens`, when the provider reports one
         cache_write_tokens: Tokens written to the provider's cache, when it reports them
+        input_audio_tokens: The audio share of `input_tokens`, cached audio included, when the
+            call took audio in
+        cache_audio_read_tokens: The cached share of that audio. It is also counted in
+            `cache_read_tokens`
         provider: Provider name, e.g. "anthropic"
         model: The provider's name for the model, e.g. "gpt-5-nano"
         activity_type: Kind of call, e.g. "chat_completion"
@@ -195,6 +199,8 @@ class ReportUsageRequest(RequestPayload):
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_write_tokens: int | None = None
+    input_audio_tokens: int | None = None
+    cache_audio_read_tokens: int | None = None
     provider: str | None = None
     model: str | None = None
     activity_type: str | None = None

@@ -63,7 +63,9 @@ await GriptapeNodes.ahandle_request(
 
     Anthropic and Bedrock leave the cached tokens out of their input count, so passing their input count alone reports too little, and a report whose cache counts exceed it isn't sent.
 
-- If your node runs its model through pydantic-ai, pass its `RunUsage` counts straight across: `RunUsage.input_tokens` is already the total for every provider.
+- When the call took audio in, also send `input_audio_tokens`, the audio share of `input_tokens` with cached audio included, and `cache_audio_read_tokens`, the cached share of that audio. The cached audio is also counted in `cache_read_tokens`. OpenAI reports input audio as `prompt_tokens_details.audio_tokens`. Leave both out for a call without audio.
+
+- If your node runs its model through pydantic-ai, pass its `RunUsage` counts straight across, audio included: `RunUsage.input_tokens` is already the total for every provider, and `input_audio_tokens` and `cache_audio_read_tokens` follow the same rules.
 
 - `model` is required with token counts, because Griptape Cloud prices by model. Send the same provider name for the model as in the check.
 

@@ -426,16 +426,33 @@ def _token_problem(request: ReportUsageRequest) -> str | None:
     """Say why a token report can't be sent, or None when it can."""
     if request.input_tokens is None or request.output_tokens is None:
         return "a token report needs both input and output token counts."
-    cache_read = request.cache_read_tokens or 0
-    cache_write = request.cache_write_tokens or 0
-    if min(request.input_tokens, request.output_tokens, cache_read, cache_write) < 0:
-        return "a token count is negative."
-    if cache_read + cache_write > request.input_tokens:
-        return "the cached token counts are larger than the input token count."
+    count_problem = _count_problem(request.input_tokens, request.output_tokens, request)
+    if count_problem is not None:
+        return count_problem
     if not request.model or len(request.model) > _DESCRIPTOR_CAPS["model"]:
         return "a token report needs a model name Griptape Cloud can price it under."
     if request.activity_type not in (None, "", "chat_completion"):
         return "Griptape Cloud prices token counts as chat completions; send a declared cost for other kinds of call."
+    return None
+
+
+def _count_problem(input_tokens: int, output_tokens: int, request: ReportUsageRequest) -> str | None:
+    """Say why the token counts don't add up, or None when they do.
+
+    An absent optional count is 0, as Cloud reads it, so a share is only checked against what was sent.
+    """
+    cache_read = request.cache_read_tokens or 0
+    cache_write = request.cache_write_tokens or 0
+    input_audio = request.input_audio_tokens or 0
+    cache_audio_read = request.cache_audio_read_tokens or 0
+    if min(input_tokens, output_tokens, cache_read, cache_write, input_audio, cache_audio_read) < 0:
+        return "a token count is negative."
+    if cache_read + cache_write > input_tokens:
+        return "the cached token counts are larger than the input token count."
+    if input_audio > input_tokens:
+        return "the audio input count is larger than the input token count."
+    if cache_audio_read > min(input_audio, cache_read):
+        return "the cached audio count is larger than the audio input count or the cached input count."
     return None
 
 
@@ -449,6 +466,10 @@ def _usage_body(request: ReportUsageRequest) -> dict[str, int | None]:
         usage["cache_read_tokens"] = request.cache_read_tokens
     if request.cache_write_tokens is not None:
         usage["cache_write_tokens"] = request.cache_write_tokens
+    if request.input_audio_tokens is not None:
+        usage["input_audio_tokens"] = request.input_audio_tokens
+    if request.cache_audio_read_tokens is not None:
+        usage["cache_audio_read_tokens"] = request.cache_audio_read_tokens
     return usage
 
 

@@ -672,6 +672,95 @@ class TestTokenReports:
         assert isinstance(result, ReportUsageResultSuccess)
 
 
+class TestAudioCounts:
+    """input_audio_tokens is the audio share of input_tokens; cache_audio_read_tokens the cached share of that."""
+
+    def test_audio_counts_are_posted_in_usage(self, http: MagicMock) -> None:
+        http.return_value = _response(201)
+
+        _manager().on_report_usage_request(
+            ReportUsageRequest(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_tokens=900,
+                input_audio_tokens=300,
+                cache_audio_read_tokens=200,
+                model="gpt-4o",
+            )
+        )
+
+        assert _sent(http)["usage"] == {
+            "input_tokens": 1000,
+            "output_tokens": 500,
+            "cache_read_tokens": 900,
+            "input_audio_tokens": 300,
+            "cache_audio_read_tokens": 200,
+        }
+
+    def test_audio_counts_are_left_out_when_not_given(self, http: MagicMock) -> None:
+        http.return_value = _response(201)
+
+        _manager().on_report_usage_request(ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m"))
+
+        usage = _sent(http)["usage"]
+        assert "input_audio_tokens" not in usage
+        assert "cache_audio_read_tokens" not in usage
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"input_audio_tokens": 1000},
+            {"input_audio_tokens": 300, "cache_read_tokens": 900, "cache_audio_read_tokens": 300},
+            {"input_audio_tokens": 300, "cache_read_tokens": 200, "cache_audio_read_tokens": 200},
+        ],
+        ids=["audio-equals-input", "cached-audio-equals-audio", "cached-audio-equals-cached-input"],
+    )
+    def test_shares_equal_to_their_limit_are_accepted(self, http: MagicMock, fields: dict) -> None:
+        http.return_value = _response(201)
+
+        result = _manager().on_report_usage_request(
+            ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m", **fields)
+        )
+
+        assert isinstance(result, ReportUsageResultSuccess)
+
+    @pytest.mark.parametrize(
+        ("fields", "reason"),
+        [
+            ({"input_audio_tokens": 1001}, "audio input count is larger"),
+            (
+                {"input_audio_tokens": 300, "cache_read_tokens": 900, "cache_audio_read_tokens": 301},
+                "cached audio count",
+            ),
+            (
+                {"input_audio_tokens": 300, "cache_read_tokens": 200, "cache_audio_read_tokens": 201},
+                "cached audio count",
+            ),
+            ({"cache_audio_read_tokens": 1}, "cached audio count"),
+            ({"input_audio_tokens": -1}, "negative"),
+            ({"cache_audio_read_tokens": -1}, "negative"),
+        ],
+        ids=[
+            "audio-over-input",
+            "cached-audio-over-audio",
+            "cached-audio-over-cached-input",
+            "cached-audio-without-audio",
+            "negative-audio",
+            "negative-cached-audio",
+        ],
+    )
+    def test_a_report_cloud_would_reject_for_audio_is_not_sent(
+        self, http: MagicMock, fields: dict, reason: str
+    ) -> None:
+        result = _manager().on_report_usage_request(
+            ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m", **fields)
+        )
+
+        assert isinstance(result, ReportUsageResultFailure)
+        assert reason in str(result.result_details)
+        http.assert_not_called()
+
+
 RECORDING_OFF = {
     "type": "server_error",
     "errors": [{"code": "SPEND_RECORDING_OFF", "detail": "Spend recording is switched off.", "attr": None}],
