@@ -938,7 +938,9 @@ class ErrorState(State):
         task_to_node = context.task_to_node
 
         running_tasks = [task for task in task_to_node if not task.done()]
-        if running_tasks:
+        # Park only when nothing has finished yet: a node that finished in the same wake as the
+        # failure publishes now, not after the slowest running sibling.
+        if running_tasks and len(running_tasks) == len(task_to_node):
             # Also wake on the new-work flag, which a teardown sets, so a reset ends this run
             # now rather than when the slowest running node finishes. See ExecuteDagState.on_update.
             context.new_work_event.clear()

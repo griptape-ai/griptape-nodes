@@ -108,6 +108,46 @@ class TestAFailureLetsRunningNodesFinish:
         assert machine.context.running_tasks_count == 0
 
     @pytest.mark.asyncio
+    async def test_a_node_finishing_alongside_the_failure_publishes_before_a_slower_sibling(
+        self, published: AsyncMock
+    ) -> None:
+        """A success reaped in the same wake as the failure must not wait on a node still running."""
+        machine, release, dag_builder = machine_running_one_node(max_nodes_in_parallel=5)
+        finish_together = asyncio.Event()
+        failing = add_waiting_node(dag_builder, "failing", "failing")
+        done_sibling = add_waiting_node(dag_builder, "done_sibling", "done_sibling")
+        done_sibling.node_reference.state = NodeResolutionState.RESOLVING
+
+        async def _raise_on_finish() -> None:
+            await finish_together.wait()
+            msg = "boom"
+            raise RuntimeError(msg)
+
+        _seed_task(machine, failing, asyncio.create_task(_raise_on_finish()))
+        _seed_task(machine, done_sibling, asyncio.create_task(finish_together.wait()))
+        finish_together.set()
+
+        driver = asyncio.create_task(machine.resolve_node())
+        for _ in range(50):
+            if published.await_count:
+                break
+            await asyncio.sleep(0)
+
+        # "running" is still held, so the run has not ended, yet the finished sibling is published.
+        assert not driver.done()
+        published.assert_awaited_once()
+        assert published.await_args is not None
+        assert published.await_args.args[1].node_reference.name == "done_sibling"
+        assert done_sibling.node_reference.state is NodeResolutionState.RESOLVED
+
+        release.set()
+        await asyncio.wait_for(driver, timeout=1)
+
+        assert [call.args[1].node_reference.name for call in published.await_args_list] == ["done_sibling", "running"]
+        assert machine.context.workflow_state == WorkflowState.ERRORED
+        assert machine.context.running_tasks_count == 0
+
+    @pytest.mark.asyncio
     async def test_a_node_cannot_join_a_run_that_is_ending_on_a_failure(self, published: AsyncMock) -> None:  # noqa: ARG002
         machine, release, dag_builder = machine_running_one_node(max_nodes_in_parallel=5)
         failing = add_waiting_node(dag_builder, "failing", "failing")
