@@ -672,6 +672,55 @@ class TestTokenReports:
         assert isinstance(result, ReportUsageResultSuccess)
 
 
+RECORDING_OFF = {
+    "type": "server_error",
+    "errors": [{"code": "SPEND_RECORDING_OFF", "detail": "Spend recording is switched off.", "attr": None}],
+}
+
+
+class TestSpendRecordingOff:
+    """Cloud's kill switch is a 503 with code SPEND_RECORDING_OFF: a steady state, not an outage."""
+
+    def test_a_check_clears_quietly(self, http: MagicMock) -> None:
+        http.return_value = _response(503, RECORDING_OFF)
+
+        result = _check(_manager(), BudgetAccessRequest(model="m"))
+
+        assert isinstance(result, BudgetAccessResultSuccess)
+        assert result.checked is False
+        assert isinstance(result.result_details, ResultDetails)
+        detail = result.result_details.result_details[0]
+        assert detail.level == logging.DEBUG
+        assert "spend recording switched off" in detail.message
+
+    def test_a_report_is_dropped_once_without_retrying(self, http: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        http.return_value = _response(503, RECORDING_OFF)
+
+        with caplog.at_level(logging.DEBUG, logger="griptape_nodes"):
+            result = _manager().on_report_usage_request(
+                ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m")
+            )
+
+        assert isinstance(result, ReportUsageResultSuccess)
+        assert http.call_count == 1
+        dropped = [r for r in caplog.records if "spend recording switched off" in r.getMessage()]
+        assert [r.levelno for r in dropped] == [logging.DEBUG]
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    def test_an_ordinary_503_is_still_an_outage(self, http: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        """Only the kill switch's code is quiet: any other 503 still warns and is retried."""
+        http.return_value = _response(503, {"type": "server_error", "errors": [{"code": "UNAVAILABLE"}]})
+
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            check = _check(_manager(), BudgetAccessRequest(model="m"))
+            _manager().on_report_usage_request(ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m"))
+
+        assert isinstance(check.result_details, ResultDetails)
+        assert check.result_details.result_details[0].level == logging.WARNING
+        assert http.call_count == 1 + budget_manager_module.REPORT_MAX_ATTEMPTS
+        assert "Dropped usage report" in caplog.text
+
+
 class TestReportQueue:
     def test_no_thread_until_the_first_report(self) -> None:
         budget_manager_module._DaemonQueue("test-report-lazy")

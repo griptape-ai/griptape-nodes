@@ -67,6 +67,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 BUDGET_CHECKS_PATH = "/api/budget-checks"
+# The error code Cloud's 503 carries while its spend-recording kill switch is off.
+SPEND_RECORDING_OFF_CODE = "SPEND_RECORDING_OFF"
 SPEND_PATH = "/api/spend"
 
 # The check blocks the node, so it gets one short attempt and fails open rather than retrying.
@@ -201,7 +203,7 @@ class BudgetManager(EngineScoped):
         except _NoCredentialError:
             return self._unchecked(request.model, correlation_id, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
         except httpx2.HTTPStatusError as exc:
-            return self._refused_over_http(request.model, correlation_id, exc.response.status_code)
+            return self._refused_over_http(request.model, correlation_id, exc.response)
         # InvalidURL is not an HTTPError: a mistyped GT_CLOUD_BASE_URL must still fail open.
         except (httpx2.HTTPError, httpx2.InvalidURL):
             return self._unchecked(request.model, correlation_id, "Failed because Griptape Cloud could not be reached.")
@@ -331,6 +333,12 @@ class BudgetManager(EngineScoped):
             logger.warning("Dropped a usage report: %s", MISSING_CREDENTIAL_MESSAGE)
         except httpx2.HTTPStatusError as exc:
             status = exc.response.status_code
+            if _is_recording_off(exc.response):
+                logger.debug(
+                    "Dropped usage report %s: this Griptape Cloud deployment has spend recording switched off.",
+                    body["idempotency_key"],
+                )
+                return
             if status in (HTTPStatus.BAD_REQUEST, HTTPStatus.CONFLICT):
                 # The engine built a body Cloud rejects, or reused a key: a bug here, not in Cloud.
                 logger.error(
@@ -365,10 +373,19 @@ class BudgetManager(EngineScoped):
             ),
         )
 
-    def _refused_over_http(self, model: str, correlation_id: str, status: int) -> BudgetAccessResultSuccess:
+    def _refused_over_http(
+        self, model: str, correlation_id: str, response: httpx2.Response
+    ) -> BudgetAccessResultSuccess:
         """Clear a call Cloud answered with an HTTP error rather than a decision."""
-        if status == HTTPStatus.NOT_FOUND:
-            # The deployment has reporting switched off: the steady state there, not news.
+        # Both are the steady state of a deployment, not news, so they stay out of the warnings.
+        if _is_recording_off(response):
+            return self._unchecked(
+                model,
+                correlation_id,
+                "Failed because this Griptape Cloud deployment has spend recording switched off.",
+                level=logging.DEBUG,
+            )
+        if response.status_code == HTTPStatus.NOT_FOUND:
             return self._unchecked(
                 model,
                 correlation_id,
@@ -376,7 +393,7 @@ class BudgetManager(EngineScoped):
                 level=logging.DEBUG,
             )
         return self._unchecked(
-            model, correlation_id, f"Failed because Griptape Cloud refused the check (HTTP {status})."
+            model, correlation_id, f"Failed because Griptape Cloud refused the check (HTTP {response.status_code})."
         )
 
     def _report_not_sent(self, model: str | None, reason: str) -> ReportUsageResultFailure:
@@ -491,7 +508,25 @@ class _NoCredentialError(Exception):
 
 
 def _is_retryable_report_error(exc: BaseException) -> bool:
-    """Retry transient failures, and 429 too: Cloud throttles reports per license."""
+    """Retry transient failures, and 429 too: Cloud throttles reports per license.
+
+    Not the spend-recording kill switch: it is a 503, but it stays off until someone turns it on.
+    """
+    if isinstance(exc, httpx2.HTTPStatusError) and _is_recording_off(exc.response):
+        return False
     if isinstance(exc, httpx2.HTTPStatusError) and exc.response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
         return True
     return is_retryable_httpx_error(exc)
+
+
+def _is_recording_off(response: httpx2.Response) -> bool:
+    """Whether Cloud answered with its spend-recording kill switch: a 503 with code SPEND_RECORDING_OFF."""
+    if response.status_code != HTTPStatus.SERVICE_UNAVAILABLE:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    if not isinstance(body, dict) or not isinstance(body.get("errors"), list):
+        return False
+    return any(isinstance(error, dict) and error.get("code") == SPEND_RECORDING_OFF_CODE for error in body["errors"])
