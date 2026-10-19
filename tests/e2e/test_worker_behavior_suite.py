@@ -75,7 +75,7 @@ def _register_library(tmp_path: Path) -> None:
 def _make(node_type: str, name: str) -> BaseNode:
     """Create a node directly, for tests that only execute it."""
     node = LibraryRegistry.create_node(node_type=node_type, name=name, specific_library_name=LIBRARY)
-    current_engine().object_manager.add_object_by_name(name, node)
+    current_engine().object_manager.add_object_by_name(current_engine().current_workflow, name, node)
     return node
 
 

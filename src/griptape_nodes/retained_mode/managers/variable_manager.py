@@ -675,7 +675,7 @@ class VariablesManager(EngineScoped):
             self._persist_project_variables(project_id=request.project_id)
         else:
             result.variable.value = request.value
-        self._unresolve_nodes_referencing_variables([request.name])
+        self._unresolve_nodes_referencing_variables(workflow, [request.name])
         return SetVariableValueResultSuccess(result_details=f"Successfully set value for variable '{request.name}'.")
 
     @handles(GetVariableTypeRequest)
@@ -1221,7 +1221,7 @@ class VariablesManager(EngineScoped):
         for name, value in request.variables.items():
             found[name].value = value
 
-        self._unresolve_nodes_referencing_variables(list(request.variables.keys()))
+        self._unresolve_nodes_referencing_variables(workflow, list(request.variables.keys()))
         return SetVariablesResultSuccess(result_details=f"Successfully set {len(request.variables)} variable(s).")
 
     @handles(GetVariableDetailsRequest)
@@ -1261,7 +1261,7 @@ class VariablesManager(EngineScoped):
             details=details, result_details=f"Successfully retrieved details for variable '{request.name}'."
         )
 
-    def _unresolve_nodes_referencing_variables(self, variable_names: list[str]) -> None:
+    def _unresolve_nodes_referencing_variables(self, workflow: WorkflowRuntime, variable_names: list[str]) -> None:
         # Lazy imports to avoid circular dependency between retained_mode and exe_types.
         from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
         from griptape_nodes.exe_types.variable_resolver import VariableResolver
@@ -1273,7 +1273,7 @@ class VariablesManager(EngineScoped):
 
         connections = flow_manager.get_connections()
 
-        for obj in list(self.engine.object_manager._state.name_to_objects.values()):
+        for obj in list(workflow.objects.name_to_objects.values()):
             if not isinstance(obj, BaseNode):
                 continue
             if obj.state not in (NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING):

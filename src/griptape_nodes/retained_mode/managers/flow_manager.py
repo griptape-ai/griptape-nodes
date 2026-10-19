@@ -704,14 +704,14 @@ class FlowManager(EngineScoped):
 
         # Create it.
         final_flow_name = self.engine.object_manager.generate_name_for_object(
-            type_name="ControlFlow", requested_name=request.flow_name
+            self.engine.current_workflow, type_name="ControlFlow", requested_name=request.flow_name
         )
         # Check if we're creating this flow within a referenced workflow context
         # This will inform the engine to maintain a reference to the workflow
         # when serializing it. It may inform the editor to render it differently.
         workflow_manager = self.engine.workflow_manager
         flow = ControlFlow(name=final_flow_name, engine=self.engine, metadata=request.metadata)
-        self.engine.object_manager.add_object_by_name(name=final_flow_name, obj=flow)
+        self.engine.object_manager.add_object_by_name(self.engine.current_workflow, name=final_flow_name, obj=flow)
         self._state.name_to_parent_name[final_flow_name] = parent_name
 
         # Track referenced workflow if this flow was created within a referenced workflow context
@@ -821,7 +821,7 @@ class FlowManager(EngineScoped):
 
             # If we've made it this far, we have deleted all the children Flows and their nodes.
             # Remove the flow from our map.
-            obj_mgr.del_obj_by_name(flow.name)
+            obj_mgr.del_obj_by_name(self.engine.current_workflow, flow.name)
             del self._state.name_to_parent_name[flow.name]
 
             # Clean up referenced workflow tracking

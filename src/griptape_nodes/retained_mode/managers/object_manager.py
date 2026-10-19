@@ -1,5 +1,4 @@
 import logging
-import re
 from re import Pattern
 from typing import Any, ClassVar
 
@@ -29,7 +28,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.object_types import WorkflowObjects
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -37,33 +38,12 @@ logger = logging.getLogger("griptape_nodes")
 class ObjectManager(EngineScoped):
     request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
-    class WorkflowState:
-        """The named objects (flows, nodes) of one open workflow."""
-
-        def __init__(self) -> None:
-            self.name_to_objects: dict[str, object] = {}
-
     def __init__(self, _event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         _event_manager.register_request_handlers(self)
 
-    @property
-    def _state(self) -> "ObjectManager.WorkflowState":
-        return self.engine.current_workflow.state(ObjectManager.WorkflowState, ObjectManager.WorkflowState)
-
-    @property
-    def _objects_to_read(self) -> dict[str, object]:
-        """The current workflow's objects for a lookup, which finds none when no workflow is open.
-
-        Only lookups read through here. Adding or removing an object needs a workflow to hold it.
-        """
-        runtime = self.engine.current_workflow_or_none()
-        if runtime is None:
-            return {}
-        return runtime.state(ObjectManager.WorkflowState, ObjectManager.WorkflowState).name_to_objects
-
-    @handles(RenameObjectRequest, scope=RequestScope.WORKFLOW)
-    def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
+    @handles(RenameObjectRequest)
+    def on_rename_object_request(self, request: RenameObjectRequest, workflow: WorkflowRuntime) -> ResultPayload:
         # Does the source object exist?
         if request.object_name == request.requested_name:
             unchanged = RenameObjectResultSuccess(
@@ -74,18 +54,18 @@ class ObjectManager(EngineScoped):
             # undo slot that would replay as a no-op.
             unchanged.altered_workflow_state = False
             return unchanged
-        source_obj = self.attempt_get_object_by_name(request.object_name)
+        source_obj = workflow.objects.name_to_objects.get(request.object_name)
         if source_obj is None:
             details = f"Attempted to rename object '{request.object_name}', but no object of that name could be found."
             return RenameObjectResultFailure(next_available_name=None, result_details=details)
 
         # Is there a collision?
-        requested_name_obj = self.attempt_get_object_by_name(request.requested_name)
+        requested_name_obj = workflow.objects.name_to_objects.get(request.requested_name)
         if requested_name_obj is None:
             final_name = request.requested_name
         else:
             # Collision. Decide what to do.
-            next_name = self.generate_name_for_object(
+            next_name = workflow.objects.generate_name(
                 type_name=source_obj.__class__.__name__, requested_name=request.requested_name
             )
 
@@ -109,8 +89,8 @@ class ObjectManager(EngineScoped):
                 return RenameObjectResultFailure(next_available_name=None, result_details=details)
 
         # Update the object table.
-        self._state.name_to_objects[final_name] = source_obj
-        del self._state.name_to_objects[request.object_name]
+        workflow.objects.name_to_objects[final_name] = source_obj
+        del workflow.objects.name_to_objects[request.object_name]
 
         details = f"Successfully renamed object '{request.object_name}' to '{final_name}'."
         log_level = logging.DEBUG
@@ -131,8 +111,7 @@ class ObjectManager(EngineScoped):
 
         engine = self.engine
         for runtime in engine.workflow_runtimes:
-            with engine.bind_workflow(runtime):
-                failure = await self.clear_current_workflow()
+            failure = await self.clear_workflow(runtime)
             if failure is not None:
                 return ClearAllObjectStateResultFailure(result_details=failure)
             engine.remove_workflow_runtime(runtime)
@@ -143,15 +122,71 @@ class ObjectManager(EngineScoped):
         details = "Successfully cleared all object state (deleted everything)."
         return ClearAllObjectStateResultSuccess(result_details=details)
 
-    async def clear_current_workflow(self, *, keep_variables: bool = False) -> str | None:
-        """Delete everything in the workflow the current work acts on, leaving its runtime empty.
+    async def clear_workflow(self, workflow: WorkflowRuntime, *, keep_variables: bool = False) -> str | None:
+        """Delete everything in `workflow`, leaving its runtime empty.
 
         The other open workflows are untouched. Returns why it failed, or None.
 
         Args:
+            workflow: The workflow to clear.
             keep_variables: Keep the workflow's variables and settings, for a rebuild in the same runtime
                 from a graph that doesn't record them.
         """
+        # The managers the teardown calls act on the workflow the current work is bound to.
+        with self.engine.bind_workflow(workflow):
+            return await self._clear_bound_workflow(workflow, keep_variables=keep_variables)
+
+    def has_objects(self) -> bool:
+        """Whether the current workflow has any flows or nodes."""
+        return bool(self._current_objects_or_empty().name_to_objects)
+
+    def get_filtered_subset[T](
+        self,
+        name: str | Pattern | None = None,
+        type: type[T] | None = None,  # noqa: A002
+    ) -> dict[str, T]:
+        """Filter the current workflow's objects by name pattern and/or type."""
+        return self._current_objects_or_empty().get_filtered_subset(name=name, type=type)
+
+    def generate_name_for_object(
+        self, workflow: WorkflowRuntime, type_name: str, requested_name: str | None = None
+    ) -> str:
+        return workflow.objects.generate_name(type_name=type_name, requested_name=requested_name)
+
+    def add_object_by_name(self, workflow: WorkflowRuntime, name: str, obj: object) -> None:
+        workflow.objects.add(name, obj)
+
+    def get_object_by_name(self, name: str) -> object:
+        return self._current_objects_or_empty().name_to_objects[name]
+
+    def has_object_with_name(self, name: str) -> bool:
+        return name in self._current_objects_or_empty().name_to_objects
+
+    def attempt_get_object_by_name(self, name: str) -> Any | None:
+        return self._current_objects_or_empty().name_to_objects.get(name, None)
+
+    def attempt_get_object_by_name_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
+        obj = self.attempt_get_object_by_name(name)
+        if obj is not None and isinstance(obj, cast_type):
+            return obj
+        return None
+
+    def del_obj_by_name(self, workflow: WorkflowRuntime, name: str) -> None:
+        # Does the object have any children? delete those
+        obj = workflow.objects.name_to_objects[name]
+        if isinstance(obj, BaseNodeElement):
+            children = obj.find_elements_by_type(BaseNodeElement)
+            for child in children:
+                obj.remove_child(child)
+                if isinstance(child, BaseNode):
+                    self.engine.handle_request(DeleteNodeRequest(child.name))
+                    return
+                if isinstance(child, Parameter) and isinstance(obj, BaseNode):
+                    self.engine.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
+                    return
+        del workflow.objects.name_to_objects[name]
+
+    async def _clear_bound_workflow(self, workflow: WorkflowRuntime, *, keep_variables: bool) -> str | None:
         engine = self.engine
         # Cancel any in-flight run before tearing its bookkeeping down: the reset
         # below makes the flow look idle, so the cancel in
@@ -175,12 +210,12 @@ class ObjectManager(EngineScoped):
             return f"Attempted to reset global execution state. Failed with exception: {e}"
 
         workflow_name = None
-        if engine.context_manager.has_current_workflow():
-            workflow_name = engine.context_manager.get_current_workflow_name()
+        if workflow.context.has_current_workflow():
+            workflow_name = workflow.context.get_current_workflow_name()
 
         # Cancel its running flows, delete its child flows, drain its context substack, pop it.
         try:
-            while engine.context_manager.has_current_workflow():
+            while workflow.context.has_current_workflow():
                 engine.clear_current_workflow_data()
         except Exception as e:
             return f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
@@ -192,145 +227,25 @@ class ObjectManager(EngineScoped):
             # its objects for the life of the process.
             await engine.worker_manager.broadcast_local_object_teardown()
 
-        if self._state.name_to_objects:
-            return f"Attempted to clear all object state, but {len(self._state.name_to_objects)} object(s) remained after workflow teardown."
+        if workflow.objects.name_to_objects:
+            return f"Attempted to clear all object state, but {len(workflow.objects.name_to_objects)} object(s) remained after workflow teardown."
 
         if keep_variables:
             return None
-        self._clear_variables_and_settings(workflow_name)
+        self._clear_variables_and_settings(workflow, workflow_name)
         return None
 
-    def has_objects(self) -> bool:
-        """Whether the current workflow has any flows or nodes."""
-        return bool(self._objects_to_read)
+    def _current_objects_or_empty(self) -> WorkflowObjects:
+        """The current workflow's objects for a lookup, which finds none when no workflow is open.
 
-    def get_filtered_subset[T](
-        self,
-        name: str | Pattern | None = None,
-        type: type[T] | None = None,  # noqa: A002
-    ) -> dict[str, T]:
-        """Filter a dictionary by key pattern and/or value type.
-
-        Args:
-            name: A regex pattern string or compiled pattern to match keys
-            type: A type to match values
-
-        Returns:
-            A new filtered dictionary containing only matching key-value pairs
+        Only lookups read through here. Adding or removing an object needs a workflow to hold it.
         """
-        result = {}
-
-        # Compile pattern if it's a string
-        if name and isinstance(name, str):
-            name = re.compile(name)
-
-        for key, value in self._objects_to_read.items():
-            # Check key pattern if provided
-            key_match = True
-            if name:
-                key_match = bool(name.search(key))
-
-            # Check value type if provided
-            value_match = True
-            if type:
-                value_match = isinstance(value, type)
-
-            # Add to result if both conditions match
-            if key_match and value_match:
-                result[key] = value
-
-        return result
-
-    def generate_name_for_object(self, type_name: str, requested_name: str | None = None) -> str:
-        # Now ensure that we're giving a valid unique name. Here are the rules:
-        # 1. If no name was requested, use the type name + first free integer.
-        # 2. If a name was requested and no collision, use it as-is.
-        # 3. If a name was requested and there IS a collision, check:
-        #    a. If name ends in a number, find the FIRST prefix + integer value that isn't a collision.
-        #    b. If name does NOT end in a number, use the name + first free integer.
-
-        # We are going in with eyes open that the collision testing is inefficient.
-        name_to_return = None
-        incremental_prefix = ""
-
-        if requested_name is None:
-            # 1. If no name was requested, use the type name + first free integer.
-            incremental_prefix = f"{type_name}_"
-        elif requested_name not in self._state.name_to_objects:
-            # 2. If a name was requested and no collision, use it as-is.
-            name_to_return = requested_name
-        else:
-            # 3. If a name was requested and there IS a collision, check:
-            pattern_match = re.search(r"\d+$", requested_name)
-            if pattern_match is not None:
-                #    a. If name ends in a number, find the FIRST prefix + integer value that isn't a collision.
-                # Ends in a number. Find the FIRST prefix + integer value that isn't a collision.
-                start = pattern_match.start()
-                incremental_prefix = requested_name[:start]
-            else:
-                #    b. If name does NOT end in a number, use the name + first free integer.
-                incremental_prefix = f"{requested_name}_"
-
-        if name_to_return is None:
-            # Do the incremental walk.
-            curr_idx = 1
-            done = False
-            while not done:
-                test_name = f"{incremental_prefix}{curr_idx}"
-                if test_name not in self._state.name_to_objects:
-                    # Found it.
-                    name_to_return = test_name
-                    done = True
-                else:
-                    # Keep going.
-                    curr_idx += 1
-
-        if name_to_return is None:
-            msg = "Failed to generate a unique name for the object."
-            raise ValueError(msg)
-
-        return name_to_return
-
-    def add_object_by_name(self, name: str, obj: object) -> None:
-        if name in self._state.name_to_objects:
-            msg = f"Attempted to add an object with name '{name}' but an object with that name already exists. The Object Manager is sacrosanct in this regard."
-            raise ValueError(msg)
-        self._state.name_to_objects[name] = obj
-
-    def get_object_by_name(self, name: str) -> object:
-        return self._objects_to_read[name]
-
-    def has_object_with_name(self, name: str) -> bool:
-        has_it = name in self._objects_to_read
-        return has_it
-
-    def attempt_get_object_by_name(self, name: str) -> Any | None:
-        return self._objects_to_read.get(name, None)
-
-    def attempt_get_object_by_name_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
-        obj = self.attempt_get_object_by_name(name)
-        if obj is not None and isinstance(obj, cast_type):
-            return obj
-        return None
-
-    def del_obj_by_name(self, name: str) -> None:
-        # Does the object have any children? delete those
-        obj = self._state.name_to_objects[name]
-        if isinstance(obj, BaseNodeElement):
-            children = obj.find_elements_by_type(BaseNodeElement)
-            for child in children:
-                obj.remove_child(child)
-                if isinstance(child, BaseNode):
-                    self.engine.handle_request(DeleteNodeRequest(child.name))
-                    return
-                if isinstance(child, Parameter) and isinstance(obj, BaseNode):
-                    self.engine.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
-                    return
-        del self._state.name_to_objects[name]
-
-    def _clear_variables_and_settings(self, workflow_name: str | None) -> None:
         workflow = self.engine.current_workflow_or_none()
-        if workflow is not None:
-            workflow.variables.clear()
+        if workflow is None:
+            return WorkflowObjects()
+        return workflow.objects
+
+    def _clear_variables_and_settings(self, workflow: WorkflowRuntime, workflow_name: str | None) -> None:
+        workflow.variables.clear()
         if workflow_name is not None:
             self.engine.workflow_manager.clear_object_state(workflow_name)

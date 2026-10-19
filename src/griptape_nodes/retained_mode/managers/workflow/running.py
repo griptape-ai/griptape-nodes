@@ -159,7 +159,7 @@ class WorkflowRunner(EngineScoped):
                 return RunWorkflowFromScratchResultFailure(result_details=details)
 
             # Start with a clean slate. Other open workflows are left alone.
-            clear_failure = await self.engine.object_manager.clear_current_workflow()
+            clear_failure = await self.engine.object_manager.clear_workflow(self.engine.current_workflow)
             if clear_failure is not None:
                 details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
                 return RunWorkflowFromScratchResultFailure(result_details=details)
@@ -244,7 +244,7 @@ class WorkflowRunner(EngineScoped):
         with self.engine.workflow_manager.squelch_workflow_altered():
             if request.run_with_clean_slate:
                 # Start with a clean slate. Other open workflows are left alone.
-                clear_failure = await self.engine.object_manager.clear_current_workflow()
+                clear_failure = await self.engine.object_manager.clear_workflow(self.engine.current_workflow)
                 if clear_failure is not None:
                     details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
                     return RunWorkflowFromRegistryResultFailure(result_details=details)
@@ -262,7 +262,7 @@ class WorkflowRunner(EngineScoped):
 
                 # Clear out what this attempt built in its workflow. That also pops the context
                 # pushed above.
-                await self.engine.object_manager.clear_current_workflow()
+                await self.engine.object_manager.clear_workflow(self.engine.current_workflow)
                 return RunWorkflowFromRegistryResultFailure(result_details=ResultDetails(*result_messages))
 
         self.engine.open_workflows_manager.announce_change()

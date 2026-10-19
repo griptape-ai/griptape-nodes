@@ -222,7 +222,7 @@ class TestParameterBehaviorsSurviveOnRealClasses:
         node = LibraryRegistry.create_node(
             node_type="BehaviorPreservationNode", name="behaviors", specific_library_name="Behavior Library"
         )
-        current_engine().object_manager.add_object_by_name("behaviors", node)
+        current_engine().object_manager.add_object_by_name(current_engine().current_workflow, "behaviors", node)
 
         parameter = node.get_parameter_by_name("model_manager")
         assert parameter is not None
@@ -360,7 +360,7 @@ class TestUnshippableOutputIsKept:
         node = LibraryRegistry.create_node(
             node_type="ProducerNode", name="Producer", specific_library_name="Guardrail Library"
         )
-        current_engine().object_manager.add_object_by_name("Producer", node)
+        current_engine().object_manager.add_object_by_name(current_engine().current_workflow, "Producer", node)
 
         result = await current_engine().ahandle_request(
             ExecuteNodeRequest(

@@ -61,7 +61,7 @@ def _add_error_proxy_node(engine: Engine, node_name: str) -> ErrorProxyNode:
         failure_reason="library unavailable in this test",
         metadata={},
     )
-    engine.object_manager.add_object_by_name(node.name, node)
+    engine.object_manager.add_object_by_name(engine.current_workflow, node.name, node)
     return node
 
 

@@ -130,8 +130,7 @@ class OpenWorkflowsManager(EngineScoped):
     async def close_workflow_runtime(self, runtime: WorkflowRuntime) -> str | None:
         """Clear a runtime's objects and forget it. Returns why it failed, or None."""
         engine = self.engine
-        with engine.bind_workflow(runtime):
-            failure = await engine.object_manager.clear_current_workflow()
+        failure = await engine.object_manager.clear_workflow(runtime)
         if failure is not None:
             return failure
         engine.remove_workflow_runtime(runtime)
@@ -156,7 +155,7 @@ class OpenWorkflowsManager(EngineScoped):
         for runtime in self.engine.workflow_runtimes:
             with self.engine.bind_workflow(runtime):
                 record = await self._snapshot_current_workflow(runtime)
-                failure = await self.engine.object_manager.clear_current_workflow(keep_variables=True)
+                failure = await self.engine.object_manager.clear_workflow(runtime, keep_variables=True)
             if failure is not None:
                 msg = f"Attempted to clear workflow '{self.workflow_name_in(runtime)}' for a rebuild. Failed due to: {failure}"
                 raise RuntimeError(msg)
@@ -230,7 +229,7 @@ class OpenWorkflowsManager(EngineScoped):
         with engine.bind_workflow(runtime):
             failure = await self._build_workflow(request)
             if failure is not None:
-                await engine.object_manager.clear_current_workflow()
+                await engine.object_manager.clear_workflow(runtime)
         if failure is not None:
             engine.remove_workflow_runtime(runtime)
             return OpenWorkflowResultFailure(result_details=failure)

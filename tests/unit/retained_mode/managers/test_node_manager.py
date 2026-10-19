@@ -293,7 +293,7 @@ class TestSerializeNodeWithoutLibraryMetadata:
         node.metadata.pop("library", None)
         assert "library" not in node.metadata
 
-        engine.object_manager.add_object_by_name(node.name, node)
+        engine.object_manager.add_object_by_name(engine.current_workflow, node.name, node)
 
         result = engine.node_manager.on_serialize_node_to_commands(SerializeNodeToCommandsRequest(node_name=node.name))
 
@@ -436,7 +436,7 @@ class TestGetParameterValueOutputPriority:
         mock_node.get_parameter_by_name.return_value = param
 
         obj_mgr = engine.object_manager
-        obj_mgr.add_object_by_name("test_node", mock_node)
+        obj_mgr.add_object_by_name(engine.current_workflow, "test_node", mock_node)
 
         node_manager = engine.node_manager
         request = GetParameterValueRequest(parameter_name="result", node_name="test_node")
@@ -466,7 +466,7 @@ class TestGetParameterValueOutputPriority:
         mock_node.get_parameter_by_name.return_value = param
 
         obj_mgr = engine.object_manager
-        obj_mgr.add_object_by_name("test_node", mock_node)
+        obj_mgr.add_object_by_name(engine.current_workflow, "test_node", mock_node)
 
         node_manager = engine.node_manager
         request = GetParameterValueRequest(parameter_name="a", node_name="test_node")
@@ -496,7 +496,7 @@ class TestGetParameterValueOutputPriority:
         mock_node.get_parameter_by_name.return_value = param
 
         obj_mgr = engine.object_manager
-        obj_mgr.add_object_by_name("test_node", mock_node)
+        obj_mgr.add_object_by_name(engine.current_workflow, "test_node", mock_node)
 
         node_manager = engine.node_manager
         request = GetParameterValueRequest(parameter_name="x", node_name="test_node")

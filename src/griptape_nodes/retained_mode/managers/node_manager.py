@@ -731,7 +731,7 @@ class NodeManager(EngineScoped):
 
         obj_mgr = self.engine.object_manager
         final_node_name = obj_mgr.generate_name_for_object(
-            type_name=request.node_type, requested_name=requested_node_name
+            self.engine.current_workflow, type_name=request.node_type, requested_name=requested_node_name
         )
         remapped_requested_node_name = (request.node_name is not None) and (request.node_name != final_node_name)
 
@@ -803,7 +803,7 @@ class NodeManager(EngineScoped):
 
         # Record keeping. The node keeps its workflow too: built by a client that names none, it was
         # constructed with nothing bound and resolved its workflow only here.
-        obj_mgr.add_object_by_name(node.name, node)
+        obj_mgr.add_object_by_name(self.engine.current_workflow, node.name, node)
         self._state.name_to_parent_flow_name[node.name] = parent_flow_name
         node.workflow_runtime = self.engine.current_workflow
 
@@ -1455,7 +1455,7 @@ class NodeManager(EngineScoped):
             node.local_objects.release_parked(key)
 
         # Now remove the record keeping
-        self.engine.object_manager.del_obj_by_name(node_name)
+        self.engine.object_manager.del_obj_by_name(self.engine.current_workflow, node_name)
         del self._state.name_to_parent_flow_name[node_name]
 
         # If we were part of the Current Context, pop it.
@@ -6015,7 +6015,9 @@ class NodeManager(EngineScoped):
         rename_request = RenameObjectRequest(
             object_name=new_node_name, requested_name=node_name, allow_next_closest_name_available=False
         )
-        rename_result = self.engine.object_manager.on_rename_object_request(rename_request)
+        rename_result = self.engine.object_manager.on_rename_object_request(
+            rename_request, self.engine.current_workflow
+        )
         if not isinstance(rename_result, RenameObjectResultSuccess):
             details = f"Attempted to reset Node '{node_name}'. Failed to rename new node to original name: {rename_result.result_details}"
             return ResetNodeToDefaultsResultFailure(result_details=details)

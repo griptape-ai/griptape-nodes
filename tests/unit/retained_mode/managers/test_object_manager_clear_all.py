@@ -29,10 +29,9 @@ class TestClearingAWorkflowCancelsFirst:
         engine.flow_manager.reset_global_execution_state = MagicMock(side_effect=lambda: calls.append("reset"))
         # Awaited by the handler to release objects libraries parked in workers.
         engine.worker_manager.broadcast_local_object_teardown = AsyncMock()
-        engine.context_manager.has_current_workflow.return_value = False
 
         object_manager = ObjectManager(MagicMock(), engine=engine)
-        failure = await object_manager.clear_current_workflow()
+        failure = await object_manager.clear_workflow(engine.current_workflow)
 
         assert failure is None
         assert calls == ["cancel", "reset"], "the reset must not run ahead of the cancel"
@@ -43,10 +42,9 @@ class TestClearingAWorkflowCancelsFirst:
         engine.flow_manager.check_for_existing_running_flow.return_value = False
         engine.flow_manager.cancel_flow_run = AsyncMock()
         engine.worker_manager.broadcast_local_object_teardown = AsyncMock()
-        engine.context_manager.has_current_workflow.return_value = False
 
         object_manager = ObjectManager(MagicMock(), engine=engine)
-        failure = await object_manager.clear_current_workflow()
+        failure = await object_manager.clear_workflow(engine.current_workflow)
 
         assert failure is None
         engine.flow_manager.cancel_flow_run.assert_not_awaited()
