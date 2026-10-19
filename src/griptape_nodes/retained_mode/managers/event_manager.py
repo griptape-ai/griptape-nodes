@@ -52,6 +52,7 @@ from griptape_nodes.retained_mode.runtime.binding import (
     WorkflowNotNamedError,
     WorkflowNotOpenError,
     bound_workflow,
+    bound_workflow_id,
 )
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.utils.async_utils import call_function, to_thread
@@ -1072,11 +1073,7 @@ class EventManager(EngineScoped):
         # A node's request names no workflow, and the worker bound it to the namespace of the workflow the
         # node runs for, whose id is the orchestrator's. Naming it on the envelope tells the orchestrator
         # which workflow to act on.
-        bound = self.engine.current_workflow_or_none()
-        workflow_id = None
-        if bound is not None:
-            workflow_id = bound.workflow_id
-        event_request: EventRequest = EventRequest(request=request, workflow_id=workflow_id)
+        event_request: EventRequest = EventRequest(request=request, workflow_id=bound_workflow_id())
 
         response_future = asyncio.run_coroutine_threadsafe(
             self._worker_request_client.request_to_orchestrator(

@@ -274,7 +274,7 @@ class TestStartFlowRequestDefaultsToCurrentContext:
 
         # Short-circuit the flow lookup so we can assert on the resolved name without
         # actually running a control flow.
-        with patch.object(flow_manager, "_get_flow", side_effect=KeyError("stop here")) as get_flow:
+        with patch.object(flow_manager, "get_flow_in", side_effect=KeyError("stop here")) as get_flow:
             result = await engine.ahandle_request(StartFlowRequest())
 
         # The handler should have looked up the current-context flow name, not bailed with
@@ -325,7 +325,7 @@ class TestStartFlowRequestDefaultsToCurrentContext:
             patch.object(workflow.context, "has_current_node", return_value=True),
             patch.object(workflow.context, "get_current_node", return_value=fake_node),
             patch.object(workflow.objects, "get_as_type", return_value=fake_node),
-            patch.object(flow_manager, "_get_flow", side_effect=KeyError("stop here")) as get_flow,
+            patch.object(flow_manager, "get_flow_in", side_effect=KeyError("stop here")) as get_flow,
         ):
             result = await engine.ahandle_request(StartFlowFromNodeRequest())
 
@@ -345,7 +345,7 @@ class TestStartFlowFailureMessage:
         flow_manager = engine.flow_manager
         validated = ValidateFlowDependenciesResultSuccess(validation_succeeded=True, exceptions=[], result_details="ok")
         with (
-            patch.object(flow_manager, "_get_flow", return_value=MagicMock()),
+            patch.object(flow_manager, "get_flow_in", return_value=MagicMock()),
             patch.object(flow_manager, "check_for_existing_running_flow", return_value=False),
             patch.object(flow_manager, "start_node_queue"),
             patch.object(flow_manager, "on_validate_flow_dependencies_request", return_value=validated),

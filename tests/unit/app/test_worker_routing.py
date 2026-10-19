@@ -436,10 +436,10 @@ class TestDropWorkflowLocalObjectsHandler:
 
 
 async def _drop_for(engine: Engine, runtime: WorkflowRuntime) -> ResultPayload:
-    """Run the drop handler the way dispatch does: bound to the workflow the request is addressed to."""
+    """Run the drop handler the way dispatch does: bound to, and passed, the workflow it is addressed to."""
     with engine.bind_workflow(runtime):
         return await _handle_drop_workflow_local_objects(
-            DropWorkflowLocalObjectsRequest(), event_manager=engine.event_manager
+            DropWorkflowLocalObjectsRequest(), workflow=runtime, event_manager=engine.event_manager
         )
 
 

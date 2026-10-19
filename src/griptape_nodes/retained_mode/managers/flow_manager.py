@@ -358,7 +358,15 @@ class FlowManager(EngineScoped):
         if workflow is None:
             msg = f"Flow with name {flow_name} doesn't exist"
             raise KeyError(msg)
-        return self._get_flow(workflow, flow_name)
+        return self.get_flow_in(workflow, flow_name)
+
+    def get_flow_in(self, workflow: WorkflowRuntime, flow_name: str) -> ControlFlow:
+        flow = workflow.objects.get_as_type(flow_name, ControlFlow)
+        if flow is None:
+            msg = f"Flow with name {flow_name} doesn't exist"
+            raise KeyError(msg)
+
+        return flow
 
     def unresolve_all_nodes_in_flow(self, flow_name: str) -> None:
         """Reset all nodes in a flow to UNRESOLVED state.
@@ -400,14 +408,6 @@ class FlowManager(EngineScoped):
                 flow_name,
                 delete_result.result_details,
             )
-
-    def _get_flow(self, workflow: WorkflowRuntime, flow_name: str) -> ControlFlow:
-        flow = workflow.objects.get_as_type(flow_name, ControlFlow)
-        if flow is None:
-            msg = f"Flow with name {flow_name} doesn't exist"
-            raise KeyError(msg)
-
-        return flow
 
     def _get_node(self, workflow: WorkflowRuntime, name: str) -> BaseNode:
         node = workflow.objects.get_as_type(name, BaseNode)
@@ -860,7 +860,7 @@ class FlowManager(EngineScoped):
         source_flow_name = None
         try:
             source_flow_name = workflow.nodes.parent_flow_name(source_node_name)
-            self._get_flow(workflow, flow_name=source_flow_name)
+            self.get_flow_in(workflow, flow_name=source_flow_name)
         except KeyError as err:
             details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" failed: {err}.'
             return CreateConnectionResultFailure(result_details=details)
@@ -868,7 +868,7 @@ class FlowManager(EngineScoped):
         target_flow_name = None
         try:
             target_flow_name = workflow.nodes.parent_flow_name(target_node_name)
-            self._get_flow(workflow, flow_name=target_flow_name)
+            self.get_flow_in(workflow, flow_name=target_flow_name)
         except KeyError as err:
             details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" failed: {err}.'
             return CreateConnectionResultFailure(result_details=details)
@@ -1210,7 +1210,7 @@ class FlowManager(EngineScoped):
         source_flow_name = None
         try:
             source_flow_name = workflow.nodes.parent_flow_name(source_node_name)
-            self._get_flow(workflow, flow_name=source_flow_name)
+            self.get_flow_in(workflow, flow_name=source_flow_name)
         except KeyError as err:
             details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". Error: {err}'
 
@@ -1219,7 +1219,7 @@ class FlowManager(EngineScoped):
         target_flow_name = None
         try:
             target_flow_name = workflow.nodes.parent_flow_name(target_node_name)
-            self._get_flow(workflow, flow_name=target_flow_name)
+            self.get_flow_in(workflow, flow_name=target_flow_name)
         except KeyError as err:
             details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". Error: {err}'
 
@@ -2716,7 +2716,7 @@ class FlowManager(EngineScoped):
                 return StartFlowResultFailure(validation_exceptions=[], result_details=details)
         # get the flow by ID
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Cannot start flow. Error: {err}"
             return StartFlowResultFailure(validation_exceptions=[err], result_details=details)
@@ -2821,7 +2821,7 @@ class FlowManager(EngineScoped):
                 return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
         # get the flow by ID
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Cannot start flow. Error: {err}"
             return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
@@ -3008,7 +3008,7 @@ class FlowManager(EngineScoped):
             return StartFlowResultFailure(validation_exceptions=[], result_details=details)
 
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Cannot start flow. Error: {err}"
             return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
@@ -3083,7 +3083,7 @@ class FlowManager(EngineScoped):
             details = "Could not get flow state. No flow name was provided."
             return GetFlowStateResultFailure(result_details=details)
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Could not get flow state. Error: {err}"
             return GetFlowStateResultFailure(result_details=details)
@@ -3109,7 +3109,7 @@ class FlowManager(EngineScoped):
 
             return CancelFlowResultFailure(result_details=details)
         try:
-            self._get_flow(workflow, flow_name)
+            self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Could not cancel flow execution. Error: {err}"
 
@@ -3134,13 +3134,13 @@ class FlowManager(EngineScoped):
 
             return SingleNodeStepResultFailure(validation_exceptions=[], result_details=details)
         try:
-            self._get_flow(workflow, flow_name)
+            self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Could not advance to the next step of a running workflow. No flow with name {flow_name} exists. Error: {err}"
 
             return SingleNodeStepResultFailure(validation_exceptions=[err], result_details=details)
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
             await self.single_node_step(workflow, flow)
         except Exception as e:
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
@@ -3161,7 +3161,7 @@ class FlowManager(EngineScoped):
 
             return SingleExecutionStepResultFailure(result_details=details)
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Could not advance to the next step of a running workflow. Error: {err}."
 
@@ -3193,7 +3193,7 @@ class FlowManager(EngineScoped):
 
             return ContinueExecutionStepResultFailure(result_details=details)
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Failed to continue execution step. Error: {err}"
 
@@ -3213,7 +3213,7 @@ class FlowManager(EngineScoped):
             details = "Failed to unresolve flow because no flow name was provided"
             return UnresolveFlowResultFailure(result_details=details)
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Failed to unresolve flow. Error: {err}"
             return UnresolveFlowResultFailure(result_details=details)
@@ -3232,7 +3232,7 @@ class FlowManager(EngineScoped):
         flow_name = request.flow_name
         # get the flow name
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Failed to validate flow. Error: {err}"
             return ValidateFlowDependenciesResultFailure(result_details=details)
@@ -3309,7 +3309,7 @@ class FlowManager(EngineScoped):
                 return AutoLayoutFlowResultFailure(result_details=details)
 
         try:
-            flow = self._get_flow(workflow, flow_name)
+            flow = self.get_flow_in(workflow, flow_name)
         except KeyError as err:
             details = f"Attempted to auto-layout flow '{flow_name}'. Failed because: {err}"
             return AutoLayoutFlowResultFailure(result_details=details)

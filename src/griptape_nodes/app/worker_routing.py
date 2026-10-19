@@ -85,6 +85,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 HandlerCallback = "Callable[[RequestPayload], ResultPayload | Awaitable[ResultPayload]]"
@@ -490,6 +491,7 @@ def register_remote_handlers(event_manager: EventManager) -> None:
 async def _handle_drop_workflow_local_objects(
     request: DropWorkflowLocalObjectsRequest,  # noqa: ARG001
     *,
+    workflow: WorkflowRuntime,
     event_manager: EventManager,
 ) -> ResultPayload:
     """Release every object this process is holding for one workflow's nodes.
@@ -504,9 +506,8 @@ async def _handle_drop_workflow_local_objects(
     """
     engine = event_manager.engine
     resource_manager = engine.resource_manager
-    # Dispatch bound this request to the worker's namespace for the workflow it is addressed to.
-    runtime = engine.current_workflow
-    workflow_id = runtime.workflow_id
+    # The worker's namespace for the workflow the request is addressed to.
+    workflow_id = workflow.workflow_id
 
     try:
         # Off the loop: a release hook is `del model` plus a CUDA cache flush, and blocking the
@@ -519,7 +520,7 @@ async def _handle_drop_workflow_local_objects(
         return DropWorkflowLocalObjectsResultFailure(result_details=details)
     # The orchestrator cleared the workflow, so the namespace kept for it goes too. A later node from
     # the same workflow makes a fresh one.
-    engine.remove_workflow_runtime(runtime)
+    engine.remove_workflow_runtime(workflow)
     return DropWorkflowLocalObjectsResultSuccess(result_details=f"Released {dropped} held object(s).")
 
 
@@ -662,8 +663,10 @@ def register_broadcast_handlers(
 def _register_local_object_handlers(event_manager: EventManager) -> None:
     """Wire the two teardown requests that free objects this worker is holding."""
 
-    async def handle_drop_workflow_local_objects(request: DropWorkflowLocalObjectsRequest) -> ResultPayload:
-        return await _handle_drop_workflow_local_objects(request, event_manager=event_manager)
+    async def handle_drop_workflow_local_objects(
+        request: DropWorkflowLocalObjectsRequest, workflow: WorkflowRuntime
+    ) -> ResultPayload:
+        return await _handle_drop_workflow_local_objects(request, workflow=workflow, event_manager=event_manager)
 
     event_manager.assign_manager_to_request_type(
         DropWorkflowLocalObjectsRequest, handle_drop_workflow_local_objects, scope=RequestScope.WORKFLOW

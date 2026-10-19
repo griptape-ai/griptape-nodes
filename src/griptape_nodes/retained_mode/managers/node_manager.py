@@ -370,7 +370,7 @@ class NodeManager(EngineScoped):
 
     def handle_node_rename(self, workflow: WorkflowRuntime, old_name: str, new_name: str) -> None:
         # Get the node itself
-        node = self._get_node(workflow, old_name)
+        node = self.get_node_in(workflow, old_name)
         # Get all connections for this node and update them.
         flow_name = workflow.nodes.parent_flow_name(old_name)
         flow = self.engine.flow_manager.get_flow_by_name(flow_name)
@@ -820,7 +820,7 @@ class NodeManager(EngineScoped):
             try:
                 # get_node_by_name raises ValueError for a missing node, not KeyError — unlike
                 # workflow.objects.name_to_objects[...], which the _get_node_group helpers call directly.
-                parent_group = self._get_node(workflow, request.parent_group_name)
+                parent_group = self.get_node_in(workflow, request.parent_group_name)
             except ValueError:
                 parent_group = None
                 logger.warning(
@@ -913,7 +913,7 @@ class NodeManager(EngineScoped):
                             target_parameter_name="from_start",
                         )
                     )
-                    end_node = self._get_node(workflow, end_loop.node_name)
+                    end_node = self.get_node_in(workflow, end_loop.node_name)
                     if not isinstance(end_node, BaseIterativeEndNode):
                         msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired node '{end_loop.node_name}' was not a proper EndLoop instance. The corresponding node will have to be created by hand and attached manually."
                         logger.error(
@@ -944,7 +944,7 @@ class NodeManager(EngineScoped):
                 nodes_to_add = []
                 for node_name in request.node_names_to_add:
                     try:
-                        existing_node = self._get_node(workflow, node_name)
+                        existing_node = self.get_node_in(workflow, node_name)
                         nodes_to_add.append(existing_node)
                     except KeyError:
                         warning_details = (
@@ -2430,7 +2430,7 @@ class NodeManager(EngineScoped):
         # Check and break invalid incoming connections
         for conn in list_connections_result.incoming_connections:
             if conn.target_parameter_name == request.parameter_name:
-                source_node = self._get_node(workflow, conn.source_node_name)
+                source_node = self.get_node_in(workflow, conn.source_node_name)
                 source_param = source_node.get_parameter_by_name(conn.source_parameter_name)
                 if source_param and not parameter.is_incoming_type_allowed(source_param.output_type):
                     delete_result = self.engine.flow_manager.on_delete_connection_request(
@@ -2449,7 +2449,7 @@ class NodeManager(EngineScoped):
         # Check and break invalid outgoing connections
         for conn in list_connections_result.outgoing_connections:
             if conn.source_parameter_name == request.parameter_name:
-                target_node = self._get_node(workflow, conn.target_node_name)
+                target_node = self.get_node_in(workflow, conn.target_node_name)
                 target_param = target_node.get_parameter_by_name(conn.target_parameter_name)
                 if target_param and not target_param.is_incoming_type_allowed(parameter.output_type):
                     delete_result = self.engine.flow_manager.on_delete_connection_request(
@@ -3113,7 +3113,7 @@ class NodeManager(EngineScoped):
             if test_node_name != request.node_name:
                 # Get node by name
                 try:
-                    test_node = self._get_node(workflow, test_node_name)
+                    test_node = self.get_node_in(workflow, test_node_name)
                 except ValueError as err:
                     details = f"Attempted to get compatible parameters for node '{node_name}', and sought to test against {test_node_name}, but that node does not exist. Error: {err}."
                     return GetCompatibleParametersResultFailure(result_details=details)
@@ -3194,7 +3194,7 @@ class NodeManager(EngineScoped):
 
         return node
 
-    def _get_node(self, workflow: WorkflowRuntime, name: str) -> BaseNode:
+    def get_node_in(self, workflow: WorkflowRuntime, name: str) -> BaseNode:
         node = workflow.objects.get_as_type(name, BaseNode)
         if node is None:
             msg = f"Node '{name}' not found."
@@ -3222,7 +3222,7 @@ class NodeManager(EngineScoped):
 
             return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
         try:
-            node = self._get_node(workflow, node_name)
+            node = self.get_node_in(workflow, node_name)
         except ValueError as e:
             details = f'Resolve failure. "{node_name}" does not exist. {e}'
 
@@ -5282,7 +5282,7 @@ class NodeManager(EngineScoped):
             node_name = node.name
         else:
             try:
-                node = self._get_node(workflow, node_name)
+                node = self.get_node_in(workflow, node_name)
             except KeyError as err:
                 details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node could not be found. Error: {err}"
                 return RenameParameterResultFailure(result_details=details)
@@ -5389,7 +5389,7 @@ class NodeManager(EngineScoped):
             node_name = node.name
         else:
             try:
-                node = self._get_node(workflow, node_name)
+                node = self.get_node_in(workflow, node_name)
             except ValueError as err:
                 details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
                 return SetLockNodeStateResultFailure(result_details=details)
@@ -5409,7 +5409,7 @@ class NodeManager(EngineScoped):
         failed: dict[str, str] = {}
         for name in request.node_names:
             try:
-                node = self._get_node(workflow, name)
+                node = self.get_node_in(workflow, name)
             except ValueError as err:
                 failed[name] = f"Node not found. Error: {err}"
                 continue
@@ -5525,8 +5525,8 @@ class NodeManager(EngineScoped):
         """Handle parameter migration requests."""
         # Validate nodes exist - get_node_by_name can raise ValueError
         try:
-            source_node = self._get_node(workflow, request.source_node_name)
-            target_node = self._get_node(workflow, request.target_node_name)
+            source_node = self.get_node_in(workflow, request.source_node_name)
+            target_node = self.get_node_in(workflow, request.target_node_name)
             logger.debug(
                 "Successfully validated nodes exist for parameter migration: %s -> %s",
                 source_node.name,
@@ -6002,7 +6002,7 @@ class NodeManager(EngineScoped):
         # Copy only position and size from original node's metadata to preserve layout.
         # We don't copy the full metadata because it contains instance-specific data that shouldn't be transferred.
         artifact_metadata = all_info_result.metadata
-        new_node = self._get_node(workflow, new_node_name)
+        new_node = self.get_node_in(workflow, new_node_name)
         if "position" in artifact_metadata:
             new_node.metadata["position"] = copy.deepcopy(artifact_metadata["position"])
         if "size" in artifact_metadata:
@@ -6094,7 +6094,7 @@ class NodeManager(EngineScoped):
             node_name = node.name
         else:
             try:
-                node = self._get_node(workflow, node_name)
+                node = self.get_node_in(workflow, node_name)
             except KeyError as err:
                 details = f"Attempted to reorder item in ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because the Node could not be found. Error: {err}"
                 return ReorderParameterListItemResultFailure(result_details=details)
