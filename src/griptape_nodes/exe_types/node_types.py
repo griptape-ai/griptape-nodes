@@ -1110,18 +1110,10 @@ class BaseNode(ABC):
             parameter, value, initial_setup=initial_setup, running=_running_node.get() is self
         ):
             return
-        # Perform any conversions to the value based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
         # cause a calling object to alter its assumptions/behavior. The value requested
         # to be assigned will NOT be set.
-        candidate_value = self._convert_value(parameter, value)
-
-        # Validate the values next, based on how the Parameter is configured.
-        # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
-        # cause a calling object to alter its assumptions/behavior. The value requested
-        # to be assigned will NOT be set.
-        for validator in parameter.validators:
-            validator(parameter, candidate_value)
+        candidate_value = self._convert_and_validate(parameter, value)
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
@@ -1147,6 +1139,30 @@ class BaseNode(ABC):
             container = self.get_parameter_by_name(parameter.parent_container_name)
             if isinstance(container, ParameterContainer):
                 self._list_rows.rows_changed(container, initial_setup=initial_setup)
+
+    def _convert_and_validate(self, parameter: Parameter, value: Any) -> Any:
+        """Run the Parameter's converters, then its validators, and return the converted value.
+
+        A row holding a list adds its items to the list, so its converters and validators run on each item.
+        """
+        if not self._row_value_is_items(parameter, value):
+            candidate_value = self._convert_value(parameter, value)
+            for validator in parameter.validators:
+                validator(parameter, candidate_value)
+            return candidate_value
+
+        candidate_items = [self._convert_value(parameter, item) for item in value]
+        for validator in parameter.validators:
+            for item in candidate_items:
+                validator(parameter, item)
+        return candidate_items
+
+    def _row_value_is_items(self, parameter: Parameter, value: Any) -> bool:
+        """Whether `value` is a list a row adds to its list item by item, instead of being one item."""
+        if not isinstance(value, list) or parameter.parent_container_name is None:
+            return False
+        container = self.get_parameter_by_name(parameter.parent_container_name)
+        return isinstance(container, ParameterList) and container.concatenates_list_rows
 
     @staticmethod
     def _convert_value(parameter: Parameter, value: Any) -> Any:

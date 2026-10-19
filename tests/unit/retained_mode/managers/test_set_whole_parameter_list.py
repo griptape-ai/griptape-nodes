@@ -185,6 +185,13 @@ class TestWholeListSetOnAnUnconnectedList:
         assert isinstance(result, SetParameterValueResultFailure)
         assert node.get_parameter_value("items") == ["a"]
 
+    def test_a_row_holding_a_list_validates_each_item(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        row = _add_row(engine, "a")
+
+        with pytest.raises(ValueError, match="bad item"):
+            node.set_parameter_value(row, ["ok", "bad"])
+
     def test_clearing_a_resolved_node_unresolves_it(self, engine: Engine, flow_name: str) -> None:
         """No row is set when the list is cleared, so the row path cannot be what unresolves the node."""
         node = _add(engine, _ListNode(name="Lister"), flow_name)
@@ -323,7 +330,7 @@ def _get_items(engine: Engine) -> object:
     return result.value
 
 
-def _add_row(engine: Engine, value: str) -> str:
+def _add_row(engine: Engine, value: str | list[str]) -> str:
     added = engine.handle_request(AddParameterToNodeRequest(node_name="Lister", parent_container_name="items"))
     assert isinstance(added, AddParameterToNodeResultSuccess)
     engine.handle_request(
@@ -428,6 +435,20 @@ class TestItemConverters:
 
         assert [node.get_parameter_value(row.name) for row in _rows(node)] == ["A", "B"]
         assert _get_items(engine) == ["A", "B"]
+
+    def test_a_row_holding_a_list_converts_each_item(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _ConvertingListNode(name="Lister"), flow_name)
+
+        _add_row(engine, ["a", "b"])
+
+        assert _get_items(engine) == ["A", "B"]
+
+    def test_a_whole_list_with_a_nested_list_converts_each_item(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _ConvertingListNode(name="Lister"), flow_name)
+
+        _set_items(engine, [["a", "b"], "c"])
+
+        assert _get_items(engine) == ["A", "B", "C"]
 
     def test_a_row_set_by_the_editor_converts(self, engine: Engine, flow_name: str) -> None:
         _add(engine, _ConvertingListNode(name="Lister"), flow_name)
