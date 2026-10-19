@@ -166,10 +166,9 @@ class LibraryMetadataLoading(EngineScoped):
     ) -> LoadLibraryMetadataFromFileResultSuccess | LoadLibraryMetadataFromFileResultFailure:
         """Validate a library JSON file into metadata, leaving the git details unset.
 
-        Use this inside the engine, which only needs the schema. The request handlers add the git
-        details for the editor, and those cost several git subprocesses per library: a library
-        load reads its metadata several times, so looking them up on each read made git the bulk
-        of every library load.
+        Use this inside the engine, which only needs the schema. Callers that need the git details
+        go through the request handlers, which add them at the cost of several git subprocesses
+        per library.
         """
         file_path = request.file_path
 

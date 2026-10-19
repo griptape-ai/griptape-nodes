@@ -142,7 +142,7 @@ async def test_git_lookups_run_concurrently(engine: Engine, tmp_path: Path) -> N
 
 @pytest.mark.asyncio
 async def test_registering_a_library_runs_no_git(engine: Engine, tmp_path: Path) -> None:
-    """Registration reads a library's metadata several times, and git on each read made it slow."""
+    """Registration reads only the library's schema; git details are for the request handlers."""
     library_dir = tmp_path / "lib"
     library_dir.mkdir()
     (library_dir / "plain_node.py").write_text(
