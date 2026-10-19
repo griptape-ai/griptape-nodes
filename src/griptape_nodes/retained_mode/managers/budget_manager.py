@@ -417,6 +417,8 @@ def _token_problem(request: ReportUsageRequest) -> str | None:
         return "the cached token counts are larger than the input token count."
     if not request.model or len(request.model) > _DESCRIPTOR_CAPS["model"]:
         return "a token report needs a model name Griptape Cloud can price it under."
+    if request.activity_type not in (None, "", "chat_completion"):
+        return "Griptape Cloud prices token counts as chat completions; send a declared cost for other kinds of call."
     return None
 
 

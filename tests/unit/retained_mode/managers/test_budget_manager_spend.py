@@ -611,6 +611,10 @@ class TestTokenReports:
             ({"input_tokens": 1000, "output_tokens": 500}, "model name"),
             ({"input_tokens": 1000, "output_tokens": 500, "model": "m" * 256}, "model name"),
             ({"declared_cost_micro_usd": -1}, "negative"),
+            (
+                {"input_tokens": 1000, "output_tokens": 500, "model": "m", "activity_type": "embedding"},
+                "chat completions",
+            ),
         ],
         ids=[
             "both",
@@ -624,6 +628,7 @@ class TestTokenReports:
             "no-model",
             "model-too-long",
             "negative-cost",
+            "non-chat-activity",
         ],
     )
     def test_a_report_cloud_would_reject_is_not_sent(self, http: MagicMock, fields: dict, reason: str) -> None:
@@ -634,6 +639,27 @@ class TestTokenReports:
         assert isinstance(result.result_details, ResultDetails)
         assert result.result_details.result_details[0].level == logging.WARNING
         http.assert_not_called()
+
+    @pytest.mark.parametrize("activity_type", [None, "", "chat_completion"])
+    def test_a_chat_token_report_is_sent(self, http: MagicMock, activity_type: str | None) -> None:
+        http.return_value = _response(201)
+
+        result = _manager().on_report_usage_request(
+            ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m", activity_type=activity_type)
+        )
+
+        assert isinstance(result, ReportUsageResultSuccess)
+
+    def test_a_non_chat_cost_report_is_still_sent(self, http: MagicMock) -> None:
+        """Only token counts are priced as chat; a declared cost may describe any kind of call."""
+        http.return_value = _response(201)
+
+        result = _manager().on_report_usage_request(
+            ReportUsageRequest(declared_cost_micro_usd=10, model="m", activity_type="embedding")
+        )
+
+        assert isinstance(result, ReportUsageResultSuccess)
+        assert _sent(http)["activity_type"] == "embedding"
 
     def test_cache_counts_equal_to_input_are_accepted(self, http: MagicMock) -> None:
         """Every input token cached is valid: the cached share can equal the total."""
