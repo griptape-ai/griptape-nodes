@@ -36,7 +36,6 @@ from griptape_nodes.retained_mode.events.library_events import (
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.events.workflow_events import (
     CreateWorkflowFromTemplateRequest,
-    CreateWorkflowFromTemplateResultFailure,
     CreateWorkflowFromTemplateResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultSuccess,
@@ -420,16 +419,25 @@ async def test_a_backing_workflow_marked_as_a_template_creates_a_workflow(
     reason=f"Workflow Node Library fixture workflow missing at {FIXTURE_WORKFLOW_FILE}",
 )
 @pytest.mark.asyncio
-async def test_a_backing_workflow_without_the_template_flag_is_not_a_template(
+async def test_a_backing_workflow_without_the_template_flag_is_copied_on_create(
     registered_library: Path, engine: Engine
 ) -> None:
-    """Without `is_template = true`, the workflow is listed but cannot be created from."""
-    template_name = (registered_library.parent / "shout_workflow").as_posix()
+    """Without `is_template = true`, the workflow is not a template, but Create still copies it."""
+    workflow_file = registered_library.parent / FIXTURE_WORKFLOW_FILE.name
+    template_name = workflow_file.with_suffix("").as_posix()
+    original_source = workflow_file.read_text()
+
+    list_result = await engine.ahandle_request(ListAllWorkflowsRequest())
+    assert isinstance(list_result, ListAllWorkflowsResultSuccess), list_result
+    assert list_result.workflows[template_name]["is_template"] is False
 
     create_result = await engine.ahandle_request(CreateWorkflowFromTemplateRequest(template_name=template_name))
+    assert isinstance(create_result, CreateWorkflowFromTemplateResultSuccess), create_result
 
-    assert isinstance(create_result, CreateWorkflowFromTemplateResultFailure), create_result
-    assert "not marked as a template" in str(create_result.result_details)
+    # The copy lands in the workspace as the user's own workflow; the library's file is untouched.
+    created = engine.workflow_registry.get_workflow_by_name(create_result.workflow_name)
+    assert created.metadata.is_griptape_provided is False
+    assert workflow_file.read_text() == original_source
 
 
 @pytest.mark.skipif(
