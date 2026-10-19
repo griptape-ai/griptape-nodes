@@ -54,6 +54,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifa
     ImageArtifactProvider,
 )
 from griptape_nodes.retained_mode.managers.os_manager import StagingFailedError
+from griptape_nodes.retained_mode.runtime.binding import NO_WORKFLOW
 
 # Mirrors the constant in tests/unit/retained_mode/managers/test_os_manager.py.
 # Used by the long-path stress test below so the magic 260 doesn't bare-appear.
@@ -502,6 +503,33 @@ class TestOnDemandCandidateGeneration:
         )
 
 
+class TestWorkflowForFileProvenance:
+    """Which workflow a written file's embedded metadata and sidecar describe."""
+
+    def test_uses_the_workflow_dispatch_gave(self, engine: Engine) -> None:
+        runtime = engine.open_workflow_runtime()
+
+        assert engine.os_manager._workflow_for_file_provenance(runtime) is runtime
+
+    def test_direct_call_without_a_workflow_uses_the_bound_workflow(self, engine: Engine) -> None:
+        runtime = engine.open_workflow_runtime()
+
+        with engine.bind_workflow(runtime):
+            assert engine.os_manager._workflow_for_file_provenance(None) is runtime
+
+    def test_work_bound_to_no_workflow_has_none(self, engine: Engine) -> None:
+        engine.open_workflow_runtime()
+
+        with engine.bind_workflow(NO_WORKFLOW):
+            assert engine.os_manager._workflow_for_file_provenance(None) is None
+
+    def test_several_open_workflows_with_none_named_has_none(self, engine: Engine) -> None:
+        engine.open_workflow_runtime()
+        engine.open_workflow_runtime()
+
+        assert engine.os_manager._workflow_for_file_provenance(None) is None
+
+
 class TestMetadataInjection:
     """Test workflow metadata injection in WriteFileRequest handler."""
 
@@ -539,7 +567,7 @@ class TestMetadataInjection:
 
         assert isinstance(result, WriteFileResultSuccess)
         mock_lookup.assert_called_once_with("image.png")
-        provider.collect_metadata_for_write.assert_called_once_with("image.png")
+        provider.collect_metadata_for_write.assert_called_once_with("image.png", engine.current_workflow_or_none())
         provider.prepare_content_for_write.assert_called_once_with(original_bytes, "image.png", metadata)
 
     def test_metadata_not_injected_when_skip_flag_set(self, engine: Engine, temp_dir: Path) -> None:

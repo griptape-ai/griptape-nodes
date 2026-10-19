@@ -61,7 +61,7 @@ class TestWriteSidecarFailurePaths:
         mock_engine.handle_request.return_value = GetCurrentProjectResultFailure(result_details="no project")
 
         with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
-            write_sidecar(file_path, metadata, mock_engine)
+            write_sidecar(file_path, metadata, mock_engine, None)
 
         assert "Failed to write sidecar metadata" in caplog.text
         assert "output.txt" in caplog.text
@@ -77,7 +77,7 @@ class TestWriteSidecarFailurePaths:
         file_path = Path("/workspace/output.txt")
         metadata = SidecarContent()
 
-        def handle_request(request: object) -> object:
+        def handle_request(request: object, workflow_id: str | None = None) -> object:  # noqa: ARG001
             from griptape_nodes.retained_mode.events.project_events import (
                 GetCurrentProjectRequest,
                 GetSituationRequest,
@@ -94,7 +94,7 @@ class TestWriteSidecarFailurePaths:
         mock_engine.handle_request.side_effect = handle_request
 
         with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
-            write_sidecar(file_path, metadata, mock_engine)
+            write_sidecar(file_path, metadata, mock_engine, None)
 
         assert "Failed to write sidecar metadata" in caplog.text
 
@@ -122,7 +122,7 @@ class TestWriteSidecarFailurePaths:
         file_path = Path("/workspace/output.txt")
         metadata = SidecarContent()
 
-        def handle_request(request: object) -> object:
+        def handle_request(request: object, workflow_id: str | None = None) -> object:  # noqa: ARG001
             from griptape_nodes.retained_mode.events.project_events import (
                 GetCurrentProjectRequest,
                 GetPathForMacroRequest,
@@ -146,7 +146,7 @@ class TestWriteSidecarFailurePaths:
         mock_engine.handle_request.side_effect = handle_request
 
         with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
-            write_sidecar(file_path, metadata, mock_engine)
+            write_sidecar(file_path, metadata, mock_engine, None)
 
         assert "Failed to write sidecar metadata" in caplog.text
 
@@ -175,7 +175,7 @@ class TestWriteSidecarFailurePaths:
         )
         file_path = tmp_path / "output.txt"
 
-        def handle_request(request: object) -> object:
+        def handle_request(request: object, workflow_id: str | None = None) -> object:  # noqa: ARG001
             from griptape_nodes.retained_mode.events.project_events import (
                 GetCurrentProjectRequest,
                 GetPathForMacroRequest,
@@ -197,9 +197,8 @@ class TestWriteSidecarFailurePaths:
 
         mock_engine = Mock()
         mock_engine.handle_request.side_effect = handle_request
-        mock_engine.context_manager.has_current_workflow.return_value = False
 
-        write_sidecar(file_path, None, mock_engine)
+        write_sidecar(file_path, None, mock_engine, None)
 
         assert sidecar_path.exists()
         data = json.loads(sidecar_path.read_text())
@@ -207,3 +206,58 @@ class TestWriteSidecarFailurePaths:
         assert "saved_at" in data
         # No situation field because metadata was empty SidecarContent()
         assert "situation" not in data
+
+    def test_requests_are_addressed_to_the_given_workflow_and_its_provenance_is_written(self, tmp_path: Path) -> None:
+        """Every nested request names the given workflow, and the sidecar describes that workflow."""
+        from griptape_nodes.common.project_templates.situation import (
+            SituationFilePolicy,
+            SituationTemplate,
+        )
+        from griptape_nodes.common.project_templates.situation import (
+            SituationPolicy as SitPolicy,
+        )
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetCurrentProjectRequest,
+            GetCurrentProjectResultSuccess,
+            GetPathForMacroRequest,
+            GetPathForMacroResultSuccess,
+            GetSituationRequest,
+            GetSituationResultSuccess,
+        )
+
+        sidecar_path = tmp_path / ".griptape-nodes-metadata" / "output.txt.json"
+        mock_project_info = Mock()
+        mock_project_info.project_base_dir = tmp_path
+        situation = SituationTemplate(
+            name="save_griptape_nodes_metadata",
+            macro="{griptape-nodes-metadata}/{source_file_name}.json",
+            policy=SitPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
+        )
+        addressed_to: list[str | None] = []
+
+        def handle_request(request: object, workflow_id: str | None = None) -> object:
+            addressed_to.append(workflow_id)
+            if isinstance(request, GetCurrentProjectRequest):
+                return GetCurrentProjectResultSuccess(project_info=mock_project_info, result_details="ok")
+            if isinstance(request, GetSituationRequest):
+                return GetSituationResultSuccess(situation=situation, result_details="ok")
+            if isinstance(request, GetPathForMacroRequest):
+                return GetPathForMacroResultSuccess(
+                    resolved_path=sidecar_path, absolute_path=sidecar_path, result_details="ok"
+                )
+            msg = f"Unexpected request: {request}"
+            raise AssertionError(msg)
+
+        mock_engine = Mock()
+        mock_engine.handle_request.side_effect = handle_request
+        mock_engine.workflow_registry.get_workflow_by_name.side_effect = KeyError
+        workflow = Mock()
+        workflow.workflow_id = "wf-1"
+        workflow.context.has_current_workflow.return_value = True
+        workflow.context.get_current_workflow_name.return_value = "my_workflow"
+        workflow.context.has_current_flow.return_value = False
+
+        write_sidecar(tmp_path / "output.txt", None, mock_engine, workflow)
+
+        assert addressed_to == ["wf-1", "wf-1", "wf-1"]
+        assert json.loads(sidecar_path.read_text())["workflow"] == {"name": "my_workflow"}

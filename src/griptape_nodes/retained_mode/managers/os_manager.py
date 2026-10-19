@@ -155,6 +155,7 @@ from griptape_nodes.retained_mode.managers.resource_types.compute_resource impor
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.runtime.binding import WorkflowNotNamedError
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime, workflow_id_of
 
 if TYPE_CHECKING:
@@ -2680,6 +2681,8 @@ class OSManager(EngineScoped):
         # Normalize path
         normalized_path = normalize_path_for_platform(file_path)
 
+        provenance_workflow = self._workflow_for_file_provenance(workflow)
+
         # Inject workflow metadata into file content if applicable
         content = request.content
         if (
@@ -2691,7 +2694,7 @@ class OSManager(EngineScoped):
             # loop; only the re-encode with the collected metadata goes to a worker thread.
             provider = self.engine.artifact_manager.provider_for_write(file_path.name)
             if provider is not None:
-                metadata = provider.collect_metadata_for_write(file_path.name)
+                metadata = provider.collect_metadata_for_write(file_path.name, provenance_workflow)
                 if metadata:
                     content = await to_thread(provider.prepare_content_for_write, content, file_path.name, metadata)
 
@@ -3009,7 +3012,7 @@ class OSManager(EngineScoped):
 
         # Write sidecar metadata file if caller opted in by providing file_metadata
         if request.file_metadata is not None:
-            write_sidecar(final_file_path, request.file_metadata, self.engine)
+            write_sidecar(final_file_path, request.file_metadata, self.engine, provenance_workflow)
 
         if used_indexed_fallback:
             msg = f"File written to indexed path: {final_file_path} (original path '{path_display}' already existed)"
@@ -3052,6 +3055,23 @@ class OSManager(EngineScoped):
             bytes_written=outcome.bytes_written,
             result_details=f"Temp file written at {outcome.staged_path}",
         )
+
+    def _workflow_for_file_provenance(self, workflow: WorkflowRuntime | None) -> WorkflowRuntime | None:
+        """The workflow a written file's embedded metadata and sidecar describe, or None when it has none.
+
+        Dispatch hands a write its workflow, so that one is used. A node library that calls
+        `on_write_file_request` directly gets no workflow, and its file belongs to the workflow the call
+        runs in, so this is the one place that reads the bound workflow for it. When several workflows are
+        open and the call is bound to none of them, the file gets no workflow provenance, because
+        provenance is best-effort and must not fail the write.
+        """
+        if workflow is not None:
+            return workflow
+        try:
+            return self.engine.current_workflow_or_none()
+        except WorkflowNotNamedError:
+            logger.debug("Skipping workflow metadata for a written file. Several workflows are open and none is named.")
+            return None
 
     def _stage_bytes_at_temp(
         self, content: bytes, variables: MacroVariables, workflow_id: str | None

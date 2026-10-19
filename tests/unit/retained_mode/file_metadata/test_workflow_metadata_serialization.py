@@ -77,7 +77,7 @@ class TestSerializeFlow:
         )
         assert isinstance(created, CreateFlowResultSuccess)
 
-        payload = _serialize_flow(engine, flow_name=created.flow_name)
+        payload = _serialize_flow(engine, engine.current_workflow, flow_name=created.flow_name)
         assert payload is not None
 
         decoded = decode_commands(json.loads(payload), SerializedFlowCommands)
@@ -94,14 +94,14 @@ class TestSerializeFlow:
         engine.context_manager.push_workflow(workflow_name="wf_no_flow")
 
         assert not engine.context_manager.has_current_flow()
-        assert _serialize_flow(engine, flow_name=None) is None
+        assert _serialize_flow(engine, engine.current_workflow, flow_name=None) is None
 
     @pytest.mark.usefixtures("clean_object_state")
     def test_unknown_flow_name_returns_none(self, engine: Engine) -> None:
         """A flow name that does not exist fails the underlying request; this must degrade to None, not raise."""
         engine.context_manager.push_workflow(workflow_name="wf_missing_flow")
 
-        assert _serialize_flow(engine, flow_name="does_not_exist") is None
+        assert _serialize_flow(engine, engine.current_workflow, flow_name="does_not_exist") is None
 
     @pytest.mark.usefixtures("clean_object_state")
     def test_none_flow_name_uses_current_flow_context(self, engine: Engine) -> None:
@@ -113,7 +113,7 @@ class TestSerializeFlow:
         assert isinstance(created, CreateFlowResultSuccess)
         assert engine.context_manager.has_current_flow()
 
-        payload = _serialize_flow(engine, flow_name=None)
+        payload = _serialize_flow(engine, engine.current_workflow, flow_name=None)
         assert payload is not None
 
         decoded = decode_commands(json.loads(payload), SerializedFlowCommands)
@@ -129,7 +129,7 @@ class TestSerializeNode:
         engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_name="wf_node", flow_name="fl_node"))
         _add_error_proxy_node(engine, "my_node")
 
-        payload = _serialize_node("my_node", engine)
+        payload = _serialize_node("my_node", engine, engine.current_workflow)
         assert payload is not None
 
         parsed = json.loads(payload)
@@ -140,7 +140,7 @@ class TestSerializeNode:
         """A node name that does not exist fails the underlying request; this must degrade to None, not raise."""
         engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_name="wf_missing_node", flow_name="fl_missing"))
 
-        assert _serialize_node("no_such_node", engine) is None
+        assert _serialize_node("no_such_node", engine, engine.current_workflow) is None
 
 
 class TestCollectWorkflowMetadata:
@@ -155,7 +155,7 @@ class TestCollectWorkflowMetadata:
         )
         assert isinstance(created, CreateFlowResultSuccess)
 
-        metadata = collect_workflow_metadata(engine)
+        metadata = collect_workflow_metadata(engine, engine.current_workflow)
 
         assert metadata  # sanity: something was collected
         assert all(key.startswith(METADATA_NAMESPACE) for key in metadata)
@@ -165,7 +165,7 @@ class TestCollectWorkflowMetadata:
         """Even with no workflow in context, a timestamp is always available."""
         assert not engine.context_manager.has_current_workflow()
 
-        metadata = collect_workflow_metadata(engine)
+        metadata = collect_workflow_metadata(engine, engine.current_workflow)
 
         assert f"{METADATA_NAMESPACE}saved_at" in metadata
         assert f"{METADATA_NAMESPACE}workflow_name" not in metadata
@@ -181,7 +181,7 @@ class TestCollectWorkflowMetadata:
         )
         assert isinstance(created, CreateFlowResultSuccess)
 
-        metadata = collect_workflow_metadata(engine)
+        metadata = collect_workflow_metadata(engine, engine.current_workflow)
 
         assert FLOW_COMMANDS_KEY in metadata
         decoded = decode_commands(json.loads(metadata[FLOW_COMMANDS_KEY]), SerializedFlowCommands)
