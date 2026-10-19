@@ -83,7 +83,7 @@ class ObjectManager(EngineScoped):
             case ControlFlow():
                 self.engine.flow_manager.handle_flow_rename(old_name=request.object_name, new_name=final_name)
             case BaseNode():
-                self.engine.node_manager.handle_node_rename(old_name=request.object_name, new_name=final_name)
+                self.engine.node_manager.handle_node_rename(workflow, old_name=request.object_name, new_name=final_name)
             case _:
                 details = f"Attempted to rename an object named '{request.object_name}', but that object wasn't of a type supported for rename."
                 return RenameObjectResultFailure(next_available_name=None, result_details=details)
@@ -166,10 +166,7 @@ class ObjectManager(EngineScoped):
         return self._current_objects_or_empty().name_to_objects.get(name, None)
 
     def attempt_get_object_by_name_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
-        obj = self.attempt_get_object_by_name(name)
-        if obj is not None and isinstance(obj, cast_type):
-            return obj
-        return None
+        return self._current_objects_or_empty().get_as_type(name, cast_type)
 
     def del_obj_by_name(self, workflow: WorkflowRuntime, name: str) -> None:
         # Does the object have any children? delete those

@@ -3959,7 +3959,8 @@ class NodeExecutor(EngineScoped):
                             value=param_value,
                             incoming_connection_source_node_name=node.name,
                             incoming_connection_source_parameter_name=target_param_name,
-                        )
+                        ),
+                        self.engine.current_workflow,
                     )
             target_node.parameter_output_values[target_param_name] = param_value
 

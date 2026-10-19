@@ -23,6 +23,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.execution_events import NodeMetadata
@@ -32,13 +33,11 @@ class TestExecuteNodeStrictMode:
     def _make_node_manager(
         self,
         *,
-        object_manager: MagicMock | None = None,
         library_manager: MagicMock | None = None,
         worker_manager: MagicMock | None = None,
     ) -> NodeManager:
         """Build a NodeManager wired to a mock engine instead of the process-wide facade."""
         mock_engine = MagicMock()
-        mock_engine.object_manager = object_manager
         mock_engine.library_manager = library_manager
         # Engine always has a WorkerManager, so a test that leaves it None describes a shape the
         # engine cannot be in. Routing awaits it, so it needs to be awaitable.
@@ -65,10 +64,11 @@ class TestExecuteNodeStrictMode:
         node.aprocess = AsyncMock(side_effect=_aprocess)
         return node
 
-    def _make_mock_obj_mgr(self, existing_node: MagicMock) -> MagicMock:
-        m = MagicMock()
-        m.attempt_get_object_by_name_as_type.return_value = existing_node
-        return m
+    def _make_workflow(self, existing_node: MagicMock | None = None) -> WorkflowRuntime:
+        workflow = WorkflowRuntime(owner=object())
+        if existing_node is not None:
+            workflow.objects.name_to_objects[existing_node.name] = existing_node
+        return workflow
 
     def _make_mock_library_manager(self, *, is_worker: bool) -> MagicMock:
         m = MagicMock()
@@ -82,12 +82,12 @@ class TestExecuteNodeStrictMode:
     @pytest.mark.asyncio
     async def test_orchestrator_violation_stays_success(self) -> None:
         node = self._make_mock_node(aprocess_reports=True)
-        obj_mgr = self._make_mock_obj_mgr(existing_node=node)
+        workflow = self._make_workflow(existing_node=node)
         lib_mgr = self._make_mock_library_manager(is_worker=False)
-        node_manager = self._make_node_manager(object_manager=obj_mgr, library_manager=lib_mgr)
+        node_manager = self._make_node_manager(library_manager=lib_mgr)
 
         request = ExecuteNodeRequest(node_name="n", node_metadata=cast("NodeMetadata", {"node_type": "T"}))
-        result = await node_manager.on_execute_node_request(request)
+        result = await node_manager.on_execute_node_request(request, workflow)
 
         assert isinstance(result, ExecuteNodeResultSuccess)
         node.aprocess.assert_awaited_once()
@@ -100,7 +100,7 @@ class TestExecuteNodeStrictMode:
 
         with patch.object(node_manager, "_materialize_transient_node_from_metadata", return_value=node):
             request = ExecuteNodeRequest(node_name="n", node_metadata=cast("NodeMetadata", {"node_type": "T"}))
-            result = await node_manager.on_execute_node_request(request)
+            result = await node_manager.on_execute_node_request(request, self._make_workflow())
 
         assert isinstance(result, ExecuteNodeResultFailure)
         details = str(result.result_details)
@@ -116,7 +116,7 @@ class TestExecuteNodeStrictMode:
 
         with patch.object(node_manager, "_materialize_transient_node_from_metadata", return_value=node):
             request = ExecuteNodeRequest(node_name="n", node_metadata=cast("NodeMetadata", {"node_type": "T"}))
-            result = await node_manager.on_execute_node_request(request)
+            result = await node_manager.on_execute_node_request(request, self._make_workflow())
 
         assert isinstance(result, ExecuteNodeResultSuccess)
         node.aprocess.assert_awaited_once()
@@ -124,12 +124,12 @@ class TestExecuteNodeStrictMode:
     @pytest.mark.asyncio
     async def test_orchestrator_no_violations_unchanged(self) -> None:
         node = self._make_mock_node(aprocess_reports=False)
-        obj_mgr = self._make_mock_obj_mgr(existing_node=node)
+        workflow = self._make_workflow(existing_node=node)
         lib_mgr = self._make_mock_library_manager(is_worker=False)
-        node_manager = self._make_node_manager(object_manager=obj_mgr, library_manager=lib_mgr)
+        node_manager = self._make_node_manager(library_manager=lib_mgr)
 
         request = ExecuteNodeRequest(node_name="n", node_metadata=cast("NodeMetadata", {"node_type": "T"}))
-        result = await node_manager.on_execute_node_request(request)
+        result = await node_manager.on_execute_node_request(request, workflow)
 
         assert isinstance(result, ExecuteNodeResultSuccess)
         node.aprocess.assert_awaited_once()

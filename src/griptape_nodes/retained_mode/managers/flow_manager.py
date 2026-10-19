@@ -949,7 +949,7 @@ class FlowManager(EngineScoped):
                 self._state.name_to_parent_name[flow_name] = new_name
 
         # Let the Node Manager know about the change, too.
-        self.engine.node_manager.handle_flow_rename(old_name=old_name, new_name=new_name)
+        self.engine.node_manager.handle_flow_rename(self.engine.current_workflow, old_name=old_name, new_name=new_name)
 
     @handles(CreateConnectionRequest)
     def on_create_connection_request(self, request: CreateConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
@@ -1796,7 +1796,9 @@ class FlowManager(EngineScoped):
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
                 include_existing_subflow_in_group=True,
             )
-            serialize_result = self.engine.node_manager.on_serialize_node_to_commands(serialize_request)
+            serialize_result = self.engine.node_manager.on_serialize_node_to_commands(
+                serialize_request, self.engine.current_workflow
+            )
 
             if not isinstance(serialize_result, SerializeNodeToCommandsResultSuccess):
                 return PackageNodesAsSerializedFlowResultFailure(
@@ -1878,7 +1880,7 @@ class FlowManager(EngineScoped):
         for node in nodes_to_package:
             list_connections_request = ListConnectionsForNodeRequest(node_name=node.name)
             list_connections_result = self.engine.node_manager.on_list_connections_for_node_request(
-                list_connections_request
+                list_connections_request, self.engine.current_workflow
             )
 
             if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
@@ -2007,7 +2009,7 @@ class FlowManager(EngineScoped):
         # Get connection details using the standard approach
         list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
         list_connections_result = self.engine.node_manager.on_list_connections_for_node_request(
-            list_connections_request
+            list_connections_request, self.engine.current_workflow
         )
 
         if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):

@@ -59,6 +59,13 @@ class WorkflowObjects:
 
         return result
 
+    def get_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
+        """The object named `name` if there is one and it is a `cast_type`, else None."""
+        obj = self.name_to_objects.get(name)
+        if obj is not None and isinstance(obj, cast_type):
+            return obj
+        return None
+
     def generate_name(self, type_name: str, requested_name: str | None = None) -> str:
         """A name no object here has, built from the requested name or else the type name."""
         # Now ensure that we're giving a valid unique name. Here are the rules:

@@ -564,7 +564,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         self._proxy_param_to_connections[proxy_parameter.name] -= 1
         if self._proxy_param_to_connections[proxy_parameter.name] == 0:
             self.engine.node_manager.on_remove_parameter_from_node_request(
-                request=RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=proxy_parameter.name)
+                request=RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=proxy_parameter.name),
+                workflow=self.engine.current_workflow,
             )
             del self._proxy_param_to_connections[proxy_parameter.name]
             if metadata_key in self.metadata and proxy_parameter.name in self.metadata[metadata_key]:

@@ -295,7 +295,7 @@ class TestSerializeNodeWithoutLibraryMetadata:
 
         engine.object_manager.add_object_by_name(engine.current_workflow, node.name, node)
 
-        result = engine.node_manager.on_serialize_node_to_commands(SerializeNodeToCommandsRequest(node_name=node.name))
+        result = engine.handle_request(SerializeNodeToCommandsRequest(node_name=node.name))
 
         assert isinstance(result, SerializeNodeToCommandsResultSuccess)
         create_command = result.serialized_node_commands.create_node_command
@@ -318,11 +318,7 @@ class TestUnresolveNodeRequest:
         mock_node.name = "test_node"
         mock_node.state = NodeResolutionState.RESOLVING
         mock_node.parameter_output_values = MagicMock()
-        with patch.object(
-            engine.object_manager,
-            "attempt_get_object_by_name_as_type",
-            return_value=mock_node,
-        ):
+        with patch.object(engine.current_workflow.objects, "get_as_type", return_value=mock_node):
             result = engine.handle_request(UnresolveNodeRequest(node_name="test_node"))
 
         assert isinstance(result, UnresolveNodeResultFailure)
@@ -337,11 +333,7 @@ class TestUnresolveNodeRequest:
         mock_node.parameter_output_values = MagicMock()
         mock_connections = MagicMock()
         with (
-            patch.object(
-                engine.object_manager,
-                "attempt_get_object_by_name_as_type",
-                return_value=mock_node,
-            ),
+            patch.object(engine.current_workflow.objects, "get_as_type", return_value=mock_node),
             patch.object(
                 engine.flow_manager,
                 "get_connections",
@@ -364,11 +356,7 @@ class TestUnresolveNodeRequest:
         mock_node.parameter_output_values = MagicMock()
         mock_connections = MagicMock()
         with (
-            patch.object(
-                engine.object_manager,
-                "attempt_get_object_by_name_as_type",
-                return_value=mock_node,
-            ),
+            patch.object(engine.current_workflow.objects, "get_as_type", return_value=mock_node),
             patch.object(
                 engine.flow_manager,
                 "get_connections",
@@ -438,9 +426,8 @@ class TestGetParameterValueOutputPriority:
         obj_mgr = engine.object_manager
         obj_mgr.add_object_by_name(engine.current_workflow, "test_node", mock_node)
 
-        node_manager = engine.node_manager
         request = GetParameterValueRequest(parameter_name="result", node_name="test_node")
-        result = node_manager.on_get_parameter_value_request(request)
+        result = engine.node_manager.on_get_parameter_value_request(request, engine.current_workflow)
 
         assert isinstance(result, GetParameterValueResultSuccess)
         assert result.value == output_value
@@ -468,9 +455,8 @@ class TestGetParameterValueOutputPriority:
         obj_mgr = engine.object_manager
         obj_mgr.add_object_by_name(engine.current_workflow, "test_node", mock_node)
 
-        node_manager = engine.node_manager
         request = GetParameterValueRequest(parameter_name="a", node_name="test_node")
-        result = node_manager.on_get_parameter_value_request(request)
+        result = engine.node_manager.on_get_parameter_value_request(request, engine.current_workflow)
 
         assert isinstance(result, GetParameterValueResultSuccess)
         assert result.value == input_value
@@ -498,9 +484,8 @@ class TestGetParameterValueOutputPriority:
         obj_mgr = engine.object_manager
         obj_mgr.add_object_by_name(engine.current_workflow, "test_node", mock_node)
 
-        node_manager = engine.node_manager
         request = GetParameterValueRequest(parameter_name="x", node_name="test_node")
-        result = node_manager.on_get_parameter_value_request(request)
+        result = engine.node_manager.on_get_parameter_value_request(request, engine.current_workflow)
 
         assert isinstance(result, GetParameterValueResultSuccess)
         assert result.value == default_value
@@ -577,7 +562,7 @@ class TestNodeManagerCancelExecuteNode:
 
         # Should not raise; there is no entry for "ghost_node" and
         # WorkerManager.forward_event_to_worker should not be invoked.
-        await node_manager.cancel_worker_execution("ghost_node")
+        await node_manager.cancel_worker_execution(engine.current_workflow, "ghost_node")
 
 
 class TestDeserializeNodeFromCommandsRetargetsElementCommands:
@@ -644,10 +629,11 @@ class TestDeserializeNodeFromCommandsRetargetsElementCommands:
 
         mock_node = MagicMock(spec=BaseNode)
         mock_engine.handle_request.side_effect = fake_handle_request
-        mock_engine.object_manager.attempt_get_object_by_name_as_type.return_value = mock_node
+        workflow = MagicMock()
+        workflow.objects.get_as_type.return_value = mock_node
 
         with patch.object(NodeManager, "_cleanup_node_on_failed_deserialization"):
-            result = manager.on_deserialize_node_from_commands(request)
+            result = manager.on_deserialize_node_from_commands(request, workflow)
 
         assert isinstance(result, DeserializeNodeFromCommandsResultSuccess)
         assert result.node_name == copy_name

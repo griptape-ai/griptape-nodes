@@ -22,6 +22,11 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+
+
+def _workflow() -> WorkflowRuntime:
+    return WorkflowRuntime(owner=object())
 
 
 def _manager(*, is_worker: bool = False) -> NodeManager:
@@ -50,7 +55,7 @@ class TestTheHookGatesExecution:
     async def test_a_node_that_declines_does_not_run(self) -> None:
         node = _node(validation=[ValueError("input latent has no source_shape")])
 
-        result = await _manager()._hydrate_and_run_node(node, _request())
+        result = await _manager()._hydrate_and_run_node(_workflow(), node, _request())
 
         assert isinstance(result, ExecuteNodeResultFailure)
         node.aprocess.assert_not_awaited()
@@ -59,7 +64,7 @@ class TestTheHookGatesExecution:
     async def test_the_reasons_travel_as_themselves(self) -> None:
         """Not only in the message: a caller has to be able to tell a refusal from a crash."""
         reason = ValueError("input latent has no source_shape")
-        result = await _manager()._hydrate_and_run_node(_node(validation=[reason]), _request())
+        result = await _manager()._hydrate_and_run_node(_workflow(), _node(validation=[reason]), _request())
 
         assert isinstance(result, ExecuteNodeResultFailure)
         assert result.validation_exceptions == [reason]
@@ -72,7 +77,7 @@ class TestTheHookGatesExecution:
         node = _node()
         node.validate_in_execution_environment = MagicMock(side_effect=reason)
 
-        result = await _manager()._hydrate_and_run_node(node, _request())
+        result = await _manager()._hydrate_and_run_node(_workflow(), node, _request())
 
         assert isinstance(result, ExecuteNodeResultFailure)
         assert result.validation_exceptions == [reason]
@@ -82,7 +87,7 @@ class TestTheHookGatesExecution:
     async def test_a_node_with_nothing_to_say_runs(self) -> None:
         node = _node(validation=None)
 
-        result = await _manager()._hydrate_and_run_node(node, _request())
+        result = await _manager()._hydrate_and_run_node(_workflow(), node, _request())
 
         assert isinstance(result, ExecuteNodeResultSuccess)
         node.aprocess.assert_awaited_once()
@@ -92,7 +97,7 @@ class TestTheHookGatesExecution:
         """`[]` means "I looked and found nothing", which is the same as not implementing the hook."""
         node = _node(validation=[])
 
-        result = await _manager()._hydrate_and_run_node(node, _request())
+        result = await _manager()._hydrate_and_run_node(_workflow(), node, _request())
 
         assert isinstance(result, ExecuteNodeResultSuccess)
         node.aprocess.assert_awaited_once()
@@ -103,7 +108,7 @@ class TestTheHookGatesExecution:
         """A library must not have to know whether it was routed to a worker."""
         node = _node(validation=None)
 
-        await _manager(is_worker=is_worker)._hydrate_and_run_node(node, _request())
+        await _manager(is_worker=is_worker)._hydrate_and_run_node(_workflow(), node, _request())
 
         node.validate_in_execution_environment.assert_called_once_with()
 
@@ -121,7 +126,7 @@ class TestTheHookGatesExecution:
         node.get_parameter_by_name = MagicMock(return_value=MagicMock())
         request = ExecuteNodeRequest(node_name="Node 1", parameter_values={"width": 512})
 
-        await _manager()._hydrate_and_run_node(node, request)
+        await _manager()._hydrate_and_run_node(_workflow(), node, request)
 
         assert order.index("set:width") < order.index("validate")
 

@@ -34,6 +34,7 @@ def node_stub(name: str) -> BaseNode:
     # on the way to dispatching a node; validate must report no problems or we land in
     # ErrorState instead of executing.
     node.parameter_output_values = MagicMock()
+    node.workflow_runtime = MagicMock()
     node.validate_before_node_run = MagicMock(return_value=None)
     return node
 

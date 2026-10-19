@@ -1036,7 +1036,10 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
         # add to node_to_reference, breaking this iteration mid-cancel.
         node_manager = self.context.engine.node_manager
         for dag_node in list(self.context.node_to_reference.values()):
-            await node_manager.cancel_worker_execution(dag_node.node_reference.name)
+            workflow = dag_node.node_reference.workflow_runtime
+            if workflow is None:
+                continue
+            await node_manager.cancel_worker_execution(workflow, dag_node.node_reference.name)
 
         # Cancel all running tasks
         tasks = list(self.context.task_to_node.keys())
