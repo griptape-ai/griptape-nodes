@@ -34,12 +34,16 @@ if isinstance(check, BudgetAccessResultFailure):
 
 ## After the call: `ReportUsageRequest`
 
+Report the token counts the provider returned. Griptape Cloud prices them, so your node never needs a price table.
+
 ```python
 from griptape_nodes.retained_mode.events.budget_events import ReportUsageRequest
 
 await GriptapeNodes.ahandle_request(
     ReportUsageRequest(
-        declared_cost_micro_usd=12_345,
+        input_tokens=1_000,
+        output_tokens=500,
+        cache_read_tokens=900,
         provider="openai",
         model="gpt-5-nano",
         activity_type="chat_completion",
@@ -49,7 +53,9 @@ await GriptapeNodes.ahandle_request(
 )
 ```
 
+- Pass the counts exactly as the provider reports them. `input_tokens` is the provider's total, cached tokens included. `cache_read_tokens` is the cached share of it, and `cache_write_tokens` the tokens written to the cache. Leave either out when the provider doesn't report it.
+- `model` is required with token counts, because Griptape Cloud prices by model. Send the same provider name for the model as in the check.
+- If your node knows its cost but has no token counts, send `declared_cost_micro_usd` (in millionths of a US dollar) instead. Send one or the other, never both.
 - The report is sent in the background and returns at once. It is retried briefly, then dropped with a line in the engine log.
-- **Never fail a node over its report.** Ignore the result.
+- **Never fail a node over its report.** Ignore the result. A report that can't be sent, such as one missing its model, comes back as a failure with the reason; the node carries on.
 - Pass the `correlation_id` from the check's success so Cloud can pair the check with the report.
-- Costs are in millionths of a US dollar: `1_000_000` is $1.00.

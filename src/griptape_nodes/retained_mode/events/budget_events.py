@@ -159,7 +159,11 @@ class BudgetAccessResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ReportUsageRequest(RequestPayload):
-    """Report what a direct provider call cost, so it counts against budgets and shows in usage.
+    """Report what a direct provider call used, so it counts against budgets and shows in usage.
+
+    Send the provider's token counts and Griptape Cloud prices them, so no client holds prices.
+    Send exactly one of: the token counts (`input_tokens` and `output_tokens`, with `model`), or
+    `declared_cost_micro_usd`. Anything else is not sent.
 
     Best-effort: the report is sent in the background, retried briefly, and dropped with a log
     line if Cloud cannot take it. A node must never fail over its usage report.
@@ -167,7 +171,13 @@ class ReportUsageRequest(RequestPayload):
     Use when: A node has just finished a direct provider call (not through the Griptape proxy).
 
     Args:
-        declared_cost_micro_usd: What the call cost, in millionths of a US dollar
+        declared_cost_micro_usd: What the call cost, in millionths of a US dollar, for a caller
+            that knows its cost and has no token counts
+        input_tokens: The provider's total prompt token count, cached tokens included, passed
+            through as the provider reported it
+        output_tokens: The provider's output token count
+        cache_read_tokens: The cached share of `input_tokens`, when the provider reports one
+        cache_write_tokens: Tokens written to the provider's cache, when it reports them
         provider: Provider name, e.g. "anthropic"
         model: The provider's name for the model, e.g. "gpt-5-nano"
         activity_type: Kind of call, e.g. "chat_completion"
@@ -178,7 +188,11 @@ class ReportUsageRequest(RequestPayload):
     Results: ReportUsageResultSuccess (queued) | ReportUsageResultFailure (not sent)
     """
 
-    declared_cost_micro_usd: int
+    declared_cost_micro_usd: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
     provider: str | None = None
     model: str | None = None
     activity_type: str | None = None

@@ -241,10 +241,9 @@ class BudgetManager(EngineScoped):
         self, request: ReportUsageRequest
     ) -> ReportUsageResultSuccess | ReportUsageResultFailure:
         """Queue a usage report for a direct provider call and return without waiting on Cloud."""
-        if request.declared_cost_micro_usd < 0:
-            return self._report_not_sent(
-                request.model, f"Failed because the declared cost {request.declared_cost_micro_usd} is negative."
-            )
+        problem = _usage_problem(request)
+        if problem is not None:
+            return self._report_not_sent(request.model, f"Failed because {problem}")
         if resolve_cloud_credential(self.engine.secrets_manager) is None:
             return self._report_not_sent(request.model, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
 
@@ -252,10 +251,13 @@ class BudgetManager(EngineScoped):
         idempotency_key = uuid.uuid4().hex
         body: dict[str, Any] = {
             "idempotency_key": idempotency_key,
-            "declared_cost_micro_usd": request.declared_cost_micro_usd,
             "tags": self._build_tags(request.node_type, request.node_id),
             "occurred_at": datetime.now(UTC).isoformat(),
         }
+        if request.declared_cost_micro_usd is None:
+            body["usage"] = _usage_body(request)
+        else:
+            body["declared_cost_micro_usd"] = request.declared_cost_micro_usd
         for name, cap in _DESCRIPTOR_CAPS.items():
             value = getattr(request, name)
             if value is not None and len(value) <= cap:
@@ -384,6 +386,51 @@ class BudgetManager(EngineScoped):
                 level=logging.WARNING,
             )
         )
+
+
+def _usage_problem(request: ReportUsageRequest) -> str | None:
+    """Say why a report can't be sent, or None when it can.
+
+    Mirrors the checks Cloud rejects a report with, so a report Cloud would refuse is never sent.
+    """
+    has_tokens = request.input_tokens is not None or request.output_tokens is not None
+    if has_tokens and request.declared_cost_micro_usd is not None:
+        return "it gave both token counts and a declared cost; send one or the other."
+    if has_tokens:
+        return _token_problem(request)
+    if request.declared_cost_micro_usd is None:
+        return "it gave neither token counts nor a declared cost."
+    if request.declared_cost_micro_usd < 0:
+        return f"the declared cost {request.declared_cost_micro_usd} is negative."
+    return None
+
+
+def _token_problem(request: ReportUsageRequest) -> str | None:
+    """Say why a token report can't be sent, or None when it can."""
+    if request.input_tokens is None or request.output_tokens is None:
+        return "a token report needs both input and output token counts."
+    cache_read = request.cache_read_tokens or 0
+    cache_write = request.cache_write_tokens or 0
+    if min(request.input_tokens, request.output_tokens, cache_read, cache_write) < 0:
+        return "a token count is negative."
+    if cache_read + cache_write > request.input_tokens:
+        return "the cached token counts are larger than the input token count."
+    if not request.model or len(request.model) > _DESCRIPTOR_CAPS["model"]:
+        return "a token report needs a model name Griptape Cloud can price it under."
+    return None
+
+
+def _usage_body(request: ReportUsageRequest) -> dict[str, int | None]:
+    """The `usage` field: the counts as the provider reported them, cache keys only when given."""
+    usage: dict[str, int | None] = {
+        "input_tokens": request.input_tokens,
+        "output_tokens": request.output_tokens,
+    }
+    if request.cache_read_tokens is not None:
+        usage["cache_read_tokens"] = request.cache_read_tokens
+    if request.cache_write_tokens is not None:
+        usage["cache_write_tokens"] = request.cache_write_tokens
+    return usage
 
 
 def _decision(response: httpx2.Response) -> dict[str, Any] | None:

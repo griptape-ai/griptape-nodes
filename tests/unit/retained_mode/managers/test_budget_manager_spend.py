@@ -527,6 +527,125 @@ class TestReportUsage:
         assert "Secret Poster Label" not in json.dumps(_sent(http))
 
 
+class TestTokenReports:
+    """Direct calls report the provider's token counts and Griptape Cloud prices them."""
+
+    def test_posts_the_token_counts_as_usage(self, http: MagicMock) -> None:
+        http.return_value = _response(201)
+
+        result = _manager().on_report_usage_request(
+            ReportUsageRequest(
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_tokens=900,
+                cache_write_tokens=40,
+                provider="anthropic",
+                model="claude-haiku-4-5",
+                activity_type="chat_completion",
+                node_type="Agent",
+            )
+        )
+
+        assert isinstance(result, ReportUsageResultSuccess)
+        body = _sent(http)
+        assert body["usage"] == {
+            "input_tokens": 1000,
+            "output_tokens": 500,
+            "cache_read_tokens": 900,
+            "cache_write_tokens": 40,
+        }
+        assert "declared_cost_micro_usd" not in body
+        assert body["model"] == "claude-haiku-4-5"
+        assert body["idempotency_key"] == result.idempotency_key
+
+    def test_cache_counts_are_left_out_when_not_given(self, http: MagicMock) -> None:
+        http.return_value = _response(201)
+
+        _manager().on_report_usage_request(ReportUsageRequest(input_tokens=1000, output_tokens=500, model="gpt-5-nano"))
+
+        assert _sent(http)["usage"] == {"input_tokens": 1000, "output_tokens": 500}
+
+    def test_a_cost_report_still_sends_the_declared_cost(self, http: MagicMock) -> None:
+        http.return_value = _response(201)
+
+        cost = 250
+        _manager().on_report_usage_request(ReportUsageRequest(declared_cost_micro_usd=cost, model="gpt-5-nano"))
+
+        body = _sent(http)
+        assert body["declared_cost_micro_usd"] == cost
+        assert "usage" not in body
+
+    def test_retries_resend_the_same_counts_under_the_same_key(self, http: MagicMock) -> None:
+        """Cloud replays a same-key, same-counts report and rejects different counts, so retries must not vary."""
+        http.side_effect = [_response(503), _response(201)]
+
+        result = _manager().on_report_usage_request(
+            ReportUsageRequest(input_tokens=1000, output_tokens=500, model="gpt-5-nano")
+        )
+
+        assert isinstance(result, ReportUsageResultSuccess)
+        first, second = _sent(http, 0), _sent(http, 1)
+        assert first["idempotency_key"] == second["idempotency_key"] == result.idempotency_key
+        assert first["usage"] == second["usage"]
+
+    @pytest.mark.parametrize(
+        ("fields", "reason"),
+        [
+            ({"input_tokens": 1000, "output_tokens": 500, "declared_cost_micro_usd": 250, "model": "m"}, "both"),
+            ({"model": "m"}, "neither"),
+            ({"input_tokens": 1000, "model": "m"}, "both input and output"),
+            ({"output_tokens": 500, "model": "m"}, "both input and output"),
+            ({"input_tokens": -1, "output_tokens": 500, "model": "m"}, "negative"),
+            ({"input_tokens": 1000, "output_tokens": -5, "model": "m"}, "negative"),
+            ({"input_tokens": 1000, "output_tokens": 500, "cache_read_tokens": -1, "model": "m"}, "negative"),
+            (
+                {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cache_read_tokens": 90,
+                    "cache_write_tokens": 20,
+                    "model": "m",
+                },
+                "larger than",
+            ),
+            ({"input_tokens": 1000, "output_tokens": 500}, "model name"),
+            ({"input_tokens": 1000, "output_tokens": 500, "model": "m" * 256}, "model name"),
+            ({"declared_cost_micro_usd": -1}, "negative"),
+        ],
+        ids=[
+            "both",
+            "neither",
+            "input-only",
+            "output-only",
+            "negative-input",
+            "negative-output",
+            "negative-cache",
+            "cache-over-input",
+            "no-model",
+            "model-too-long",
+            "negative-cost",
+        ],
+    )
+    def test_a_report_cloud_would_reject_is_not_sent(self, http: MagicMock, fields: dict, reason: str) -> None:
+        result = _manager().on_report_usage_request(ReportUsageRequest(**fields))
+
+        assert isinstance(result, ReportUsageResultFailure)
+        assert reason in str(result.result_details)
+        assert isinstance(result.result_details, ResultDetails)
+        assert result.result_details.result_details[0].level == logging.WARNING
+        http.assert_not_called()
+
+    def test_cache_counts_equal_to_input_are_accepted(self, http: MagicMock) -> None:
+        """Every input token cached is valid: the cached share can equal the total."""
+        http.return_value = _response(201)
+
+        result = _manager().on_report_usage_request(
+            ReportUsageRequest(input_tokens=1000, output_tokens=500, cache_read_tokens=1000, model="m")
+        )
+
+        assert isinstance(result, ReportUsageResultSuccess)
+
+
 class TestReportQueue:
     def test_no_thread_until_the_first_report(self) -> None:
         budget_manager_module._DaemonQueue("test-report-lazy")
