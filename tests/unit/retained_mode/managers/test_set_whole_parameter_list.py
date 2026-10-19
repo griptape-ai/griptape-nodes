@@ -244,6 +244,54 @@ class TestWholeListSetOnAnUnconnectedList:
         assert _rows(node) == [row]
 
 
+class TestMaxItemsWhenARowChanges:
+    def test_a_row_set_over_max_items_is_rejected_and_keeps_its_value(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister", max_items=4), flow_name)
+        _set_items(engine, ["a", "b"])
+        row = _rows(node)[0]
+
+        result = engine.handle_request(
+            SetParameterValueRequest(node_name="Lister", parameter_name=row.name, value=["w", "x", "y", "z"])
+        )
+
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert node.get_parameter_value("items") == ["a", "b"]
+
+    def test_a_row_set_up_to_max_items_is_accepted(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister", max_items=4), flow_name)
+        _set_items(engine, ["a", "b"])
+        row = _rows(node)[0]
+
+        result = engine.handle_request(
+            SetParameterValueRequest(node_name="Lister", parameter_name=row.name, value=["x", "y", "z"])
+        )
+
+        assert isinstance(result, SetParameterValueResultSuccess)
+        assert node.get_parameter_value("items") == ["x", "y", "z", "b"]
+
+    def test_a_value_over_a_connection_only_warns(
+        self, engine: Engine, flow_name: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _add(engine, _Source(name="Source"), flow_name)
+        node = _add(engine, _ListNode(name="Lister", max_items=2), flow_name)
+        _set_items(engine, ["a"])
+        row = _rows(node)[0]
+        engine.handle_request(
+            CreateConnectionRequest(
+                source_node_name="Source",
+                source_parameter_name="out",
+                target_node_name="Lister",
+                target_parameter_name=row.name,
+            )
+        )
+
+        with caplog.at_level("WARNING", logger="griptape_nodes"):
+            node.set_parameter_value(row.name, ["x", "y", "z"])
+
+        assert any("accepts at most 2" in record.getMessage() for record in caplog.records)
+        assert node.get_parameter_value("items") == ["x", "y", "z"]
+
+
 class TestValuesThatAreNotLists:
     def test_a_string_is_rejected(self, engine: Engine, flow_name: str) -> None:
         node = _add(engine, _ListNode(name="Lister"), flow_name)

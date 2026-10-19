@@ -132,6 +132,39 @@ class ListRows:
         self._replace(parameter, value)
         return True
 
+    def check_row_within_max_items(self, row: Parameter, value: Any, *, initial_setup: bool) -> None:
+        """Refuse a value for `row` that would take its list over `max_items`.
+
+        A row holding a list adds all of its items, so a list can hold more items than it has rows. A value
+        that arrives over a connection can't be refused, so it only logs a warning.
+
+        Raises:
+            ValueError: if the list would hold more than `max_items` items.
+        """
+        if initial_setup or row.parent_container_name is None:
+            return
+        node = self._node
+        container = node.get_parameter_by_name(row.parent_container_name)
+        if not isinstance(container, ParameterList) or container.max_items is None:
+            return
+        held_count = 0
+        for child in container.get_child_parameters():
+            child_value = value if child.name == row.name else node._get_raw_parameter_value(child.name)
+            held_count += len(_items_of_row(container, child_value))
+        if held_count <= container.max_items:
+            return
+        if node._param_has_incoming_connection(row.name):
+            logger.warning(
+                "Node '%s' list '%s' would hold %d items but accepts at most %d. The extra items may be dropped.",
+                node.name,
+                container.name,
+                held_count,
+                container.max_items,
+            )
+            return
+        msg = f"Attempted to set an item of list '{node.name}.{container.name}'. Failed because the list would hold {held_count} items, counting the items of any list in a row, and holds at most {container.max_items} items."
+        raise ValueError(msg)
+
     def row_removed(self, parameter_list: ParameterList, row: BaseNodeElement) -> None:
         """Drop a removed row's value, and tell the node its list changed."""
         self._node.parameter_values.pop(row.name, None)
@@ -200,7 +233,6 @@ class ListRows:
             for item in items:
                 row = parameter_list.add_child_parameter()
                 node.set_parameter_value(row.name, item)
-            self._check_held_within_max_items(parameter_list, list_label)
             self._notify(parameter_list, initial_setup=False)
         except Exception:
             # Converters, validators and hooks may raise anything. Undo, then let it propagate unchanged.
@@ -208,18 +240,6 @@ class ListRows:
             raise
         finally:
             self._being_replaced.discard(parameter_list.name)
-
-    def _check_held_within_max_items(self, parameter_list: ParameterList, list_label: str) -> None:
-        """Raise if the rows hold more than `max_items`, which a row holding a list can do with fewer rows.
-
-        Raises:
-            ValueError: if the list holds more items than `max_items`.
-        """
-        max_items = parameter_list.max_items
-        held_count = len(handle_container_parameter(self._node, parameter_list))
-        if max_items is not None and held_count > max_items:
-            msg = f"Attempted to set list {list_label}. Failed because the list would hold {held_count} items after its nested lists are added, and holds at most {max_items} items."
-            raise ValueError(msg)
 
     def _restore(self, parameter_list: ParameterList, rows: list[Parameter], values: dict[str, Any]) -> None:
         """Put back the rows `_replace` removed, with their values, and remove the ones it added."""
@@ -288,11 +308,15 @@ def handle_container_parameter(current_node: BaseNode, parameter: ParameterConta
         # would put a live object in it and send it to a worker as JSON. The node still sees objects:
         # its read resolves the whole list on the way out.
         value = current_node._get_raw_parameter_value(child.name)
-        if value is None:
-            continue
-        # A row fed a whole list adds its items, so the list ends up the concatenation of its rows.
-        if isinstance(value, list) and isinstance(parameter, ParameterList) and parameter.concatenates_list_rows:
-            build_parameter_value.extend(value)
-        else:
-            build_parameter_value.append(value)
+        build_parameter_value.extend(_items_of_row(parameter, value))
     return build_parameter_value
+
+
+def _items_of_row(container: ParameterContainer, value: Any) -> list[Any]:
+    """The items a row's value adds to its list: none for an empty row, and all of a list's items for a row holding one."""
+    if value is None:
+        return []
+    # A row fed a whole list adds its items, so the list ends up the concatenation of its rows.
+    if isinstance(value, list) and isinstance(container, ParameterList) and container.concatenates_list_rows:
+        return value
+    return [value]

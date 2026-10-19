@@ -1114,6 +1114,7 @@ class BaseNode(ABC):
         # cause a calling object to alter its assumptions/behavior. The value requested
         # to be assigned will NOT be set.
         candidate_value = self._convert_and_validate(parameter, value)
+        self._list_rows.check_row_within_max_items(parameter, candidate_value, initial_setup=initial_setup)
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
