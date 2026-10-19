@@ -13,6 +13,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeResultSuccess,
     NodeMetadata,
 )
+from griptape_nodes.retained_mode.events.flow_events import PACKAGED_FLOW_BOUNDARY_KEY
 from griptape_nodes.retained_mode.events.worker_events import WorkerGoneError
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -871,13 +872,24 @@ class TestExecuteNodePrivateExecutionRoute:
         node.aprocess.assert_awaited_once()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("boundary_type", [StartNode, EndNode])
-    async def test_a_packaged_flows_boundary_node_runs_locally_inside_the_scope(
-        self, boundary_type: type[BaseNode]
-    ) -> None:
-        """StartFlow/EndFlow carry parameters added by request, which a worker's fresh copy lacks."""
-        node = MagicMock(spec=boundary_type)
-        node.name = "StartFlow"
+    async def test_the_packagers_boundary_nodes_run_locally_inside_the_scope(self) -> None:
+        """The packager's StartFlow/EndFlow carry parameters added by request, which a worker's copy lacks."""
+        node = self._make_node()
+        node.metadata[PACKAGED_FLOW_BOUNDARY_KEY] = True
+        wm = self._make_worker_manager(self._PRIVATE_WORKER)
+
+        result = await self._execute(node, wm)
+
+        assert isinstance(result, ExecuteNodeResultSuccess)
+        wm.route_to_worker.assert_not_awaited()
+        node.aprocess.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("node_type", [StartNode, EndNode])
+    async def test_a_start_or_end_node_a_user_placed_goes_to_the_worker(self, node_type: type[BaseNode]) -> None:
+        """Only the packager's boundary nodes stay: a library's Start/End subclass may do real work."""
+        node = MagicMock(spec=node_type)
+        node.name = "Users_Start_Node"
         node.aprocess = AsyncMock()
         node.parameter_values = {}
         node.parameter_output_values = {}
@@ -888,5 +900,5 @@ class TestExecuteNodePrivateExecutionRoute:
         result = await self._execute(node, wm)
 
         assert isinstance(result, ExecuteNodeResultSuccess)
-        wm.route_to_worker.assert_not_awaited()
-        node.aprocess.assert_awaited_once()
+        assert wm.route_to_worker.await_args.args[1:] == self._PRIVATE_WORKER
+        node.aprocess.assert_not_awaited()

@@ -24,6 +24,12 @@ from griptape_nodes.retained_mode.events.variable_events import CreateVariableRe
 # flows the iterative executor deserializes.
 TRANSIENT_KEY = "transient"
 
+# Node-metadata flag on the StartFlow/EndFlow nodes the packager adds around a packaged body. They
+# are the packaged flow's boundary: they only pass values in and out, and their parameters are
+# added by request. Routing reads it to keep them in the orchestrator, where those parameters
+# exist. A Start/End node a user placed carries no flag and is routed like any other node.
+PACKAGED_FLOW_BOUNDARY_KEY = "packaged_flow_boundary"
+
 
 class FlowMetadataExtractionFailureReason(StrEnum):
     """Reasons why flow metadata extraction from image failed."""

@@ -351,10 +351,11 @@ async def test_a_private_loop_sends_its_iterations_to_the_worker(
     assert scopes == {PrivateExecutionScope(owner_name=group_name)}, general_purpose_worker.received
     body_runs = [name for name, _scope in general_purpose_worker.received if name.startswith("Body")]
     assert len(body_runs) >= len(_LOOP_ITEMS), general_purpose_worker.received
-    # The packaged flow's StartFlow and EndFlow stayed here: the packager gives them their parameters
-    # by request, and a worker's fresh copy would not have them.
-    boundary_runs = [name for name, _scope in general_purpose_worker.received if "Flow" in name]
-    assert boundary_runs == [], general_purpose_worker.received
+    # The packager's StartFlow and EndFlow stayed here: the packager gives them their parameters by
+    # request, and a worker's fresh copy would not have them. Only the body's copies reached the worker.
+    assert all(name.startswith("Body") for name, _scope in general_purpose_worker.received), (
+        general_purpose_worker.received
+    )
     # The loop collected a result from every iteration: the body echoes the index it was handed.
     group = engine.node_manager.get_node_by_name(group_name)
     assert group.parameter_output_values.get("results") == [str(i) for i in range(len(_LOOP_ITEMS))]

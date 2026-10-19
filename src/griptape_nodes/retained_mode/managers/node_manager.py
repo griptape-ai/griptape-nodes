@@ -50,11 +50,9 @@ from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
     PRIVATE_EXECUTION,
     BaseNode,
-    EndNode,
     ErrorProxyNode,
     NodeDependencies,
     NodeResolutionState,
-    StartNode,
     TransformedParameterValue,
     _values_differ,
     aprocess_scope,
@@ -105,6 +103,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowResultFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    PACKAGED_FLOW_BOUNDARY_KEY,
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
@@ -3344,11 +3343,12 @@ class NodeManager(EngineScoped):
             # A library's own worker comes first: that is where its dependencies are installed. Only a
             # node that would otherwise run here moves to the worker its Private Execution names.
             #
-            # A packaged flow's StartFlow and EndFlow stay here. They are the flow's boundary and only
-            # pass values in and out, and the packager gives them their parameters by request, which
-            # the fresh copy a worker builds from metadata does not have. The body goes.
+            # The StartFlow and EndFlow the packager adds around a packaged body stay here. They are the
+            # flow's boundary and only pass values in and out, and the packager gives them their
+            # parameters by request, which the fresh copy a worker builds from metadata does not have.
+            # The packager flags them; a Start/End node a user placed carries no flag and goes.
             private_scope = current_private_execution_scope.get()
-            is_flow_boundary = isinstance(node, (StartNode, EndNode))
+            is_flow_boundary = bool(node.metadata.get(PACKAGED_FLOW_BOUNDARY_KEY))
             if wm is not None and private_scope is not None and not is_flow_boundary:
                 return await self._execute_node_in_private_execution_worker(request, wm, private_scope)
 
