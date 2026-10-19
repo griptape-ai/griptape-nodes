@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
 from griptape_nodes.common.project_templates import DEFAULT_PROJECT_TEMPLATE
+from griptape_nodes.common.workflow_context_handoff import WorkflowContextSnapshot
 from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_path_safely
 from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.project_events import (
@@ -47,8 +48,16 @@ from griptape_nodes.retained_mode.events.project_events import (
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.project_manager import PROJECTS_TO_REGISTER_KEY, ProjectManager
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.utils.file_utils import DEFAULT_MAX_SEARCH_DEPTH
 from tests.unit.mock_engine import mock_engine_with_workflow_runtime
+
+
+def _workflow_in_context(name: str, file_path: str | None, working_directory: str | None) -> WorkflowRuntime:
+    """A runtime holding the workflow `name`, as dispatch hands one to a handler."""
+    workflow = WorkflowRuntime(owner=object())
+    workflow.context.push_workflow(name, file_path, working_directory)
+    return workflow
 
 
 def _stub_config_for_listing(mock_config: Mock, *, global_workspace: str = "/global/ws") -> None:
@@ -341,13 +350,8 @@ class TestProjectManagerMacroHandlers:
         # refactor pushed non-directory builtins through `Path(...).as_posix()`
         # by mistake, backslash handling could mangle the value. Distinctive
         # enough to catch that class of regression.
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = True
-        mock_context_manager.get_current_workflow_name.return_value = "My Cool Workflow"
-        mock_context_manager.get_current_workflow_file_path.return_value = None
-        mock_context_manager.get_current_workflow_working_directory.return_value = None
+        workflow = _workflow_in_context("My Cool Workflow", None, None)
         project_manager._engine = MagicMock()
-        project_manager._engine.context_manager = mock_context_manager
 
         cast("Mock", project_manager._config_manager).workspace_path = tmp_path.resolve()
 
@@ -373,7 +377,7 @@ class TestProjectManagerMacroHandlers:
             auto_resolve_builtins=True,
         )
 
-        result = project_manager.on_match_path_against_macro_request(request)
+        result = project_manager.on_match_path_against_macro_request(request, workflow)
 
         assert isinstance(result, AttemptMatchPathAgainstMacroResultSuccess)
         assert result.match_failure is None
@@ -428,7 +432,9 @@ class TestProjectManagerMacroHandlers:
 
         # Caller asserts a directory that isn't the workspace.
         bag = cast("dict[str, Any]", {"workspace_dir": "/completely/different/path"})
-        result = project_manager._resolve_builtins_into_bag(bag, ["workspace_dir"], project_info)
+        result = project_manager._resolve_builtins_into_bag(
+            bag, ["workspace_dir"], project_info, WorkflowContextSnapshot()
+        )
 
         # `resolve_path_safely` normalizes both sides and picks up the disagreement.
         assert "workspace_dir" in result.conflicts
@@ -459,11 +465,7 @@ class TestProjectManagerMacroHandlers:
             ProjectInfo,
         )
 
-        # No current workflow → workflow_name / workflow_dir resolvers raise RuntimeError.
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = False
         project_manager._engine = MagicMock()
-        project_manager._engine.context_manager = mock_context_manager
 
         cast("Mock", project_manager._config_manager).workspace_path = tmp_path.resolve()
 
@@ -482,6 +484,7 @@ class TestProjectManagerMacroHandlers:
             bag,
             ["workflow_name", "workflow_dir", "workspace_dir"],
             project_info,
+            WorkflowContextSnapshot(),
         )
 
         # workflow_* resolvers both raised — recorded as unavailable with the exception attached.
@@ -536,7 +539,9 @@ class TestProjectManagerMacroHandlers:
 
         # Caller asserts a value that disagrees with the resolved builtin.
         bag = cast("dict[str, Any]", {"static_files_dir": "user-overridden-value"})
-        result = project_manager._resolve_builtins_into_bag(bag, ["static_files_dir"], project_info)
+        result = project_manager._resolve_builtins_into_bag(
+            bag, ["static_files_dir"], project_info, WorkflowContextSnapshot()
+        )
 
         # String compare picked up the disagreement → conflict recorded.
         assert "static_files_dir" in result.conflicts
@@ -653,33 +658,23 @@ class TestProjectManagerBuiltinVariables:
 
         cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/workspace")
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = True
-        mock_context_manager.get_current_workflow_name.return_value = "my_workflow"
-        mock_context_manager.get_current_workflow_file_path.return_value = None
-        mock_context_manager.get_current_workflow_working_directory.return_value = None
+        workflow = _workflow_in_context("my_workflow", None, None)
         project_manager_with_template._engine = MagicMock()
-        project_manager_with_template._engine.context_manager = mock_context_manager
 
         parsed_macro = ParsedMacro("{workflow_name}_output.txt")
 
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
-        result = project_manager_with_template.on_get_path_for_macro_request(request)
+        result = project_manager_with_template.on_get_path_for_macro_request(request, workflow)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("my_workflow_output.txt")
-        mock_context_manager.has_current_workflow.assert_called_once()
-        mock_context_manager.get_current_workflow_name.assert_called_once()
 
     def test_builtin_workflow_name_no_current_workflow(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {workflow_name} raises RuntimeError when no current workflow."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = False
         project_manager_with_template._engine = MagicMock()
-        project_manager_with_template._engine.context_manager = mock_context_manager
 
         parsed_macro = ParsedMacro("{workflow_name}_output.txt")
 
@@ -722,27 +717,25 @@ class TestProjectManagerBuiltinVariables:
         worker writes where the orchestrator does not read, with no error at the divergence.
         """
         from griptape_nodes.common.macro_parser import ParsedMacro
-        from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 
-        # A real ContextManager with an empty stack: exactly a worker before adopting.
-        context_manager = ContextManager(event_manager=MagicMock(), engine=mock_engine_with_workflow_runtime())
+        # A runtime with an empty context: exactly a worker's namespace before adopting.
+        workflow = WorkflowRuntime(owner=object())
         project_manager_with_template._engine = MagicMock()
         mock_workflow_registry = project_manager_with_template._engine.workflow_registry
-        project_manager_with_template._engine.context_manager = context_manager
 
         dir_request = GetPathForMacroRequest(parsed_macro=ParsedMacro("{workflow_dir}/output.txt"), variables={})
         name_request = GetPathForMacroRequest(parsed_macro=ParsedMacro("{workflow_name}.txt"), variables={})
 
         # Unadopted: the folder is unresolvable, which is what silently degrades the path.
         assert not isinstance(
-            project_manager_with_template.on_get_path_for_macro_request(dir_request),
+            project_manager_with_template.on_get_path_for_macro_request(dir_request, workflow),
             GetPathForMacroResultSuccess,
         )
 
-        context_manager.mirror_workflow_context("my_show", "/orchestrator/shows/my_show/my_show.py", None)
+        workflow.context.mirror_workflow_context("my_show", "/orchestrator/shows/my_show/my_show.py", None)
 
-        resolved_dir = project_manager_with_template.on_get_path_for_macro_request(dir_request)
-        resolved_name = project_manager_with_template.on_get_path_for_macro_request(name_request)
+        resolved_dir = project_manager_with_template.on_get_path_for_macro_request(dir_request, workflow)
+        resolved_name = project_manager_with_template.on_get_path_for_macro_request(name_request, workflow)
 
         assert isinstance(resolved_dir, GetPathForMacroResultSuccess)
         assert resolved_dir.resolved_path == Path("/orchestrator/shows/my_show/output.txt")
@@ -797,32 +790,15 @@ class TestProjectManagerBuiltinVariables:
 
         assert context_manager.has_current_workflow() is False
 
-    def test_dispatch_snapshot_is_empty_when_there_is_no_workflow(
-        self,
-        project_manager_with_template: ProjectManager,
-    ) -> None:
+    def test_dispatch_snapshot_is_empty_when_there_is_no_workflow(self) -> None:
         """Nothing to lend, so the peer must drop any mirror it holds and degrade identically."""
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = False
-        project_manager_with_template._engine = MagicMock()
-        project_manager_with_template._engine.context_manager = mock_context_manager
+        assert WorkflowRuntime(owner=object()).context.snapshot().name is None
 
-        assert project_manager_with_template.workflow_context_for_dispatch().name is None
-
-    def test_dispatch_snapshot_carries_the_whole_context(
-        self,
-        project_manager_with_template: ProjectManager,
-    ) -> None:
+    def test_dispatch_snapshot_carries_the_whole_context(self) -> None:
         """Raw context, not a resolved path: derived values are then computed by the peer."""
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = True
-        mock_context_manager.get_current_workflow_name.return_value = "my_show"
-        mock_context_manager.get_current_workflow_file_path.return_value = "/shows/my_show/my_show.py"
-        mock_context_manager.get_current_workflow_working_directory.return_value = "/shows/my_show"
-        project_manager_with_template._engine = MagicMock()
-        project_manager_with_template._engine.context_manager = mock_context_manager
+        workflow = _workflow_in_context("my_show", "/shows/my_show/my_show.py", "/shows/my_show")
 
-        snapshot = project_manager_with_template.workflow_context_for_dispatch()
+        snapshot = workflow.context.snapshot()
 
         assert snapshot.name == "my_show"
         assert snapshot.file_path == "/shows/my_show/my_show.py"
@@ -835,14 +811,9 @@ class TestProjectManagerBuiltinVariables:
         """Test that {workflow_dir} resolves to the workflow file's parent directory."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = True
-        mock_context_manager.get_current_workflow_name.return_value = "my_workflow"
-        mock_context_manager.get_current_workflow_file_path.return_value = None
-        mock_context_manager.get_current_workflow_working_directory.return_value = None
+        workflow = _workflow_in_context("my_workflow", None, None)
         project_manager_with_template._engine = MagicMock()
         mock_workflow_registry = project_manager_with_template._engine.workflow_registry
-        project_manager_with_template._engine.context_manager = mock_context_manager
 
         mock_workflow = Mock()
         mock_workflow.file_path = "my_project/my_workflow.json"
@@ -852,7 +823,7 @@ class TestProjectManagerBuiltinVariables:
         parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
-        result = project_manager_with_template.on_get_path_for_macro_request(request)
+        result = project_manager_with_template.on_get_path_for_macro_request(request, workflow)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/workspace/my_project/output.txt")
@@ -861,10 +832,7 @@ class TestProjectManagerBuiltinVariables:
         """Test that required {workflow_dir} fails when there is no current workflow."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = False
         project_manager_with_template._engine = MagicMock()
-        project_manager_with_template._engine.context_manager = mock_context_manager
 
         parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
@@ -886,10 +854,7 @@ class TestProjectManagerBuiltinVariables:
 
         cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/workspace")
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = False
         project_manager_with_template._engine = MagicMock()
-        project_manager_with_template._engine.context_manager = mock_context_manager
 
         parsed_macro = ParsedMacro("{workflow_dir?:/}staticfiles/output.txt")
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
@@ -919,14 +884,9 @@ class TestProjectManagerBuiltinVariables:
             expected_folder = resolve_path_safely(Path(working_directory))
             working_directory = str(expected_folder)
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = True
-        mock_context_manager.get_current_workflow_name.return_value = "workflow_5"
-        mock_context_manager.get_current_workflow_file_path.return_value = None
-        mock_context_manager.get_current_workflow_working_directory.return_value = working_directory
+        workflow = _workflow_in_context("workflow_5", None, working_directory)
         project_manager_with_template._engine = MagicMock()
         mock_workflow_registry = project_manager_with_template._engine.workflow_registry
-        project_manager_with_template._engine.context_manager = mock_context_manager
 
         mock_workflow_registry.has_workflow_with_name.return_value = False
 
@@ -934,7 +894,7 @@ class TestProjectManagerBuiltinVariables:
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
         with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
-            result = project_manager_with_template.on_get_path_for_macro_request(request)
+            result = project_manager_with_template.on_get_path_for_macro_request(request, workflow)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == expected_folder / "staticfiles/output.txt"
@@ -957,10 +917,7 @@ class TestProjectManagerBuiltinVariables:
 
         cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/workspace")
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = False
         project_manager_with_template._engine = MagicMock()
-        project_manager_with_template._engine.context_manager = mock_context_manager
 
         parsed_macro = ParsedMacro("{workflow_dir?:/}outputs/image.png")
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
@@ -992,14 +949,10 @@ class TestProjectManagerBuiltinVariables:
 
         cast("Mock", project_manager_with_template._config_manager).workspace_path = Path("/workspace")
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = True
+        workflow = _workflow_in_context("stale/key/my_workflow", "/elsewhere/shot_042/my_workflow.py", None)
         # Stale: keyed against the workspace that was active when the workflow was opened.
-        mock_context_manager.get_current_workflow_name.return_value = "stale/key/my_workflow"
-        mock_context_manager.get_current_workflow_file_path.return_value = "/elsewhere/shot_042/my_workflow.py"
         project_manager_with_template._engine = MagicMock()
         mock_workflow_registry = project_manager_with_template._engine.workflow_registry
-        project_manager_with_template._engine.context_manager = mock_context_manager
 
         # The registry no longer holds that key -- this is what used to poison the result.
         mock_workflow_registry.get_workflow_by_name.side_effect = KeyError("stale/key/my_workflow")
@@ -1007,7 +960,7 @@ class TestProjectManagerBuiltinVariables:
         parsed_macro = ParsedMacro("{workflow_dir?:/}outputs/image.png")
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
-        result = project_manager_with_template.on_get_path_for_macro_request(request)
+        result = project_manager_with_template.on_get_path_for_macro_request(request, workflow)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
         # Anchored to the workflow, NOT degraded to a bare workspace-relative "outputs".
@@ -1413,10 +1366,7 @@ class TestProjectManagerGetStateForMacro:
         """Test GetStateForMacro fails when builtin variable cannot be resolved."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = False
         project_manager_with_current_project._engine = MagicMock()
-        project_manager_with_current_project._engine.context_manager = mock_context_manager
 
         parsed_macro = ParsedMacro("{workflow_name}_output.txt")
 
@@ -1858,13 +1808,9 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
         cast("Mock", project_manager._config_manager).workspace_path = project_base
 
-        # Mock GriptapeNodes.ContextManager()
         mock_engine = MagicMock()
         with patch.object(project_manager, "_engine", mock_engine):
             cast("Mock", project_manager._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
-            mock_engine.context_manager = mock_context
 
             # Test path inside outputs directory
             absolute_path = project_base / "outputs" / "renders" / "file.png"
@@ -1916,9 +1862,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         mock_engine = MagicMock()
         with patch.object(project_manager, "_engine", mock_engine):
             cast("Mock", project_manager._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
-            mock_engine.context_manager = mock_context
 
             # Test path outside project
             absolute_path = Path("/Users/test/Downloads/file.png")
@@ -1986,9 +1929,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         mock_engine = MagicMock()
         with patch.object(project_manager, "_engine", mock_engine):
             cast("Mock", project_manager._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
-            mock_engine.context_manager = mock_context
 
             # Test path inside outputs/inputs subdirectory (should match outputs, not inputs)
             absolute_path = project_base / "outputs" / "inputs" / "file.png"
@@ -2040,9 +1980,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         mock_engine = MagicMock()
         with patch.object(project_manager, "_engine", mock_engine):
             cast("Mock", project_manager._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
-            mock_engine.context_manager = mock_context
 
             # Test path exactly at outputs directory
             absolute_path = project_base / "outputs"
@@ -2092,9 +2029,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
         mock_engine = MagicMock()
         with patch.object(project_manager, "_engine", mock_engine):
             cast("Mock", project_manager._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False
-            mock_engine.context_manager = mock_context
 
             # Test path inside project_base_dir but not in any defined directory
             absolute_path = project_base / "random_folder" / "file.txt"
@@ -2159,10 +2093,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_config = Mock()
             mock_config.get_config_value.return_value = str(project_base)
             mock_config.workspace_path = project_base
-
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False  # No workflow available
-            mock_engine.context_manager = mock_context
 
             absolute_path = project_base / "outputs" / "file.png"
 
@@ -6939,9 +6869,6 @@ class TestProjectEnvironmentVariableRecursion:
         mock_engine = MagicMock()
         with patch.object(pm, "_engine", mock_engine):
             cast("Mock", pm._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False
-            mock_engine.context_manager = mock_context
 
             result = pm.on_get_path_for_macro_request(
                 GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{WF}/x.png"), variables={})
@@ -6960,9 +6887,6 @@ class TestProjectEnvironmentVariableRecursion:
         mock_engine = MagicMock()
         with patch.object(pm, "_engine", mock_engine):
             cast("Mock", pm._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False
-            mock_engine.context_manager = mock_context
 
             result = pm.on_get_path_for_macro_request(
                 GetPathForMacroRequest(parsed_macro=ParsedMacro("{inputs}/img.png"), variables={})
@@ -6981,9 +6905,6 @@ class TestProjectEnvironmentVariableRecursion:
         mock_engine = MagicMock()
         with patch.object(pm, "_engine", mock_engine):
             cast("Mock", pm._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False
-            mock_engine.context_manager = mock_context
 
             result = pm.on_get_path_for_macro_request(
                 GetPathForMacroRequest(parsed_macro=ParsedMacro("{inputs}/img.png"), variables={})
@@ -7003,12 +6924,7 @@ class TestProjectEnvironmentVariableRecursion:
         mock_workflow_registry = mock_engine.workflow_registry
         with patch.object(pm, "_engine", mock_engine):
             cast("Mock", pm._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = True
-            mock_context.get_current_workflow_name.return_value = "my_workflow"
-            mock_context.get_current_workflow_file_path.return_value = None
-            mock_context.get_current_workflow_working_directory.return_value = None
-            mock_engine.context_manager = mock_context
+            workflow = _workflow_in_context("my_workflow", None, None)
 
             mock_workflow = Mock()
             mock_workflow.file_path = "my_project/my_workflow.json"
@@ -7016,7 +6932,7 @@ class TestProjectEnvironmentVariableRecursion:
             mock_workflow_registry.get_complete_file_path.return_value = "/workspace/my_project/my_workflow.json"
 
             result = pm.on_get_path_for_macro_request(
-                GetPathForMacroRequest(parsed_macro=ParsedMacro("{inputs}/img.png"), variables={})
+                GetPathForMacroRequest(parsed_macro=ParsedMacro("{inputs}/img.png"), variables={}), workflow
             )
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/workspace/my_project/inputs/img.png")
@@ -7029,9 +6945,6 @@ class TestProjectEnvironmentVariableRecursion:
         mock_engine = MagicMock()
         with patch.object(pm, "_engine", mock_engine):
             cast("Mock", pm._event_manager).evaluate_authorization_checkpoint.return_value = None
-            mock_context = Mock()
-            mock_context.has_current_workflow.return_value = False
-            mock_engine.context_manager = mock_context
 
             result = pm.on_get_path_for_macro_request(
                 GetPathForMacroRequest(parsed_macro=ParsedMacro("{outputs}/{WF}/x.png"), variables={})
@@ -12535,7 +12448,9 @@ class TestProjectVariableResolution:
         pm = self._pm()
         synthetic_ws = Path("/synthetic/ws")
         pm._config_manager.workspace_path = synthetic_ws
-        variable = pm.resolve_project_variable("workspace_dir", project_id=None)
+        variable = pm.resolve_project_variable(
+            "workspace_dir", project_id=None, workflow_context=WorkflowContextSnapshot()
+        )
         assert type(variable) is FlowVariable
         # Production stringifies the Path, so compare via str(Path) — on Windows the
         # separators come back as backslashes.
@@ -12545,18 +12460,22 @@ class TestProjectVariableResolution:
     def test_resolve_unknown_name_raises_value_error(self) -> None:
         pm = self._pm()
         with pytest.raises(ValueError, match="Unknown computed project variable"):
-            pm.resolve_project_variable("not_defined_anywhere", project_id=None)
+            pm.resolve_project_variable(
+                "not_defined_anywhere", project_id=None, workflow_context=WorkflowContextSnapshot()
+            )
 
     def test_resolve_unknown_project_raises_value_error(self) -> None:
         pm = self._pm()
         with pytest.raises(ValueError, match="not loaded"):
-            pm.resolve_project_variable("workspace_dir", project_id="not_loaded")
+            pm.resolve_project_variable(
+                "workspace_dir", project_id="not_loaded", workflow_context=WorkflowContextSnapshot()
+            )
 
     def test_resolve_context_not_ready_propagates(self) -> None:
         """A builtin whose live context isn't ready raises for the caller to handle."""
         pm = self._pm()
 
-        def blow_up(name: str, project_info: object) -> str:  # noqa: ARG001
+        def blow_up(name: str, project_info: object, workflow_context: object) -> str:  # noqa: ARG001
             msg = "context not ready"
             raise RuntimeError(msg)
 
@@ -12564,7 +12483,7 @@ class TestProjectVariableResolution:
             patch.object(pm, "_get_builtin_variable_value", side_effect=blow_up),
             pytest.raises(RuntimeError, match="context not ready"),
         ):
-            pm.resolve_project_variable("workflow_dir", project_id=None)
+            pm.resolve_project_variable("workflow_dir", project_id=None, workflow_context=WorkflowContextSnapshot())
 
     def test_resolved_snapshot_serializes_cleanly(self) -> None:
         """Regression: the snapshot must survive cattrs unstructure (no live resolver attached)."""
@@ -12573,7 +12492,9 @@ class TestProjectVariableResolution:
         pm = self._pm()
         synthetic_ws = Path("/synthetic/ws")
         pm._config_manager.workspace_path = synthetic_ws
-        variable = pm.resolve_project_variable("workspace_dir", project_id=None)
+        variable = pm.resolve_project_variable(
+            "workspace_dir", project_id=None, workflow_context=WorkflowContextSnapshot()
+        )
         serialized = converter.unstructure(variable)
         assert serialized["name"] == "workspace_dir"
         # Compare via str(Path): Windows stringifies with backslash separators.
@@ -12699,7 +12620,9 @@ variables:
             assert warnings, "expected a collision warning for workspace_dir"
             # Resolution: computed wins — the stored /hijack value is unreachable.
             pm = engine.project_manager
-            resolved = pm.resolve_project_variable("workspace_dir", project_id=load_result.project_id)
+            resolved = pm.resolve_project_variable(
+                "workspace_dir", project_id=load_result.project_id, workflow_context=WorkflowContextSnapshot()
+            )
             assert resolved.value != "/hijack"
         finally:
             self._unload(engine, load_result.project_id)
@@ -13321,13 +13244,7 @@ class TestUnsavedWorkflowDirFromSaveSituation:
         pm._successfully_loaded_project_templates[project_id] = project_info
         pm._current_project_id = project_id
 
-        mock_context_manager = Mock()
-        mock_context_manager.has_current_workflow.return_value = True
-        mock_context_manager.get_current_workflow_name.return_value = "unsaved:abc"
-        mock_context_manager.get_current_workflow_file_path.return_value = None
-        mock_context_manager.get_current_workflow_working_directory.return_value = None
         pm._engine = MagicMock()
-        pm._engine.context_manager = mock_context_manager
         # The probe resolves through on_get_path_for_macro_request, which consults stored project
         # variables. A MagicMock's return value is not a mapping it can walk.
         pm._engine.variables_manager.stored_project_variable_values.return_value = stored_project_variables or {}
@@ -13351,17 +13268,19 @@ class TestUnsavedWorkflowDirFromSaveSituation:
         recorded = workflow_dir_requests if workflow_dir_requests is not None else []
         real_get_builtin = ProjectManager._get_builtin_variable_value
 
-        def counting_get_builtin(pm_self: ProjectManager, var_name: str, project_info: ProjectInfo) -> str:
+        def counting_get_builtin(
+            pm_self: ProjectManager, var_name: str, project_info: ProjectInfo, workflow_context: WorkflowContextSnapshot
+        ) -> str:
             if var_name == "workflow_dir":
                 recorded.append(var_name)
-            return real_get_builtin(pm_self, var_name, project_info)
+            return real_get_builtin(pm_self, var_name, project_info, workflow_context)
 
         registered_unsaved = Mock()
         registered_unsaved.file_path = None
         cast("MagicMock", pm._engine).workflow_registry.get_workflow_by_name.return_value = registered_unsaved
         with patch.object(ProjectManager, "_get_builtin_variable_value", counting_get_builtin):
             project_info = pm._successfully_loaded_project_templates[cast("str", pm._current_project_id)]
-            return pm._resolve_workflow_dir(project_info)
+            return pm._resolve_workflow_dir(project_info, WorkflowContextSnapshot(name="unsaved:abc"))
 
     def test_default_macro_answers_the_workspace_root(self) -> None:
         """The shipped `{workspace_dir}/{sub_dirs?:/}...` macro puts a workflow at the root."""

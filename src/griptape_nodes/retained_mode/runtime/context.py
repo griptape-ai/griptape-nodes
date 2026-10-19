@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from griptape_nodes.common.workflow_context_handoff import WorkflowContextSnapshot
+
 if TYPE_CHECKING:
     from types import TracebackType
 
@@ -218,6 +220,15 @@ class WorkflowContextStack:
         if not self.has_current_node():
             return False
         return self.workflow_stack[-1].flow_stack[-1].node_stack[-1].has_current_element()
+
+    def snapshot(self) -> WorkflowContextSnapshot:
+        """The workflow entry's name, file path, and working directory, or an empty snapshot when there is none."""
+        if not self.has_current_workflow():
+            return WorkflowContextSnapshot()
+        entry = self._current_workflow_entry()
+        return WorkflowContextSnapshot(
+            name=entry.name, file_path=entry.file_path, working_directory=entry.working_directory
+        )
 
     def get_current_workflow_name(self) -> str:
         """The name of the current Workflow context.

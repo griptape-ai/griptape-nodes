@@ -47,7 +47,7 @@ def _stub_listing(directory: str, filenames: list[str]) -> Any:
     types should be hit by this code path).
     """
 
-    def handle_request(request: object) -> object:
+    def handle_request(request: object, **_kwargs: object) -> object:
         if isinstance(request, ListDirectoryRequest):
             if request.directory_path == directory:
                 entries = [
@@ -83,7 +83,7 @@ def _stub_listing_with_macro(
     doesn't bring up a real ProjectManager.
     """
 
-    def handle_request(request: object) -> object:
+    def handle_request(request: object, **_kwargs: object) -> object:
         if isinstance(request, GetPathForMacroRequest):
             assert request.parsed_macro.template == macro_directory, (
                 f"unexpected macro: {request.parsed_macro.template!r} (expected {macro_directory!r})"

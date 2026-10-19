@@ -162,7 +162,7 @@ from griptape_nodes.retained_mode.events.mcp_events import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
-from griptape_nodes.retained_mode.runtime.binding import bound_workflow_id
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime, workflow_id_of
 from griptape_nodes.servers import bind_free_socket
 from griptape_nodes.servers.mcp import GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT, start_mcp_server
 from griptape_nodes.utils.budget_refusal import BUDGET_REPLY_HALT_PREFIX, refusal_from_exception
@@ -607,17 +607,21 @@ class AgentManager(EngineScoped):
             self._load_providers_from_config()
             self._runner_cache.clear()
 
-    @handles(RunAgentRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    async def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
+    @handles(RunAgentRequest)
+    async def on_handle_run_agent_request(
+        self, request: RunAgentRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         try:
-            return await self._run_agent(request)
+            return await self._run_agent(request, workflow_id_of(workflow))
         except Exception as e:
             return self._agent_run_failure(e, request.provider_name)
 
-    @handles(ResolveToolApprovalsRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    async def on_handle_resolve_tool_approvals_request(self, request: ResolveToolApprovalsRequest) -> ResultPayload:
+    @handles(ResolveToolApprovalsRequest)
+    async def on_handle_resolve_tool_approvals_request(
+        self, request: ResolveToolApprovalsRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         try:
-            return await self._resolve_tool_approvals(request)
+            return await self._resolve_tool_approvals(request, workflow_id_of(workflow))
         except Exception as e:
             return self._agent_run_failure(e, request.provider_name)
 
@@ -660,18 +664,18 @@ class AgentManager(EngineScoped):
             return str(exc)
         return f"Griptape Cloud refused the request because {POLICY_DENIED_HINT} ({exc})"
 
-    async def _run_agent(self, request: RunAgentRequest) -> ResultPayload:
+    async def _run_agent(self, request: RunAgentRequest, workflow_id: str | None) -> ResultPayload:
         thread_id = self._validate_thread_for_run(request.thread_id)
         active = self._claim_thread(thread_id)
         if active is None:
             return _reply_in_progress_failure(f"send a message in conversation {thread_id}")
         try:
-            return await self._run_agent_on_claimed_thread(request, thread_id, active)
+            return await self._run_agent_on_claimed_thread(request, thread_id, active, workflow_id)
         finally:
             self._release_thread(thread_id, active)
 
     async def _run_agent_on_claimed_thread(
-        self, request: RunAgentRequest, thread_id: str, active: _ActiveRun
+        self, request: RunAgentRequest, thread_id: str, active: _ActiveRun, workflow_id: str | None
     ) -> ResultPayload:
         history = self._thread_storage.load_history(thread_id)
         is_first_run = len(history) == 0
@@ -691,6 +695,7 @@ class AgentManager(EngineScoped):
         result = await self._run_turn(
             thread_id=thread_id,
             active=active,
+            workflow_id=workflow_id,
             provider_name=request.provider_name,
             model_name=request.model_name,
             mcp_server_names=request.additional_mcp_servers,
@@ -714,7 +719,9 @@ class AgentManager(EngineScoped):
             mcp_server_names=request.additional_mcp_servers,
         )
 
-    async def _resolve_tool_approvals(self, request: ResolveToolApprovalsRequest) -> ResultPayload:
+    async def _resolve_tool_approvals(
+        self, request: ResolveToolApprovalsRequest, workflow_id: str | None
+    ) -> ResultPayload:
         thread_id = request.thread_id
         if not self._thread_storage.thread_exists(thread_id):
             details = f"Attempted to answer the approval request in conversation {thread_id}. Failed because the conversation does not exist."
@@ -729,12 +736,12 @@ class AgentManager(EngineScoped):
         if active is None:
             return _reply_in_progress_failure(f"answer the approval request in conversation {thread_id}")
         try:
-            return await self._resolve_tool_approvals_on_claimed_thread(request, thread_id, active)
+            return await self._resolve_tool_approvals_on_claimed_thread(request, thread_id, active, workflow_id)
         finally:
             self._release_thread(thread_id, active)
 
     async def _resolve_tool_approvals_on_claimed_thread(
-        self, request: ResolveToolApprovalsRequest, thread_id: str, active: _ActiveRun
+        self, request: ResolveToolApprovalsRequest, thread_id: str, active: _ActiveRun, workflow_id: str | None
     ) -> ResultPayload:
         # Read from the saved conversation rather than anything held in memory, so
         # an approval card still works after the engine restarts.
@@ -756,6 +763,7 @@ class AgentManager(EngineScoped):
         result = await self._run_turn(
             thread_id=thread_id,
             active=active,
+            workflow_id=workflow_id,
             provider_name=request.provider_name,
             model_name=request.model_name,
             mcp_server_names=request.additional_mcp_servers,
@@ -776,6 +784,7 @@ class AgentManager(EngineScoped):
         *,
         thread_id: str,
         active: _ActiveRun,
+        workflow_id: str | None,
         provider_name: str | None,
         model_name: str | None,
         mcp_server_names: list[str],
@@ -787,15 +796,14 @@ class AgentManager(EngineScoped):
         """Run one agent turn on ``thread_id``, streaming its events.
 
         ``active`` is the thread's claim from :meth:`_claim_thread`; its cancel event
-        is what ``CancelAgentRequest`` sets.
+        is what ``CancelAgentRequest`` sets. ``workflow_id`` is the workflow the request
+        that started the turn acts on, or None.
         """
         runner = self._build_runner(
             provider_name=provider_name,
             model_name=model_name,
         )
         attribution_headers = await self._attribution_headers(provider_name)
-        # The workflow the request that started the turn acts on.
-        workflow_id = bound_workflow_id()
 
         event_manager = self.engine.event_manager
 

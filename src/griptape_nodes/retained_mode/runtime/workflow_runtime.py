@@ -43,3 +43,14 @@ class WorkflowRuntime:
         self.nodes = WorkflowNodes()
         self.flows = WorkflowFlows()
         self.loading = WorkflowLoading()
+
+
+def workflow_id_of(workflow: WorkflowRuntime | None) -> str | None:
+    """The id to address a nested request to `workflow` by, or None when the work acts on no workflow.
+
+    A nested request addressed to no workflow keeps the binding of the work that issued it: no workflow
+    when dispatch gave the handler None, and the caller's own when node code calls the handler directly.
+    """
+    if workflow is None:
+        return None
+    return workflow.workflow_id

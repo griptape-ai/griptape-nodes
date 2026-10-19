@@ -81,13 +81,13 @@ def mock_config_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     # Store the original handle_request method
     original_handle_request = Engine.handle_request
 
-    def selective_mock(self: Engine, request: RequestPayload) -> ResultPayload:
+    def selective_mock(self: Engine, request: RequestPayload, *, workflow_id: str | None = None) -> ResultPayload:
         """Only mock SetConfigValueRequest, let all other requests through."""
         if isinstance(request, SetConfigValueRequest):
             # Mock config writes to prevent test pollution
             return SetConfigValueResultSuccess(result_details="Mocked config write")
         # Let all other requests go to the real handler
-        return original_handle_request(self, request)
+        return original_handle_request(self, request, workflow_id=workflow_id)
 
     monkeypatch.setattr(Engine, "handle_request", selective_mock)
 

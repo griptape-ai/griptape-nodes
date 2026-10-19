@@ -62,7 +62,9 @@ from griptape_nodes.retained_mode.managers.settings import (
     coerce_refresh_previews_max_files,
 )
 from griptape_nodes.retained_mode.managers.static_file_watcher import StaticFileWatcher, WatchedFileChange
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.runtime.binding import bound_workflow_id
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime, workflow_id_of
 from griptape_nodes.servers.static import (
     ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV,
     STATIC_SERVER_HOST,
@@ -324,10 +326,11 @@ class StaticFilesManager(EngineScoped):
         logger.debug("Serving preview for %s -> %s", file_path, preview_path)
         return PreviewResolution(path_to_serve=preview_path, artifact_metadata=result.artifact_metadata)
 
-    @handles(CreateStaticFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(CreateStaticFileRequest)
     def on_handle_create_static_file_request(
         self,
         request: CreateStaticFileRequest,
+        workflow: WorkflowRuntime | None = None,
     ) -> CreateStaticFileResultSuccess | CreateStaticFileResultFailure:
         file_name = request.file_name
 
@@ -338,22 +341,24 @@ class StaticFilesManager(EngineScoped):
             return CreateStaticFileResultFailure(error=msg, result_details=msg)
 
         try:
-            url = self.save_static_file(content_bytes, file_name)
+            url = self._save_static_file(content_bytes, file_name, workflow_id=workflow_id_of(workflow))
         except Exception as e:
             msg = f"Failed to create static file for file {file_name}: {e}"
             return CreateStaticFileResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileResultSuccess(url=url, result_details=f"Successfully created static file: {url}")
 
-    @handles(CreateStaticFileUploadUrlRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(CreateStaticFileUploadUrlRequest)
     def on_handle_create_static_file_upload_url_request(
         self,
         request: CreateStaticFileUploadUrlRequest,
+        workflow: WorkflowRuntime | None = None,
     ) -> CreateStaticFileUploadUrlResultSuccess | CreateStaticFileUploadUrlResultFailure:
         """Handle the request to create a presigned URL for uploading a static file.
 
         Args:
             request: The request object containing the file name.
+            workflow: The workflow the request acts on, or None.
 
         Returns:
             A result object indicating success or failure.
@@ -361,7 +366,7 @@ class StaticFilesManager(EngineScoped):
         file_name = request.file_name
         situation_name = request.situation_name
 
-        resolved = self._resolve_static_file_path(file_name, situation_name)
+        resolved = self._resolve_static_file_path(file_name, workflow_id_of(workflow), situation_name)
         if resolved is None:
             msg = f"Attempted to create upload URL for '{file_name}'. Failed because the project template is missing the '{situation_name}' situation."
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
@@ -380,21 +385,23 @@ class StaticFilesManager(EngineScoped):
             result_details="Successfully created static file upload URL",
         )
 
-    @handles(CreateStaticFileDownloadUrlRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(CreateStaticFileDownloadUrlRequest)
     def on_handle_create_static_file_download_url_request(
         self,
         request: CreateStaticFileDownloadUrlRequest,
+        workflow: WorkflowRuntime | None = None,
     ) -> CreateStaticFileDownloadUrlResultSuccess | CreateStaticFileDownloadUrlResultFailure:
         """Handle the request to create a presigned URL for downloading a static file from the staticfiles directory.
 
         Args:
             request: The request object containing the file name.
+            workflow: The workflow the request acts on, or None.
 
         Returns:
             A result object indicating success or failure.
         """
         situation_name = request.situation_name
-        resolved = self._resolve_static_file_path(request.file_name, situation_name)
+        resolved = self._resolve_static_file_path(request.file_name, workflow_id_of(workflow), situation_name)
         if resolved is None:
             msg = f"Attempted to create download URL for '{request.file_name}'. Failed because the project template is missing the '{situation_name}' situation."
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
@@ -502,15 +509,17 @@ class StaticFilesManager(EngineScoped):
             logger.debug("Serving full image (no thumbnail available) for %s", file_path)
         return resolution
 
-    @handles(CreateStaticFileDownloadUrlFromPathRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(CreateStaticFileDownloadUrlFromPathRequest)
     async def on_handle_create_static_file_download_url_from_path_request(
         self,
         request: CreateStaticFileDownloadUrlFromPathRequest,
+        workflow: WorkflowRuntime | None = None,
     ) -> CreateStaticFileDownloadUrlFromPathResultSuccess | CreateStaticFileDownloadUrlResultFailure:
         """Handle request to create download URL from arbitrary file path.
 
         Args:
             request: Request containing file_path and preview parameters.
+            workflow: The workflow the request acts on, or None.
 
         Returns:
             Result with download URL or failure message.
@@ -536,7 +545,8 @@ class StaticFilesManager(EngineScoped):
         source_macro_path: MacroPath | None = None
         if parsed.get_variables():
             resolve_result = self.engine.handle_request(
-                GetPathForMacroRequest(parsed_macro=parsed, variables=request.macro_variables)
+                GetPathForMacroRequest(parsed_macro=parsed, variables=request.macro_variables),
+                workflow_id=workflow_id_of(workflow),
             )
             if not isinstance(resolve_result, GetPathForMacroResultSuccess):
                 msg = f"Attempted to create download URL. Failed with file_path='{file_path}' because macro resolution failed: {resolve_result.result_details}"
@@ -735,7 +745,26 @@ class StaticFilesManager(EngineScoped):
             FileExistsError: When existing_file_policy is FAIL and file already exists.
             RuntimeError: If the project template is missing the save_static_file situation, or if the file write fails.
         """
-        resolved = self._resolve_static_file_path(file_name)
+        # Node libraries call this directly, from the work their node is bound to.
+        return self._save_static_file(
+            data,
+            file_name,
+            existing_file_policy,
+            skip_metadata_injection=skip_metadata_injection,
+            workflow_id=bound_workflow_id(),
+        )
+
+    def _save_static_file(
+        self,
+        data: bytes,
+        file_name: str,
+        existing_file_policy: ExistingFilePolicy | None = None,
+        *,
+        skip_metadata_injection: bool = False,
+        workflow_id: str | None,
+    ) -> str:
+        """`save_static_file`, resolving the path against the workflow `workflow_id` names."""
+        resolved = self._resolve_static_file_path(file_name, workflow_id)
         if resolved is None:
             msg = f"Attempted to save static file '{file_name}'. Failed because the project template is missing the '{BuiltInSituation.SAVE_STATIC_FILE}' situation."
             raise RuntimeError(msg)
@@ -763,12 +792,13 @@ class StaticFilesManager(EngineScoped):
         return self.storage_driver.create_signed_download_url(Path(saved_path))
 
     def _resolve_static_file_path(
-        self, file_name: str, situation_name: str = BuiltInSituation.SAVE_STATIC_FILE
+        self, file_name: str, workflow_id: str | None, situation_name: str = BuiltInSituation.SAVE_STATIC_FILE
     ) -> ResolvedStaticFilePath | None:
         """Resolve the file path for a static file using the given situation.
 
         Args:
             file_name: The name of the file (e.g., "output.png").
+            workflow_id: The workflow whose `{workflow_dir}` the situation resolves against, or None.
             situation_name: The situation to use for path resolution. Defaults to
                 ``save_static_file``.
 
@@ -798,7 +828,8 @@ class StaticFilesManager(EngineScoped):
             GetPathForMacroRequest(
                 parsed_macro=parsed_macro,
                 variables={"file_name_base": parts.stem, "file_extension": parts.extension},
-            )
+            ),
+            workflow_id=workflow_id,
         )
         if not isinstance(macro_result, GetPathForMacroResultSuccess):
             logger.warning("Failed to resolve %s situation path: %s", situation_name, macro_result.result_details)

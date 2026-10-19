@@ -155,6 +155,7 @@ from griptape_nodes.retained_mode.managers.resource_types.compute_resource impor
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime, workflow_id_of
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.authorization_checkpoint import CheckpointDenial
@@ -546,7 +547,7 @@ class OSManager(EngineScoped):
             raise
 
     def _resolve_macro_path_to_string(
-        self, macro_path: MacroPath, *, failure_log_level: int = logging.ERROR
+        self, macro_path: MacroPath, workflow_id: str | None, *, failure_log_level: int = logging.ERROR
     ) -> str | MacroResolutionFailure:
         """Resolve MacroPath to absolute string via ProjectManager.
 
@@ -558,6 +559,7 @@ class OSManager(EngineScoped):
 
         Args:
             macro_path: MacroPath containing parsed macro and variables
+            workflow_id: The workflow whose `{workflow_dir}` and `{workflow_name}` the macro uses, or None
             failure_log_level: Log level for the failure result's
                 ``result_details``. Defaults to ``logging.ERROR`` — the
                 natural level for a failed resolve. Callers that treat a
@@ -577,7 +579,8 @@ class OSManager(EngineScoped):
                 variables=macro_path.variables,
                 failure_log_level=failure_log_level,
                 broadcast_result=False,
-            )
+            ),
+            workflow_id=workflow_id,
         )
         if not isinstance(result, GetPathForMacroResultSuccess):
             missing = getattr(result, "missing_variables", None)
@@ -837,7 +840,7 @@ class OSManager(EngineScoped):
     # CREATE_NEW File Collision Policy - Helper Methods
     # ============================================================================
 
-    def _bind_project_variables_for_index_scan(self, macro_path: MacroPath) -> MacroPath:
+    def _bind_project_variables_for_index_scan(self, macro_path: MacroPath, workflow_id: str | None) -> MacroPath:
         """Bake project directories and builtins into a macro so only its `{_index}` slot is left open.
 
         Callers such as `DirectoryDestination` and `build_versioned_sequence_destination` pass
@@ -850,6 +853,7 @@ class OSManager(EngineScoped):
 
         Args:
             macro_path: MacroPath whose template contains an unresolved `{_index}` slot.
+            workflow_id: The workflow whose builtins the macro resolves against, or None.
 
         Returns:
             A MacroPath with only the index slot unresolved. Returns `macro_path` unchanged
@@ -876,7 +880,8 @@ class OSManager(EngineScoped):
                 parsed_macro=macro_path.parsed_macro,
                 variables={**macro_path.variables, **sentinel_vars},
                 failure_log_level=logging.DEBUG,
-            )
+            ),
+            workflow_id=workflow_id,
         )
         if not isinstance(result, GetPathForMacroResultSuccess):
             return macro_path
@@ -2038,8 +2043,10 @@ class OSManager(EngineScoped):
             result_details=(f"Deduced {len(all_sequences)} sequence(s) from {len(request.file_paths)} path(s)."),
         )
 
-    @handles(ScanSequencesRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    async def on_scan_sequences_request(self, request: ScanSequencesRequest) -> ResultPayload:  # noqa: PLR0911
+    @handles(ScanSequencesRequest)
+    async def on_scan_sequences_request(  # noqa: PLR0911
+        self, request: ScanSequencesRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         """Handle a request to scan a path or pattern for file sequences.
 
         The handler does macro resolution itself, builds a `PathMapping`, and
@@ -2056,7 +2063,7 @@ class OSManager(EngineScoped):
           propagate via `DirectoryListingError` and surface their original
           `FileIOFailureReason` so the underlying diagnostic isn't lost.
         """
-        mapping_or_failure = self._build_scan_path_mapping(request.path)
+        mapping_or_failure = self._build_scan_path_mapping(request.path, workflow_id_of(workflow))
         if isinstance(mapping_or_failure, ScanSequencesResultFailure):
             return mapping_or_failure
         mapping = mapping_or_failure
@@ -2130,7 +2137,9 @@ class OSManager(EngineScoped):
             result_details=details,
         )
 
-    def _build_scan_path_mapping(self, path: str) -> PathMapping | ScanSequencesResultFailure:  # noqa: PLR0911
+    def _build_scan_path_mapping(  # noqa: PLR0911
+        self, path: str, workflow_id: str | None
+    ) -> PathMapping | ScanSequencesResultFailure:
         """Parse `path`, resolve any macro head, and build a `PathMapping`.
 
         The path is split into a directory portion and a filename portion at
@@ -2182,7 +2191,9 @@ class OSManager(EngineScoped):
                 filename_pattern=filename_pattern,
             )
 
-        resolve_result = self.engine.handle_request(GetPathForMacroRequest(parsed_macro=parsed_directory, variables={}))
+        resolve_result = self.engine.handle_request(
+            GetPathForMacroRequest(parsed_macro=parsed_directory, variables={}), workflow_id=workflow_id
+        )
         if not isinstance(resolve_result, GetPathForMacroResultSuccess):
             return ScanSequencesResultFailure(
                 failure_reason=SequenceScanFailureReason.INVALID_TEMPLATE,
@@ -2476,10 +2487,12 @@ class OSManager(EngineScoped):
             else "Found available filename (no index needed)",
         )
 
-    @handles(GetNextVersionIndexRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    def on_get_next_version_index_request(self, request: GetNextVersionIndexRequest) -> ResultPayload:
+    @handles(GetNextVersionIndexRequest)
+    def on_get_next_version_index_request(
+        self, request: GetNextVersionIndexRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         """Handle a request to find the next available version index via a single glob pass."""
-        scan_macro_path = self._bind_project_variables_for_index_scan(request.macro_path)
+        scan_macro_path = self._bind_project_variables_for_index_scan(request.macro_path, workflow_id_of(workflow))
         parsed_macro = scan_macro_path.parsed_macro
         variables = scan_macro_path.variables
 
@@ -2508,8 +2521,10 @@ class OSManager(EngineScoped):
             else "Base path is available (no index needed)",
         )
 
-    @handles(WriteFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    async def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
+    @handles(WriteFileRequest)
+    async def on_write_file_request(  # noqa: PLR0911, PLR0912, PLR0915, C901
+        self, request: WriteFileRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         """Write content to a file with exclusive locking, returning once it is on disk.
 
         Everything that reads engine state runs on the thread driving this coroutine: macro
@@ -2518,6 +2533,7 @@ class OSManager(EngineScoped):
         steps that touch no engine state and take seconds for a large file are handed to a worker
         thread: re-encoding image bytes with workflow metadata, and writing the bytes to disk.
         """
+        workflow_id = workflow_id_of(workflow)
         # Initialize success tracking variables
         final_file_path: Path | None = None
         final_bytes_written: int | None = None
@@ -2540,7 +2556,7 @@ class OSManager(EngineScoped):
                 logging.DEBUG if request.existing_file_policy is ExistingFilePolicy.CREATE_NEW else logging.ERROR
             )
             resolution_result = self._resolve_macro_path_to_string(
-                macro_path, failure_log_level=first_attempt_log_level
+                macro_path, workflow_id, failure_log_level=first_attempt_log_level
             )
 
             # Seed-and-retry: ONLY for CREATE_NEW + a single padded missing-required
@@ -2560,7 +2576,7 @@ class OSManager(EngineScoped):
                     seeded_macro = MacroPath(parsed_macro=macro_path.parsed_macro, variables=seeded_vars)
                     # Second-attempt resolve: if seeding didn't fix it, that's genuinely
                     # broken — keep the ERROR default so the user sees what went wrong.
-                    resolution_result = self._resolve_macro_path_to_string(seeded_macro)
+                    resolution_result = self._resolve_macro_path_to_string(seeded_macro, workflow_id)
 
             if isinstance(resolution_result, MacroResolutionFailure):
                 msg = f"Attempted to write to file '{path_display}'. Failed due to missing variables: {resolution_result.error_details}"
@@ -2635,6 +2651,7 @@ class OSManager(EngineScoped):
                 sniffed_ext=sniffed_ext,
                 file_path=file_path,
                 caller_variables=request.file_path.variables if isinstance(request.file_path, MacroPath) else None,
+                workflow_id=workflow_id,
             )
             if vet_failure is not None:
                 return vet_failure
@@ -2869,7 +2886,7 @@ class OSManager(EngineScoped):
                             # set it ourselves), so the resolver doesn't need any policy
                             # context — it'll succeed without invoking any seed logic.
                             resolution = self._resolve_macro_path_to_string(
-                                MacroPath(parsed_macro=parsed_macro, variables=index_vars),
+                                MacroPath(parsed_macro=parsed_macro, variables=index_vars), workflow_id
                             )
                             if isinstance(resolution, MacroResolutionFailure):
                                 msg = f"Attempted to write to file '{path_display}'. Failed due to unable to resolve path template with index {idx}: {resolution.error_details}"
@@ -3006,8 +3023,10 @@ class OSManager(EngineScoped):
             result_details=result_details,
         )
 
-    @handles(WriteTempFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    def on_write_temp_file_request(self, request: WriteTempFileRequest) -> ResultPayload:
+    @handles(WriteTempFileRequest)
+    def on_write_temp_file_request(
+        self, request: WriteTempFileRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         """Write a temp file at the project-scoped ``SAVE_TEMP_FILE`` situation path.
 
         Distinct from ``on_write_file_request``: callers do not choose the
@@ -3022,7 +3041,7 @@ class OSManager(EngineScoped):
         a uuid or similar in ``variables["file_name_base"]``.
         """
         try:
-            outcome = self._stage_bytes_at_temp(request.content, request.variables)
+            outcome = self._stage_bytes_at_temp(request.content, request.variables, workflow_id_of(workflow))
         except StagingFailedError as exc:
             return WriteTempFileResultFailure(
                 failure_reason=exc.failure_reason,
@@ -3034,8 +3053,10 @@ class OSManager(EngineScoped):
             result_details=f"Temp file written at {outcome.staged_path}",
         )
 
-    def _stage_bytes_at_temp(self, content: bytes, variables: MacroVariables) -> _StagedTempOutcome:
-        """Land ``content`` at the SAVE_TEMP_FILE path resolved with ``variables``.
+    def _stage_bytes_at_temp(
+        self, content: bytes, variables: MacroVariables, workflow_id: str | None
+    ) -> _StagedTempOutcome:
+        """Land ``content`` at the SAVE_TEMP_FILE path resolved with ``variables`` in workflow ``workflow_id``.
 
         Resolves the SAVE_TEMP_FILE situation, resolves its macro against the
         caller's variables (merged with project builtins by
@@ -3065,7 +3086,9 @@ class OSManager(EngineScoped):
             msg = f"Attempted to write temp file. Failed to parse SAVE_TEMP_FILE macro: {exc}"
             raise StagingFailedError(msg, FileIOFailureReason.INVALID_PATH) from exc
 
-        path_result = self.engine.handle_request(GetPathForMacroRequest(parsed_macro=parsed_macro, variables=variables))
+        path_result = self.engine.handle_request(
+            GetPathForMacroRequest(parsed_macro=parsed_macro, variables=variables), workflow_id=workflow_id
+        )
         if not isinstance(path_result, GetPathForMacroResultSuccess):
             msg = f"Attempted to write temp file. Failed to resolve SAVE_TEMP_FILE macro: {path_result.result_details}"
             raise StagingFailedError(msg, FileIOFailureReason.INVALID_PATH)
@@ -3160,6 +3183,7 @@ class OSManager(EngineScoped):
         sniffed_ext: str,
         file_path: Path,
         caller_variables: MacroVariables | None,
+        workflow_id: str | None,
     ) -> WriteFileResultFailure | None:
         """Ask the format's provider to vet the pending write.
 
@@ -3200,7 +3224,7 @@ class OSManager(EngineScoped):
                 staging_variables["file_extension"] = sniffed_ext
 
                 try:
-                    outcome = self._stage_bytes_at_temp(content, staging_variables)
+                    outcome = self._stage_bytes_at_temp(content, staging_variables, workflow_id)
                 except StagingFailedError as exc:
                     return WriteFileResultFailure(
                         failure_reason=FileIOFailureReason.CODEC_NOT_PERMITTED,
@@ -4352,19 +4376,20 @@ class OSManager(EngineScoped):
             result_details=f"Successfully retrieved file info for path {request.path}",
         )
 
-    @handles(ResolveMacroPathRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(ResolveMacroPathRequest)
     def on_handle_resolve_macro_path_request(
-        self, request: ResolveMacroPathRequest
+        self, request: ResolveMacroPathRequest, workflow: WorkflowRuntime | None = None
     ) -> ResolveMacroPathResultSuccess | ResolveMacroPathResultFailure:
         """Handle macro path resolution request.
 
         Args:
             request: The request containing macro_path to resolve
+            workflow: The workflow the request acts on, or None
 
         Returns:
             Success with resolved path or failure with details
         """
-        resolution_result = self._resolve_macro_path_to_string(request.macro_path)
+        resolution_result = self._resolve_macro_path_to_string(request.macro_path, workflow_id_of(workflow))
 
         if isinstance(resolution_result, MacroResolutionFailure):
             return ResolveMacroPathResultFailure(

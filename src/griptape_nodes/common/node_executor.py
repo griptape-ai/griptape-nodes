@@ -341,7 +341,7 @@ class NodeExecutor(EngineScoped):
             # Resolved here because only this process has workflow context to resolve it FROM;
             # a worker would answer from an empty context and silently degrade the paths its node
             # writes to. Harmless on the local route, where these are this process's own values.
-            workflow_context = self.engine.project_manager.workflow_context_for_dispatch()
+            workflow_context = self._workflow_of(node).context.snapshot()
             # Named on the request rather than left to the binding: a worker has no binding of ours.
             run = current_run.get()
             run_id = None

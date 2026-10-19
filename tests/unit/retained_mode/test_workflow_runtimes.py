@@ -6,11 +6,14 @@ import asyncio
 import contextvars
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
+from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.files.path_utils import resolve_path_safely
 from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.app_events import EngineHeartbeatRequest, EngineHeartbeatResultSuccess
 from griptape_nodes.retained_mode.events.base_events import (
@@ -43,7 +46,17 @@ from griptape_nodes.retained_mode.events.open_workflow_events import (
     OpenWorkflowResultSuccess,
     OpenWorkflowsChanged,
 )
-from griptape_nodes.retained_mode.events.os_events import GetFileInfoRequest
+from griptape_nodes.retained_mode.events.os_events import (
+    GetFileInfoRequest,
+    ResolveMacroPathRequest,
+    ResolveMacroPathResultSuccess,
+)
+from griptape_nodes.retained_mode.events.project_events import (
+    GetPathForMacroRequest,
+    GetPathForMacroResultFailure,
+    GetPathForMacroResultSuccess,
+    MacroPath,
+)
 from griptape_nodes.retained_mode.events.variable_events import (
     CreateVariableRequest,
     CreateVariableResultSuccess,
@@ -65,7 +78,6 @@ from griptape_nodes.retained_mode.variable_types import VariableScope
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
-    from pathlib import Path
 
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
@@ -798,3 +810,48 @@ class TestResultWireFormat:
         wire = converters.engine.unstructure(result)
         assert wire["scope"] == "host"
         assert "workflow_id" not in wire["request"]
+
+
+class TestProjectMacros:
+    """`{workflow_dir}` and `{workflow_name}` come from the workflow a request acts on."""
+
+    @staticmethod
+    def _open_in(engine: Engine, name: str, folder: Path) -> str:
+        opened = engine.handle_request(OpenWorkflowRequest(display_name=name, working_directory=str(folder)))
+        assert isinstance(opened, OpenWorkflowResultSuccess), opened
+        return opened.workflow_id
+
+    @staticmethod
+    def _workflow_dir(engine: Engine, workflow_id: str | None) -> Path:
+        request = GetPathForMacroRequest(parsed_macro=ParsedMacro("{workflow_dir}/out.png"), variables={})
+        result = engine.handle_request(request, workflow_id=workflow_id)
+        assert isinstance(result, GetPathForMacroResultSuccess), result
+        return result.absolute_path.parent
+
+    def test_each_workflow_resolves_its_own_folder(self, engine: Engine, tmp_path: Path) -> None:
+        a = self._open_in(engine, "A", tmp_path / "a")
+        b = self._open_in(engine, "B", tmp_path / "b")
+
+        assert self._workflow_dir(engine, a) == resolve_path_safely(tmp_path / "a")
+        assert self._workflow_dir(engine, b) == resolve_path_safely(tmp_path / "b")
+
+    def test_a_file_request_resolves_against_the_workflow_it_names(self, engine: Engine, tmp_path: Path) -> None:
+        a = self._open_in(engine, "A", tmp_path / "a")
+        self._open_in(engine, "B", tmp_path / "b")
+        macro_path = MacroPath(ParsedMacro("{workflow_dir}/out.png"), {})
+
+        result = engine.handle_request(ResolveMacroPathRequest(macro_path=macro_path), workflow_id=a)
+
+        assert isinstance(result, ResolveMacroPathResultSuccess), result
+        assert Path(result.resolved_path) == resolve_path_safely(tmp_path / "a" / "out.png")
+
+    def test_a_request_naming_no_workflow_while_several_are_open_has_no_folder(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        self._open_in(engine, "A", tmp_path / "a")
+        self._open_in(engine, "B", tmp_path / "b")
+        request = GetPathForMacroRequest(parsed_macro=ParsedMacro("{workflow_dir}/out.png"), variables={})
+
+        result = engine.handle_request(request)
+
+        assert isinstance(result, GetPathForMacroResultFailure), result

@@ -18,6 +18,9 @@ from typing import NamedTuple
 class WorkflowContextSnapshot(NamedTuple):
     """A workflow context in the three fields `WorkflowContextState` keeps.
 
+    Also what project macro resolution reads `{workflow_name}` and `{workflow_dir}` from, so a path
+    resolves against the workflow its request acts on rather than whichever one is current.
+
     `name` None means the lending engine had no current workflow, and the adopting engine must then
     have none either. Both engines degrading a path the same way is correct; disagreeing is the bug
     this exists to prevent.

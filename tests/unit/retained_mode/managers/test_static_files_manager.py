@@ -1074,7 +1074,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
         absolute_path = workspace_dir / "staticfiles/output.png"
         expected_relative_path = Path("staticfiles/output.png")
 
-        def handle_request(request: object) -> object:
+        def handle_request(request: object, **_kwargs: object) -> object:
             from griptape_nodes.retained_mode.events.project_events import (
                 GetPathForMacroRequest,
                 GetSituationRequest,
@@ -1097,7 +1097,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
         mock_static_files_manager.config_manager = mock_config_manager
 
         with patch.object(mock_static_files_manager.engine, "handle_request", side_effect=handle_request):
-            result = mock_static_files_manager._resolve_static_file_path("output.png")
+            result = mock_static_files_manager._resolve_static_file_path("output.png", None)
 
         assert result is not None
         assert result.path == expected_relative_path
@@ -1119,7 +1119,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
             ),
             caplog.at_level(logging.WARNING, logger="griptape_nodes"),
         ):
-            result = mock_static_files_manager._resolve_static_file_path("output.png")
+            result = mock_static_files_manager._resolve_static_file_path("output.png", None)
 
         assert result is None
         assert "save_static_file" in caplog.text
@@ -1157,7 +1157,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
             ),
             caplog.at_level(logging.WARNING, logger="griptape_nodes"),
         ):
-            result = mock_static_files_manager._resolve_static_file_path("output.png")
+            result = mock_static_files_manager._resolve_static_file_path("output.png", None)
 
         assert result is None
         assert "save_static_file" in caplog.text
@@ -1185,7 +1185,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
             policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
         )
 
-        def handle_request(request: object) -> object:
+        def handle_request(request: object, **_kwargs: object) -> object:
             from griptape_nodes.retained_mode.events.project_events import (
                 GetPathForMacroRequest,
                 GetSituationRequest,
@@ -1206,7 +1206,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
             patch.object(mock_static_files_manager.engine, "handle_request", side_effect=handle_request),
             caplog.at_level(logging.WARNING, logger="griptape_nodes"),
         ):
-            result = mock_static_files_manager._resolve_static_file_path("output.png")
+            result = mock_static_files_manager._resolve_static_file_path("output.png", None)
 
         assert result is None
         assert "save_static_file" in caplog.text
@@ -1236,7 +1236,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
         # Workflow is outside the workspace (e.g., saved in Downloads)
         outside_path = Path("/Users/user/Downloads/staticfiles/output.png")
 
-        def handle_request(request: object) -> object:
+        def handle_request(request: object, **_kwargs: object) -> object:
             from griptape_nodes.retained_mode.events.project_events import (
                 GetPathForMacroRequest,
                 GetSituationRequest,
@@ -1264,7 +1264,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
             patch.object(mock_static_files_manager.engine, "handle_request", side_effect=handle_request),
             caplog.at_level(logging.WARNING, logger="griptape_nodes"),
         ):
-            result = mock_static_files_manager._resolve_static_file_path("output.png")
+            result = mock_static_files_manager._resolve_static_file_path("output.png", None)
 
         assert result is not None
         assert result.path == Path("staticfiles/output.png")
