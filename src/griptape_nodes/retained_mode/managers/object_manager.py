@@ -209,7 +209,7 @@ class ObjectManager(EngineScoped):
         # Cancel its running flows, delete its child flows, drain its context substack, pop it.
         try:
             while workflow.context.has_current_workflow():
-                engine.clear_current_workflow_data()
+                engine.clear_workflow_data(workflow)
         except Exception as e:
             return f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
         finally:
@@ -218,7 +218,7 @@ class ObjectManager(EngineScoped):
             #
             # In the finally because nothing retries this request, so a worker that was never told keeps
             # its objects for the life of the process.
-            await engine.worker_manager.broadcast_local_object_teardown()
+            await engine.worker_manager.broadcast_local_object_teardown(workflow)
 
         if workflow.objects.name_to_objects:
             return f"Attempted to clear all object state, but {len(workflow.objects.name_to_objects)} object(s) remained after workflow teardown."

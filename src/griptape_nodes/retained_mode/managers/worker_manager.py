@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import RequestPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes_app")
 
@@ -1257,19 +1258,19 @@ class WorkerManager(EngineScoped):
                 e,
             )
 
-    async def broadcast_local_object_teardown(self) -> None:
-        """Tell every worker to release named pending keys, then everything its libraries hold.
+    async def broadcast_local_object_teardown(self, workflow: WorkflowRuntime) -> None:
+        """Tell every worker to release named pending keys, then everything its libraries hold for `workflow`.
 
         One method because both halves are required: the named-key broadcast is what drains the
         orchestrator's pending-release queue, and the drop-all is what covers whatever a worker still holds.
-        Two teardown sites call this; neither may take half of it. Both act on the current workflow, so
-        the objects of the other open workflows stay.
+        Teardown must not take half of it. Only `workflow`'s objects go, so the objects of the other
+        open workflows stay.
         """
         await self.broadcast_pending_local_object_releases()
-        await self.broadcast_drop_workflow_local_objects()
+        await self.broadcast_drop_workflow_local_objects(workflow)
 
-    async def broadcast_drop_workflow_local_objects(self) -> None:
-        """Tell every worker to release the objects its libraries parked for the current workflow.
+    async def broadcast_drop_workflow_local_objects(self, workflow: WorkflowRuntime) -> None:
+        """Tell every worker to release the objects its libraries parked for `workflow`.
 
         Awaited rather than scheduled, for the reason recorded on `_on_config_changed` above: this one is
         called from a workflow teardown that can be dispatched synchronously, and a task created on a
@@ -1286,9 +1287,7 @@ class WorkerManager(EngineScoped):
 
         if self._transport is None or not self._workers:
             return
-        event = EventRequest(
-            request=DropWorkflowLocalObjectsRequest(), workflow_id=self.engine.current_workflow.workflow_id
-        )
+        event = EventRequest(request=DropWorkflowLocalObjectsRequest(), workflow_id=workflow.workflow_id)
         try:
             await self.broadcast_to_workers(event)
         except Exception as e:

@@ -454,7 +454,7 @@ class TestWorkflowStateClearReleasesObjects:
         engine.context_manager.push_workflow("wf")
 
         with (
-            patch.object(engine, "clear_current_workflow_data", side_effect=RuntimeError("teardown blew up")),
+            patch.object(engine, "clear_workflow_data", side_effect=RuntimeError("teardown blew up")),
             patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast,
         ):
             result = engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
@@ -502,7 +502,7 @@ class TestWorkflowStateClearReleasesObjects:
             patch.object(worker_manager, "_transport", object()),
             patch.object(worker_manager, "_workers", {"w1": object()}),
         ):
-            asyncio.run(worker_manager.broadcast_drop_workflow_local_objects())
+            asyncio.run(worker_manager.broadcast_drop_workflow_local_objects(engine.current_workflow))
 
         assert fan_out.await_count == 1
         assert fan_out.await_args is not None
@@ -748,10 +748,10 @@ class TestTeardownBroadcastPairing:
             patch.object(
                 worker_manager,
                 "broadcast_drop_workflow_local_objects",
-                AsyncMock(side_effect=lambda: order.append("drop_all")),
+                AsyncMock(side_effect=lambda _workflow: order.append("drop_all")),
             ),
         ):
-            asyncio.run(worker_manager.broadcast_local_object_teardown())
+            asyncio.run(worker_manager.broadcast_local_object_teardown(engine.current_workflow))
 
         assert order == ["pending", "drop_all"]
 

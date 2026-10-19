@@ -823,24 +823,34 @@ class Engine:
     def get_engine_id(self) -> str | None:
         return self._engine_identity_manager.active_engine_id
 
-    def clear_current_workflow_data(self) -> None:  # noqa: C901
-        """Tear down the active workflow: cancel running flows, delete its orphan flows, then pop it.
+    def clear_current_workflow_data(self) -> None:
+        """Tear down the current workflow. See `clear_workflow_data`.
+
+        For saved workflow files and tests, which reach it through the `GriptapeNodes` facade.
+        """
+        workflow = self.current_workflow_or_none()
+        if workflow is None:
+            msg = "Cannot clear current workflow data without an active workflow context."
+            raise RuntimeError(msg)
+        self.clear_workflow_data(workflow)
+
+    def clear_workflow_data(self, workflow: WorkflowRuntime) -> None:  # noqa: C901
+        """Tear down `workflow`: cancel running flows, delete its orphan flows, then pop it.
 
         Requires an active workflow context. Order matters:
         `on_delete_flow_request` pushes a flow context via `ContextManager().flow(...)`,
         which raises `NoActiveWorkflowError` if the workflow has already been popped.
         So we delete flows first and pop the workflow last.
         """
-        workflow = self.current_workflow_or_none()
-        if workflow is None or not workflow.context.has_current_workflow():
+        if not workflow.context.has_current_workflow():
             msg = "Cannot clear current workflow data without an active workflow context."
             raise RuntimeError(msg)
 
         # Cancel any running flow so the delete path doesn't race with execution.
         flow_manager = self._flow_manager
-        for flow_name in self._object_manager.get_filtered_subset(type=ControlFlow):
+        for flow_name in workflow.objects.get_filtered_subset(type=ControlFlow):
             if flow_manager.check_for_existing_running_flow(workflow):
-                self.handle_request(CancelFlowRequest(flow_name=flow_name))
+                self.handle_request(CancelFlowRequest(flow_name=flow_name), workflow_id=workflow.workflow_id)
 
         # Delete all orphan (top-level) flows. We can't rely on
         # `ListFlowsInCurrentContextRequest` here because the caller may only have a
@@ -849,12 +859,12 @@ class Engine:
         # `on_delete_flow_request` cascades into its children and nodes.
         more_flows = True
         while more_flows:
-            flows = self._object_manager.get_filtered_subset(type=ControlFlow)
+            flows = workflow.objects.get_filtered_subset(type=ControlFlow)
             found_orphan = False
             for flow_name in flows:
                 parent = workflow.flows.parent_flow_name(flow_name)
                 if not parent:
-                    self.handle_request(DeleteFlowRequest(flow_name=flow_name))
+                    self.handle_request(DeleteFlowRequest(flow_name=flow_name), workflow_id=workflow.workflow_id)
                     found_orphan = True
                     break
             if not flows or not found_orphan:
