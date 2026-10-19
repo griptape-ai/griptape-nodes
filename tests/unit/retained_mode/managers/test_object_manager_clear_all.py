@@ -25,8 +25,10 @@ class TestClearingAWorkflowCancelsFirst:
 
         engine = mock_engine_with_workflow_runtime()
         engine.flow_manager.check_for_existing_running_flow.return_value = True
-        engine.flow_manager.cancel_flow_run = AsyncMock(side_effect=lambda: calls.append("cancel"))
-        engine.flow_manager.reset_global_execution_state = MagicMock(side_effect=lambda: calls.append("reset"))
+        engine.flow_manager.cancel_flow_run = AsyncMock(side_effect=lambda _workflow: calls.append("cancel"))
+        engine.flow_manager.reset_global_execution_state = MagicMock(
+            side_effect=lambda _workflow: calls.append("reset")
+        )
         # Awaited by the handler to release objects libraries parked in workers.
         engine.worker_manager.broadcast_local_object_teardown = AsyncMock()
 

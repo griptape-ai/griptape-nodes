@@ -266,7 +266,7 @@ async def test_deleting_the_running_node_cancels_the_run(
     assert "still running" in str(delete_result.result_details), delete_result.result_details
 
     assert cancellations, "Deleting the running node cancelled the run but never told the editor."
-    assert engine.flow_manager.check_for_existing_running_flow() is False, (
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False, (
         "The flow still reports itself as running, so the editor's Run button never clears."
     )
 
@@ -310,7 +310,7 @@ async def test_deleting_an_unresolved_upstream_cancels_the_run(
     assert "still running" in str(delete_result.result_details), delete_result.result_details
 
     assert cancellations, "Deleting an unresolved upstream cancelled the run but never told the editor."
-    assert engine.flow_manager.check_for_existing_running_flow() is False, (
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False, (
         "Downstream is stranded on a dependency that can never arrive and the flow never ends."
     )
 
@@ -382,7 +382,7 @@ async def test_deleting_a_finished_node_a_queued_consumer_still_needs_cancels_th
         f"The cancellation never named the node that still needed the deleted one: {delete_result.result_details}"
     )
     assert "waiting on it" in str(delete_result.result_details), delete_result.result_details
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False
 
 
 @requires_fixture_library
@@ -425,7 +425,7 @@ async def test_deleting_an_unresolved_node_from_a_control_chain_ends_the_run(
     _open_gate(middle_gate)
     await _drain_cancelled_run(run)
 
-    assert engine.flow_manager.check_for_existing_running_flow() is False, (
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False, (
         "The control chain was truncated by the deletion and the run never terminated."
     )
 
@@ -496,7 +496,7 @@ async def test_deleting_a_supplier_of_a_later_chain_member_cancels_the_run(
         f"The cancellation never named the node further down the chain that still needed the deleted "
         f"one: {delete_result.result_details}"
     )
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False
 
 
 @requires_fixture_library
@@ -571,7 +571,7 @@ async def test_deleting_a_supplier_a_data_hop_away_from_the_chain_cancels_the_ru
     assert "Resizer" in str(delete_result.result_details), (
         f"The cancellation never named the node that lost its input: {delete_result.result_details}"
     )
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False
 
 
 @requires_fixture_library
@@ -645,7 +645,7 @@ async def test_deleting_a_supplier_two_hops_down_the_chain_cancels_the_run(
         f"The cancellation named something other than the node that actually still needed the deleted "
         f"one: {delete_result.result_details}"
     )
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False
 
 
 # ---------------------------------------------------------------------------------------------
@@ -699,7 +699,7 @@ async def test_deleting_an_unrelated_node_does_not_interrupt_streaming(
     survivor = engine.node_manager.get_node_by_name("Survivor")
     assert survivor.state is NodeResolutionState.RESOLVED
     assert survivor.parameter_output_values.get("result") == "survived"
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False
 
 
 @requires_fixture_library
@@ -772,7 +772,7 @@ async def test_deleting_a_resolved_upstream_leaves_its_running_successor_alone(
     assert "Downstream" not in unresolved_while_executing, (
         "Downstream was announced unresolved while it was still executing, which the finishing run then contradicts."
     )
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False
 
     # The reset was deferred, not cancelled. Now that the node is done, the input has to be back at
     # its parameter default -- an input with no PROPERTY mode is invisible and unclearable in the
@@ -881,7 +881,7 @@ async def test_deleting_a_downstream_node_that_has_not_started_leaves_the_run_al
     assert not cancellations, "Deleting a not-yet-started downstream node cancelled a healthy run."
     assert producer.state is NodeResolutionState.RESOLVED
     assert producer.parameter_output_values.get("result") == "produced"
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False
 
 
 @requires_fixture_library
@@ -947,7 +947,7 @@ async def test_deleting_a_supplier_for_a_chain_nobody_started_leaves_the_run_alo
     assert not cancellations, "Deleting a supplier for an idle chain cancelled an unrelated run."
     assert runner.state is NodeResolutionState.RESOLVED
     assert runner.parameter_output_values.get("result") == "runner finished"
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False
 
 
 @requires_fixture_library
@@ -1011,7 +1011,7 @@ async def test_deleting_bystanders_then_the_running_node_answers_each_delete_on_
         f"policy stopped recognising it as running: {runner_result.result_details}"
     )
     assert cancellations, "Deleting the running node cancelled the run but never told the editor."
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False
 
 
 @requires_fixture_library
@@ -1071,4 +1071,4 @@ async def test_deleting_a_settled_node_removes_it_from_the_live_dag(
     # Nothing published after the delete may still claim the deleted node is part of the run.
     for involved_nodes in involved[involved_before_finish:]:
         assert "Upstream" not in involved_nodes
-    assert engine.flow_manager.check_for_existing_running_flow() is False
+    assert engine.flow_manager.check_for_existing_running_flow(engine.current_workflow) is False

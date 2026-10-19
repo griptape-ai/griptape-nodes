@@ -81,7 +81,7 @@ class ObjectManager(EngineScoped):
             # Let the object's manager know. TODO: https://github.com/griptape-ai/griptape-nodes/issues/869
         match source_obj:
             case ControlFlow():
-                self.engine.flow_manager.handle_flow_rename(old_name=request.object_name, new_name=final_name)
+                self.engine.flow_manager.handle_flow_rename(workflow, old_name=request.object_name, new_name=final_name)
             case BaseNode():
                 self.engine.node_manager.handle_node_rename(workflow, old_name=request.object_name, new_name=final_name)
             case _:
@@ -194,15 +194,15 @@ class ObjectManager(EngineScoped):
         # Best-effort: a node that refuses to cancel must not block the teardown.
         # A driver still parked holds its FSM claim until it wakes and abandons the
         # run; harmless here because deleting the flows drops the machine it holds.
-        if engine.flow_manager.check_for_existing_running_flow():
+        if engine.flow_manager.check_for_existing_running_flow(workflow):
             try:
-                await engine.flow_manager.cancel_flow_run()
+                await engine.flow_manager.cancel_flow_run(workflow)
             except Exception as e:
                 logger.warning("Could not cancel the running workflow before clearing it. Continuing anyway: %s", e)
 
         try:
             # Eliminate all execution references before deletion
-            engine.flow_manager.reset_global_execution_state()
+            engine.flow_manager.reset_global_execution_state(workflow)
         except Exception as e:
             return f"Attempted to reset global execution state. Failed with exception: {e}"
 

@@ -198,7 +198,7 @@ def _collect_raw_provenance(engine: Engine) -> dict[str, Any]:
 
     try:
         flow = context_manager.get_current_flow()
-        _, resolving_nodes, _ = engine.flow_manager.flow_state(flow)
+        _, resolving_nodes, _ = engine.flow_manager.flow_state(engine.current_workflow, flow)
         result["flow"] = {"name": flow.name, "resolving_nodes": list(resolving_nodes)}
 
         if resolving_nodes:

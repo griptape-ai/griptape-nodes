@@ -172,9 +172,8 @@ class VariablesManager(EngineScoped):
         """Get the starting flow name, using the workflow's current flow if None."""
         if starting_flow is not None:
             # Validate that the specified flow exists
-            flow_manager = self.engine.flow_manager
             try:
-                flow_manager.get_parent_flow(starting_flow)  # This will raise if flow doesn't exist
+                workflow.flows.parent_flow_name(starting_flow)  # This will raise if flow doesn't exist
             except Exception as e:
                 msg = f"Specified starting flow '{starting_flow}' does not exist: {e}"
                 raise ValueError(msg) from e
@@ -185,24 +184,6 @@ class VariablesManager(EngineScoped):
             raise ValueError(msg)
 
         return workflow.context.get_current_flow().name
-
-    def _get_flow_hierarchy(self, starting_flow: str) -> list[str]:
-        """Get the flow hierarchy from starting flow up to root."""
-        flow_manager = self.engine.flow_manager
-
-        hierarchy = []
-        current_flow = starting_flow
-
-        while current_flow:
-            hierarchy.append(current_flow)
-            try:
-                parent = flow_manager.get_parent_flow(current_flow)
-                current_flow = parent
-            except Exception:
-                # No parent flow found, we've reached the root
-                break
-
-        return hierarchy
 
     @staticmethod
     def _find_variable_in_flow(workflow: WorkflowRuntime, flow_name: str, variable_name: str) -> FlowVariable | None:
@@ -419,7 +400,7 @@ class VariablesManager(EngineScoped):
 
             case VariableScope.HIERARCHICAL:
                 # Flow chain → project layer → global.
-                for flow_name in self._get_flow_hierarchy(starting_flow):
+                for flow_name in workflow.flows.flow_hierarchy(starting_flow):
                     variable = self._find_variable_in_flow(workflow, flow_name, variable_name)
                     if variable:
                         found_scope = (
@@ -962,7 +943,7 @@ class VariablesManager(EngineScoped):
         - Flow variables shadow project layer entries of the same name
         - Project layer entries shadow global variables of the same name
         """
-        hierarchy = self._get_flow_hierarchy(starting_flow)
+        hierarchy = workflow.flows.flow_hierarchy(starting_flow)
         seen_names: set[str] = set()
         variables: list[ResolvedVariable] = []
 
@@ -1267,11 +1248,11 @@ class VariablesManager(EngineScoped):
         from griptape_nodes.exe_types.variable_resolver import VariableResolver
 
         flow_manager = self.engine.flow_manager
-        if flow_manager.check_for_existing_running_flow():
+        if flow_manager.check_for_existing_running_flow(workflow):
             # Mid-run: downstream UNRESOLVED nodes pick up new values naturally via ResolveSubstitutionRequest.
             return
 
-        connections = flow_manager.get_connections()
+        connections = workflow.flows.connections
 
         for obj in list(workflow.objects.name_to_objects.values()):
             if not isinstance(obj, BaseNode):

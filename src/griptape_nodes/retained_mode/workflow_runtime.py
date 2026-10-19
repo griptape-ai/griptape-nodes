@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Final
 from griptape_nodes.retained_mode.context_types import WorkflowContextStack
 from griptape_nodes.retained_mode.object_types import WorkflowObjects
 from griptape_nodes.retained_mode.variable_types import WorkflowVariables
+from griptape_nodes.retained_mode.workflow_flow_types import WorkflowFlows
 from griptape_nodes.retained_mode.workflow_node_types import WorkflowNodes
 
 if TYPE_CHECKING:
@@ -49,6 +50,7 @@ class WorkflowRuntime:
         self.variables = WorkflowVariables()
         self.objects = WorkflowObjects()
         self.nodes = WorkflowNodes()
+        self.flows = WorkflowFlows(owner)
         self._states: dict[type, Any] = {}
 
     def state[T](self, state_type: type[T], factory: Callable[[], T]) -> T:

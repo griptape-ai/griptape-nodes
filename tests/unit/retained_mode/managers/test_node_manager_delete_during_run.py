@@ -326,7 +326,7 @@ async def test_a_delete_that_cannot_cancel_the_run_fails_rather_than_proceeding(
     node_manager = _node_manager(engine)
 
     parent_flow = MagicMock()
-    outcome = await node_manager.cancel_conditionally(parent_flow, "Flow", _node("Runner"))
+    outcome = await node_manager.cancel_conditionally(MagicMock(), parent_flow, "Flow", _node("Runner"))
 
     assert isinstance(outcome.failure, DeleteNodeResultFailure)
     assert "Runner" in str(outcome.failure.result_details)

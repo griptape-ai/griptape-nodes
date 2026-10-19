@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import EndNode, StartNode
-from griptape_nodes.retained_mode.events.flow_events import GetTopLevelFlowRequest, GetTopLevelFlowResultSuccess
 from griptape_nodes.retained_mode.events.workflow_events import WorkflowShape
 
 if TYPE_CHECKING:
@@ -47,11 +46,7 @@ def extract_workflow_shape(
     workflow_shape: dict[str, Any] = {WorkflowShapeType.INPUT: {}, WorkflowShapeType.OUTPUT: {}}
 
     if flow_name is None:
-        result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
-        if result.failed():
-            details = f"Workflow '{workflow_name}' does not have a top-level flow."
-            raise ValueError(details)
-        flow_name = cast("GetTopLevelFlowResultSuccess", result).flow_name
+        flow_name = flow_manager.engine.current_workflow.flows.top_level_flow_name()
         if flow_name is None:
             details = f"Workflow '{workflow_name}' does not have a top-level flow."
             raise ValueError(details)

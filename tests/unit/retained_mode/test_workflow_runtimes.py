@@ -101,10 +101,10 @@ def _runtime(engine: Engine, workflow_id: str) -> WorkflowRuntime:
     return runtime
 
 
-def _running_only(engine: Engine, running: WorkflowRuntime | None) -> AbstractContextManager[object]:
+def _running_only(running: WorkflowRuntime | None) -> AbstractContextManager[object]:
     """Stand in for each workflow's own execution state, reporting only `running` as running."""
     return patch.object(
-        FlowManager, "check_for_existing_running_flow", lambda _flow_manager: engine.current_workflow is running
+        FlowManager, "check_for_existing_running_flow", lambda _flow_manager, runtime: runtime is running
     )
 
 
@@ -343,7 +343,7 @@ class TestRequestTargeting:
         b = _open_new_workflow_with_note(engine, "NoteB")
         runtime_b = _runtime(engine, b.workflow_id)
 
-        with _running_only(engine, runtime_b):
+        with _running_only(runtime_b):
             engine.run_scheduler.admit(runtime_b)
             result = engine.handle_request(CreateNodeRequest(node_type="Note", node_name="Stray"))
 
@@ -582,7 +582,7 @@ class TestRunScheduler:
         runtime_a = _runtime(engine, a.workflow_id)
         runtime_b = _runtime(engine, b.workflow_id)
 
-        with _running_only(engine, runtime_a):
+        with _running_only(runtime_a):
             engine.run_scheduler.admit(runtime_a)
             listed = _listed(engine)
             with pytest.raises(RunRefusedError, match="is running"):
@@ -597,7 +597,7 @@ class TestRunScheduler:
         a = _open_new_workflow_with_note(engine, "NoteA")
         runtime_a = _runtime(engine, a.workflow_id)
 
-        with _running_only(engine, runtime_a):
+        with _running_only(runtime_a):
             first = engine.run_scheduler.admit(runtime_a)
             again = engine.run_scheduler.admit(runtime_a)
 
@@ -617,7 +617,7 @@ class TestRunScheduler:
         b = _open_new_workflow_with_note(engine, "NoteB")
         runtime_a = _runtime(engine, a.workflow_id)
 
-        with _running_only(engine, runtime_a):
+        with _running_only(runtime_a):
             engine.run_scheduler.admit(runtime_a)
             engine.remove_workflow_runtime(runtime_a)
             run = engine.run_scheduler.admit(_runtime(engine, b.workflow_id))
@@ -673,7 +673,7 @@ class TestUnboundReads:
         def read() -> None:
             seen.append(engine.current_workflow.workflow_id)
 
-        with _running_only(engine, runtime_a):
+        with _running_only(runtime_a):
             engine.run_scheduler.admit(runtime_a)
             thread = threading.Thread(target=read)
             thread.start()
@@ -721,7 +721,7 @@ class TestHeartbeat:
         b = _open_new_workflow_with_note(engine, "NoteB")
         runtime_b = _runtime(engine, b.workflow_id)
 
-        with _running_only(engine, runtime_b):
+        with _running_only(runtime_b):
             result = engine.handle_request(EngineHeartbeatRequest(heartbeat_id="h"))
 
         assert isinstance(result, EngineHeartbeatResultSuccess), result

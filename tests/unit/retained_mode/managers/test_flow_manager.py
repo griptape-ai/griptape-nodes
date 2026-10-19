@@ -152,10 +152,9 @@ class TestExtractFlowCommandsFromImageMetadata:
     def test_returns_success_with_none_when_image_has_no_metadata(
         self, engine: Engine, image_without_metadata: str
     ) -> None:
-        flow_manager = engine.flow_manager
         request = ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=image_without_metadata)
 
-        result = flow_manager.on_extract_flow_commands_from_image_metadata(request)
+        result = engine.handle_request(request)
 
         assert isinstance(result, ExtractFlowCommandsFromImageMetadataResultSuccess)
         assert result.serialized_flow_commands is None
@@ -164,30 +163,27 @@ class TestExtractFlowCommandsFromImageMetadata:
     def test_returns_success_with_none_when_flow_commands_key_missing(
         self, engine: Engine, image_with_unrelated_metadata: str
     ) -> None:
-        flow_manager = engine.flow_manager
         request = ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=image_with_unrelated_metadata)
 
-        result = flow_manager.on_extract_flow_commands_from_image_metadata(request)
+        result = engine.handle_request(request)
 
         assert isinstance(result, ExtractFlowCommandsFromImageMetadataResultSuccess)
         assert result.serialized_flow_commands is None
         assert result.altered_workflow_state is False
 
     def test_returns_failure_when_file_missing(self, engine: Engine) -> None:
-        flow_manager = engine.flow_manager
         request = ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path="/does/not/exist.png")
 
-        result = flow_manager.on_extract_flow_commands_from_image_metadata(request)
+        result = engine.handle_request(request)
 
         assert isinstance(result, ExtractFlowCommandsFromImageMetadataResultFailure)
 
     def test_returns_commands_when_flow_commands_key_present(
         self, engine: Engine, image_with_flow_commands: str, empty_flow_commands: SerializedFlowCommands
     ) -> None:
-        flow_manager = engine.flow_manager
         request = ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=image_with_flow_commands)
 
-        result = flow_manager.on_extract_flow_commands_from_image_metadata(request)
+        result = engine.handle_request(request)
 
         assert isinstance(result, ExtractFlowCommandsFromImageMetadataResultSuccess)
         assert result.serialized_flow_commands == empty_flow_commands
@@ -205,9 +201,7 @@ class TestExtractFlowCommandsFromImageMetadata:
     def test_returns_failure_when_flow_commands_are_unreadable(self, engine: Engine, text: str, reason: str) -> None:
         path = _image_with_flow_commands_text(text)
         try:
-            result = engine.flow_manager.on_extract_flow_commands_from_image_metadata(
-                ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=path)
-            )
+            result = engine.handle_request(ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=path))
         finally:
             Path(path).unlink(missing_ok=True)
 
@@ -225,9 +219,7 @@ class TestExtractFlowCommandsFromImageMetadata:
             return image
 
         with patch.object(Image, "open", _open):
-            engine.flow_manager.on_extract_flow_commands_from_image_metadata(
-                ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=path)
-            )
+            engine.handle_request(ExtractFlowCommandsFromImageMetadataRequest(file_url_or_path=path))
 
         (image,) = opened
         assert image.fp is None
@@ -244,7 +236,6 @@ class TestStartFlowRequestDefaultsToCurrentContext:
             StartFlowResultFailure,
         )
 
-        flow_manager = engine.flow_manager
         engine.handle_request(
             __import__(
                 "griptape_nodes.retained_mode.events.object_events",
@@ -254,7 +245,7 @@ class TestStartFlowRequestDefaultsToCurrentContext:
 
         assert not engine.context_manager.has_current_flow()
 
-        result = await flow_manager.on_start_flow_request(StartFlowRequest())
+        result = await engine.ahandle_request(StartFlowRequest())
 
         assert isinstance(result, StartFlowResultFailure)
         # Message should now name a concrete remediation, not the old generic one.
@@ -281,15 +272,15 @@ class TestStartFlowRequestDefaultsToCurrentContext:
         )
         assert isinstance(create_flow_result, CreateFlowResultSuccess)
 
-        # Short-circuit get_flow_by_name so we can assert on the resolved name without
+        # Short-circuit the flow lookup so we can assert on the resolved name without
         # actually running a control flow.
-        with patch.object(flow_manager, "get_flow_by_name", side_effect=KeyError("stop here")) as get_flow:
-            result = await flow_manager.on_start_flow_request(StartFlowRequest())
+        with patch.object(flow_manager, "_get_flow", side_effect=KeyError("stop here")) as get_flow:
+            result = await engine.ahandle_request(StartFlowRequest())
 
         # The handler should have looked up the current-context flow name, not bailed with
         # the "must provide flow name" error.
         assert isinstance(result, StartFlowResultFailure)
-        get_flow.assert_called_once_with("flow_in_ctx")
+        get_flow.assert_called_once_with(engine.current_workflow, "flow_in_ctx")
 
         engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
 
@@ -301,12 +292,11 @@ class TestStartFlowRequestDefaultsToCurrentContext:
         )
         from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 
-        flow_manager = engine.flow_manager
         engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
 
         assert not engine.context_manager.has_current_node()
 
-        result = await flow_manager.on_start_flow_from_node_request(StartFlowFromNodeRequest())
+        result = await engine.ahandle_request(StartFlowFromNodeRequest())
 
         assert isinstance(result, StartFlowFromNodeResultFailure)
         assert "Current Context" in str(result.result_details)
@@ -329,29 +319,20 @@ class TestStartFlowRequestDefaultsToCurrentContext:
         # needs to expose `.name`; we short-circuit object lookup below.
         fake_node = MagicMock(spec=BaseNode)
         fake_node.name = "node_in_ctx"
-        ctx = engine.context_manager
+        workflow = engine.current_workflow
+        workflow.nodes.name_to_parent_flow_name["node_in_ctx"] = "derived_parent_flow"
         with (
-            patch.object(ctx, "has_current_node", return_value=True),
-            patch.object(ctx, "get_current_node", return_value=fake_node),
-            patch.object(
-                engine.object_manager,
-                "attempt_get_object_by_name_as_type",
-                return_value=fake_node,
-            ),
-            patch.object(
-                engine.node_manager,
-                "get_node_parent_flow_by_name",
-                return_value="derived_parent_flow",
-            ) as get_parent_flow,
-            patch.object(flow_manager, "get_flow_by_name", side_effect=KeyError("stop here")) as get_flow,
+            patch.object(workflow.context, "has_current_node", return_value=True),
+            patch.object(workflow.context, "get_current_node", return_value=fake_node),
+            patch.object(workflow.objects, "get_as_type", return_value=fake_node),
+            patch.object(flow_manager, "_get_flow", side_effect=KeyError("stop here")) as get_flow,
         ):
-            result = await flow_manager.on_start_flow_from_node_request(StartFlowFromNodeRequest())
+            result = await engine.ahandle_request(StartFlowFromNodeRequest())
 
         # The handler should have used the current-context node and derived its parent flow,
         # not bailed with the "must provide node name" error.
         assert isinstance(result, StartFlowFromNodeResultFailure)
-        get_parent_flow.assert_called_once_with("node_in_ctx")
-        get_flow.assert_called_once_with("derived_parent_flow")
+        get_flow.assert_called_once_with(workflow, "derived_parent_flow")
 
         engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
 
@@ -364,31 +345,31 @@ class TestStartFlowFailureMessage:
         flow_manager = engine.flow_manager
         validated = ValidateFlowDependenciesResultSuccess(validation_succeeded=True, exceptions=[], result_details="ok")
         with (
-            patch.object(flow_manager, "get_flow_by_name", return_value=MagicMock()),
+            patch.object(flow_manager, "_get_flow", return_value=MagicMock()),
             patch.object(flow_manager, "check_for_existing_running_flow", return_value=False),
-            patch.object(flow_manager, "get_start_node_queue"),
+            patch.object(flow_manager, "_start_node_queue"),
             patch.object(flow_manager, "on_validate_flow_dependencies_request", return_value=validated),
         ):
             yield flow_manager
 
     @pytest.mark.asyncio
-    async def test_start_flow_reports_exception(self, ready_flow_manager: Any) -> None:
+    async def test_start_flow_reports_exception(self, ready_flow_manager: Any, engine: Engine) -> None:
         with patch.object(ready_flow_manager, "start_flow", side_effect=RuntimeError("boom")):
-            result = await ready_flow_manager.on_start_flow_request(StartFlowRequest(flow_name="f"))
+            result = await engine.ahandle_request(StartFlowRequest(flow_name="f"))
 
         assert isinstance(result, StartFlowResultFailure)
         assert str(result.result_details) == "Attempted to run flow 'f'. Failed due to: boom"
 
     @pytest.mark.asyncio
-    async def test_start_flow_reports_resolution_error(self, ready_flow_manager: Any) -> None:
+    async def test_start_flow_reports_resolution_error(self, ready_flow_manager: Any, engine: Engine) -> None:
         machine = MagicMock()
         machine.resolution_machine.is_errored.return_value = True
         machine.resolution_machine.get_error_message.return_value = "Node 'n' encountered a problem: boom"
         with (
             patch.object(ready_flow_manager, "start_flow"),
-            patch.object(ready_flow_manager._state, "global_control_flow_machine", machine),
+            patch.object(ready_flow_manager.engine.current_workflow.flows, "global_control_flow_machine", machine),
         ):
-            result = await ready_flow_manager.on_start_flow_request(StartFlowRequest(flow_name="f"))
+            result = await engine.ahandle_request(StartFlowRequest(flow_name="f"))
 
         assert isinstance(result, StartFlowResultFailure)
         assert (
@@ -399,12 +380,10 @@ class TestStartFlowFailureMessage:
     @pytest.mark.asyncio
     async def test_start_flow_from_node_reports_exception(self, ready_flow_manager: Any, engine: Engine) -> None:
         with (
-            patch.object(engine.object_manager, "attempt_get_object_by_name_as_type", return_value=MagicMock()),
+            patch.object(engine.current_workflow.objects, "get_as_type", return_value=MagicMock()),
             patch.object(ready_flow_manager, "start_flow", side_effect=RuntimeError("boom")),
         ):
-            result = await ready_flow_manager.on_start_flow_from_node_request(
-                StartFlowFromNodeRequest(node_name="n", flow_name="f")
-            )
+            result = await engine.ahandle_request(StartFlowFromNodeRequest(node_name="n", flow_name="f"))
 
         assert isinstance(result, StartFlowFromNodeResultFailure)
         assert str(result.result_details) == "Attempted to run flow 'f'. Failed due to: boom"
@@ -426,13 +405,12 @@ class TestListNodesInFlowRequest:
 
         from griptape_nodes.retained_mode.managers.flow_manager import ControlFlow
 
-        flow_manager = engine.flow_manager
         with patch.object(
-            engine.object_manager,
-            "attempt_get_object_by_name_as_type",
+            engine.current_workflow.objects,
+            "get_as_type",
             side_effect=lambda _name, typ: flow if typ is ControlFlow else None,
         ):
-            return flow_manager.on_list_nodes_in_flow_request(request)  # type: ignore[arg-type]
+            return engine.handle_request(request)  # type: ignore[arg-type]
 
     def test_no_filter_returns_all_nodes(self, engine: Engine) -> None:
         from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest, ListNodesInFlowResultSuccess
@@ -570,9 +548,8 @@ class TestAutoLayoutFlowRequest:
         )
 
         self._cleanup(engine)
-        flow_manager = engine.flow_manager
 
-        result = await flow_manager.on_auto_layout_flow_request(AutoLayoutFlowRequest())
+        result = await engine.ahandle_request(AutoLayoutFlowRequest())
 
         assert isinstance(result, AutoLayoutFlowResultFailure)
 
@@ -586,7 +563,7 @@ class TestAutoLayoutFlowRequest:
         flow_name = self._bootstrap_graph(engine)
         flow_manager = engine.flow_manager
 
-        result = await flow_manager.on_auto_layout_flow_request(
+        result = await engine.ahandle_request(
             AutoLayoutFlowRequest(
                 flow_name=flow_name,
                 origin_x=10.0,
@@ -620,8 +597,7 @@ class TestAutoLayoutFlowRequest:
 
         self._bootstrap_workflow_and_flow(engine, workflow="empty_wf", flow="empty_flow")
 
-        flow_manager = engine.flow_manager
-        result = await flow_manager.on_auto_layout_flow_request(AutoLayoutFlowRequest(flow_name="empty_flow"))
+        result = await engine.ahandle_request(AutoLayoutFlowRequest(flow_name="empty_flow"))
 
         assert isinstance(result, AutoLayoutFlowResultSuccess)
         assert result.positioned_nodes == []
@@ -742,7 +718,7 @@ class TestClassifyNodesForDag:
     control-entry / data-sink roles based purely on the connection graph. It backs both the
     top-level queue and isolated subflow seeding, so these tests lock in each branch. Real node
     subclasses and a real Connections object are used so the Parameter/Connection semantics match
-    production; only get_connections is patched to hand the classifier the crafted graph.
+    production; only the workflow's connections are replaced to hand the classifier the crafted graph.
     """
 
     @staticmethod
@@ -750,7 +726,7 @@ class TestClassifyNodesForDag:
         from unittest.mock import patch
 
         flow_manager = engine.flow_manager
-        with patch.object(flow_manager, "get_connections", return_value=connections):
+        with patch.object(engine.current_workflow.flows, "connections", connections):
             return flow_manager.classify_nodes_for_dag(nodes)
 
     def test_start_node_is_a_start_node(self, engine: Engine) -> None:
@@ -872,7 +848,7 @@ class TestSerializeFlowSkipsTransientChildFlows:
         flow_manager = engine.flow_manager
         flow_manager.get_flow_by_name(transient.flow_name).metadata[TRANSIENT_KEY] = True
 
-        result = flow_manager.on_serialize_flow_to_commands(
+        result = engine.handle_request(
             SerializeFlowToCommandsRequest(flow_name=parent.flow_name, include_create_flow_command=True)
         )
         assert isinstance(result, SerializeFlowToCommandsResultSuccess)
@@ -924,7 +900,7 @@ class TestSerializeFlowSkipsTransientChildFlows:
 
         # Serialization must succeed (not fail on the transient flow's internal connection) and
         # must not include the transient flow.
-        result = flow_manager.on_serialize_flow_to_commands(
+        result = engine.handle_request(
             SerializeFlowToCommandsRequest(flow_name=parent.flow_name, include_create_flow_command=True)
         )
         assert isinstance(result, SerializeFlowToCommandsResultSuccess), result

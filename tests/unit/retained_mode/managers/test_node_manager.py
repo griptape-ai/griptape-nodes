@@ -334,11 +334,7 @@ class TestUnresolveNodeRequest:
         mock_connections = MagicMock()
         with (
             patch.object(engine.current_workflow.objects, "get_as_type", return_value=mock_node),
-            patch.object(
-                engine.flow_manager,
-                "get_connections",
-                return_value=mock_connections,
-            ),
+            patch.object(engine.current_workflow.flows, "connections", mock_connections),
         ):
             result = engine.handle_request(UnresolveNodeRequest(node_name="test_node"))
 
@@ -357,11 +353,7 @@ class TestUnresolveNodeRequest:
         mock_connections = MagicMock()
         with (
             patch.object(engine.current_workflow.objects, "get_as_type", return_value=mock_node),
-            patch.object(
-                engine.flow_manager,
-                "get_connections",
-                return_value=mock_connections,
-            ),
+            patch.object(engine.current_workflow.flows, "connections", mock_connections),
         ):
             result = engine.handle_request(UnresolveNodeRequest(node_name="test_node"))
 

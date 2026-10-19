@@ -496,7 +496,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         target_parameter_name=proxy_parameter.name,
                         source_node_name=node.name,
                         target_node_name=self.name,
-                    )
+                    ),
+                    self.engine.current_workflow,
                 )
                 if delete_result.failed():
                     msg = f"{self.name}: Failed to delete internal outgoing connection from {node.name}.{parameter_name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
@@ -510,7 +511,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             target_parameter_name=connection.target_parameter.name,
                             source_node_name=node.name,
                             target_node_name=connection.target_node.name,
-                        )
+                        ),
+                        self.engine.current_workflow,
                     )
                     if create_result.failed():
                         msg = f"{self.name}: Failed to create direct outgoing connection from {node.name}.{parameter_name} to {connection.target_node.name}.{connection.target_parameter.name}: {create_result.result_details}"
@@ -531,7 +533,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         target_parameter_name=parameter_name,
                         source_node_name=self.name,
                         target_node_name=node.name,
-                    )
+                    ),
+                    self.engine.current_workflow,
                 )
                 if delete_result.failed():
                     msg = f"{self.name}: Failed to delete internal incoming connection from proxy {proxy_parameter.name} to {node.name}.{parameter_name}: {delete_result.result_details}"
@@ -545,7 +548,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             target_parameter_name=parameter_name,
                             source_node_name=connection.source_node.name,
                             target_node_name=node.name,
-                        )
+                        ),
+                        self.engine.current_workflow,
                     )
                     if create_result.failed():
                         msg = f"{self.name}: Failed to create direct incoming connection from {connection.source_node.name}.{connection.source_parameter.name} to {node.name}.{parameter_name}: {create_result.result_details}"
@@ -615,7 +619,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         target_parameter_name=proxy_parameter.name,
                         source_node_name=node.name,
                         target_node_name=self.name,
-                    )
+                    ),
+                    self.engine.current_workflow,
                 )
                 if delete_result.failed():
                     msg = f"{self.name}: Failed to delete internal outgoing connection from {node.name}.{parameter_name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
@@ -629,7 +634,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             target_parameter_name=connection.target_parameter.name,
                             source_node_name=node.name,
                             target_node_name=connection.target_node.name,
-                        )
+                        ),
+                        self.engine.current_workflow,
                     )
                     if create_result.failed():
                         msg = f"{self.name}: Failed to create direct outgoing connection from {node.name}.{parameter_name} to {connection.target_node.name}.{connection.target_parameter.name}: {create_result.result_details}"
@@ -644,7 +650,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                                 target_parameter_name=connection.target_parameter.name,
                                 source_node_name=connection.source_node.name,
                                 target_node_name=connection.target_node.name,
-                            )
+                            ),
+                            self.engine.current_workflow,
                         )
                         if delete_result.failed():
                             msg = f"{self.name}: Failed to delete external connection from proxy {proxy_parameter.name} to {connection.target_node.name}.{connection.target_parameter.name}: {delete_result.result_details}"
@@ -680,7 +687,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         target_parameter_name=parameter_name,
                         source_node_name=self.name,
                         target_node_name=node.name,
-                    )
+                    ),
+                    self.engine.current_workflow,
                 )
                 if delete_result.failed():
                     msg = f"{self.name}: Failed to delete internal incoming connection from proxy {proxy_parameter.name} to {node.name}.{parameter_name}: {delete_result.result_details}"
@@ -694,7 +702,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             target_parameter_name=parameter_name,
                             source_node_name=connection.source_node.name,
                             target_node_name=node.name,
-                        )
+                        ),
+                        self.engine.current_workflow,
                     )
                     if create_result.failed():
                         msg = f"{self.name}: Failed to create direct incoming connection from {connection.source_node.name}.{connection.source_parameter.name} to {node.name}.{parameter_name}: {create_result.result_details}"
@@ -709,7 +718,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                                 target_parameter_name=proxy_parameter.name,
                                 source_node_name=connection.source_node.name,
                                 target_node_name=self.name,
-                            )
+                            ),
+                            self.engine.current_workflow,
                         )
                         if delete_result.failed():
                             msg = f"{self.name}: Failed to delete external connection from {connection.source_node.name}.{connection.source_parameter.name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
@@ -1301,9 +1311,14 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         subflow = self.metadata.get("subflow_name")
         if subflow is not None and isinstance(subflow, str):
-            result = await self.engine.flow_manager.on_start_local_subflow_request(
-                StartLocalSubflowRequest(flow_name=subflow)
-            )
+            # This runs in the node's own task, which may have lost the binding, so use the runtime the node was made in.
+            workflow = self.workflow_runtime
+            if workflow is None:
+                workflow = self.engine.current_workflow
+            with self.engine.bind_workflow(workflow):
+                result = await self.engine.flow_manager.on_start_local_subflow_request(
+                    StartLocalSubflowRequest(flow_name=subflow), workflow
+                )
 
             if isinstance(result, StartLocalSubflowResultFailure):
                 # Clear partial outputs to prevent inconsistent state

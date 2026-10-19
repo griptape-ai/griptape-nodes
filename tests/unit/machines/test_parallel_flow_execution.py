@@ -4,7 +4,7 @@
 
 import asyncio
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -25,7 +25,6 @@ from griptape_nodes.machines.parallel_resolution import (
 )
 from griptape_nodes.retained_mode.events.execution_events import NodeErrorEvent
 from griptape_nodes.retained_mode.events.node_error_details import NodeErrorDetails
-from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 
@@ -224,85 +223,6 @@ class TestParallelFlowExecution:
 
 class TestFlowManagerDagBuilderIntegration:
     """Test cases for FlowManager's DAG builder integration during flow execution."""
-
-    def test_flow_manager_creates_dag_builder_for_parallel_flow(self) -> None:
-        """Test that FlowManager creates a DAG builder when starting a parallel flow."""
-        # This test is complex and involves async flow manager methods that are hard to mock
-        # For now, just test that the basic FlowManager functionality works
-        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-
-        try:
-            # Test basic FlowManager creation
-            flow_manager = FlowManager(MagicMock(spec=EventManager))
-            assert hasattr(flow_manager, "global_dag_builder")
-
-            # Test that DAG builder can be set
-            mock_dag_builder = MagicMock(spec=DagBuilder)
-            flow_manager._state.global_dag_builder = mock_dag_builder
-            assert flow_manager._state.global_dag_builder is mock_dag_builder
-
-            # Test basic functionality without async complexity
-        except Exception:  # noqa: S110
-            # If FlowManager requires complex setup, skip this test
-            pass
-
-    def test_flow_manager_preserves_dag_builder_between_single_node_resolutions(self) -> None:
-        """Test that FlowManager preserves DAG builder between single node resolutions."""
-        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-
-        try:
-            # Create FlowManager instance
-            flow_manager = FlowManager(MagicMock(spec=EventManager))
-
-            # Create initial DAG builder
-            initial_dag_builder = MagicMock(spec=DagBuilder)
-            flow_manager._state.global_dag_builder = initial_dag_builder
-
-            # Verify that the DAG builder is preserved
-            assert flow_manager._state.global_dag_builder is initial_dag_builder
-
-            # Test that it can be cleared and reset
-            flow_manager._state.global_dag_builder.clear()
-            assert flow_manager._state.global_dag_builder is not None
-
-        except Exception:  # noqa: S110
-            # If FlowManager requires complex setup, skip this test
-            pass
-
-    @pytest.mark.asyncio
-    async def test_flow_manager_clears_dag_builder_on_cancel(self) -> None:
-        """Test that FlowManager clears DAG builder reference when canceling a flow."""
-        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-
-        try:
-            # Create FlowManager instance with existing DAG builder
-            flow_manager = FlowManager(MagicMock(spec=EventManager))
-            mock_dag_builder = MagicMock(spec=DagBuilder)
-            flow_manager._state.global_dag_builder = mock_dag_builder
-
-            # Create mock control flow machine
-            mock_control_flow = MagicMock()
-            mock_control_flow.reset_machine = MagicMock()
-            mock_control_flow.context.flow_name = "test_flow"
-            flow_manager._state.global_control_flow_machine = mock_control_flow
-
-            # Create mock flow with no nodes to avoid async complexity in test
-            mock_flow = MagicMock()
-            mock_flow.nodes = {}
-
-            with (
-                patch.object(flow_manager, "check_for_existing_running_flow", return_value=True),
-                patch.object(flow_manager, "get_flow_by_name", return_value=mock_flow),
-            ):
-                # Cancel flow
-                await flow_manager.cancel_flow_run()
-
-                # Verify DAG builder reference is cleared
-                assert flow_manager._state.global_dag_builder is None
-
-        except Exception:  # noqa: S110
-            # If FlowManager requires complex setup, skip this test
-            pass
 
     def test_dag_builder_prevents_duplicate_node_addition_after_clear(self) -> None:
         """Test that DAG builder prevents duplicate node addition and allows re-addition after clear."""

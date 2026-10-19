@@ -374,7 +374,7 @@ class NodeManager(EngineScoped):
         # Get all connections for this node and update them.
         flow_name = workflow.nodes.parent_flow_name(old_name)
         flow = self.engine.flow_manager.get_flow_by_name(flow_name)
-        connections = self.engine.flow_manager.get_connections()
+        connections = workflow.flows.connections
         # Get all incoming and outgoing connections and update them.
         if old_name in connections.incoming_index:
             incoming_connections = connections.incoming_index[old_name]
@@ -1183,7 +1183,7 @@ class NodeManager(EngineScoped):
         )
 
     async def cancel_conditionally(
-        self, parent_flow: ControlFlow, parent_flow_name: str, node: BaseNode
+        self, workflow: WorkflowRuntime, parent_flow: ControlFlow, parent_flow_name: str, node: BaseNode
     ) -> _FlowCancelOutcome:
         """Cancel the running flow if deleting this node would take unfinished work away from it.
 
@@ -1198,6 +1198,7 @@ class NodeManager(EngineScoped):
         during a run was refused.
 
         Args:
+            workflow: The workflow the node is in.
             parent_flow: The control flow object that may need to be cancelled.
             parent_flow_name: The name of the parent flow for use in cancellation requests.
             node: The base node that is trying to be deleted.
@@ -1211,7 +1212,7 @@ class NodeManager(EngineScoped):
             This method also clears the flow queue regardless of whether cancellation occurred,
             to ensure the specified node is not processed in the future.
         """
-        if not self.engine.flow_manager.check_for_existing_running_flow():
+        if not self.engine.flow_manager.check_for_existing_running_flow(workflow):
             return _FlowCancelOutcome()
 
         entangled_node_name = self._find_entangled_live_node(node)
@@ -1369,14 +1370,14 @@ class NodeManager(EngineScoped):
                 details = f"Attempted to delete a Node '{node_name}'. Error: {err}"
                 return DeleteNodeResultFailure(result_details=details)
 
-            cancel_outcome = await self.cancel_conditionally(parent_flow, parent_flow_name, node)
+            cancel_outcome = await self.cancel_conditionally(workflow, parent_flow, parent_flow_name, node)
             if cancel_outcome.failure is not None:
                 return cancel_outcome.failure
 
             # The node is leaving, so the live DAG has to stop naming it: it is published to the
             # editor as an involved node, iterated on cancel, and checked before a node is allowed
             # to start. Harmless when the run was cancelled above, since teardown clears it anyway.
-            self.engine.flow_manager.global_dag_builder.remove_node(node_name)
+            workflow.flows.global_dag_builder.remove_node(node_name)
 
             # Call after_node_deleted hook for cleanup of a node, implemented by node author.
             try:
@@ -1698,7 +1699,7 @@ class NodeManager(EngineScoped):
             return result
 
         # Kinda gross, but let's do it
-        connection_mgr = self.engine.flow_manager.get_connections()
+        connection_mgr = workflow.flows.connections
         # get outgoing connections
         outgoing_connections_list = []
         if node_name in connection_mgr.outgoing_index:
@@ -1777,7 +1778,7 @@ class NodeManager(EngineScoped):
             return GetConnectionsForParameterResultFailure(result_details=details)
 
         # Get connections for this specific parameter
-        connection_mgr = self.engine.flow_manager.get_connections()
+        connection_mgr = workflow.flows.connections
 
         # Get outgoing connections for this parameter
         outgoing_connections_list = []
@@ -2208,7 +2209,7 @@ class NodeManager(EngineScoped):
                 node.remove_parameter_element(element)
             if isinstance(element, Parameter) and element.parent_container_name is not None:
                 # The list lost an item, so what reads it has to run again.
-                self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+                workflow.flows.connections.unresolve_future_nodes(node)
         else:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because element didn't exist."
 
@@ -2438,7 +2439,8 @@ class NodeManager(EngineScoped):
                             source_parameter_name=conn.source_parameter_name,
                             target_node_name=node_name,
                             target_parameter_name=request.parameter_name,
-                        )
+                        ),
+                        workflow,
                     )
                     if isinstance(delete_result, ResultPayloadFailure):
                         details = f"Failed to delete incompatible incoming connection from {conn.source_node_name}.{conn.source_parameter_name} to {node_name}.{request.parameter_name}: {delete_result}"
@@ -2456,7 +2458,8 @@ class NodeManager(EngineScoped):
                             source_parameter_name=request.parameter_name,
                             target_node_name=conn.target_node_name,
                             target_parameter_name=conn.target_parameter_name,
-                        )
+                        ),
+                        workflow,
                     )
                     if isinstance(delete_result, ResultPayloadFailure):
                         details = f"Failed to delete incompatible outgoing connection from {node_name}.{request.parameter_name} to {conn.target_node_name}.{conn.target_parameter_name}: {delete_result}"
@@ -2737,7 +2740,7 @@ class NodeManager(EngineScoped):
             and ParameterMode.PROPERTY in parameter.allowed_modes
         ):
             # Check if this parameter has any incoming connections
-            connections = self.engine.flow_manager.get_connections()
+            connections = workflow.flows.connections
             target_connections = connections.incoming_index.get(node_name)
             if target_connections is not None:
                 param_connections = target_connections.get(request.parameter_name)
@@ -2813,7 +2816,7 @@ class NodeManager(EngineScoped):
             return SetParameterValueResultFailure(result_details=details)
         if not request.initial_setup and modified:
             try:
-                self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+                workflow.flows.connections.unresolve_future_nodes(node)
             except Exception as err:
                 details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
                 return SetParameterValueResultFailure(result_details=details)
@@ -3091,7 +3094,9 @@ class NodeManager(EngineScoped):
 
         # Iterate through all nodes in this Flow (yes, this restriction still sucks)
         list_nodes_in_flow_request = ListNodesInFlowRequest(flow_name=flow_name)
-        list_nodes_in_flow_result = self.engine.flow_manager.on_list_nodes_in_flow_request(list_nodes_in_flow_request)
+        list_nodes_in_flow_result = self.engine.flow_manager.on_list_nodes_in_flow_request(
+            list_nodes_in_flow_request, workflow
+        )
         if not list_nodes_in_flow_result.succeeded():
             details = f"Attempted to get compatible parameters for '{node_name}.{request.parameter_name}'. Failed due to inability to list nodes in parent flow '{flow_name}'."
             return GetCompatibleParametersResultFailure(result_details=details)
@@ -3247,19 +3252,19 @@ class NodeManager(EngineScoped):
             self.engine.run_scheduler.raise_if_refused(workflow)
         except RunRefusedError as e:
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=str(e))
-        if flow_mgr.check_for_existing_running_flow() and not flow_mgr.global_single_node_resolution:
+        if flow_mgr.check_for_existing_running_flow(workflow) and not workflow.flows.global_single_node_resolution:
             # Behavior should also match if the flow running is a Control Flow, and not a singular node resolution.
             errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
             return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
 
         # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
-        if node.name in flow_mgr.global_dag_builder.node_to_reference:
+        if node.name in workflow.flows.global_dag_builder.node_to_reference:
             return ResolveNodeResultFailure(
                 validation_exceptions=[],
                 result_details=f"Node {node.name} is already executing. Cannot start execution.",
             )
         try:
-            self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+            workflow.flows.connections.unresolve_future_nodes(node)
         except Exception as e:
             details = f'Failed to mark future nodes dirty. Unable to kick off flow from "{node_name}": {e}'
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
@@ -3283,7 +3288,7 @@ class NodeManager(EngineScoped):
             details = f"Failed to resolve node '{node_name}'. Flow Validation Failed. Error: {e}"
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         try:
-            await self.engine.flow_manager.resolve_singular_node(flow, node, debug_mode=debug_mode)
+            await self.engine.flow_manager.resolve_singular_node(workflow, flow, node, debug_mode=debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
@@ -4642,7 +4647,7 @@ class NodeManager(EngineScoped):
                 details = f"Attempted to serialize a selection of Nodes. Failed to get the flow of node {node_name}. Cannot serialize connections for this node."
                 logger.warning(details)
                 continue
-            connections = self.engine.flow_manager.get_connections()
+            connections = workflow.flows.connections
             if node_name in connections.outgoing_index:
                 node_connections = [
                     connections.connections[connection_id]
@@ -4889,7 +4894,9 @@ class NodeManager(EngineScoped):
         # Remake duplicate connections of node (only for explicitly selected nodes, not children)
 
         NodeManager.remake_connections(
-            self, new_node_names=result.non_children_names, old_node_names=serialize_result.node_names_serialized
+            self,
+            new_node_names=result.non_children_names,
+            old_node_names=serialize_result.node_names_serialized,
         )
         return DuplicateSelectedNodesResultSuccess(
             result.node_names,
@@ -5309,7 +5316,7 @@ class NodeManager(EngineScoped):
         # Get all connections for this node
         flow_name = workflow.nodes.parent_flow_name(node_name)
         self.engine.flow_manager.get_flow_by_name(flow_name)
-        connections = self.engine.flow_manager.get_connections()
+        connections = workflow.flows.connections
 
         # Update connections that reference this parameter
         if node_name in connections.incoming_index:
@@ -6012,7 +6019,7 @@ class NodeManager(EngineScoped):
                 target_node_name=new_node_name,
                 target_parameter_name=incoming_connection.target_parameter_name,
             )
-            connection_result = self.engine.flow_manager.on_create_connection_request(connection_request)
+            connection_result = self.engine.flow_manager.on_create_connection_request(connection_request, workflow)
             if not isinstance(connection_result, CreateConnectionResultSuccess):
                 failed_incoming.append(incoming_connection)
 
@@ -6023,7 +6030,7 @@ class NodeManager(EngineScoped):
                 target_node_name=outgoing_connection.target_node_name,
                 target_parameter_name=outgoing_connection.target_parameter_name,
             )
-            connection_result = self.engine.flow_manager.on_create_connection_request(connection_request)
+            connection_result = self.engine.flow_manager.on_create_connection_request(connection_request, workflow)
             if not isinstance(connection_result, CreateConnectionResultSuccess):
                 failed_outgoing.append(outgoing_connection)
 
@@ -6132,7 +6139,7 @@ class NodeManager(EngineScoped):
 
         # Mark the node and what follows it as unresolved since the list's order changed
         node.state = NodeResolutionState.UNRESOLVED
-        self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+        workflow.flows.connections.unresolve_future_nodes(node)
 
         # Manually add the reordered children structure to _changes so the event includes it
         parameter_list._changes["children"] = [child.to_dict() for child in parameter_list._children]
@@ -6157,5 +6164,5 @@ class NodeManager(EngineScoped):
                 result_details=f"Attempted to unresolve Node '{request.node_name}'. Node is currently RESOLVING."
             )
         node.make_node_unresolved(current_states_to_trigger_change_event={NodeResolutionState.RESOLVED})
-        self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+        workflow.flows.connections.unresolve_future_nodes(node)
         return UnresolveNodeResultSuccess(result_details=f"Node '{request.node_name}' marked as unresolved.")

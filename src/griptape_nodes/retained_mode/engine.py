@@ -518,7 +518,7 @@ class Engine:
     def is_workflow_running(self, runtime: WorkflowRuntime) -> bool:
         """Whether `runtime`'s run is in progress, by its own execution state."""
         with self.bind_workflow(runtime):
-            return self._flow_manager.check_for_existing_running_flow()
+            return self._flow_manager.check_for_existing_running_flow(runtime)
 
     def describe_open_workflows(self) -> dict[str, Any]:
         """Describe the open workflows for a heartbeat or discovery record, as the heartbeat's fields.
@@ -839,7 +839,7 @@ class Engine:
         # Cancel any running flow so the delete path doesn't race with execution.
         flow_manager = self._flow_manager
         for flow_name in self._object_manager.get_filtered_subset(type=ControlFlow):
-            if flow_manager.check_for_existing_running_flow():
+            if flow_manager.check_for_existing_running_flow(workflow):
                 self.handle_request(CancelFlowRequest(flow_name=flow_name))
 
         # Delete all orphan (top-level) flows. We can't rely on
@@ -852,7 +852,7 @@ class Engine:
             flows = self._object_manager.get_filtered_subset(type=ControlFlow)
             found_orphan = False
             for flow_name in flows:
-                parent = flow_manager.get_parent_flow(flow_name)
+                parent = workflow.flows.parent_flow_name(flow_name)
                 if not parent:
                     self.handle_request(DeleteFlowRequest(flow_name=flow_name))
                     found_orphan = True
