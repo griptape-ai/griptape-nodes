@@ -12,6 +12,7 @@ import uuid
 
 from griptape_nodes.retained_mode.runtime.context import WorkflowContextStack
 from griptape_nodes.retained_mode.runtime.flows import WorkflowFlows
+from griptape_nodes.retained_mode.runtime.loading import WorkflowLoading
 from griptape_nodes.retained_mode.runtime.nodes import WorkflowNodes
 from griptape_nodes.retained_mode.runtime.objects import WorkflowObjects
 from griptape_nodes.retained_mode.runtime.variables import WorkflowVariables
@@ -41,3 +42,4 @@ class WorkflowRuntime:
         self.objects = WorkflowObjects()
         self.nodes = WorkflowNodes()
         self.flows = WorkflowFlows()
+        self.loading = WorkflowLoading()

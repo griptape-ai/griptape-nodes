@@ -1188,13 +1188,12 @@ class EventManager(EngineScoped):
     ) -> EventResultSuccess | EventResultFailure:
         """Core logic for handling requests, shared between sync and async methods."""
         operation_depth_mgr = self.engine.operation_depth_manager
-        workflow_mgr = self.engine.workflow_manager
+        # The workflow the request acted on, bound by dispatch around this call.
+        bound = bound_workflow.get()
 
         with operation_depth_mgr as depth_manager:
-            # Now see if the WorkflowManager was asking us to squelch altered_workflow_state commands
-            # This prevents situations like loading a workflow (which naturally alters the workflow state)
-            # from coming in and immediately being flagged as being dirty.
-            if workflow_mgr.should_squelch_workflow_altered():
+            # Loading a workflow alters it request by request, and none of that should mark it unsaved.
+            if isinstance(bound, WorkflowRuntime) and bound.loading.is_squelching_altered():
                 callback_result.altered_workflow_state = False
 
             # Override failure log level if requested, except for a synthesized failure:

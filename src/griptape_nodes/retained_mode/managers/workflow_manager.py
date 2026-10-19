@@ -98,7 +98,6 @@ from griptape_nodes.utils.file_utils import find_files_recursive
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from types import TracebackType
 
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -156,53 +155,9 @@ class WorkflowManager(EngineScoped):
 
     _workflow_file_path_to_info: dict[str, WorkflowInfo]
 
-    # Track how many contexts we have that intend to squelch (set to False) altered_workflow_state event values.
-    class WorkflowSquelchContext:
-        """Context manager to squelch workflow altered events."""
-
-        def __init__(self, manager: WorkflowManager):
-            self.manager = manager
-
-        def __enter__(self) -> None:
-            self.manager._squelch_workflow_altered_count += 1
-
-        def __exit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc_value: BaseException | None,
-            exc_traceback: TracebackType | None,
-        ) -> None:
-            self.manager._squelch_workflow_altered_count -= 1
-
-    _squelch_workflow_altered_count: int = 0
-
-    # Track referenced workflow import context stack
-    class ReferencedWorkflowContext:
-        """Context manager for tracking workflow import operations."""
-
-        def __init__(self, manager: WorkflowManager, workflow_name: str):
-            self.manager = manager
-            self.workflow_name = workflow_name
-
-        def __enter__(self) -> WorkflowManager.ReferencedWorkflowContext:
-            self.manager._referenced_workflow_stack.append(self.workflow_name)
-            return self
-
-        def __exit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc_value: BaseException | None,
-            exc_traceback: TracebackType | None,
-        ) -> None:
-            self.manager._referenced_workflow_stack.pop()
-
-    _referenced_workflow_stack: list[str] = field(default_factory=list)
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         self._workflow_file_path_to_info = {}
-        self._squelch_workflow_altered_count = 0
-        self._referenced_workflow_stack = []
         # Initialize as set: before refresh_workflow_registry has run, the registry
         # is simply empty. Handlers invoked during library load (e.g. from a node
         # __init__ that issues a workflow query) should return an empty result
@@ -221,18 +176,6 @@ class WorkflowManager(EngineScoped):
         self.publishing = WorkflowPublishing(event_manager, engine=engine)
         self.referenced_import = ReferencedWorkflowImport(event_manager, engine=engine)
         event_manager.register_request_handlers(self)
-
-    def has_current_referenced_workflow(self) -> bool:
-        """Check if there is currently a referenced workflow context active."""
-        return len(self._referenced_workflow_stack) > 0
-
-    def get_current_referenced_workflow(self) -> str:
-        """Get the current workflow source path from the context stack.
-
-        Raises:
-            IndexError: If no referenced workflow context is active.
-        """
-        return self._referenced_workflow_stack[-1]
 
     async def refresh_workflow_registry(self, workflows_to_register: list[str] | None = None) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
@@ -408,17 +351,6 @@ class WorkflowManager(EngineScoped):
     async def wait_for_workflows_loaded(self) -> None:
         """Wait until any registry refresh in progress has finished."""
         await self._workflows_loading_complete.wait()
-
-    def referenced_workflow(self, workflow_name: str) -> ReferencedWorkflowContext:
-        """Track `workflow_name` as the referenced workflow being imported for the `with` block."""
-        return self.ReferencedWorkflowContext(self, workflow_name)
-
-    def squelch_workflow_altered(self) -> WorkflowSquelchContext:
-        """Suppress workflow-altered events for the duration of the `with` block."""
-        return self.WorkflowSquelchContext(self)
-
-    def should_squelch_workflow_altered(self) -> bool:
-        return self._squelch_workflow_altered_count > 0
 
     def persist_external_workflow_registration(self, full_path: str) -> None:
         """Persist an out-of-workspace workflow path to global config so it survives restarts.

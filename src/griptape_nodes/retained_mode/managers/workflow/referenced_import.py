@@ -132,7 +132,7 @@ class ReferencedWorkflowImport(EngineScoped):
         workflow_manager = self.engine.workflow_manager
         with self.engine.context_manager.flow(flow_name):
             if request.track_as_referenced:
-                with workflow_manager.referenced_workflow(request.workflow_name):
+                with workflow.loading.importing_referenced_workflow(request.workflow_name):
                     workflow_result = await workflow_manager.runner.run_workflow(workflow_file_path)
             else:
                 workflow_result = await workflow_manager.runner.run_workflow(workflow_file_path)

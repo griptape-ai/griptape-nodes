@@ -658,14 +658,13 @@ class FlowManager(EngineScoped):
         # Check if we're creating this flow within a referenced workflow context
         # This will inform the engine to maintain a reference to the workflow
         # when serializing it. It may inform the editor to render it differently.
-        workflow_manager = self.engine.workflow_manager
         flow = ControlFlow(name=final_flow_name, engine=self.engine, metadata=request.metadata)
         self.engine.object_manager.add_object_by_name(workflow, name=final_flow_name, obj=flow)
         workflow.flows.name_to_parent_name[final_flow_name] = parent_name
 
         # Track referenced workflow if this flow was created within a referenced workflow context
-        if workflow_manager.has_current_referenced_workflow():
-            referenced_workflow_name = workflow_manager.get_current_referenced_workflow()
+        referenced_workflow_name = workflow.loading.referenced_workflow_being_imported()
+        if referenced_workflow_name is not None:
             workflow.flows.flow_to_referenced_workflow_name[flow] = referenced_workflow_name
 
         # See if we need to push it as the current context.

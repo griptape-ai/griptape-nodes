@@ -314,6 +314,38 @@ class TestWorkflowArgument:
         assert isinstance(in_b, GetVariableValueResultFailure), in_b
 
 
+class TestLoading:
+    def test_a_load_in_one_workflow_leaves_edits_in_another_marked_altered(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        b = _open_new_workflow_with_note(engine, "NoteB")
+
+        with _runtime(engine, a.workflow_id).loading.squelch_altered():
+            in_a = engine.handle_request(
+                CreateVariableRequest(name="v", type="str", is_global=True), workflow_id=a.workflow_id
+            )
+            in_b = engine.handle_request(
+                CreateVariableRequest(name="v", type="str", is_global=True), workflow_id=b.workflow_id
+            )
+
+        assert isinstance(in_a, CreateVariableResultSuccess), in_a
+        assert isinstance(in_b, CreateVariableResultSuccess), in_b
+        assert in_a.altered_workflow_state is False
+        assert in_b.altered_workflow_state is True
+
+    def test_flows_made_while_importing_are_tagged_only_in_the_importing_workflow(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        b = _open_new_workflow_with_note(engine, "NoteB")
+
+        with _runtime(engine, a.workflow_id).loading.importing_referenced_workflow("imported"):
+            engine.handle_request(CreateFlowRequest(flow_name="InA", parent_flow_name=None), workflow_id=a.workflow_id)
+            engine.handle_request(CreateFlowRequest(flow_name="InB", parent_flow_name=None), workflow_id=b.workflow_id)
+
+        tagged_a = _runtime(engine, a.workflow_id).flows.flow_to_referenced_workflow_name
+        tagged_b = _runtime(engine, b.workflow_id).flows.flow_to_referenced_workflow_name
+        assert [flow.name for flow in tagged_a] == ["InA"]
+        assert tagged_b == {}
+
+
 class TestRequestTargeting:
     def test_a_request_acts_on_the_workflow_it_names(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")

@@ -171,7 +171,7 @@ class OpenWorkflowsManager(EngineScoped):
         for record in suspended:
             if record.runtime not in self.engine.workflow_runtimes:
                 continue
-            with self.engine.bind_workflow(record.runtime), self.engine.workflow_manager.squelch_workflow_altered():
+            with self.engine.bind_workflow(record.runtime), record.runtime.loading.squelch_altered():
                 failure = await self._rebuild_current_workflow(record)
             if failure is not None:
                 failures.append(WorkflowRebuildFailure(workflow_name=record.workflow_name, details=failure))

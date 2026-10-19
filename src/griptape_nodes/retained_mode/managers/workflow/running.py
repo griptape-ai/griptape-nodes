@@ -149,7 +149,7 @@ class WorkflowRunner(EngineScoped):
         self, request: RunWorkflowFromScratchRequest, workflow: WorkflowRuntime
     ) -> ResultPayload:
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it into a blank slate.
-        with self.engine.workflow_manager.squelch_workflow_altered():
+        with workflow.loading.squelch_altered():
             # Check if file path exists
             relative_file_path = request.file_path
             complete_file_path = self.engine.workflow_registry.get_complete_file_path(
@@ -244,7 +244,7 @@ class WorkflowRunner(EngineScoped):
             context_warning = f"Started a new workflow '{request.workflow_name}' but a workflow '{workflow.context.get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
 
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it.
-        with self.engine.workflow_manager.squelch_workflow_altered():
+        with workflow.loading.squelch_altered():
             if request.run_with_clean_slate:
                 # Start with a clean slate. Other open workflows are left alone.
                 clear_failure = await self.engine.object_manager.clear_workflow(workflow)
