@@ -6,7 +6,7 @@ import importlib.util
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.workflow_node import (
@@ -29,9 +29,12 @@ from griptape_nodes.node_library.library_registry import (
 )
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadataError, read_workflow_metadata
 from griptape_nodes.retained_mode.engine import EngineScoped
+from griptape_nodes.retained_mode.events.base_events import AppPayload, ExecutionPayload
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     AfterLibraryCallbackProblem,
+    AppEventListenerRegistrationProblem,
     BeforeLibraryCallbackProblem,
+    ExecutionEventListenerRegistrationProblem,
     NodeClassNotBaseNodeProblem,
     NodeClassNotFoundProblem,
     NodeModuleImportProblem,
@@ -595,6 +598,32 @@ class LibraryModuleLoading(EngineScoped):
                     err,
                 )
 
+        if advanced_library:
+            self._register_event_listeners(
+                library_name=library_data.name,
+                library_info=library_info,
+                event_family="execution",
+                example_event_type_name="NodeFinishProcessEvent",
+                payload_base_type=ExecutionPayload,
+                getter_name="get_execution_event_listeners",
+                get_listeners=advanced_library.get_execution_event_listeners,
+                add_listener=self.engine.event_manager.add_listener_to_execution_event,
+                registered_listeners=library._registered_execution_event_listeners,
+                problem_type=ExecutionEventListenerRegistrationProblem,
+            )
+            self._register_event_listeners(
+                library_name=library_data.name,
+                library_info=library_info,
+                event_family="app",
+                example_event_type_name="ConfigChanged",
+                payload_base_type=AppPayload,
+                getter_name="get_app_event_listeners",
+                get_listeners=advanced_library.get_app_event_listeners,
+                add_listener=self.engine.event_manager.add_listener_to_app_event,
+                registered_listeners=library._registered_app_event_listeners,
+                problem_type=AppEventListenerRegistrationProblem,
+            )
+
         # Update library_info fitness based on load successes and problem count
         if not any_nodes_loaded_successfully:
             library_info.fitness = LibraryFitness.UNUSABLE
@@ -641,6 +670,66 @@ class LibraryModuleLoading(EngineScoped):
             )
 
         return node_class
+
+    def _register_event_listeners(  # noqa: PLR0913
+        self,
+        *,
+        library_name: str,
+        library_info: LibraryInfo,
+        event_family: str,
+        example_event_type_name: str,
+        payload_base_type: type,
+        getter_name: str,
+        get_listeners: Callable[[], Sequence[tuple[type, Callable]]],
+        add_listener: Callable[[Any, Any], None],
+        registered_listeners: list[tuple[type, Callable]],
+        problem_type: type[ExecutionEventListenerRegistrationProblem | AppEventListenerRegistrationProblem],
+    ) -> None:
+        """Register the execution or app event listeners a library declares, tracking each for unload.
+
+        A bad entry is recorded as a problem and skips the rest of the list; the listeners
+        registered before it stay registered and tracked, so unloading still removes them.
+        """
+        try:
+            listeners = get_listeners()
+            for event_type, callback in listeners:
+                # Listeners match on the exact payload type, so a key from the wrong event family
+                # would register cleanly and then never fire. Fail loudly instead.
+                if not isinstance(event_type, type) or not issubclass(event_type, payload_base_type):
+                    msg = (
+                        f"Attempted to register an {event_family} event listener from library "
+                        f"'{library_name}'. Failed because '{event_type}' is not an {event_family} event "
+                        f"type. Each entry from {getter_name}() must pair an {event_family} event type, "
+                        f"such as {example_event_type_name}, with a function to run."
+                    )
+                    raise TypeError(msg)  # noqa: TRY301
+                if not callable(callback):
+                    msg = (
+                        f"Attempted to register an {event_family} event listener for '{event_type.__name__}' "
+                        f"from library '{library_name}'. Failed because the listener is not something that "
+                        f"can be called. Each entry from {getter_name}() must pair an {event_family} event "
+                        f"type with a function to run."
+                    )
+                    raise TypeError(msg)  # noqa: TRY301
+                # add_listener_to_execution_event rejects an async callback with a TypeError that
+                # already explains why.
+                add_listener(event_type, callback)
+                registered_listeners.append((event_type, callback))
+            if listeners:
+                logger.debug(
+                    "Registered %d %s event listener(s) for library '%s'",
+                    len(listeners),
+                    event_family,
+                    library_name,
+                )
+        except Exception as err:
+            library_info.problems.append(problem_type(error_message=str(err)))
+            logger.error(
+                "Failed to register %s event listeners for library '%s': %s",
+                event_family,
+                library_name,
+                err,
+            )
 
     def _create_stable_namespace(self, library_name: str, file_path: Path) -> str:
         """Create a stable namespace for a dynamic module.

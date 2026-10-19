@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Required, TypedDict
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -460,16 +461,71 @@ class NodeUnresolvedEvent(ExecutionPayload):
     node_name: str
 
 
+class NodeProcessOutcome(StrEnum):
+    """How a node's run ended, as reported on `NodeFinishProcessEvent`."""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 @dataclass
 @PayloadRegistry.register
 class NodeStartProcessEvent(ExecutionPayload):
+    """A node is about to run. Sent before the node does any work.
+
+    Sent once for every node the engine runs: regular nodes, nodes that run in a worker, group and
+    loop nodes, and the nodes inside them. A loop runs its body once per iteration, so a body node
+    sends one of these for each iteration.
+
+    Args:
+        node_name: The node on the canvas. A loop body node is named as it is on the canvas on
+            every iteration.
+        node_type: The node's class name.
+        specific_library_name: The library the node type came from.
+        flow_name: The flow the node is in.
+        execution_id: Identifies this run of the node. The `NodeFinishProcessEvent` for the same run
+            carries the same value. Opaque: compare it, but don't parse it.
+        parent_execution_id: The `execution_id` of the nearest run this one is part of, such as the
+            group or loop node whose body this node is in, or None at the top of a run.
+    """
+
     node_name: str
+    node_type: str | None = None
+    specific_library_name: str | None = None
+    flow_name: str | None = None
+    execution_id: str | None = None
+    parent_execution_id: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class NodeFinishProcessEvent(ExecutionPayload):
+    """A node stopped running, whether it succeeded, failed, or was cancelled.
+
+    Sent for every run that sent a `NodeStartProcessEvent`, after the node's work is over.
+
+    Args:
+        node_name: The node on the canvas, as on the matching `NodeStartProcessEvent`.
+        node_type: The node's class name.
+        specific_library_name: The library the node type came from.
+        flow_name: The flow the node is in.
+        execution_id: The same value as on the matching `NodeStartProcessEvent`.
+        parent_execution_id: The same value as on the matching `NodeStartProcessEvent`.
+        outcome: How the run ended. Optional so events from older engines still parse.
+        error_message: When the run failed, the failure as one flattened string.
+        error: When the run failed, the same failure in parts, as on `NodeErrorEvent`.
+    """
+
     node_name: str
+    node_type: str | None = None
+    specific_library_name: str | None = None
+    flow_name: str | None = None
+    execution_id: str | None = None
+    parent_execution_id: str | None = None
+    outcome: NodeProcessOutcome | None = None
+    error_message: str | None = None
+    error: NodeErrorDetails | None = None
 
 
 @dataclass

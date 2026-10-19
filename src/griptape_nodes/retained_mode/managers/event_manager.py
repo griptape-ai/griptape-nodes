@@ -185,6 +185,9 @@ class EventManager(EngineScoped):
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
+        # Libraries subscribe while they load, on a worker thread, while a broadcast may be
+        # iterating a set on the loop's thread, so guard the dict and snapshot a set before iterating.
+        self._app_event_listeners_lock = threading.Lock()
         # Dictionary to store ALL SUBSCRIBERS to execution events (the live feed of
         # ExecutionPayloads emitted during a run, e.g. AgentStreamEvent). Lets a node
         # tap the feed while it runs and react (e.g. stream tokens to a parameter).
@@ -1299,12 +1302,13 @@ class EventManager(EngineScoped):
         lives in, and a peer's payload describes the peer, so acting on it would corrupt the
         receiver. A worker that has something to tell the orchestrator sends it a request.
         """
-        listener_set = self._app_event_listeners.get(app_event_type)
-        if listener_set is None:
-            listener_set = set()
-            self._app_event_listeners[app_event_type] = listener_set
+        with self._app_event_listeners_lock:
+            listener_set = self._app_event_listeners.get(app_event_type)
+            if listener_set is None:
+                listener_set = set()
+                self._app_event_listeners[app_event_type] = listener_set
 
-        listener_set.add(callback)
+            listener_set.add(callback)
 
     def add_listener_to_execution_event(self, execution_event_type: type[EP], callback: Callable[[EP], None]) -> None:
         """Subscribe to a type of execution event on the live event feed.
@@ -1333,6 +1337,12 @@ class EventManager(EngineScoped):
         ``remove_listener_for_execution_event``). The agent payloads are the exception:
         they carry the ``thread_id`` of their conversation, so a subscriber can filter
         on that instead.
+
+        A library should return its listeners from
+        ``AdvancedNodeLibrary.get_execution_event_listeners()`` instead of calling this, so the
+        engine removes them when the library unloads.
+
+        Nothing is delivered while the event queue has not been initialized.
         """
         callback_call = type(callback).__call__
         if inspect.iscoroutinefunction(callback) or inspect.iscoroutinefunction(callback_call):
@@ -1398,8 +1408,23 @@ class EventManager(EngineScoped):
     def remove_listener_for_app_event(
         self, app_event_type: type[AP], callback: Callable[[AP], None] | Callable[[AP], Awaitable[None]]
     ) -> None:
-        listener_set = self._app_event_listeners[app_event_type]
-        listener_set.remove(callback)
+        """Unsubscribe a callback previously registered with ``add_listener_to_app_event``.
+
+        Removing a callback that is not subscribed does nothing, so a library that listed the same
+        listener twice still unloads cleanly.
+        """
+        with self._app_event_listeners_lock:
+            listener_set = self._app_event_listeners.get(app_event_type)
+            if listener_set is None:
+                return
+            listener_set.discard(callback)
+            if not listener_set:
+                del self._app_event_listeners[app_event_type]
+
+    def _app_event_listeners_for(self, app_event_type: type[AppPayload]) -> list[Callable]:
+        """A snapshot of the listeners for an app event type, safe to iterate while others subscribe."""
+        with self._app_event_listeners_lock:
+            return list(self._app_event_listeners.get(app_event_type, ()))
 
     def broadcast_app_event(self, app_event: AP) -> None:
         """Broadcast an app event to all registered listeners (sync version).
@@ -1407,17 +1432,15 @@ class EventManager(EngineScoped):
         Args:
             app_event: The app event to broadcast
         """
-        app_event_type = type(app_event)
-        if app_event_type in self._app_event_listeners:
-            listener_set = self._app_event_listeners[app_event_type]
-
+        listeners = self._app_event_listeners_for(type(app_event))
+        if listeners:
             # Support async callbacks for sync method. See the matching comment
             # in handle_request for the ThreadRunner rationale: listeners here
             # are user-supplied callbacks that do not share primitives with the
             # caller's loop, so the side-loop path is safe.
             async def _broadcast_async() -> None:
                 async with asyncio.TaskGroup() as tg:
-                    for listener_callback in listener_set:
+                    for listener_callback in listeners:
                         tg.create_task(self._call_app_event_listener(listener_callback, app_event))
 
             if _running_loop() is not None:
@@ -1432,12 +1455,10 @@ class EventManager(EngineScoped):
         Args:
             app_event: The app event to broadcast
         """
-        app_event_type = type(app_event)
-        if app_event_type in self._app_event_listeners:
-            listener_set = self._app_event_listeners[app_event_type]
-
+        listeners = self._app_event_listeners_for(type(app_event))
+        if listeners:
             async with asyncio.TaskGroup() as tg:
-                for listener_callback in listener_set:
+                for listener_callback in listeners:
                     tg.create_task(self._call_app_event_listener(listener_callback, app_event))
 
     async def _call_app_event_listener(
