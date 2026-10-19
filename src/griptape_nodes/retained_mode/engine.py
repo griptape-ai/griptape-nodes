@@ -44,14 +44,14 @@ from griptape_nodes.retained_mode.events.flow_events import (
 )
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.run_scheduler import RunScheduler
-from griptape_nodes.retained_mode.workflow_runtime import (
+from griptape_nodes.retained_mode.runtime.binding import (
     NO_WORKFLOW,
     NoWorkflow,
     WorkflowNotNamedError,
     WorkflowNotOpenError,
-    WorkflowRuntime,
     bound_workflow,
 )
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:

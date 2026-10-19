@@ -16,7 +16,7 @@ from griptape_nodes.retained_mode.events.worker_events import WorkerGoneError
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.serialization.values import encode_value
 
 _LIBRARY_REGISTRY_CREATE_NODE_PATH = "griptape_nodes.retained_mode.managers.node_manager.LibraryRegistry.create_node"

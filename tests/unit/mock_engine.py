@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock
 
 from griptape_nodes.retained_mode.run_scheduler import RunScheduler
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 def mock_engine_with_workflow_runtime() -> MagicMock:

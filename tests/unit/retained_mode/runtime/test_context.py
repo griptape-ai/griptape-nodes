@@ -4,18 +4,18 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from griptape_nodes.retained_mode.context_types import (
-    EmptyStackError,
-    NoActiveFlowError,
-    NoActiveWorkflowError,
-    WorkflowContextStack,
-)
 from griptape_nodes.retained_mode.engine import Engine
 from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
+)
+from griptape_nodes.retained_mode.runtime.context import (
+    EmptyStackError,
+    NoActiveFlowError,
+    NoActiveWorkflowError,
+    WorkflowContextStack,
 )
 
 

@@ -60,15 +60,15 @@ from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 from griptape_nodes.retained_mode.request_handlers import RequestScope
 from griptape_nodes.retained_mode.run_scheduler import RunRefusedError, current_run
+from griptape_nodes.retained_mode.runtime.binding import NO_WORKFLOW, WorkflowNotNamedError, bound_workflow
 from griptape_nodes.retained_mode.variable_types import VariableScope
-from griptape_nodes.retained_mode.workflow_runtime import NO_WORKFLOW, WorkflowNotNamedError, bound_workflow
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
     from pathlib import Path
 
     from griptape_nodes.retained_mode.engine import Engine
-    from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 def _open_new_workflow_with_note(engine: Engine, note_name: str) -> OpenWorkflowResultSuccess:

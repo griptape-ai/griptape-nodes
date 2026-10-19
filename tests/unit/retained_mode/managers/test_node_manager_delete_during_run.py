@@ -99,7 +99,7 @@ def test_deleting_a_node_the_run_is_gated_on_is_entangled() -> None:
     never coming, so it counts as entangled even though the candidate is not in the DAG yet and the
     deleted node has no connection to it.
     """
-    dag_builder = DagBuilder(MagicMock())
+    dag_builder = DagBuilder()
     dag_builder.start_node_candidates["GatedDataNode"] = {"default": {"Boundary"}}
 
     node_manager = _node_manager(_engine(dag_builder))
@@ -109,7 +109,7 @@ def test_deleting_a_node_the_run_is_gated_on_is_entangled() -> None:
 
 def test_deleting_a_node_nothing_is_gated_on_is_free() -> None:
     """The same shape with a different name is not entangled -- the rule has to discriminate."""
-    dag_builder = DagBuilder(MagicMock())
+    dag_builder = DagBuilder()
     dag_builder.start_node_candidates["GatedDataNode"] = {"default": {"Boundary"}}
 
     node_manager = _node_manager(_engine(dag_builder))
@@ -125,7 +125,7 @@ def test_a_consumer_the_run_has_already_gone_past_does_not_hold_the_node() -> No
     would be reading the topology instead of the run -- which would make every node with a consumer
     anywhere downstream permanently undeletable.
     """
-    dag_builder = DagBuilder(MagicMock())
+    dag_builder = DagBuilder()
     dag_builder.node_to_reference["Finished"] = DagNode(node_reference=_node("Finished"), node_state=NodeState.DONE)
 
     engine = _engine(dag_builder, outgoing=_outgoing_to(_node("AbsentConsumer")))
@@ -143,7 +143,7 @@ def test_an_errored_node_whose_consumer_never_collected_is_still_entangled() -> 
     collection happens at the consumer's own dispatch. Deleting the supplier now would let that
     consumer run on its parameter default.
     """
-    dag_builder = DagBuilder(MagicMock())
+    dag_builder = DagBuilder()
     deleted = _node("Errored")
     consumer = _node("Consumer")
     dag_builder.node_to_reference["Errored"] = DagNode(node_reference=deleted, node_state=NodeState.ERRORED)
@@ -174,7 +174,7 @@ def test_a_consumer_beyond_a_control_loop_is_found_without_the_walk_hanging() ->
     _connect_control(connections, tail, "exec_out", consumer)
     _connect_data(connections, deleted, consumer)
 
-    dag_builder = DagBuilder(MagicMock())
+    dag_builder = DagBuilder()
     dag_builder.node_to_reference["Head"] = DagNode(node_reference=head, node_state=NodeState.PROCESSING)
 
     engine = _engine(dag_builder)
@@ -201,7 +201,7 @@ def test_a_consumer_the_control_graph_never_reaches_is_free() -> None:
     _connect_control(connections, body, LOOP_BACK_PARAMETER, head)
     _connect_data(connections, deleted, stranded)
 
-    dag_builder = DagBuilder(MagicMock())
+    dag_builder = DagBuilder()
     dag_builder.node_to_reference["Head"] = DagNode(node_reference=head, node_state=NodeState.PROCESSING)
 
     engine = _engine(dag_builder)
@@ -241,7 +241,7 @@ def _queued_sibling_scene(*, via_data_hop: bool) -> _QueuedSiblingScene:
     else:
         _connect_data(connections, loader, fast)
 
-    dag_builder = DagBuilder(MagicMock())
+    dag_builder = DagBuilder()
     dag_builder.node_to_reference["Start"] = DagNode(node_reference=start, node_state=NodeState.DONE)
     dag_builder.node_to_reference["Fast"] = DagNode(node_reference=fast, node_state=NodeState.QUEUED)
     dag_builder.node_to_reference["Slow"] = DagNode(node_reference=slow, node_state=NodeState.PROCESSING)
@@ -296,7 +296,7 @@ def test_the_walk_stops_at_a_consumer_that_has_already_collected() -> None:
     _connect_data(connections, fast, beyond)
     _connect_control(connections, slow, "exec_out", beyond)
 
-    dag_builder = DagBuilder(MagicMock())
+    dag_builder = DagBuilder()
     dag_builder.node_to_reference["Fast"] = DagNode(node_reference=fast, node_state=NodeState.PROCESSING)
     dag_builder.node_to_reference["Slow"] = DagNode(node_reference=slow, node_state=NodeState.PROCESSING)
 
@@ -315,7 +315,7 @@ async def test_a_delete_that_cannot_cancel_the_run_fails_rather_than_proceeding(
     is the wedge this whole policy exists to avoid -- so the delete is refused, and says why in terms
     of the workflow rather than the machinery.
     """
-    dag_builder = DagBuilder(MagicMock())
+    dag_builder = DagBuilder()
     dag_builder.node_to_reference["Runner"] = DagNode(node_reference=_node("Runner"), node_state=NodeState.PROCESSING)
 
     engine = _engine(dag_builder)

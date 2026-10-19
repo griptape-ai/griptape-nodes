@@ -30,6 +30,9 @@ class RequestScope(StrEnum):
 
     A handler that takes a `workflow` parameter declares its scope by its signature: WORKFLOW, or
     OPTIONAL_WORKFLOW when the parameter defaults to None. Dispatch passes it the workflow it resolved.
+    A handler that acts on a workflow only through code it calls, such as a nested request or macro
+    resolution, passes `scope=` to @handles instead. An owner's `request_scope` default may only be
+    HOST.
     """
 
     HOST = "host"

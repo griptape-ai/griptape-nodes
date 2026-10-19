@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.workflow_events import (
@@ -13,66 +13,45 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SetVariableSubstitutionEnabledResultNotAlteredSuccess,
     SetVariableSubstitutionEnabledResultSuccess,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 logger = logging.getLogger("griptape_nodes")
 
 
 class VariableSubstitution(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
-        # Missing keys enable substitution. This cannot live in WorkflowMetadata because
-        # build_workflow() must set it during both editor loads and direct script execution.
-        self._enabled: dict[str, bool] = {}
         event_manager.register_request_handlers(self)
 
-    def drop(self, workflow_key: str) -> None:
-        """Remove the substitution flag when a workflow is permanently deleted."""
-        self._enabled.pop(workflow_key, None)
-
-    def rekey(self, old_key: str, new_key: str) -> None:
-        """Transfer the substitution flag when a workflow registry key changes.
-
-        Only moves the entry when a flag was explicitly set; workflows that defaulted
-        to True (no dict entry) stay that way under the new key without polluting the dict.
-        """
-        if old_key in self._enabled:
-            self._enabled[new_key] = self._enabled.pop(old_key)
-
     def is_enabled(self) -> bool:
-        """Return whether variable substitution is enabled for the current workflow.
+        """Whether variable substitution is on for the current workflow. On when no workflow is open.
 
-        Reads from the in-memory dict populated by SetVariableSubstitutionEnabledRequest.
-        Defaults to True so existing workflows that have never set the flag get
-        substitution without any migration.
+        Node code reads it through `VariableResolver`, which has no runtime to hand.
         """
-        context_manager = self.engine.context_manager
-        if not context_manager.has_current_workflow():
+        workflow = self.engine.current_workflow_or_none()
+        if workflow is None:
             return True
-        workflow_name = context_manager.get_current_workflow_name()
-        # Return the stored value, or True if this workflow has never set the flag.
-        return self._enabled.get(workflow_name, True)
+        return workflow.variables.substitution_enabled
 
     @handles(GetVariableSubstitutionEnabledRequest)
     def on_get_variable_substitution_enabled_request(
         self,
         request: GetVariableSubstitutionEnabledRequest,  # noqa: ARG002
+        workflow: WorkflowRuntime,
     ) -> ResultPayload:
-        """Return whether variable substitution is enabled for the current workflow."""
-        context_manager = self.engine.context_manager
-        if not context_manager.has_current_workflow():
+        """Return whether variable substitution is enabled for the workflow."""
+        if not workflow.context.has_current_workflow():
             return GetVariableSubstitutionEnabledResultFailure(
                 result_details="Attempted to get variable substitution enabled. Failed because no workflow is active."
             )
-        enabled = self.is_enabled()
+        enabled = workflow.variables.substitution_enabled
         return GetVariableSubstitutionEnabledResultSuccess(
             result_details=f"Variable substitution is {'enabled' if enabled else 'disabled'} for the current workflow.",
             enabled=enabled,
@@ -80,22 +59,20 @@ class VariableSubstitution(EngineScoped):
 
     @handles(SetVariableSubstitutionEnabledRequest)
     def on_set_variable_substitution_enabled_request(
-        self, request: SetVariableSubstitutionEnabledRequest
+        self, request: SetVariableSubstitutionEnabledRequest, workflow: WorkflowRuntime
     ) -> ResultPayload:
-        """Enable or disable variable substitution for the current workflow.
+        """Enable or disable variable substitution for the workflow.
 
-        Stores the flag in memory keyed by the current workflow name. When the
-        workflow is saved, the code generator bakes a SetVariableSubstitutionEnabledRequest
-        call into build_workflow() so the flag is restored on every subsequent load,
-        including direct script execution.
+        Held by the open workflow. When the workflow is saved, the code generator bakes a
+        SetVariableSubstitutionEnabledRequest call into build_workflow() so the flag is restored on
+        every subsequent load, including direct script execution.
         """
-        context_manager = self.engine.context_manager
-        if not context_manager.has_current_workflow():
+        if not workflow.context.has_current_workflow():
             return SetVariableSubstitutionEnabledResultFailure(
                 result_details="Attempted to set variable substitution enabled. Failed because no workflow is active."
             )
-        workflow_name = context_manager.get_current_workflow_name()
-        self._enabled[workflow_name] = request.enabled
+        workflow_name = workflow.context.get_current_workflow_name()
+        workflow.variables.substitution_enabled = request.enabled
         details = (
             f"Variable substitution {'enabled' if request.enabled else 'disabled'} for workflow '{workflow_name}'."
         )

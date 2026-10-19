@@ -17,7 +17,7 @@ import pytest
 
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from tests.unit.mock_engine import mock_engine_with_workflow_runtime
 
 

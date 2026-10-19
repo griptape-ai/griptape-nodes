@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 @dataclass(frozen=True)

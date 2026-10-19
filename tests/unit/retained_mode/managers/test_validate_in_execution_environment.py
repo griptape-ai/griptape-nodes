@@ -22,7 +22,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ExecuteNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 def _workflow() -> WorkflowRuntime:

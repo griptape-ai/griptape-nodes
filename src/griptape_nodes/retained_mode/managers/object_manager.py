@@ -28,9 +28,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.object_types import WorkflowObjects
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+from griptape_nodes.retained_mode.runtime.objects import WorkflowObjects
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -206,10 +206,6 @@ class ObjectManager(EngineScoped):
         except Exception as e:
             return f"Attempted to reset global execution state. Failed with exception: {e}"
 
-        workflow_name = None
-        if workflow.context.has_current_workflow():
-            workflow_name = workflow.context.get_current_workflow_name()
-
         # Cancel its running flows, delete its child flows, drain its context substack, pop it.
         try:
             while workflow.context.has_current_workflow():
@@ -227,9 +223,8 @@ class ObjectManager(EngineScoped):
         if workflow.objects.name_to_objects:
             return f"Attempted to clear all object state, but {len(workflow.objects.name_to_objects)} object(s) remained after workflow teardown."
 
-        if keep_variables:
-            return None
-        self._clear_variables_and_settings(workflow, workflow_name)
+        if not keep_variables:
+            workflow.variables.clear()
         return None
 
     def _current_objects_or_empty(self) -> WorkflowObjects:
@@ -241,8 +236,3 @@ class ObjectManager(EngineScoped):
         if workflow is None:
             return WorkflowObjects()
         return workflow.objects
-
-    def _clear_variables_and_settings(self, workflow: WorkflowRuntime, workflow_name: str | None) -> None:
-        workflow.variables.clear()
-        if workflow_name is not None:
-            self.engine.workflow_manager.clear_object_state(workflow_name)

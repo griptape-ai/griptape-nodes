@@ -162,7 +162,7 @@ from griptape_nodes.retained_mode.events.mcp_events import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
-from griptape_nodes.retained_mode.workflow_runtime import bound_workflow_id
+from griptape_nodes.retained_mode.runtime.binding import bound_workflow_id
 from griptape_nodes.servers import bind_free_socket
 from griptape_nodes.servers.mcp import GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT, start_mcp_server
 from griptape_nodes.utils.budget_refusal import BUDGET_REPLY_HALT_PREFIX, refusal_from_exception

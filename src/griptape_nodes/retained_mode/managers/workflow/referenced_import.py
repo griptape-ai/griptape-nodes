@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 import semver
 
@@ -19,59 +19,60 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.managers.workflow.loading import is_loading_workflow
 from griptape_nodes.retained_mode.managers.workflow.running import WorkflowExecutionResult, execution_result_details
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.workflow_registry import Workflow
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 logger = logging.getLogger("griptape_nodes")
 
 
 class ReferencedWorkflowImport(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)
 
     @handles(ImportWorkflowAsReferencedSubFlowRequest)
     async def on_import_workflow_as_referenced_sub_flow_request(
-        self, request: ImportWorkflowAsReferencedSubFlowRequest
+        self, request: ImportWorkflowAsReferencedSubFlowRequest, workflow: WorkflowRuntime
     ) -> ResultPayload:
         """Import a registered workflow as a new referenced sub flow in the current context."""
         # Validate prerequisites
-        validation_error = self._validate_import_prerequisites(request)
+        validation_error = self._validate_import_prerequisites(workflow, request)
         if validation_error:
             return validation_error
 
         # Get the workflow (validation passed, so we know it exists)
-        workflow = self._get_workflow_by_name(request.workflow_name)
+        registered = self._get_workflow_by_name(request.workflow_name)
 
         # Determine target flow name
         if request.flow_name is not None:
             flow_name = request.flow_name
         else:
-            flow_name = self.engine.context_manager.get_current_flow().name
+            flow_name = workflow.context.get_current_flow().name
 
         # Execute the import
-        return await self._execute_workflow_import(request, workflow, flow_name)
+        return await self._execute_workflow_import(workflow, request, registered, flow_name)
 
-    def _validate_import_prerequisites(self, request: ImportWorkflowAsReferencedSubFlowRequest) -> ResultPayload | None:  # noqa: PLR0911
+    def _validate_import_prerequisites(  # noqa: PLR0911
+        self, workflow: WorkflowRuntime, request: ImportWorkflowAsReferencedSubFlowRequest
+    ) -> ResultPayload | None:
         """Validate all prerequisites for import. Returns error result or None if valid."""
         # Check workflow exists and get it
         try:
-            workflow = self._get_workflow_by_name(request.workflow_name)
+            registered = self._get_workflow_by_name(request.workflow_name)
         except KeyError:
             details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow is not registered"
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         # Import-as-referenced runs the workflow file as a subflow. Unsaved workflows
         # have no file to execute; callers must save first.
-        if workflow.file_path is None:
+        if registered.file_path is None:
             details = (
                 f"Attempted to import unsaved workflow '{request.workflow_name}' as a referenced sub flow. "
                 "Save the workflow before importing it as a sub-flow."
@@ -82,28 +83,23 @@ class ReferencedWorkflowImport(EngineScoped):
         # (workflow schema was fixed in 0.6.0 to support importing workflows)
         required_version = semver.VersionInfo(major=0, minor=6, patch=0)
         try:
-            workflow_version = semver.VersionInfo.parse(workflow.metadata.schema_version)
+            workflow_version = semver.VersionInfo.parse(registered.metadata.schema_version)
         except Exception as e:
-            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{workflow.metadata.schema_version}' caused an error: {e}"
+            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{registered.metadata.schema_version}' caused an error: {e}"
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
         if workflow_version < required_version:
-            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{workflow.metadata.schema_version}' is less than required version '0.6.0'. To remedy, open the workflow you are attempting to import and save it again to upgrade it to the latest version."
+            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{registered.metadata.schema_version}' is less than required version '0.6.0'. To remedy, open the workflow you are attempting to import and save it again to upgrade it to the latest version."
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         # Check target flow
         flow_name = request.flow_name
         if flow_name is None:
-            if not self.engine.context_manager.has_current_flow():
+            if not workflow.context.has_current_flow():
                 details = f"Attempted to import workflow '{request.workflow_name}' into Current Context. Failed because Current Context was empty"
                 return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
-        else:
-            # Validate that the specified flow exists
-            flow_manager = self.engine.flow_manager
-            try:
-                flow_manager.get_flow_by_name(flow_name)
-            except KeyError:
-                details = f"Attempted to import workflow '{request.workflow_name}' into flow '{flow_name}'. Failed because target flow does not exist"
-                return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
+        elif workflow.objects.get_as_type(flow_name, ControlFlow) is None:
+            details = f"Attempted to import workflow '{request.workflow_name}' into flow '{flow_name}'. Failed because target flow does not exist"
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         return None
 
@@ -112,20 +108,23 @@ class ReferencedWorkflowImport(EngineScoped):
         return self.engine.workflow_registry.get_workflow_by_name(workflow_name)
 
     async def _execute_workflow_import(
-        self, request: ImportWorkflowAsReferencedSubFlowRequest, workflow: Workflow, flow_name: str
+        self,
+        workflow: WorkflowRuntime,
+        request: ImportWorkflowAsReferencedSubFlowRequest,
+        registered: Workflow,
+        flow_name: str,
     ) -> ResultPayload:
         """Execute the actual workflow import.
 
-        Precondition: `workflow.file_path is not None` (enforced by `_validate_import_prerequisites`).
+        Precondition: `registered.file_path is not None` (enforced by `_validate_import_prerequisites`).
         """
-        workflow_file_path = workflow.file_path
+        workflow_file_path = registered.file_path
         if workflow_file_path is None:
             details = f"Attempted to import unsaved workflow '{request.workflow_name}' as a referenced sub flow."
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         # Get current flows before importing
-        obj_manager = self.engine.object_manager
-        flows_before = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
+        flows_before = set(workflow.objects.get_filtered_subset(type=ControlFlow).keys())
 
         # Execute the workflow within the target flow context.
         # When track_as_referenced is True, wrap in ReferencedWorkflowContext so the flow
@@ -145,7 +144,7 @@ class ReferencedWorkflowImport(EngineScoped):
             )
 
         # Get flows after importing to find the new referenced sub flow
-        flows_after = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
+        flows_after = set(workflow.objects.get_filtered_subset(type=ControlFlow).keys())
         new_flows = flows_after - flows_before
 
         if not new_flows:

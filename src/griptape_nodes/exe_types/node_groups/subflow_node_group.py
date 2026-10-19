@@ -45,6 +45,7 @@ from griptape_nodes.traits.options import Options
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.node_types import BaseNode, Connection
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -124,6 +125,12 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         # Add subprocess execution status component for real-time GUI updates
         self._add_subflow_execution_parameters()
+
+    def _own_workflow(self) -> WorkflowRuntime:
+        """The workflow this group belongs to, which code it runs on another task may have lost the binding to."""
+        if self.workflow_runtime is not None:
+            return self.workflow_runtime
+        return self.engine.current_workflow
 
     def _create_subflow(self) -> None:
         """Create the dedicated subflow that will hold this NodeGroup's nodes.
@@ -497,7 +504,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         source_node_name=node.name,
                         target_node_name=self.name,
                     ),
-                    self.engine.current_workflow,
+                    self._own_workflow(),
                 )
                 if delete_result.failed():
                     msg = f"{self.name}: Failed to delete internal outgoing connection from {node.name}.{parameter_name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
@@ -512,7 +519,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             source_node_name=node.name,
                             target_node_name=connection.target_node.name,
                         ),
-                        self.engine.current_workflow,
+                        self._own_workflow(),
                     )
                     if create_result.failed():
                         msg = f"{self.name}: Failed to create direct outgoing connection from {node.name}.{parameter_name} to {connection.target_node.name}.{connection.target_parameter.name}: {create_result.result_details}"
@@ -534,7 +541,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         source_node_name=self.name,
                         target_node_name=node.name,
                     ),
-                    self.engine.current_workflow,
+                    self._own_workflow(),
                 )
                 if delete_result.failed():
                     msg = f"{self.name}: Failed to delete internal incoming connection from proxy {proxy_parameter.name} to {node.name}.{parameter_name}: {delete_result.result_details}"
@@ -549,7 +556,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             source_node_name=connection.source_node.name,
                             target_node_name=node.name,
                         ),
-                        self.engine.current_workflow,
+                        self._own_workflow(),
                     )
                     if create_result.failed():
                         msg = f"{self.name}: Failed to create direct incoming connection from {connection.source_node.name}.{connection.source_parameter.name} to {node.name}.{parameter_name}: {create_result.result_details}"
@@ -569,7 +576,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         if self._proxy_param_to_connections[proxy_parameter.name] == 0:
             self.engine.node_manager.on_remove_parameter_from_node_request(
                 request=RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=proxy_parameter.name),
-                workflow=self.engine.current_workflow,
+                workflow=self._own_workflow(),
             )
             del self._proxy_param_to_connections[proxy_parameter.name]
             if metadata_key in self.metadata and proxy_parameter.name in self.metadata[metadata_key]:
@@ -620,7 +627,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         source_node_name=node.name,
                         target_node_name=self.name,
                     ),
-                    self.engine.current_workflow,
+                    self._own_workflow(),
                 )
                 if delete_result.failed():
                     msg = f"{self.name}: Failed to delete internal outgoing connection from {node.name}.{parameter_name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
@@ -635,7 +642,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             source_node_name=node.name,
                             target_node_name=connection.target_node.name,
                         ),
-                        self.engine.current_workflow,
+                        self._own_workflow(),
                     )
                     if create_result.failed():
                         msg = f"{self.name}: Failed to create direct outgoing connection from {node.name}.{parameter_name} to {connection.target_node.name}.{connection.target_parameter.name}: {create_result.result_details}"
@@ -651,7 +658,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                                 source_node_name=connection.source_node.name,
                                 target_node_name=connection.target_node.name,
                             ),
-                            self.engine.current_workflow,
+                            self._own_workflow(),
                         )
                         if delete_result.failed():
                             msg = f"{self.name}: Failed to delete external connection from proxy {proxy_parameter.name} to {connection.target_node.name}.{connection.target_parameter.name}: {delete_result.result_details}"
@@ -688,7 +695,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         source_node_name=self.name,
                         target_node_name=node.name,
                     ),
-                    self.engine.current_workflow,
+                    self._own_workflow(),
                 )
                 if delete_result.failed():
                     msg = f"{self.name}: Failed to delete internal incoming connection from proxy {proxy_parameter.name} to {node.name}.{parameter_name}: {delete_result.result_details}"
@@ -703,7 +710,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                             source_node_name=connection.source_node.name,
                             target_node_name=node.name,
                         ),
-                        self.engine.current_workflow,
+                        self._own_workflow(),
                     )
                     if create_result.failed():
                         msg = f"{self.name}: Failed to create direct incoming connection from {connection.source_node.name}.{connection.source_parameter.name} to {node.name}.{parameter_name}: {create_result.result_details}"
@@ -719,7 +726,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                                 source_node_name=connection.source_node.name,
                                 target_node_name=self.name,
                             ),
-                            self.engine.current_workflow,
+                            self._own_workflow(),
                         )
                         if delete_result.failed():
                             msg = f"{self.name}: Failed to delete external connection from {connection.source_node.name}.{connection.source_parameter.name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
@@ -1312,9 +1319,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         subflow = self.metadata.get("subflow_name")
         if subflow is not None and isinstance(subflow, str):
             # This runs in the node's own task, which may have lost the binding, so use the runtime the node was made in.
-            workflow = self.workflow_runtime
-            if workflow is None:
-                workflow = self.engine.current_workflow
+            workflow = self._own_workflow()
             with self.engine.bind_workflow(workflow):
                 result = await self.engine.flow_manager.on_start_local_subflow_request(
                     StartLocalSubflowRequest(flow_name=subflow), workflow

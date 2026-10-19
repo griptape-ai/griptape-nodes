@@ -8,14 +8,16 @@ from __future__ import annotations
 
 from enum import StrEnum
 from queue import Queue
-from typing import TYPE_CHECKING, NamedTuple, cast
+from typing import TYPE_CHECKING, NamedTuple
+
+from griptape_nodes.exe_types.connections import Connections
+from griptape_nodes.machines.dag_builder import DagBuilder
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.machines.control_flow import ControlFlowMachine
-    from griptape_nodes.retained_mode.engine import Engine
 
 
 class DagExecutionType(StrEnum):
@@ -34,17 +36,7 @@ class QueueItem(NamedTuple):
 class WorkflowFlows:
     """The flows of one open workflow, how they nest, how their nodes connect, and the run in progress."""
 
-    def __init__(self, engine: object) -> None:
-        """Make an empty set of flows.
-
-        Args:
-            engine: The engine the workflow belongs to, which its DAG builder reports to.
-        """
-        # These imports are inside the method because the modules import `node_types`, which imports
-        # `workflow_runtime`, which makes a `WorkflowFlows` for every runtime it opens.
-        from griptape_nodes.exe_types.connections import Connections
-        from griptape_nodes.machines.dag_builder import DagBuilder
-
+    def __init__(self) -> None:
         self.name_to_parent_name: dict[str, str | None] = {}
         self.flow_to_referenced_workflow_name: dict[ControlFlow, str] = {}
         self.connections = Connections()
@@ -52,7 +44,7 @@ class WorkflowFlows:
         # The control flow machine of the current run, if any.
         self.global_control_flow_machine: ControlFlowMachine | None = None
         self.global_single_node_resolution = False
-        self.global_dag_builder = DagBuilder(cast("Engine", engine))
+        self.global_dag_builder = DagBuilder(self.connections)
 
     def parent_flow_name(self, flow_name: str) -> str | None:
         """The name of the flow the flow belongs to, None for the top-level flow.

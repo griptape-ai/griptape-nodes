@@ -7,16 +7,6 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
-from griptape_nodes.retained_mode.context_types import (
-    ElementContext,
-    EmptyStackError,
-    FlowContext,
-    NoActiveFlowError,
-    NoActiveWorkflowError,
-    NodeContext,
-    WorkflowContextError,
-    WorkflowContextStack,
-)
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.context_events import (
     EnsureWorkflowAndFlowRequest,
@@ -29,6 +19,16 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextSuccess,
 )
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.runtime.context import (
+    ElementContext,
+    EmptyStackError,
+    FlowContext,
+    NoActiveFlowError,
+    NoActiveWorkflowError,
+    NodeContext,
+    WorkflowContextError,
+    WorkflowContextStack,
+)
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 

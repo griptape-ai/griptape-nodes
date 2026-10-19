@@ -56,6 +56,7 @@ from griptape_nodes.retained_mode.events.variable_events import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.retained_mode.variable_types import (
     FlowVariable,
     VariableLayer,
@@ -63,7 +64,6 @@ from griptape_nodes.retained_mode.variable_types import (
     VariablePermission,
     VariableScope,
 )
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 

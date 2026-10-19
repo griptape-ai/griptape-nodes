@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import re
 from contextlib import redirect_stdout
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.retained_mode.events.arbitrary_python_events import (
     RunArbitraryPythonStringRequest,
@@ -32,12 +32,10 @@ def strip_ansi_codes(text: str) -> str:
 
 
 class ArbitraryCodeExecManager:
-    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
-
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.register_request_handlers(self)
 
-    @handles(RunArbitraryPythonStringRequest)
+    @handles(RunArbitraryPythonStringRequest, scope=RequestScope.WORKFLOW)
     def on_run_arbitrary_python_string_request(self, request: RunArbitraryPythonStringRequest) -> ResultPayload:
 
         try:

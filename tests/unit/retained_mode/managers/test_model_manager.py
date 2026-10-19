@@ -207,14 +207,15 @@ class TestOnHandleSearchModelsRequest:
 
 
 class TestOnHandleDeclareModelInvocationRequest:
-    def test_clears_the_node_to_proceed(self, model_manager: ModelManager) -> None:
+    def test_clears_the_node_to_proceed(self, engine: Engine, model_manager: ModelManager) -> None:
         # Reaching the handler means the pre-dispatch chain did not deny the
         # declaration, so the node is cleared to invoke the model itself.
         result = model_manager.on_handle_declare_model_invocation_request(
             DeclareModelInvocationRequest(
                 model_id="gtc_claude_opus_4_7",
                 node_name="Agent_1",
-            )
+            ),
+            engine.current_workflow,
         )
 
         assert isinstance(result, DeclareModelInvocationResultSuccess)
@@ -270,14 +271,14 @@ class TestOnHandleDeclareModelInvocationRequest:
         manager = ModelManager()
 
         denied = manager.on_handle_declare_model_invocation_request(
-            DeclareModelInvocationRequest(model_id="gtc_claude_opus_4_7")
+            DeclareModelInvocationRequest(model_id="gtc_claude_opus_4_7"), engine.current_workflow
         )
         assert isinstance(denied, DeclareModelInvocationResultFailure)
         assert "Anthropic models are not enabled." in str(denied.result_details)
         assert seen == {"action": "InvokeModel", "subject_id": "gtc_claude_opus_4_7", "id": "gtc_claude_opus_4_7"}
 
         allowed = manager.on_handle_declare_model_invocation_request(
-            DeclareModelInvocationRequest(model_id="gtc_gpt_5")
+            DeclareModelInvocationRequest(model_id="gtc_gpt_5"), engine.current_workflow
         )
         assert isinstance(allowed, DeclareModelInvocationResultSuccess)
 
@@ -296,7 +297,7 @@ class TestOnHandleDeclareModelInvocationRequest:
         manager = ModelManager()
 
         denied = manager.on_handle_declare_model_invocation_request(
-            DeclareModelInvocationRequest(model_id="gtc_claude_opus_4_7")
+            DeclareModelInvocationRequest(model_id="gtc_claude_opus_4_7"), engine.current_workflow
         )
         assert isinstance(denied, DeclareModelInvocationResultFailure)
         assert "Denied by the license policy." in str(denied.result_details)
@@ -414,7 +415,7 @@ class TestDeclareModelInvocationCatalogEnrichment:
         manager = ModelManager()
 
         result = manager.on_handle_declare_model_invocation_request(
-            DeclareModelInvocationRequest(model_id="gtc_gpt_image_1_mini", node_name="Probe_1")
+            DeclareModelInvocationRequest(model_id="gtc_gpt_image_1_mini", node_name="Probe_1"), engine.current_workflow
         )
 
         assert isinstance(result, DeclareModelInvocationResultSuccess)
@@ -448,7 +449,7 @@ class TestDeclareModelInvocationCatalogEnrichment:
         manager = ModelManager()
 
         result = manager.on_handle_declare_model_invocation_request(
-            DeclareModelInvocationRequest(model_id="gtc_gpt_image_1_mini", node_name="Probe_1")
+            DeclareModelInvocationRequest(model_id="gtc_gpt_image_1_mini", node_name="Probe_1"), engine.current_workflow
         )
 
         assert isinstance(result, DeclareModelInvocationResultFailure)
@@ -474,7 +475,7 @@ class TestDeclareModelInvocationCatalogEnrichment:
         manager = ModelManager()
 
         manager.on_handle_declare_model_invocation_request(
-            DeclareModelInvocationRequest(model_id="gtc_not_declared", node_name="Probe_1")
+            DeclareModelInvocationRequest(model_id="gtc_not_declared", node_name="Probe_1"), engine.current_workflow
         )
 
         assert seen["attributes"] == {"id": "gtc_not_declared"}
@@ -495,7 +496,7 @@ class TestDeclareModelInvocationCatalogEnrichment:
         manager = ModelManager()
 
         manager.on_handle_declare_model_invocation_request(
-            DeclareModelInvocationRequest(model_id="gtc_gpt_image_1_mini")
+            DeclareModelInvocationRequest(model_id="gtc_gpt_image_1_mini"), engine.current_workflow
         )
 
         # No node to resolve against -- only the bare id, as before.

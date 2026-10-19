@@ -6,7 +6,7 @@ from collections import defaultdict
 from contextlib import nullcontext
 from inspect import iscoroutinefunction
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import anyio
 
@@ -47,7 +47,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.workflow.loading import LoadProblemFrame
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -128,8 +129,6 @@ def collate_problems_by_type(problems: Iterable[WorkflowProblem]) -> list[str]:
 
 
 class WorkflowRunner(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)
@@ -146,7 +145,9 @@ class WorkflowRunner(EngineScoped):
             )
 
     @handles(RunWorkflowFromScratchRequest)
-    async def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
+    async def on_run_workflow_from_scratch_request(
+        self, request: RunWorkflowFromScratchRequest, workflow: WorkflowRuntime
+    ) -> ResultPayload:
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it into a blank slate.
         with self.engine.workflow_manager.squelch_workflow_altered():
             # Check if file path exists
@@ -159,7 +160,7 @@ class WorkflowRunner(EngineScoped):
                 return RunWorkflowFromScratchResultFailure(result_details=details)
 
             # Start with a clean slate. Other open workflows are left alone.
-            clear_failure = await self.engine.object_manager.clear_workflow(self.engine.current_workflow)
+            clear_failure = await self.engine.object_manager.clear_workflow(workflow)
             if clear_failure is not None:
                 details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
                 return RunWorkflowFromScratchResultFailure(result_details=details)
@@ -178,15 +179,15 @@ class WorkflowRunner(EngineScoped):
 
     @handles(RunWorkflowWithCurrentStateRequest)
     async def on_run_workflow_with_current_state_request(
-        self, request: RunWorkflowWithCurrentStateRequest
+        self, request: RunWorkflowWithCurrentStateRequest, workflow: WorkflowRuntime
     ) -> ResultPayload:
         relative_file_path = request.file_path
-        if self.engine.context_manager.has_current_flow():
+        if workflow.context.has_current_flow():
             # Disallow opening a workflow inside another workflow this way. It would
             # become an invisible child flow (no way to reach it in the UI), persisted
             # with the parent workflow on save, and executed invisibly whenever the
             # parent workflow was executed.
-            open_flow_name = self.engine.context_manager.get_current_flow().name
+            open_flow_name = workflow.context.get_current_flow().name
             details = (
                 f"Attempted to open workflow '{relative_file_path}' while the flow '{open_flow_name}' is still open. "
                 "Close the current workflow first, before opening this one."
@@ -209,12 +210,14 @@ class WorkflowRunner(EngineScoped):
         )
 
     @handles(RunWorkflowFromRegistryRequest)
-    async def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
+    async def on_run_workflow_from_registry_request(
+        self, request: RunWorkflowFromRegistryRequest, workflow: WorkflowRuntime
+    ) -> ResultPayload:
         await self.engine.workflow_manager.wait_for_workflows_loaded()
 
         # get workflow from registry
         try:
-            workflow = self.engine.workflow_registry.get_workflow_by_name(request.workflow_name)
+            registered = self.engine.workflow_registry.get_workflow_by_name(request.workflow_name)
         except KeyError:
             details = f"Failed to get workflow '{request.workflow_name}' from registry."
             return RunWorkflowFromRegistryResultFailure(result_details=details)
@@ -223,7 +226,7 @@ class WorkflowRunner(EngineScoped):
         # Unsaved workflows have no file; callers should use StartFlowRequest against the
         # live flow for in-memory execution. Keep this reject explicit so the UI can
         # distinguish "run this unsaved edit" (StartFlow) from "run the last saved version".
-        relative_file_path = workflow.file_path
+        relative_file_path = registered.file_path
         if relative_file_path is None:
             details = (
                 f"Cannot run unsaved workflow '{request.workflow_name}' from the registry because it has no file on disk. "
@@ -237,20 +240,20 @@ class WorkflowRunner(EngineScoped):
         # run_with_clean_slate=True, replacement is the explicitly requested behavior, so
         # only warn when clobbering the context was NOT asked for.
         context_warning = None
-        if not request.run_with_clean_slate and self.engine.context_manager.has_current_workflow():
-            context_warning = f"Started a new workflow '{request.workflow_name}' but a workflow '{self.engine.context_manager.get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
+        if not request.run_with_clean_slate and workflow.context.has_current_workflow():
+            context_warning = f"Started a new workflow '{request.workflow_name}' but a workflow '{workflow.context.get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
 
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it.
         with self.engine.workflow_manager.squelch_workflow_altered():
             if request.run_with_clean_slate:
                 # Start with a clean slate. Other open workflows are left alone.
-                clear_failure = await self.engine.object_manager.clear_workflow(self.engine.current_workflow)
+                clear_failure = await self.engine.object_manager.clear_workflow(workflow)
                 if clear_failure is not None:
                     details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
                     return RunWorkflowFromRegistryResultFailure(result_details=details)
 
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
-            self.engine.context_manager.push_workflow(request.workflow_name)
+            self.engine.context_manager.push_workflow_into(workflow, request.workflow_name)
             # run file
             execution_result = await self.run_workflow(relative_file_path=relative_file_path)
 
@@ -262,7 +265,7 @@ class WorkflowRunner(EngineScoped):
 
                 # Clear out what this attempt built in its workflow. That also pops the context
                 # pushed above.
-                await self.engine.object_manager.clear_workflow(self.engine.current_workflow)
+                await self.engine.object_manager.clear_workflow(workflow)
                 return RunWorkflowFromRegistryResultFailure(result_details=ResultDetails(*result_messages))
 
         self.engine.open_workflows_manager.announce_change()
@@ -276,15 +279,16 @@ class WorkflowRunner(EngineScoped):
             status=execution_result.status, result_details=ResultDetails(*result_messages)
         )
 
-    @handles(GetWorkflowRunCommandRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    async def on_get_workflow_run_command_request(self, request: GetWorkflowRunCommandRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    @handles(GetWorkflowRunCommandRequest)
+    async def on_get_workflow_run_command_request(  # noqa: C901, PLR0911, PLR0912
+        self, request: GetWorkflowRunCommandRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         workflow_name = request.workflow_name
         file_path = request.file_path
 
         # Failure: no identifier and no current context
         if workflow_name is None and file_path is None:
-            context_manager = self.engine.context_manager
-            if not context_manager.has_current_workflow():
+            if workflow is None or not workflow.context.has_current_workflow():
                 return GetWorkflowRunCommandResultFailure(
                     result_details=(
                         "Attempted to get workflow run command. Failed with workflow_name=None, file_path=None "
@@ -292,7 +296,7 @@ class WorkflowRunner(EngineScoped):
                     )
                 )
             # When neither workflow_name nor file_path is provided, use the workflow in the current context as a fallback.
-            workflow_name = context_manager.get_current_workflow_name()
+            workflow_name = workflow.context.get_current_workflow_name()
 
         # Failure: both workflow_name and file_path provided
         if workflow_name is not None and file_path is not None:
@@ -307,7 +311,7 @@ class WorkflowRunner(EngineScoped):
         workflow_shape: WorkflowShape | None = None
         if workflow_name is not None:
             try:
-                workflow = self.engine.workflow_registry.get_workflow_by_name(workflow_name)
+                registered = self.engine.workflow_registry.get_workflow_by_name(workflow_name)
             except KeyError:
                 return GetWorkflowRunCommandResultFailure(
                     result_details=(
@@ -315,8 +319,8 @@ class WorkflowRunner(EngineScoped):
                         "because the workflow was not found in the registry. Save the workflow first, or provide file_path."
                     )
                 )
-            relative_file_path = workflow.file_path
-            workflow_shape = workflow.metadata.workflow_shape
+            relative_file_path = registered.file_path
+            workflow_shape = registered.metadata.workflow_shape
         else:
             relative_file_path = file_path
 

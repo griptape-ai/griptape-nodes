@@ -8,7 +8,7 @@ import platform
 import sys
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import TYPE_CHECKING, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 from urllib.parse import unquote, urlparse
 
 import httpx2
@@ -92,7 +92,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     SECRETS_TO_REGISTER_KEY,
     SESSION_LOG_BUFFER_LINES_KEY,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.dict_utils import normalize_secrets_to_register
 from griptape_nodes.utils.version_utils import get_install_source
 
@@ -102,6 +102,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.project_events import ProjectTemplateInfo
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -165,8 +166,6 @@ class DiagnosticsManager(EngineScoped):
     being investigated.
     """
 
-    request_scope: ClassVar[RequestScope] = RequestScope.OPTIONAL_WORKFLOW
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         """Initialize the DiagnosticsManager.
 
@@ -179,7 +178,7 @@ class DiagnosticsManager(EngineScoped):
 
     @handles(GetDiagnosticsReportRequest)
     async def on_get_diagnostics_report_request(
-        self, request: GetDiagnosticsReportRequest
+        self, request: GetDiagnosticsReportRequest, workflow: WorkflowRuntime | None = None
     ) -> GetDiagnosticsReportResultSuccess | GetDiagnosticsReportResultFailure:
         """Collect a redacted snapshot of the engine's state."""
         redactor = Redactor(
@@ -188,7 +187,7 @@ class DiagnosticsManager(EngineScoped):
         )
         warnings: list[str] = []
 
-        report = await self._build_report(redactor, warnings, normalize_identity=request.normalize_identity)
+        report = await self._build_report(redactor, warnings, workflow, normalize_identity=request.normalize_identity)
         if report is None:
             details = (
                 "Attempted to collect a diagnostics report. Failed because the engine's host could not be identified."
@@ -207,6 +206,7 @@ class DiagnosticsManager(EngineScoped):
     async def on_run_health_checks_request(
         self,
         request: RunHealthChecksRequest,  # noqa: ARG002 - the checks take no options yet
+        workflow: WorkflowRuntime | None = None,
     ) -> RunHealthChecksResultSuccess | RunHealthChecksResultFailure:
         """Judge the engine's setup and say what to fix."""
         # Identity is normalized because a verdict quotes paths back to the user, who is
@@ -214,7 +214,7 @@ class DiagnosticsManager(EngineScoped):
         redactor = Redactor(secret_values=self._known_secret_values(), normalize_identity=True)
         warnings: list[str] = []
 
-        report = await self._build_report(redactor, warnings, normalize_identity=True)
+        report = await self._build_report(redactor, warnings, workflow, normalize_identity=True)
         if report is None:
             details = (
                 "Attempted to run health checks. Failed because the engine's own state could not be collected first."
@@ -237,7 +237,7 @@ class DiagnosticsManager(EngineScoped):
 
     @handles(CollectDiagnosticsRequest)
     async def on_collect_diagnostics_request(
-        self, request: CollectDiagnosticsRequest
+        self, request: CollectDiagnosticsRequest, workflow: WorkflowRuntime | None = None
     ) -> CollectDiagnosticsResultSuccess | CollectDiagnosticsResultFailure:
         """Build a diagnostics bundle and return a link to download it."""
         # This name is joined onto the output directory, so anything with a directory in it --
@@ -265,9 +265,11 @@ class DiagnosticsManager(EngineScoped):
                 if request.include_logs:
                     self._stage_logs(bundle, warnings)
                 if request.include_current_workflow:
-                    self._stage_current_workflow(bundle, warnings)
+                    self._stage_current_workflow(bundle, warnings, workflow)
 
-                report = await self._build_report(redactor, warnings, normalize_identity=request.normalize_identity)
+                report = await self._build_report(
+                    redactor, warnings, workflow, normalize_identity=request.normalize_identity
+                )
                 if report is None:
                     details = "Attempted to collect a diagnostics bundle. Failed because the engine's host could not be identified."
                     return CollectDiagnosticsResultFailure(result_details=details)
@@ -411,7 +413,7 @@ class DiagnosticsManager(EngineScoped):
         )
 
     async def _build_report(
-        self, redactor: Redactor, warnings: list[str], *, normalize_identity: bool
+        self, redactor: Redactor, warnings: list[str], workflow: WorkflowRuntime | None, *, normalize_identity: bool
     ) -> DiagnosticsReport | None:
         """Assemble the report, or None when the engine's own identity cannot be established.
 
@@ -437,7 +439,7 @@ class DiagnosticsManager(EngineScoped):
             libraries=self._build_libraries_section(redactor, warnings),
             projects=await self._build_projects_section(redactor, warnings),
             logs=self._build_logs_section(redactor, warnings),
-            session=await self._build_session_section(redactor, warnings),
+            session=await self._build_session_section(redactor, warnings, workflow),
         )
 
         # Both set last: the counts have to cover everything above, and any section can raise a
@@ -563,14 +565,15 @@ class DiagnosticsManager(EngineScoped):
             "most likely cannot be written to."
         )
 
-    def _stage_current_workflow(self, bundle: DiagnosticsBundle, warnings: list[str]) -> None:
-        """Add the open workflow's saved file to a bundle, when there is one."""
-        context_manager = self.engine.context_manager
-        if not context_manager.has_current_workflow():
+    def _stage_current_workflow(
+        self, bundle: DiagnosticsBundle, warnings: list[str], workflow: WorkflowRuntime | None
+    ) -> None:
+        """Add the workflow's saved file to a bundle, when there is one."""
+        if workflow is None or not workflow.context.has_current_workflow():
             warnings.append("No workflow was open, so none is in this bundle.")
             return
 
-        file_path = context_manager.get_current_workflow_file_path()
+        file_path = workflow.context.get_current_workflow_file_path()
         if file_path is None:
             warnings.append(
                 "The open workflow has never been saved, so it is not in this bundle. "
@@ -909,23 +912,22 @@ class DiagnosticsManager(EngineScoped):
             files=files,
         )
 
-    async def _build_session_section(self, redactor: Redactor, warnings: list[str]) -> SessionDiagnostics:
+    async def _build_session_section(
+        self, redactor: Redactor, warnings: list[str], workflow: WorkflowRuntime | None
+    ) -> SessionDiagnostics:
         """Report what the engine currently has open."""
-        context_manager = self.engine.context_manager
-        object_manager = self.engine.object_manager
-
         workflow_name = None
         workflow_path = None
         flow_count = 0
         node_count = 0
         # The workflow the request is addressed to, if any: with several open, the one the user is on.
-        if context_manager.has_current_workflow():
-            flow_count = len(object_manager.get_filtered_subset(type=ControlFlow))
-            node_count = len(object_manager.get_filtered_subset(type=BaseNode))
+        if workflow is not None and workflow.context.has_current_workflow():
+            flow_count = len(workflow.objects.get_filtered_subset(type=ControlFlow))
+            node_count = len(workflow.objects.get_filtered_subset(type=BaseNode))
             # Redacted even though it is a "name": a workflow saved outside the workspace is keyed
             # by its absolute path, so one saved to the desktop is named `/Users/sam/Desktop/flow`.
-            workflow_name = redactor.redact_text(context_manager.get_current_workflow_name())
-            current_path = context_manager.get_current_workflow_file_path()
+            workflow_name = redactor.redact_text(workflow.context.get_current_workflow_name())
+            current_path = workflow.context.get_current_workflow_file_path()
             if current_path is not None:
                 workflow_path = redactor.redact_path(current_path)
 

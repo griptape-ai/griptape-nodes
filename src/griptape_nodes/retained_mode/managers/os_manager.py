@@ -317,7 +317,7 @@ class OSManager(EngineScoped):
     This lays the groundwork to exclude specific functionality on a configuration basis.
     """
 
-    request_scope: ClassVar[RequestScope] = RequestScope.OPTIONAL_WORKFLOW
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     # Windows CSIDL constants for special folders (used by _expand_path)
     # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
@@ -1447,7 +1447,7 @@ class OSManager(EngineScoped):
             sys.stdout.flush()  # Recommended here https://docs.python.org/3/library/os.html#os.execvpe
             os.execvp(args[0], args)  # noqa: S606
 
-    @handles(OpenAssociatedFileRequest, scope=RequestScope.HOST)
+    @handles(OpenAssociatedFileRequest)
     def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
         # Validate that exactly one of path_to_file or file_entry is provided
         if request.path_to_file is None and request.file_entry is None:
@@ -1550,7 +1550,7 @@ class OSManager(EngineScoped):
             details = f"Exception occurred when trying to open path: {e}"
             return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=details)
 
-    @handles(LaunchExternalViewerRequest, scope=RequestScope.HOST)
+    @handles(LaunchExternalViewerRequest)
     def on_launch_external_viewer_request(self, request: LaunchExternalViewerRequest) -> ResultPayload:  # noqa: PLR0911
         executable_key = f"{request.config_category}.viewer_executable"
         args_key = f"{request.config_category}.viewer_args"
@@ -1717,7 +1717,7 @@ class OSManager(EngineScoped):
             mime_type = "text/plain"
         return mime_type
 
-    @handles(ListDirectoryRequest)
+    @handles(ListDirectoryRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Handle a request to list directory contents."""
         try:
@@ -1941,7 +1941,7 @@ class OSManager(EngineScoped):
             msg = f"Unexpected error in list_directory: {type(e).__name__}: {e}"
             return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
 
-    @handles(ListDirectorySequencesRequest)
+    @handles(ListDirectorySequencesRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_list_directory_sequences_request(self, request: ListDirectorySequencesRequest) -> ResultPayload:
         """Handle a request to list only file sequences in a directory.
 
@@ -1979,7 +1979,7 @@ class OSManager(EngineScoped):
             result_details="Unexpected result type from on_list_directory_request.",
         )
 
-    @handles(DeduceSequencesFromFileListRequest)
+    @handles(DeduceSequencesFromFileListRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_deduce_sequences_from_file_list_request(self, request: DeduceSequencesFromFileListRequest) -> ResultPayload:
         """Handle a request to detect sequences from a caller-supplied file list.
 
@@ -2038,7 +2038,7 @@ class OSManager(EngineScoped):
             result_details=(f"Deduced {len(all_sequences)} sequence(s) from {len(request.file_paths)} path(s)."),
         )
 
-    @handles(ScanSequencesRequest)
+    @handles(ScanSequencesRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     async def on_scan_sequences_request(self, request: ScanSequencesRequest) -> ResultPayload:  # noqa: PLR0911
         """Handle a request to scan a path or pattern for file sequences.
 
@@ -2309,7 +2309,7 @@ class OSManager(EngineScoped):
                 failure_reason=FileIOFailureReason.IO_ERROR, result_details=f"Error reading from {location}: {e}"
             )
 
-    @handles(ReadFileRequest)
+    @handles(ReadFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     async def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
         """Handle a request to read file contents with automatic text/binary detection.
 
@@ -2398,7 +2398,7 @@ class OSManager(EngineScoped):
         logger.debug("Fallback to full image data URL")
         return data_url
 
-    @handles(GetNextUnusedFilenameRequest)
+    @handles(GetNextUnusedFilenameRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_get_next_unused_filename_request(self, request: GetNextUnusedFilenameRequest) -> ResultPayload:
         """Handle a request to find the next available filename (preview only - no file creation)."""
         # Handle string paths specially: try base path first, then indexed
@@ -2476,7 +2476,7 @@ class OSManager(EngineScoped):
             else "Found available filename (no index needed)",
         )
 
-    @handles(GetNextVersionIndexRequest)
+    @handles(GetNextVersionIndexRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_get_next_version_index_request(self, request: GetNextVersionIndexRequest) -> ResultPayload:
         """Handle a request to find the next available version index via a single glob pass."""
         scan_macro_path = self._bind_project_variables_for_index_scan(request.macro_path)
@@ -2508,7 +2508,7 @@ class OSManager(EngineScoped):
             else "Base path is available (no index needed)",
         )
 
-    @handles(WriteFileRequest)
+    @handles(WriteFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     async def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         """Write content to a file with exclusive locking, returning once it is on disk.
 
@@ -3006,7 +3006,7 @@ class OSManager(EngineScoped):
             result_details=result_details,
         )
 
-    @handles(WriteTempFileRequest)
+    @handles(WriteTempFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_write_temp_file_request(self, request: WriteTempFileRequest) -> ResultPayload:
         """Write a temp file at the project-scoped ``SAVE_TEMP_FILE`` situation path.
 
@@ -3876,7 +3876,7 @@ class OSManager(EngineScoped):
 
         return removed_count > 0
 
-    @handles(MakeDirectoryRequest)
+    @handles(MakeDirectoryRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_make_directory_request(self, request: MakeDirectoryRequest) -> ResultPayload:  # noqa: PLR0911
         """Handle a request to create a directory."""
         sanitized = sanitize_path_string(request.path)
@@ -3927,7 +3927,7 @@ class OSManager(EngineScoped):
             result_details=f"Directory created successfully at {dir_path}",
         )
 
-    @handles(CreateFileRequest)
+    @handles(CreateFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_create_file_request(self, request: CreateFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
         """Handle a request to create a file or directory."""
         # Get the full path
@@ -4002,7 +4002,7 @@ class OSManager(EngineScoped):
             result_details=f"{'Directory' if request.is_directory else 'File'} created successfully at {file_path}",
         )
 
-    @handles(RenameFileRequest)
+    @handles(RenameFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_rename_file_request(self, request: RenameFileRequest) -> ResultPayload:  # noqa: PLR0911, C901
         """Handle a request to rename a file or directory."""
         # Resolve and validate paths
@@ -4067,7 +4067,7 @@ class OSManager(EngineScoped):
             result_details=ResultDetails(message=details, level=logging.INFO),
         )
 
-    @handles(CopyFileRequest)
+    @handles(CopyFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_copy_file_request(self, request: CopyFileRequest) -> ResultPayload:  # noqa: PLR0911, C901
         """Handle a request to copy a single file."""
         # Resolve source path
@@ -4157,7 +4157,7 @@ class OSManager(EngineScoped):
             console.print(f"[red]Details: {e}[/red]")
             raise
 
-    @handles(DeleteFileRequest)
+    @handles(DeleteFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     async def on_delete_file_request(  # noqa: PLR0911, PLR0912, PLR0915, C901
         self, request: DeleteFileRequest
     ) -> DeleteFileResultSuccess | DeleteFileResultFailure:
@@ -4282,7 +4282,7 @@ class OSManager(EngineScoped):
             result_details=result_details,
         )
 
-    @handles(GetFileInfoRequest)
+    @handles(GetFileInfoRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_get_file_info_request(  # noqa: PLR0911
         self, request: GetFileInfoRequest
     ) -> GetFileInfoResultSuccess | GetFileInfoResultFailure:
@@ -4352,7 +4352,7 @@ class OSManager(EngineScoped):
             result_details=f"Successfully retrieved file info for path {request.path}",
         )
 
-    @handles(ResolveMacroPathRequest)
+    @handles(ResolveMacroPathRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_handle_resolve_macro_path_request(
         self, request: ResolveMacroPathRequest
     ) -> ResolveMacroPathResultSuccess | ResolveMacroPathResultFailure:
@@ -4527,7 +4527,7 @@ class OSManager(EngineScoped):
 
         return CopyTreeStats(files_copied=files_copied, total_bytes_copied=total_bytes_copied)
 
-    @handles(CopyTreeRequest)
+    @handles(CopyTreeRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_copy_tree_request(self, request: CopyTreeRequest) -> ResultPayload:
         """Handle a request to copy a directory tree."""
         # Validate paths

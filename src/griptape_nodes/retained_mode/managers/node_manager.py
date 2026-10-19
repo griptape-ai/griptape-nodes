@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
-    from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.drivers.cloud_credentials import resolve_cloud_host
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
@@ -70,7 +70,6 @@ from griptape_nodes.node_library.library_declarations import (
     resolve_node_models,
 )
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
-from griptape_nodes.retained_mode.context_types import NodeContext
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import (
@@ -250,7 +249,8 @@ from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.retained_mode.run_scheduler import Run, RunRefusedError, current_run, run_scope
-from griptape_nodes.retained_mode.workflow_node_types import WorkflowNodes
+from griptape_nodes.retained_mode.runtime.context import NodeContext
+from griptape_nodes.retained_mode.runtime.nodes import WorkflowNodes
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
 from griptape_nodes.serialization.legacy_pickle import (
     LegacyPickleError,

@@ -61,8 +61,8 @@ from griptape_nodes.retained_mode.events.resource_events import (
     GetExecutionDeviceResultSuccess,
 )
 from griptape_nodes.retained_mode.run_scheduler import current_run
+from griptape_nodes.retained_mode.runtime.binding import NO_WORKFLOW, bound_workflow
 from griptape_nodes.retained_mode.variable_types import VariableScope  # noqa: TC001 - read at runtime by the converter
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime, bound_workflow
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.widget import Widget
 from griptape_nodes.utils import async_utils
@@ -70,6 +70,7 @@ from griptape_nodes.utils import async_utils
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.retained_mode.engine import Engine
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -403,7 +404,7 @@ class BaseNode(ABC):
         # transient node, in the namespace of the orchestrator workflow it runs for.
         self.workflow_runtime: WorkflowRuntime | None = None
         bound = bound_workflow.get()
-        if isinstance(bound, WorkflowRuntime):
+        if bound is not None and bound is not NO_WORKFLOW:
             self.workflow_runtime = bound
         self.name = name
         self._state = state

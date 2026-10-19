@@ -56,7 +56,7 @@ def machine_running_one_node(max_nodes_in_parallel: int) -> RunningMachine:
     engine = MagicMock()
     # Dispatching a node awaits this; a bare MagicMock is not awaitable.
     engine.event_manager.aput_event = AsyncMock()
-    dag_builder = DagBuilder(engine)
+    dag_builder = DagBuilder()
     dag_builder.graphs["running"] = graph
     dag_builder.graph_to_nodes["running"] = {"running"}
     dag_builder.node_to_reference["running"] = DagNode(node_reference=running_node, node_state=NodeState.PROCESSING)

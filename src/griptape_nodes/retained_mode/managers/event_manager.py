@@ -47,13 +47,13 @@ from griptape_nodes.retained_mode.request_handlers import (
     scope_from_signature,
 )
 from griptape_nodes.retained_mode.run_scheduler import current_run
-from griptape_nodes.retained_mode.workflow_runtime import (
+from griptape_nodes.retained_mode.runtime.binding import (
     NoWorkflow,
     WorkflowNotNamedError,
     WorkflowNotOpenError,
-    WorkflowRuntime,
     bound_workflow,
 )
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 if TYPE_CHECKING:
@@ -892,7 +892,8 @@ class EventManager(EngineScoped):
         """Assign each `@handles` method on `owner`. An unmarked override keeps its parent's marks.
 
         A handler that takes a `workflow` parameter acts on what its signature says. Otherwise it acts on its
-        own `scope`, else on the owner's `request_scope`.
+        own `scope`, else on the owner's `request_scope`, which may only be HOST, so every handler that acts
+        on a workflow declares it where it is defined.
 
         Raises:
             TypeError: A handler's scope is contradictory or undeclared.
@@ -906,6 +907,13 @@ class EventManager(EngineScoped):
 
         # Resolved before anything is assigned, so a missing declaration leaves nothing half-registered.
         default_scope = getattr(owner, "request_scope", None)
+        if default_scope is not None and default_scope is not RequestScope.HOST:
+            msg = (
+                f"Attempted to register the request handlers on {type(owner).__name__}. Failed because its "
+                f"request_scope is {default_scope.value}, and only a host default is allowed. A handler that "
+                "acts on a workflow says so itself: take a `workflow` parameter, or pass `scope=` to @handles."
+            )
+            raise TypeError(msg)
         resolved: list[tuple[str, tuple[type[RequestPayload], ...], RequestScope]] = []
         for name, (request_types, own_scope) in marks.items():
             scope = self._handler_scope_on(owner, name, own_scope, default_scope)
@@ -940,8 +948,8 @@ class EventManager(EngineScoped):
         msg = (
             f"Attempted to register the request handler '{name}' on {type(owner).__name__}. "
             f"Failed because it sets no scope and {type(owner).__name__} declares no request_scope. "
-            "Take a `workflow` parameter, declare `request_scope: ClassVar[RequestScope]` on the class, "
-            "or pass `scope=` to @handles."
+            "Take a `workflow` parameter, pass `scope=` to @handles, or declare "
+            "`request_scope: ClassVar[RequestScope] = RequestScope.HOST` on the class."
         )
         raise TypeError(msg)
 

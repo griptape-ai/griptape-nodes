@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -102,13 +103,14 @@ class WorkflowFileOperations(EngineScoped):
         if isinstance(delete_result, DeleteFileResultFailure):
             details = f"Failed to delete workflow file with path '{workflow_file_path}'. {delete_result.result_details}"
             return DeleteWorkflowResultFailure(result_details=details)
-        self.engine.workflow_manager.variable_substitution.drop(name)
         return DeleteWorkflowResultSuccess(
             result_details=ResultDetails(message=f"Successfully deleted workflow: {name}", level=logging.INFO)
         )
 
-    @handles(RenameWorkflowRequest, scope=RequestScope.WORKFLOW)
-    async def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
+    @handles(RenameWorkflowRequest)
+    async def on_rename_workflow_request(
+        self, request: RenameWorkflowRequest, workflow: WorkflowRuntime
+    ) -> ResultPayload:
         # Sanitize to a Python module-friendly name for the file stem (registry key).
         sanitized_stem = normalize_display_name(request.requested_name)
         if not sanitized_stem:
@@ -149,6 +151,7 @@ class WorkflowFileOperations(EngineScoped):
             return RenameWorkflowResultFailure(result_details=details)
 
         reconcile_error = await self._reconcile_rename_bookkeeping(
+            workflow,
             old_workflow_name=request.workflow_name,
             save_result=save_workflow_request,
             source=source,
@@ -234,7 +237,6 @@ class WorkflowFileOperations(EngineScoped):
             # Update registry key if directory changed
             if old_registry_key != new_registry_key:
                 self.engine.workflow_registry.rekey_workflow(old_registry_key, new_registry_key)
-                self.engine.workflow_manager.variable_substitution.rekey(old_registry_key, new_registry_key)
                 # Whichever workflow is open from this file follows it, not just the one this
                 # request acts on: the library browser moves workflows that aren't on screen.
                 self.engine.open_workflows_manager.rekey_open_workflow(
@@ -330,12 +332,13 @@ class WorkflowFileOperations(EngineScoped):
 
     async def _reconcile_rename_bookkeeping(
         self,
+        workflow: WorkflowRuntime,
         *,
         old_workflow_name: str,
         save_result: SaveWorkflowResultSuccess,
         source: Workflow | None,
     ) -> str | None:
-        """Post-save bookkeeping for a rename: rekey flags, persist external reg, delete old entry, sync context.
+        """Post-save bookkeeping for a rename: persist external reg, delete old entry, sync context.
 
         ``source`` is the pre-resolved registry entry for ``old_workflow_name`` (or ``None`` when
         the workflow wasn't registered). Threaded from the outer handler so we don't re-query.
@@ -344,10 +347,6 @@ class WorkflowFileOperations(EngineScoped):
         handler doesn't blow past the McCabe branch limit.
         """
         new_workflow_name = save_result.workflow_name
-
-        # Transfer the substitution flag to the new name before the delete call removes the old entry.
-        if new_workflow_name != old_workflow_name:
-            self.engine.workflow_manager.variable_substitution.rekey(old_workflow_name, new_workflow_name)
 
         # If the renamed file landed outside the workspace, keep it registered at its new path
         # (the old path's registration is stripped by the delete below).
@@ -367,8 +366,8 @@ class WorkflowFileOperations(EngineScoped):
         # Rename saves the workflow this request acts on, which stays open under its new key. Its
         # retained path moves with it: rename keeps the directory, so `workflow_dir` is unaffected,
         # but the old path names a file that is gone.
-        context_manager = self.engine.context_manager
-        if context_manager.has_current_workflow() and context_manager.get_current_workflow_name() == old_workflow_name:
-            context_manager.rekey_workflow(old_workflow_name, new_workflow_name, str(save_result.file_path))
+        context = workflow.context
+        if context.has_current_workflow() and context.get_current_workflow_name() == old_workflow_name:
+            context.rekey_workflow(old_workflow_name, new_workflow_name, str(save_result.file_path))
             self.engine.open_workflows_manager.announce_change()
         return None

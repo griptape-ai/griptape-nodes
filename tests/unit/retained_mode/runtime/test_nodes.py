@@ -2,7 +2,7 @@
 
 import pytest
 
-from griptape_nodes.retained_mode.workflow_node_types import WorkflowNodes
+from griptape_nodes.retained_mode.runtime.nodes import WorkflowNodes
 
 
 class TestWorkflowNodes:

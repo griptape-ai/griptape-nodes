@@ -509,11 +509,11 @@ class TestTheOpenWorkflow:
     """
 
     @pytest.fixture
-    def open_workflow(self, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    def open_workflow(self, engine: Engine, tmp_path: Path) -> Path:
         """Open a saved workflow in the engine, and return the file it was saved to."""
         workflow = tmp_path / "the-flow-that-broke.py"
         workflow.write_text("# a saved workflow\n", encoding="utf-8")
-        self._open(monkeypatch, engine, name="the-flow-that-broke", file_path=str(workflow))
+        self._open(engine, name="the-flow-that-broke", file_path=str(workflow))
         return workflow
 
     @pytest.mark.asyncio
@@ -533,38 +533,32 @@ class TestTheOpenWorkflow:
 
     @pytest.mark.asyncio
     async def test_an_unsaved_workflow_is_reported_with_what_to_do_about_it(
-        self, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, engine: Engine, tmp_path: Path
     ) -> None:
         """The likeliest case of all: the workflow being reported on has never been saved."""
-        self._open(monkeypatch, engine, name="untitled", file_path=None)
+        self._open(engine, name="untitled", file_path=None)
 
         result = await _collect(engine, tmp_path, include_current_workflow=True)
 
         assert [warning for warning in result.manifest.warnings if "never been saved" in warning] != []
 
     @pytest.mark.asyncio
-    async def test_a_workflow_whose_file_is_gone_is_reported_by_name(
-        self, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_a_workflow_whose_file_is_gone_is_reported_by_name(self, engine: Engine, tmp_path: Path) -> None:
         """Deleted from under the engine, which is itself worth knowing about."""
-        self._open(monkeypatch, engine, name="deleted-since", file_path=str(tmp_path / "deleted-since.py"))
+        self._open(engine, name="deleted-since", file_path=str(tmp_path / "deleted-since.py"))
 
         result = await _collect(engine, tmp_path, include_current_workflow=True)
 
         assert [warning for warning in result.manifest.warnings if "deleted-since.py" in warning] != []
 
     @staticmethod
-    def _open(monkeypatch: pytest.MonkeyPatch, engine: Engine, *, name: str, file_path: str | None) -> None:
-        """Answer the context manager as though this workflow were open.
+    def _open(engine: Engine, *, name: str, file_path: str | None) -> None:
+        """Enter this workflow's context in the engine's open workflow.
 
-        Patched rather than really opened: opening one runs its generated module, which
-        registers nodes and libraries this has nothing to do with. The three methods
-        replaced here are everything the diagnostics code asks about the open workflow.
+        Only the context is entered: opening it for real runs its generated module, which
+        registers nodes and libraries this has nothing to do with.
         """
-        context_manager = engine.context_manager
-        monkeypatch.setattr(context_manager, "has_current_workflow", lambda: True)
-        monkeypatch.setattr(context_manager, "get_current_workflow_name", lambda: name)
-        monkeypatch.setattr(context_manager, "get_current_workflow_file_path", lambda: file_path)
+        engine.current_workflow.context.push_workflow(name, file_path, None)
 
 
 class TestBundleWrittenToStaticFiles:

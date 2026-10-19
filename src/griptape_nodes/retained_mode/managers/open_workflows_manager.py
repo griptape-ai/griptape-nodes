@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -93,13 +93,15 @@ class OpenWorkflowsManager(EngineScoped):
         async with self._mutex.locked(_OPEN_WORKFLOWS_KEY):
             return await self._open_workflow(request)
 
-    @handles(CloseWorkflowRequest, scope=RequestScope.WORKFLOW)
-    async def on_close_workflow_request(self, request: CloseWorkflowRequest) -> ResultPayload:  # noqa: ARG002
+    @handles(CloseWorkflowRequest)
+    async def on_close_workflow_request(
+        self,
+        request: CloseWorkflowRequest,  # noqa: ARG002
+        workflow: WorkflowRuntime,
+    ) -> ResultPayload:
         async with self._mutex.locked(_OPEN_WORKFLOWS_KEY):
-            # Dispatch bound this request to the workflow it is addressed to.
-            runtime = self.engine.current_workflow
-            workflow_name = self.workflow_name_in(runtime) or "the workflow"
-            failure = await self.close_workflow_runtime(runtime)
+            workflow_name = self.workflow_name_in(workflow) or "the workflow"
+            failure = await self.close_workflow_runtime(workflow)
         if failure is not None:
             details = f"Attempted to close workflow '{workflow_name}'. Failed due to: {failure}"
             return CloseWorkflowResultFailure(result_details=details)

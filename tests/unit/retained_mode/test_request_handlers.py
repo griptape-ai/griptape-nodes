@@ -7,7 +7,7 @@ from griptape_nodes.app.worker_routing import RemoteHandler
 from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
-from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 @dataclass(kw_only=True)
@@ -73,14 +73,22 @@ class _Static:
 
 
 class _MixedScopes:
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
+    @handles(_PingRequest, scope=RequestScope.WORKFLOW)
+    def on_ping(self, request: _PingRequest) -> None:
+        pass
+
+    @handles(_PongRequest)
+    def on_pong(self, request: _PongRequest) -> None:
+        pass
+
+
+class _WorkflowDefault:
     request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
 
     @handles(_PingRequest)
     def on_ping(self, request: _PingRequest) -> None:
-        pass
-
-    @handles(_PongRequest, scope=RequestScope.HOST)
-    def on_pong(self, request: _PongRequest) -> None:
         pass
 
 
@@ -199,6 +207,14 @@ class TestRegisterRequestHandlers:
 
         with pytest.raises(ValueError, match="already assigned"):
             event_manager.register_request_handlers(_Base())
+
+    def test_an_owner_default_other_than_host_raises(self) -> None:
+        event_manager = EventManager()
+
+        with pytest.raises(TypeError, match="only a host default is allowed"):
+            event_manager.register_request_handlers(_WorkflowDefault())
+
+        assert event_manager.get_manager_for_request_type(_PingRequest) is None
 
     def test_owner_scope_is_the_default_and_a_handler_scope_overrides_it(self) -> None:
         event_manager = EventManager()

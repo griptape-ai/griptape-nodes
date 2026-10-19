@@ -38,7 +38,6 @@ from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachi
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNodeCategories, NodeState
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
-from griptape_nodes.retained_mode.context_types import FlowContext, NodeContext
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -183,8 +182,9 @@ from griptape_nodes.retained_mode.managers.workflow.shape import (
 )
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.run_scheduler import run_scope
+from griptape_nodes.retained_mode.runtime.context import FlowContext, NodeContext
+from griptape_nodes.retained_mode.runtime.flows import DagExecutionType, QueueItem
 from griptape_nodes.retained_mode.variable_types import VariableScope
-from griptape_nodes.retained_mode.workflow_flow_types import DagExecutionType, QueueItem
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands
 from griptape_nodes.serialization.legacy_pickle import LegacyPickleError, read_legacy_image_flow_commands
 from griptape_nodes.serialization.values import Unencodable, decode_value, encodable_default, try_encode, value_key
@@ -198,8 +198,8 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.workflow.shape import WorkflowShapeNodes
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
     from griptape_nodes.retained_mode.variable_types import FlowVariable
-    from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 

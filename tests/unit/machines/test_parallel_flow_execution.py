@@ -234,7 +234,7 @@ class TestFlowManagerDagBuilderIntegration:
         # The engine reports no connections
         mock_connections = MagicMock()
         mock_connections.get_connected_node.return_value = None
-        dag_builder = DagBuilder(_engine_with_connections(mock_connections))
+        dag_builder = DagBuilder(mock_connections)
 
         # First addition should succeed
         added_nodes_1 = dag_builder.add_node_with_dependencies(mock_node)

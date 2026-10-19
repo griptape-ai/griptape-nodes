@@ -5,7 +5,7 @@ import os
 import threading
 from functools import partial
 from pathlib import Path
-from typing import ClassVar, NamedTuple
+from typing import NamedTuple
 
 import anyio
 import anyio.to_thread
@@ -126,8 +126,6 @@ REFRESH_PREVIEWS_ON_FILE_CHANGE_KEY = "refresh_previews_on_file_change"
 
 class StaticFilesManager(EngineScoped):
     """A class to manage the creation and management of static files."""
-
-    request_scope: ClassVar[RequestScope] = RequestScope.OPTIONAL_WORKFLOW
 
     def __init__(
         self,
@@ -326,7 +324,7 @@ class StaticFilesManager(EngineScoped):
         logger.debug("Serving preview for %s -> %s", file_path, preview_path)
         return PreviewResolution(path_to_serve=preview_path, artifact_metadata=result.artifact_metadata)
 
-    @handles(CreateStaticFileRequest)
+    @handles(CreateStaticFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_handle_create_static_file_request(
         self,
         request: CreateStaticFileRequest,
@@ -347,7 +345,7 @@ class StaticFilesManager(EngineScoped):
 
         return CreateStaticFileResultSuccess(url=url, result_details=f"Successfully created static file: {url}")
 
-    @handles(CreateStaticFileUploadUrlRequest)
+    @handles(CreateStaticFileUploadUrlRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_handle_create_static_file_upload_url_request(
         self,
         request: CreateStaticFileUploadUrlRequest,
@@ -382,7 +380,7 @@ class StaticFilesManager(EngineScoped):
             result_details="Successfully created static file upload URL",
         )
 
-    @handles(CreateStaticFileDownloadUrlRequest)
+    @handles(CreateStaticFileDownloadUrlRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_handle_create_static_file_download_url_request(
         self,
         request: CreateStaticFileDownloadUrlRequest,
@@ -504,7 +502,7 @@ class StaticFilesManager(EngineScoped):
             logger.debug("Serving full image (no thumbnail available) for %s", file_path)
         return resolution
 
-    @handles(CreateStaticFileDownloadUrlFromPathRequest)
+    @handles(CreateStaticFileDownloadUrlFromPathRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     async def on_handle_create_static_file_download_url_from_path_request(
         self,
         request: CreateStaticFileDownloadUrlFromPathRequest,

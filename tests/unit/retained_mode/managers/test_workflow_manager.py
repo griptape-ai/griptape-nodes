@@ -89,7 +89,6 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     MissingTomlSectionProblem,
 )
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
 from griptape_nodes.retained_mode.managers.workflow.codegen import WorkflowCodeGenerator
 from griptape_nodes.retained_mode.managers.workflow.running import WorkflowExecutionResult, execution_result_details
 from griptape_nodes.retained_mode.managers.workflow.saving import (
@@ -944,7 +943,9 @@ class TestWorkflowManager:
                     ),
                 ):
                     result = asyncio.run(
-                        workflow_manager.saver.on_save_workflow_request(SaveWorkflowRequest(file_name=saved_key))
+                        workflow_manager.saver.on_save_workflow_request(
+                            SaveWorkflowRequest(file_name=saved_key), workflow=engine.current_workflow
+                        )
                     )
 
                 assert isinstance(result, SaveWorkflowResultSuccess)
@@ -1096,7 +1097,9 @@ class TestWorkflowManager:
                     # frontend saveWorkflowWithoutModal behavior). Backend should strip it
                     # and use metadata.name as the filename stem.
                     result = asyncio.run(
-                        workflow_manager.saver.on_save_workflow_request(SaveWorkflowRequest(file_name=unsaved_key))
+                        workflow_manager.saver.on_save_workflow_request(
+                            SaveWorkflowRequest(file_name=unsaved_key), workflow=engine.current_workflow
+                        )
                     )
 
                 assert isinstance(result, SaveWorkflowResultSuccess)
@@ -1174,7 +1177,8 @@ class TestWorkflowManager:
                         workflow_name=scenario.workflow_name,
                         requested_name=scenario.requested_name,
                         **(request_kwargs or {}),
-                    )
+                    ),
+                    workflow=workflow_manager.engine.current_workflow,
                 )
             )
 
@@ -1391,7 +1395,8 @@ class TestWorkflowManager:
                         requested_name="my_workflow_renamed",
                         display_name_behavior=RenameDisplayNameBehavior[non_override_behavior],
                         display_name="Silently Ignored",
-                    )
+                    ),
+                    workflow=engine.current_workflow,
                 )
             )
 
@@ -1425,7 +1430,8 @@ class TestWorkflowManager:
                         requested_name="my_workflow_renamed",
                         display_name_behavior=RenameDisplayNameBehavior.OVERRIDE,
                         display_name=empty_display_name,
-                    )
+                    ),
+                    workflow=engine.current_workflow,
                 )
             )
 
@@ -1500,7 +1506,8 @@ class TestWorkflowManager:
                         workflow_name="never_registered",
                         requested_name="never_registered_renamed",
                         display_name_behavior=RenameDisplayNameBehavior.PRESERVE_EXISTING,
-                    )
+                    ),
+                    workflow=engine.current_workflow,
                 )
             )
 
@@ -1549,7 +1556,7 @@ class TestWorkflowManager:
         ):
             result = asyncio.run(
                 workflow_manager.file_operations.on_rename_workflow_request(
-                    RenameWorkflowRequest(workflow_name="old", requested_name="new")
+                    RenameWorkflowRequest(workflow_name="old", requested_name="new"), workflow=engine.current_workflow
                 )
             )
 
@@ -3508,18 +3515,17 @@ class TestRunWorkflowWithCurrentStateRequest:
     async def test_refuses_while_a_flow_is_open(
         self,
         engine: Engine,
-        context_manager: Mock,
         run_workflow: AsyncMock,
         get_complete_file_path: Mock,  # noqa: ARG002
         anyio_path: Mock,  # noqa: ARG002
     ) -> None:
         open_flow = Mock(spec=ControlFlow)
         open_flow.name = self._OPEN_FLOW_NAME
-        context_manager.has_current_flow.return_value = True
-        context_manager.get_current_flow.return_value = open_flow
+        engine.current_workflow.context.push_workflow("open_workflow", None, None)
+        engine.current_workflow.context.push_flow(open_flow)
 
         result = await engine.workflow_manager.runner.on_run_workflow_with_current_state_request(
-            RunWorkflowWithCurrentStateRequest(file_path=self._WORKFLOW_FILE)
+            RunWorkflowWithCurrentStateRequest(file_path=self._WORKFLOW_FILE), workflow=engine.current_workflow
         )
 
         assert isinstance(result, RunWorkflowWithCurrentStateResultFailure), result
@@ -3539,7 +3545,7 @@ class TestRunWorkflowWithCurrentStateRequest:
         context_manager.has_current_flow.return_value = False
 
         await engine.workflow_manager.runner.on_run_workflow_with_current_state_request(
-            RunWorkflowWithCurrentStateRequest(file_path=self._WORKFLOW_FILE)
+            RunWorkflowWithCurrentStateRequest(file_path=self._WORKFLOW_FILE), workflow=engine.current_workflow
         )
 
         # Getting past the guard is the behaviour under test; what the run then does is mocked away.
@@ -5058,7 +5064,8 @@ class TestSaveWorkflowDisplayNameFallback:
             ):
                 asyncio.run(
                     workflow_manager.saver.on_save_workflow_request(
-                        SaveWorkflowRequest(file_name=request_file_name, display_name=request_display_name)
+                        SaveWorkflowRequest(file_name=request_file_name, display_name=request_display_name),
+                        workflow=engine.current_workflow,
                     )
                 )
         finally:
@@ -5505,12 +5512,14 @@ class TestExecuteWorkflowImport:
 
         # The import creates two new flows (a top-level flow + a group's body flow). The dict
         # values are never inspected -- only the keys form the new-flows set.
-        object_manager = Mock(spec=ObjectManager)
-        object_manager.get_filtered_subset.side_effect = [
-            {"ParentFlow": object()},
-            {"ParentFlow": object(), "ControlFlow_2": object(), "Group_subflow": object()},
-        ]
-        monkeypatch.setattr(engine, "_object_manager", object_manager)
+        runtime = engine.current_workflow
+        filtered_subset = Mock(
+            side_effect=[
+                {"ParentFlow": object()},
+                {"ParentFlow": object(), "ControlFlow_2": object(), "Group_subflow": object()},
+            ]
+        )
+        monkeypatch.setattr(runtime.objects, "get_filtered_subset", filtered_subset)
 
         # ContextManager().flow(...) is used purely as a context manager wrapping the import.
         context_manager = MagicMock(spec=ContextManager)
@@ -5528,7 +5537,9 @@ class TestExecuteWorkflowImport:
         )
         monkeypatch.setattr(workflow_manager.referenced_import, "_select_top_level_imported_flow", select_mock)
 
-        result = await workflow_manager.referenced_import._execute_workflow_import(request, workflow, "ParentFlow")
+        result = await workflow_manager.referenced_import._execute_workflow_import(
+            runtime, request, workflow, "ParentFlow"
+        )
 
         # It selects via the helper (passing the new-flows set, target flow, workflow name, and engine)...
         select_mock.assert_called_once_with({"ControlFlow_2", "Group_subflow"}, "ParentFlow", "wf", engine)
@@ -5653,7 +5664,8 @@ class TestSaveWorkflowOverwriteProtection:
             ):
                 return asyncio.run(
                     workflow_manager.saver.on_save_workflow_request(
-                        SaveWorkflowRequest(file_name=file_name, overwrite_existing=overwrite_existing)
+                        SaveWorkflowRequest(file_name=file_name, overwrite_existing=overwrite_existing),
+                        workflow=engine.current_workflow,
                     )
                 )
         finally:

@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -162,7 +163,7 @@ class _ExistingMetadata(NamedTuple):
 
 
 class WorkflowSaver(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
@@ -248,12 +249,13 @@ class WorkflowSaver(EngineScoped):
         return WriteWorkflowFileResult(success=True, error_details="", written_file=written_file)
 
     @handles(SaveWorkflowRequest)
-    async def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    async def on_save_workflow_request(  # noqa: C901, PLR0912, PLR0915
+        self, request: SaveWorkflowRequest, workflow: WorkflowRuntime
+    ) -> ResultPayload:
         # Determine save target (file path, name, metadata)
-        context_manager = self.engine.context_manager
-        current_workflow_name = (
-            context_manager.get_current_workflow_name() if context_manager.has_current_workflow() else None
-        )
+        current_workflow_name = None
+        if workflow.context.has_current_workflow():
+            current_workflow_name = workflow.context.get_current_workflow_name()
 
         try:
             save_target = self._determine_save_target(
@@ -429,16 +431,12 @@ class WorkflowSaver(EngineScoped):
             # dropping the unsaved entry and updating the existing saved entry below.
             if registry_key in registered_workflows:
                 self.engine.workflow_registry.delete_workflow_by_name(unsaved_source_key)
-                self.engine.workflow_manager.variable_substitution.drop(unsaved_source_key)
             else:
                 self.engine.workflow_registry.rekey_workflow(old_key=unsaved_source_key, new_key=registry_key)
-                self.engine.workflow_manager.variable_substitution.rekey(unsaved_source_key, registry_key)
                 rekeyed_workflow = self.engine.workflow_registry.get_workflow_by_name(registry_key)
                 rekeyed_workflow.file_path = relative_file_path
             # An unsaved context has no path; this save is where it gets one.
-            self.engine.context_manager.rekey_workflow(
-                unsaved_source_key, registry_key, str(save_file_result.file_path)
-            )
+            workflow.context.rekey_workflow(unsaved_source_key, registry_key, str(save_file_result.file_path))
             registered_workflows = self.engine.workflow_registry.list_workflows()
             # Listed under its new key from here on.
             self.engine.open_workflows_manager.announce_change()
@@ -512,7 +510,7 @@ class WorkflowSaver(EngineScoped):
             return False
         return Path(resolved).exists()
 
-    @handles(SaveWorkflowFileFromSerializedFlowRequest, scope=RequestScope.HOST)
+    @handles(SaveWorkflowFileFromSerializedFlowRequest)
     async def on_save_workflow_file_from_serialized_flow_request(
         self, request: SaveWorkflowFileFromSerializedFlowRequest
     ) -> ResultPayload:
@@ -544,7 +542,8 @@ class WorkflowSaver(EngineScoped):
             workflow_shape=request.workflow_shape,
         )
 
-    @handles(SaveSubflowToWorkflowRequest)
+    # Acts on the workflow through the nested SerializeFlowToCommandsRequest, which inherits it.
+    @handles(SaveSubflowToWorkflowRequest, scope=RequestScope.WORKFLOW)
     async def on_save_subflow_to_workflow(self, request: SaveSubflowToWorkflowRequest) -> ResultPayload:
         """Save a subflow back to its original workflow file."""
         registry_key = request.workflow_name
