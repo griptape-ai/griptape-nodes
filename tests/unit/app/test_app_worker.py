@@ -2608,6 +2608,16 @@ class TestStartingAWorkerOnAnotherMachine:
         assert [sent["request_type"] for sent in _sent(links)] == ["RegisterOriginatorRequest"]
 
     @pytest.mark.asyncio
+    async def test_requests_to_the_machine_are_addressed_to_its_engine(self, worker_manager: WorkerManager) -> None:
+        """On a transport several engines share, the bare "request" topic would reach all of them."""
+        links = _machine(worker_manager)
+
+        await _start_on_machine(worker_manager)
+
+        topics = {published.args[3] for published in links.publish.await_args_list}
+        assert topics == {f"engines/{_MACHINE}/request"}
+
+    @pytest.mark.asyncio
     async def test_two_libraries_on_one_machine_register_with_it_once(self, worker_manager: WorkerManager) -> None:
         links = _machine(worker_manager)
         worker_manager.engine.config_manager.get_config_value.side_effect = (  # type: ignore[union-attr]

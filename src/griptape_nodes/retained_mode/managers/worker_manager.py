@@ -1269,7 +1269,11 @@ class WorkerManager(EngineScoped):
         future = await self._tx.request_client.track_request(request_id, tag=machine, resolve_failures_as_payload=True)
         event = EventRequest(request=request, request_id=request_id, response_topic=f"sessions/{session_id}/response")
         try:
-            await self._links_for(machine).publish(machine, "EventRequest", converters.engine.dumps(event), "request")
+            # Addressed to the machine's engine rather than the bare "request" topic, which on a
+            # transport shared by several engines would reach every one of them.
+            await self._links_for(machine).publish(
+                machine, "EventRequest", converters.engine.dumps(event), f"{engine_topic_prefix(machine)}request"
+            )
             return await asyncio.wait_for(asyncio.wrap_future(future), timeout=_MACHINE_REQUEST_TIMEOUT_S)
         except TimeoutError:
             self._tx.request_client.discard_request(request_id)
