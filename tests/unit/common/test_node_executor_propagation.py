@@ -329,7 +329,7 @@ class TestGroupCopyBackPreservesTemplate:
         with _gn_mock_with_variable():
             executor._apply_parameter_values_to_node(node, {"PromptNode_prompt": "hyperreal"}, package_result)
 
-        unresolve = mock_engine.flow_manager.get_connections.return_value.unresolve_future_nodes
+        unresolve = mock_engine.current_workflow.flows.connections.unresolve_future_nodes
         unresolve.assert_called_once_with(node)
 
     def test_apply_parameter_values_invalidates_even_when_output_unchanged(self) -> None:
@@ -353,7 +353,7 @@ class TestGroupCopyBackPreservesTemplate:
             node.parameter_output_values["prompt"] = "hyperreal"
             executor._apply_parameter_values_to_node(node, {"PromptNode_prompt": "hyperreal"}, package_result)
 
-        unresolve = mock_engine.flow_manager.get_connections.return_value.unresolve_future_nodes
+        unresolve = mock_engine.current_workflow.flows.connections.unresolve_future_nodes
         unresolve.assert_called_once_with(node)
 
     def test_apply_parameter_values_writes_non_template_values_normally(self) -> None:

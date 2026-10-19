@@ -478,7 +478,7 @@ async def test_deleting_a_supplier_of_a_later_chain_member_cancels_the_run(
     await _wait_until_resolved(engine, "Shared")
     await _wait_until_resolving(engine, "First")
 
-    dag_nodes = engine.flow_manager.global_dag_builder.node_to_reference
+    dag_nodes = engine.current_workflow.flows.global_dag_builder.node_to_reference
     assert "Second" not in dag_nodes, (
         "Test setup is wrong: Second was already in the live DAG, so this is not the absent-consumer case."
     )
@@ -550,7 +550,7 @@ async def test_deleting_a_supplier_a_data_hop_away_from_the_chain_cancels_the_ru
 
     await _wait_until_resolving(engine, "First")
 
-    dag_nodes = engine.flow_manager.global_dag_builder.node_to_reference
+    dag_nodes = engine.current_workflow.flows.global_dag_builder.node_to_reference
     for absent_member in ("Second", "Resizer"):
         assert absent_member not in dag_nodes, (
             f"Test setup is wrong: {absent_member} was already in the live DAG, so this is not the "
@@ -622,7 +622,7 @@ async def test_deleting_a_supplier_two_hops_down_the_chain_cancels_the_run(
     run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
     await _wait_until_resolving(engine, "First")
 
-    dag_nodes = engine.flow_manager.global_dag_builder.node_to_reference
+    dag_nodes = engine.current_workflow.flows.global_dag_builder.node_to_reference
     for later_member in ("Second", "Third"):
         assert later_member not in dag_nodes, (
             f"Test setup is wrong: '{later_member}' was already in the live DAG, so this is not the "
@@ -1050,7 +1050,7 @@ async def test_deleting_a_settled_node_removes_it_from_the_live_dag(
     await _wait_until_resolved(engine, "Upstream")
     await _wait_until_resolving(engine, "Downstream")
 
-    dag_nodes = engine.flow_manager.global_dag_builder.node_to_reference
+    dag_nodes = engine.current_workflow.flows.global_dag_builder.node_to_reference
     assert "Upstream" in dag_nodes, "Test setup is wrong: Upstream was never in the live DAG to begin with."
 
     await _delete_node(engine, flow_name, "Upstream")
@@ -1059,9 +1059,9 @@ async def test_deleting_a_settled_node_removes_it_from_the_live_dag(
         "A deleted node was left in the live DAG, where it is still announced to the editor as part "
         "of the run and still iterated when the run is cancelled."
     )
-    for graph in engine.flow_manager.global_dag_builder.graphs.values():
+    for graph in engine.current_workflow.flows.global_dag_builder.graphs.values():
         assert "Upstream" not in graph.nodes()
-    for graph_node_names in engine.flow_manager.global_dag_builder.graph_to_nodes.values():
+    for graph_node_names in engine.current_workflow.flows.global_dag_builder.graph_to_nodes.values():
         assert "Upstream" not in graph_node_names
 
     involved_before_finish = len(involved)

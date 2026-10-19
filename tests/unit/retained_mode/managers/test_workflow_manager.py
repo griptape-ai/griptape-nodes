@@ -88,7 +88,6 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     LibraryNotRegisteredProblem,
     MissingTomlSectionProblem,
 )
-from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 from griptape_nodes.retained_mode.managers.workflow.codegen import WorkflowCodeGenerator
 from griptape_nodes.retained_mode.managers.workflow.running import WorkflowExecutionResult, execution_result_details
 from griptape_nodes.retained_mode.managers.workflow.saving import (
@@ -106,6 +105,7 @@ from griptape_nodes.retained_mode.managers.workflow.shape import (
 from griptape_nodes.retained_mode.managers.workflow_manager import (
     WorkflowManager,
 )
+from griptape_nodes.retained_mode.runtime.flows import WorkflowFlows
 
 
 def _valid_workflow_source(name: str, libraries: list[str] | None = None) -> str:
@@ -5382,21 +5382,19 @@ class TestScrubForAstConstant:
 class TestSelectTopLevelImportedFlow:
     """ReferencedWorkflowImport._select_top_level_imported_flow picks the top-level imported flow."""
 
-    def _flow_manager_with_parents(self, parents: dict[str, str]) -> Engine:
-        """Build a mock engine whose flow_manager.get_parent_flow resolves via the given name->parent mapping."""
-        flow_manager = Mock(spec=FlowManager)
-        flow_manager.get_parent_flow.side_effect = lambda flow: parents[flow]
-        engine = Mock(spec=Engine)
-        engine.flow_manager = flow_manager
-        return engine
+    def _flows_with_parents(self, parents: dict[str, str]) -> WorkflowFlows:
+        """Build flows whose parentage is the given name->parent mapping."""
+        flows = WorkflowFlows()
+        flows.name_to_parent_name.update(parents)
+        return flows
 
     def test_selects_flow_parented_to_import_target(self, engine: Engine) -> None:
         workflow_manager = engine.workflow_manager
         # Top-level flow is parented to the target; the group's body flow is parented to the top-level.
-        mock_engine = self._flow_manager_with_parents({"ControlFlow_2": "ParentFlow", "Group_subflow": "ControlFlow_2"})
+        flows = self._flows_with_parents({"ControlFlow_2": "ParentFlow", "Group_subflow": "ControlFlow_2"})
 
         selected = workflow_manager.referenced_import._select_top_level_imported_flow(
-            {"ControlFlow_2", "Group_subflow"}, "ParentFlow", "grouped_inner_workflow", mock_engine
+            {"ControlFlow_2", "Group_subflow"}, "ParentFlow", "grouped_inner_workflow", flows
         )
 
         assert selected == "ControlFlow_2"
@@ -5405,11 +5403,11 @@ class TestSelectTopLevelImportedFlow:
         self, engine: Engine, caplog: pytest.LogCaptureFixture
     ) -> None:
         workflow_manager = engine.workflow_manager
-        mock_engine = self._flow_manager_with_parents({"Zeta_flow": "Other", "Alpha_flow": "Other"})
+        flows = self._flows_with_parents({"Zeta_flow": "Other", "Alpha_flow": "Other"})
 
         with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
             selected = workflow_manager.referenced_import._select_top_level_imported_flow(
-                {"Zeta_flow", "Alpha_flow"}, "ParentFlow", "wf", mock_engine
+                {"Zeta_flow", "Alpha_flow"}, "ParentFlow", "wf", flows
             )
 
         # No flow parented to the target: deterministic sorted fallback, never hash-ordered.
@@ -5423,11 +5421,11 @@ class TestSelectTopLevelImportedFlow:
         self, engine: Engine, caplog: pytest.LogCaptureFixture
     ) -> None:
         workflow_manager = engine.workflow_manager
-        mock_engine = self._flow_manager_with_parents({"Zeta_flow": "ParentFlow", "Alpha_flow": "ParentFlow"})
+        flows = self._flows_with_parents({"Zeta_flow": "ParentFlow", "Alpha_flow": "ParentFlow"})
 
         with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
             selected = workflow_manager.referenced_import._select_top_level_imported_flow(
-                {"Zeta_flow", "Alpha_flow"}, "ParentFlow", "wf", mock_engine
+                {"Zeta_flow", "Alpha_flow"}, "ParentFlow", "wf", flows
             )
 
         # More than one candidate parented to the target: deterministic sorted fallback.
@@ -5541,8 +5539,8 @@ class TestExecuteWorkflowImport:
             runtime, request, workflow, "ParentFlow"
         )
 
-        # It selects via the helper (passing the new-flows set, target flow, workflow name, and engine)...
-        select_mock.assert_called_once_with({"ControlFlow_2", "Group_subflow"}, "ParentFlow", "wf", engine)
+        # It selects via the helper (passing the new-flows set, target flow, workflow name, and flows)...
+        select_mock.assert_called_once_with({"ControlFlow_2", "Group_subflow"}, "ParentFlow", "wf", runtime.flows)
         # ...and returns exactly what the helper chose.
         assert isinstance(result, ImportWorkflowAsReferencedSubFlowResultSuccess)
         assert result.created_flow_name == "ControlFlow_2"

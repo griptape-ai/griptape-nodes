@@ -8,7 +8,6 @@ import logging
 from dataclasses import dataclass, field, replace
 from io import BytesIO
 from pathlib import Path
-from queue import Queue
 from typing import TYPE_CHECKING, Any, Concatenate, NamedTuple, cast
 from uuid import uuid4
 
@@ -35,7 +34,7 @@ from griptape_nodes.exe_types.node_types import (
     VariableReference,
 )
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
-from griptape_nodes.machines.dag_builder import DagBuilder, DagNodeCategories, NodeState
+from griptape_nodes.machines.dag_builder import DagNodeCategories, NodeState
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
 from griptape_nodes.retained_mode.engine import EngineScoped
@@ -191,9 +190,9 @@ from griptape_nodes.serialization.values import Unencodable, decode_value, encod
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+    from queue import Queue
 
     from griptape_nodes.exe_types.connections import Connections
-    from griptape_nodes.machines.dag_builder import DagBuilder
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -345,21 +344,6 @@ class FlowManager(EngineScoped):
         self._node_executor = NodeExecutor(self.engine)
 
     @property
-    def global_single_node_resolution(self) -> bool:
-        workflow = self.engine.current_workflow
-        return workflow.flows.global_single_node_resolution
-
-    @property
-    def global_flow_queue(self) -> Queue[QueueItem]:
-        workflow = self.engine.current_workflow
-        return workflow.flows.global_flow_queue
-
-    @property
-    def global_dag_builder(self) -> DagBuilder:
-        workflow = self.engine.current_workflow
-        return workflow.flows.global_dag_builder
-
-    @property
     def node_executor(self) -> NodeExecutor:
         return self._node_executor
 
@@ -367,44 +351,6 @@ class FlowManager(EngineScoped):
         """Get the connections instance."""
         workflow = self.engine.current_workflow
         return workflow.flows.connections
-
-    def get_connected_output_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
-        """Get connected output parameters."""
-        workflow = self.engine.current_workflow
-        return workflow.flows.connected_output_parameters(node, param)
-
-    def get_parent_flow(self, flow_name: str) -> str | None:
-        workflow = self.engine.current_workflow
-        return workflow.flows.parent_flow_name(flow_name)
-
-    def reparent_flow(self, flow_name: str, new_parent_flow_name: str) -> None:
-        """Move a Flow under a different parent Flow.
-
-        Used when a node group is nested inside another: the inner group's subflow has to become a
-        child of the outer group's subflow so the saved flow hierarchy mirrors the group nesting.
-        Serialization walks parent/child links, so a subflow left parented to the top-level flow is
-        saved outside its enclosing group and its members go missing on load.
-
-        No peer manager has to be told: the workflow's flows are the only record of parentage, and
-        NodeManager tracks a node's flow by name, which reparenting does not change.
-
-        Unlike every other structural change in retained mode, this is a plain method rather than a
-        request, so nothing is emitted and the editor is not told. That is a real gap, not a design
-        choice: there is no ``ReparentFlowRequest`` to route it through. It holds today because the
-        nesting that triggers it happens inside ``AddNodesToNodeGroupRequest``, whose own result the
-        editor already acts on, and because the editor derives group nesting from ``parent_group``
-        rather than from flow parentage. An editor feature that reads flow parentage directly would
-        need this promoted to a request first.
-
-        Args:
-            flow_name: The Flow to move
-            new_parent_flow_name: The Flow that should become its parent
-
-        Raises:
-            ValueError: If either Flow is unknown, or the move would create a cycle
-        """
-        workflow = self.engine.current_workflow
-        workflow.flows.reparent_flow(flow_name, new_parent_flow_name)
 
     def get_flow_by_name(self, flow_name: str) -> ControlFlow:
         # A lookup, which finds nothing when no workflow is open.
@@ -540,7 +486,7 @@ class FlowManager(EngineScoped):
                 return GetFlowDetailsResultFailure(result_details=details)
 
         try:
-            parent_flow_name = self.get_parent_flow(flow_name)
+            parent_flow_name = workflow.flows.parent_flow_name(flow_name)
         except ValueError:
             details = f"Attempted to get Flow details for '{flow_name}'. Failed because Flow does not exist in parent mapping."
             return GetFlowDetailsResultFailure(result_details=details)
@@ -658,7 +604,7 @@ class FlowManager(EngineScoped):
         # Check if we're creating this flow within a referenced workflow context
         # This will inform the engine to maintain a reference to the workflow
         # when serializing it. It may inform the editor to render it differently.
-        flow = ControlFlow(name=final_flow_name, engine=self.engine, metadata=request.metadata)
+        flow = ControlFlow(name=final_flow_name, engine=self.engine, workflow=workflow, metadata=request.metadata)
         self.engine.object_manager.add_object_by_name(workflow, name=final_flow_name, obj=flow)
         workflow.flows.name_to_parent_name[final_flow_name] = parent_name
 
@@ -2786,7 +2732,7 @@ class FlowManager(EngineScoped):
                 details = f"Provided node with name {flow_node_name} does not exist"
                 return StartFlowResultFailure(validation_exceptions=[], result_details=details)
             # lets get the first control node in the flow!
-            start_node = self._start_node_from_node(workflow, flow, flow_node)
+            start_node = self.start_node_from_node(workflow, flow, flow_node)
             # if the start is not the node provided, set a breakpoint at the stop (we're running up until there)
             if not start_node:
                 details = f"Start node for node with name {flow_node_name} does not exist"
@@ -2796,7 +2742,7 @@ class FlowManager(EngineScoped):
         else:
             # we wont hit this if we dont have a request id, our requests always have nodes
             # If there is a request, reinitialize the queue
-            self._start_node_queue(workflow)  # initialize the start flow queue!
+            self.start_node_queue(workflow)  # initialize the start flow queue!
             start_node = None
         # Run Validation before starting a flow
         result = await self.on_validate_flow_dependencies_request(
@@ -3103,6 +3049,7 @@ class FlowManager(EngineScoped):
 
         subflow_machine = ControlFlowMachine(
             flow.name,
+            workflow,
             is_isolated=True,
             engine=self.engine,
         )
@@ -3782,7 +3729,7 @@ class FlowManager(EngineScoped):
                     # Always set set_as_new_context=False during serialization - let the workflow manager
                     # that loads this serialized flow decide whether to push it to context or not
                     # Get parent flow name from the flow manager's tracking
-                    parent_name = self.get_parent_flow(flow_name)
+                    parent_name = workflow.flows.parent_flow_name(flow_name)
                     create_flow_request = CreateFlowRequest(
                         flow_name=flow_name,
                         parent_flow_name=parent_name,
@@ -4552,7 +4499,7 @@ class FlowManager(EngineScoped):
 
         # Initialize global control flow machine and DAG builder
 
-        workflow.flows.global_control_flow_machine = ControlFlowMachine(flow.name, engine=self.engine)
+        workflow.flows.global_control_flow_machine = ControlFlowMachine(flow.name, workflow, engine=self.engine)
         # Set off the request here.
         try:
             await workflow.flows.global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
@@ -4828,27 +4775,6 @@ class FlowManager(EngineScoped):
         workflow.flows.global_flow_queue.task_done()
         return queue_item.node
 
-    def clear_execution_queue(self, flow: ControlFlow) -> None:
-        """Clear all nodes from the global execution queue."""
-        workflow = self.engine.current_workflow
-        if (
-            workflow.flows.global_control_flow_machine
-            and workflow.flows.global_control_flow_machine.context.flow_name == flow.name
-        ):
-            workflow.flows.global_flow_queue.queue.clear()
-
-    def has_connection(
-        self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
-        target_node: BaseNode,
-        target_parameter: Parameter,
-    ) -> bool:
-        """Check if a connection exists between the specified nodes and parameters."""
-        workflow = self.engine.current_workflow
-        return workflow.flows.has_connection(source_node, source_parameter, target_node, target_parameter)
-
-    # Internal execution queue helper methods to consolidate redundant operations
     async def _handle_flow_start_if_not_running(
         self,
         workflow: WorkflowRuntime,
@@ -4866,7 +4792,7 @@ class FlowManager(EngineScoped):
             workflow.flows.global_flow_queue.task_done()
             # Get or create machine
             if workflow.flows.global_control_flow_machine is None:
-                workflow.flows.global_control_flow_machine = ControlFlowMachine(flow.name, engine=self.engine)
+                workflow.flows.global_control_flow_machine = ControlFlowMachine(flow.name, workflow, engine=self.engine)
             await workflow.flows.global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def _handle_post_execution_queue_processing(self, workflow: WorkflowRuntime, *, debug_mode: bool) -> None:
@@ -4909,7 +4835,7 @@ class FlowManager(EngineScoped):
             # Set that we are only working on one node right now!
             workflow.flows.global_single_node_resolution = True
             # Get or create machine
-            workflow.flows.global_control_flow_machine = ControlFlowMachine(flow.name, engine=self.engine)
+            workflow.flows.global_control_flow_machine = ControlFlowMachine(flow.name, workflow, engine=self.engine)
             workflow.flows.global_control_flow_machine.context.current_nodes = [node]
             resolution_machine = workflow.flows.global_control_flow_machine.resolution_machine
             resolution_machine.change_debug_mode(debug_mode=debug_mode)
@@ -5104,49 +5030,20 @@ class FlowManager(EngineScoped):
                 nodes_to_visit.extend(node.nodes.values())
         return involved_node_names
 
-    def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
-        workflow = self.engine.current_workflow
-        return self._start_node_from_node(workflow, flow, node)
-
-    def get_prev_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:  # noqa: ARG002
-        workflow = self.engine.current_workflow
-        return self._prev_node(workflow, node)
-
-    def get_start_node_queue(self) -> Queue | None:
-        workflow = self.engine.current_workflow
-        return self._start_node_queue(workflow)
-
-    def _start_node_from_node(self, workflow: WorkflowRuntime, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
+    def start_node_from_node(self, workflow: WorkflowRuntime, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.
         if node not in flow.nodes.values():
             return None
         # Go back through incoming control connections to get the start node
         curr_node = node
-        prev_node = self._prev_node(workflow, curr_node)
+        prev_node = workflow.flows.prev_control_node(curr_node)
         # Fencepost loop - get the first previous node name and then we go
         while prev_node:
             curr_node = prev_node
-            prev_node = self._prev_node(workflow, prev_node)
+            prev_node = workflow.flows.prev_control_node(prev_node)
         return curr_node
 
-    def _prev_node(self, workflow: WorkflowRuntime, node: BaseNode) -> BaseNode | None:
-        connections = workflow.flows.connections
-        if node.name in connections.incoming_index:
-            parameters = connections.incoming_index[node.name]
-            for parameter_name in parameters:
-                parameter = node.get_parameter_by_name(parameter_name)
-                if parameter and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
-                    # this is a control connection
-                    connection_ids = connections.incoming_index[node.name][parameter_name]
-                    for connection_id in connection_ids:
-                        connection = connections.connections[connection_id]
-                        # Skip internal NodeGroup connections
-                        if connection.is_node_group_internal:
-                            continue
-                        return connection.get_source_node()
-        return None
-
-    def _start_node_queue(self, workflow: WorkflowRuntime) -> Queue | None:
+    def start_node_queue(self, workflow: WorkflowRuntime) -> Queue | None:
         # For cross-flow execution, we consider ALL nodes across ALL (non-referenced) flows.
         # Referenced subflows are executed explicitly via StartLocalSubflowRequest and must not
         # participate in the top-level queue; SubflowNodeGroup children run inside their group's
@@ -5166,7 +5063,7 @@ class FlowManager(EngineScoped):
         if not scope_nodes:
             return None
 
-        categories = self._classify_nodes_for_dag(workflow, scope_nodes)
+        categories = self.classify_nodes_for_dag(workflow, scope_nodes)
 
         # populate the global flow queue with node type information
         for node in categories.start_nodes:
@@ -5191,11 +5088,7 @@ class FlowManager(EngineScoped):
         """
         return [node for node in nodes if not isinstance(node.parent_group, SubflowNodeGroup)]
 
-    def classify_nodes_for_dag(self, nodes: list[BaseNode]) -> DagNodeCategories:
-        workflow = self.engine.current_workflow
-        return self._classify_nodes_for_dag(workflow, nodes)
-
-    def _classify_nodes_for_dag(  # noqa: C901, PLR0912, PLR0915
+    def classify_nodes_for_dag(  # noqa: C901, PLR0912, PLR0915
         self, workflow: WorkflowRuntime, nodes: list[BaseNode]
     ) -> DagNodeCategories:
         """Bucket a scope of nodes into start / control-entry / data-sink roles for DAG seeding.
@@ -5300,39 +5193,13 @@ class FlowManager(EngineScoped):
 
         return DagNodeCategories(start_nodes=start_nodes, control_nodes=control_nodes, data_sink_nodes=valid_data_nodes)
 
-    def get_connected_input_from_node(self, flow: ControlFlow, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:  # noqa: ARG002
-        workflow = self.engine.current_workflow
-        return workflow.flows.connected_input_from_node(node)
-
-    def get_connected_output_from_node(self, flow: ControlFlow, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:  # noqa: ARG002
-        workflow = self.engine.current_workflow
-        return workflow.flows.connected_output_from_node(node)
-
-    def get_connected_input_parameters(
-        self,
-        flow: ControlFlow,  # noqa: ARG002
-        node: BaseNode,
-        param: Parameter,
-    ) -> list[tuple[BaseNode, Parameter]]:
-        workflow = self.engine.current_workflow
-        return workflow.flows.connected_input_parameters(node, param)
-
-    def get_connections_on_node(self, node: BaseNode) -> list[BaseNode] | None:
-        workflow = self.engine.current_workflow
-        return workflow.flows.connections_on_node(node)
-
-    def get_all_connected_nodes(self, node: BaseNode) -> list[BaseNode]:
-        workflow = self.engine.current_workflow
-        return workflow.flows.all_connected_nodes(node)
-
-    def is_node_connected(self, start_node: BaseNode, node: BaseNode) -> list[str]:
+    def is_node_connected(self, workflow: WorkflowRuntime, start_node: BaseNode, node: BaseNode) -> list[str]:
         """Check if node is in the forward control path from start_node, returning boundary nodes if connected.
 
         Returns:
             list[str]: Names of nodes that have direct connections to 'node' and are in the forward control path,
                       or empty list if not in forward path.
         """
-        workflow = self.engine.current_workflow
         connections = workflow.flows.connections
 
         # Check if node is in the forward control path from start_node
@@ -5358,37 +5225,3 @@ class FlowManager(EngineScoped):
                         boundary_nodes.append(source_node_name)
 
         return boundary_nodes
-
-    def get_node_dependencies(
-        self,
-        flow: ControlFlow,  # noqa: ARG002
-        node: BaseNode,
-    ) -> list[BaseNode]:
-        """Get all upstream nodes that the given node depends on.
-
-        This method performs a breadth-first search starting from the given node and working backwards through its non-control input connections to identify all nodes that must run before this node can be resolved.
-        It ignores control connections, since we're only focusing on node dependencies.
-
-        Args:
-            flow (ControlFlow): The flow containing the node
-            node (BaseNode): The node to find dependencies for
-
-        Returns:
-            list[BaseNode]: A list of all nodes that the given node depends on, including the node itself (as the first element)
-        """
-        workflow = self.engine.current_workflow
-        node_list = [node]
-        node_queue = Queue()
-        node_queue.put(node)
-        while not node_queue.empty():
-            curr_node = node_queue.get()
-            input_connections = workflow.flows.connected_input_from_node(curr_node)
-            if input_connections:
-                for input_node, input_parameter in input_connections:
-                    if (
-                        ParameterTypeBuiltin.CONTROL_TYPE.value != input_parameter.output_type
-                        and input_node not in node_list
-                    ):
-                        node_list.append(input_node)
-                        node_queue.put(input_node)
-        return node_list

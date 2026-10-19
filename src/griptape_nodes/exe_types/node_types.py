@@ -503,6 +503,15 @@ class BaseNode(ABC):
             event.run_id = self._run_id_in_own_workflow()
         return ExecutionGriptapeNodeEvent(wrapped_event=event)
 
+    def _own_workflow(self) -> WorkflowRuntime:
+        """The workflow this node belongs to, which code it runs on another task may have lost the binding to.
+
+        A node built outside any request belongs to the current one.
+        """
+        if self.workflow_runtime is not None:
+            return self.workflow_runtime
+        return self.engine.current_workflow
+
     def _run_id_in_own_workflow(self) -> str | None:
         """The run the current work belongs to, when it is a run of this node's workflow."""
         run = current_run.get()

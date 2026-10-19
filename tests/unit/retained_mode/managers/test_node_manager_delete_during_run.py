@@ -8,6 +8,7 @@ control graph, which a run reaches only through whichever topology it happens to
 """
 
 from dataclasses import dataclass
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -19,6 +20,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder, DagNode, NodeState
 from griptape_nodes.retained_mode.events.node_events import DeleteNodeResultFailure
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 LOOP_BACK_PARAMETER = "loop_back"
 DATA_PARAMETER = "value"
@@ -80,11 +82,23 @@ def _outgoing_to(*target_nodes: object) -> list[MagicMock]:
 
 
 def _engine(dag_builder: DagBuilder, *, outgoing: list | None = None) -> MagicMock:
-    """An engine whose only real part is the DAG the deletion policy reads."""
+    """An engine whose only real part is the workflow, and its DAG, the deletion policy reads.
+
+    The workflow is `engine.scene_workflow`.
+    """
     engine = MagicMock()
-    engine.flow_manager.global_dag_builder = dag_builder
-    engine.flow_manager.get_connections.return_value.get_all_outgoing_connections.return_value = outgoing or []
+    workflow = WorkflowRuntime(owner=engine)
+    workflow.flows.global_dag_builder = dag_builder
+    connections = MagicMock()
+    connections.get_all_outgoing_connections.return_value = outgoing or []
+    workflow.flows.connections = connections
+    engine.scene_workflow = workflow
     return engine
+
+
+def _workflow(node_manager: NodeManager) -> WorkflowRuntime:
+    """The workflow `_engine` built for `node_manager`'s engine."""
+    return cast("MagicMock", node_manager.engine).scene_workflow
 
 
 def _node_manager(engine: MagicMock) -> NodeManager:
@@ -104,7 +118,7 @@ def test_deleting_a_node_the_run_is_gated_on_is_entangled() -> None:
 
     node_manager = _node_manager(_engine(dag_builder))
 
-    assert node_manager._find_entangled_live_node(_node("Boundary")) == "GatedDataNode"
+    assert node_manager._find_entangled_live_node(_workflow(node_manager), _node("Boundary")) == "GatedDataNode"
 
 
 def test_deleting_a_node_nothing_is_gated_on_is_free() -> None:
@@ -114,7 +128,7 @@ def test_deleting_a_node_nothing_is_gated_on_is_free() -> None:
 
     node_manager = _node_manager(_engine(dag_builder))
 
-    assert node_manager._find_entangled_live_node(_node("Unrelated")) is None
+    assert node_manager._find_entangled_live_node(_workflow(node_manager), _node("Unrelated")) is None
 
 
 def test_a_consumer_the_run_has_already_gone_past_does_not_hold_the_node() -> None:
@@ -131,8 +145,8 @@ def test_a_consumer_the_run_has_already_gone_past_does_not_hold_the_node() -> No
     engine = _engine(dag_builder, outgoing=_outgoing_to(_node("AbsentConsumer")))
     node_manager = _node_manager(engine)
 
-    assert node_manager._find_entangled_live_node(_node("Deleted")) is None
-    engine.flow_manager.get_connections.return_value.is_node_in_forward_control_path.assert_not_called()
+    assert node_manager._find_entangled_live_node(_workflow(node_manager), _node("Deleted")) is None
+    engine.scene_workflow.flows.connections.is_node_in_forward_control_path.assert_not_called()
 
 
 def test_an_errored_node_whose_consumer_never_collected_is_still_entangled() -> None:
@@ -151,7 +165,7 @@ def test_an_errored_node_whose_consumer_never_collected_is_still_entangled() -> 
 
     node_manager = _node_manager(_engine(dag_builder, outgoing=_outgoing_to(consumer)))
 
-    assert node_manager._find_entangled_live_node(deleted) == "Consumer"
+    assert node_manager._find_entangled_live_node(_workflow(node_manager), deleted) == "Consumer"
 
 
 def test_a_consumer_beyond_a_control_loop_is_found_without_the_walk_hanging() -> None:
@@ -178,10 +192,10 @@ def test_a_consumer_beyond_a_control_loop_is_found_without_the_walk_hanging() ->
     dag_builder.node_to_reference["Head"] = DagNode(node_reference=head, node_state=NodeState.PROCESSING)
 
     engine = _engine(dag_builder)
-    engine.flow_manager.get_connections.return_value = connections
+    engine.scene_workflow.flows.connections = connections
     node_manager = _node_manager(engine)
 
-    assert node_manager._find_entangled_live_node(deleted) == "Consumer"
+    assert node_manager._find_entangled_live_node(_workflow(node_manager), deleted) == "Consumer"
 
 
 def test_a_consumer_the_control_graph_never_reaches_is_free() -> None:
@@ -205,10 +219,10 @@ def test_a_consumer_the_control_graph_never_reaches_is_free() -> None:
     dag_builder.node_to_reference["Head"] = DagNode(node_reference=head, node_state=NodeState.PROCESSING)
 
     engine = _engine(dag_builder)
-    engine.flow_manager.get_connections.return_value = connections
+    engine.scene_workflow.flows.connections = connections
     node_manager = _node_manager(engine)
 
-    assert node_manager._find_entangled_live_node(deleted) is None
+    assert node_manager._find_entangled_live_node(_workflow(node_manager), deleted) is None
 
 
 @dataclass
@@ -247,7 +261,7 @@ def _queued_sibling_scene(*, via_data_hop: bool) -> _QueuedSiblingScene:
     dag_builder.node_to_reference["Slow"] = DagNode(node_reference=slow, node_state=NodeState.PROCESSING)
 
     engine = _engine(dag_builder)
-    engine.flow_manager.get_connections.return_value = connections
+    engine.scene_workflow.flows.connections = connections
     return _QueuedSiblingScene(node_manager=_node_manager(engine), supplier=loader)
 
 
@@ -260,7 +274,7 @@ def test_direct_data_connection_to_a_queued_sibling_cancels() -> None:
     """
     scene = _queued_sibling_scene(via_data_hop=False)
 
-    assert scene.node_manager._find_entangled_live_node(scene.supplier) == "Fast"
+    assert scene.node_manager._find_entangled_live_node(_workflow(scene.node_manager), scene.supplier) == "Fast"
 
 
 def test_a_queued_sibling_reached_through_a_data_hop_also_cancels() -> None:
@@ -273,7 +287,7 @@ def test_a_queued_sibling_reached_through_a_data_hop_also_cancels() -> None:
     """
     scene = _queued_sibling_scene(via_data_hop=True)
 
-    assert scene.node_manager._find_entangled_live_node(scene.supplier) == "Resizer"
+    assert scene.node_manager._find_entangled_live_node(_workflow(scene.node_manager), scene.supplier) == "Resizer"
 
 
 def test_the_walk_stops_at_a_consumer_that_has_already_collected() -> None:
@@ -301,10 +315,10 @@ def test_the_walk_stops_at_a_consumer_that_has_already_collected() -> None:
     dag_builder.node_to_reference["Slow"] = DagNode(node_reference=slow, node_state=NodeState.PROCESSING)
 
     engine = _engine(dag_builder)
-    engine.flow_manager.get_connections.return_value = connections
+    engine.scene_workflow.flows.connections = connections
     node_manager = _node_manager(engine)
 
-    assert node_manager._find_entangled_live_node(loader) is None
+    assert node_manager._find_entangled_live_node(_workflow(node_manager), loader) is None
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,7 @@ from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.machines.control_flow import ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNodeCategories
 from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType, QueueItem
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -41,29 +42,29 @@ class TestDrainGlobalFlowQueue:
     """Tests for ControlFlowMachine._drain_global_flow_queue."""
 
     def test_buckets_items_by_type_and_empties_queue(self, engine: Engine) -> None:
-        flow_manager = engine.flow_manager
-        flow_manager.global_flow_queue.queue.clear()
+        flows = engine.current_workflow.flows
+        flows.global_flow_queue.queue.clear()
 
         start = _mock_node("start")
         control = _mock_node("control")
         data = _mock_node("data")
-        flow_manager.global_flow_queue.put(QueueItem(node=start, dag_execution_type=DagExecutionType.START_NODE))
-        flow_manager.global_flow_queue.put(QueueItem(node=control, dag_execution_type=DagExecutionType.CONTROL_NODE))
-        flow_manager.global_flow_queue.put(QueueItem(node=data, dag_execution_type=DagExecutionType.DATA_NODE))
+        flows.global_flow_queue.put(QueueItem(node=start, dag_execution_type=DagExecutionType.START_NODE))
+        flows.global_flow_queue.put(QueueItem(node=control, dag_execution_type=DagExecutionType.CONTROL_NODE))
+        flows.global_flow_queue.put(QueueItem(node=data, dag_execution_type=DagExecutionType.DATA_NODE))
 
-        categories = ControlFlowMachine._drain_global_flow_queue(flow_manager)
+        categories = ControlFlowMachine._drain_global_flow_queue(flows)
 
         assert [node.name for node in categories.start_nodes] == ["start"]
         assert [node.name for node in categories.control_nodes] == ["control"]
         assert [node.name for node in categories.data_sink_nodes] == ["data"]
         # The queue must be fully drained.
-        assert flow_manager.global_flow_queue.empty()
+        assert flows.global_flow_queue.empty()
 
     def test_empty_queue_yields_empty_categories(self, engine: Engine) -> None:
-        flow_manager = engine.flow_manager
-        flow_manager.global_flow_queue.queue.clear()
+        flows = engine.current_workflow.flows
+        flows.global_flow_queue.queue.clear()
 
-        categories = ControlFlowMachine._drain_global_flow_queue(flow_manager)
+        categories = ControlFlowMachine._drain_global_flow_queue(flows)
 
         assert categories.start_nodes == []
         assert categories.control_nodes == []
@@ -78,14 +79,14 @@ class TestSeedDagFromCategories:
         control = _mock_node("Ctrl")
         categories = DagNodeCategories(start_nodes=[start], control_nodes=[control], data_sink_nodes=[])
         flow_manager = MagicMock()
-        node_manager = MagicMock()
+        workflow = WorkflowRuntime(owner=None)
 
         connections = MagicMock()
         connections.get_connected_node.return_value = None
         dag_builder = DagBuilder(connections)
 
         entry_nodes = ControlFlowMachine._seed_dag_from_categories(
-            start, categories, dag_builder, flow_manager, node_manager
+            start, categories, dag_builder, workflow, flow_manager
         )
 
         # The start node plus every entry node come back so the control flow can begin.
@@ -103,13 +104,14 @@ class TestSeedDagFromCategories:
         # is_node_connected returns [] -> the sink is not gated by any control graph.
         flow_manager = MagicMock()
         flow_manager.is_node_connected.return_value = []
-        node_manager = MagicMock()
+        workflow = WorkflowRuntime(owner=None)
+        workflow.objects.add("Start", start)
 
         connections = MagicMock()
         connections.get_connected_node.return_value = None
         dag_builder = DagBuilder(connections)
 
-        ControlFlowMachine._seed_dag_from_categories(start, categories, dag_builder, flow_manager, node_manager)
+        ControlFlowMachine._seed_dag_from_categories(start, categories, dag_builder, workflow, flow_manager)
 
         # A data-only sink is seeded directly so its dependencies resolve unconditionally.
         assert "Sink" in dag_builder.node_to_reference
@@ -122,14 +124,14 @@ class TestSeedDagFromCategories:
         # is_node_connected returns boundary nodes -> the sink is gated by Start's control graph.
         flow_manager = MagicMock()
         flow_manager.is_node_connected.return_value = ["Start"]
-        node_manager = MagicMock()
-        node_manager.get_node_by_name.side_effect = lambda name: start if name == "Start" else None
+        workflow = WorkflowRuntime(owner=None)
+        workflow.objects.add("Start", start)
 
         connections = MagicMock()
         connections.get_connected_node.return_value = None
         dag_builder = DagBuilder(connections)
 
-        ControlFlowMachine._seed_dag_from_categories(start, categories, dag_builder, flow_manager, node_manager)
+        ControlFlowMachine._seed_dag_from_categories(start, categories, dag_builder, workflow, flow_manager)
 
         # A gated sink is not seeded directly; it is registered as a candidate keyed by the graph
         # start so the branch stays control-gated.
@@ -141,7 +143,7 @@ class TestSeedDagFromCategories:
         sink = _mock_node("Sink")
         categories = DagNodeCategories(start_nodes=[start], control_nodes=[], data_sink_nodes=[sink])
         flow_manager = MagicMock()
-        node_manager = MagicMock()
+        workflow = WorkflowRuntime(owner=None)
 
         connections = MagicMock()
         connections.get_connected_node.return_value = None
@@ -150,7 +152,7 @@ class TestSeedDagFromCategories:
         # Pre-seed the sink so PASS 2 sees it already present.
         dag_builder.add_node(sink)
 
-        ControlFlowMachine._seed_dag_from_categories(start, categories, dag_builder, flow_manager, node_manager)
+        ControlFlowMachine._seed_dag_from_categories(start, categories, dag_builder, workflow, flow_manager)
 
         # Already-present sinks short-circuit before any connectivity check.
         flow_manager.is_node_connected.assert_not_called()
@@ -169,7 +171,7 @@ class TestProcessNodesForDagIsolatedScope:
 
     @pytest.mark.asyncio
     async def test_isolated_scope_keeps_group_children(self, engine: Engine) -> None:
-        machine = ControlFlowMachine("grp_subflow", is_isolated=True)
+        machine = ControlFlowMachine("grp_subflow", engine.current_workflow, is_isolated=True)
         # Swap the fresh DagBuilder for a stub: add_node_with_dependencies becomes a no-op, and the
         # is_isolated check (dag_builder is not the global one) still holds for a MagicMock.
         machine.context.resolution_machine.context.dag_builder = MagicMock()
@@ -185,12 +187,12 @@ class TestProcessNodesForDagIsolatedScope:
         flow_manager = engine.flow_manager
         captured: dict[str, list[BaseNode]] = {}
 
-        def fake_classify(nodes: list[BaseNode]) -> DagNodeCategories:
+        def fake_classify(_workflow: WorkflowRuntime, nodes: list[BaseNode]) -> DagNodeCategories:
             captured["scope"] = list(nodes)
             return DagNodeCategories(start_nodes=[], control_nodes=[], data_sink_nodes=list(nodes))
 
         with (
-            patch.object(flow_manager, "get_flow_by_name", return_value=subflow),
+            patch.object(machine.context, "get_flow", return_value=subflow),
             patch.object(flow_manager, "classify_nodes_for_dag", side_effect=fake_classify),
             patch.object(ControlFlowMachine, "_seed_dag_from_categories", return_value=[child_a]) as seed,
         ):

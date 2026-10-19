@@ -45,7 +45,6 @@ from griptape_nodes.traits.options import Options
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.node_types import BaseNode, Connection
-    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -125,12 +124,6 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         # Add subprocess execution status component for real-time GUI updates
         self._add_subflow_execution_parameters()
-
-    def _own_workflow(self) -> WorkflowRuntime:
-        """The workflow this group belongs to, which code it runs on another task may have lost the binding to."""
-        if self.workflow_runtime is not None:
-            return self.workflow_runtime
-        return self.engine.current_workflow
 
     def _create_subflow(self) -> None:
         """Create the dedicated subflow that will hold this NodeGroup's nodes.
@@ -589,7 +582,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         """
         if isinstance(proxy_parameter, ControlParameter):
             return
-        connections = self.engine.flow_manager.get_connections()
+        connections = self._own_workflow().flows.connections
         incoming = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
         outgoing = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
         inner_parameters = [c.source_parameter for c in incoming if c.source_node.parent_group is self] + [
@@ -835,7 +828,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                     self._discard_subflow_created_for_a_failed_add()
                 raise
 
-        connections = self.engine.flow_manager.get_connections()
+        connections = self._own_workflow().flows.connections
         node_names_in_group = set(self.nodes.keys())
         self.metadata["node_names_in_group"] = list(node_names_in_group)
         self.remap_to_internal(nodes, connections)
@@ -1058,7 +1051,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         # editor but loses its contents on save, so the caller has to hear about it. Both callers
         # turn this into a failure result (see NodeManager.on_add_nodes_to_node_group_request).
         try:
-            self.engine.flow_manager.reparent_flow(child_subflow_name, parent_subflow_name)
+            self._own_workflow().flows.reparent_flow(child_subflow_name, parent_subflow_name)
         except ValueError as err:
             msg = (
                 f"Attempted to change what group '{node.name}' belongs to. "
@@ -1186,7 +1179,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         Returns:
             The existing proxy parameter if found, None otherwise
         """
-        connections = self.engine.flow_manager.get_connections()
+        connections = self._own_workflow().flows.connections
 
         # Determine which proxy parameters to check based on direction
         if is_incoming:
@@ -1285,7 +1278,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             # Rolling back means going the way they came: into this group's subflow.
             self._relocate_nodes(nodes, destination_flow_name=parent_flow_name, rollback_flow_name=subflow_name)
 
-        connections = self.engine.flow_manager.get_connections()
+        connections = self._own_workflow().flows.connections
         for node in nodes:
             node.parent_group = None
             self.nodes.pop(node.name)
@@ -1340,7 +1333,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         For each right (output) proxy parameter, finds the internal node connected
         to it and copies the value to this group's parameter_output_values.
         """
-        connections = self.engine.flow_manager.get_connections()
+        connections = self._own_workflow().flows.connections
 
         right_params = self.metadata.get(RIGHT_PARAMETERS_KEY, [])
         for proxy_param_name in right_params:

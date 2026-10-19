@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode, Connection
     from griptape_nodes.retained_mode.engine import Engine
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -23,18 +24,20 @@ class CurrentNodes(NamedTuple):
 
 # The flow will own all of the nodes
 class ControlFlow:
-    """Thin delegation shim: methods forward to the owning engine's FlowManager."""
+    """A flow of one open workflow. Its connection queries answer from that workflow's flows."""
 
     name: str
     nodes: dict[str, BaseNode]
     metadata: dict
     engine: Engine
+    workflow: WorkflowRuntime
 
-    def __init__(self, name: str, engine: Engine, metadata: dict | None = None) -> None:
+    def __init__(self, name: str, engine: Engine, workflow: WorkflowRuntime, metadata: dict | None = None) -> None:
         self.name = name
         self.nodes = {}
         self.metadata = metadata or {}
         self.engine = engine
+        self.workflow = workflow
 
     def add_node(self, node: BaseNode) -> None:
         self.nodes[node.name] = node
@@ -50,7 +53,7 @@ class ControlFlow:
         target_parameter: Parameter,
     ) -> Connection | None:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            return self.engine.flow_manager.get_connections().add_connection(
+            return self.workflow.flows.connections.add_connection(
                 source_node, source_parameter, target_node, target_parameter
             )
         return None
@@ -59,7 +62,7 @@ class ControlFlow:
         self, source_node: BaseNode, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            return self.engine.flow_manager.get_connections().remove_connection(
+            return self.workflow.flows.connections.remove_connection(
                 source_node.name, source_parameter.name, target_node.name, target_parameter.name
             )
         return False
@@ -71,16 +74,16 @@ class ControlFlow:
         target_node: BaseNode,
         target_parameter: Parameter,
     ) -> bool:
-        return self.engine.flow_manager.has_connection(source_node, source_parameter, target_node, target_parameter)
+        return self.workflow.flows.has_connection(source_node, source_parameter, target_node, target_parameter)
 
     def clear_execution_queue(self) -> None:
-        self.engine.flow_manager.clear_execution_queue(self)
+        self.workflow.flows.clear_queue_for_flow(self.name)
 
     def get_connections_on_node(self, node: BaseNode) -> list[BaseNode] | None:
-        return self.engine.flow_manager.get_connections_on_node(node)
+        return self.workflow.flows.connections_on_node(node)
 
     def get_all_connected_nodes(self, node: BaseNode) -> list[BaseNode]:
-        return self.engine.flow_manager.get_all_connected_nodes(node)
+        return self.workflow.flows.all_connected_nodes(node)
 
     def get_node_dependencies(self, node: BaseNode) -> list[BaseNode]:
         """Get all upstream nodes that the given node depends on.
@@ -94,25 +97,25 @@ class ControlFlow:
         Returns:
             list[BaseNode]: A list of all nodes that the given node depends on, including the node itself (as the first element)
         """
-        return self.engine.flow_manager.get_node_dependencies(self, node)
+        return self.workflow.flows.node_dependencies(node)
 
     def get_connected_output_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
-        return self.engine.flow_manager.get_connected_output_parameters(node, param)
+        return self.workflow.flows.connected_output_parameters(node, param)
 
     def get_connected_input_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
-        return self.engine.flow_manager.get_connected_input_parameters(self, node, param)
+        return self.workflow.flows.connected_input_parameters(node, param)
 
     def get_connected_output_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:
-        return self.engine.flow_manager.get_connected_output_from_node(self, node)
+        return self.workflow.flows.connected_output_from_node(node)
 
     def get_connected_input_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:
-        return self.engine.flow_manager.get_connected_input_from_node(self, node)
+        return self.workflow.flows.connected_input_from_node(node)
 
     def get_start_node_queue(self) -> Queue | None:
-        return self.engine.flow_manager.get_start_node_queue()
+        return self.engine.flow_manager.start_node_queue(self.workflow)
 
     def get_start_node_from_node(self, node: BaseNode) -> BaseNode | None:
-        return self.engine.flow_manager.get_start_node_from_node(self, node)
+        return self.engine.flow_manager.start_node_from_node(self.workflow, self, node)
 
     def get_prev_node(self, node: BaseNode) -> BaseNode | None:
-        return self.engine.flow_manager.get_prev_node(self, node)
+        return self.workflow.flows.prev_control_node(node)

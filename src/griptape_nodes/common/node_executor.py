@@ -128,6 +128,7 @@ if TYPE_CHECKING:
 
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -1064,7 +1065,7 @@ class NodeExecutor(EngineScoped):
                 node.state = NodeResolutionState.RESOLVED
 
         # Remove packaged nodes from global queue since they will be copied into loop iterations
-        self._remove_packaged_nodes_from_queue(all_nodes)
+        self._remove_packaged_nodes_from_queue(self._workflow_of(start_node), all_nodes)
 
         return package_result, execution_type
 
@@ -2347,7 +2348,7 @@ class NodeExecutor(EngineScoped):
             if node_reference:
                 node_reference.state = NodeResolutionState.RESOLVED
 
-        self._remove_packaged_nodes_from_queue(set(node_names))
+        self._remove_packaged_nodes_from_queue(self._workflow_of(node), set(node_names))
 
         return package_result
 
@@ -3840,7 +3841,13 @@ class NodeExecutor(EngineScoped):
             parameter_output_values.update(end_node_values)
         return parameter_output_values
 
-    def _remove_packaged_nodes_from_queue(self, packaged_node_names: set[str]) -> None:
+    def _workflow_of(self, node: BaseNode) -> WorkflowRuntime:
+        """The workflow `node` belongs to. Execution runs on tasks that may have lost the binding."""
+        if node.workflow_runtime is not None:
+            return node.workflow_runtime
+        return self.engine.current_workflow
+
+    def _remove_packaged_nodes_from_queue(self, workflow: WorkflowRuntime, packaged_node_names: set[str]) -> None:
         """Remove nodes from global flow queue after they've been packaged for loop execution.
 
         When nodes are packaged for For Each loops, they will be deserialized into separate
@@ -3848,26 +3855,25 @@ class NodeExecutor(EngineScoped):
         being executed in the main flow while also being copied into loop iterations.
 
         Args:
+            workflow: The workflow the nodes belong to
             packaged_node_names: Set of node names that were packaged
         """
-        flow_manager = self.engine.flow_manager
-        node_manager = self.engine.node_manager
-
         # Get the nodes from the names
         packaged_nodes = set()
         for node_name in packaged_node_names:
-            node = node_manager.get_node_by_name(node_name)
+            node = workflow.objects.get_as_type(node_name, BaseNode)
             if node:
                 packaged_nodes.add(node)
 
         # Remove matching queue items from global queue
-        items_to_remove = [item for item in flow_manager.global_flow_queue.queue if item.node in packaged_nodes]
+        flow_queue = workflow.flows.global_flow_queue
+        items_to_remove = [item for item in flow_queue.queue if item.node in packaged_nodes]
 
         for item in items_to_remove:
-            flow_manager.global_flow_queue.queue.remove(item)
+            flow_queue.queue.remove(item)
 
         # Remove from DAG builder to prevent parallel execution in parent flow
-        dag_builder = flow_manager.global_dag_builder
+        dag_builder = workflow.flows.global_dag_builder
         if dag_builder:
             for node_name in packaged_node_names:
                 # Remove from node_to_reference
@@ -3960,7 +3966,7 @@ class NodeExecutor(EngineScoped):
                             incoming_connection_source_node_name=node.name,
                             incoming_connection_source_parameter_name=target_param_name,
                         ),
-                        self.engine.current_workflow,
+                        self._workflow_of(target_node),
                     )
             target_node.parameter_output_values[target_param_name] = param_value
 
@@ -3994,7 +4000,7 @@ class NodeExecutor(EngineScoped):
         ``parameter_output_values`` before each node runs.
         """
         try:
-            self.engine.flow_manager.get_connections().unresolve_future_nodes(target_node)
+            self._workflow_of(target_node).flows.connections.unresolve_future_nodes(target_node)
         except Exception:
             logger.warning(
                 "Could not unresolve nodes downstream of '%s' after preserving the variable template on '%s'",

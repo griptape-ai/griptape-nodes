@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.flows import WorkflowFlows
     from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
@@ -152,7 +153,7 @@ class ReferencedWorkflowImport(EngineScoped):
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         created_flow_name = self._select_top_level_imported_flow(
-            new_flows, flow_name, request.workflow_name, self.engine
+            new_flows, flow_name, request.workflow_name, workflow.flows
         )
 
         # Apply imported flow metadata if provided
@@ -195,7 +196,7 @@ class ReferencedWorkflowImport(EngineScoped):
 
     @staticmethod
     def _select_top_level_imported_flow(
-        new_flows: set[str], parent_flow_name: str, workflow_name: str, engine: Engine
+        new_flows: set[str], parent_flow_name: str, workflow_name: str, flows: WorkflowFlows
     ) -> str:
         """Select the top-level flow among those created by importing a referenced workflow.
 
@@ -207,13 +208,12 @@ class ReferencedWorkflowImport(EngineScoped):
             new_flows: Names of the flows created during the import.
             parent_flow_name: The flow the workflow was imported into (the import target).
             workflow_name: Name of the imported workflow, for diagnostics.
-            engine: The engine whose FlowManager resolves flow parentage.
+            flows: The flows of the workflow imported into, which record flow parentage.
 
         Returns:
             The name of the top-level imported flow.
         """
-        flow_manager = engine.flow_manager
-        top_level_flows = [flow for flow in new_flows if flow_manager.get_parent_flow(flow) == parent_flow_name]
+        top_level_flows = [flow for flow in new_flows if flows.parent_flow_name(flow) == parent_flow_name]
 
         if len(top_level_flows) == 1:
             return top_level_flows[0]

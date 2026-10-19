@@ -306,7 +306,7 @@ class TestProxySerializable:
         connections = Mock()
         connections.get_incoming_connections_to_parameter.return_value = []
         connections.get_outgoing_connections_from_parameter.return_value = []
-        monkeypatch.setattr(engine.flow_manager, "get_connections", lambda: connections)
+        monkeypatch.setattr(engine.current_workflow.flows, "connections", connections)
         return connections
 
     @staticmethod

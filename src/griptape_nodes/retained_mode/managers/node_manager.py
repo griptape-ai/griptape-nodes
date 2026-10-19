@@ -1215,7 +1215,7 @@ class NodeManager(EngineScoped):
         if not self.engine.flow_manager.check_for_existing_running_flow(workflow):
             return _FlowCancelOutcome()
 
-        entangled_node_name = self._find_entangled_live_node(node)
+        entangled_node_name = self._find_entangled_live_node(workflow, node)
         if entangled_node_name is not None:
             result = await self.engine.ahandle_request(CancelFlowRequest(flow_name=parent_flow_name))
             if result.failed():
@@ -1226,7 +1226,7 @@ class NodeManager(EngineScoped):
         parent_flow.clear_execution_queue()
         return _FlowCancelOutcome(cancelled_for_node_name=entangled_node_name)
 
-    def _find_entangled_live_node(self, node: BaseNode) -> str | None:
+    def _find_entangled_live_node(self, workflow: WorkflowRuntime, node: BaseNode) -> str | None:
         """Name the live node that deleting `node` would damage, or None if nothing would be.
 
         Three ways a delete can damage a run, and only these three:
@@ -1257,20 +1257,20 @@ class NodeManager(EngineScoped):
         deleting one of those does not cancel. See `FlowManager._is_node_executing`, which has the
         same blind spot.
         """
-        dag_builder = self.engine.flow_manager.global_dag_builder
+        dag_builder = workflow.flows.global_dag_builder
         dag_nodes = dag_builder.node_to_reference
 
         own_dag_node = dag_nodes.get(node.name)
         if own_dag_node is not None and own_dag_node.node_state not in _SETTLED_NODE_STATES:
             return node.name
 
-        connections = self.engine.flow_manager.get_connections()
+        connections = workflow.flows.connections
         for connection in connections.get_all_outgoing_connections(node):
             target_node = connection.target_node
             target_dag_node = dag_nodes.get(target_node.name)
             if target_dag_node is not None and target_dag_node.node_state in _UNCOLLECTED_NODE_STATES:
                 return target_node.name
-            if target_dag_node is None and self._run_will_reach(target_node):
+            if target_dag_node is None and self._run_will_reach(workflow, target_node):
                 return target_node.name
 
         for gated_node_name, boundary_nodes_by_graph in dag_builder.start_node_candidates.items():
@@ -1280,7 +1280,7 @@ class NodeManager(EngineScoped):
 
         return None
 
-    def _run_will_reach(self, node: BaseNode, visited: set[str] | None = None) -> bool:
+    def _run_will_reach(self, workflow: WorkflowRuntime, node: BaseNode, visited: set[str] | None = None) -> bool:
         """Whether the live run is still going to arrive at a node that is not in the DAG yet.
 
         A run arrives at a node in one of two ways, and both have to be asked about.
@@ -1317,8 +1317,8 @@ class NodeManager(EngineScoped):
             return False
         visited.add(node.name)
 
-        dag_builder = self.engine.flow_manager.global_dag_builder
-        connections = self.engine.flow_manager.get_connections()
+        dag_builder = workflow.flows.global_dag_builder
+        connections = workflow.flows.connections
 
         for dag_node in dag_builder.node_to_reference.values():
             if dag_node.node_state in _SETTLED_NODE_STATES:
@@ -1333,7 +1333,7 @@ class NodeManager(EngineScoped):
             consumer_dag_node = dag_builder.node_to_reference.get(consumer.name)
             if consumer_dag_node is not None and consumer_dag_node.node_state in _UNCOLLECTED_NODE_STATES:
                 return True
-            if consumer_dag_node is None and self._run_will_reach(consumer, visited):
+            if consumer_dag_node is None and self._run_will_reach(workflow, consumer, visited):
                 return True
 
         return False
@@ -5394,7 +5394,7 @@ class NodeManager(EngineScoped):
                 details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
                 return SetLockNodeStateResultFailure(result_details=details)
         node.lock = request.lock
-        self._unresolve_unlocked_node_left_unexecuted(node)
+        self._unresolve_unlocked_node_left_unexecuted(workflow, node)
         return SetLockNodeStateResultSuccess(
             node_name=node_name,
             locked=node.lock,
@@ -5414,7 +5414,7 @@ class NodeManager(EngineScoped):
                 failed[name] = f"Node not found. Error: {err}"
                 continue
             node.lock = request.lock
-            self._unresolve_unlocked_node_left_unexecuted(node)
+            self._unresolve_unlocked_node_left_unexecuted(workflow, node)
             updated.append(name)
 
         if not updated:
@@ -5429,7 +5429,7 @@ class NodeManager(EngineScoped):
             result_details=details,
         )
 
-    def _unresolve_unlocked_node_left_unexecuted(self, node: BaseNode) -> None:
+    def _unresolve_unlocked_node_left_unexecuted(self, workflow: WorkflowRuntime, node: BaseNode) -> None:
         """Unresolve an unlocked node, and everything downstream, unless it resolved by executing.
 
         While locked, a node is passed through without running, and that pass marks it RESOLVED even
@@ -5443,7 +5443,7 @@ class NodeManager(EngineScoped):
 
         node.resolved_while_locked = False
         node.make_node_unresolved(current_states_to_trigger_change_event={NodeResolutionState.RESOLVED})
-        self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
+        workflow.flows.connections.unresolve_future_nodes(node)
 
     @handles(SendNodeMessageRequest)
     def on_send_node_message_request(self, request: SendNodeMessageRequest, workflow: WorkflowRuntime) -> ResultPayload:

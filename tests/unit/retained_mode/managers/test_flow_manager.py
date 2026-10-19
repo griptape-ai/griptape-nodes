@@ -347,7 +347,7 @@ class TestStartFlowFailureMessage:
         with (
             patch.object(flow_manager, "_get_flow", return_value=MagicMock()),
             patch.object(flow_manager, "check_for_existing_running_flow", return_value=False),
-            patch.object(flow_manager, "_start_node_queue"),
+            patch.object(flow_manager, "start_node_queue"),
             patch.object(flow_manager, "on_validate_flow_dependencies_request", return_value=validated),
         ):
             yield flow_manager
@@ -727,7 +727,7 @@ class TestClassifyNodesForDag:
 
         flow_manager = engine.flow_manager
         with patch.object(engine.current_workflow.flows, "connections", connections):
-            return flow_manager.classify_nodes_for_dag(nodes)
+            return flow_manager.classify_nodes_for_dag(engine.current_workflow, nodes)
 
     def test_start_node_is_a_start_node(self, engine: Engine) -> None:
         start = _ClassifyStartNode("Start")
@@ -971,9 +971,9 @@ class TestReparentFlow:
         assert isinstance(inner, CreateFlowResultSuccess)
 
         flow_manager = engine.flow_manager
-        flow_manager.reparent_flow(inner.flow_name, outer.flow_name)
+        flow_manager.engine.current_workflow.flows.reparent_flow(inner.flow_name, outer.flow_name)
 
-        assert flow_manager.get_parent_flow(inner.flow_name) == outer.flow_name
+        assert flow_manager.engine.current_workflow.flows.parent_flow_name(inner.flow_name) == outer.flow_name
 
     @pytest.mark.usefixtures("clean_object_state")
     def test_rejects_unknown_flows(self, engine: Engine) -> None:
@@ -985,9 +985,9 @@ class TestReparentFlow:
         flow_manager = engine.flow_manager
 
         with pytest.raises(ValueError, match="doesn't exist"):
-            flow_manager.reparent_flow("ghost", real.flow_name)
+            flow_manager.engine.current_workflow.flows.reparent_flow("ghost", real.flow_name)
         with pytest.raises(ValueError, match="doesn't exist"):
-            flow_manager.reparent_flow(real.flow_name, "ghost")
+            flow_manager.engine.current_workflow.flows.reparent_flow(real.flow_name, "ghost")
 
     @pytest.mark.usefixtures("clean_object_state")
     def test_rejects_making_a_flow_its_own_parent(self, engine: Engine) -> None:
@@ -998,7 +998,7 @@ class TestReparentFlow:
         assert isinstance(solo, CreateFlowResultSuccess)
 
         with pytest.raises(ValueError, match="its own parent"):
-            engine.flow_manager.reparent_flow(solo.flow_name, solo.flow_name)
+            engine.current_workflow.flows.reparent_flow(solo.flow_name, solo.flow_name)
 
     @pytest.mark.usefixtures("clean_object_state")
     def test_rejects_moving_a_flow_inside_its_own_descendant(self, engine: Engine) -> None:
@@ -1015,8 +1015,8 @@ class TestReparentFlow:
 
         flow_manager = engine.flow_manager
         with pytest.raises(ValueError, match="already inside"):
-            flow_manager.reparent_flow(outer.flow_name, inner.flow_name)
+            flow_manager.engine.current_workflow.flows.reparent_flow(outer.flow_name, inner.flow_name)
 
         # The rejected move must leave the hierarchy untouched.
-        assert flow_manager.get_parent_flow(inner.flow_name) == outer.flow_name
-        assert flow_manager.get_parent_flow(outer.flow_name) is None
+        assert flow_manager.engine.current_workflow.flows.parent_flow_name(inner.flow_name) == outer.flow_name
+        assert flow_manager.engine.current_workflow.flows.parent_flow_name(outer.flow_name) is None

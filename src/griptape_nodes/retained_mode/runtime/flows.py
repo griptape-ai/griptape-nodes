@@ -11,6 +11,7 @@ from queue import Queue
 from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.exe_types.connections import Connections
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.machines.dag_builder import DagBuilder
 
 if TYPE_CHECKING:
@@ -219,3 +220,44 @@ class WorkflowFlows:
                     discovered[next_node] = True
                     queue.put(next_node)
         return list(processed.keys())
+
+    def prev_control_node(self, node: BaseNode) -> BaseNode | None:
+        """The node whose control output leads into `node`, skipping connections internal to a node group."""
+        incoming_params = self.connections.incoming_index.get(node.name)
+        if incoming_params is None:
+            return None
+        for parameter_name, connection_ids in incoming_params.items():
+            parameter = node.get_parameter_by_name(parameter_name)
+            if parameter is None or parameter.output_type != ParameterTypeBuiltin.CONTROL_TYPE.value:
+                continue
+            for connection_id in connection_ids:
+                connection = self.connections.connections[connection_id]
+                if connection.is_node_group_internal:
+                    continue
+                return connection.get_source_node()
+        return None
+
+    def node_dependencies(self, node: BaseNode) -> list[BaseNode]:
+        """The node, then every node upstream of it through data connections, breadth first.
+
+        Control connections are ignored: they order a run, they don't feed values.
+        """
+        node_list = [node]
+        node_queue: Queue[BaseNode] = Queue()
+        node_queue.put(node)
+        while not node_queue.empty():
+            current_node = node_queue.get()
+            for input_node, input_parameter in self.connected_input_from_node(current_node):
+                if input_parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                    continue
+                if input_node in node_list:
+                    continue
+                node_list.append(input_node)
+                node_queue.put(input_node)
+        return node_list
+
+    def clear_queue_for_flow(self, flow_name: str) -> None:
+        """Empty the execution queue, when the run in progress is of `flow_name`."""
+        machine = self.global_control_flow_machine
+        if machine is not None and machine.context.flow_name == flow_name:
+            self.global_flow_queue.queue.clear()

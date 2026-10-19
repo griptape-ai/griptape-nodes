@@ -146,9 +146,9 @@ async def test_import_binds_to_top_level_flow_not_group_body(
     # The imported workflow created two flows (its top-level flow + the group's body flow). The
     # returned flow must be the TOP-LEVEL one, i.e. the flow whose parent is the import target.
     # The group's body flow is parented to that top-level flow, so returning it would be the bug.
-    flow_manager = engine.flow_manager
+    flows = engine.current_workflow.flows
     created_flow = import_result.created_flow_name
-    assert flow_manager.get_parent_flow(created_flow) == parent_flow, (
-        f"import bound to '{created_flow}' (parent '{flow_manager.get_parent_flow(created_flow)}') "
+    assert flows.parent_flow_name(created_flow) == parent_flow, (
+        f"import bound to '{created_flow}' (parent '{flows.parent_flow_name(created_flow)}') "
         f"instead of the top-level flow parented to '{parent_flow}'"
     )

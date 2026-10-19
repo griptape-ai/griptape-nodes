@@ -478,7 +478,7 @@ class BaseIterativeStartNode(BaseNode):
         # a substitute: it unresolves the node itself and refuses while the node is RESOLVING,
         # which is exactly this node's state here. An iterative node in a worker-routed library
         # therefore needs a downstream-only unresolve request that does not exist yet.
-        connections = self.engine.flow_manager.get_connections()
+        connections = self._own_workflow().flows.connections
         connections.unresolve_future_nodes(self)
 
         # Always set the index output in base class

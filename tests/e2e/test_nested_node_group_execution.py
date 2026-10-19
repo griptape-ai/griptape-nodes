@@ -152,6 +152,7 @@ from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import 
 )
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend as _E2EStorageBackend
 from griptape_nodes.retained_mode.events.flow_events import (
+    GetFlowDetailsRequest as _E2EGetFlowDetailsRequest,
     GetTopLevelFlowRequest as _E2EGetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess as _E2EGetTopLevelFlowResultSuccess,
 )
@@ -187,12 +188,12 @@ def _check_nesting_rebuilt() -> None:
         raise RuntimeError("E2E_FAIL: OuterGroup does not transitively contain Leaf")
 
     # The subflows have to be nested the same way the groups are.
-    flow_manager = _E2EGriptapeNodes.FlowManager()
     inner_subflow = inner.metadata.get("subflow_name")
     outer_subflow = outer.metadata.get("subflow_name")
-    if flow_manager.get_parent_flow(inner_subflow) != outer_subflow:
+    inner_parent = _E2EGriptapeNodes.handle_request(_E2EGetFlowDetailsRequest(flow_name=inner_subflow)).parent_flow_name
+    if inner_parent != outer_subflow:
         raise RuntimeError(
-            f"E2E_FAIL: {{inner_subflow}} parent is {{flow_manager.get_parent_flow(inner_subflow)!r}}, "
+            f"E2E_FAIL: {{inner_subflow}} parent is {{inner_parent!r}}, "
             f"expected {{outer_subflow!r}}"
         )
 
