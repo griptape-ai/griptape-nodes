@@ -12,7 +12,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import BaseModel
 
@@ -28,7 +28,7 @@ from griptape_nodes.retained_mode.events.app_events import (
     SessionHeartbeatResultFailure,
     SessionHeartbeatResultSuccess,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.engine_dirs import engine_state_dir
 
 if TYPE_CHECKING:
@@ -58,6 +58,8 @@ class SessionsStorage(BaseModel):
 
 class SessionManager:
     """Manages session saving and active session state."""
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     _SESSION_STATE_FILE = "sessions.json"
 

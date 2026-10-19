@@ -1,7 +1,7 @@
 import logging
 import re
 from re import Pattern
-from typing import Any
+from typing import Any, ClassVar
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -29,12 +29,14 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 logger = logging.getLogger("griptape_nodes")
 
 
 class ObjectManager(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     class WorkflowState:
         """The named objects (flows, nodes) of one open workflow."""
 
@@ -60,7 +62,7 @@ class ObjectManager(EngineScoped):
             return {}
         return runtime.state(ObjectManager.WorkflowState, ObjectManager.WorkflowState).name_to_objects
 
-    @handles(RenameObjectRequest)
+    @handles(RenameObjectRequest, scope=RequestScope.WORKFLOW)
     def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
         # Does the source object exist?
         if request.object_name == request.requested_name:

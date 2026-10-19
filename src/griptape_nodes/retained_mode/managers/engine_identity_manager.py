@@ -13,7 +13,7 @@ import logging
 import os
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import BaseModel
 
@@ -29,7 +29,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
     ResultPayload,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.utils.name_generator import generate_engine_name
 from griptape_nodes.utils.engine_dirs import engine_data_dir
 
@@ -59,6 +59,8 @@ class EnginesStorage(BaseModel):
 
 class EngineIdentityManager:
     """Manages engine identity and active engine state."""
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     _ENGINE_DATA_FILE = "engines.json"
 

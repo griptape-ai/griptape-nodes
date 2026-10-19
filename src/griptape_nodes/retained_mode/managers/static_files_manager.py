@@ -5,7 +5,7 @@ import os
 import threading
 from functools import partial
 from pathlib import Path
-from typing import NamedTuple
+from typing import ClassVar, NamedTuple
 
 import anyio
 import anyio.to_thread
@@ -62,7 +62,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     coerce_refresh_previews_max_files,
 )
 from griptape_nodes.retained_mode.managers.static_file_watcher import StaticFileWatcher, WatchedFileChange
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.servers.static import (
     ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV,
     STATIC_SERVER_HOST,
@@ -126,6 +126,8 @@ REFRESH_PREVIEWS_ON_FILE_CHANGE_KEY = "refresh_previews_on_file_change"
 
 class StaticFilesManager(EngineScoped):
     """A class to manage the creation and management of static files."""
+
+    request_scope: ClassVar[RequestScope] = RequestScope.OPTIONAL_WORKFLOW
 
     def __init__(
         self,

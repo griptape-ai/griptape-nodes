@@ -8,7 +8,7 @@ import os
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 import anyio
 from pydantic import ValidationError
@@ -146,7 +146,7 @@ from griptape_nodes.retained_mode.publishing.project_packager import (
     read_manifest,
     rename_project_template,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.variable_types import FlowVariable, VariableLayer, VariablePermission
 from griptape_nodes.utils.dict_utils import get_dot_value
 from griptape_nodes.utils.file_utils import find_files_recursive
@@ -678,6 +678,8 @@ class ProjectManager(EngineScoped):
 
     This allows UI to query validation status even when template failed to load.
     """
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(
         self,
@@ -1575,7 +1577,7 @@ class ProjectManager(EngineScoped):
             libraries_root=libraries_root,
         )
 
-    @handles(GetSituationRequest)
+    @handles(GetSituationRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_get_situation_request(
         self, request: GetSituationRequest
     ) -> GetSituationResultSuccess | GetSituationResultFailure:
@@ -1608,7 +1610,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully retrieved situation '{request.situation_name}'. Macro: {situation.macro}, Policy: create_dirs={situation.policy.create_dirs}, on_collision={situation.policy.on_collision}",
         )
 
-    @handles(GetPathForMacroRequest)
+    @handles(GetPathForMacroRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_get_path_for_macro_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, request: GetPathForMacroRequest
     ) -> GetPathForMacroResultSuccess | GetPathForMacroResultFailure:
@@ -4110,7 +4112,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully unregistered project template '{project_id}'",
         )
 
-    @handles(AttemptMatchPathAgainstMacroRequest)
+    @handles(AttemptMatchPathAgainstMacroRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_match_path_against_macro_request(
         self, request: AttemptMatchPathAgainstMacroRequest
     ) -> AttemptMatchPathAgainstMacroResultSuccess | AttemptMatchPathAgainstMacroResultFailure:
@@ -4199,7 +4201,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully matched path '{request.file_path}' against macro '{request.parsed_macro.template}'. Extracted {len(extracted)} variables",
         )
 
-    @handles(GetStateForMacroRequest)
+    @handles(GetStateForMacroRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_get_state_for_macro_request(
         self, request: GetStateForMacroRequest
     ) -> GetStateForMacroResultSuccess | GetStateForMacroResultFailure:
@@ -4631,7 +4633,7 @@ class ProjectManager(EngineScoped):
         # reload when the workspace actually changes.
         self._initialization_complete = True
 
-    @handles(GetAllSituationsForProjectRequest)
+    @handles(GetAllSituationsForProjectRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_get_all_situations_for_project_request(
         self, request: GetAllSituationsForProjectRequest
     ) -> GetAllSituationsForProjectResultSuccess | GetAllSituationsForProjectResultFailure:
@@ -4654,7 +4656,7 @@ class ProjectManager(EngineScoped):
             result_details=f"Successfully retrieved all situations. Found {len(situations)} situations",
         )
 
-    @handles(AttemptMapAbsolutePathToProjectRequest)
+    @handles(AttemptMapAbsolutePathToProjectRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_attempt_map_absolute_path_to_project_request(
         self, request: AttemptMapAbsolutePathToProjectRequest
     ) -> AttemptMapAbsolutePathToProjectResultSuccess | AttemptMapAbsolutePathToProjectResultFailure:

@@ -28,7 +28,7 @@ import threading
 from dataclasses import asdict, dataclass, replace
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 from urllib.parse import urlsplit
 
 import httpx2
@@ -161,7 +161,7 @@ from griptape_nodes.retained_mode.events.mcp_events import (
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.workflow_runtime import bound_workflow_id
 from griptape_nodes.servers import bind_free_socket
 from griptape_nodes.servers.mcp import GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT, start_mcp_server
@@ -531,6 +531,8 @@ class _RehydratedMessage:
 class AgentManager(EngineScoped):
     """Owns the chat-sidebar agent runner and the engine-bundled MCP server."""
 
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(
         self,
         static_files_manager: StaticFilesManager,
@@ -605,14 +607,14 @@ class AgentManager(EngineScoped):
             self._load_providers_from_config()
             self._runner_cache.clear()
 
-    @handles(RunAgentRequest)
+    @handles(RunAgentRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     async def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
             return await self._run_agent(request)
         except Exception as e:
             return self._agent_run_failure(e, request.provider_name)
 
-    @handles(ResolveToolApprovalsRequest)
+    @handles(ResolveToolApprovalsRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     async def on_handle_resolve_tool_approvals_request(self, request: ResolveToolApprovalsRequest) -> ResultPayload:
         try:
             return await self._resolve_tool_approvals(request)

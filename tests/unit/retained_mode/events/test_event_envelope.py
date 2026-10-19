@@ -125,6 +125,18 @@ def test_round_trips_through_json(name: str, cls: type, payload_attr: str, paylo
     )
 
 
+def test_request_envelope_carries_the_workflow_it_is_addressed_to() -> None:
+    """A workflow request is addressed on the envelope, not in the request, so the envelope must survive the wire."""
+    original = EventRequest(request=_request(), workflow_id="wf-1")
+
+    wire = json.loads(json.dumps(converters.engine.unstructure(original), default=str))
+    restored = converters.engine.structure(wire, EventRequest)
+
+    assert wire["workflow_id"] == "wf-1"
+    assert "workflow_id" not in wire["request"]
+    assert restored.workflow_id == "wf-1"
+
+
 def test_batch_round_trips_through_json() -> None:
     """The batch envelope rebuilds each inner request with its concrete payload type."""
     original = _events()["EventRequestBatch"]

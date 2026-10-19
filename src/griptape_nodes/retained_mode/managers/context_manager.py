@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
@@ -18,7 +18,7 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -39,6 +39,8 @@ class ContextManager(EngineScoped):
     There must always be a Workflow context active.
     Clients can push/pop Workflow contexts, Flow contexts, Node contexts, and Element contexts.
     """
+
+    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
 
     class WorkflowContextError(Exception):
         """Base exception for workflow context errors."""

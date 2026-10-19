@@ -38,8 +38,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from griptape_nodes.app.worker_routing import naming_its_workflow
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -76,8 +76,12 @@ class InProcessWorkerHarness:
         """
 
         async def _forward(request: RequestPayload) -> ResultPayload:
-            forwarded = naming_its_workflow(request, self.worker.engine)
-            result_event = await self.orchestrator.ahandle_request(forwarded)
+            # What forward_to_orchestrator puts on the envelope: the workflow the worker is bound to.
+            bound = self.worker.engine.current_workflow_or_none()
+            workflow_id = None
+            if bound is not None:
+                workflow_id = bound.workflow_id
+            result_event = await self.orchestrator.ahandle_request(request, workflow_id=workflow_id)
             return result_event.result
 
         original = self.worker.get_manager_for_request_type(request_type)
@@ -93,9 +97,13 @@ class InProcessWorkerHarness:
                 raise RuntimeError(msg)
             return await _invoke_handler(original, request)
 
+        # Production keeps each type's scope when it swaps in a RemoteHandler. A type with no original
+        # handler has nothing to keep.
+        scope = RequestScope.HOST
         if original is not None:
+            scope = self.worker.scope_for(request_type)
             self.worker.remove_manager_from_request_type(request_type)
-        self.worker.assign_manager_to_request_type(request_type, remote)
+        self.worker.assign_manager_to_request_type(request_type, remote, scope=scope)
 
     async def start(self) -> None:
         """Start the worker-side dispatch loop. Safe to call multiple times."""
@@ -160,7 +168,9 @@ class InProcessWorkerHarness:
             # Orchestrator side gave up before the worker got here; drop silently.
             return
         try:
-            result_event = await self.worker.ahandle_request(event_request.request)
+            result_event = await self.worker.ahandle_request(
+                event_request.request, workflow_id=event_request.workflow_id
+            )
         except Exception as exc:
             future.set_exception(exc)
             return

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from griptape_nodes.common.manifests.manifest import (
     LibraryManifestEntry,
@@ -36,7 +36,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     ListProjectTemplatesRequest,
     ListProjectTemplatesResultSuccess,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -52,6 +52,8 @@ class ManifestManager(EngineScoped):
     The manager owns no persistent state. It assembles a manifest on demand by
     querying the existing library and project registries through their events.
     """
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         """Initialize the ManifestManager.

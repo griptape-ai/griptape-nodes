@@ -5,7 +5,7 @@ import logging
 import os
 import socket
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, NamedTuple
 
 import uvicorn
 from fastapi import FastAPI
@@ -103,6 +103,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     # Workflows
@@ -185,7 +186,8 @@ EVENT_REQUEST_BATCH_DESCRIPTION = (
     "CreateConnectionRequest calls in a row).\n\n"
     "Args:\n"
     "    requests: ordered list of inner calls. Each entry is\n"
-    "        {request_type: <name of a supported tool>, request: <that tool's argument object>}.\n"
+    "        {request_type: <name of a supported tool>, request: <that tool's argument object>,\n"
+    "        workflow_id: <optional open workflow to act on>}.\n"
     "    timeout_ms: overall timeout for the whole batch in milliseconds. Defaults to\n"
     "        30000 ms per inner request, capped at 300000 ms.\n\n"
     "Returns:\n"
@@ -214,6 +216,19 @@ secrets_manager = SecretsManager(config_manager)
 
 mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
 mcp_server_logger.setLevel(logging.INFO)
+
+_WORKFLOW_ID_DESCRIPTION = (
+    "ID of the open workflow this request acts on, from OpenWorkflowRequest or ListOpenWorkflowsRequest. "
+    "Leave it out when only one workflow is open."
+)
+
+
+class _BatchEntry(NamedTuple):
+    """One validated entry of an EventRequestBatch."""
+
+    request_type: str
+    payload: dict[str, Any]
+    workflow_id: str | None
 
 
 def _summarize_result_details(result_details: object) -> str | list[dict] | None:
@@ -284,6 +299,10 @@ def _event_request_batch_input_schema() -> dict[str, Any]:
                             "type": "object",
                             "description": "Argument object that tool would accept individually.",
                         },
+                        "workflow_id": {
+                            "type": "string",
+                            "description": _WORKFLOW_ID_DESCRIPTION,
+                        },
                     },
                     "required": ["request_type", "request"],
                 },
@@ -298,8 +317,29 @@ def _event_request_batch_input_schema() -> dict[str, Any]:
     }
 
 
-def _build_batch_pairs(raw_requests: object) -> list[tuple[str, dict[str, Any]]]:
-    """Validate the inner requests array and return (request_type, payload_dict) pairs.
+def _tool_input_schema(request_type: type[RequestPayload]) -> dict[str, Any]:
+    """JSON schema for a request's tool, plus the `workflow_id` argument when it acts on a workflow.
+
+    The workflow is addressed beside the request, not inside it, so the schema built from the request
+    class does not have it. A host request ignores any workflow, so it doesn't advertise one.
+    """
+    schema = TypeAdapter(request_type).json_schema()
+    if GriptapeNodes.EventManager().scope_for(request_type) is RequestScope.HOST:
+        return schema
+    schema.setdefault("properties", {})["workflow_id"] = {"type": "string", "description": _WORKFLOW_ID_DESCRIPTION}
+    return schema
+
+
+def _workflow_id_argument(raw: object, where: str) -> str | None:
+    """The optional `workflow_id` of a tool call or batch entry, validated."""
+    if raw is None or isinstance(raw, str):
+        return raw
+    msg = f"Attempted to dispatch {where}. Failed because 'workflow_id' must be a string, got {raw!r}."
+    raise TypeError(msg)
+
+
+def _build_batch_entries(raw_requests: object) -> list[_BatchEntry]:
+    """Validate the inner requests array and return one entry per inner request.
 
     Mirrors the single-request dispatch: each inner request is validated by instantiating the
     matching RequestPayload class so missing required fields and unknown kwargs fail fast,
@@ -312,7 +352,7 @@ def _build_batch_pairs(raw_requests: object) -> list[tuple[str, dict[str, Any]]]
         msg = "Attempted to dispatch EventRequestBatch. Failed because 'requests' was empty."
         raise ValueError(msg)
 
-    pairs: list[tuple[str, dict[str, Any]]] = []
+    entries: list[_BatchEntry] = []
     for index, entry in enumerate(raw_requests):
         if not isinstance(entry, dict):
             msg = f"Attempted to dispatch EventRequestBatch entry {index}. Failed because the entry was not an object."
@@ -342,9 +382,12 @@ def _build_batch_pairs(raw_requests: object) -> list[tuple[str, dict[str, Any]]]
             )
             raise ValueError(msg) from exc
 
-        pairs.append((request_type, dict(payload_obj.__dict__)))
+        workflow_id = _workflow_id_argument(
+            entry.get("workflow_id"), f"EventRequestBatch entry {index} ({request_type})"
+        )
+        entries.append(_BatchEntry(request_type, dict(payload_obj.__dict__), workflow_id))
 
-    return pairs
+    return entries
 
 
 def _resolve_batch_timeout_ms(override: object, num_requests: int) -> int:
@@ -382,7 +425,7 @@ def _trim_batch_results(raw_results: list[Any]) -> list[dict[str, Any]]:
     return trimmed
 
 
-async def _handle_request_on_engine_loop(request_payload: RequestPayload) -> dict[str, Any]:
+async def _handle_request_on_engine_loop(request_payload: RequestPayload, workflow_id: str | None) -> dict[str, Any]:
     """Handle a request on the engine loop and serialize the result to the wire shape.
 
     Must be scheduled onto the engine's event loop (see _dispatch_to_engine). GriptapeNodes.
@@ -391,8 +434,10 @@ async def _handle_request_on_engine_loop(request_payload: RequestPayload) -> dic
     editor) still observe the change. The returned ResultPayload is wrapped back into an
     EventResult purely to reuse its wire serializer, producing the same dict shape the WebSocket
     transport delivered, which _trim_response already knows how to collapse.
+
+    `workflow_id` is the workflow the caller addresses, as the `EventRequest` envelope would carry it.
     """
-    result_payload = await GriptapeNodes.ahandle_request(request_payload)
+    result_payload = await GriptapeNodes.get_instance().ahandle_request(request_payload, workflow_id=workflow_id)
     if result_payload.succeeded():
         result_event: EventResultSuccess | EventResultFailure = EventResultSuccess(
             request=request_payload, result=result_payload
@@ -402,7 +447,9 @@ async def _handle_request_on_engine_loop(request_payload: RequestPayload) -> dic
     return json.loads(converters.client.dumps_result(result_event).text)
 
 
-async def _dispatch_to_engine(request_payload: RequestPayload, timeout_ms: int | None = None) -> dict[str, Any]:
+async def _dispatch_to_engine(
+    request_payload: RequestPayload, timeout_ms: int | None = None, *, workflow_id: str | None = None
+) -> dict[str, Any]:
     """Dispatch a request from the MCP server's loop onto the engine loop and await the result.
 
     The MCP server runs uvicorn on its own event loop in a daemon thread, so `call_tool` is not
@@ -429,7 +476,7 @@ async def _dispatch_to_engine(request_payload: RequestPayload, timeout_ms: int |
         )
         raise RuntimeError(msg)
     response_future = asyncio.wrap_future(
-        asyncio.run_coroutine_threadsafe(_handle_request_on_engine_loop(request_payload), engine_loop)
+        asyncio.run_coroutine_threadsafe(_handle_request_on_engine_loop(request_payload, workflow_id), engine_loop)
     )
     if timeout_ms:
         return await asyncio.wait_for(asyncio.shield(response_future), timeout=timeout_ms / 1000)
@@ -439,7 +486,7 @@ async def _dispatch_to_engine(request_payload: RequestPayload, timeout_ms: int |
 async def list_tools(_ctx: ServerRequestContext[Any], _params: PaginatedRequestParams | None) -> ListToolsResult:
     """Advertise one tool per supported request event, plus the synthetic batch envelope."""
     single_tools = [
-        Tool(name=event.__name__, description=event.__doc__, input_schema=TypeAdapter(event).json_schema())
+        Tool(name=event.__name__, description=event.__doc__, input_schema=_tool_input_schema(event))
         for event in SUPPORTED_REQUEST_EVENTS.values()
     ]
     batch_tool = Tool(
@@ -467,9 +514,9 @@ async def call_tool(_ctx: ServerRequestContext[Any], params: CallToolRequestPara
 async def _call_tool_payload(name: str, arguments: dict[str, Any]) -> str:
     """Dispatch one tool call and return its JSON text payload."""
     if name == EVENT_REQUEST_BATCH_TOOL_NAME:
-        pairs = _build_batch_pairs(arguments.get("requests"))
-        timeout_ms = _resolve_batch_timeout_ms(arguments.get("timeout_ms"), len(pairs))
-        raw_results = await _dispatch_batch_to_engine(pairs, timeout_ms)
+        entries = _build_batch_entries(arguments.get("requests"))
+        timeout_ms = _resolve_batch_timeout_ms(arguments.get("timeout_ms"), len(entries))
+        raw_results = await _dispatch_batch_to_engine(entries, timeout_ms)
         mcp_server_logger.debug("Got %d batch results", len(raw_results))
         return json.dumps(_trim_batch_results(raw_results))
 
@@ -477,20 +524,27 @@ async def _call_tool_payload(name: str, arguments: dict[str, Any]) -> str:
         msg = f"Unsupported tool: {name}"
         raise ValueError(msg)
 
-    request_payload = SUPPORTED_REQUEST_EVENTS[name](**arguments)
-    result = await _dispatch_to_engine(request_payload, timeout_ms=_SINGLE_REQUEST_TIMEOUT_MS)
+    workflow_id = _workflow_id_argument(arguments.get("workflow_id"), name)
+    request_arguments = {key: value for key, value in arguments.items() if key != "workflow_id"}
+    request_payload = SUPPORTED_REQUEST_EVENTS[name](**request_arguments)
+    result = await _dispatch_to_engine(request_payload, timeout_ms=_SINGLE_REQUEST_TIMEOUT_MS, workflow_id=workflow_id)
     mcp_server_logger.debug("Got result: %s", result)
     return json.dumps(_trim_response(result))
 
 
-async def _dispatch_batch_to_engine(pairs: list[tuple[str, dict[str, Any]]], timeout_ms: int) -> list[Any]:
-    """Dispatch a batch of (request_type, payload) pairs concurrently onto the engine loop.
+async def _dispatch_batch_to_engine(entries: list[_BatchEntry], timeout_ms: int) -> list[Any]:
+    """Dispatch a batch of entries concurrently onto the engine loop.
 
     Mirrors the single-request path but gathers the per-request futures. Failures are returned
     in their slot (return_exceptions semantics) so one bad inner request does not abort the rest;
     _trim_batch_results maps those exceptions to ok=false responses.
     """
-    coros = [_dispatch_to_engine(SUPPORTED_REQUEST_EVENTS[request_type](**payload)) for request_type, payload in pairs]
+    coros = [
+        _dispatch_to_engine(
+            SUPPORTED_REQUEST_EVENTS[entry.request_type](**entry.payload), workflow_id=entry.workflow_id
+        )
+        for entry in entries
+    ]
     gather = asyncio.gather(*coros, return_exceptions=True)
     return await asyncio.wait_for(gather, timeout=timeout_ms / 1000)
 

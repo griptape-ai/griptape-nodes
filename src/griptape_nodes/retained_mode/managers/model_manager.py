@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlparse
 
 from huggingface_hub import list_models, scan_cache_dir, snapshot_download
@@ -58,7 +58,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointSubjectType,
 )
 from griptape_nodes.retained_mode.managers.settings import MODELS_TO_DOWNLOAD_KEY
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.async_utils import cancel_subprocess
 from griptape_nodes.utils.engine_dirs import engine_data_dir
 from griptape_nodes.utils.model_download_errors import (
@@ -368,6 +368,8 @@ class ModelManager(EngineScoped):
     It supports downloading entire model repositories or specific files, with caching and
     local storage management.
     """
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(self, event_manager: EventManager | None = None, *, engine: Engine | None = None) -> None:
         """Initialize the ModelManager.
@@ -895,7 +897,7 @@ class ModelManager(EngineScoped):
             None,
         )
 
-    @handles(DeclareModelInvocationRequest)
+    @handles(DeclareModelInvocationRequest, scope=RequestScope.WORKFLOW)
     def on_handle_declare_model_invocation_request(self, request: DeclareModelInvocationRequest) -> ResultPayload:
         """Acknowledge a node's declaration that it is about to invoke a model.
 

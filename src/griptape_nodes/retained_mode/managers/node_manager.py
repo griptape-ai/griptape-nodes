@@ -6,7 +6,7 @@ import dataclasses
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, cast
 from uuid import uuid4
 
 from griptape_nodes.common.parameter_hydration import hydrate_parameter_values
@@ -245,7 +245,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointSubjectType,
 )
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.retained_mode.run_scheduler import Run, RunRefusedError, current_run, run_scope
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
@@ -352,6 +352,8 @@ class _NodeInstantiationDeniedError(Exception):
 
 
 class NodeManager(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
+
     class WorkflowState:
         """Node bookkeeping for one open workflow, keyed by node name."""
 
@@ -3379,7 +3381,7 @@ class NodeManager(EngineScoped):
         """The run a node execution belongs to.
 
         The run bound here, except on a worker, which has no binding of the orchestrator's and takes
-        the run the request names.
+        the run the request carries.
         """
         if not self.engine.library_manager.is_worker or request.run_id is None:
             return current_run.get()
@@ -3529,7 +3531,9 @@ class NodeManager(EngineScoped):
             worker_request_topic,
         )
         try:
-            event_request = EventRequest(request=request)
+            # Addressed to the workflow this node belongs to: a worker keeps a namespace per orchestrator
+            # workflow, keyed by this id, and names it on everything it sends back.
+            event_request = EventRequest(request=request, workflow_id=self.engine.current_workflow.workflow_id)
             event_request.request_id = target_request_id
             execute_raw = await wm.route_to_worker(
                 event_request,

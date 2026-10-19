@@ -1,18 +1,17 @@
 from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
-    HostRequest,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
 @PayloadRegistry.register
-class DownloadModelRequest(HostRequest):
+class DownloadModelRequest(RequestPayload):
     """Download a model from Hugging Face Hub.
 
     Use when: Downloading models for local inference, caching models for offline use,
@@ -89,7 +88,7 @@ class QueryInfo:
 
 @dataclass
 @PayloadRegistry.register
-class ListModelsRequest(HostRequest):
+class ListModelsRequest(RequestPayload):
     """List all downloaded models from the local cache.
 
     Use when: Viewing what models are available locally, checking cache usage,
@@ -119,7 +118,7 @@ class ListModelsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteModelRequest(HostRequest):
+class DeleteModelRequest(RequestPayload):
     """Delete a downloaded model from the local cache.
 
     Use when: Cleaning up disk space, removing unused models, managing local storage.
@@ -155,7 +154,7 @@ class DeleteModelResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ListModelDownloadsRequest(HostRequest):
+class ListModelDownloadsRequest(RequestPayload):
     """List download status for a specific model or all downloads.
 
     Use when: Checking progress of ongoing downloads, viewing download history,
@@ -209,7 +208,7 @@ class ListModelDownloadsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 @PayloadRegistry.register
-class DeleteModelDownloadRequest(HostRequest):
+class DeleteModelDownloadRequest(RequestPayload):
     """Delete download status tracking records for a model.
 
     Use when: Cleaning up orphaned download status files, removing tracking data
@@ -246,7 +245,7 @@ class DeleteModelDownloadResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class SearchModelsRequest(HostRequest):
+class SearchModelsRequest(RequestPayload):
     """Search for models on Hugging Face Hub.
 
     Use when: Finding models by name, filtering models by task or library,
@@ -299,7 +298,7 @@ class SearchModelsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetModelInfoRequest(HostRequest):
+class GetModelInfoRequest(RequestPayload):
     """Fetch detailed information for a specific model from Hugging Face Hub.
 
     Use when: Retrieving exact storage size before downloading, inspecting model
@@ -350,7 +349,7 @@ class GetModelInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DeclareModelInvocationRequest(WorkflowRequest):
+class DeclareModelInvocationRequest(RequestPayload):
     """Declare that a node is about to invoke a catalog model, so the call is subject to entitlements.
 
     This is how a well-intentioned node opts into the permission system: before

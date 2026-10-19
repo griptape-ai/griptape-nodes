@@ -6,7 +6,7 @@ from collections import defaultdict
 from contextlib import nullcontext
 from inspect import iscoroutinefunction
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 import anyio
 
@@ -47,7 +47,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.workflow.loading import LoadProblemFrame
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -128,6 +128,8 @@ def collate_problems_by_type(problems: Iterable[WorkflowProblem]) -> list[str]:
 
 
 class WorkflowRunner(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
+
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)
@@ -274,7 +276,7 @@ class WorkflowRunner(EngineScoped):
             status=execution_result.status, result_details=ResultDetails(*result_messages)
         )
 
-    @handles(GetWorkflowRunCommandRequest)
+    @handles(GetWorkflowRunCommandRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     async def on_get_workflow_run_command_request(self, request: GetWorkflowRunCommandRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         workflow_name = request.workflow_name
         file_path = request.file_path

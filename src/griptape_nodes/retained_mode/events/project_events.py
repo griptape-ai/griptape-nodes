@@ -15,8 +15,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroVariables, ParsedMacro, VariableInfo
 from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo, SituationTemplate
 from griptape_nodes.retained_mode.events.base_events import (
-    HostRequest,
-    OptionalWorkflowRequest,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
@@ -105,7 +104,7 @@ class UnresolvedSequenceSlotBehavior(StrEnum):
 
 @dataclass
 @PayloadRegistry.register
-class LoadProjectTemplateRequest(HostRequest):
+class LoadProjectTemplateRequest(RequestPayload):
     """Load user's project.yml and merge with system defaults.
 
     Use when: User opens a workspace, user creates new project, user modifies project.yml.
@@ -151,7 +150,7 @@ class LoadProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class GetProjectTemplateRequest(HostRequest):
+class GetProjectTemplateRequest(RequestPayload):
     """Get cached project template for a project ID.
 
     Use when: Querying current project configuration, checking validation status.
@@ -188,7 +187,7 @@ class GetProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 @PayloadRegistry.register
-class ResolveProjectWorkspaceRequest(HostRequest):
+class ResolveProjectWorkspaceRequest(RequestPayload):
     """Resolve the workspace directory a project would use, WITHOUT loading/activating it.
 
     Use when: Showing a project's effective workspace in the detail view when the project does not
@@ -282,7 +281,7 @@ class ProjectTemplateInfo:
 
 @dataclass
 @PayloadRegistry.register
-class ListProjectTemplatesRequest(HostRequest):
+class ListProjectTemplatesRequest(RequestPayload):
     """List all project templates that have been loaded or attempted to load.
 
     Use when: Displaying available projects, checking which projects are loaded.
@@ -312,7 +311,7 @@ class ListProjectTemplatesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSu
 
 @dataclass
 @PayloadRegistry.register
-class GetSituationRequest(OptionalWorkflowRequest):
+class GetSituationRequest(RequestPayload):
     """Get the full situation template for a specific situation.
 
     Returns the complete SituationTemplate including macro and policy.
@@ -353,7 +352,7 @@ class GetSituationResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetPathForMacroRequest(OptionalWorkflowRequest):
+class GetPathForMacroRequest(RequestPayload):
     """Resolve ANY macro schema with variables to produce final file path.
 
     Use when: Resolving paths, saving files. Works with any macro string, not tied to situations.
@@ -421,7 +420,7 @@ class GetPathForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 
 @dataclass
 @PayloadRegistry.register
-class SetCurrentProjectRequest(HostRequest):
+class SetCurrentProjectRequest(RequestPayload):
     """Set which project user has currently selected.
 
     Use when: User switches between projects, opens a new workspace.
@@ -455,7 +454,7 @@ class SetCurrentProjectResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetCurrentProjectRequest(HostRequest):
+class GetCurrentProjectRequest(RequestPayload):
     """Get the currently selected project path.
 
     Use when: Need to know which project user is working with.
@@ -484,7 +483,7 @@ class GetCurrentProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailu
 
 @dataclass
 @PayloadRegistry.register
-class SaveProjectTemplateRequest(HostRequest):
+class SaveProjectTemplateRequest(RequestPayload):
     """Save user customizations to project.yml file.
 
     Use when: User modifies project configuration, exports template.
@@ -520,7 +519,7 @@ class SaveProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class ValidateProjectTemplateRequest(HostRequest):
+class ValidateProjectTemplateRequest(RequestPayload):
     """Validate a project template dict without saving or loading it.
 
     Use when: UI needs to check whether a template would be accepted by the
@@ -564,7 +563,7 @@ class ValidateProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 @dataclass
 @PayloadRegistry.register
-class AttemptMatchPathAgainstMacroRequest(OptionalWorkflowRequest):
+class AttemptMatchPathAgainstMacroRequest(RequestPayload):
     """Attempt to match a path against a macro schema and extract variables.
 
     Use when: Validating paths, extracting info from file paths,
@@ -621,7 +620,7 @@ class AttemptMatchPathAgainstMacroResultFailure(WorkflowNotAlteredMixin, ResultP
 
 @dataclass
 @PayloadRegistry.register
-class GetStateForMacroRequest(OptionalWorkflowRequest):
+class GetStateForMacroRequest(RequestPayload):
     """Analyze a macro and return comprehensive state information.
 
     Use when: Building UI forms, real-time validation, checking if resolution
@@ -678,7 +677,7 @@ class GetStateForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class AttemptMapAbsolutePathToProjectRequest(OptionalWorkflowRequest):
+class AttemptMapAbsolutePathToProjectRequest(RequestPayload):
     """Find out if an absolute path exists anywhere within a Project directory.
 
     Use when: User selects or types an absolute path via FilePicker and you need to know:
@@ -762,7 +761,7 @@ class AttemptMapAbsolutePathToProjectResultFailure(WorkflowNotAlteredMixin, Resu
 
 @dataclass
 @PayloadRegistry.register
-class UnregisterProjectTemplateRequest(HostRequest):
+class UnregisterProjectTemplateRequest(RequestPayload):
     """Remove a registered project template from the engine.
 
     Removes the template from in-memory caches and from the persisted
@@ -800,7 +799,7 @@ class UnregisterProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayl
 
 @dataclass
 @PayloadRegistry.register
-class GetAllSituationsForProjectRequest(OptionalWorkflowRequest):
+class GetAllSituationsForProjectRequest(RequestPayload):
     """Get all situation names and schemas from a project template.
 
     Args:
@@ -831,7 +830,7 @@ class GetAllSituationsForProjectResultFailure(WorkflowNotAlteredMixin, ResultPay
 
 @dataclass
 @PayloadRegistry.register
-class ActivateWorkspaceProjectRequest(HostRequest):
+class ActivateWorkspaceProjectRequest(RequestPayload):
     """Resolve and activate the workspace project before app initialization completes.
 
     Emitted by the app orchestrator after role setup but before the
@@ -861,7 +860,7 @@ class ActivateWorkspaceProjectResultFailure(WorkflowNotAlteredMixin, ResultPaylo
 
 @dataclass
 @PayloadRegistry.register
-class ExportProjectRequest(HostRequest):
+class ExportProjectRequest(RequestPayload):
     """Package a loaded project and its dependencies into a portable .zip.
 
     Use when: User wants to archive or branch an entire project. The package
@@ -918,7 +917,7 @@ class ExportProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class PreviewImportProjectRequest(HostRequest):
+class PreviewImportProjectRequest(RequestPayload):
     """Read a project package's manifest without extracting it.
 
     Use when: The GUI wants to show what a .zip contains (libraries, required
@@ -963,7 +962,7 @@ class PreviewImportProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 
 @dataclass
 @PayloadRegistry.register
-class ImportProjectRequest(HostRequest):
+class ImportProjectRequest(RequestPayload):
     """Extract a project package to a target directory and register it.
 
     Use when: User archives or branches a project. The mirrored base-dir tree is
@@ -1026,7 +1025,7 @@ class ImportProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class UpgradeProjectSchemaRequest(HostRequest):
+class UpgradeProjectSchemaRequest(RequestPayload):
     """Electively upgrade a loaded project to the latest schema MAJOR version.
 
     A within-major version advance happens automatically on save; crossing a MAJOR

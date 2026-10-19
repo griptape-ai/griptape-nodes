@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Literal, NoReturn, TypeVar
+from typing import Any, Literal, NoReturn, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -130,43 +130,6 @@ class RequestPayload(Payload, ABC):
     request_id: str | None = None
     failure_log_level: int | None = None
     fields: list[str] | None = None
-
-
-@dataclass(kw_only=True)
-class HostRequest(RequestPayload, ABC):
-    """A request about the host rather than any one workflow: config, libraries, projects, secrets.
-
-    It never acts on a workflow, so it names none, and its result is a host event.
-    """
-
-
-@dataclass(kw_only=True)
-class WorkflowRequest(RequestPayload, ABC):
-    """A request that acts on one open workflow.
-
-    Args:
-        workflow_id: The open workflow to act on. A request issued while handling another acts on that
-            request's workflow when it names none. Otherwise it must name one, unless the engine holds
-            just one workflow open, which it then acts on. A request naming a workflow that isn't open
-            fails, and so does one that names none while several are open.
-    """
-
-    # Whether the request can run with no workflow at all. See OptionalWorkflowRequest.
-    workflow_optional: ClassVar[bool] = False
-
-    workflow_id: str | None = None
-
-
-@dataclass(kw_only=True)
-class OptionalWorkflowRequest(WorkflowRequest, ABC):
-    """A request that works on its own but resolves paths and macros against a workflow it names.
-
-    `{workflow_dir}` and the project situations built on it depend on which workflow is asking. Naming
-    none while several are open runs the request with no workflow, the way an engine with none open
-    would, rather than failing.
-    """
-
-    workflow_optional: ClassVar[bool] = True
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
@@ -344,6 +307,9 @@ class EventRequest[P: Payload](BaseEvent):
     request: P
     request_id: str | None = None
     response_topic: str | None = None
+    # The open workflow the caller addresses the request to. A request's scope, declared by its handler,
+    # decides whether it matters; host requests ignore it.
+    workflow_id: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an EventRequest, inferring the generic type if needed."""

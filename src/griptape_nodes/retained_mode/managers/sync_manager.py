@@ -7,7 +7,7 @@ import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from watchfiles import Change, PythonFilter, watch
 
@@ -28,7 +28,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RegisterWorkflowsFromConfigResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -42,6 +42,8 @@ logger = logging.getLogger("griptape_nodes")
 
 class SyncManager(EngineScoped):
     """Manager for syncing workflows with cloud storage."""
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(
         self, event_manager: EventManager, config_manager: ConfigManager, *, engine: Engine | None = None

@@ -8,7 +8,7 @@ from griptape_nodes.common.diagnostics.bundle import DiagnosticsBundleManifest
 from griptape_nodes.common.diagnostics.health import HealthReport
 from griptape_nodes.common.diagnostics.report import DiagnosticsReport
 from griptape_nodes.retained_mode.events.base_events import (
-    OptionalWorkflowRequest,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
@@ -18,7 +18,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 @dataclass
 @PayloadRegistry.register
-class GetDiagnosticsReportRequest(OptionalWorkflowRequest):
+class GetDiagnosticsReportRequest(RequestPayload):
     """Collect a snapshot of the engine's state for troubleshooting.
 
     Use when: Someone reporting a problem needs to say what version they are running, on
@@ -66,7 +66,7 @@ class GetDiagnosticsReportResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 
 @dataclass
 @PayloadRegistry.register
-class CollectDiagnosticsRequest(OptionalWorkflowRequest):
+class CollectDiagnosticsRequest(RequestPayload):
     """Collect a diagnostics bundle: one zip holding everything needed to troubleshoot.
 
     Use when: A user reporting a problem should send one file rather than assembling logs,
@@ -143,7 +143,7 @@ class CollectDiagnosticsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 @PayloadRegistry.register
-class RunHealthChecksRequest(OptionalWorkflowRequest):
+class RunHealthChecksRequest(RequestPayload):
     """Check whether this installation is set up correctly and say what to fix.
 
     Use when: Someone says "it isn't working" and the symptom is not clear yet. Where

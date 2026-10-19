@@ -14,7 +14,7 @@ from griptape_nodes.servers.mcp import (
     _BATCH_PER_REQUEST_TIMEOUT_MS,
     EVENT_REQUEST_BATCH_TOOL_NAME,
     SUPPORTED_REQUEST_EVENTS,
-    _build_batch_pairs,
+    _build_batch_entries,
     _dispatch_to_engine,
     _event_request_batch_input_schema,
     _resolve_batch_timeout_ms,
@@ -128,8 +128,8 @@ class TestEventRequestBatchInputSchema:
         assert schema["properties"]["requests"]["minItems"] == 1
 
 
-class TestBuildBatchPairs:
-    def test_builds_pairs_for_valid_inner_requests(self) -> None:
+class TestBuildBatchEntries:
+    def test_builds_entries_for_valid_inner_requests(self) -> None:
         raw = [
             {"request_type": "CreateNodeRequest", "request": {"node_type": "TextInput"}},
             {
@@ -143,36 +143,53 @@ class TestBuildBatchPairs:
             },
         ]
 
-        pairs = _build_batch_pairs(raw)
+        entries = _build_batch_entries(raw)
 
-        assert [request_type for request_type, _ in pairs] == ["CreateNodeRequest", "CreateConnectionRequest"]
+        assert [entry.request_type for entry in entries] == ["CreateNodeRequest", "CreateConnectionRequest"]
         # Defaults from the dataclasses are filled in, so payload dicts carry every field.
-        assert pairs[0][1]["node_type"] == "TextInput"
-        assert pairs[1][1]["source_node_name"] == "TextInput_1"
+        assert entries[0].payload["node_type"] == "TextInput"
+        assert entries[1].payload["source_node_name"] == "TextInput_1"
+        assert [entry.workflow_id for entry in entries] == [None, None]
+
+    def test_reads_the_workflow_an_entry_is_addressed_to(self) -> None:
+        raw = [{"request_type": "CreateNodeRequest", "request": {"node_type": "X"}, "workflow_id": "wf-1"}]
+
+        entries = _build_batch_entries(raw)
+
+        assert entries[0].workflow_id == "wf-1"
+        assert "workflow_id" not in entries[0].payload
+
+    def test_rejects_a_non_string_workflow_id(self) -> None:
+        with pytest.raises(TypeError, match="workflow_id"):
+            _build_batch_entries(
+                [{"request_type": "CreateNodeRequest", "request": {"node_type": "X"}, "workflow_id": 7}]
+            )
 
     def test_rejects_non_list_requests(self) -> None:
         with pytest.raises(TypeError, match="must be a list"):
-            _build_batch_pairs("not a list")
+            _build_batch_entries("not a list")
 
     def test_rejects_empty_list(self) -> None:
         with pytest.raises(ValueError, match="empty"):
-            _build_batch_pairs([])
+            _build_batch_entries([])
 
     def test_rejects_non_dict_entry(self) -> None:
         with pytest.raises(TypeError, match="entry 0"):
-            _build_batch_pairs(["not a dict"])
+            _build_batch_entries(["not a dict"])
 
     def test_rejects_unknown_request_type(self) -> None:
         with pytest.raises(ValueError, match="is not a supported tool"):
-            _build_batch_pairs([{"request_type": "NopeRequest", "request": {}}])
+            _build_batch_entries([{"request_type": "NopeRequest", "request": {}}])
 
     def test_rejects_non_dict_request_payload(self) -> None:
         with pytest.raises(TypeError, match="must be an object"):
-            _build_batch_pairs([{"request_type": "ListRegisteredLibrariesRequest", "request": "bad"}])
+            _build_batch_entries([{"request_type": "ListRegisteredLibrariesRequest", "request": "bad"}])
 
     def test_rejects_unknown_kwargs_in_inner_payload(self) -> None:
         with pytest.raises(ValueError, match="Attempted to construct CreateNodeRequest"):
-            _build_batch_pairs([{"request_type": "CreateNodeRequest", "request": {"node_type": "X", "bogus_field": 1}}])
+            _build_batch_entries(
+                [{"request_type": "CreateNodeRequest", "request": {"node_type": "X", "bogus_field": 1}}]
+            )
 
 
 class TestResolveBatchTimeoutMs:
@@ -283,6 +300,16 @@ class TestListTools:
         assert "ValidateFlowDependenciesRequest" in names
 
     @pytest.mark.asyncio
+    async def test_workflow_tools_take_a_workflow_id_and_host_tools_do_not(self) -> None:
+        result = await list_tools(_NO_CONTEXT, None)
+
+        schemas = {tool.name: tool.input_schema for tool in result.tools}
+        assert "workflow_id" in schemas["CreateNodeRequest"]["properties"]
+        assert "workflow_id" in schemas["CloseWorkflowRequest"]["properties"]
+        assert "workflow_id" not in schemas["ListRegisteredLibrariesRequest"].get("properties", {})
+        assert "workflow_id" not in schemas["CreateNodeRequest"].get("required", [])
+
+    @pytest.mark.asyncio
     async def test_every_tool_carries_an_object_input_schema(self) -> None:
         result = await list_tools(_NO_CONTEXT, None)
 
@@ -299,7 +326,7 @@ class TestCallTool:
 
     @pytest.mark.asyncio
     async def test_returns_trimmed_payload_as_text_content(self) -> None:
-        async def fake_dispatch(_payload: object, timeout_ms: int | None = None) -> dict[str, Any]:  # noqa: ARG001
+        async def fake_dispatch(_payload: object, timeout_ms: int | None = None, **_kwargs: Any) -> dict[str, Any]:  # noqa: ARG001
             return {"result_type": "ListRegisteredLibrariesResultSuccess", "result": {"libraries": ["demo"]}}
 
         with patch.object(mcp_module, "_dispatch_to_engine", fake_dispatch):
@@ -311,10 +338,29 @@ class TestCallTool:
         assert json.loads(result.content[0].text) == {"ok": True, "libraries": ["demo"]}  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
+    async def test_addresses_the_request_to_the_workflow_id_argument(self) -> None:
+        seen: dict[str, object] = {}
+
+        async def fake_dispatch(payload: object, timeout_ms: int | None = None, **kwargs: Any) -> dict[str, Any]:  # noqa: ARG001
+            seen["payload"] = payload
+            seen["workflow_id"] = kwargs["workflow_id"]
+            return {"result_type": "CreateNodeResultSuccess", "result": {}}
+
+        with patch.object(mcp_module, "_dispatch_to_engine", fake_dispatch):
+            result = await call_tool(
+                _NO_CONTEXT,
+                CallToolRequestParams(name="CreateNodeRequest", arguments={"node_type": "X", "workflow_id": "wf-1"}),
+            )
+
+        assert result.is_error is False
+        assert seen["workflow_id"] == "wf-1"
+        assert isinstance(seen["payload"], SUPPORTED_REQUEST_EVENTS["CreateNodeRequest"])
+
+    @pytest.mark.asyncio
     async def test_treats_missing_arguments_as_empty(self) -> None:
         seen: dict[str, object] = {}
 
-        async def fake_dispatch(payload: object, timeout_ms: int | None = None) -> dict[str, Any]:  # noqa: ARG001
+        async def fake_dispatch(payload: object, timeout_ms: int | None = None, **_kwargs: Any) -> dict[str, Any]:  # noqa: ARG001
             seen["payload"] = payload
             return {"result_type": "ListRegisteredLibrariesResultSuccess", "result": {}}
 
@@ -342,7 +388,7 @@ class TestCallTool:
 
     @pytest.mark.asyncio
     async def test_reports_dispatch_timeout_as_error_result(self) -> None:
-        async def timing_out_dispatch(_payload: object, timeout_ms: int | None = None) -> dict[str, Any]:  # noqa: ARG001
+        async def timing_out_dispatch(_payload: object, **_kwargs: Any) -> dict[str, Any]:
             raise TimeoutError
 
         with patch.object(mcp_module, "_dispatch_to_engine", timing_out_dispatch):
@@ -354,8 +400,8 @@ class TestCallTool:
 
     @pytest.mark.asyncio
     async def test_dispatches_the_batch_envelope(self) -> None:
-        async def fake_batch_dispatch(pairs: list[tuple[str, dict[str, Any]]], timeout_ms: int) -> list[Any]:  # noqa: ARG001
-            return [{"result_type": "CreateNodeResultSuccess", "result": {"node_name": "A_1"}} for _ in pairs]
+        async def fake_batch_dispatch(entries: list[Any], timeout_ms: int) -> list[Any]:  # noqa: ARG001
+            return [{"result_type": "CreateNodeResultSuccess", "result": {"node_name": "A_1"}} for _ in entries]
 
         with patch.object(mcp_module, "_dispatch_batch_to_engine", fake_batch_dispatch):
             result = await call_tool(
@@ -377,6 +423,31 @@ class TestCallTool:
 
         assert result.is_error is True
         assert "empty" in result.content[0].text  # type: ignore[union-attr]
+
+
+class TestDispatchBatchToEngine:
+    @pytest.mark.asyncio
+    async def test_each_entry_is_dispatched_to_its_own_workflow(self) -> None:
+        dispatched: list[tuple[type, str | None]] = []
+
+        async def fake_dispatch(payload: object, timeout_ms: int | None = None, **kwargs: Any) -> dict[str, Any]:  # noqa: ARG001
+            dispatched.append((type(payload), kwargs["workflow_id"]))
+            return {}
+
+        entries = _build_batch_entries(
+            [
+                {"request_type": "CreateNodeRequest", "request": {"node_type": "X"}, "workflow_id": "wf-1"},
+                {"request_type": "ListRegisteredLibrariesRequest", "request": {}},
+            ]
+        )
+
+        with patch.object(mcp_module, "_dispatch_to_engine", fake_dispatch):
+            await mcp_module._dispatch_batch_to_engine(entries, timeout_ms=1000)
+
+        assert sorted(dispatched, key=lambda item: item[0].__name__) == [
+            (SUPPORTED_REQUEST_EVENTS["CreateNodeRequest"], "wf-1"),
+            (SUPPORTED_REQUEST_EVENTS["ListRegisteredLibrariesRequest"], None),
+        ]
 
 
 class TestDispatchToEngineShield:
@@ -413,7 +484,7 @@ class TestDispatchToEngineShield:
         completed = threading.Event()
         cancelled = threading.Event()
 
-        async def slow_engine_handler(_payload: object) -> dict[str, bool]:
+        async def slow_engine_handler(_payload: object, _workflow_id: str | None) -> dict[str, bool]:
             try:
                 await asyncio.sleep(0.5)
             except asyncio.CancelledError:
@@ -445,7 +516,7 @@ class TestDispatchToEngineShield:
     async def test_returns_result_when_engine_finishes_before_timeout(self) -> None:
         engine_loop, thread = self._run_engine_loop_in_thread()
 
-        async def fast_engine_handler(_payload: object) -> dict[str, bool]:
+        async def fast_engine_handler(_payload: object, _workflow_id: str | None) -> dict[str, bool]:
             return {"ok": True}
 
         event_manager = MagicMock()

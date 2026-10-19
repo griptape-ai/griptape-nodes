@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from griptape_nodes.retained_mode.events.base_events import (
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.serialization.values import DisplayValue
@@ -17,7 +17,7 @@ from griptape_nodes.serialization.values import DisplayValue
 
 @dataclass
 @PayloadRegistry.register
-class RunArbitraryPythonStringRequest(WorkflowRequest):
+class RunArbitraryPythonStringRequest(RequestPayload):
     """Execute arbitrary Python code string.
 
     Use when: Development/debugging, testing code snippets, prototyping,

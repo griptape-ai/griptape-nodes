@@ -1,27 +1,26 @@
 """Requests that open, list, and close the workflows an engine holds at once.
 
 Every open workflow has a `workflow_id`, stable for as long as it stays open, through saves, renames,
-moves, and library reloads. A workflow request names one in its own `workflow_id` to act on that
-workflow; see `WorkflowRequest`. The engine has no "active" workflow: which one a client shows is the
-client's business.
+moves, and library reloads. A workflow request is addressed to one by the `workflow_id` on its
+`EventRequest`, not by a field of the request; see `RequestScope`. The engine has no "active" workflow:
+which one a client shows is the client's business.
 """
 
 from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
-    HostRequest,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
 @PayloadRegistry.register
-class OpenWorkflowRequest(HostRequest):
+class OpenWorkflowRequest(RequestPayload):
     """Open a workflow alongside the ones already open.
 
     Use when: Opening a saved workflow, or starting a new one, without closing the workflows already open.
@@ -30,8 +29,8 @@ class OpenWorkflowRequest(HostRequest):
     A workflow that is already open stays as it is, and its id is returned. Without `workflow_name`,
     starts a new unsaved workflow with an empty flow.
 
-    Name the returned id on the workflow requests meant for it. With several workflows open, a workflow
-    request that names none fails.
+    Address the workflow requests meant for it with the returned id, as the `workflow_id` of their
+    `EventRequest`. With several workflows open, a workflow request that is addressed to none fails.
 
     Args:
         workflow_name: Registry key of the workflow to open, or None to start a new one.
@@ -88,7 +87,7 @@ class OpenWorkflow:
 
 @dataclass
 @PayloadRegistry.register
-class ListOpenWorkflowsRequest(HostRequest):
+class ListOpenWorkflowsRequest(RequestPayload):
     """List the workflows the engine holds open.
 
     Use when: Showing which workflows can be switched to without reloading, and which one is running.
@@ -117,10 +116,11 @@ class ListOpenWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailu
 
 @dataclass
 @PayloadRegistry.register
-class CloseWorkflowRequest(WorkflowRequest):
-    """Close the workflow this request acts on, discarding its unsaved changes.
+class CloseWorkflowRequest(RequestPayload):
+    """Close the workflow this request is addressed to, discarding its unsaved changes.
 
-    Use when: The user closes a workflow they have open. Name it in `workflow_id`.
+    Use when: The user closes a workflow they have open. Address it with the `workflow_id` of the
+    `EventRequest`.
 
     Cancels its run if it has one.
 

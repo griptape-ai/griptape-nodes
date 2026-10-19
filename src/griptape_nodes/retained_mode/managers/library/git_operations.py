@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, ClassVar, NamedTuple
 
 import anyio
 from semver import Version
@@ -49,7 +49,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     LIBRARIES_TO_REGISTER_KEY,
     LIBRARY_MINIMUM_RELEASE_AGE_KEY,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.file_utils import find_file_in_directory
 from griptape_nodes.utils.git_utils import (
     GitError,
@@ -134,6 +134,8 @@ class MinimumReleaseAgeConfig(NamedTuple):
 
 
 class LibraryGitOperations(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

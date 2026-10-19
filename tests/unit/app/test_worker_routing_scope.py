@@ -28,6 +28,7 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import ResultContext
@@ -189,7 +190,7 @@ class TestRemoteHandlerRouting:
                     result_details="local",
                 )
 
-            event_manager.assign_manager_to_request_type(request_type, stub)
+            event_manager.assign_manager_to_request_type(request_type, stub, scope=RequestScope.WORKFLOW)
 
         register_remote_handlers(event_manager)
 

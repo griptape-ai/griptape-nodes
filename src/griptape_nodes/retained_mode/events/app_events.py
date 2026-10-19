@@ -4,7 +4,7 @@ from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
-    HostRequest,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     SkipTheLineMixin,
@@ -48,7 +48,7 @@ class UserInfo:
 
 @dataclass
 @PayloadRegistry.register
-class AppStartSessionRequest(HostRequest):
+class AppStartSessionRequest(RequestPayload):
     """Start a new application session.
 
     Use when: Initializing client connections, beginning new workflow sessions,
@@ -78,7 +78,7 @@ class AppStartSessionResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class AppGetSessionRequest(HostRequest):
+class AppGetSessionRequest(RequestPayload):
     """Get the current session information.
 
     Use when: Checking session status, retrieving session details,
@@ -233,7 +233,7 @@ class LibraryLoadedNotification(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ReportLibraryLoadedRequest(HostRequest, SkipTheLineMixin):
+class ReportLibraryLoadedRequest(RequestPayload, SkipTheLineMixin):
     """Sent by a worker to the orchestrator to report how a library loaded in the worker.
 
     It is what releases anything waiting to route execution to that worker.
@@ -333,7 +333,7 @@ class CurrentProjectChanged(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetEngineVersionRequest(HostRequest):
+class GetEngineVersionRequest(RequestPayload):
     """Get the engine version information.
 
     Use when: Checking compatibility, displaying version info,
@@ -367,7 +367,7 @@ class GetEngineVersionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class AppEndSessionRequest(HostRequest):
+class AppEndSessionRequest(RequestPayload):
     """End the current application session.
 
     Use when: Closing client connections, cleaning up session resources,
@@ -397,7 +397,7 @@ class AppEndSessionResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SessionHeartbeatRequest(HostRequest, SkipTheLineMixin):
+class SessionHeartbeatRequest(RequestPayload, SkipTheLineMixin):
     """Request clients can use ensure the engine session is still active."""
 
 
@@ -415,7 +415,7 @@ class SessionHeartbeatResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class EngineHeartbeatRequest(HostRequest, SkipTheLineMixin):
+class EngineHeartbeatRequest(RequestPayload, SkipTheLineMixin):
     """Request clients can use to discover active engines and their status.
 
     Attributes:
@@ -508,7 +508,7 @@ class EngineHeartbeatResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SetEngineNameRequest(HostRequest):
+class SetEngineNameRequest(RequestPayload):
     """Set the human-readable engine name.
 
     Use when: Customizing engine identification, setting up engine instances,
@@ -549,7 +549,7 @@ class SetEngineNameResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetEngineNameRequest(HostRequest):
+class GetEngineNameRequest(RequestPayload):
     """Get the current engine name.
 
     Use when: Displaying engine information, checking engine identity,

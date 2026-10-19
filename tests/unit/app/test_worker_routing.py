@@ -32,7 +32,9 @@ from griptape_nodes.app.worker_routing import (
     DropWorkflowLocalObjectsRequest,
     DropWorkflowLocalObjectsResultFailure,
     DropWorkflowLocalObjectsResultSuccess,
+    RefreshSecretsRequest,
     ReloadAllLibrariesRequest,
+    ReloadConfigRequest,
     RemoteHandler,
     _handle_drop_local_objects,
     _handle_drop_workflow_local_objects,
@@ -56,6 +58,7 @@ from griptape_nodes.retained_mode.events.project_events import (
 )
 from griptape_nodes.retained_mode.events.resource_events import GetExecutionDeviceRequest
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -166,7 +169,7 @@ class TestInstallRemoteHandlersSwap:
                 return _StubResult(result_details="ok")
 
             originals[request_type] = original
-            event_manager.assign_manager_to_request_type(request_type, original)
+            event_manager.assign_manager_to_request_type(request_type, original, scope=RequestScope.WORKFLOW)
 
         register_remote_handlers(event_manager)
 
@@ -192,7 +195,7 @@ class TestInstallRemoteHandlersSwap:
                 return _StubResult(result_details="local")
 
             locals_registered[request_type] = original
-            event_manager.assign_manager_to_request_type(request_type, original)
+            event_manager.assign_manager_to_request_type(request_type, original, scope=RequestScope.HOST)
 
         register_remote_handlers(event_manager)
 
@@ -235,6 +238,43 @@ class TestInstallRemoteHandlersSwap:
         forwarded = sorted(t.__name__ for t in installed - LOCAL_ONLY_REQUEST_TYPES)
         assert forwarded == [], f"broadcast handlers that would be forwarded to the orchestrator: {forwarded}"
 
+    def test_the_swap_keeps_each_types_scope(self) -> None:
+        event_manager = EventManager()
+        scopes = {
+            CreateNodeRequest: RequestScope.WORKFLOW,
+            GetSituationRequest: RequestScope.OPTIONAL_WORKFLOW,
+            GetExecutionDeviceRequest: RequestScope.HOST,
+        }
+        for request_type, scope in scopes.items():
+
+            async def original(_request: RequestPayload) -> _StubResult:
+                return _StubResult(result_details="ok")
+
+            event_manager.assign_manager_to_request_type(request_type, original, scope=scope)
+
+        register_remote_handlers(event_manager)
+
+        for request_type, scope in scopes.items():
+            assert event_manager.scope_for(request_type) is scope, request_type.__name__
+
+    def test_broadcast_handlers_declare_the_scope_their_requests_have(self) -> None:
+        probe = EventManager()
+        register_broadcast_handlers(
+            probe,
+            config_manager=MagicMock(),
+            secrets_manager=MagicMock(),
+            project_manager=MagicMock(),
+        )
+
+        assert probe.scope_for(DropWorkflowLocalObjectsRequest) is RequestScope.WORKFLOW
+        for host_request in (
+            ReloadConfigRequest,
+            RefreshSecretsRequest,
+            ActivateProjectRequest,
+            DropLocalObjectsRequest,
+        ):
+            assert probe.scope_for(host_request) is RequestScope.HOST, host_request.__name__
+
     def test_per_file_project_reads_stay_local(self) -> None:
         """Three project-template reads on the per-saved-file path must not forward.
 
@@ -268,7 +308,7 @@ class TestInstallRemoteHandlersSwap:
         async def original(_request: RequestPayload) -> _StubResult:
             return _StubResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(CreateNodeRequest, original)
+        event_manager.assign_manager_to_request_type(CreateNodeRequest, original, scope=RequestScope.WORKFLOW)
 
         register_remote_handlers(event_manager)
 
@@ -290,7 +330,9 @@ class TestInstallRemoteHandlersSwap:
             local_calls.append(request)
             return _StubResult(result_details="local")
 
-        event_manager.assign_manager_to_request_type(AddParameterToNodeRequest, local_add_parameter)
+        event_manager.assign_manager_to_request_type(
+            AddParameterToNodeRequest, local_add_parameter, scope=RequestScope.WORKFLOW
+        )
 
         register_remote_handlers(event_manager)
 
@@ -394,10 +436,10 @@ class TestDropWorkflowLocalObjectsHandler:
 
 
 async def _drop_for(engine: Engine, runtime: WorkflowRuntime) -> ResultPayload:
-    """Run the drop handler the way dispatch does: bound to the workflow the request names."""
+    """Run the drop handler the way dispatch does: bound to the workflow the request is addressed to."""
     with engine.bind_workflow(runtime):
         return await _handle_drop_workflow_local_objects(
-            DropWorkflowLocalObjectsRequest(workflow_id=runtime.workflow_id), event_manager=engine.event_manager
+            DropWorkflowLocalObjectsRequest(), event_manager=engine.event_manager
         )
 
 

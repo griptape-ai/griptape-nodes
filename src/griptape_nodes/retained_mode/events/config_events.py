@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from griptape_nodes.retained_mode.events.base_events import (
-    HostRequest,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
@@ -88,7 +88,7 @@ class ConfigLayer(BaseModel):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigValueRequest(HostRequest):
+class GetConfigValueRequest(RequestPayload):
     """Get a specific configuration value.
 
     Use when: Reading application settings, checking node configurations, retrieving user preferences,
@@ -133,7 +133,7 @@ class GetConfigValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class SetConfigValueRequest(HostRequest):
+class SetConfigValueRequest(RequestPayload):
     """Set a specific configuration value.
 
     Use when: Updating application settings, configuring node behavior, storing user preferences,
@@ -183,7 +183,7 @@ class SetConfigValueResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigCategoryRequest(HostRequest):
+class GetConfigCategoryRequest(RequestPayload):
     """Get all configuration values within a category.
 
     Use when: Retrieving multiple related settings, displaying configuration sections in UIs,
@@ -225,7 +225,7 @@ class GetConfigCategoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailu
 
 @dataclass
 @PayloadRegistry.register
-class SetConfigCategoryRequest(HostRequest):
+class SetConfigCategoryRequest(RequestPayload):
     """Set multiple configuration values within a category.
 
     Use when: Bulk updating configuration settings, restoring configuration sections,
@@ -277,7 +277,7 @@ class SetConfigCategoryResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkspaceRequest(HostRequest):
+class GetWorkspaceRequest(RequestPayload):
     """Get the absolute path to the configured workspace directory.
 
     Use when: Resolving relative FILE_SYSTEM-category settings (e.g. `sandbox_library_directory`,
@@ -305,7 +305,7 @@ class GetWorkspaceResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigPathRequest(HostRequest):
+class GetConfigPathRequest(RequestPayload):
     """Get the path to the configuration file.
 
     Use when: Locating configuration files, debugging configuration issues,
@@ -335,7 +335,7 @@ class GetConfigPathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigLayersRequest(HostRequest):
+class GetConfigLayersRequest(RequestPayload):
     """Get the full config layer stack, in isolation, lowest to highest priority.
 
     Use when: diagnosing why a setting doesn't take effect, building a settings UI that
@@ -364,7 +364,7 @@ class GetConfigLayersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
 
 @dataclass
 @PayloadRegistry.register
-class ResetConfigRequest(HostRequest):
+class ResetConfigRequest(RequestPayload):
     """Reset configuration to default values.
 
     Use when: Recovering from configuration errors, restoring default settings,
@@ -388,7 +388,7 @@ class ResetConfigResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigSchemaRequest(HostRequest):
+class GetConfigSchemaRequest(RequestPayload):
     """Get the JSON schema for the configuration model.
 
     Use when: Frontend needs to understand field types, enums, and validation rules
@@ -418,7 +418,7 @@ class GetConfigSchemaResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 
 @dataclass
 @PayloadRegistry.register
-class ListBetaFeaturesRequest(HostRequest):
+class ListBetaFeaturesRequest(RequestPayload):
     """List the beta features this engine and its loaded libraries define.
 
     Use when: Showing engine and library features on the editor's Beta settings page. Values are
@@ -447,7 +447,7 @@ class ListBetaFeaturesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 
 @dataclass
 @PayloadRegistry.register
-class IsBetaFeatureEnabledRequest(HostRequest):
+class IsBetaFeatureEnabledRequest(RequestPayload):
     """Check whether a beta feature is on.
 
     Use when: Node code needs to know whether a beta feature from its library is on. Nodes call

@@ -5,7 +5,7 @@ import logging
 import subprocess
 from importlib.resources import files
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, ClassVar, NamedTuple
 
 from packaging.requirements import InvalidRequirement, Requirement
 
@@ -78,7 +78,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     LIBRARY_DEPENDENCY_INSTALL_BEHAVIOR_KEY,
     LibraryDependencyInstallBehavior,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.dict_utils import merge_dicts, normalize_secrets_to_register
 from griptape_nodes.utils.uv_utils import find_uv_bin
 
@@ -98,6 +98,8 @@ class RegisterLibraryPrerequisites(NamedTuple):
 
 
 class LibraryRegistrar(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

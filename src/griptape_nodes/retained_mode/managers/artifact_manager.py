@@ -107,7 +107,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
 )
 from griptape_nodes.retained_mode.managers.authorization_checkpoint import CheckpointDenial
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.async_utils import to_thread
 from griptape_nodes.utils.ffmpeg_cache import install_ffmpeg_cache_redirect
 from griptape_nodes.utils.file_utils import mtimes_match
@@ -178,6 +178,8 @@ class ArtifactManager(EngineScoped):
     Coordinates artifact type providers to handle different media formats.
     Providers are looked up by file extension for efficient routing.
     """
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(self, event_manager: EventManager | None = None, *, engine: Engine | None = None) -> None:
         """Initialize the ArtifactManager.

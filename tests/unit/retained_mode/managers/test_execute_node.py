@@ -83,6 +83,7 @@ def _make_node_manager(
     mock_engine = MagicMock()
     mock_engine.object_manager = object_manager
     mock_engine.library_manager = library_manager
+    mock_engine.current_workflow.workflow_id = "workflow-under-test"
     if event_manager is not None:
         mock_engine.event_manager = event_manager
     # Engine always has a WorkerManager, so a test that leaves it None describes a shape the engine
@@ -542,6 +543,9 @@ class TestExecuteNodeWorkerRoute:
         assert isinstance(result, ExecuteNodeResultSuccess)
         assert result.parameter_output_values == {"out": 42}
         wm.route_to_worker.assert_awaited_once()
+        # The worker is told which of the orchestrator's workflows the node belongs to, on the envelope.
+        sent_envelope = wm.route_to_worker.await_args.args[0]
+        assert sent_envelope.workflow_id == "workflow-under-test"
         # The orchestrator stub must not have run aprocess; the worker did.
         mock_node.aprocess.assert_not_awaited()
 

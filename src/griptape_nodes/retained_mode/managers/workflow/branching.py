@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, ClassVar, NamedTuple
 
 from griptape_nodes.files.path_utils import (
     derive_registry_key,
@@ -31,7 +31,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ResetWorkflowBranchResultFailure,
     ResetWorkflowBranchResultSuccess,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -55,6 +55,8 @@ class _BranchNaming(NamedTuple):
 
 
 class WorkflowBranching(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

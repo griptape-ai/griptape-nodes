@@ -2,17 +2,17 @@
 from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
 @PayloadRegistry.register
-class ValidateFlowDependenciesRequest(WorkflowRequest):
+class ValidateFlowDependenciesRequest(RequestPayload):
     """Validate that a flow has all required dependencies before execution.
 
     Use when: Pre-flight checks before flow execution, preventing runtime failures,
@@ -56,7 +56,7 @@ class ValidateFlowDependenciesResultFailure(WorkflowNotAlteredMixin, ResultPaylo
 
 @dataclass
 @PayloadRegistry.register
-class ValidateNodeDependenciesRequest(WorkflowRequest):
+class ValidateNodeDependenciesRequest(RequestPayload):
     """Validate that a node has all required dependencies before execution.
 
     Use when: Pre-flight checks before node execution, preventing runtime failures,

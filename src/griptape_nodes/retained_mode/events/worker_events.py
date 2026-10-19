@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 from griptape_nodes.retained_mode.events.base_events import (
-    HostRequest,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     SkipTheLineMixin,
@@ -26,7 +26,7 @@ class WorkerGoneError(Exception):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterWorkerRequest(HostRequest):
+class RegisterWorkerRequest(RequestPayload):
     """Sent by a worker engine to the orchestrator's session topic to announce itself.
 
     The orchestrator stores the worker's engine_id and subscribes to the worker's
@@ -72,7 +72,7 @@ class RegisterWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class WorkerHeartbeatRequest(HostRequest, SkipTheLineMixin):
+class WorkerHeartbeatRequest(RequestPayload, SkipTheLineMixin):
     """Sent by the orchestrator to a worker to verify it is still alive.
 
     Uses SkipTheLineMixin so the worker processes it immediately without queuing,
@@ -99,7 +99,7 @@ class WorkerHeartbeatResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
 
 @dataclass
 @PayloadRegistry.register
-class UnregisterWorkerRequest(HostRequest):
+class UnregisterWorkerRequest(RequestPayload):
     """Sent by a worker to the orchestrator's session topic on graceful shutdown.
 
     Args:
@@ -130,7 +130,7 @@ class UnregisterWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class StartWorkerRequest(HostRequest):
+class StartWorkerRequest(RequestPayload):
     """Internal request to spawn a worker subprocess for a library that requires one.
 
     Sent by LibraryManager when a worker-delegated library finishes loading on the

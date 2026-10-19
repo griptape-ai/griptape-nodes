@@ -6,8 +6,7 @@ from enum import StrEnum
 from griptape_nodes.common.macro_parser import MacroVariables
 from griptape_nodes.common.sequences.models import MissingItemPolicy, NoTokenBehavior, Sequence, SequenceScanOptions
 from griptape_nodes.retained_mode.events.base_events import (
-    HostRequest,
-    OptionalWorkflowRequest,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
@@ -115,7 +114,7 @@ class FileSystemEntry:
 
 @dataclass
 @PayloadRegistry.register
-class OpenAssociatedFileRequest(HostRequest):
+class OpenAssociatedFileRequest(RequestPayload):
     """Open a file or directory using the operating system's associated application.
 
     Use when: Opening generated files, launching external applications,
@@ -154,7 +153,7 @@ class OpenAssociatedFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 @PayloadRegistry.register
-class LaunchExternalViewerRequest(HostRequest):
+class LaunchExternalViewerRequest(RequestPayload):
     """Open a file in the external viewer application the user configured for a library.
 
     Use when: A node offers an "open in external viewer" action for its output files
@@ -207,7 +206,7 @@ class LaunchExternalViewerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 
 @dataclass
 @PayloadRegistry.register
-class ListDirectoryRequest(OptionalWorkflowRequest):
+class ListDirectoryRequest(RequestPayload):
     """List contents of a directory.
 
     Use when: Browsing file system, showing directory contents,
@@ -340,7 +339,7 @@ class ListDirectorySequencesResultFailure(WorkflowNotAlteredMixin, ResultPayload
 
 @dataclass
 @PayloadRegistry.register
-class DeduceSequencesFromFileListRequest(OptionalWorkflowRequest):
+class DeduceSequencesFromFileListRequest(RequestPayload):
     """Detect file sequences within a caller-supplied list of file paths.
 
     No additional filesystem I/O is performed — pass paths already obtained
@@ -400,7 +399,7 @@ class DeduceSequencesFromFileListResultFailure(WorkflowNotAlteredMixin, ResultPa
 
 @dataclass
 @PayloadRegistry.register
-class ScanSequencesRequest(OptionalWorkflowRequest):
+class ScanSequencesRequest(RequestPayload):
     """Scan a path or pattern; produce typed Sequence(s) with macro-preserving paths.
 
     Use when: A node or workflow needs to discover frame/item sequences on disk
@@ -519,7 +518,7 @@ class ScanSequencesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ReadFileRequest(OptionalWorkflowRequest):
+class ReadFileRequest(RequestPayload):
     """Read contents of a file, automatically detecting if it's text or binary using MIME types.
 
     Use when: Reading file contents for display, processing, or analysis.
@@ -582,7 +581,7 @@ class ReadFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CreateFileRequest(OptionalWorkflowRequest):
+class CreateFileRequest(RequestPayload):
     """Create a new file or directory.
 
     Use when: Creating files/directories through file picker,
@@ -643,7 +642,7 @@ class CreateFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class RenameFileRequest(OptionalWorkflowRequest):
+class RenameFileRequest(RequestPayload):
     """Rename a file or directory.
 
     Use when: Renaming files/directories through file picker,
@@ -686,7 +685,7 @@ class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetNextUnusedFilenameRequest(OptionalWorkflowRequest):
+class GetNextUnusedFilenameRequest(RequestPayload):
     """Find the next available filename with auto-incrementing index (preview only - no file creation).
 
     Use when: Finding available filenames without file collision before actual write operations.
@@ -756,7 +755,7 @@ class GetNextUnusedFilenameResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass(kw_only=True)
 @PayloadRegistry.register
-class WriteFileRequest(OptionalWorkflowRequest):
+class WriteFileRequest(RequestPayload):
     """Write content to a file.
 
     Automatically detects text vs binary mode based on content type.
@@ -841,7 +840,7 @@ class WriteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CopyTreeRequest(OptionalWorkflowRequest):
+class CopyTreeRequest(RequestPayload):
     """Copy an entire directory tree from source to destination.
 
     Use when: Copying directories recursively, backing up directory structures,
@@ -899,7 +898,7 @@ class CopyTreeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CopyFileRequest(OptionalWorkflowRequest):
+class CopyFileRequest(RequestPayload):
     """Copy a single file from source to destination.
 
     Use when: Copying individual files, duplicating files,
@@ -949,7 +948,7 @@ class CopyFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteFileRequest(OptionalWorkflowRequest):
+class DeleteFileRequest(RequestPayload):
     """Delete a file or directory.
 
     Use when: Deleting files/directories through file picker,
@@ -1013,7 +1012,7 @@ class DeleteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetFileInfoRequest(OptionalWorkflowRequest):
+class GetFileInfoRequest(RequestPayload):
     """Get information about a file or directory.
 
     Use when: Checking if a path exists, determining if path is file/directory,
@@ -1057,7 +1056,7 @@ class GetFileInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class ResolveMacroPathRequest(OptionalWorkflowRequest):
+class ResolveMacroPathRequest(RequestPayload):
     """Resolve a MacroPath to an absolute path string.
 
     Use when: Need to convert a MacroPath with variables to a concrete file path.
@@ -1098,7 +1097,7 @@ class ResolveMacroPathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class GetNextVersionIndexRequest(OptionalWorkflowRequest):
+class GetNextVersionIndexRequest(RequestPayload):
     """Find the next available version index for a versioned path pattern.
 
     Use when: Allocating a new versioned output slot (e.g. ``v001``, ``v002``) without
@@ -1164,7 +1163,7 @@ class GetNextVersionIndexResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class MakeDirectoryRequest(OptionalWorkflowRequest):
+class MakeDirectoryRequest(RequestPayload):
     """Create a directory, optionally including intermediate parent directories.
 
     Use when: Creating output directories, setting up workspace folder structures,
@@ -1214,7 +1213,7 @@ class MakeDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class WriteTempFileRequest(OptionalWorkflowRequest):
+class WriteTempFileRequest(RequestPayload):
     """Write a temp file at the project-scoped path resolved from ``SAVE_TEMP_FILE``.
 
     Distinct from ``WriteFileRequest`` in that the caller does not choose the

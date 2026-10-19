@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from griptape_nodes.node_library.library_declarations import (
     SuggestedWorkerMode,
@@ -25,7 +25,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     LIBRARIES_TO_REGISTER_KEY,
     LibraryRegistration,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.library_utils import extract_library_path
 
 if TYPE_CHECKING:
@@ -55,6 +55,8 @@ class LibraryWorkers(EngineScoped):
     # How a worker reaches the orchestrator to report a load. Registered by whatever owns the
     # transport, because this manager has no way to send a request to another process. Stays None
     # on the orchestrator and on a single-process engine, where there is nobody to report to.
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     _library_load_reporter: Callable[[ReportLibraryLoadedRequest], Awaitable[None]] | None = None
 
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:

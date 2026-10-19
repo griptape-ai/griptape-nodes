@@ -18,7 +18,7 @@ import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import semver
 
@@ -35,7 +35,6 @@ from griptape_nodes.retained_mode.events.app_events import (
 from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
     ResultPayloadFailure,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
@@ -43,7 +42,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.run_scheduler import RunScheduler
 from griptape_nodes.retained_mode.workflow_runtime import (
     NO_WORKFLOW,
@@ -155,6 +154,8 @@ class Engine:
     Managers are created here and hold a reference back to this engine, so they resolve
     peers through `self._engine` rather than reaching for process-wide state.
     """
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     _event_manager: EventManager
     _os_manager: OSManager
@@ -464,29 +465,35 @@ class Engine:
                 return runtime
         return None
 
-    def runtime_for_request(self, request: RequestPayload) -> WorkflowRuntime | NoWorkflow | None:
+    def runtime_for_request(
+        self, request: RequestPayload, scope: RequestScope, workflow_id: str | None
+    ) -> WorkflowRuntime | NoWorkflow | None:
         """What dispatch binds `request` to: a runtime, NO_WORKFLOW, or None to leave the binding alone.
 
-        A host request issued from inside other work keeps that work's binding, so a host request made
-        while handling a workflow request still acts within that workflow. A host request from a client
-        acts on no workflow, so a host handler that reads the current workflow fails on its first test
-        instead of working only while one workflow is open.
+        `scope` is what the request's handler declared and `workflow_id` is the workflow the caller
+        addressed, from the `EventRequest` envelope.
 
-        A workflow request acts on the workflow it names, else the one the current work is bound to, else
-        the engine's only open workflow. A client that works on a single workflow never names one, so its
-        first workflow request opens one when none is open.
+        A host request ignores the workflow the caller addressed, so a stale id can't fail it. Issued from
+        inside other work it keeps that work's binding, so a host request made while handling a workflow
+        request still acts within that workflow. From a client it acts on no workflow, so a host handler
+        that reads the current workflow fails on its first test instead of working only while one workflow
+        is open.
+
+        A workflow request acts on the workflow the caller addressed, else the one the current work is bound
+        to, else the engine's only open workflow. A client that works on a single workflow never names one,
+        so its first workflow request opens one when none is open.
 
         Raises:
-            WorkflowNotOpenError: The request names a workflow that isn't open.
-            WorkflowNotNamedError: The request names none and none can be chosen for it.
+            WorkflowNotOpenError: The caller addressed a workflow that isn't open.
+            WorkflowNotNamedError: The caller addressed none and none can be chosen for the request.
         """
-        if not isinstance(request, WorkflowRequest):
+        if scope is RequestScope.HOST:
             if bound_workflow.get() is None:
                 return NO_WORKFLOW
             return None
-        if request.workflow_id is not None:
-            return self._runtime_named_by(request, request.workflow_id)
-        return self._runtime_for_unnamed(request)
+        if workflow_id is not None:
+            return self._runtime_named_by(request, workflow_id)
+        return self._runtime_for_unnamed(request, scope)
 
     def open_workflow_runtime(self, workflow_id: str | None = None) -> WorkflowRuntime:
         """Open an empty runtime, with the given id or a fresh one."""
@@ -550,7 +557,7 @@ class Engine:
                 workflow_info["workflow_file_path"] = self._workflow_registry.get_complete_file_path(workflow.file_path)
         return workflow_info
 
-    def _runtime_named_by(self, request: WorkflowRequest, workflow_id: str) -> WorkflowRuntime:
+    def _runtime_named_by(self, request: RequestPayload, workflow_id: str) -> WorkflowRuntime:
         runtime = self.find_workflow_runtime(workflow_id)
         if runtime is not None:
             return runtime
@@ -565,8 +572,8 @@ class Engine:
         )
         raise WorkflowNotOpenError(msg)
 
-    def _runtime_for_unnamed(self, request: WorkflowRequest) -> WorkflowRuntime | NoWorkflow:
-        optional = type(request).workflow_optional
+    def _runtime_for_unnamed(self, request: RequestPayload, scope: RequestScope) -> WorkflowRuntime | NoWorkflow:
+        optional = scope is RequestScope.OPTIONAL_WORKFLOW
         bound = bound_workflow.get()
         if isinstance(bound, WorkflowRuntime) and bound.owner is self:
             return bound
@@ -592,7 +599,7 @@ class Engine:
     def _resolve_unbound_workflow(self) -> WorkflowRuntime | None:
         """The workflow an unbound read of the current workflow gets: the only one open, or the running one.
 
-        Only for reads by code that lost its binding, never for dispatch: a request that names no workflow
+        Only for reads by code that lost its binding, never for dispatch: a request addressed to no workflow
         while several are open fails rather than landing on whichever one runs.
 
         Raises:
@@ -641,7 +648,7 @@ class Engine:
     def _unnamed_workflow_message(self, request: RequestPayload) -> str:
         return (
             f"Attempted to handle '{type(request).__name__}'. Failed because several workflows are open and the "
-            "request names none of them. Name one in its workflow_id."
+            "request names none of them. Address one with a workflow_id."
         )
 
     def _workflow_display_name(self, runtime: WorkflowRuntime) -> str:
@@ -746,12 +753,18 @@ class Engine:
         """Back-compat for callers that reach for the instance through an instance."""
         return self
 
-    def handle_request(self, request: RequestPayload) -> ResultPayload:
-        """Synchronous request handler."""
+    def handle_request(self, request: RequestPayload, *, workflow_id: str | None = None) -> ResultPayload:
+        """Synchronous request handler.
+
+        Args:
+            request: The request payload to handle.
+            workflow_id: The workflow the caller addresses, like the `EventRequest` envelope's. Work already
+                bound to a workflow inherits it when this is None.
+        """
         event_mgr = self._event_manager
 
         try:
-            result_event = event_mgr.handle_request(request=request)
+            result_event = event_mgr.handle_request(request=request, workflow_id=workflow_id)
             # Only queue result event if broadcasting is enabled and not suppressed
             if request.broadcast_result and not event_mgr.should_suppress_event(result_event):
                 event_mgr.put_event(GriptapeNodeEvent(wrapped_event=result_event))
@@ -770,16 +783,18 @@ class Engine:
         else:
             return result_event.result
 
-    async def ahandle_request(self, request: RequestPayload) -> ResultPayload:
+    async def ahandle_request(self, request: RequestPayload, *, workflow_id: str | None = None) -> ResultPayload:
         """Asynchronous request handler.
 
         Args:
             request: The request payload to handle.
+            workflow_id: The workflow the caller addresses, like the `EventRequest` envelope's. Work already
+                bound to a workflow inherits it when this is None.
         """
         event_mgr = self._event_manager
 
         try:
-            result_event = await event_mgr.ahandle_request(request=request)
+            result_event = await event_mgr.ahandle_request(request=request, workflow_id=workflow_id)
             # Only queue result event if broadcasting is enabled and not suppressed
             if request.broadcast_result and not event_mgr.should_suppress_event(result_event):
                 await event_mgr.aput_event(GriptapeNodeEvent(wrapped_event=result_event))

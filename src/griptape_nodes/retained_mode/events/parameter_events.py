@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.connection_events import IncomingConnection, OutgoingConnection
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterToNodeRequest(WorkflowRequest):
+class AddParameterToNodeRequest(RequestPayload):
     """Add a new parameter to a node.
 
     Use when: Dynamically adding inputs/outputs to nodes, customizing node interfaces,
@@ -114,7 +114,7 @@ class AddParameterToNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class RemoveParameterFromNodeRequest(WorkflowRequest):
+class RemoveParameterFromNodeRequest(RequestPayload):
     """Remove a parameter from a node.
 
     Use when: Cleaning up unused parameters, dynamically restructuring node interfaces,
@@ -146,7 +146,7 @@ class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterGroupToNodeRequest(WorkflowRequest):
+class AddParameterGroupToNodeRequest(RequestPayload):
     """Add a new ParameterGroup to a node.
 
     Use when: Dynamically organizing parameters into collapsible groups,
@@ -193,7 +193,7 @@ class AddParameterGroupToNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterGroupDetailsRequest(WorkflowRequest):
+class AlterParameterGroupDetailsRequest(RequestPayload):
     """Alter the details and configuration of a ParameterGroup.
 
     Use when: Modifying ParameterGroup UI options (collapsed state, visibility, etc.),
@@ -232,7 +232,7 @@ class AlterParameterGroupDetailsResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SetParameterValueRequest(WorkflowRequest):
+class SetParameterValueRequest(RequestPayload):
     """Set the value of a parameter on a node.
 
     Use when: Configuring node inputs, setting property values, loading saved workflows,
@@ -290,7 +290,7 @@ class SetParameterValueResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsRequest(WorkflowRequest):
+class GetParameterDetailsRequest(RequestPayload):
     """Get detailed information about a parameter.
 
     Use when: Inspecting parameter configuration, validating parameter properties,
@@ -356,7 +356,7 @@ class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterDetailsRequest(WorkflowRequest):
+class AlterParameterDetailsRequest(RequestPayload):
     """Alter the details and configuration of a parameter.
 
     Use when: Modifying parameter types, updating tooltips, changing allowed modes,
@@ -461,7 +461,7 @@ class AlterParameterDetailsResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueRequest(WorkflowRequest):
+class GetParameterValueRequest(RequestPayload):
     """Get the current value of a parameter.
 
     Use when: Reading parameter values, debugging workflow state, displaying current values in UIs,
@@ -514,7 +514,7 @@ class OnParameterValueChanged(WorkflowAlteredMixin, ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersRequest(WorkflowRequest):
+class GetCompatibleParametersRequest(RequestPayload):
     """Get parameters that are compatible for connections.
 
     Use when: Creating connections between nodes, validating connection compatibility,
@@ -559,7 +559,7 @@ class GetCompatibleParametersResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeElementDetailsRequest(WorkflowRequest):
+class GetNodeElementDetailsRequest(RequestPayload):
     """Get detailed information about a node element.
 
     Use when: Inspecting node structure, debugging element configuration,
@@ -598,7 +598,7 @@ class AlterElementEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RenameParameterRequest(WorkflowRequest):
+class RenameParameterRequest(RequestPayload):
     """Rename a parameter on a node.
 
     Use when: Refactoring parameter names, improving parameter clarity, updating parameter
@@ -649,7 +649,7 @@ class RenameParameterResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetConnectionsForParameterRequest(WorkflowRequest):
+class GetConnectionsForParameterRequest(RequestPayload):
     """Get connections for a specific parameter on a node.
 
     Use when: Checking if a parameter is connected, getting connection details for a parameter,
@@ -733,7 +733,7 @@ class ConversionConfig:
 
 @dataclass
 @PayloadRegistry.register
-class ReorderParameterListItemRequest(WorkflowRequest):
+class ReorderParameterListItemRequest(RequestPayload):
     """Reorder an item within a ParameterList.
 
     Use when: User drags to reorder list items in the UI, implementing undo/redo for list reordering,
@@ -772,7 +772,7 @@ class ReorderParameterListItemResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class MigrateParameterRequest(WorkflowRequest):
+class MigrateParameterRequest(RequestPayload):
     """Request to migrate a parameter from one node to another with optional conversions.
 
     Args:

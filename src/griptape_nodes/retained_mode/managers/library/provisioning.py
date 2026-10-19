@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion
@@ -27,7 +27,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     REQUIRES_ENGINE_KEY,
     LibraryDownload,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.dict_utils import get_dot_value
 from griptape_nodes.utils.file_utils import find_file_in_directory, find_files_recursive
 from griptape_nodes.utils.git_utils import (
@@ -88,6 +88,8 @@ def registration_satisfied_by_installed(download: LibraryDownload, installed_ver
 
 
 class LibraryProvisioning(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

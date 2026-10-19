@@ -5,7 +5,7 @@ event-based interface for frontend and backend interactions.
 """
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from griptape_nodes.retained_mode.events.mcp_events import (
     CreateMCPServerRequest,
@@ -36,13 +36,15 @@ from griptape_nodes.retained_mode.events.mcp_events import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import MCPServerConfig
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 logger = logging.getLogger("griptape_nodes")
 
 
 class MCPManager:
     """Manager for MCP server configurations and operations."""
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(self, event_manager: EventManager | None = None, config_manager: ConfigManager | None = None) -> None:
         """Initialize the MCPManager.

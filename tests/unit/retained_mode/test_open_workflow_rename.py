@@ -38,7 +38,7 @@ def _open_saved_workflow(engine: Engine, file_name: str) -> OpenWorkflowResultSu
     """Open a new workflow and save it as `file_name`."""
     opened = engine.handle_request(OpenWorkflowRequest(display_name=file_name))
     assert isinstance(opened, OpenWorkflowResultSuccess), opened
-    saved = engine.handle_request(SaveWorkflowRequest(file_name=file_name, workflow_id=opened.workflow_id))
+    saved = engine.handle_request(SaveWorkflowRequest(file_name=file_name), workflow_id=opened.workflow_id)
     assert isinstance(saved, SaveWorkflowResultSuccess), saved
     return opened
 
@@ -56,7 +56,7 @@ class TestRenameOpenWorkflow:
         beta = _open_saved_workflow(engine, "beta")
 
         renamed = engine.handle_request(
-            RenameWorkflowRequest(workflow_name="alpha", requested_name="gamma", workflow_id=alpha.workflow_id)
+            RenameWorkflowRequest(workflow_name="alpha", requested_name="gamma"), workflow_id=alpha.workflow_id
         )
 
         assert isinstance(renamed, RenameWorkflowResultSuccess), renamed
@@ -67,7 +67,7 @@ class TestRenameOpenWorkflow:
         beta = _open_saved_workflow(engine, "beta")
 
         engine.handle_request(
-            RenameWorkflowRequest(workflow_name="beta", requested_name="delta", workflow_id=beta.workflow_id)
+            RenameWorkflowRequest(workflow_name="beta", requested_name="delta"), workflow_id=beta.workflow_id
         )
 
         assert _open_names_by_id(engine) == {alpha.workflow_id: "alpha", beta.workflow_id: "delta"}

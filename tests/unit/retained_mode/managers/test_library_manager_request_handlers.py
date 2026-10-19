@@ -12,6 +12,7 @@ from griptape_nodes.node_library.library_registry import Library, LibrarySchema
 from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import RequestHandlerRegistrationProblem
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -75,7 +76,9 @@ class TestRequestHandlerRegistration:
                 library_info=library_info,
             )
 
-        event_manager.assign_manager_to_request_type.assert_called_once_with(_TestRequest, _handler)
+        event_manager.assign_manager_to_request_type.assert_called_once_with(
+            _TestRequest, _handler, scope=RequestScope.HOST
+        )
 
     def test_handler_types_recorded_on_library(self, engine: Engine) -> None:
         """Registered handler types must be stored in library._registered_request_handler_types."""
@@ -188,5 +191,7 @@ class TestRequestHandlerRegistration:
                 library_info=library_info,
             )
 
-        event_manager.assign_manager_to_request_type.assert_called_once_with(_TestRequest, _handler)
+        event_manager.assign_manager_to_request_type.assert_called_once_with(
+            _TestRequest, _handler, scope=RequestScope.HOST
+        )
         assert library_info.problems == []

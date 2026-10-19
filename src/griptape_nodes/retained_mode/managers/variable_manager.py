@@ -1,5 +1,5 @@
 import logging
-from typing import Any, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 
 from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError
 from griptape_nodes.retained_mode.engine import Engine, EngineScoped
@@ -55,7 +55,7 @@ from griptape_nodes.retained_mode.events.variable_events import (
     VariableDetails,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.variable_types import (
     FlowVariable,
     VariableLayer,
@@ -121,6 +121,8 @@ def _project_type_mismatch(new_type: str, current_value: Any) -> str | None:
 
 class VariablesManager(EngineScoped):
     """Manager for variables with scoped access control."""
+
+    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
 
     class WorkflowState:
         """The flow and global variables of one open workflow."""

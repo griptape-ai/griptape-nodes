@@ -2,7 +2,7 @@ import logging
 import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from griptape_nodes.retained_mode.engine import Engine, EngineScoped
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -39,7 +39,7 @@ from griptape_nodes.retained_mode.events.resource_events import (
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.resource_components.resource_type import ResourceType
 from griptape_nodes.retained_mode.managers.resource_types.compute_resource import ComputeBackend, ComputeInstance
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.resource_components.resource_instance import ResourceInstance
@@ -105,6 +105,8 @@ class ResourceManager(EngineScoped):
 
     Separate maps, because the capability query gates library executability.
     """
+
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)

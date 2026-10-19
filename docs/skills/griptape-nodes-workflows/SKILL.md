@@ -373,12 +373,16 @@ ones; with no `workflow_name` it starts a new one. It returns the workflow's
 library reloads. `ListOpenWorkflowsRequest` lists the open ones and their ids.
 
 Requests about one workflow (nodes, flows, connections, parameters, runs, saving)
-take a `workflow_id`. Pass it whenever more than one workflow is open: with several
-open, such a request that names none fails rather than guessing. With exactly one
-open you may leave it out. Requests about the engine as a whole (config, libraries,
-projects, secrets, listing workflows) take no `workflow_id`.
+take an optional `workflow_id` tool argument. It sits beside the request's own
+arguments, not inside the request. In an `EventRequestBatch`, put it in the entry
+beside `request_type` and `request`:
+`{"request_type": "CreateNodeRequest", "request": {...}, "workflow_id": "..."}`.
+Pass it whenever more than one workflow is open: with several open, such a request
+addressed to none fails rather than guessing. With exactly one open you may leave it
+out. Requests about the engine as a whole (config, libraries, projects, secrets,
+listing workflows) take no `workflow_id`.
 
-`CloseWorkflowRequest(workflow_id=...)` closes one. Only one workflow runs at a
+`CloseWorkflowRequest` with a `workflow_id` closes one. Only one workflow runs at a
 time: starting a run while another workflow runs fails. `SetWorkflowContextRequest`
 refuses if the workflow already has a context; open another instead.
 `ClearAllObjectStateRequest(i_know_what_im_doing=True)` closes EVERY open workflow.

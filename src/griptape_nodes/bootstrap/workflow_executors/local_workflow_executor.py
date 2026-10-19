@@ -222,7 +222,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
     async def _handle_event_request(self, event: EventRequest) -> None:
         """Handle EventRequest objects by processing them through GriptapeNodes."""
-        await GriptapeNodes.ahandle_request(event.request)
+        await GriptapeNodes.get_instance().ahandle_request(event.request, workflow_id=event.workflow_id)
 
     async def _handle_execution_event(
         self, event: ExecutionGriptapeNodeEvent, flow_name: str

@@ -3,7 +3,7 @@ import os
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import Mock, patch
 
 import anyio
@@ -2004,7 +2004,7 @@ class TestProviderRegistrationConfigLogLevels:
         manager = ArtifactManager(engine=Mock())
         captured_requests: list[RequestPayload] = []
 
-        def capture_requests(request: RequestPayload) -> ResultPayload:
+        def capture_requests(request: RequestPayload, **_kwargs: Any) -> ResultPayload:
             captured_requests.append(request)
             return engine.handle_request(request)
 
@@ -2026,7 +2026,7 @@ class TestProviderRegistrationConfigLogLevels:
         manager = ArtifactManager(engine=Mock())
         captured_requests: list[RequestPayload] = []
 
-        def capture_requests(request: RequestPayload) -> ResultPayload:
+        def capture_requests(request: RequestPayload, **_kwargs: Any) -> ResultPayload:
             captured_requests.append(request)
             return engine.handle_request(request)
 

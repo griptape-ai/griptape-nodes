@@ -44,6 +44,7 @@ from griptape_nodes.retained_mode.managers.library.common import LibraryFitness,
 from griptape_nodes.retained_mode.managers.settings import (
     LIBRARY_LAZY_NODE_LOADING_KEY,
 )
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 from griptape_nodes.serialization.type_names import (
     DYNAMIC_MODULE_PREFIX,
     forget_stable_module_name,
@@ -537,7 +538,9 @@ class LibraryModuleLoading(EngineScoped):
                 handlers = advanced_library.get_request_handlers()
                 for request_type, handler in handlers:
                     event_manager = self.engine.event_manager
-                    event_manager.assign_manager_to_request_type(request_type, handler)
+                    # A library's own request acts on the host: libraries declare no scope for the
+                    # requests they own, and a host request runs wherever it is made from.
+                    event_manager.assign_manager_to_request_type(request_type, handler, scope=RequestScope.HOST)
                     library._registered_request_handler_types.append(request_type)
                 if handlers:
                     logger.debug(

@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
-    HostRequest,
+    RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
@@ -51,7 +51,7 @@ class PreviewGenerationPolicy(StrEnum):
 
 @dataclass
 @PayloadRegistry.register
-class GeneratePreviewRequest(HostRequest):
+class GeneratePreviewRequest(RequestPayload):
     """Generate a preview for an artifact.
 
     Args:
@@ -96,7 +96,7 @@ class GeneratePreviewResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 
 @dataclass
 @PayloadRegistry.register
-class GeneratePreviewFromDefaultsRequest(HostRequest):
+class GeneratePreviewFromDefaultsRequest(RequestPayload):
     """Generate a preview for an artifact using ALL defaults from config.
 
     This is a high-level convenience request that reads all settings from config
@@ -139,7 +139,7 @@ class GeneratePreviewFromDefaultsResultFailure(WorkflowNotAlteredMixin, ResultPa
 
 @dataclass
 @PayloadRegistry.register
-class GetPreviewForArtifactRequest(HostRequest):
+class GetPreviewForArtifactRequest(RequestPayload):
     """Get preview for an artifact, optionally generating/regenerating if needed.
 
     Args:
@@ -190,7 +190,7 @@ class GetPreviewForArtifactResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass
 @PayloadRegistry.register
-class RegisterArtifactProviderRequest(HostRequest):
+class RegisterArtifactProviderRequest(RequestPayload):
     """Register an artifact provider.
 
     Args:
@@ -216,7 +216,7 @@ class RegisterArtifactProviderResultFailure(WorkflowNotAlteredMixin, ResultPaylo
 
 @dataclass
 @PayloadRegistry.register
-class ListArtifactProvidersRequest(HostRequest):
+class ListArtifactProvidersRequest(RequestPayload):
     """List all registered artifact providers.
 
     Results: ListArtifactProvidersResultSuccess | ListArtifactProvidersResultFailure
@@ -239,7 +239,7 @@ class ListArtifactProvidersResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass
 @PayloadRegistry.register
-class GetArtifactProviderDetailsRequest(HostRequest):
+class GetArtifactProviderDetailsRequest(RequestPayload):
     """Get details for a specific artifact provider by friendly name.
 
     Args:
@@ -270,7 +270,7 @@ class GetArtifactProviderDetailsResultFailure(WorkflowNotAlteredMixin, ResultPay
 
 @dataclass
 @PayloadRegistry.register
-class RegisterPreviewGeneratorRequest(HostRequest):
+class RegisterPreviewGeneratorRequest(RequestPayload):
     """Register a preview generator with a provider.
 
     Args:
@@ -298,7 +298,7 @@ class RegisterPreviewGeneratorResultFailure(WorkflowNotAlteredMixin, ResultPaylo
 
 @dataclass
 @PayloadRegistry.register
-class ListPreviewGeneratorsRequest(HostRequest):
+class ListPreviewGeneratorsRequest(RequestPayload):
     """List all registered preview generators for a provider.
 
     Args:
@@ -326,7 +326,7 @@ class ListPreviewGeneratorsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass
 @PayloadRegistry.register
-class GetPreviewGeneratorDetailsRequest(HostRequest):
+class GetPreviewGeneratorDetailsRequest(RequestPayload):
     """Get details for a specific preview generator by friendly name.
 
     Args:
@@ -359,7 +359,7 @@ class GetPreviewGeneratorDetailsResultFailure(WorkflowNotAlteredMixin, ResultPay
 
 @dataclass
 @PayloadRegistry.register
-class GetArtifactSchemasRequest(HostRequest):
+class GetArtifactSchemasRequest(RequestPayload):
     """Request artifact configuration schemas for all registered providers.
 
     This retrieves the complete schema structure including providers, formats,
@@ -391,7 +391,7 @@ class GetArtifactSchemasResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 @PayloadRegistry.register
-class CheckArtifactReadPermissionRequest(HostRequest):
+class CheckArtifactReadPermissionRequest(RequestPayload):
     """Ask whether a file may be read under the current authorization policy.
 
     Routed to the artifact provider that claims the source's extension; that

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import AppEvent
@@ -36,7 +36,7 @@ from griptape_nodes.retained_mode.events.open_workflow_events import (
     OpenWorkflowsChanged,
 )
 from griptape_nodes.retained_mode.events.workflow_events import RunWorkflowFromRegistryRequest
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.keyed_mutex import KeyedMutex
 
 if TYPE_CHECKING:
@@ -78,6 +78,8 @@ class WorkflowRebuildFailure:
 
 
 class OpenWorkflowsManager(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         # Opening awaits while it builds, so two opens of one workflow could each find it closed and
@@ -91,10 +93,10 @@ class OpenWorkflowsManager(EngineScoped):
         async with self._mutex.locked(_OPEN_WORKFLOWS_KEY):
             return await self._open_workflow(request)
 
-    @handles(CloseWorkflowRequest)
+    @handles(CloseWorkflowRequest, scope=RequestScope.WORKFLOW)
     async def on_close_workflow_request(self, request: CloseWorkflowRequest) -> ResultPayload:  # noqa: ARG002
         async with self._mutex.locked(_OPEN_WORKFLOWS_KEY):
-            # Dispatch bound this request to the workflow it names.
+            # Dispatch bound this request to the workflow it is addressed to.
             runtime = self.engine.current_workflow
             workflow_name = self.workflow_name_in(runtime) or "the workflow"
             failure = await self.close_workflow_runtime(runtime)

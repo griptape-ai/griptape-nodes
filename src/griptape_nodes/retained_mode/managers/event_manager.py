@@ -31,7 +31,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
     ResultPayload,
     StrictModeViolationDetail,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -40,7 +39,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointDenial,
     CheckpointFailure,
 )
-from griptape_nodes.retained_mode.request_handlers import handled_request_types
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handled_request_types, handler_scope
 from griptape_nodes.retained_mode.run_scheduler import current_run
 from griptape_nodes.retained_mode.workflow_runtime import (
     NoWorkflow,
@@ -191,6 +190,9 @@ class EventManager(EngineScoped):
         super().__init__(engine)
         # Dictionary to store the SPECIFIC manager for each request type
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
+        # What each request type acts on, declared when its handler is assigned. Kept beside the manager
+        # map, and moved with it when a RemoteHandler takes a type over.
+        self._request_type_to_scope: dict[type[RequestPayload], RequestScope] = {}
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
         # Dictionary to store ALL SUBSCRIBERS to execution events (the live feed of
@@ -851,30 +853,58 @@ class EventManager(EngineScoped):
         self,
         request_type: type[RP],
         callback: Callable[[RP], ResultPayload] | Callable[[RP], Awaitable[ResultPayload]],
+        *,
+        scope: RequestScope,
     ) -> None:
         """Assign a manager to handle a request.
 
         Args:
             request_type: The type of request to assign the manager to
             callback: Function to be called when event occurs
+            scope: What the request acts on, which decides the workflow dispatch binds for it
         """
         existing_manager = self._request_type_to_manager.get(request_type)
         if existing_manager is not None:
             msg = f"Attempted to assign an event of type {request_type} to manager {callback.__name__}, but that request is already assigned to manager {existing_manager.__name__}."
             raise ValueError(msg)
         self._request_type_to_manager[request_type] = callback
+        self._request_type_to_scope[request_type] = scope
 
     def register_request_handlers(self, owner: object) -> None:
-        """Assign each `@handles` method on `owner`. An unmarked override keeps its parent's marks."""
-        marks: dict[str, tuple[type[RequestPayload], ...]] = {}
+        """Assign each `@handles` method on `owner`. An unmarked override keeps its parent's marks.
+
+        A handler acts on what its own `scope` says, else on the owner's `request_scope`.
+
+        Raises:
+            TypeError: A handler sets no scope and the owner declares no `request_scope`.
+        """
+        marks: dict[str, tuple[tuple[type[RequestPayload], ...], RequestScope | None]] = {}
         for klass in reversed(type(owner).__mro__):
             for name, attr in vars(klass).items():
                 request_types = handled_request_types(attr)
                 if request_types:
-                    marks[name] = request_types
-        for name, request_types in marks.items():
+                    marks[name] = (request_types, handler_scope(attr))
+
+        # Resolved before anything is assigned, so a missing declaration leaves nothing half-registered.
+        default_scope = getattr(owner, "request_scope", None)
+        resolved: list[tuple[str, tuple[type[RequestPayload], ...], RequestScope]] = []
+        for name, (request_types, own_scope) in marks.items():
+            scope = own_scope
+            if scope is None:
+                scope = default_scope
+            if scope is None:
+                msg = (
+                    f"Attempted to register the request handler '{name}' on {type(owner).__name__}. "
+                    f"Failed because it sets no scope and {type(owner).__name__} declares no request_scope. "
+                    "Declare `request_scope: ClassVar[RequestScope]` on the class, or pass "
+                    "`scope=` to @handles."
+                )
+                raise TypeError(msg)
+            resolved.append((name, request_types, scope))
+
+        for name, request_types, scope in resolved:
             for request_type in request_types:
-                self.assign_manager_to_request_type(request_type, getattr(owner, name))
+                self.assign_manager_to_request_type(request_type, getattr(owner, name), scope=scope)
 
     def configure_worker_forwarding(
         self,
@@ -945,6 +975,18 @@ class EventManager(EngineScoped):
         """Return the currently-registered handler callback for a request type, or None."""
         return self._request_type_to_manager.get(request_type)
 
+    def scope_for(self, request_type: type[RP]) -> RequestScope:
+        """What a request type acts on, as declared when its handler was assigned.
+
+        Raises:
+            TypeError: No handler is assigned to the request type.
+        """
+        scope = self._request_type_to_scope.get(request_type)
+        if scope is None:
+            msg = f"No manager found to handle request of type '{request_type.__name__}'."
+            raise TypeError(msg)
+        return scope
+
     def registered_request_types(self) -> list[type[RequestPayload]]:
         """Every request type that currently has a handler.
 
@@ -980,7 +1022,14 @@ class EventManager(EngineScoped):
             msg = "Worker forwarding is enabled but not fully configured."
             raise RuntimeError(msg)
 
-        event_request: EventRequest = EventRequest(request=request)
+        # A node's request names no workflow, and the worker bound it to the namespace of the workflow the
+        # node runs for, whose id is the orchestrator's. Naming it on the envelope tells the orchestrator
+        # which workflow to act on.
+        bound = self.engine.current_workflow_or_none()
+        workflow_id = None
+        if bound is not None:
+            workflow_id = bound.workflow_id
+        event_request: EventRequest = EventRequest(request=request, workflow_id=workflow_id)
 
         response_future = asyncio.run_coroutine_threadsafe(
             self._worker_request_client.request_to_orchestrator(
@@ -1026,6 +1075,7 @@ class EventManager(EngineScoped):
         """
         if request_type in self._request_type_to_manager:
             del self._request_type_to_manager[request_type]
+        self._request_type_to_scope.pop(request_type, None)
 
     def _override_result_log_level(self, result: ResultPayload, level: int) -> None:
         """Override the log level on all result details.
@@ -1165,15 +1215,12 @@ class EventManager(EngineScoped):
         )
 
     def _result_for_unroutable_request(
-        self, request: RP, exception: Exception, *, context: ResultContext
+        self, request: RP, exception: Exception, *, workflow_id: str | None, context: ResultContext
     ) -> EventResultSuccess | EventResultFailure:
-        """Build the failure for a request that names a workflow that isn't open, or none when it must.
+        """Build the failure for a request that addresses a workflow that isn't open, or none when it must.
 
-        The result names the workflow the request named, so a client showing it can route the failure.
+        The result names the workflow the caller addressed, so a client showing it can route the failure.
         """
-        workflow_id = None
-        if isinstance(request, WorkflowRequest):
-            workflow_id = request.workflow_id
         return self._handle_request_core(
             request,
             GenericResultFailure(exception=exception, result_details=str(exception)),
@@ -1199,12 +1246,15 @@ class EventManager(EngineScoped):
         request: RP,
         *,
         result_context: ResultContext | None = None,
+        workflow_id: str | None = None,
     ) -> EventResultSuccess | EventResultFailure:
         """Publish an event to the manager assigned to its type.
 
         Args:
             request: The request to handle
             result_context: The result context containing response_topic and request_id
+            workflow_id: The workflow the caller addresses, from the `EventRequest` envelope. Whether it
+                matters, and what happens when it is missing, is up to the request's scope.
         """
         operation_depth_mgr = self.engine.operation_depth_manager
         if result_context is None:
@@ -1218,9 +1268,9 @@ class EventManager(EngineScoped):
             raise TypeError(msg)
 
         try:
-            binding = self.engine.runtime_for_request(request)
+            binding = self.engine.runtime_for_request(request, self.scope_for(request_type), workflow_id)
         except (WorkflowNotOpenError, WorkflowNotNamedError) as exc:
-            return self._result_for_unroutable_request(request, exc, context=result_context)
+            return self._result_for_unroutable_request(request, exc, workflow_id=workflow_id, context=result_context)
         result_context = self._result_context_for(binding, result_context)
 
         # Act on that workflow in the hooks, the handler, and every task it spawns.
@@ -1266,12 +1316,15 @@ class EventManager(EngineScoped):
         request: RP,
         *,
         result_context: ResultContext | None = None,
+        workflow_id: str | None = None,
     ) -> EventResultSuccess | EventResultFailure:
         """Publish an event to the manager assigned to its type (sync version).
 
         Args:
             request: The request to handle
             result_context: The result context containing response_topic and request_id
+            workflow_id: The workflow the caller addresses, from the `EventRequest` envelope. Whether it
+                matters, and what happens when it is missing, is up to the request's scope.
         """
         operation_depth_mgr = self.engine.operation_depth_manager
         if result_context is None:
@@ -1285,9 +1338,9 @@ class EventManager(EngineScoped):
             raise TypeError(msg)
 
         try:
-            binding = self.engine.runtime_for_request(request)
+            binding = self.engine.runtime_for_request(request, self.scope_for(request_type), workflow_id)
         except (WorkflowNotOpenError, WorkflowNotNamedError) as exc:
-            return self._result_for_unroutable_request(request, exc, context=result_context)
+            return self._result_for_unroutable_request(request, exc, workflow_id=workflow_id, context=result_context)
         result_context = self._result_context_for(binding, result_context)
 
         # Act on that workflow in the hooks, the handler, and every task it spawns.

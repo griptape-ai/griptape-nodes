@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.budget_events import (
     GetAttributionContextRequest,
     GetAttributionContextResultSuccess,
 )
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 from tests.unit.worker.harness import InProcessWorkerHarness
 
 
@@ -49,8 +50,12 @@ class TestAttributionIsForwardedFromWorkers:
         async def worker_local_handler(request: GetAttributionContextRequest) -> GetAttributionContextResultSuccess:  # noqa: ARG001
             return GetAttributionContextResultSuccess(header_value="from-the-worker", result_details="ok")
 
-        harness.orchestrator.assign_manager_to_request_type(GetAttributionContextRequest, orchestrator_handler)
-        harness.worker.assign_manager_to_request_type(GetAttributionContextRequest, worker_local_handler)
+        harness.orchestrator.assign_manager_to_request_type(
+            GetAttributionContextRequest, orchestrator_handler, scope=RequestScope.HOST
+        )
+        harness.worker.assign_manager_to_request_type(
+            GetAttributionContextRequest, worker_local_handler, scope=RequestScope.HOST
+        )
         harness.install_remote_handler(GetAttributionContextRequest)
 
         with harness.worker.node_execution_scope():
@@ -72,8 +77,12 @@ class TestAttributionIsForwardedFromWorkers:
         async def worker_local_handler(request: GetAttributionContextRequest) -> GetAttributionContextResultSuccess:  # noqa: ARG001
             return GetAttributionContextResultSuccess(header_value="from-the-worker", result_details="ok")
 
-        harness.orchestrator.assign_manager_to_request_type(GetAttributionContextRequest, orchestrator_handler)
-        harness.worker.assign_manager_to_request_type(GetAttributionContextRequest, worker_local_handler)
+        harness.orchestrator.assign_manager_to_request_type(
+            GetAttributionContextRequest, orchestrator_handler, scope=RequestScope.HOST
+        )
+        harness.worker.assign_manager_to_request_type(
+            GetAttributionContextRequest, worker_local_handler, scope=RequestScope.HOST
+        )
         harness.install_remote_handler(GetAttributionContextRequest)
 
         result_event = await harness.worker.ahandle_request(GetAttributionContextRequest())
@@ -131,6 +140,7 @@ class TestAttributionForwardingIsWired:
         event_manager.assign_manager_to_request_type(
             GetAttributionContextRequest,
             RemoteHandler(original=local_handler, event_manager=event_manager),
+            scope=RequestScope.HOST,
         )
 
         with event_manager.node_execution_scope(), ThreadPoolExecutor(max_workers=1) as pool:

@@ -154,7 +154,7 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.resource_types.compute_resource import ComputeBackend, ComputeResourceType
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.authorization_checkpoint import CheckpointDenial
@@ -316,6 +316,8 @@ class OSManager(EngineScoped):
     Making its own class as some runtime environments and some customer requirements may dictate this as optional.
     This lays the groundwork to exclude specific functionality on a configuration basis.
     """
+
+    request_scope: ClassVar[RequestScope] = RequestScope.OPTIONAL_WORKFLOW
 
     # Windows CSIDL constants for special folders (used by _expand_path)
     # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
@@ -1445,7 +1447,7 @@ class OSManager(EngineScoped):
             sys.stdout.flush()  # Recommended here https://docs.python.org/3/library/os.html#os.execvpe
             os.execvp(args[0], args)  # noqa: S606
 
-    @handles(OpenAssociatedFileRequest)
+    @handles(OpenAssociatedFileRequest, scope=RequestScope.HOST)
     def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
         # Validate that exactly one of path_to_file or file_entry is provided
         if request.path_to_file is None and request.file_entry is None:
@@ -1548,7 +1550,7 @@ class OSManager(EngineScoped):
             details = f"Exception occurred when trying to open path: {e}"
             return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=details)
 
-    @handles(LaunchExternalViewerRequest)
+    @handles(LaunchExternalViewerRequest, scope=RequestScope.HOST)
     def on_launch_external_viewer_request(self, request: LaunchExternalViewerRequest) -> ResultPayload:  # noqa: PLR0911
         executable_key = f"{request.config_category}.viewer_executable"
         args_key = f"{request.config_category}.viewer_args"

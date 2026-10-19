@@ -20,7 +20,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
-    HostRequest,
+    RequestPayload,
     ResultPayload,
     ResultPayloadSuccess,
 )
@@ -51,6 +51,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 from griptape_nodes.retained_mode.run_scheduler import RunRefusedError, current_run
 from griptape_nodes.retained_mode.workflow_runtime import NO_WORKFLOW, WorkflowNotNamedError, bound_workflow
 
@@ -67,7 +68,7 @@ def _open_new_workflow_with_note(engine: Engine, note_name: str) -> OpenWorkflow
     opened = engine.handle_request(OpenWorkflowRequest(display_name=note_name))
     assert isinstance(opened, OpenWorkflowResultSuccess), opened
     node = engine.handle_request(
-        CreateNodeRequest(node_type="Note", node_name=note_name, workflow_id=opened.workflow_id)
+        CreateNodeRequest(node_type="Note", node_name=note_name), workflow_id=opened.workflow_id
     )
     assert isinstance(node, CreateNodeResultSuccess), node
     return opened
@@ -75,7 +76,7 @@ def _open_new_workflow_with_note(engine: Engine, note_name: str) -> OpenWorkflow
 
 def _node_names(engine: Engine, workflow_id: str | None) -> set[str]:
     """The nodes in the current flow of a workflow."""
-    result = engine.handle_request(ListNodesInFlowRequest(workflow_id=workflow_id))
+    result = engine.handle_request(ListNodesInFlowRequest(), workflow_id=workflow_id)
     assert isinstance(result, ListNodesInFlowResultSuccess), result
     return set(result.node_names)
 
@@ -113,7 +114,7 @@ def _drain(queue: asyncio.Queue) -> list[object]:
 
 
 @dataclass
-class _ProbeHostRequest(HostRequest):
+class _ProbeHostRequest(RequestPayload):
     """A host request whose handler records the workflow binding it ran under."""
 
 
@@ -130,7 +131,7 @@ def _probe_binding(engine: Engine) -> list[object]:
         seen.append(bound_workflow.get())
         return _ProbeResult(result_details="probed")
 
-    engine.event_manager.assign_manager_to_request_type(_ProbeHostRequest, handle)
+    engine.event_manager.assign_manager_to_request_type(_ProbeHostRequest, handle, scope=RequestScope.HOST)
     return seen
 
 
@@ -234,7 +235,7 @@ class TestRequestTargeting:
         b = _open_new_workflow_with_note(engine, "NoteB")
 
         created = engine.handle_request(
-            CreateNodeRequest(node_type="Note", node_name="Added", workflow_id=a.workflow_id)
+            CreateNodeRequest(node_type="Note", node_name="Added"), workflow_id=a.workflow_id
         )
 
         assert isinstance(created, CreateNodeResultSuccess), created
@@ -272,6 +273,15 @@ class TestRequestTargeting:
 
         engine.handle_request(_ProbeHostRequest())
 
+        assert seen == [NO_WORKFLOW]
+
+    def test_a_host_request_ignores_the_workflow_it_is_addressed_to(self, engine: Engine) -> None:
+        _open_new_workflow_with_note(engine, "NoteA")
+        seen = _probe_binding(engine)
+
+        result = engine.handle_request(_ProbeHostRequest(), workflow_id="no-longer-open")
+
+        assert result.succeeded()
         assert seen == [NO_WORKFLOW]
 
     def test_a_host_request_issued_within_a_workflow_keeps_it(self, engine: Engine) -> None:
@@ -317,27 +327,19 @@ class TestRequestTargeting:
     def test_a_request_naming_a_closed_workflow_fails(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
         b = _open_new_workflow_with_note(engine, "NoteB")
-        engine.handle_request(CloseWorkflowRequest(workflow_id=a.workflow_id))
+        engine.handle_request(CloseWorkflowRequest(), workflow_id=a.workflow_id)
 
-        result = engine.handle_request(CreateNodeRequest(node_type="Note", workflow_id=a.workflow_id))
+        result = engine.handle_request(CreateNodeRequest(node_type="Note"), workflow_id=a.workflow_id)
 
         assert result.failed()
         assert _node_names(engine, b.workflow_id) == {"NoteB"}
-
-    def test_dispatch_leaves_the_request_as_it_was(self, engine: Engine) -> None:
-        _open_new_workflow_with_note(engine, "NoteA")
-        request = CreateNodeRequest(node_type="Note", node_name="Added")
-
-        engine.handle_request(request)
-
-        assert request.workflow_id is None
 
     def test_a_workflow_result_names_its_workflow_and_a_host_result_names_none(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
         _open_new_workflow_with_note(engine, "NoteB")
         queue = _queued_events(engine)
 
-        engine.handle_request(ListNodesInFlowRequest(workflow_id=a.workflow_id))
+        engine.handle_request(ListNodesInFlowRequest(), workflow_id=a.workflow_id)
         engine.handle_request(ListOpenWorkflowsRequest())
 
         results = [e.wrapped_event for e in _drain(queue) if isinstance(e, GriptapeNodeEvent)]
@@ -349,10 +351,10 @@ class TestRequestTargeting:
     def test_a_failure_for_a_closed_workflow_names_that_workflow(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
         _open_new_workflow_with_note(engine, "NoteB")
-        engine.handle_request(CloseWorkflowRequest(workflow_id=a.workflow_id))
+        engine.handle_request(CloseWorkflowRequest(), workflow_id=a.workflow_id)
         queue = _queued_events(engine)
 
-        engine.handle_request(ListNodesInFlowRequest(workflow_id=a.workflow_id))
+        engine.handle_request(ListNodesInFlowRequest(), workflow_id=a.workflow_id)
 
         failure = next(
             e.wrapped_event
@@ -390,7 +392,7 @@ class TestRequestTargeting:
 
         engine.event_manager.initialize_queue(asyncio.Queue())
         engine.event_manager.add_post_dispatch_hook(ListNodesInFlowRequest, hook)
-        await engine.ahandle_request(ListNodesInFlowRequest(workflow_id=a.workflow_id))
+        await engine.ahandle_request(ListNodesInFlowRequest(), workflow_id=a.workflow_id)
         await asyncio.wait_for(done.wait(), timeout=5)
 
         assert seen == [a.workflow_id]
@@ -464,7 +466,7 @@ class TestCloseWorkflow:
         a = _open_new_workflow_with_note(engine, "NoteA")
         b = _open_new_workflow_with_note(engine, "NoteB")
 
-        result = engine.handle_request(CloseWorkflowRequest(workflow_id=a.workflow_id))
+        result = engine.handle_request(CloseWorkflowRequest(), workflow_id=a.workflow_id)
 
         assert isinstance(result, CloseWorkflowResultSuccess), result
         assert [w.workflow_id for w in _listed(engine).workflows] == [b.workflow_id]
@@ -473,7 +475,7 @@ class TestCloseWorkflow:
     def test_closing_the_last_workflow_leaves_none_open(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
 
-        engine.handle_request(CloseWorkflowRequest(workflow_id=a.workflow_id))
+        engine.handle_request(CloseWorkflowRequest(), workflow_id=a.workflow_id)
 
         assert _listed(engine).workflows == []
         assert engine.workflow_runtimes == []
@@ -668,7 +670,6 @@ class TestResultWireFormat:
         wire = converters.engine.unstructure(result)
         assert wire["workflow_id"] == a.workflow_id
         assert wire["request"]["workflow_id"] == a.workflow_id
-        assert request.workflow_id is None
 
     def test_a_host_requests_echo_names_no_workflow(self, engine: Engine) -> None:
         _open_new_workflow_with_note(engine, "NoteA")

@@ -3,7 +3,7 @@
 ## Threads a node starts keep their workflow
 
 The engine can hold several workflows open, and the work a request does is tied to the workflow it
-names through a context variable. A thread started with `threading.Thread` or a
+is addressed to through a context variable. A thread started with `threading.Thread` or a
 `ThreadPoolExecutor` doesn't inherit context variables, so code on it that calls the engine has no
 workflow. While one workflow is open the engine uses that one. While several are open it uses the
 running workflow and logs a warning; that fallback will be removed.

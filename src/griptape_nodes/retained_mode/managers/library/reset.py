@@ -17,7 +17,7 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import anyio
 
@@ -30,7 +30,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.managers.library.common import LibraryLifecycleState
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.engine_dirs import engine_state_dir
 
 if TYPE_CHECKING:
@@ -47,6 +47,8 @@ LIBRARY_ENV_DIR_NAMES = frozenset({".venv", ".venv-exec"})
 
 
 class LibraryReset(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

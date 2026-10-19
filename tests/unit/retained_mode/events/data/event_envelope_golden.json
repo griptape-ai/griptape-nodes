@@ -2,6 +2,7 @@
   "EventRequest": {
     "request_id": "r1",
     "response_topic": "t",
+    "workflow_id": null,
     "event_type": "EventRequest",
     "request_type": "GetParameterValueRequest",
     "request": {
@@ -9,7 +10,6 @@
       "request_id": null,
       "failure_log_level": null,
       "fields": null,
-      "workflow_id": null,
       "parameter_name": "p",
       "node_name": "n"
     }
@@ -20,6 +20,7 @@
       {
         "request_id": "a",
         "response_topic": null,
+        "workflow_id": null,
         "event_type": "EventRequest",
         "request_type": "GetParameterValueRequest",
         "request": {
@@ -27,7 +28,6 @@
           "request_id": null,
           "failure_log_level": null,
           "fields": null,
-          "workflow_id": null,
           "parameter_name": "p",
           "node_name": "n"
         }
@@ -48,7 +48,6 @@
       "request_id": null,
       "failure_log_level": null,
       "fields": null,
-      "workflow_id": null,
       "parameter_name": "p",
       "node_name": "n"
     },
@@ -92,7 +91,6 @@
       "request_id": null,
       "failure_log_level": null,
       "fields": null,
-      "workflow_id": null,
       "parameter_name": "p",
       "node_name": "n"
     },

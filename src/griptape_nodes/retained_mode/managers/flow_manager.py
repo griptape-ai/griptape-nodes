@@ -10,7 +10,7 @@ from enum import StrEnum
 from io import BytesIO
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Concatenate, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Concatenate, NamedTuple, cast
 from uuid import uuid4
 
 import httpx2
@@ -182,7 +182,7 @@ from griptape_nodes.retained_mode.managers.workflow.shape import (
     build_workflow_shape_from_parameter_info,
     extract_parameter_shape_info,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.run_scheduler import run_scope
 from griptape_nodes.retained_mode.variable_types import VariableScope
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands
@@ -347,6 +347,8 @@ def _in_current_run[**P, R](
 
 
 class FlowManager(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
+
     class WorkflowState:
         """The flow hierarchy, connections, and execution state of one open workflow."""
 

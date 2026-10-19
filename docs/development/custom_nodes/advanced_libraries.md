@@ -199,6 +199,9 @@ class ConvertColorspaceResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailu
     pass
 ```
 
+The engine treats a request your library serves as a host request: it doesn't act on one
+particular open workflow, so a caller doesn't need to say which workflow it is addressed to.
+
 Put them in their own module that both your advanced library and your nodes import. The
 library directory is on `sys.path` by the time either loads, so a plain
 `import colorspace_events` resolves, and both files get the same module object and

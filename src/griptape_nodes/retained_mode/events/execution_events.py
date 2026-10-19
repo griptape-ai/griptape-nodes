@@ -3,13 +3,13 @@ from typing import Required, TypedDict
 
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
+    RequestPayload,
     ResultDetails,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     SkipTheLineMixin,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.node_error_details import NodeErrorDetails
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -20,7 +20,7 @@ from griptape_nodes.serialization.values import DisplayValue, Value
 
 @dataclass
 @PayloadRegistry.register
-class ResolveNodeRequest(WorkflowRequest):
+class ResolveNodeRequest(RequestPayload):
     """Resolve (execute) a specific node.
 
     Use when: Running individual nodes, testing node execution, debugging workflows,
@@ -57,7 +57,7 @@ class ResolveNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class StartFlowRequest(WorkflowRequest):
+class StartFlowRequest(RequestPayload):
     """Start executing a flow.
 
     Use when: Running workflows, beginning automated execution, testing complete flows.
@@ -102,7 +102,7 @@ class StartFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class StartLocalSubflowRequest(WorkflowRequest):
+class StartLocalSubflowRequest(RequestPayload):
     """Start an independent local subflow that runs concurrently with the main flow.
 
     Use when: Running loop iterations or other independent subflows that need their own
@@ -137,7 +137,7 @@ class StartLocalSubflowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class StartFlowFromNodeRequest(WorkflowRequest):
+class StartFlowFromNodeRequest(RequestPayload):
     """Start executing a flow from a specific node.
 
     Use when: Resuming execution from a particular node, debugging specific parts of a flow,
@@ -178,7 +178,7 @@ class StartFlowFromNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CancelFlowRequest(WorkflowRequest):
+class CancelFlowRequest(RequestPayload):
     """Cancel a running flow execution.
 
     Use when: Stopping long-running workflows, handling user cancellation,
@@ -209,7 +209,7 @@ class CancelFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class UnresolveFlowRequest(WorkflowRequest):
+class UnresolveFlowRequest(RequestPayload):
     """Reset every node in a flow back to unresolved.
 
     Use when: Clearing cached results so the next run re-executes every node.
@@ -244,7 +244,7 @@ class UnresolveFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 # Step In: Execute one resolving step at a time (per parameter)
 @dataclass
 @PayloadRegistry.register
-class SingleExecutionStepRequest(WorkflowRequest):
+class SingleExecutionStepRequest(RequestPayload):
     # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
     flow_name: str | None = None
 
@@ -263,7 +263,7 @@ class SingleExecutionStepResultFailure(ResultPayloadFailure):
 # Step Over: Execute one node at a time (execute whole node and move on) IS THIS CONTROL NODE OR ANY NODE?
 @dataclass
 @PayloadRegistry.register
-class SingleNodeStepRequest(WorkflowRequest):
+class SingleNodeStepRequest(RequestPayload):
     # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
     flow_name: str | None = None
 
@@ -283,7 +283,7 @@ class SingleNodeStepResultFailure(ResolveNodeResultFailure):
 # Continue
 @dataclass
 @PayloadRegistry.register
-class ContinueExecutionStepRequest(WorkflowRequest):
+class ContinueExecutionStepRequest(RequestPayload):
     # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
     flow_name: str | None = None
 
@@ -302,7 +302,7 @@ class ContinueExecutionStepResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowStateRequest(WorkflowRequest):
+class GetFlowStateRequest(RequestPayload):
     """Get the current execution state of a flow.
 
     Use when: Monitoring execution progress, debugging workflow state,
@@ -338,7 +338,7 @@ class GetFlowStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetIsFlowRunningRequest(WorkflowRequest):
+class GetIsFlowRunningRequest(RequestPayload):
     """Check if a flow is currently running.
 
     Use when: Monitoring execution status, preventing concurrent execution,
@@ -523,7 +523,7 @@ class NodeMetadata(TypedDict, total=False):
 
 @dataclass
 @PayloadRegistry.register
-class ExecuteNodeRequest(WorkflowRequest):
+class ExecuteNodeRequest(RequestPayload):
     """Execute a node's aprocess() directly with provided parameter values.
 
     Hydrates the node's input parameters, calls aprocess(), and returns outputs.
@@ -568,8 +568,6 @@ class ExecuteNodeRequest(WorkflowRequest):
             workflow's own folder to a workspace-relative path. These three mirror
             ContextManager.WorkflowContextState exactly; workflow_name None means the orchestrator
             had no workflow either, so there is nothing to adopt.
-        workflow_id: Named explicitly, unlike most requests: a worker holds a namespace per
-            orchestrator workflow, keyed by this id, and names it on everything it sends back.
         run_id: The run the node belongs to, so the events the node emits from a worker name it.
 
     Results: ExecuteNodeResultSuccess | ExecuteNodeResultFailure
@@ -622,7 +620,7 @@ class ExecuteNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CancelExecuteNodeRequest(WorkflowRequest, SkipTheLineMixin):
+class CancelExecuteNodeRequest(RequestPayload, SkipTheLineMixin):
     """Cancel an in-flight ExecuteNodeRequest on this engine.
 
     Dispatched by the orchestrator to a worker when a user cancels a flow and a

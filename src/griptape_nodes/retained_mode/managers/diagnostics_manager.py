@@ -8,7 +8,7 @@ import platform
 import sys
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, ClassVar, NamedTuple
 from urllib.parse import unquote, urlparse
 
 import httpx2
@@ -92,7 +92,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     SECRETS_TO_REGISTER_KEY,
     SESSION_LOG_BUFFER_LINES_KEY,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.dict_utils import normalize_secrets_to_register
 from griptape_nodes.utils.version_utils import get_install_source
 
@@ -164,6 +164,8 @@ class DiagnosticsManager(EngineScoped):
     and the report is still returned: the reason a section is missing is frequently the problem
     being investigated.
     """
+
+    request_scope: ClassVar[RequestScope] = RequestScope.OPTIONAL_WORKFLOW
 
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         """Initialize the DiagnosticsManager.
@@ -916,7 +918,7 @@ class DiagnosticsManager(EngineScoped):
         workflow_path = None
         flow_count = 0
         node_count = 0
-        # The workflow the request names, if it names one: with several open, the one the user is on.
+        # The workflow the request is addressed to, if any: with several open, the one the user is on.
         if context_manager.has_current_workflow():
             flow_count = len(object_manager.get_filtered_subset(type=ControlFlow))
             node_count = len(object_manager.get_filtered_subset(type=BaseNode))

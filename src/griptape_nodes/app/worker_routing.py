@@ -28,21 +28,18 @@ routing metadata.
 from __future__ import annotations
 
 import asyncio
-import copy
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeGuard, cast
 
 from griptape_nodes.retained_mode.events import artifact_events, os_events
 from griptape_nodes.retained_mode.events.base_events import (
-    HostRequest,
     RequestPayload,
     ResultPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     SkipTheLineMixin,
     WorkflowNotAlteredMixin,
-    WorkflowRequest,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelExecuteNodeRequest,
@@ -75,6 +72,7 @@ from griptape_nodes.retained_mode.events.worker_events import (
     WorkerHeartbeatRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 logger = logging.getLogger("griptape_nodes")
@@ -83,7 +81,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from types import ModuleType
 
-    from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
@@ -95,7 +92,7 @@ HandlerCallback = "Callable[[RequestPayload], ResultPayload | Awaitable[ResultPa
 
 @dataclass
 @PayloadRegistry.register
-class ReloadConfigRequest(HostRequest, SkipTheLineMixin):
+class ReloadConfigRequest(RequestPayload, SkipTheLineMixin):
     """Sent by the orchestrator to each registered worker after a config mutation succeeds.
 
     On the same machine orchestrator and workers share
@@ -123,15 +120,15 @@ class ReloadConfigResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DropWorkflowLocalObjectsRequest(WorkflowRequest, SkipTheLineMixin):
+class DropWorkflowLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
     """Sent by the orchestrator to each registered worker when a workflow's object state is cleared.
 
     Clearing a workflow deletes its nodes and so every key referring to an object held for it, leaving
     those objects unreachable while still holding what they hold. A broadcast rather than a local hook
     because the worker, not the orchestrator, is the process holding them.
 
-    Acts on the workflow named by `workflow_id`, like any request. The worker releases what it parked
-    while running that workflow's nodes and keeps the objects of the other open workflows.
+    Acts on the workflow the request is addressed to, like any workflow request. The worker releases what
+    it parked while running that workflow's nodes and keeps the objects of the other open workflows.
 
     SkipTheLineMixin for the same reason as its siblings: the alternative is a queued ExecuteNodeRequest
     running against objects belonging to a workflow that is already gone.
@@ -140,7 +137,7 @@ class DropWorkflowLocalObjectsRequest(WorkflowRequest, SkipTheLineMixin):
 
 @dataclass
 @PayloadRegistry.register
-class DropLocalObjectsRequest(HostRequest, SkipTheLineMixin):
+class DropLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
     """Sent by the orchestrator when named held objects stop being referenced.
 
     A handle parameter's value is a key. When that value is replaced or the node carrying it is deleted,
@@ -180,7 +177,7 @@ class DropWorkflowLocalObjectsResultFailure(WorkflowNotAlteredMixin, ResultPaylo
 
 @dataclass
 @PayloadRegistry.register
-class RefreshSecretsRequest(HostRequest, SkipTheLineMixin):
+class RefreshSecretsRequest(RequestPayload, SkipTheLineMixin):
     """Sent by the orchestrator to each registered worker after a secret mutation succeeds.
 
     The global .env at ~/.config/griptape_nodes/.env is shared across
@@ -208,7 +205,7 @@ class RefreshSecretsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class ActivateProjectRequest(HostRequest, SkipTheLineMixin):
+class ActivateProjectRequest(RequestPayload, SkipTheLineMixin):
     """Sent by the orchestrator to each registered worker after it switches projects.
 
     The orchestrator is the single source of truth for the current project, but a
@@ -434,23 +431,9 @@ class RemoteHandler:
 
     async def __call__(self, request: RequestPayload) -> ResultPayload:
         if self.event_manager.in_node_execution():
-            forwarded = naming_its_workflow(request, self.event_manager.engine)
-            event_result = await self.event_manager.forward_to_orchestrator(forwarded, ResultContext())
+            event_result = await self.event_manager.forward_to_orchestrator(request, ResultContext())
             return cast("ResultPayload", event_result.result)
         return await call_function(self.original, request)
-
-
-def naming_its_workflow(request: RequestPayload, engine: Engine) -> RequestPayload:
-    """The request a worker forwards: a workflow request names the workflow it acts on here.
-
-    A node's request names no workflow, and the worker bound it to the namespace of the workflow the node
-    runs for, whose id is the orchestrator's. Named on a copy, so the node's request is unchanged.
-    """
-    if not isinstance(request, WorkflowRequest) or request.workflow_id is not None:
-        return request
-    forwarded = copy.copy(request)
-    forwarded.workflow_id = engine.current_workflow.workflow_id
-    return forwarded
 
 
 def schedule_broadcast(broadcast_type: type[RequestPayload]) -> None:
@@ -491,9 +474,10 @@ def register_remote_handlers(event_manager: EventManager) -> None:
         original = event_manager.get_manager_for_request_type(request_type)
         if original is None:
             continue
+        scope = event_manager.scope_for(request_type)
         remote = RemoteHandler(original=original, event_manager=event_manager)
         event_manager.remove_manager_from_request_type(request_type)
-        event_manager.assign_manager_to_request_type(request_type, remote)
+        event_manager.assign_manager_to_request_type(request_type, remote, scope=scope)
 
 
 async def _handle_drop_workflow_local_objects(
@@ -513,7 +497,7 @@ async def _handle_drop_workflow_local_objects(
     """
     engine = event_manager.engine
     resource_manager = engine.resource_manager
-    # Dispatch bound this request to the worker's namespace for the workflow it names.
+    # Dispatch bound this request to the worker's namespace for the workflow it is addressed to.
     runtime = engine.current_workflow
     workflow_id = runtime.workflow_id
 
@@ -657,9 +641,11 @@ def register_broadcast_handlers(
             worker_settled.set()
         return ActivateProjectResultSuccess(result_details=f"Adopted project from orchestrator: {request.project_id}.")
 
-    event_manager.assign_manager_to_request_type(ReloadConfigRequest, handle_reload_config)
-    event_manager.assign_manager_to_request_type(RefreshSecretsRequest, handle_refresh_secrets)
-    event_manager.assign_manager_to_request_type(ActivateProjectRequest, handle_activate_project)
+    event_manager.assign_manager_to_request_type(ReloadConfigRequest, handle_reload_config, scope=RequestScope.HOST)
+    event_manager.assign_manager_to_request_type(RefreshSecretsRequest, handle_refresh_secrets, scope=RequestScope.HOST)
+    event_manager.assign_manager_to_request_type(
+        ActivateProjectRequest, handle_activate_project, scope=RequestScope.HOST
+    )
 
     _register_local_object_handlers(event_manager)
 
@@ -672,9 +658,13 @@ def _register_local_object_handlers(event_manager: EventManager) -> None:
     async def handle_drop_workflow_local_objects(request: DropWorkflowLocalObjectsRequest) -> ResultPayload:
         return await _handle_drop_workflow_local_objects(request, event_manager=event_manager)
 
-    event_manager.assign_manager_to_request_type(DropWorkflowLocalObjectsRequest, handle_drop_workflow_local_objects)
+    event_manager.assign_manager_to_request_type(
+        DropWorkflowLocalObjectsRequest, handle_drop_workflow_local_objects, scope=RequestScope.WORKFLOW
+    )
 
     async def handle_drop_local_objects(request: DropLocalObjectsRequest) -> ResultPayload:
         return await _handle_drop_local_objects(request, event_manager=event_manager)
 
-    event_manager.assign_manager_to_request_type(DropLocalObjectsRequest, handle_drop_local_objects)
+    event_manager.assign_manager_to_request_type(
+        DropLocalObjectsRequest, handle_drop_local_objects, scope=RequestScope.HOST
+    )

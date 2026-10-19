@@ -31,6 +31,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadSuccess,
 )
+from griptape_nodes.retained_mode.request_handlers import RequestScope
 from tests.unit.worker.harness import (
     InProcessWorkerHarness,
     build_result_from_route_to_worker_dict,
@@ -75,7 +76,7 @@ class TestHarnessOrchestratorToWorker:
         async def echo_handler(request: _EchoRequest) -> _EchoResult:
             return _EchoResult(echoed=request.value, result_details="ok")
 
-        harness.worker.assign_manager_to_request_type(_EchoRequest, echo_handler)
+        harness.worker.assign_manager_to_request_type(_EchoRequest, echo_handler, scope=RequestScope.HOST)
 
         await harness.start()
         try:
@@ -114,7 +115,9 @@ class TestHarnessWorkerToOrchestratorForwarding:
             return _ForwardableResult(seen_by=f"orchestrator:{request.marker}", result_details="ok")
 
         # Orchestrator owns the real handler; worker side installs a RemoteHandler for it.
-        harness.orchestrator.assign_manager_to_request_type(_ForwardableRequest, orchestrator_handler)
+        harness.orchestrator.assign_manager_to_request_type(
+            _ForwardableRequest, orchestrator_handler, scope=RequestScope.HOST
+        )
         harness.install_remote_handler(_ForwardableRequest)
 
         # Forwarding only activates inside node_execution_scope.

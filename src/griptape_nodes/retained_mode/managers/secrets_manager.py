@@ -3,7 +3,7 @@ import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, overload
+from typing import ClassVar, Literal, overload
 
 from dotenv import dotenv_values, get_key, set_key, unset_key
 from dotenv.main import DotEnv
@@ -26,7 +26,7 @@ from griptape_nodes.retained_mode.events.secrets_events import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import SECRETS_TO_REGISTER_KEY
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.utils.dict_utils import normalize_secrets_to_register
 from griptape_nodes.utils.engine_dirs import engine_config_dir
 
@@ -46,6 +46,8 @@ def merge_env_file_values(*, global_values: Mapping[str, str], workspace_values:
 
 
 class SecretsManager:
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(self, config_manager: ConfigManager, event_manager: EventManager | None = None) -> None:
         self.config_manager = config_manager
         self._event_manager = event_manager

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import semver
 
@@ -19,7 +19,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.managers.workflow.loading import is_loading_workflow
 from griptape_nodes.retained_mode.managers.workflow.running import WorkflowExecutionResult, execution_result_details
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.workflow_registry import Workflow
@@ -32,6 +32,8 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class ReferencedWorkflowImport(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.WORKFLOW
+
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

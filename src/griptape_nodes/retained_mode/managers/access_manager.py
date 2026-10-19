@@ -41,7 +41,7 @@ fires from `ModelManager`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from griptape_nodes.node_library.library_declarations import (
     ModelProviderUsageNodeProperty,
@@ -74,7 +74,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointAttribute,
     CheckpointSubjectType,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -110,6 +110,8 @@ class _NodeResolution:
 class AccessManager(EngineScoped):
     """Answers per-candidate authorization queries via the `OFFER_MODEL` checkpoint."""
 
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(self, event_manager: EventManager | None = None, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         if event_manager is not None:
@@ -129,7 +131,7 @@ class AccessManager(EngineScoped):
             result_details=f"Evaluated {len(verdicts)} candidate model(s).",
         )
 
-    @handles(QueryModelAccessForNodeRequest)
+    @handles(QueryModelAccessForNodeRequest, scope=RequestScope.WORKFLOW)
     def on_query_model_access_for_node_request(self, request: QueryModelAccessForNodeRequest) -> ResultPayload:
         """Node-attributed. Engine derives candidates from declarations unless caller overrides."""
         try:

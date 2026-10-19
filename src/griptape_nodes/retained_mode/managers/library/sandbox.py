@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, field
 from itertools import groupby
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.path_utils import (
@@ -75,7 +75,7 @@ from griptape_nodes.retained_mode.managers.library.common import (
 )
 from griptape_nodes.retained_mode.managers.library.metadata_loading import is_library_name_registered
 from griptape_nodes.retained_mode.managers.library.module_loading import get_root_cause_from_exception
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -114,6 +114,8 @@ class SandboxCandidates:
 
 
 class LibrarySandbox(EngineScoped):
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         # Serializes ReloadSandboxLibraryRequest: two quick refreshes must not interleave unload,
