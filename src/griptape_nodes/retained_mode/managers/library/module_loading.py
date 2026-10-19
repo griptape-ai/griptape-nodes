@@ -13,8 +13,13 @@ from griptape_nodes.exe_types.workflow_node import (
     WorkflowNode,
     WorkflowNodeDefinitionError,
     build_workflow_node_class,
+    ensure_workflow_registered,
 )
-from griptape_nodes.files.path_utils import canonicalize_for_identity_preserving_symlinks, resolve_workspace_path
+from griptape_nodes.files.path_utils import (
+    canonicalize_for_identity_preserving_symlinks,
+    relative_to_keeping_or_following_links,
+    resolve_workspace_path,
+)
 from griptape_nodes.node_library.library_registry import (
     Library,
     LibraryRegistry,
@@ -926,4 +931,50 @@ class LibraryModuleLoading(EngineScoped):
         library_problem = library.register_new_node_type(node_class, metadata=workflow_node_definition.metadata)
         if library_problem is not None:
             library_info.problems.append(library_problem)
+            return True
+
+        library_info.workflow_node_classes.append(node_class)
+        self.list_workflow_node_workflow(node_class, library_info)
         return True
+
+    def list_workflow_node_workflow(self, node_class: type[WorkflowNode], library_info: LibraryInfo) -> None:
+        """List the workflow behind a library's workflow node in the registry as library-provided.
+
+        Listed like the workflows in the library's `workflows` list: browsable before any node is
+        placed. A registry refresh clears every workflow and calls this again, so the key follows the
+        current workspace. A workflow elsewhere in the workspace is the user's own file, so it stays
+        editable and the workspace scan lists it. The scan skips everything under a non-sandbox
+        library's directory, which includes libraries installed into the workspace.
+        """
+        workspace_path = self.engine.config_manager.workspace_path
+        if self._is_users_workflow(node_class.workflow_file_path, workspace_path, library_info):
+            return
+        node_class.workflow_metadata.is_griptape_provided = True
+        try:
+            ensure_workflow_registered(
+                workspace_path,
+                self.engine.workflow_registry,
+                node_class.workflow_file_path,
+                node_class.workflow_metadata,
+            )
+        except (KeyError, ValueError):
+            logger.warning(
+                "Library '%s' could not list the workflow '%s' behind node type '%s'.",
+                library_info.library_name,
+                node_class.workflow_file_path,
+                node_class.__name__,
+            )
+
+    @staticmethod
+    def _is_users_workflow(workflow_file_path: Path, workspace_path: Path, library_info: LibraryInfo) -> bool:
+        """Whether a library's workflow is a file the workspace scan lists as the user's own.
+
+        Mirrors the scan's rule: it lists files in the workspace, except those under a non-sandbox
+        library's directory.
+        """
+        if relative_to_keeping_or_following_links(workflow_file_path, workspace_path) is None:
+            return False
+        if library_info.is_sandbox:
+            return True
+        library_dir = Path(library_info.library_path).parent
+        return relative_to_keeping_or_following_links(workflow_file_path, library_dir) is None

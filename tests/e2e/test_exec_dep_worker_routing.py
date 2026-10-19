@@ -39,10 +39,10 @@ from griptape_nodes.retained_mode.events.node_events import (
 # The facade import survives for the dummy-manager guard tests, whose subject it is.
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # noqa: TID251
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+from griptape_nodes.testing.offline_wheels import build_wheel, offline_install_flags
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.utils.version_utils import engine_version
 from tests.e2e.fixtures.behavior_preservation_library.behavior_preservation_node import CLICK_ACKNOWLEDGEMENT
-from tests.e2e.offline_wheels import build_wheel, offline_install_flags
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

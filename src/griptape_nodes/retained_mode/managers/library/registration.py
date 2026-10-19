@@ -152,12 +152,17 @@ class LibraryRegistrar(EngineScoped):
         # FAILURE CHECK
         if isinstance(progression_result, RegisterLibraryFromFileResultFailure):
             return progression_result
+        self.engine.library_manager.workers.note_library_set_changed()
 
         # Phase 3: Return appropriate result based on fitness
         # At this point, library_name must be set (it's set during METADATA_LOADED phase)
         if library_info.library_name is None:
             details = "Library loaded but library_name was not set during metadata loading"
             return RegisterLibraryFromFileResultFailure(result_details=details)
+
+        # Its execution environment is built now, so its worker can start without waiting for the
+        # other libraries. Every way a library is registered passes through here, mid-session too.
+        await self.engine.library_manager.workers.start_worker_for_library(library_info.library_name)
 
         match library_info.fitness:
             case LibraryFitness.GOOD:
@@ -271,6 +276,7 @@ class LibraryRegistrar(EngineScoped):
         except Exception as e:
             details = f"Attempted to unload library '{request.library_name}'. Failed due to {e}"
             return UnloadLibraryFromRegistryResultFailure(result_details=details)
+        self.engine.library_manager.workers.note_library_set_changed()
 
         # Release anything this library was holding in THIS process, so it cannot come back holding
         # objects its previous code built.
@@ -342,7 +348,7 @@ class LibraryRegistrar(EngineScoped):
 
             # If we don't have LibraryInfo yet, load metadata to get the name
             if not lib_info or not lib_info.library_name:
-                metadata_result = self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
+                metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
                     LoadLibraryMetadataFromFileRequest(file_path=file_path)
                 )
 
@@ -481,10 +487,8 @@ class LibraryRegistrar(EngineScoped):
                 case LibraryLifecycleState.DISCOVERED:
                     # DISCOVERED → METADATA_LOADED
                     # All libraries (including sandbox) load metadata from JSON file
-                    metadata_result = (
-                        self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                        )
+                    metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                        LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                     )
 
                     if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
@@ -508,10 +512,8 @@ class LibraryRegistrar(EngineScoped):
                 case LibraryLifecycleState.METADATA_LOADED:
                     # METADATA_LOADED → EVALUATED
                     # Need to load schema to pass to evaluate request
-                    metadata_result = (
-                        self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                        )
+                    metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                        LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                     )
 
                     if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
@@ -564,10 +566,8 @@ class LibraryRegistrar(EngineScoped):
                     # before this library's nodes are imported in the LOADED phase. Venvs are completely
                     # isolated - dependency packages are not accessible to this library's pip install
                     # subprocess.
-                    dep_metadata_result = (
-                        self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                        )
+                    dep_metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                        LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                     )
                     if not isinstance(dep_metadata_result, LoadLibraryMetadataFromFileResultFailure):
                         dep_schema = dep_metadata_result.library_schema
@@ -739,10 +739,8 @@ class LibraryRegistrar(EngineScoped):
                     if not library_info.is_sandbox:
                         # REGULAR LIBRARIES: Standard registration from JSON file
                         # Load metadata and create library
-                        metadata_result = (
-                            self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                                LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                            )
+                        metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                         )
 
                         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
@@ -818,8 +816,13 @@ class LibraryRegistrar(EngineScoped):
                         # A worker reports its load so the orchestrator learns this library's nodes
                         # can execute there. The orchestrator imported the library itself and keeps
                         # its own fitness verdict; this is only the news that the worker is ready.
+                        #
+                        # Not from a general-purpose worker: it is no library's worker, so its load
+                        # is not the one the orchestrator is waiting on, and a report from it would
+                        # release a library's gate before that library's own worker had loaded it.
                         if (
                             self.engine.library_manager.is_worker
+                            and not self.engine.library_manager.is_general_purpose_worker
                             and library_info.lifecycle_state == LibraryLifecycleState.LOADED
                             and library_info.library_name
                         ):
@@ -836,10 +839,8 @@ class LibraryRegistrar(EngineScoped):
                         # SANDBOX LIBRARIES: Full processing here (discovery + registration)
                         # Load metadata from JSON file (already generated in DISCOVERED → METADATA_LOADED)
                         sandbox_directory = Path(library_info.library_path).parent
-                        metadata_result = (
-                            self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                                LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                            )
+                        metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                         )
 
                         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):

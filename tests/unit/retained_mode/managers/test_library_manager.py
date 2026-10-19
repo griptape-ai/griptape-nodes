@@ -726,7 +726,7 @@ class TestLibraryManagerRegisterLibraryFromFile:
 
         with (
             patch("griptape_nodes.retained_mode.managers.library.registration.Path") as mock_path,
-            patch.object(library_manager.metadata_loading, "load_library_metadata_from_file_request") as mock_load,
+            patch.object(library_manager.metadata_loading, "read_library_metadata") as mock_load,
             # Mock that venv already exists (old code would skip installation)
             patch.object(library_manager.environment, "get_library_venv_path") as mock_venv,
             patch.object(library_manager.dependencies, "install_library_dependencies_request") as mock_install,
@@ -772,7 +772,7 @@ class TestLibraryManagerRegisterLibraryFromFile:
             ),
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=LoadLibraryMetadataFromFileResultSuccess(
                     library_schema=schema,
                     file_path="/f",
@@ -836,7 +836,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.environment, "get_library_venv_path", return_value=_ABSENT_VENV_PATH),
@@ -873,7 +873,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.environment, "get_library_venv_path", return_value=_ABSENT_VENV_PATH),
@@ -916,7 +916,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             # Reports as present so the removal is attempted, unlike _ABSENT_VENV_PATH.
@@ -961,7 +961,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.environment, "get_library_venv_path", return_value=_ABSENT_VENV_PATH),
@@ -990,7 +990,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.environment, "get_library_venv_path", return_value=_ABSENT_VENV_PATH),
@@ -1022,7 +1022,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.environment, "get_library_venv_path", return_value=_ABSENT_VENV_PATH),
@@ -1063,7 +1063,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.environment, "get_library_venv_path", return_value=_ABSENT_VENV_PATH),
@@ -1111,7 +1111,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.environment, "get_library_venv_path", return_value=_ABSENT_VENV_PATH),
@@ -1163,7 +1163,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.environment, "get_library_venv_path", return_value=_ABSENT_VENV_PATH),
@@ -1213,7 +1213,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.environment, "get_library_venv_path", return_value=_ABSENT_VENV_PATH),
@@ -1288,7 +1288,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(
@@ -1318,7 +1318,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.dependencies, "_execution_dependencies_of_declared_libraries", return_value=[]),
@@ -1387,7 +1387,7 @@ class TestLibraryManagerInstallLibraryDependencies:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 side_effect=lambda request: self._metadata_result(schemas[request.file_path]),
             ),
             patch.object(mgr.dependencies, "_install_dependency_set", new_callable=AsyncMock) as mock_build,
@@ -1785,6 +1785,50 @@ class TestAddLibraryPathsToSysPath:
             assert str(base_dir) in sys.path
         finally:
             sys.path[:] = original_sys_path
+
+
+class TestCollectLibraryWorkflowFiles:
+    """Test collecting library-declared workflow files for the workflow registry."""
+
+    @pytest.mark.asyncio
+    async def test_repeat_collection_keeps_one_sys_path_entry_at_the_front(
+        self, engine: Engine, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Every registry refresh collects again; the library directory must not stack up on sys.path."""
+        library_manager = engine.library_manager
+        library_path = tmp_path / "griptape_nodes_library.json"
+        base_dir = str(tmp_path)
+        monkeypatch.setitem(
+            library_manager._library_file_path_to_info,
+            str(library_path),
+            _LibraryManager.LibraryInfo(
+                lifecycle_state=_LibraryManager.LibraryLifecycleState.LOADED,
+                fitness=_LibraryManager.LibraryFitness.GOOD,
+                library_path=str(library_path),
+                is_sandbox=False,
+                library_name="TestLib",
+            ),
+        )
+        library = MagicMock()
+        library.get_library_data.return_value.workflows = ["templates/demo.py"]
+        monkeypatch.setattr(sys, "path", [*sys.path, base_dir])
+
+        with (
+            patch.object(
+                engine,
+                "ahandle_request",
+                AsyncMock(
+                    return_value=ListRegisteredLibrariesResultSuccess(libraries=["TestLib"], result_details="ok")
+                ),
+            ),
+            patch.object(LibraryRegistry, "get_library", return_value=library),
+        ):
+            first = await library_manager.collect_library_workflow_files()
+            second = await library_manager.collect_library_workflow_files()
+
+        assert first == second == [str(tmp_path / "templates/demo.py")]
+        assert sys.path[0] == base_dir
+        assert sys.path.count(base_dir) == 1
 
 
 class SandboxImportSpyBase:

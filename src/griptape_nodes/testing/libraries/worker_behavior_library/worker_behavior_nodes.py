@@ -27,10 +27,13 @@ the minimal fixtures did not cover:
 - ``EditorBehaviorNode``: converters, validators, and parameters added and removed from
   ``after_value_set`` -- all of which now run orchestrator-side on the real class instead of
   being lost to a schema stub.
+- ``ProcessInfoNode``: reports the process that ran it and that process's parent, so a test
+  driving real engine processes can tell which process executed the node.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from griptape_nodes.common.project_templates.situation import BuiltInSituation
@@ -274,6 +277,26 @@ class GrowsAnOutputListNode(DataNode):
             self.set_parameter_value(child.name, item)
 
 
+class ReadsAnInputListNode(DataNode):
+    """Echoes an input `ParameterList`, the shape of a node reading `reference_images`."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+        self.add_parameter(
+            ParameterList(
+                name="items",
+                input_types=["str"],
+                type="str",
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+        self.add_parameter(Parameter(name="echo", type="list", tooltip="", allowed_modes={ParameterMode.OUTPUT}))
+
+    def process(self) -> None:
+        self.parameter_output_values["echo"] = self.get_parameter_list_value("items")
+
+
 def _shout(value: Any) -> Any:
     """Converter: proves converters run where the node object is real."""
     if isinstance(value, str):
@@ -393,6 +416,35 @@ class ReadSecretNode(DataNode):
         )
         value = result.value if isinstance(result, GetSecretValueResultSuccess) else None
         self.parameter_output_values["secret_value"] = value or ""
+
+
+class ProcessInfoNode(DataNode):
+    """Outputs the ids of the process that executed it and of that process's parent."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+        self.add_parameter(
+            Parameter(
+                name="pid",
+                type="int",
+                default_value=0,
+                tooltip="Id of the process that executed this node",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="parent_pid",
+                type="int",
+                default_value=0,
+                tooltip="Id of that process's parent",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+
+    def process(self) -> None:
+        self.parameter_output_values["pid"] = os.getpid()
+        self.parameter_output_values["parent_pid"] = os.getppid()
 
 
 class UnshippableOutputNode(DataNode):

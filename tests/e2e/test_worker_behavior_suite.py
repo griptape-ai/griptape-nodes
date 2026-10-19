@@ -18,14 +18,12 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 from griptape_nodes.exe_types.local_objects import is_reference
-from griptape_nodes.node_library.library_registry import LibraryRegistry, LibrarySchema
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.engine import current_engine
 from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
@@ -40,36 +38,34 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
-from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
+    AddParameterToNodeResultSuccess,
+    RemoveParameterFromNodeRequest,
+    SetParameterValueRequest,
+)
 from griptape_nodes.retained_mode.events.project_events import ActivateWorkspaceProjectRequest
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
-from griptape_nodes.utils.version_utils import engine_version
+from griptape_nodes.testing.libraries import WORKER_BEHAVIOR_LIBRARY_NAME, materialize_worker_behavior_library
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.node_types import BaseNode
+    from pathlib import Path
 
-FIXTURE_DIR = Path(__file__).parent / "fixtures" / "worker_behavior_library"
-LIBRARY = "Worker Behavior Library"
+    from griptape_nodes.exe_types.node_types import BaseNode
 
 
 @pytest.fixture(autouse=True)
 def _register_library(tmp_path: Path) -> None:
-    library_dir = tmp_path / "worker_behavior_library"
-    library_dir.mkdir()
-    schema = json.loads((FIXTURE_DIR / "griptape_nodes_library.json").read_text())
-    schema["library_schema_version"] = LibrarySchema.LATEST_SCHEMA_VERSION
-    schema["metadata"]["engine_version"] = engine_version
-    (library_dir / "griptape_nodes_library.json").write_text(json.dumps(schema, indent=2))
-    shutil.copy(FIXTURE_DIR / "worker_behavior_nodes.py", library_dir / "worker_behavior_nodes.py")
-    result = current_engine().handle_request(
-        RegisterLibraryFromFileRequest(file_path=str(library_dir / "griptape_nodes_library.json"))
-    )
+    library_json = materialize_worker_behavior_library(tmp_path)
+    result = current_engine().handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
     assert isinstance(result, RegisterLibraryFromFileResultSuccess), getattr(result, "result_details", result)
 
 
 def _make(node_type: str, name: str) -> BaseNode:
     """Create a node directly, for tests that only execute it."""
-    node = LibraryRegistry.create_node(node_type=node_type, name=name, specific_library_name=LIBRARY)
+    node = LibraryRegistry.create_node(
+        node_type=node_type, name=name, specific_library_name=WORKER_BEHAVIOR_LIBRARY_NAME
+    )
     current_engine().object_manager.add_object_by_name(name, node)
     return node
 
@@ -88,7 +84,7 @@ def _make_in_flow(node_type: str, name: str) -> BaseNode:
     create_result = current_engine().handle_request(
         CreateNodeRequest(
             node_type=node_type,
-            specific_library_name=LIBRARY,
+            specific_library_name=WORKER_BEHAVIOR_LIBRARY_NAME,
             node_name=name,
             override_parent_flow_name=flow_result.flow_name,
         )
@@ -102,7 +98,7 @@ async def _execute(node_type: str, name: str, **parameter_values: object) -> Exe
         ExecuteNodeRequest(
             node_name=name,
             parameter_values=dict(parameter_values),
-            node_metadata={"node_type": node_type, "library": LIBRARY},
+            node_metadata={"node_type": node_type, "library": WORKER_BEHAVIOR_LIBRARY_NAME},
         )
     )
     assert isinstance(result, ExecuteNodeResultSuccess), getattr(result, "result_details", result)
@@ -427,6 +423,49 @@ class TestAnOutputListGrownWhileRunning:
         assert node.get_parameter_value("clips") == ["clip0", "clip1"]
 
 
+class TestAnInputListFilledInTheEditor:
+    """A list the artist filled row by row, then edited, as the executor dispatches it."""
+
+    @pytest.mark.parametrize("is_worker", [False, True])
+    @pytest.mark.asyncio
+    async def test_the_node_reads_the_rows_it_has_now(
+        self, caplog: pytest.LogCaptureFixture, *, is_worker: bool
+    ) -> None:
+        node = _make_in_flow("ReadsAnInputListNode", f"InputLister{is_worker}")
+        rows = []
+        for value in ("a", "b", "c"):
+            added = current_engine().handle_request(
+                AddParameterToNodeRequest(node_name=node.name, parent_container_name="items")
+            )
+            assert isinstance(added, AddParameterToNodeResultSuccess)
+            current_engine().handle_request(
+                SetParameterValueRequest(node_name=node.name, parameter_name=added.parameter_name, value=value)
+            )
+            rows.append(added.parameter_name)
+        current_engine().handle_request(RemoveParameterFromNodeRequest(node_name=node.name, parameter_name=rows[1]))
+        current_engine().library_manager._is_worker = is_worker
+
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            result = await _execute("ReadsAnInputListNode", node.name, **node._list_rows.values_for_dispatch())
+
+        assert result.parameter_output_values["echo"] == ["a", "c"]
+        assert "does not exist on the executing copy" not in caplog.text
+
+    @pytest.mark.parametrize("is_worker", [False, True])
+    @pytest.mark.asyncio
+    async def test_a_list_set_whole_by_request(self, *, is_worker: bool) -> None:
+        """How an MCP client or a script sets a list."""
+        node = _make_in_flow("ReadsAnInputListNode", f"WholeLister{is_worker}")
+        current_engine().handle_request(
+            SetParameterValueRequest(node_name=node.name, parameter_name="items", value=["a", "b"])
+        )
+        current_engine().library_manager._is_worker = is_worker
+
+        result = await _execute("ReadsAnInputListNode", node.name, **node._list_rows.values_for_dispatch())
+
+        assert result.parameter_output_values["echo"] == ["a", "b"]
+
+
 class TestEditorTimeBehaviorOnRealNodes:
     """These are exactly what a schema stub would have dropped."""
 
@@ -478,7 +517,7 @@ class TestUnshippableOutputsAreKept:
             ExecuteNodeRequest(
                 node_name="Unshippable",
                 parameter_values={},
-                node_metadata={"node_type": "UnshippableOutputNode", "library": LIBRARY},
+                node_metadata={"node_type": "UnshippableOutputNode", "library": WORKER_BEHAVIOR_LIBRARY_NAME},
             )
         )
 

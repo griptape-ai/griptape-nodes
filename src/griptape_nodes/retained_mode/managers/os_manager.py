@@ -160,6 +160,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.authorization_checkpoint import CheckpointDenial
 
 # File is not in static directory (or not a local file), create small preview
+from griptape_nodes.utils.async_utils import to_thread
 from griptape_nodes.utils.file_utils import atomic_write_bytes
 from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
 
@@ -2267,7 +2268,7 @@ class OSManager(EngineScoped):
 
             # Handle image thumbnail generation (if requested)
             if mime_type.startswith("image/") and request.should_transform_image_content_to_thumbnail and not is_text:
-                content = self._generate_thumbnail_from_image_content(content, location, mime_type)
+                content = await self._generate_thumbnail_from_image_content(content, location, mime_type)
                 # Thumbnail returns a string (URL or data URI), not bytes
                 decoded_content: str | bytes = content
                 encoding = None
@@ -2327,8 +2328,13 @@ class OSManager(EngineScoped):
         # Read via driver system (driver handles all validation and I/O)
         return await self._read_via_driver(location, request)
 
-    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path | str, mime_type: str) -> str:
+    async def _generate_thumbnail_from_image_content(
+        self, content: bytes, file_path: Path | str, mime_type: str
+    ) -> str:
         """Handle image content by creating previews or returning static URLs.
+
+        The workspace check reads engine state, so it runs on the loop; only the image encode
+        runs on a worker thread.
 
         Args:
             content: Image bytes
@@ -2368,8 +2374,13 @@ class OSManager(EngineScoped):
             # Not a valid local path (might be URL or data URI), continue to preview
             pass
 
+        return await to_thread(self._image_bytes_to_preview_data_url, original_image_bytes, mime_type)
+
+    @staticmethod
+    def _image_bytes_to_preview_data_url(image_bytes: bytes, mime_type: str) -> str:
+        """Encode a small WEBP preview of the image as a data URL. CPU-bound and touches no engine state."""
         preview_data_url = create_image_preview_from_bytes(
-            original_image_bytes,  # type: ignore[arg-type]
+            image_bytes,  # type: ignore[arg-type]
             max_width=200,
             max_height=200,
             quality=85,
@@ -2381,7 +2392,7 @@ class OSManager(EngineScoped):
             return preview_data_url
 
         # Fallback to data URL if preview creation fails
-        data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
+        data_url = f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
         logger.debug("Fallback to full image data URL")
         return data_url
 
@@ -2496,8 +2507,15 @@ class OSManager(EngineScoped):
         )
 
     @handles(WriteFileRequest)
-    def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
-        """Handle a request to write content to a file with exclusive locking."""
+    async def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
+        """Write content to a file with exclusive locking, returning once it is on disk.
+
+        Everything that reads engine state runs on the thread driving this coroutine: macro
+        resolution, the config read, the codec vet, the index scan, and the collision policy.
+        Manager state has no locks, so none of that may move to a worker thread. Only the two
+        steps that touch no engine state and take seconds for a large file are handed to a worker
+        thread: re-encoding image bytes with workflow metadata, and writing the bytes to disk.
+        """
         # Initialize success tracking variables
         final_file_path: Path | None = None
         final_bytes_written: int | None = None
@@ -2650,7 +2668,13 @@ class OSManager(EngineScoped):
             and not request.skip_metadata_injection
             and self.engine.config_manager.get_config_value("auto_inject_workflow_metadata")
         ):
-            content = self.engine.artifact_manager.prepare_content_for_write(content, file_path.name)
+            # The provider lookup and metadata collection read engine state, so they stay on the
+            # loop; only the re-encode with the collected metadata goes to a worker thread.
+            provider = self.engine.artifact_manager.provider_for_write(file_path.name)
+            if provider is not None:
+                metadata = provider.collect_metadata_for_write(file_path.name)
+                if metadata:
+                    content = await to_thread(provider.prepare_content_for_write, content, file_path.name, metadata)
 
         # Now attempt the write, based on our collision (existing file) policy.
         match request.existing_file_policy:
@@ -2671,7 +2695,8 @@ class OSManager(EngineScoped):
                     # portalocker as the concurrency mechanism here: concurrent
                     # overwrites are last-rename-wins, and writer interleaving is
                     # impossible because each writer fills a private sibling.
-                    result = self._attempt_atomic_file_write(
+                    result = await to_thread(
+                        self._attempt_atomic_file_write,
                         normalized_path=Path(normalized_path),
                         content=content,
                         encoding=request.encoding,
@@ -2685,7 +2710,8 @@ class OSManager(EngineScoped):
                     # the FAIL policy) gets its atomicity from O_EXCL, and its
                     # FileExistsError signal plus the debris cleanup around it are
                     # load-bearing for the CREATE_NEW candidate walk.
-                    result = self._attempt_file_write(
+                    result = await to_thread(
+                        self._attempt_file_write,
                         normalized_path=Path(normalized_path),
                         content=content,
                         encoding=request.encoding,
@@ -2709,7 +2735,8 @@ class OSManager(EngineScoped):
                 # Path already validated and ready to use (handled at method top)
 
                 # TRY-FIRST: Attempt to write to the requested path
-                result = self._attempt_file_write(
+                result = await to_thread(
+                    self._attempt_file_write,
                     normalized_path=Path(normalized_path),
                     content=content,
                     encoding=request.encoding,
@@ -2907,7 +2934,8 @@ class OSManager(EngineScoped):
                         normalized_candidate_path = normalize_path_for_platform(candidate_path)
 
                         # Try to write this indexed candidate using helper
-                        result = self._attempt_file_write(
+                        result = await to_thread(
+                            self._attempt_file_write,
                             normalized_path=Path(normalized_candidate_path),
                             content=content,
                             encoding=request.encoding,

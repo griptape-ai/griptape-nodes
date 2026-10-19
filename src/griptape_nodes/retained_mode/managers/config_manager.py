@@ -72,6 +72,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     RenameFileResultFailure,
     WriteFileRequest,
     WriteFileResultFailure,
+    WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import (
@@ -2147,9 +2148,9 @@ class ConfigManager(EngineScoped):
                 create_parents=True,  # Create parent directories if missing
                 skip_metadata_injection=True,
             )
-            create_result = os_manager.on_write_file_request(create_request)
+            create_result = self.engine.handle_request(create_request)
 
-            if isinstance(create_result, WriteFileResultFailure):
+            if not create_result.succeeded():
                 logger.error(
                     "Attempted to create user config file at '%s'. Failed due to: %s",
                     config_path_str,
@@ -2159,9 +2160,11 @@ class ConfigManager(EngineScoped):
 
         # Step 3: Read current config directly from disk.
         #
-        # We intentionally bypass the ReadFileRequest handler here. The enclosing writes
-        # already use os_manager.on_write_file_request directly (sync), so the read matches
-        # that bootstrap-path style and avoids coupling config load to event-loop state.
+        # We intentionally bypass the ReadFileRequest handler here: this runs on the bootstrap
+        # path, which may have no event loop, and a config read should not depend on one. The
+        # writes around it go through the engine's sync request path, which drives the async
+        # WriteFileRequest handler to completion before returning (on a loop of its own when none
+        # is running), so the file is fully written by the time this reads it.
         try:
             file_content = Path(config_path_str).read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -2238,7 +2241,17 @@ class ConfigManager(EngineScoped):
             existing_file_policy=ExistingFilePolicy.OVERWRITE,
             create_parents=True,
         )
-        write_result = os_manager.on_write_file_request(write_request)
+        write_result = self.engine.handle_request(write_request)
+
+        # A result that is neither success nor a write failure comes from the dispatcher itself
+        # (an unhandled exception, or a pre-dispatch hook declining the request).
+        if not isinstance(write_result, (WriteFileResultSuccess, WriteFileResultFailure)):
+            logger.error(
+                "Attempted to write merged config to '%s'. Failed with: %s",
+                config_path_str,
+                write_result.result_details,
+            )
+            return False
 
         # Handle write failures
         if isinstance(write_result, WriteFileResultFailure):
