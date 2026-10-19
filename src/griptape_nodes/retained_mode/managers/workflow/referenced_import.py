@@ -20,6 +20,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.managers.workflow.loading import is_loading_workflow
 from griptape_nodes.retained_mode.managers.workflow.running import WorkflowExecutionResult, execution_result_details
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.runtime.context import FlowContext
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.workflow_registry import Workflow
@@ -130,13 +131,14 @@ class ReferencedWorkflowImport(EngineScoped):
         # Execute the workflow within the target flow context.
         # When track_as_referenced is True, wrap in ReferencedWorkflowContext so the flow
         # serializes as an import command. When False, the flow serializes as inline content.
-        workflow_manager = self.engine.workflow_manager
-        with self.engine.context_manager.flow(flow_name):
+        runner = self.engine.workflow_manager.runner
+        target_flow = self.engine.flow_manager.get_flow_in(workflow, flow_name)
+        with FlowContext(workflow.context, target_flow):
             if request.track_as_referenced:
                 with workflow.loading.importing_referenced_workflow(request.workflow_name):
-                    workflow_result = await workflow_manager.runner.run_workflow(workflow_file_path)
+                    workflow_result = await runner.run_workflow(workflow_file_path, workflow)
             else:
-                workflow_result = await workflow_manager.runner.run_workflow(workflow_file_path)
+                workflow_result = await runner.run_workflow(workflow_file_path, workflow)
 
         if not workflow_result.execution_successful:
             details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow execution failed: {workflow_result.execution_details}"

@@ -5519,9 +5519,10 @@ class TestExecuteWorkflowImport:
         )
         monkeypatch.setattr(runtime.objects, "get_filtered_subset", filtered_subset)
 
-        # ContextManager().flow(...) is used purely as a context manager wrapping the import.
-        context_manager = MagicMock(spec=ContextManager)
-        monkeypatch.setattr(engine, "_context_manager", context_manager)
+        # The import runs inside the target flow's context, entered on the runtime's own stack.
+        monkeypatch.setattr(engine.flow_manager, "get_flow_in", Mock(return_value=MagicMock()))
+        monkeypatch.setattr(runtime.context, "push_flow", Mock())
+        monkeypatch.setattr(runtime.context, "pop_flow", Mock())
 
         monkeypatch.setattr(
             workflow_manager.runner,
