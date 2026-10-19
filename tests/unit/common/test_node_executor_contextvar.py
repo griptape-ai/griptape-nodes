@@ -44,7 +44,7 @@ class TestNodeExecutorContextVar:
         captured: list[str | None] = []
         node = _make_node("TestNode")
 
-        async def fake_handle(_request: Any) -> ExecuteNodeResultSuccess:
+        async def fake_handle(_request: Any, **_kwargs: Any) -> ExecuteNodeResultSuccess:
             captured.append(current_executing_node_name.get())
             return _success_result()
 
@@ -89,7 +89,7 @@ class TestNodeExecutorContextVar:
         node_a = _make_node("NodeA")
         node_b = _make_node("NodeB")
 
-        async def fake_handle(request: Any) -> ExecuteNodeResultSuccess:
+        async def fake_handle(request: Any, **_kwargs: Any) -> ExecuteNodeResultSuccess:
             await asyncio.sleep(0)  # yield to allow interleaving
             results[request.node_name] = current_executing_node_name.get()
             return _success_result()

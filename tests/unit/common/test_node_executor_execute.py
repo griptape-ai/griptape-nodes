@@ -99,7 +99,7 @@ class TestExecuteDispatchContract:
         node = _make_node(parameter_values={"in": "hi"})
         captured: dict[str, Any] = {}
 
-        async def capture(req: Any) -> ExecuteNodeResultSuccess:
+        async def capture(req: Any, **_kwargs: Any) -> ExecuteNodeResultSuccess:
             # Mutate the node's live dict; the request's snapshot must not change.
             node.parameter_values["in"] = "MUTATED"
             captured["params"] = req.parameter_values
@@ -111,6 +111,18 @@ class TestExecuteDispatchContract:
         await executor.execute(node)
 
         assert captured["params"] == {"in": "hi"}
+
+    @pytest.mark.asyncio
+    async def test_dispatches_to_the_workflow_the_node_belongs_to(self) -> None:
+        node = _make_node(name="Greeter")
+        node.workflow_runtime.workflow_id = "workflow-of-greeter"
+
+        executor = _make_executor()
+        mock_engine = cast("MagicMock", executor.engine)
+        mock_engine.ahandle_request = AsyncMock(return_value=_success_result())
+        await executor.execute(node)
+
+        assert mock_engine.ahandle_request.call_args.kwargs["workflow_id"] == "workflow-of-greeter"
 
     @pytest.mark.asyncio
     async def test_dispatches_node_metadata(self) -> None:
@@ -129,7 +141,7 @@ class TestExecuteDispatchContract:
         node = _make_node(metadata={"node_type": "Foo", "library": "Bar"})
         captured: dict[str, Any] = {}
 
-        async def capture(req: Any) -> ExecuteNodeResultSuccess:
+        async def capture(req: Any, **_kwargs: Any) -> ExecuteNodeResultSuccess:
             node.metadata["library"] = "MUTATED"
             captured["meta"] = req.node_metadata
             return _success_result()
