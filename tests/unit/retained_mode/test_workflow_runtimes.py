@@ -16,6 +16,10 @@ from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.files.path_utils import resolve_path_safely
 from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.app_events import EngineHeartbeatRequest, EngineHeartbeatResultSuccess
+from griptape_nodes.retained_mode.events.artifact_events import (
+    GetPreviewForArtifactRequest,
+    GetPreviewForArtifactResultFailure,
+)
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
     EventResultFailure,
@@ -844,6 +848,22 @@ class TestProjectMacros:
 
         assert isinstance(result, ResolveMacroPathResultSuccess), result
         assert Path(result.resolved_path) == resolve_path_safely(tmp_path / "a" / "out.png")
+
+    def test_a_preview_request_resolves_its_source_against_the_workflow_it_names(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        a = self._open_in(engine, "A", tmp_path / "a")
+        self._open_in(engine, "B", tmp_path / "b")
+        request = GetPreviewForArtifactRequest(
+            macro_path=MacroPath(ParsedMacro("{workflow_dir}/missing.png"), {}), artifact_provider_name="Image"
+        )
+
+        result = engine.handle_request(request, workflow_id=a)
+
+        # The source is looked up in A's folder, where it isn't.
+        assert isinstance(result, GetPreviewForArtifactResultFailure), result
+        assert result.source_file_missing
+        assert str(resolve_path_safely(tmp_path / "a" / "missing.png")) in str(result.result_details)
 
     def test_a_request_naming_no_workflow_while_several_are_open_has_no_folder(
         self, engine: Engine, tmp_path: Path

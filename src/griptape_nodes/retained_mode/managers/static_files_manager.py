@@ -259,7 +259,7 @@ class StaticFilesManager(EngineScoped):
         return self._static_server_base_url
 
     async def _generate_preview_if_needed(
-        self, file_path: Path, source_macro_path: MacroPath | None = None
+        self, file_path: Path, workflow_id: str | None, source_macro_path: MacroPath | None = None
     ) -> PreviewResolution:
         """Generate preview for a file if needed.
 
@@ -268,6 +268,7 @@ class StaticFilesManager(EngineScoped):
 
         Args:
             file_path: Path to the original file
+            workflow_id: The workflow the macro form resolves against, or None
             source_macro_path: The original macro form of file_path, when known. Used
                 for the preview request so the generated metadata records the portable
                 macro template; without it the resolved absolute path is wrapped as a
@@ -303,7 +304,8 @@ class StaticFilesManager(EngineScoped):
                 # DEBUG on the inner request so the failure logs once, here, at the
                 # layer that knows it is falling back to the original file.
                 failure_log_level=logging.DEBUG,
-            )
+            ),
+            workflow_id=workflow_id,
         )
 
         if not isinstance(result, GetPreviewForArtifactResultSuccess) or not isinstance(result.paths_to_preview, str):
@@ -476,6 +478,7 @@ class StaticFilesManager(EngineScoped):
         file_path: Path,
         *,
         preview: bool,
+        workflow_id: str | None,
         metadata_only: bool = False,
         source_macro_path: MacroPath | None = None,
     ) -> PreviewResolution:
@@ -484,6 +487,7 @@ class StaticFilesManager(EngineScoped):
         Args:
             file_path: Path to the original file.
             preview: Whether to generate and serve a preview.
+            workflow_id: The workflow a preview's macro form resolves against, or None.
             metadata_only: When True, extract metadata without generating a preview. The
                 returned path is always the original file. Takes precedence over preview.
             source_macro_path: The original macro form of file_path, when the request
@@ -501,7 +505,9 @@ class StaticFilesManager(EngineScoped):
             logger.debug("Serving full image for %s", file_path)
             return PreviewResolution(path_to_serve=file_path)
         try:
-            resolution = await self._generate_preview_if_needed(file_path, source_macro_path=source_macro_path)
+            resolution = await self._generate_preview_if_needed(
+                file_path, workflow_id, source_macro_path=source_macro_path
+            )
         except Exception as e:
             logger.warning("Preview generation failed for %s, using original: %s", file_path, e)
             return PreviewResolution(path_to_serve=file_path, preview_failure_reason=str(e))
@@ -579,6 +585,7 @@ class StaticFilesManager(EngineScoped):
         resolution = await self._resolve_preview_path(
             file_path_for_driver,
             preview=request.preview,
+            workflow_id=workflow_id_of(workflow),
             metadata_only=request.metadata_only,
             source_macro_path=source_macro_path,
         )

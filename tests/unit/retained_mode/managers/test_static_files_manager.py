@@ -825,7 +825,7 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
         registry = mock_static_files_manager.engine.artifact_manager._registry
         registry.get_provider_classes_by_format.return_value = []
 
-        resolution = await mock_static_files_manager._generate_preview_if_needed(source_file)
+        resolution = await mock_static_files_manager._generate_preview_if_needed(source_file, None)
 
         assert resolution.path_to_serve == source_file
         assert resolution.preview_failure_reason is None

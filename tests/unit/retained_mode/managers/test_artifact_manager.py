@@ -42,6 +42,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
 )
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.utils import ffmpeg_cache
 
 if TYPE_CHECKING:
@@ -1751,10 +1752,12 @@ class TestGetPreviewForArtifact:
         generation_count = 0
         original_generate = artifact_manager.on_handle_generate_preview_from_defaults_request
 
-        async def counting_generate(request: GeneratePreviewFromDefaultsRequest) -> object:
+        async def counting_generate(
+            request: GeneratePreviewFromDefaultsRequest, workflow: WorkflowRuntime | None
+        ) -> object:
             nonlocal generation_count
             generation_count += 1
-            return await original_generate(request)
+            return await original_generate(request, workflow)
 
         artifact_manager.on_handle_generate_preview_from_defaults_request = counting_generate  # type: ignore[method-assign]
 
