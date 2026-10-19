@@ -346,7 +346,7 @@ class LibraryRegistrar(EngineScoped):
 
             # If we don't have LibraryInfo yet, load metadata to get the name
             if not lib_info or not lib_info.library_name:
-                metadata_result = self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
+                metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
                     LoadLibraryMetadataFromFileRequest(file_path=file_path)
                 )
 
@@ -485,10 +485,8 @@ class LibraryRegistrar(EngineScoped):
                 case LibraryLifecycleState.DISCOVERED:
                     # DISCOVERED → METADATA_LOADED
                     # All libraries (including sandbox) load metadata from JSON file
-                    metadata_result = (
-                        self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                        )
+                    metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                        LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                     )
 
                     if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
@@ -512,10 +510,8 @@ class LibraryRegistrar(EngineScoped):
                 case LibraryLifecycleState.METADATA_LOADED:
                     # METADATA_LOADED → EVALUATED
                     # Need to load schema to pass to evaluate request
-                    metadata_result = (
-                        self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                        )
+                    metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                        LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                     )
 
                     if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
@@ -568,10 +564,8 @@ class LibraryRegistrar(EngineScoped):
                     # before this library's nodes are imported in the LOADED phase. Venvs are completely
                     # isolated - dependency packages are not accessible to this library's pip install
                     # subprocess.
-                    dep_metadata_result = (
-                        self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                        )
+                    dep_metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                        LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                     )
                     if not isinstance(dep_metadata_result, LoadLibraryMetadataFromFileResultFailure):
                         dep_schema = dep_metadata_result.library_schema
@@ -743,10 +737,8 @@ class LibraryRegistrar(EngineScoped):
                     if not library_info.is_sandbox:
                         # REGULAR LIBRARIES: Standard registration from JSON file
                         # Load metadata and create library
-                        metadata_result = (
-                            self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                                LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                            )
+                        metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                         )
 
                         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
@@ -840,10 +832,8 @@ class LibraryRegistrar(EngineScoped):
                         # SANDBOX LIBRARIES: Full processing here (discovery + registration)
                         # Load metadata from JSON file (already generated in DISCOVERED → METADATA_LOADED)
                         sandbox_directory = Path(library_info.library_path).parent
-                        metadata_result = (
-                            self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-                                LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                            )
+                        metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
+                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
                         )
 
                         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):

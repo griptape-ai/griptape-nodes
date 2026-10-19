@@ -15,10 +15,17 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema
+from griptape_nodes.node_library.library_registry import (
+    LibraryMetadata,
+    LibrarySchema,
+    NodeDefinition,
+    NodeMetadata,
+)
 from griptape_nodes.retained_mode.events.library_events import (
     LoadMetadataForAllLibrariesRequest,
     LoadMetadataForAllLibrariesResultSuccess,
+    RegisterLibraryFromFileRequest,
+    RegisterLibraryFromFileResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.library import metadata_loading
 from griptape_nodes.retained_mode.managers.settings import (
@@ -37,7 +44,7 @@ LIBRARY_COUNT = 3
 LOOP_ANSWER_TIMEOUT_SECONDS = 2.0
 
 
-def _write_library(directory: Path, name: str) -> str:
+def _write_library(directory: Path, name: str, nodes: list[NodeDefinition] | None = None) -> str:
     schema = LibrarySchema(
         name=name,
         library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
@@ -49,7 +56,7 @@ def _write_library(directory: Path, name: str) -> str:
             tags=[],
         ),
         categories=[],
-        nodes=[],
+        nodes=nodes or [],
     )
     directory.mkdir(parents=True, exist_ok=True)
     manifest = directory / "griptape_nodes_library.json"
@@ -131,3 +138,29 @@ async def test_git_lookups_run_concurrently(engine: Engine, tmp_path: Path) -> N
         f"Library {i}" for i in range(LIBRARY_COUNT)
     ]
     assert met_per_lookup == [True] * LIBRARY_COUNT
+
+
+@pytest.mark.asyncio
+async def test_registering_a_library_runs_no_git(engine: Engine, tmp_path: Path) -> None:
+    """Registration reads a library's metadata several times, and git on each read made it slow."""
+    library_dir = tmp_path / "lib"
+    library_dir.mkdir()
+    (library_dir / "plain_node.py").write_text(
+        "from griptape_nodes.exe_types.node_types import DataNode\n\n\nclass PlainNode(DataNode):\n    pass\n"
+    )
+    node = NodeDefinition(
+        class_name="PlainNode",
+        file_path="plain_node.py",
+        metadata=NodeMetadata(category="test", description="A node", display_name="Plain Node"),
+    )
+    manifest = _write_library(library_dir, "Library Without Git", nodes=[node])
+
+    def no_git(_library_path: Path) -> tuple[str | None, str | None]:
+        msg = "registering a library must not look up its git details"
+        raise AssertionError(msg)
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(metadata_loading, "get_git_info", no_git)
+        result = await engine.ahandle_request(RegisterLibraryFromFileRequest(file_path=manifest))
+
+    assert isinstance(result, RegisterLibraryFromFileResultSuccess), result.result_details

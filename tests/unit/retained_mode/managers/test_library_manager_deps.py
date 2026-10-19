@@ -198,7 +198,7 @@ class TestLibraryDependencyResolution:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=_metadata_success(_make_schema_mock(None)),
             ),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP),
@@ -222,7 +222,7 @@ class TestLibraryDependencyResolution:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=_metadata_success(_make_schema_mock([])),
             ),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP),
@@ -259,9 +259,7 @@ class TestLibraryDependencyResolution:
         }
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP),
             patch.object(mgr.git_operations, "download_library_request") as mock_download,
             patch.object(mgr, "_library_file_path_to_info", existing_paths),
@@ -282,9 +280,7 @@ class TestLibraryDependencyResolution:
         schema = _make_schema_mock(["griptape-ai/nodes-dep@v1.0.0"])
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP),
             patch.object(
                 mgr.git_operations,
@@ -319,9 +315,7 @@ class TestLibraryDependencyResolution:
         schema = _make_schema_mock(["griptape-ai/nodes-bad@v1.0.0"])
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request") as mock_install,
             patch.object(
                 mgr.git_operations,
@@ -366,9 +360,7 @@ class TestLibraryDependencyResolution:
             return _INSTALL_STOP
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request", side_effect=mock_install),
             patch.object(mgr.git_operations, "download_library_request", side_effect=mock_download),
             patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
@@ -394,9 +386,7 @@ class TestLibraryDependencyResolution:
         config_mock.get_config_value.return_value = LibraryDependencyInstallBehavior.NEVER
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP),
             patch.object(mgr.git_operations, "download_library_request") as mock_download,
             patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
@@ -425,9 +415,7 @@ class TestLibraryDependencyResolution:
         config_mock.get_config_value.return_value = LibraryDependencyInstallBehavior.NEVER
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP),
             patch.object(mgr.git_operations, "download_library_request") as mock_download,
             patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
@@ -457,9 +445,7 @@ class TestLibraryDependencyResolution:
         schema = _make_schema_mock(["griptape-ai/nodes-optional@v1.0.0"], optional=True)
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(
                 mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP
             ) as mock_install,
@@ -491,9 +477,7 @@ class TestLibraryDependencyResolution:
         schema = _make_schema_mock(["griptape-ai/nodes-dep@v1.0.0"])
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request") as mock_install,
             patch.object(
                 mgr.git_operations,
@@ -539,9 +523,7 @@ class TestLibraryDependencyResolution:
         }
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP),
             patch.object(
                 mgr.git_operations,
@@ -586,9 +568,7 @@ class TestLibraryDependencyResolution:
         }
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP),
             patch.object(mgr.git_operations, "download_library_request") as mock_download,
             patch.object(mgr, "_library_file_path_to_info", existing_paths),
@@ -819,9 +799,7 @@ class TestAdvancedLibraryModuleLoads:
         advanced_instance = MagicMock()
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.environment, "add_library_paths_to_sys_path", new=AsyncMock()),
             patch.object(
                 mgr.module_loading, "load_advanced_library_module", return_value=advanced_instance
@@ -877,7 +855,7 @@ class TestLegacyWorkerModeIsInertOnFilePathRegistration:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=_metadata_success(self._worker_mode_schema()),
             ),
             patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
@@ -898,7 +876,7 @@ class TestLegacyWorkerModeIsInertOnFilePathRegistration:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=_metadata_success(self._worker_mode_schema()),
             ),
             patch.object(mgr, "_library_file_path_to_info", {}),
@@ -920,7 +898,7 @@ class TestLegacyWorkerModeIsInertOnFilePathRegistration:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=_metadata_success(self._worker_mode_schema()),
             ),
             patch.object(mgr, "_library_file_path_to_info", {}),
@@ -943,9 +921,7 @@ class TestLegacyWorkerModeIsInertOnFilePathRegistration:
         schema.metadata.declarations = []
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr, "_library_file_path_to_info", {}),
         ):
             result = await mgr.registration._establish_register_library_prerequisites(self._request())
@@ -970,9 +946,7 @@ class TestLegacyWorkerModeIsInertOnFilePathRegistration:
         schema.metadata.dependencies = MagicMock(pip_dependencies_exec=["torch"])
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr, "_library_file_path_to_info", {}),
         ):
             result = await mgr.registration._establish_register_library_prerequisites(self._request())
@@ -996,7 +970,7 @@ class TestLegacyWorkerModeIsInertOnFilePathRegistration:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=_metadata_success(self._worker_mode_schema()),
             ),
             patch.object(mgr, "_library_file_path_to_info", {}),
@@ -1030,9 +1004,7 @@ class TestLegacyWorkerModeIsInertOnFilePathRegistration:
         entries = [{"path": "/mock.json", "worker_mode_override": "WORKER"}]
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
             patch.object(
                 engine.config_manager,
@@ -1069,7 +1041,7 @@ class TestLegacyWorkerModeIsInertOnFilePathRegistration:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=_metadata_success(self._worker_mode_schema()),
             ),
             patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
@@ -1101,7 +1073,7 @@ class TestLegacyWorkerModeIsInertOnFilePathRegistration:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 side_effect=[_metadata_success(self._worker_mode_schema()), _METADATA_STOP],
             ),
             patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
@@ -1135,9 +1107,7 @@ class TestPipInstallFailureIsRecordedOnTheLibrary:
             result_details="No solution found when resolving dependencies: nonexistent-package"
         )
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=failure),
             patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
         ):
@@ -1168,9 +1138,7 @@ class TestPipInstallFailureIsRecordedOnTheLibrary:
         schema = _make_schema_mock([])
 
         with (
-            patch.object(
-                mgr.metadata_loading, "load_library_metadata_from_file_request", return_value=_metadata_success(schema)
-            ),
+            patch.object(mgr.metadata_loading, "read_library_metadata", return_value=_metadata_success(schema)),
             patch.object(mgr.dependencies, "install_library_dependencies_request", return_value=_INSTALL_STOP),
             patch.object(mgr, "_library_file_path_to_info", {"/mock.json": lib_info}),
         ):
@@ -1223,7 +1191,7 @@ class TestExecutionEnvironmentResolvesBothSets:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.dependencies, "_this_process_owns_the_edit_venv", return_value=False),
@@ -1251,7 +1219,7 @@ class TestExecutionEnvironmentResolvesBothSets:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 return_value=self._metadata_result(schema),
             ),
             patch.object(mgr.dependencies, "_this_process_owns_the_edit_venv", return_value=False),
@@ -1638,7 +1606,7 @@ class TestShadowedComponentsAreRecordedOnTheLibrary:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 self._metadata_until_the_install_is_done(lib_info),
             ),
             patch.object(
@@ -1669,7 +1637,7 @@ class TestShadowedComponentsAreRecordedOnTheLibrary:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 self._metadata_until_the_install_is_done(lib_info),
             ),
             patch.object(
@@ -1735,7 +1703,7 @@ class TestShadowedComponentsAreRecordedOnTheLibrary:
         with (
             patch.object(
                 mgr.metadata_loading,
-                "load_library_metadata_from_file_request",
+                "read_library_metadata",
                 self._metadata_until_the_install_is_done(lib_info),
             ),
             patch.object(

@@ -132,7 +132,7 @@ class LibraryManagedEnvironment(EngineScoped):
         if is_sandbox:
             library_name = SANDBOX_LIBRARY_NAME
         else:
-            metadata_result = self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
+            metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
                 LoadLibraryMetadataFromFileRequest(file_path=file_path_str)
             )
             if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):

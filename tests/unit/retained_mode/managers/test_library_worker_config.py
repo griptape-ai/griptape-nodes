@@ -749,7 +749,7 @@ class TestExpandTargetsWithLibraryDependencies:
             result.library_schema = schema
             return result
 
-        monkeypatch.setattr(manager.metadata_loading, "load_library_metadata_from_file_request", fake_load)
+        monkeypatch.setattr(manager.metadata_loading, "read_library_metadata", fake_load)
         return manager
 
     def test_declared_dependency_reaches_the_worker(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -851,7 +851,7 @@ class TestExecutionDependenciesOfDeclaredLibraries:
             result.library_schema = schema
             return result
 
-        monkeypatch.setattr(manager.metadata_loading, "load_library_metadata_from_file_request", fake_load)
+        monkeypatch.setattr(manager.metadata_loading, "read_library_metadata", fake_load)
         return manager
 
     def _collect(self, manager: LibraryManager, library_name: str) -> list[str]:

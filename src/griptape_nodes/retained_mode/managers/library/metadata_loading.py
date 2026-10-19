@@ -70,7 +70,7 @@ class LibraryMetadataLoading(EngineScoped):
         This method provides a lightweight way to get library schema information
         without the overhead of dynamically importing Python modules.
         """
-        result = self._read_library_metadata(request)
+        result = self.read_library_metadata(request)
         if isinstance(result, LoadLibraryMetadataFromFileResultSuccess):
             result.git_remote, result.git_ref = get_git_info(_library_dir(result))
         return result
@@ -161,13 +161,15 @@ class LibraryMetadataLoading(EngineScoped):
             result_details=details,
         )
 
-    def _read_library_metadata(  # noqa: PLR0911, C901
+    def read_library_metadata(  # noqa: PLR0911, C901
         self, request: LoadLibraryMetadataFromFileRequest
     ) -> LoadLibraryMetadataFromFileResultSuccess | LoadLibraryMetadataFromFileResultFailure:
         """Validate a library JSON file into metadata, leaving the git details unset.
 
-        The git lookup is left to the caller because it spawns several git subprocesses,
-        which the async handler has to keep off the event loop.
+        Use this inside the engine, which only needs the schema. The request handlers add the git
+        details for the editor, and those cost several git subprocesses per library: a library
+        load reads its metadata several times, so looking them up on each read made git the bulk
+        of every library load.
         """
         file_path = request.file_path
 
@@ -322,7 +324,7 @@ class LibraryMetadataLoading(EngineScoped):
         up, and git subprocesses are slow to spawn on Windows. Run on the loop, every library's
         lookups stall engine initialization for the length of the whole poll.
         """
-        result = self._read_library_metadata(request)
+        result = self.read_library_metadata(request)
         if isinstance(result, LoadLibraryMetadataFromFileResultSuccess):
             result.git_remote, result.git_ref = await asyncio.to_thread(get_git_info, _library_dir(result))
         return result
