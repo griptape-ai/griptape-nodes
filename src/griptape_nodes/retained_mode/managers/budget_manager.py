@@ -440,7 +440,7 @@ def _token_problem(request: ReportUsageRequest) -> str | None:
 
 
 def _usage_body(request: ReportUsageRequest) -> dict[str, int | None]:
-    """The `usage` field: the counts as the provider reported them, cache keys only when given."""
+    """The `usage` field: the counts as the caller gave them, cache keys only when given."""
     usage: dict[str, int | None] = {
         "input_tokens": request.input_tokens,
         "output_tokens": request.output_tokens,

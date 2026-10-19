@@ -173,8 +173,10 @@ class ReportUsageRequest(RequestPayload):
     Args:
         declared_cost_micro_usd: What the call cost, in millionths of a US dollar, for a caller
             that knows its cost and has no token counts
-        input_tokens: The provider's total prompt token count, cached tokens included, passed
-            through as the provider reported it
+        input_tokens: The total prompt token count, cached tokens included. OpenAI's
+            `prompt_tokens` is this total already; Anthropic and Bedrock report the cached
+            share separately, so add it in. pydantic-ai's `RunUsage.input_tokens` is the total
+            for every provider
         output_tokens: The provider's output token count
         cache_read_tokens: The cached share of `input_tokens`, when the provider reports one
         cache_write_tokens: Tokens written to the provider's cache, when it reports them

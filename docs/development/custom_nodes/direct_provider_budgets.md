@@ -53,10 +53,26 @@ await GriptapeNodes.ahandle_request(
 )
 ```
 
-- Pass the counts exactly as the provider reports them. `input_tokens` is the provider's total, cached tokens included. `cache_read_tokens` is the cached share of it, and `cache_write_tokens` the tokens written to the cache. Leave either out when the provider doesn't report it.
+- `input_tokens` is the **total** prompt token count, cached tokens included. `cache_read_tokens` is the cached share of it, and `cache_write_tokens` the tokens written to the cache. Leave either out when the provider doesn't report it. Providers report the total differently:
+
+    | Provider           | `input_tokens`                                                             | `cache_read_tokens`                   | `cache_write_tokens`                       |
+    | ------------------ | -------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------ |
+    | OpenAI             | `prompt_tokens`                                                            | `prompt_tokens_details.cached_tokens` | `prompt_tokens_details.cache_write_tokens` |
+    | Anthropic          | `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens` | `cache_read_input_tokens`             | `cache_creation_input_tokens`              |
+    | Bedrock (Converse) | `inputTokens` + `cacheReadInputTokens` + `cacheWriteInputTokens`           | `cacheReadInputTokens`                | `cacheWriteInputTokens`                    |
+
+    Anthropic and Bedrock leave the cached tokens out of their input count, so passing their input count alone reports too little, and a report whose cache counts exceed it isn't sent.
+
+- If your node runs its model through pydantic-ai, pass its `RunUsage` counts straight across: `RunUsage.input_tokens` is already the total for every provider.
+
 - `model` is required with token counts, because Griptape Cloud prices by model. Send the same provider name for the model as in the check.
+
 - Token counts are priced as chat completions. For a chat call, leave `activity_type` out or set it to `chat_completion`. For any other kind of call, send `declared_cost_micro_usd` instead.
+
 - If your node knows its cost but has no token counts, send `declared_cost_micro_usd` (in millionths of a US dollar) instead. Send one or the other, never both.
+
 - The report is sent in the background and returns at once. It is retried briefly, then dropped with a line in the engine log.
+
 - **Never fail a node over its report.** Ignore the result. A report that can't be sent, such as one missing its model, comes back as a failure with the reason; the node carries on.
+
 - Pass the `correlation_id` from the check's success so Cloud can pair the check with the report.
