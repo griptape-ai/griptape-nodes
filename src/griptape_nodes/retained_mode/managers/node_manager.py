@@ -373,7 +373,7 @@ class NodeManager(EngineScoped):
         node = self.get_node_in(workflow, old_name)
         # Get all connections for this node and update them.
         flow_name = workflow.nodes.parent_flow_name(old_name)
-        flow = self.engine.flow_manager.get_flow_by_name(flow_name)
+        flow = self.engine.flow_manager.get_flow_in(workflow, flow_name)
         connections = workflow.flows.connections
         # Get all incoming and outgoing connections and update them.
         if old_name in connections.incoming_index:
@@ -688,7 +688,7 @@ class NodeManager(EngineScoped):
         if parent_flow is None:
             flow_mgr = self.engine.flow_manager
             try:
-                parent_flow = flow_mgr.get_flow_by_name(parent_flow_name)
+                parent_flow = flow_mgr.get_flow_in(workflow, parent_flow_name)
             except KeyError as err:
                 details = f"Attempted to create Node of type '{request.node_type}'. Failed when attempting to find the parent Flow. Error: {err}"
                 return CreateNodeResultFailure(result_details=details)
@@ -818,7 +818,7 @@ class NodeManager(EngineScoped):
         # End node can inherit the same group as its Start node.
         if request.parent_group_name:
             try:
-                # get_node_by_name raises ValueError for a missing node, not KeyError — unlike
+                # get_node_in raises ValueError for a missing node, not KeyError — unlike
                 # workflow.objects.name_to_objects[...], which the _get_node_group helpers call directly.
                 parent_group = self.get_node_in(workflow, request.parent_group_name)
             except ValueError:
@@ -898,7 +898,8 @@ class NodeManager(EngineScoped):
                         },
                         override_parent_flow_name=parent_flow_name,
                         parent_group_name=paired_parent_group_name,
-                    )
+                    ),
+                    workflow_id=workflow.workflow_id,
                 )
                 if not isinstance(end_loop, CreateNodeResultSuccess):
                     msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired class '{end_class_name}' failed to get created. The corresponding node will have to be created by hand and attached manually."
@@ -911,7 +912,8 @@ class NodeManager(EngineScoped):
                             source_parameter_name="loop",
                             target_node_name=end_loop.node_name,
                             target_parameter_name="from_start",
-                        )
+                        ),
+                        workflow_id=workflow.workflow_id,
                     )
                     end_node = self.get_node_in(workflow, end_loop.node_name)
                     if not isinstance(end_node, BaseIterativeEndNode):
@@ -984,7 +986,7 @@ class NodeManager(EngineScoped):
                 return AddNodesToNodeGroupResultFailure(result_details=details)
         else:
             try:
-                self.engine.flow_manager.get_flow_by_name(flow_name)
+                self.engine.flow_manager.get_flow_in(workflow, flow_name)
             except KeyError as err:
                 details = (
                     f"Attempted to add node to NodeGroup. Failed when attempting to find the parent Flow. Error: {err}"
@@ -1088,7 +1090,7 @@ class NodeManager(EngineScoped):
                 return RemoveNodeFromNodeGroupResultFailure(result_details=details)
         else:
             try:
-                self.engine.flow_manager.get_flow_by_name(flow_name)
+                self.engine.flow_manager.get_flow_in(workflow, flow_name)
             except KeyError as err:
                 details = f"Attempted to remove nodes from NodeGroup. Failed when attempting to find the parent Flow. Error: {err}"
                 return RemoveNodeFromNodeGroupResultFailure(result_details=details)
@@ -1217,7 +1219,9 @@ class NodeManager(EngineScoped):
 
         entangled_node_name = self._find_entangled_live_node(workflow, node)
         if entangled_node_name is not None:
-            result = await self.engine.ahandle_request(CancelFlowRequest(flow_name=parent_flow_name))
+            result = await self.engine.ahandle_request(
+                CancelFlowRequest(flow_name=parent_flow_name), workflow_id=workflow.workflow_id
+            )
             if result.failed():
                 details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
                 return _FlowCancelOutcome(failure=DeleteNodeResultFailure(result_details=details))
@@ -1365,7 +1369,7 @@ class NodeManager(EngineScoped):
         with NodeContext(workflow.context, node):
             parent_flow_name = workflow.nodes.name_to_parent_flow_name[node_name]
             try:
-                parent_flow = self.engine.flow_manager.get_flow_by_name(parent_flow_name)
+                parent_flow = self.engine.flow_manager.get_flow_in(workflow, parent_flow_name)
             except KeyError as err:
                 details = f"Attempted to delete a Node '{node_name}'. Error: {err}"
                 return DeleteNodeResultFailure(result_details=details)
@@ -1392,7 +1396,9 @@ class NodeManager(EngineScoped):
                 any_connections_remain = False
 
                 list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
-                list_connections_result = self.engine.handle_request(request=list_node_connections_request)
+                list_connections_result = self.engine.handle_request(
+                    request=list_node_connections_request, workflow_id=workflow.workflow_id
+                )
                 if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
                     details = f"Attempted to delete a Node '{node_name}'. Failed because it could not gather Connections to the Node."
                     return DeleteNodeResultFailure(result_details=details)
@@ -1407,7 +1413,7 @@ class NodeManager(EngineScoped):
                         target_node_name=node_name,
                         target_parameter_name=connection.target_parameter_name,
                     )
-                    delete_result = self.engine.handle_request(delete_request)
+                    delete_result = self.engine.handle_request(delete_request, workflow_id=workflow.workflow_id)
                     if isinstance(delete_result, ResultPayloadFailure):
                         details = (
                             f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
@@ -1425,7 +1431,7 @@ class NodeManager(EngineScoped):
                         target_node_name=connection.target_node_name,
                         target_parameter_name=connection.target_parameter_name,
                     )
-                    delete_result = self.engine.handle_request(delete_request)
+                    delete_result = self.engine.handle_request(delete_request, workflow_id=workflow.workflow_id)
                     if isinstance(delete_result, ResultPayloadFailure):
                         details = (
                             f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
@@ -1507,13 +1513,13 @@ class NodeManager(EngineScoped):
             source_flow_name = workflow.nodes.name_to_parent_flow_name[node_name]
 
         try:
-            source_flow = self.engine.flow_manager.get_flow_by_name(source_flow_name)
+            source_flow = self.engine.flow_manager.get_flow_in(workflow, source_flow_name)
         except KeyError:
             details = f"Attempted to move Node '{node_name}' from Flow '{source_flow_name}'. Failed because source flow was not found."
             return MoveNodeToNewFlowResultFailure(result_details=details)
 
         try:
-            target_flow = self.engine.flow_manager.get_flow_by_name(request.target_flow_name)
+            target_flow = self.engine.flow_manager.get_flow_in(workflow, request.target_flow_name)
         except KeyError:
             details = f"Attempted to move Node '{node_name}' to Flow '{request.target_flow_name}'. Failed because target flow was not found."
             return MoveNodeToNewFlowResultFailure(result_details=details)
@@ -1691,7 +1697,7 @@ class NodeManager(EngineScoped):
 
         parent_flow_name = workflow.nodes.name_to_parent_flow_name[node_name]
         try:
-            self.engine.flow_manager.get_flow_by_name(parent_flow_name)
+            self.engine.flow_manager.get_flow_in(workflow, parent_flow_name)
         except KeyError as err:
             details = f"Attempted to list Connections for a Node '{node_name}'. Error: {err}"
 
@@ -1770,7 +1776,7 @@ class NodeManager(EngineScoped):
 
         parent_flow_name = workflow.nodes.name_to_parent_flow_name[node_name]
         try:
-            self.engine.flow_manager.get_flow_by_name(parent_flow_name)
+            self.engine.flow_manager.get_flow_in(workflow, parent_flow_name)
         except KeyError as err:
             details = (
                 f"Attempted to get connections for parameter '{parameter_name}' on node '{node_name}'. Error: {err}"
@@ -2139,7 +2145,9 @@ class NodeManager(EngineScoped):
         # If it's a ParameterGroup, we need to remove all the Parameters inside it.
         if isinstance(element, ParameterGroup):
             for child in element.find_elements_by_type(Parameter):
-                self.engine.handle_request(RemoveParameterFromNodeRequest(child.name, node_name))
+                self.engine.handle_request(
+                    RemoveParameterFromNodeRequest(child.name, node_name), workflow_id=workflow.workflow_id
+                )
             node.remove_node_element(element)
 
             return RemoveParameterFromNodeResultSuccess(
@@ -2164,7 +2172,9 @@ class NodeManager(EngineScoped):
         # Get all the connections to/from this Parameter.
         if isinstance(element, Parameter):
             list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
-            list_connections_result = self.engine.handle_request(request=list_node_connections_request)
+            list_connections_result = self.engine.handle_request(
+                request=list_node_connections_request, workflow_id=workflow.workflow_id
+            )
             if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
                 details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to get a list of Connections for the Parameter's Node."
 
@@ -2182,7 +2192,7 @@ class NodeManager(EngineScoped):
                         target_node_name=node_name,
                         target_parameter_name=incoming_connection.target_parameter_name,
                     )
-                    delete_result = self.engine.handle_request(delete_request)
+                    delete_result = self.engine.handle_request(delete_request, workflow_id=workflow.workflow_id)
                     if isinstance(delete_result, DeleteConnectionResultFailure):
                         details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to delete a Connection for that Parameter."
 
@@ -2197,7 +2207,7 @@ class NodeManager(EngineScoped):
                         target_node_name=outgoing_connection.target_node_name,
                         target_parameter_name=outgoing_connection.target_parameter_name,
                     )
-                    delete_result = self.engine.handle_request(delete_request)
+                    delete_result = self.engine.handle_request(delete_request, workflow_id=workflow.workflow_id)
                     if isinstance(delete_result, DeleteConnectionResultFailure):
                         details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to delete a Connection for that Parameter."
 
@@ -2847,7 +2857,8 @@ class NodeManager(EngineScoped):
                             data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
                             incoming_connection_source_node_name=node.name,
                             incoming_connection_source_parameter_name=parameter.name,
-                        )
+                        ),
+                        workflow_id=workflow.workflow_id,
                     )
 
         # Propagate side-effect output changes to downstream nodes.
@@ -2880,7 +2891,8 @@ class NodeManager(EngineScoped):
                             data_type=output_param.output_type,
                             incoming_connection_source_node_name=node.name,
                             incoming_connection_source_parameter_name=output_param.name,
-                        )
+                        ),
+                        workflow_id=workflow.workflow_id,
                     )
 
         # Cool.
@@ -4501,7 +4513,7 @@ class NodeManager(EngineScoped):
     ) -> ResultPayload:
         # Issue the creation command first.
         create_node_request = request.serialized_node_commands.create_node_command
-        create_node_result = self.engine.handle_request(create_node_request)
+        create_node_result = self.engine.handle_request(create_node_request, workflow_id=workflow.workflow_id)
         if not isinstance(create_node_result, CreateNodeResultSuccess):
             req_node_name = create_node_request.node_name
             details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to create node '{req_node_name}'."
@@ -4530,7 +4542,7 @@ class NodeManager(EngineScoped):
                     ),
                 ):
                     element_command.node_name = node_name
-                element_result = self.engine.handle_request(element_command)
+                element_result = self.engine.handle_request(element_command, workflow_id=workflow.workflow_id)
                 if element_result.failed():
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
                     self._cleanup_node_on_failed_deserialization(node_name)
@@ -4642,7 +4654,7 @@ class NodeManager(EngineScoped):
         for node_name in all_selected_for_connections:
             try:
                 flow_name = workflow.nodes.parent_flow_name(node_name)
-                self.engine.flow_manager.get_flow_by_name(flow_name)
+                self.engine.flow_manager.get_flow_in(workflow, flow_name)
             except Exception:
                 details = f"Attempted to serialize a selection of Nodes. Failed to get the flow of node {node_name}. Cannot serialize connections for this node."
                 logger.warning(details)
@@ -4793,7 +4805,9 @@ class NodeManager(EngineScoped):
                     if parameter_command.unique_value_uuid in copied_values:
                         # Decoding builds a fresh object each time, so repeated pastes share nothing.
                         param_request.value = decode_value(copied_values[parameter_command.unique_value_uuid])
-                        set_parameter_result = self.engine.handle_request(parameter_command.set_parameter_value_command)
+                        set_parameter_result = self.engine.handle_request(
+                            parameter_command.set_parameter_value_command, workflow_id=workflow.workflow_id
+                        )
                         if not set_parameter_result.succeeded():
                             details = f"Failed to set parameter value for {param_request.parameter_name} on node {param_request.node_name}"
                             logger.warning(details)
@@ -4806,7 +4820,7 @@ class NodeManager(EngineScoped):
                         )
                 lock_command = commands.set_lock_commands_per_node[node_command.node_uuid]
                 if lock_command is not None:
-                    lock_node_result = self.engine.handle_request(lock_command)
+                    lock_node_result = self.engine.handle_request(lock_command, workflow_id=workflow.workflow_id)
                     if not lock_node_result.succeeded():
                         details = f"Failed to lock node {lock_command.node_name}"
                         logger.warning(details)
@@ -4819,7 +4833,7 @@ class NodeManager(EngineScoped):
                 target_node_name=node_uuid_to_name[connection_command.target_node_uuid],
                 target_parameter_name=connection_command.target_parameter_name,
             )
-            result = self.engine.handle_request(connection_request)
+            result = self.engine.handle_request(connection_request, workflow_id=workflow.workflow_id)
             if result.failed():
                 details = f"Failed to create a connection between {connection_request.source_node_name} and {connection_request.target_node_name}"
                 logger.warning(details)
@@ -5315,7 +5329,7 @@ class NodeManager(EngineScoped):
 
         # Get all connections for this node
         flow_name = workflow.nodes.parent_flow_name(node_name)
-        self.engine.flow_manager.get_flow_by_name(flow_name)
+        self.engine.flow_manager.get_flow_in(workflow, flow_name)
         connections = workflow.flows.connections
 
         # Update connections that reference this parameter

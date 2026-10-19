@@ -905,7 +905,7 @@ class TestWorkflowManager:
                 creation_date=datetime.now(UTC),
             )
 
-            async def fake_ahandle_request(req: object) -> object:
+            async def fake_ahandle_request(req: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
                 from griptape_nodes.retained_mode.events.flow_events import (
                     GetTopLevelFlowRequest,
                     SerializeFlowToCommandsRequest,
@@ -1038,7 +1038,7 @@ class TestWorkflowManager:
                 creation_date=datetime.now(UTC),
             )
 
-            async def fake_ahandle_request(req: object) -> object:
+            async def fake_ahandle_request(req: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
                 from griptape_nodes.retained_mode.events.flow_events import (
                     GetTopLevelFlowRequest,
                     SerializeFlowToCommandsRequest,
@@ -1149,7 +1149,7 @@ class TestWorkflowManager:
         mock_source.metadata.name = scenario.source_display_name
         captured: dict[str, object] = {}
 
-        async def fake_ahandle_request(req: object) -> object:
+        async def fake_ahandle_request(req: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             if isinstance(req, SaveWorkflowRequest):
                 captured["save_file_name"] = req.file_name
                 captured["save_display_name"] = req.display_name
@@ -1383,7 +1383,7 @@ class TestWorkflowManager:
 
         workflow_manager = engine.workflow_manager
 
-        async def fake_ahandle_request(req: object) -> object:
+        async def fake_ahandle_request(req: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             msg = f"Save/delete must not run when display_name is used with non-OVERRIDE; got {type(req).__name__}"
             raise AssertionError(msg)
 
@@ -1418,7 +1418,7 @@ class TestWorkflowManager:
 
         workflow_manager = engine.workflow_manager
 
-        async def fake_ahandle_request(req: object) -> object:
+        async def fake_ahandle_request(req: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             msg = f"Save/delete must not run when OVERRIDE has no display_name; got {type(req).__name__}"
             raise AssertionError(msg)
 
@@ -1483,7 +1483,7 @@ class TestWorkflowManager:
         workflow_manager = engine.workflow_manager
         captured: dict[str, object] = {}
 
-        async def fake_ahandle_request(req: object) -> object:
+        async def fake_ahandle_request(req: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             if isinstance(req, SaveWorkflowRequest):
                 captured["save_display_name"] = req.display_name
                 return SaveWorkflowResultSuccess(
@@ -1534,7 +1534,7 @@ class TestWorkflowManager:
         mock_source.file_path = "old.py"
         mock_source.metadata.name = "Old Display"
 
-        async def fake_ahandle_request(req: object) -> object:
+        async def fake_ahandle_request(req: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             if isinstance(req, SaveWorkflowRequest):
                 return SaveWorkflowResultSuccess(
                     file_path="/workspace/new.py",
@@ -3236,7 +3236,7 @@ class TestLibraryResolutionOnLoad:
 
         dispatched: list[RegisterLibraryFromFileRequest] = []
 
-        async def fake_ahandle_request(request: object) -> object:
+        async def fake_ahandle_request(request: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             dispatched.append(request)  # type: ignore[arg-type]
             return RegisterLibraryFromFileResultSuccess(
                 library_name=request.library_name,  # type: ignore[attr-defined]
@@ -3304,7 +3304,7 @@ class TestLibraryResolutionOnLoad:
 
         dispatched: list[RegisterLibraryFromFileRequest] = []
 
-        async def fake_ahandle_request(request: object) -> object:
+        async def fake_ahandle_request(request: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             dispatched.append(request)  # type: ignore[arg-type]
             library_name = request.library_name  # type: ignore[attr-defined]
             if library_name == "Present Library":
@@ -3334,7 +3334,7 @@ class TestLibraryResolutionOnLoad:
 
         dispatched: list[RegisterLibraryFromFileRequest] = []
 
-        async def fake_ahandle_request(request: object) -> object:
+        async def fake_ahandle_request(request: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             dispatched.append(request)  # type: ignore[arg-type]
             return RegisterLibraryFromFileResultFailure(result_details="not found")
 
@@ -3549,7 +3549,7 @@ class TestRunWorkflowWithCurrentStateRequest:
         )
 
         # Getting past the guard is the behaviour under test; what the run then does is mocked away.
-        run_workflow.assert_called_once_with(relative_file_path=self._WORKFLOW_FILE)
+        run_workflow.assert_called_once_with(relative_file_path=self._WORKFLOW_FILE, workflow=engine.current_workflow)
 
 
 class TestWorkflowsLoadingGate:
@@ -5030,7 +5030,7 @@ class TestSaveWorkflowDisplayNameFallback:
         )
         captured: dict[str, str | None] = {}
 
-        async def fake_ahandle_request(req: object) -> object:
+        async def fake_ahandle_request(req: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             if isinstance(req, GetTopLevelFlowRequest):
                 return GetTopLevelFlowResultSuccess(flow_name="ControlFlow_1", result_details="ok")
             if isinstance(req, SerializeFlowToCommandsRequest):
@@ -5644,7 +5644,7 @@ class TestSaveWorkflowOverwriteProtection:
             node_types_used=set(),
         )
 
-        async def fake_ahandle_request(req: object) -> object:
+        async def fake_ahandle_request(req: object, *, workflow_id: str | None = None) -> object:  # noqa: ARG001
             if isinstance(req, GetTopLevelFlowRequest):
                 return GetTopLevelFlowResultSuccess(flow_name="ControlFlow_1", result_details="ok")
             if isinstance(req, SerializeFlowToCommandsRequest):
@@ -6102,4 +6102,13 @@ class TestNodeLibraryDelegates:
             "griptape_nodes.retained_mode.managers.workflow_manager.extract_workflow_shape", return_value={"x": 1}
         ) as extract_mock:
             assert workflow_manager.extract_workflow_shape("wf", flow_name="f") == {"x": 1}
-        extract_mock.assert_called_once_with(engine.flow_manager, "wf", "f")
+        extract_mock.assert_called_once_with(engine.flow_manager, engine.current_workflow, "wf", "f")
+
+    def test_extract_workflow_shape_reads_the_workflow_it_is_given(self, engine: Engine) -> None:
+        workflow_manager = engine.workflow_manager
+        given_workflow = MagicMock()
+        with patch(
+            "griptape_nodes.retained_mode.managers.workflow_manager.extract_workflow_shape", return_value={"x": 1}
+        ) as extract_mock:
+            assert workflow_manager.extract_workflow_shape("wf", workflow=given_workflow) == {"x": 1}
+        extract_mock.assert_called_once_with(engine.flow_manager, given_workflow, "wf", None)

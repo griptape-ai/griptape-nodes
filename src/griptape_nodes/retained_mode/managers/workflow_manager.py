@@ -104,6 +104,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
     from griptape_nodes.retained_mode.managers.workflow.running import WorkflowExecutionResult
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 T = TypeVar("T")
@@ -818,9 +819,17 @@ class WorkflowManager(EngineScoped):
         """Kept for node libraries that call it. See `WorkflowRunner.run_workflow`."""
         return await self.runner.run_workflow(relative_file_path)
 
-    def extract_workflow_shape(self, workflow_name: str, flow_name: str | None = None) -> dict[str, Any]:
-        """Extracts the input and output shape for a workflow. See `shape.extract_workflow_shape`."""
-        return extract_workflow_shape(self.engine.flow_manager, workflow_name, flow_name)
+    def extract_workflow_shape(
+        self, workflow_name: str, flow_name: str | None = None, workflow: WorkflowRuntime | None = None
+    ) -> dict[str, Any]:
+        """Extracts the input and output shape for a workflow. See `shape.extract_workflow_shape`.
+
+        Engine code passes the `workflow` that holds the flow. Node libraries call this without
+        one, and get the workflow bound to the call.
+        """
+        if workflow is None:
+            workflow = self.engine.current_workflow
+        return extract_workflow_shape(self.engine.flow_manager, workflow, workflow_name, flow_name)
 
     def _walk_object_tree(
         self, obj: Any, process_class_fn: Callable[[type, Any], None], visited: set[int] | None = None

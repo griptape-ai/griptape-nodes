@@ -614,7 +614,7 @@ class TestDeserializeNodeFromCommandsRetargetsElementCommands:
             result_details=MagicMock(),
         )
 
-        def fake_handle_request(req: object) -> ResultPayload:
+        def fake_handle_request(req: object, *, workflow_id: str | None = None) -> ResultPayload:  # noqa: ARG001
             success = MagicMock()
             success.failed.return_value = False
             return create_result if req is request.serialized_node_commands.create_node_command else success

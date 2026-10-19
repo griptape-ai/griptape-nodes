@@ -133,7 +133,17 @@ class WorkflowRunner(EngineScoped):
         super().__init__(engine)
         event_manager.register_request_handlers(self)
 
-    async def run_workflow(self, relative_file_path: str) -> WorkflowExecutionResult:
+    async def run_workflow(
+        self, relative_file_path: str, workflow: WorkflowRuntime | None = None
+    ) -> WorkflowExecutionResult:
+        """Run a workflow file into `workflow`.
+
+        Callers that already hold the workflow pass it. Node libraries reach this through
+        `WorkflowManager.run_workflow` without one, and get the workflow bound to the call.
+        """
+        if workflow is None:
+            workflow = self.engine.current_workflow
+
         # Resolve path using utility function
         workspace_path = self.engine.config_manager.workspace_path
         complete_file_path = resolve_workspace_path(Path(relative_file_path), workspace_path)
@@ -141,7 +151,10 @@ class WorkflowRunner(EngineScoped):
         # referenced subflow imported from inside exec() -- see LoadProblemFrame.
         with LoadProblemFrame() as frame:
             return await self._run_workflow_in_frame(
-                relative_file_path=relative_file_path, complete_file_path=complete_file_path, frame=frame
+                relative_file_path=relative_file_path,
+                complete_file_path=complete_file_path,
+                frame=frame,
+                workflow=workflow,
             )
 
     @handles(RunWorkflowFromScratchRequest)
@@ -166,7 +179,7 @@ class WorkflowRunner(EngineScoped):
                 return RunWorkflowFromScratchResultFailure(result_details=details)
 
             # Run the file, goddamn it
-            execution_result = await self.run_workflow(relative_file_path=relative_file_path)
+            execution_result = await self.run_workflow(relative_file_path=relative_file_path, workflow=workflow)
             if execution_result.execution_successful:
                 return RunWorkflowFromScratchResultSuccess(
                     status=execution_result.status,
@@ -198,7 +211,7 @@ class WorkflowRunner(EngineScoped):
         if not await anyio.Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             return RunWorkflowWithCurrentStateResultFailure(result_details=details)
-        execution_result = await self.run_workflow(relative_file_path=relative_file_path)
+        execution_result = await self.run_workflow(relative_file_path=relative_file_path, workflow=workflow)
 
         if execution_result.execution_successful:
             return RunWorkflowWithCurrentStateResultSuccess(
@@ -255,7 +268,7 @@ class WorkflowRunner(EngineScoped):
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
             self.engine.context_manager.push_workflow_into(workflow, request.workflow_name)
             # run file
-            execution_result = await self.run_workflow(relative_file_path=relative_file_path)
+            execution_result = await self.run_workflow(relative_file_path=relative_file_path, workflow=workflow)
 
             if not execution_result.execution_successful:
                 result_messages = []
@@ -396,44 +409,30 @@ class WorkflowRunner(EngineScoped):
             result_details=ResultDetails(message=f"Run command: {run_command}", level=logging.DEBUG),
         )
 
-    async def _ensure_workflow_context_established(self) -> None:
+    def _ensure_workflow_context_established(self, workflow: WorkflowRuntime) -> None:
         """Ensure there's a current workflow and flow context after workflow execution."""
-        context_manager = self.engine.context_manager
-
         # First check: Do we have a current workflow? If not, that's a critical failure.
-        if not context_manager.has_current_workflow():
+        if not workflow.context.has_current_workflow():
             error_message = "Workflow execution completed but no current workflow is established in context"
             raise RuntimeError(error_message)
 
         # Second check: Do we have a current flow? If not, try to establish one.
-        if not context_manager.has_current_flow():
-            # Use the proper request to get the top-level flow
-            from griptape_nodes.retained_mode.events.flow_events import (
-                GetTopLevelFlowRequest,
-                GetTopLevelFlowResultSuccess,
-            )
-
-            top_level_flow_request = GetTopLevelFlowRequest()
-            top_level_flow_result = await self.engine.ahandle_request(top_level_flow_request)
-
-            if (
-                isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess)
-                and top_level_flow_result.flow_name is not None
-            ):
-                # Push the flow to the context stack permanently using FlowManager
-                flow_manager = self.engine.flow_manager
-                flow_obj = flow_manager.get_flow_by_name(top_level_flow_result.flow_name)
-                context_manager.push_flow(flow_obj)
-                details = f"Workflow execution completed. Set '{top_level_flow_result.flow_name}' as current context."
+        if not workflow.context.has_current_flow():
+            top_level_flow_name = workflow.flows.top_level_flow_name()
+            if top_level_flow_name is not None:
+                # Push the flow to the context stack permanently
+                flow_obj = self.engine.flow_manager.get_flow_in(workflow, top_level_flow_name)
+                workflow.context.push_flow(flow_obj)
+                details = f"Workflow execution completed. Set '{top_level_flow_name}' as current context."
                 logger.debug(details)
 
             # If we still don't have a flow, that's a critical error
-            if not context_manager.has_current_flow():
+            if not workflow.context.has_current_flow():
                 error_message = "Workflow execution completed but no current flow context could be established"
                 raise RuntimeError(error_message)
 
     async def _run_workflow_in_frame(
-        self, *, relative_file_path: str, complete_file_path: Path, frame: LoadProblemFrame
+        self, *, relative_file_path: str, complete_file_path: Path, frame: LoadProblemFrame, workflow: WorkflowRuntime
     ) -> WorkflowExecutionResult:
         """Read, resolve libraries for, and exec one workflow file, recording problems in `frame`."""
         try:
@@ -476,7 +475,7 @@ class WorkflowRunner(EngineScoped):
                 # After workflow execution, ensure there's always a current context by pushing
                 # the top-level flow if the context is empty. This fixes regressions where
                 # with Workflow Schema version 0.6.0+ workflows expect context to be established.
-                await self._ensure_workflow_context_established()
+                self._ensure_workflow_context_established(workflow)
 
         except Exception as e:
             return WorkflowExecutionResult(

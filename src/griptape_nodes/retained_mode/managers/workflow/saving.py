@@ -320,14 +320,17 @@ class WorkflowSaver(EngineScoped):
         )
 
         # Serialize current flow and get shape
-        top_level_flow_result = await self.engine.ahandle_request(GetTopLevelFlowRequest())
+        top_level_flow_result = await self.engine.ahandle_request(
+            GetTopLevelFlowRequest(), workflow_id=workflow.workflow_id
+        )
         if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
             details = f"Attempted to save workflow '{relative_file_path}'. Failed when requesting top level flow."
             return SaveWorkflowResultFailure(result_details=details)
         top_level_flow_name = top_level_flow_result.flow_name
 
         serialized_flow_result = await self.engine.ahandle_request(
-            SerializeFlowToCommandsRequest(flow_name=top_level_flow_name, include_create_flow_command=True)
+            SerializeFlowToCommandsRequest(flow_name=top_level_flow_name, include_create_flow_command=True),
+            workflow_id=workflow.workflow_id,
         )
         if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
             details = f"Attempted to save workflow '{relative_file_path}'. Failed when serializing flow."
@@ -336,7 +339,9 @@ class WorkflowSaver(EngineScoped):
 
         # Extract workflow shape if available; ignore failures
         try:
-            workflow_shape_dict = self.engine.workflow_manager.extract_workflow_shape(workflow_name=registry_key)
+            workflow_shape_dict = self.engine.workflow_manager.extract_workflow_shape(
+                workflow_name=registry_key, workflow=workflow
+            )
             workflow_shape = WorkflowShape(
                 inputs=workflow_shape_dict[WorkflowShapeType.INPUT],
                 outputs=workflow_shape_dict[WorkflowShapeType.OUTPUT],
@@ -542,9 +547,10 @@ class WorkflowSaver(EngineScoped):
             workflow_shape=request.workflow_shape,
         )
 
-    # Acts on the workflow through the nested SerializeFlowToCommandsRequest, which inherits it.
-    @handles(SaveSubflowToWorkflowRequest, scope=RequestScope.WORKFLOW)
-    async def on_save_subflow_to_workflow(self, request: SaveSubflowToWorkflowRequest) -> ResultPayload:
+    @handles(SaveSubflowToWorkflowRequest)
+    async def on_save_subflow_to_workflow(
+        self, request: SaveSubflowToWorkflowRequest, workflow: WorkflowRuntime
+    ) -> ResultPayload:
         """Save a subflow back to its original workflow file."""
         registry_key = request.workflow_name
 
@@ -554,8 +560,8 @@ class WorkflowSaver(EngineScoped):
             )
             return SaveSubflowToWorkflowResultFailure(result_details=details)
 
-        workflow = self.engine.workflow_registry.get_workflow_by_name(registry_key)
-        if workflow.file_path is None:
+        registered = self.engine.workflow_registry.get_workflow_by_name(registry_key)
+        if registered.file_path is None:
             # Saving a subflow back into its parent requires that parent to have a file.
             # Unsaved workflows have no destination to write into.
             details = (
@@ -564,12 +570,13 @@ class WorkflowSaver(EngineScoped):
                 "Save the parent workflow before saving a subflow into it."
             )
             return SaveSubflowToWorkflowResultFailure(result_details=details)
-        file_path = self.engine.workflow_registry.get_complete_file_path(workflow.file_path)
+        file_path = self.engine.workflow_registry.get_complete_file_path(registered.file_path)
         file_name = Path(file_path).stem
 
         # Serialize the subflow.
         serialized_flow_result = await self.engine.ahandle_request(
-            SerializeFlowToCommandsRequest(flow_name=request.flow_name, include_create_flow_command=True)
+            SerializeFlowToCommandsRequest(flow_name=request.flow_name, include_create_flow_command=True),
+            workflow_id=workflow.workflow_id,
         )
         if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
             details = f"Attempted to save subflow '{request.flow_name}' to '{file_path}'. Failed when serializing flow."
@@ -592,7 +599,7 @@ class WorkflowSaver(EngineScoped):
         # Extract workflow shape from the specific subflow (not the top-level flow).
         try:
             workflow_shape_dict = self.engine.workflow_manager.extract_workflow_shape(
-                workflow_name=registry_key, flow_name=request.flow_name
+                workflow_name=registry_key, flow_name=request.flow_name, workflow=workflow
             )
             workflow_shape = WorkflowShape(
                 inputs=workflow_shape_dict[WorkflowShapeType.INPUT],
@@ -629,7 +636,7 @@ class WorkflowSaver(EngineScoped):
         workflow_metadata = save_file_result.workflow_metadata
 
         # Update the registry entry with the new metadata.
-        workflow.metadata = workflow_metadata
+        registered.metadata = workflow_metadata
 
         details = f"Successfully saved subflow '{request.flow_name}' to: {save_file_result.file_path}"
         return SaveSubflowToWorkflowResultSuccess(
