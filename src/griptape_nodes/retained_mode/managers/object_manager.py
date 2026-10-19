@@ -297,11 +297,15 @@ class ObjectManager(EngineScoped):
         """Return the registered nodes with queued UI changes, in queue order, and forget them.
 
         Drained one atomic ``popitem`` at a time: a node can queue a change from another thread
-        mid-drain, and copying then clearing would drop it while its element stays queued.
+        mid-drain, and copying then clearing would drop it while its element stays queued. The
+        empty check is the pop itself, because another thread may be draining too.
         """
         nodes = []
-        while self._nodes_with_queued_changes:
-            _, node = self._nodes_with_queued_changes.popitem()
+        while True:
+            try:
+                _, node = self._nodes_with_queued_changes.popitem()
+            except KeyError:
+                break
             nodes.append(node)
         nodes.reverse()
         return nodes
