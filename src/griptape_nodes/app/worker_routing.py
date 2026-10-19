@@ -72,7 +72,7 @@ from griptape_nodes.retained_mode.events.worker_events import (
     WorkerHeartbeatRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
-from griptape_nodes.retained_mode.request_handlers import RequestScope
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handler_takes_workflow
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 logger = logging.getLogger("griptape_nodes")
@@ -429,11 +429,18 @@ class RemoteHandler:
     original: Any  # HandlerCallback; typed loosely to avoid a runtime import cycle
     event_manager: EventManager
 
-    async def __call__(self, request: RequestPayload) -> ResultPayload:
+    async def __call__(self, request: RequestPayload, **arguments: Any) -> ResultPayload:
+        # A forwarded request carries its workflow on the envelope, from the worker's binding, so only the
+        # local path needs `arguments`.
         if self.event_manager.in_node_execution():
             event_result = await self.event_manager.forward_to_orchestrator(request, ResultContext())
             return cast("ResultPayload", event_result.result)
-        return await call_function(self.original, request)
+        return await call_function(self.original, request, **arguments)
+
+    @property
+    def takes_workflow(self) -> bool:
+        """Whether dispatch passes the workflow, which this hands on to the handler it replaced."""
+        return handler_takes_workflow(self.original)
 
 
 def schedule_broadcast(broadcast_type: type[RequestPayload]) -> None:

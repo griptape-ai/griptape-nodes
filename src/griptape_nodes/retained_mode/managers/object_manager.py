@@ -197,9 +197,7 @@ class ObjectManager(EngineScoped):
 
         if keep_variables:
             return None
-        engine.variables_manager.clear_object_state()
-        if workflow_name is not None:
-            engine.workflow_manager.clear_object_state(workflow_name)
+        self._clear_variables_and_settings(workflow_name)
         return None
 
     def has_objects(self) -> bool:
@@ -329,3 +327,10 @@ class ObjectManager(EngineScoped):
                     self.engine.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
                     return
         del self._state.name_to_objects[name]
+
+    def _clear_variables_and_settings(self, workflow_name: str | None) -> None:
+        workflow = self.engine.current_workflow_or_none()
+        if workflow is not None:
+            workflow.variables.clear()
+        if workflow_name is not None:
+            self.engine.workflow_manager.clear_object_state(workflow_name)

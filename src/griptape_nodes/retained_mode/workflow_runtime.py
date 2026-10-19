@@ -1,14 +1,13 @@
 """The open workflows an engine holds, and which one the current work belongs to.
 
 An engine can hold several workflows open at once. Each gets a `WorkflowRuntime`, and the managers
-that keep per-workflow state (flows, nodes, connections, names, the context stack, execution) keep it
-there rather than on themselves. A manager defines the shape of its own state and reads it through
-`WorkflowRuntime.state`, so this module knows nothing about what managers store.
+that keep per-workflow state (flows, nodes, connections, names, the context stack, variables,
+execution) keep it there rather than on themselves.
 
-Requests are host requests or workflow requests (see `base_events`). Dispatch binds a workflow request
-to the runtime it names, in a ContextVar, so its handler and the tasks it spawns act on that workflow.
-Nodes record the runtime they were created in, so their events name it even from threads that lost the
-binding.
+Dispatch resolves the workflow a request acts on (see `RequestScope`) and binds it in a ContextVar,
+so its handler and the tasks it spawns act on that workflow. A handler that takes a `workflow`
+parameter is passed the runtime instead of reading the binding. Nodes record the runtime they were
+created in, so their events name it even from threads that lost the binding.
 """
 
 from __future__ import annotations
@@ -18,12 +17,19 @@ from contextvars import ContextVar
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Final
 
+from griptape_nodes.retained_mode.context_types import WorkflowContextStack
+from griptape_nodes.retained_mode.variable_types import WorkflowVariables
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 
 class WorkflowRuntime:
-    """The state of one open workflow, keyed by the type of each manager's state object."""
+    """The state of one open workflow.
+
+    State a manager has moved here is a typed attribute, made with the runtime and dropped with it.
+    Managers not yet moved keep theirs in `state`, keyed by the type of each manager's state object.
+    """
 
     def __init__(self, owner: object, workflow_id: str | None = None) -> None:
         """Make an empty runtime.
@@ -37,6 +43,8 @@ class WorkflowRuntime:
         # saved, renamed, or moved.
         self.workflow_id = workflow_id if workflow_id is not None else uuid.uuid4().hex
         self.owner = owner
+        self.context = WorkflowContextStack()
+        self.variables = WorkflowVariables()
         self._states: dict[type, Any] = {}
 
     def state[T](self, state_type: type[T], factory: Callable[[], T]) -> T:

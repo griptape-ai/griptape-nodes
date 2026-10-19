@@ -566,7 +566,7 @@ class ExecuteNodeRequest(RequestPayload):
             later) is answered by the worker's normal code paths. A worker without it answers "no
             current workflow" to all of them, which silently degrades `{outputs}` from the
             workflow's own folder to a workspace-relative path. These three mirror
-            ContextManager.WorkflowContextState exactly; workflow_name None means the orchestrator
+            WorkflowContextState exactly; workflow_name None means the orchestrator
             had no workflow either, so there is nothing to adopt.
         run_id: The run the node belongs to, so the events the node emits from a worker name it.
 

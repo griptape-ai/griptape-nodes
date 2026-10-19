@@ -777,7 +777,7 @@ class TestProjectManagerBuiltinVariables:
         # Re-adopting the same context must not grow the stack either.
         context_manager.mirror_workflow_context("second", "/b/second.py", None)
 
-        assert len(context_manager._state.workflow_stack) == 1
+        assert len(context_manager.engine.current_workflow.context.workflow_stack) == 1
         assert context_manager.get_current_workflow_name() == "second"
 
     def test_mirroring_an_empty_context_drops_the_previous_one(self) -> None:

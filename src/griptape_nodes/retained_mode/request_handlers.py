@@ -27,6 +27,9 @@ class RequestScope(StrEnum):
     OPTIONAL_WORKFLOW: works on its own but resolves paths and macros against a workflow it is given.
         `{workflow_dir}` and the project situations built on it depend on which workflow is asking. Naming
         none while several are open runs it with no workflow rather than failing.
+
+    A handler that takes a `workflow` parameter declares its scope by its signature: WORKFLOW, or
+    OPTIONAL_WORKFLOW when the parameter defaults to None. Dispatch passes it the workflow it resolved.
     """
 
     HOST = "host"
@@ -69,3 +72,25 @@ def handled_request_types(attr: object) -> tuple[type[RequestPayload], ...]:
 def handler_scope(attr: object) -> RequestScope | None:
     """The scope a `@handles` method declared for itself, or None to take its owner's `request_scope`."""
     return getattr(getattr(attr, "__func__", attr), _HANDLER_SCOPE_ATTR, None)
+
+
+def scope_from_signature(handler: Callable[..., Any]) -> RequestScope | None:
+    """The scope a handler's `workflow` parameter declares, or None when it takes no workflow."""
+    parameter = inspect.signature(handler).parameters.get("workflow")
+    if parameter is None:
+        return None
+    if parameter.default is None:
+        return RequestScope.OPTIONAL_WORKFLOW
+    return RequestScope.WORKFLOW
+
+
+def handler_takes_workflow(handler: Callable[..., Any]) -> bool:
+    """Whether dispatch passes `handler` the workflow it resolved, as its `workflow` argument.
+
+    A callable object that wraps a handler, like the worker's RemoteHandler, answers for the handler it
+    wraps through a `takes_workflow` attribute.
+    """
+    declared = getattr(handler, "takes_workflow", None)
+    if isinstance(declared, bool):
+        return declared
+    return scope_from_signature(handler) is not None

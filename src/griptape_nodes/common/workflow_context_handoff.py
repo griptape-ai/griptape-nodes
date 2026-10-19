@@ -16,7 +16,7 @@ from typing import NamedTuple
 
 
 class WorkflowContextSnapshot(NamedTuple):
-    """A workflow context in the three fields `ContextManager.WorkflowContextState` keeps.
+    """A workflow context in the three fields `WorkflowContextState` keeps.
 
     `name` None means the lending engine had no current workflow, and the adopting engine must then
     have none either. Both engines degrading a path the same way is correct; disagreeing is the bug

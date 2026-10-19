@@ -93,3 +93,30 @@ class VariableLayer:
 
     def clear(self) -> None:
         self._variables.clear()
+
+
+@dataclass
+class WorkflowVariables:
+    """The flow and global variables of one open workflow.
+
+    Project variables aren't here: they belong to a project, which several workflows can share.
+    """
+
+    # One layer per flow, made the first time a variable is written to it.
+    flow_layers: dict[str, VariableLayer] = field(default_factory=dict)
+    global_layer: VariableLayer = field(default_factory=VariableLayer)
+
+    def flow_layer(self, flow_name: str) -> VariableLayer | None:
+        return self.flow_layers.get(flow_name)
+
+    def flow_layer_for_write(self, flow_name: str) -> VariableLayer:
+        """The flow's layer, made empty if the flow has none yet."""
+        layer = self.flow_layers.get(flow_name)
+        if layer is None:
+            layer = VariableLayer()
+            self.flow_layers[flow_name] = layer
+        return layer
+
+    def clear(self) -> None:
+        self.flow_layers.clear()
+        self.global_layer.clear()

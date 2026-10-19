@@ -44,6 +44,13 @@ from griptape_nodes.retained_mode.events.open_workflow_events import (
     OpenWorkflowsChanged,
 )
 from griptape_nodes.retained_mode.events.os_events import GetFileInfoRequest
+from griptape_nodes.retained_mode.events.variable_events import (
+    CreateVariableRequest,
+    CreateVariableResultSuccess,
+    GetVariableValueRequest,
+    GetVariableValueResultFailure,
+    GetVariableValueResultSuccess,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     GetWorkflowMetadataRequest,
     GetWorkflowMetadataResultSuccess,
@@ -53,6 +60,7 @@ from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 from griptape_nodes.retained_mode.request_handlers import RequestScope
 from griptape_nodes.retained_mode.run_scheduler import RunRefusedError, current_run
+from griptape_nodes.retained_mode.variable_types import VariableScope
 from griptape_nodes.retained_mode.workflow_runtime import NO_WORKFLOW, WorkflowNotNamedError, bound_workflow
 
 if TYPE_CHECKING:
@@ -227,6 +235,83 @@ class TestOpenWorkflow:
 
         assert isinstance(result, GetWorkflowMetadataResultSuccess), result
         assert result.workflow_metadata.name == "Outside Workspace"
+
+
+@dataclass
+class _ProbeWorkflowRequest(RequestPayload):
+    """A request whose handler records the workflow dispatch passed it."""
+
+
+def _probe_workflow_argument(engine: Engine, *, optional: bool) -> list[WorkflowRuntime | None]:
+    """Handle _ProbeWorkflowRequest by recording its `workflow` argument."""
+    seen: list[WorkflowRuntime | None] = []
+
+    def handle_required(_request: _ProbeWorkflowRequest, workflow: WorkflowRuntime) -> ResultPayload:
+        seen.append(workflow)
+        return _ProbeResult(result_details="probed")
+
+    def handle_optional(_request: _ProbeWorkflowRequest, workflow: WorkflowRuntime | None = None) -> ResultPayload:
+        seen.append(workflow)
+        return _ProbeResult(result_details="probed")
+
+    if optional:
+        engine.event_manager.assign_manager_to_request_type(
+            _ProbeWorkflowRequest, handle_optional, scope=RequestScope.OPTIONAL_WORKFLOW
+        )
+    else:
+        engine.event_manager.assign_manager_to_request_type(
+            _ProbeWorkflowRequest, handle_required, scope=RequestScope.WORKFLOW
+        )
+    return seen
+
+
+class TestWorkflowArgument:
+    def test_a_handler_taking_a_workflow_is_passed_the_one_it_was_addressed_to(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        seen = _probe_workflow_argument(engine, optional=False)
+
+        engine.handle_request(_ProbeWorkflowRequest(), workflow_id=a.workflow_id)
+
+        assert seen == [_runtime(engine, a.workflow_id)]
+
+    @pytest.mark.asyncio
+    async def test_the_async_path_passes_the_workflow_too(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        seen = _probe_workflow_argument(engine, optional=False)
+
+        await engine.ahandle_request(_ProbeWorkflowRequest(), workflow_id=a.workflow_id)
+
+        assert seen == [_runtime(engine, a.workflow_id)]
+
+    def test_an_optional_handler_is_passed_none_when_none_is_named_and_several_are_open(self, engine: Engine) -> None:
+        _open_new_workflow_with_note(engine, "NoteA")
+        _open_new_workflow_with_note(engine, "NoteB")
+        seen = _probe_workflow_argument(engine, optional=True)
+
+        engine.handle_request(_ProbeWorkflowRequest())
+
+        assert seen == [None]
+
+    def test_variables_belong_to_their_workflow(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        b = _open_new_workflow_with_note(engine, "NoteB")
+
+        created = engine.handle_request(
+            CreateVariableRequest(name="seed", type="str", value="from-a", is_global=True), workflow_id=a.workflow_id
+        )
+        in_a = engine.handle_request(
+            GetVariableValueRequest(name="seed", lookup_scope=VariableScope.GLOBAL_ONLY), workflow_id=a.workflow_id
+        )
+        in_b = engine.handle_request(
+            GetVariableValueRequest(name="seed", lookup_scope=VariableScope.GLOBAL_ONLY), workflow_id=b.workflow_id
+        )
+
+        assert isinstance(created, CreateVariableResultSuccess), created
+        assert isinstance(in_a, GetVariableValueResultSuccess), in_a
+        assert in_a.value == "from-a"
+        assert isinstance(in_b, GetVariableValueResultFailure), in_b
 
 
 class TestRequestTargeting:

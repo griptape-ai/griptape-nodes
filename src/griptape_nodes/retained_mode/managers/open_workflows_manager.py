@@ -185,8 +185,7 @@ class OpenWorkflowsManager(EngineScoped):
         runtime = self.find_runtime_by_name(old_name)
         if runtime is None:
             return
-        with self.engine.bind_workflow(runtime):
-            self.engine.context_manager.rekey_workflow(old_name, new_name, file_path)
+        runtime.context.rekey_workflow(old_name, new_name, file_path)
         self.announce_change()
 
     def find_runtime_by_name(self, workflow_name: str) -> WorkflowRuntime | None:
@@ -198,11 +197,9 @@ class OpenWorkflowsManager(EngineScoped):
 
     def workflow_name_in(self, runtime: WorkflowRuntime) -> str | None:
         """The registry key of the workflow open in `runtime`, or None when it is empty."""
-        engine = self.engine
-        with engine.bind_workflow(runtime):
-            if not engine.context_manager.has_current_workflow():
-                return None
-            return engine.context_manager.get_current_workflow_name()
+        if not runtime.context.has_current_workflow():
+            return None
+        return runtime.context.get_current_workflow_name()
 
     def display_name_in(self, runtime: WorkflowRuntime) -> str | None:
         """The name users see for the workflow open in `runtime`, or None when it is empty."""
@@ -289,11 +286,10 @@ class OpenWorkflowsManager(EngineScoped):
     async def _snapshot_current_workflow(self, runtime: WorkflowRuntime) -> SuspendedWorkflow | None:
         """Record the current workflow for `resume_open_workflows`, or None when the runtime is empty."""
         engine = self.engine
-        context_manager = engine.context_manager
-        if not context_manager.has_current_workflow():
+        if not runtime.context.has_current_workflow():
             return None
-        workflow_name = context_manager.get_current_workflow_name()
-        working_directory = context_manager.get_current_workflow_working_directory()
+        workflow_name = runtime.context.get_current_workflow_name()
+        working_directory = runtime.context.get_current_workflow_working_directory()
 
         commands = None
         top_level = await engine.ahandle_request(GetTopLevelFlowRequest())
@@ -320,11 +316,11 @@ class OpenWorkflowsManager(EngineScoped):
         )
         if record.commands is None and is_saved:
             # The file creates the variables it records.
-            engine.variables_manager.clear_object_state()
+            record.runtime.variables.clear()
             return await self._build_from_file(record.workflow_name)
 
-        engine.context_manager.push_workflow(
-            workflow_name=record.workflow_name, working_directory=record.working_directory
+        engine.context_manager.push_workflow_into(
+            record.runtime, workflow_name=record.workflow_name, working_directory=record.working_directory
         )
         if record.commands is None:
             return await self._create_empty_flow()

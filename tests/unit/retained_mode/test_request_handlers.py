@@ -3,9 +3,11 @@ from typing import ClassVar
 
 import pytest
 
-from griptape_nodes.retained_mode.events.base_events import RequestPayload
+from griptape_nodes.app.worker_routing import RemoteHandler
+from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.workflow_runtime import WorkflowRuntime
 
 
 @dataclass(kw_only=True)
@@ -91,6 +93,30 @@ class _OnlyHandlerScopes:
 class _UndeclaredScope:
     @handles(_PingRequest)
     def on_ping(self, request: _PingRequest) -> None:
+        pass
+
+
+class _TakesWorkflow:
+    @handles(_PingRequest)
+    def on_ping(self, request: _PingRequest, workflow: WorkflowRuntime) -> None:
+        pass
+
+    @handles(_PongRequest)
+    def on_pong(self, request: _PongRequest, workflow: WorkflowRuntime | None = None) -> None:
+        pass
+
+
+class _HostOwnerTakesWorkflow:
+    request_scope: ClassVar[RequestScope] = RequestScope.HOST
+
+    @handles(_PingRequest)
+    def on_ping(self, request: _PingRequest, workflow: WorkflowRuntime) -> None:
+        pass
+
+
+class _ScopeContradictsSignature:
+    @handles(_PingRequest, scope=RequestScope.HOST)
+    def on_ping(self, request: _PingRequest, workflow: WorkflowRuntime) -> None:
         pass
 
 
@@ -211,3 +237,45 @@ class TestRegisterRequestHandlers:
 
         with pytest.raises(TypeError, match="No manager found"):
             event_manager.scope_for(_PingRequest)
+
+
+class TestWorkflowParameter:
+    def test_a_workflow_parameter_declares_the_scope(self) -> None:
+        event_manager = EventManager()
+
+        event_manager.register_request_handlers(_TakesWorkflow())
+
+        assert event_manager.scope_for(_PingRequest) is RequestScope.WORKFLOW
+        assert event_manager.scope_for(_PongRequest) is RequestScope.OPTIONAL_WORKFLOW
+
+    def test_the_signature_wins_over_the_owner_default(self) -> None:
+        event_manager = EventManager()
+
+        event_manager.register_request_handlers(_HostOwnerTakesWorkflow())
+
+        assert event_manager.scope_for(_PingRequest) is RequestScope.WORKFLOW
+
+    def test_a_handles_scope_that_contradicts_the_signature_raises(self) -> None:
+        event_manager = EventManager()
+
+        with pytest.raises(TypeError, match="Drop `scope=` from @handles"):
+            event_manager.register_request_handlers(_ScopeContradictsSignature())
+
+    def test_assigning_a_workflow_handler_as_host_raises(self) -> None:
+        event_manager = EventManager()
+
+        def handle(_request: _PingRequest, workflow: WorkflowRuntime) -> ResultPayload:  # noqa: ARG001, the name is what dispatch reads
+            raise AssertionError
+
+        with pytest.raises(TypeError, match="takes a workflow"):
+            event_manager.assign_manager_to_request_type(_PingRequest, handle, scope=RequestScope.HOST)
+
+    def test_a_remote_handler_takes_a_workflow_when_the_handler_it_replaced_does(self) -> None:
+        event_manager = EventManager()
+        owner = _TakesWorkflow()
+
+        takes = RemoteHandler(original=owner.on_ping, event_manager=event_manager)
+        ignores = RemoteHandler(original=_Base().on_ping, event_manager=event_manager)
+
+        assert takes.takes_workflow is True
+        assert ignores.takes_workflow is False

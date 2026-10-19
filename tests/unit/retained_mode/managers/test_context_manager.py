@@ -533,9 +533,7 @@ class TestEnsureWorkflowAndFlowRequest:
         assert not context_manager.has_current_workflow()
         assert not context_manager.has_current_flow()
 
-        result = context_manager.on_ensure_workflow_and_flow_request(
-            EnsureWorkflowAndFlowRequest(workflow_name="my_workflow", flow_name="my_flow")
-        )
+        result = engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_name="my_workflow", flow_name="my_flow"))
 
         assert isinstance(result, EnsureWorkflowAndFlowResultSuccess)
         assert result.workflow_name == "my_workflow"
@@ -554,18 +552,13 @@ class TestEnsureWorkflowAndFlowRequest:
         )
 
         self._cleanup(engine)
-        context_manager = engine.context_manager
 
         # Bootstrap once.
-        first = context_manager.on_ensure_workflow_and_flow_request(
-            EnsureWorkflowAndFlowRequest(workflow_name="scratch", flow_name="canvas")
-        )
+        first = engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_name="scratch", flow_name="canvas"))
         assert isinstance(first, EnsureWorkflowAndFlowResultSuccess)
 
         # Calling again with different names should be a no-op: existing context wins.
-        second = context_manager.on_ensure_workflow_and_flow_request(
-            EnsureWorkflowAndFlowRequest(workflow_name="ignored", flow_name="also_ignored")
-        )
+        second = engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_name="ignored", flow_name="also_ignored"))
 
         assert isinstance(second, EnsureWorkflowAndFlowResultSuccess)
         assert second.workflow_name == "scratch"
@@ -582,9 +575,8 @@ class TestEnsureWorkflowAndFlowRequest:
         )
 
         self._cleanup(engine)
-        context_manager = engine.context_manager
 
-        result = context_manager.on_ensure_workflow_and_flow_request(EnsureWorkflowAndFlowRequest())
+        result = engine.handle_request(EnsureWorkflowAndFlowRequest())
 
         assert isinstance(result, EnsureWorkflowAndFlowResultSuccess)
         assert result.workflow_name.startswith(engine.workflow_registry.UNSAVED_KEY_PREFIX)
