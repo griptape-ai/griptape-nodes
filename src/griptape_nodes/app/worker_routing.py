@@ -42,13 +42,36 @@ from griptape_nodes.retained_mode.events.base_events import (
     SkipTheLineMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
+    CreateConnectionResultFailure,
+    DeleteConnectionRequest,
+    DeleteConnectionResultFailure,
+)
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelExecuteNodeRequest,
     ExecuteNodeRequest,
 )
-from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesRequest
-from griptape_nodes.retained_mode.events.parameter_events import MigrateParameterRequest
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterGroupToNodeRequest,
+    AddParameterGroupToNodeResultFailure,
+    AddParameterToNodeRequest,
+    AddParameterToNodeResultFailure,
+    AlterParameterDetailsRequest,
+    AlterParameterDetailsResultFailure,
+    AlterParameterGroupDetailsRequest,
+    AlterParameterGroupDetailsResultFailure,
+    MigrateParameterRequest,
+    RemoveParameterFromNodeRequest,
+    RemoveParameterFromNodeResultFailure,
+    RenameParameterRequest,
+    RenameParameterResultFailure,
+    ReorderParameterListItemRequest,
+    ReorderParameterListItemResultFailure,
+    SetParameterValueRequest,
+    SetParameterValueResultFailure,
+)
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
@@ -409,29 +432,35 @@ LOCAL_ONLY_REQUEST_TYPES: frozenset[type[RequestPayload]] = frozenset(
 )
 
 
-def result_type_for(request_type: type[RequestPayload], outcome: str) -> type[ResultPayload] | None:
-    """The registered result class for `request_type`, where `outcome` is "Success" or "Failure".
+# Requests that change a node's parameters or connections, with the failure each is answered with when
+# refused. Some value hooks send these to edit their own node, and hydration replays every value through
+# those hooks, so on a worker the replay would repeat on the orchestrator's node an edit it already made.
+_NODE_EDIT_REQUESTS: dict[type[RequestPayload], type[ResultPayloadFailure]] = {
+    CreateConnectionRequest: CreateConnectionResultFailure,
+    DeleteConnectionRequest: DeleteConnectionResultFailure,
+    SetParameterValueRequest: SetParameterValueResultFailure,
+    AddParameterToNodeRequest: AddParameterToNodeResultFailure,
+    RemoveParameterFromNodeRequest: RemoveParameterFromNodeResultFailure,
+    AlterParameterDetailsRequest: AlterParameterDetailsResultFailure,
+    RenameParameterRequest: RenameParameterResultFailure,
+    ReorderParameterListItemRequest: ReorderParameterListItemResultFailure,
+    AddParameterGroupToNodeRequest: AddParameterGroupToNodeResultFailure,
+    AlterParameterGroupDetailsRequest: AlterParameterGroupDetailsResultFailure,
+}
 
-    Results are named after their request, as `<Name>Result<Outcome>` or, in the older modules,
-    `<Name><Outcome>`.
+_NODE_NAME_FIELDS = ("node_name", "source_node_name", "target_node_name")
+
+
+def edits_node(request: RequestPayload, node_name: str) -> bool:
+    """Whether `request` changes the parameters or connections of `node_name`.
+
+    A name left as None means the current context's node, which on the orchestrator is not one this worker
+    holds, so it counts as the node being rebuilt.
     """
-    stem = request_type.__name__.removesuffix("Request")
-    for name in (f"{stem}Result{outcome}", f"{stem}{outcome}"):
-        result_type = PayloadRegistry.get_type(name)
-        if result_type is not None:
-            return cast("type[ResultPayload]", result_type)
-    return None
-
-
-def forwards_during_hydration(request_type: type[RequestPayload]) -> bool:
-    """Whether a worker rebuilding a node may forward `request_type` to the orchestrator.
-
-    Hydration replays each value through the node's hooks as if a user had edited it, and the orchestrator
-    already made whatever edits those hooks make when that edit happened. So only a request whose success
-    result guarantees it leaves the workflow alone forwards; one that declares nothing is refused as well.
-    """
-    success_type = result_type_for(request_type, "Success")
-    return success_type is not None and issubclass(success_type, WorkflowNotAlteredMixin)
+    if type(request) not in _NODE_EDIT_REQUESTS:
+        return False
+    named = [getattr(request, field) for field in _NODE_NAME_FIELDS if hasattr(request, field)]
+    return any(name is None or name == node_name for name in named)
 
 
 @dataclass
@@ -442,7 +471,7 @@ class RemoteHandler:
     LOCAL_ONLY_REQUEST_TYPES. Forwards to the orchestrator while the worker is
     inside a ``node_execution_scope``; delegates to the original
     handler otherwise (so bootstrap / library-load paths keep running locally).
-    During hydration it refuses every request ``forwards_during_hydration`` rejects.
+    During hydration it refuses requests that edit the node being rebuilt (see ``edits_node``).
 
     ``original`` is the handler this shim replaced and MUST be retained so the
     out-of-scope fallback can still service requests that bootstrap code makes
@@ -455,25 +484,22 @@ class RemoteHandler:
 
     async def __call__(self, request: RequestPayload) -> ResultPayload:
         if self.event_manager.in_node_execution():
-            if self.event_manager.in_hydration() and not forwards_during_hydration(type(request)):
-                return self._refuse(request)
+            rebuilding = self.event_manager.hydrating_node_name()
+            if rebuilding is not None and edits_node(request, rebuilding):
+                return self._refuse(request, rebuilding)
             event_result = await self.event_manager.forward_to_orchestrator(request, ResultContext())
             return cast("ResultPayload", event_result.result)
         return await call_function(self.original, request)
 
     @staticmethod
-    def _refuse(request: RequestPayload) -> ResultPayload:
+    def _refuse(request: RequestPayload, node_name: str) -> ResultPayload:
         details = (
-            f"Attempted to send {type(request).__name__} to the orchestrator while setting up a node to run "
-            "in this process. Failed because it may change the workflow, and the orchestrator already made "
-            "any change a value's hooks make when that value was first set."
+            f"Attempted to send {type(request).__name__} for node '{node_name}' to the orchestrator while "
+            "setting up that node to run in this process. Failed because the orchestrator already made that "
+            "edit when the value was first set, so it was not sent again."
         )
-        result_details = ResultDetails(message=details, level=logging.WARNING)
-        failure_type = result_type_for(type(request), "Failure")
-        if failure_type is None:
-            # A request with no failure class of its own still has to be answered with a failure.
-            return GenericResultFailure(result_details=result_details)
-        return failure_type(result_details=result_details)
+        failure_type = _NODE_EDIT_REQUESTS[type(request)]
+        return failure_type(result_details=ResultDetails(message=details, level=logging.WARNING))
 
 
 def schedule_broadcast(broadcast_type: type[RequestPayload]) -> None:

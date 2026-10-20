@@ -642,11 +642,13 @@ class ReportsHydrationNode(DataNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: ARG002
         if parameter.name == "trigger":
-            self._hook_saw_hydration = current_engine().event_manager.in_hydration()
+            self._hook_saw_hydration = current_engine().event_manager.hydrating_node_name() == self.name
 
     def process(self) -> None:
         self.parameter_output_values["hook_saw_hydration"] = self._hook_saw_hydration
-        self.parameter_output_values["process_saw_hydration"] = current_engine().event_manager.in_hydration()
+        self.parameter_output_values["process_saw_hydration"] = (
+            current_engine().event_manager.hydrating_node_name() is not None
+        )
 
 
 class WriteProjectFileNode(DataNode):

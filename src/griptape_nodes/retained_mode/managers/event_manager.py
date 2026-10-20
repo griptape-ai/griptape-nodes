@@ -62,10 +62,10 @@ _active_request_type: ContextVar[type[RequestPayload] | None] = ContextVar(
     "_event_manager_active_request_type", default=None
 )
 
-# Whether the current logical chain is rebuilding a node from the values it was sent. Per chain rather
+# The node the current logical chain is rebuilding from the values it was sent, if any. Per chain rather
 # than process-wide, unlike the node-execution refcount: another node's aprocess can run in this
 # process at the same time, and its requests are not part of the rebuild.
-_in_hydration: ContextVar[bool] = ContextVar("_event_manager_in_hydration", default=False)
+_hydrating_node_name: ContextVar[str | None] = ContextVar("_event_manager_hydrating_node_name", default=None)
 
 # (request_type, callback) pairs for the post-dispatch hooks running above this point
 # in the current logical chain. A hook task is created with this marker set, and every
@@ -895,22 +895,22 @@ class EventManager(EngineScoped):
             return self._node_execution_depth > 0
 
     @contextmanager
-    def hydration_scope(self) -> Iterator[None]:
-        """Mark the current chain as rebuilding a node from the values it was sent.
+    def hydration_scope(self, node_name: str) -> Iterator[None]:
+        """Mark the current chain as rebuilding `node_name` from the values it was sent.
 
         Hydration replays each value through `set_parameter_value`, so a node's value hooks run as if a
         user had edited it. On a worker the node is a copy, and the worker-side RemoteHandler reads this
-        to keep those hooks from editing the orchestrator's graph.
+        to keep those hooks from repeating their edits on the orchestrator's node.
         """
-        token = _in_hydration.set(True)
+        token = _hydrating_node_name.set(node_name)
         try:
             yield
         finally:
-            _in_hydration.reset(token)
+            _hydrating_node_name.reset(token)
 
-    def in_hydration(self) -> bool:
-        """Return True when the current chain is inside a hydration scope."""
-        return _in_hydration.get()
+    def hydrating_node_name(self) -> str | None:
+        """The node the current chain is rebuilding, or None outside a hydration scope."""
+        return _hydrating_node_name.get()
 
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
         """Return the currently-registered handler callback for a request type, or None."""
