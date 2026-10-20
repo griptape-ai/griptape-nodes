@@ -115,13 +115,6 @@ class RunScheduler:
             return None
         return lease.run
 
-    def running_runtime(self) -> WorkflowRuntime | None:
-        """The workflow whose run is in progress, if any."""
-        lease = self._lease
-        if lease is None or not self._is_running(lease.runtime):
-            return None
-        return lease.runtime
-
     def release(self, runtime: WorkflowRuntime) -> None:
         """Forget `runtime`'s run, because the workflow is closing."""
         with self._lock:

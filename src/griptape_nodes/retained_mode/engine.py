@@ -249,8 +249,6 @@ class Engine:
         self._run_scheduler = RunScheduler(
             is_running=self.is_workflow_running, display_name_of=self._workflow_display_name
         )
-        # Unbound reads of the current workflow resolved through the compatibility path, reported once.
-        self._warned_unbound_workflow_read = False
 
         self._event_manager = EventManager(engine=self)
         self._resource_manager = ResourceManager(self._event_manager, engine=self)
@@ -464,7 +462,7 @@ class Engine:
             return None
         if isinstance(bound, WorkflowRuntime) and bound.owner is self:
             return bound
-        return self._resolve_unbound_workflow()
+        return self._only_open_workflow()
 
     def find_workflow_runtime(self, workflow_id: str) -> WorkflowRuntime | None:
         for runtime in self._workflow_runtimes:
@@ -608,39 +606,6 @@ class Engine:
         # A client that works on a single workflow never names one, so its first workflow request
         # opens one.
         return self.open_workflow_runtime()
-
-    def _resolve_unbound_workflow(self) -> WorkflowRuntime | None:
-        """The workflow an unbound read of the current workflow gets: the only one open, or the running one.
-
-        Only for reads by code that lost its binding, never for dispatch: a request addressed to no workflow
-        while several are open fails rather than landing on whichever one runs.
-
-        Raises:
-            WorkflowNotNamedError: Several are open and none runs.
-        """
-        try:
-            return self._only_open_workflow()
-        except WorkflowNotNamedError:
-            pass
-        # Compatibility for library code that starts its own threads without copying the context, and so
-        # reads the current workflow with nothing bound. One workflow runs at a time, so the running one is
-        # where that code came from. To be removed once libraries have had a release to copy the context
-        # (contextvars.copy_context) or emit through their node.
-        running = self._run_scheduler.running_runtime()
-        if running is not None:
-            if not self._warned_unbound_workflow_read:
-                self._warned_unbound_workflow_read = True
-                logger.warning(
-                    "Code running outside the request that started it asked for the current workflow while "
-                    "several are open, and was given the running one. Start threads with "
-                    "contextvars.copy_context().run so they keep their workflow; this fallback will be removed."
-                )
-            return running
-        msg = (
-            "Attempted to act on the current workflow. Failed because several workflows are open and this "
-            "work names none of them."
-        )
-        raise WorkflowNotNamedError(msg)
 
     def _only_open_workflow(self) -> WorkflowRuntime | None:
         """The engine's only open workflow, or None when none is open.

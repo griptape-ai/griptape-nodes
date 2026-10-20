@@ -712,20 +712,58 @@ class TestUnboundReads:
 
         assert len(errors) == 1
 
-    def test_an_unbound_read_during_a_run_gets_the_running_workflow(self, engine: Engine) -> None:
+    def test_an_unbound_read_during_a_run_still_fails_while_several_are_open(self, engine: Engine) -> None:
         a = _open_new_workflow_with_note(engine, "NoteA")
         _open_new_workflow_with_note(engine, "NoteB")
         runtime_a = _runtime(engine, a.workflow_id)
-        seen: list[str] = []
+        errors: list[BaseException] = []
 
         def read() -> None:
-            seen.append(engine.current_workflow.workflow_id)
+            try:
+                _ = engine.current_workflow
+            except WorkflowNotNamedError as e:
+                errors.append(e)
 
         with _running_only(runtime_a):
             engine.run_scheduler.admit(runtime_a)
             thread = threading.Thread(target=read)
             thread.start()
             thread.join()
+
+        assert len(errors) == 1
+
+    def test_an_unbound_name_lookup_never_returns_the_running_workflows_node(self, engine: Engine) -> None:
+        _open_new_workflow_with_note(engine, "Shared")
+        b = _open_new_workflow_with_note(engine, "Shared")
+        runtime_b = _runtime(engine, b.workflow_id)
+        found: list[object] = []
+        errors: list[BaseException] = []
+
+        def look_up() -> None:
+            try:
+                found.append(engine.object_manager.attempt_get_object_by_name("Shared"))
+            except WorkflowNotNamedError as e:
+                errors.append(e)
+
+        with _running_only(runtime_b):
+            engine.run_scheduler.admit(runtime_b)
+            thread = threading.Thread(target=look_up)
+            thread.start()
+            thread.join()
+
+        assert found == []
+        assert len(errors) == 1
+
+    def test_an_unbound_read_while_one_is_open_gets_it(self, engine: Engine) -> None:
+        a = _open_new_workflow_with_note(engine, "NoteA")
+        seen: list[str] = []
+
+        def read() -> None:
+            seen.append(engine.current_workflow.workflow_id)
+
+        thread = threading.Thread(target=read)
+        thread.start()
+        thread.join()
 
         assert seen == [a.workflow_id]
 
