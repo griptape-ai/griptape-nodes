@@ -269,9 +269,7 @@ class TestMaxItemsWhenARowChanges:
         assert isinstance(result, SetParameterValueResultSuccess)
         assert node.get_parameter_value("items") == ["x", "y", "z", "b"]
 
-    def test_a_value_over_a_connection_only_warns(
-        self, engine: Engine, flow_name: str, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_a_value_over_a_connection_is_rejected_too(self, engine: Engine, flow_name: str) -> None:
         _add(engine, _Source(name="Source"), flow_name)
         node = _add(engine, _ListNode(name="Lister", max_items=2), flow_name)
         _set_items(engine, ["a"])
@@ -284,12 +282,21 @@ class TestMaxItemsWhenARowChanges:
                 target_parameter_name=row.name,
             )
         )
+        before = node.get_parameter_value("items")
 
-        with caplog.at_level("WARNING", logger="griptape_nodes"):
-            node.set_parameter_value(row.name, ["x", "y", "z"])
+        result = engine.handle_request(
+            SetParameterValueRequest(
+                node_name="Lister",
+                parameter_name=row.name,
+                value=["x", "y", "z"],
+                data_type="list[str]",
+                incoming_connection_source_node_name="Source",
+                incoming_connection_source_parameter_name="out",
+            )
+        )
 
-        assert any("accepts at most 2" in record.getMessage() for record in caplog.records)
-        assert node.get_parameter_value("items") == ["x", "y", "z"]
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert node.get_parameter_value("items") == before
 
 
 class TestValuesThatAreNotLists:

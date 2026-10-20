@@ -150,16 +150,7 @@ class ListRows:
             held_count += len(_items_of_row(container, child_value))
         if held_count <= container.max_items:
             return
-        # Connected values cannot be refused.
-        if node._param_has_incoming_connection(row.name):
-            logger.warning(
-                "Node '%s' list '%s' would hold %d items but accepts at most %d. The extra items may be dropped.",
-                node.name,
-                container.name,
-                held_count,
-                container.max_items,
-            )
-            return
+        # Refused over a connection too: a worker builds the list's rows from its items, and could not.
         msg = f"Attempted to set an item of list '{node.name}.{container.name}'. Failed because the list would hold {held_count} items, counting the items of any list in a row, and holds at most {container.max_items} items."
         raise ValueError(msg)
 
@@ -314,5 +305,6 @@ def _items_of_row(container: ParameterContainer, value: Any) -> list[Any]:
     if value is None:
         return []
     if isinstance(value, list) and isinstance(container, ParameterList) and container.concatenates_list_rows:
-        return value
+        # Dropped like an empty row.
+        return [item for item in value if item is not None]
     return [value]

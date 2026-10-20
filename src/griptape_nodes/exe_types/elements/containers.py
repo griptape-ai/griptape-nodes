@@ -291,12 +291,10 @@ class ParameterList(ParameterContainer):
         super()._custom_setter_for_property_input_types(value)
         rows = [child for child in self._children if isinstance(child, Parameter)]
         if not rows:
-            # Types may be unset during construction.
+            # During construction there are no rows, and the other item types may not be set yet.
             return
-        # Read the stored value so clearing input types uses the default for both existing and new rows.
-        row_input_types = self._with_list_variants(super()._custom_getter_for_property_input_types())
         for row in rows:
-            row.input_types = row_input_types
+            self._widen_row_input_types(row)
 
     @property
     def concatenates_list_rows(self) -> bool:
@@ -315,6 +313,12 @@ class ParameterList(ParameterContainer):
         declare one item type.
         """
         return [*item_types, *(f"list[{item_type}]" for item_type in item_types), "list"]
+
+    def _widen_row_input_types(self, row: Parameter) -> None:
+        """Let `row` take one item or a list of them, whatever input types it was created or saved with."""
+        # The unwidened getter: `self.input_types` is the container's own list-shaped set. Read after the
+        # setter stores a value, so a cleared value resolves to the same default for every row.
+        row.input_types = self._with_list_variants(super()._custom_getter_for_property_input_types())
 
     def _custom_setter_for_property_output_type(self, value: str | None) -> None:
         # If we are setting a type, we need to propagate this to our children as well.
@@ -386,8 +390,7 @@ class ParameterList(ParameterContainer):
             name=name,
             tooltip=self.tooltip,
             type=self._type,
-            # The unwidened getter: `self.input_types` is the container's own list-shaped set.
-            input_types=self._with_list_variants(super()._custom_getter_for_property_input_types()),
+            input_types=self._input_types,
             output_type=self._output_type,
             default_value=self.default_value,
             tooltip_as_input=self.tooltip_as_input,
@@ -490,9 +493,10 @@ class ParameterList(ParameterContainer):
                 raise ValueError(msg)
 
         if isinstance(child, Parameter):
-            # Rows get the item converters here, including rows restored from a saved workflow.
+            # Rows get the item converters and input types here, including rows restored from a saved workflow.
             missing = [converter for converter in self._item_converters if converter not in child._converters]
             child._converters = [*missing, *child._converters]
+            self._widen_row_input_types(child)
         super().add_child(child)
 
         # Mark the parent node as unresolved since the parameter structure changed

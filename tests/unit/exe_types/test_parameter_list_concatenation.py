@@ -1,6 +1,6 @@
 import pytest
 
-from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 
 from .mocks import MockNode
 
@@ -29,6 +29,14 @@ def _refs(node: MockNode) -> ParameterList:
 class TestRowInputTypes:
     def test_new_row_accepts_the_item_and_a_list_of_it(self, node: MockNode) -> None:
         row = _refs(node).add_child_parameter()
+
+        assert row.input_types == ["ImageUrlArtifact", "list[ImageUrlArtifact]", "list"]
+
+    def test_a_row_restored_with_narrow_input_types_is_widened(self, node: MockNode) -> None:
+        refs = _refs(node)
+        row = Parameter(name="saved_row", tooltip="t", input_types=["ImageUrlArtifact"], parent_container_name="refs")
+
+        refs.add_child(row)
 
         assert row.input_types == ["ImageUrlArtifact", "list[ImageUrlArtifact]", "list"]
 
@@ -61,6 +69,13 @@ class TestConcatenation:
 
         assert node.get_parameter_list_value("refs") == ["a", "b", "c", "d"]
         assert node.get_parameter_value("refs") == ["a", "b", "c", "d"]
+
+    def test_an_empty_item_in_a_row_is_dropped(self, node: MockNode) -> None:
+        row = _refs(node).add_child_parameter()
+
+        node.set_parameter_value(row.name, ["a", None, "b"])
+
+        assert node.get_parameter_value("refs") == ["a", "b"]
 
     def test_a_list_of_lists_keeps_its_rows_whole(self) -> None:
         node = MockNode()
