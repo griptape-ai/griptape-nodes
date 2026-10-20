@@ -1,14 +1,19 @@
 """Node and run timings, and the run id, ride on the execution events, so the editor can show where a run spent its time."""
 
+from typing import NamedTuple
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.machines.control_flow import ControlFlowContext
+from griptape_nodes.machines.control_flow import ControlFlowContext, ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagNode
 from griptape_nodes.machines.parallel_resolution import ExecuteDagState
-from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
+from griptape_nodes.retained_mode.events.execution_events import (
+    PARENT_RUN_ID_ENV_VAR,
+    ControlFlowCancelledEvent,
+    FlowRunStartedEvent,
+)
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 
@@ -107,3 +112,63 @@ class TestRunId:
 
         # A finished run's machine lingers, and its id must not label spend made after it.
         assert flow_manager.current_run_id is None
+
+    def test_a_live_run_reports_its_machine_s_id(self) -> None:
+        flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())
+        machine = MagicMock()
+        machine.context.run_id = "run-1"
+        flow_manager._global_control_flow_machine = machine
+        flow_manager.check_for_existing_running_flow = MagicMock(return_value=True)
+
+        assert flow_manager.current_run_id == "run-1"
+
+
+class _StartedRun(NamedTuple):
+    machine: ControlFlowMachine
+    engine: MagicMock
+
+    @property
+    def announced(self) -> list[str]:
+        """The run ids this run announced on FlowRunStartedEvent."""
+        calls = self.engine.event_manager.put_event.call_args_list
+        payloads = [call.args[0].wrapped_event.payload for call in calls]
+        return [payload.run_id for payload in payloads if isinstance(payload, FlowRunStartedEvent)]
+
+
+class TestRunIdMinting:
+    """Which runs get an id of their own, and which share another run's."""
+
+    @staticmethod
+    async def _start(*, is_isolated: bool, monkeypatch: pytest.MonkeyPatch, parent_run_id: str | None) -> _StartedRun:
+        """Start a machine with everything past choosing its run id stubbed out."""
+        if parent_run_id is None:
+            monkeypatch.delenv(PARENT_RUN_ID_ENV_VAR, raising=False)
+        else:
+            monkeypatch.setenv(PARENT_RUN_ID_ENV_VAR, parent_run_id)
+        engine = MagicMock()
+        engine.config_manager.get_config_value.side_effect = lambda _key, default=None: default
+        machine = ControlFlowMachine("Flow", is_isolated=is_isolated, engine=engine)
+        machine._process_nodes_for_dag = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        machine.start = AsyncMock()  # type: ignore[method-assign]
+        await machine.start_flow(MagicMock(), MagicMock())
+        return _StartedRun(machine=machine, engine=engine)
+
+    @pytest.mark.asyncio
+    async def test_a_top_level_run_mints_and_announces_its_own_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        run = await self._start(is_isolated=False, monkeypatch=monkeypatch, parent_run_id=None)
+
+        assert run.machine.context.run_id is not None
+        assert run.announced == [run.machine.context.run_id]
+
+    @pytest.mark.asyncio
+    async def test_a_loop_body_neither_takes_an_id_nor_announces_a_run(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        run = await self._start(is_isolated=True, monkeypatch=monkeypatch, parent_run_id=None)
+
+        assert run.machine.context.run_id is None
+        assert run.announced == []
+
+    @pytest.mark.asyncio
+    async def test_a_group_run_for_another_engine_takes_that_engine_s_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        run = await self._start(is_isolated=False, monkeypatch=monkeypatch, parent_run_id="parent-run")
+
+        assert run.machine.context.run_id == "parent-run"

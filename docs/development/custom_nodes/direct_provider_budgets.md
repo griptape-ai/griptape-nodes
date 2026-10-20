@@ -81,6 +81,6 @@ await GriptapeNodes.ahandle_request(
 
 ## What one run cost
 
-Every request a node sends while a workflow runs carries that run's id as the `run_id` tag, so Griptape Cloud can total what one run cost, apart from earlier runs of the same workflow. A loop's iterations count toward the run that started the loop. A request sent outside a run, such as from the agent chat, carries no `run_id`.
+Every `BudgetAccessRequest` and `ReportUsageRequest` a node sends while a workflow runs carries that run's id as the `run_id` tag, so Griptape Cloud can total what one run cost, apart from earlier runs of the same workflow. A loop's iterations, and a node group set to run in its own process, count toward the run that started them. A request sent outside a run, such as from the agent chat, carries no `run_id`.
 
-The engine announces each run's id on `FlowRunStartedEvent` when the run starts, and repeats it on the `ControlFlowResolvedEvent` or `ControlFlowCancelledEvent` that ends it. A client that keeps the id can ask Griptape Cloud for that run's spend with `POST /api/spend/search` and the filter `tag_filters: [{"key": "run_id", "value": ["<run id>"]}]`, then add up the rows.
+The engine announces each run's id on `FlowRunStartedEvent` when the run starts, and repeats it on the `ControlFlowResolvedEvent` or `ControlFlowCancelledEvent` that ends it. A client that keeps the id can ask Griptape Cloud what that run cost with `POST /api/spend/search` and the filter `tag_filters: [{"key": "run_id", "value": ["<run id>"]}]`. The response's `totals` add up every matching row, not just the page returned.

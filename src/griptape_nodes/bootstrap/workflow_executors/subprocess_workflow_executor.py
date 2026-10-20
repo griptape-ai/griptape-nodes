@@ -19,6 +19,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    PARENT_RUN_ID_ENV_VAR,
     ControlFlowCancelledEvent,
     ControlFlowResolvedEvent,
     StartFlowRequest,
@@ -45,6 +46,7 @@ class SubprocessWorkflowExecutor(WorkflowExecutor, PythonSubprocessExecutor, Sub
         on_start_flow_result: Callable[[ResultPayload], None] | None = None,
         on_event: Callable[[dict], None] | None = None,
         session_id: str | None = None,
+        parent_run_id: str | None = None,
     ) -> None:
         WorkflowExecutor.__init__(self)
         PythonSubprocessExecutor.__init__(self)
@@ -52,6 +54,8 @@ class SubprocessWorkflowExecutor(WorkflowExecutor, PythonSubprocessExecutor, Sub
         self._workflow_path = workflow_path
         self._on_start_flow_result = on_start_flow_result
         self._stored_exception: SubprocessWorkflowExecutorError | None = None
+        # The run this workflow is part of, so its spend counts toward that run rather than its own.
+        self._parent_run_id = parent_run_id
 
     async def __aenter__(self) -> Self:
         """Async context manager entry: start WebSocket listener."""
@@ -108,14 +112,16 @@ class SubprocessWorkflowExecutor(WorkflowExecutor, PythonSubprocessExecutor, Sub
                 str(tmp_workflow_path),
             ]
 
+            env = {"GTN_CONFIG_ENABLE_WORKSPACE_FILE_WATCHING": "false"}
+            if self._parent_run_id is not None:
+                env[PARENT_RUN_ID_ENV_VAR] = self._parent_run_id
+
             try:
                 await self.execute_python_script(
                     script_path=tmp_script_path,
                     args=args,
                     cwd=Path(tmpdir),
-                    env={
-                        "GTN_CONFIG_ENABLE_WORKSPACE_FILE_WATCHING": "false",
-                    },
+                    env=env,
                 )
             except Exception as e:
                 msg = f"Failed to execute subprocess script: {e}"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachin
 from griptape_nodes.retained_mode.engine import EngineScoped, current_engine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
+    PARENT_RUN_ID_ENV_VAR,
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     FlowRunStartedEvent,
@@ -56,7 +58,7 @@ class ControlFlowContext(EngineScoped):
     # perf_counter() when the current run started, for the run_seconds the run's end events carry.
     run_started_at: float | None = None
     # Names the current run in spend attribution, so Griptape Cloud can total what one run cost.
-    # An isolated subflow carries the id of the run that started it.
+    # Only a top-level run has one; an isolated subflow's spend reads the global machine's.
     run_id: str | None = None
 
     def __init__(
@@ -219,11 +221,12 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     ) -> None:
         self._context.run_started_at = time.perf_counter()
         flow_manager = self._context.engine.flow_manager
-        if self._context.is_isolated:
-            # A loop body is part of the run that started it, so its spend counts toward that run.
-            self._context.run_id = flow_manager.current_run_id
-        else:
-            self._context.run_id = uuid.uuid4().hex
+        # A loop body is part of the run that started it: spend reads the id off the global
+        # machine, so an isolated subflow neither takes an id nor announces a run.
+        if not self._context.is_isolated:
+            # A node group run in its own engine process is part of the parent engine's run, which
+            # hands its id over in the environment so the group's spend counts toward that run.
+            self._context.run_id = os.getenv(PARENT_RUN_ID_ENV_VAR) or uuid.uuid4().hex
             self._context.engine.event_manager.put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
