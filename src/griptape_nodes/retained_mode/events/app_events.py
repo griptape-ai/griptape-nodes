@@ -105,6 +105,13 @@ class AppGetSessionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Session information retrieval failed. Common causes: session not found, access error."""
 
 
+def _current_engine_instance_id() -> str | None:
+    """instance_id of the engine in this process, or None before one exists."""
+    from griptape_nodes.retained_mode.engine import current_engine, has_current_engine
+
+    return current_engine().instance_id if has_current_engine() else None
+
+
 @dataclass
 @PayloadRegistry.register
 class AppInitializationComplete(AppPayload):
@@ -125,6 +132,10 @@ class AppInitializationComplete(AppPayload):
     # URL of the static file server the host process runs for this workspace. The engine serves
     # nothing itself, so when unset it assumes the host's default address (see StaticFilesManager).
     static_server_base_url: str | None = None
+    # instance_id of the engine that finished initializing, matching the one its heartbeat
+    # reports, so a client can tell which engine process this event came from. Filled from this
+    # process's engine, since the host app builds the event. None from engines too old to send it.
+    instance_id: str | None = field(default_factory=_current_engine_instance_id)
 
 
 @dataclass

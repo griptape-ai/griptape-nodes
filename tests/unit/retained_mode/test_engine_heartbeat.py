@@ -6,8 +6,9 @@ import os
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-from griptape_nodes.retained_mode.engine import Engine
+from griptape_nodes.retained_mode.engine import Engine, engine_scope
 from griptape_nodes.retained_mode.events.app_events import (
+    AppInitializationComplete,
     EngineHeartbeatRequest,
     EngineHeartbeatResultSuccess,
 )
@@ -90,3 +91,27 @@ class TestEngineHeartbeatInstanceId:
         assert isinstance(after, EngineHeartbeatResultSuccess)
         assert after.instance_id
         assert after.instance_id != before.instance_id
+
+
+class TestAppInitializationCompleteInstanceId:
+    """AppInitializationComplete carries the instance_id the same engine's heartbeat reports.
+
+    A client that sees the event before or after the heartbeat that reports a restart can match the
+    two by instance_id instead of guessing from their order.
+    """
+
+    def test_matches_the_heartbeat(self, engine: Engine) -> None:
+        heartbeat = engine.handle_engine_heartbeat_request(EngineHeartbeatRequest(heartbeat_id="hb-1"))
+
+        assert isinstance(heartbeat, EngineHeartbeatResultSuccess)
+        assert AppInitializationComplete().instance_id == heartbeat.instance_id
+
+    def test_comes_from_the_engine_in_scope(self, engine: Engine) -> None:
+        with engine_scope() as restarted:
+            event = AppInitializationComplete()
+
+        assert event.instance_id == restarted.instance_id
+        assert event.instance_id != engine.instance_id
+
+    def test_keeps_an_explicit_instance_id(self, engine: Engine) -> None:  # noqa: ARG002
+        assert AppInitializationComplete(instance_id="sent-by-another-process").instance_id == "sent-by-another-process"

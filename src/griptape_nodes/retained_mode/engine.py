@@ -265,6 +265,11 @@ class Engine:
         self._event_manager.register_request_handlers(self)
 
     @property
+    def instance_id(self) -> str:
+        """Random id generated each time the engine starts. See EngineHeartbeatResultSuccess.instance_id."""
+        return self._instance_id
+
+    @property
     def event_manager(self) -> EventManager:
         return self._event_manager
 
@@ -647,7 +652,7 @@ class Engine:
                 engine_name=engine_name,
                 engine_os=self._os_manager.platform_name(),
                 engine_id=self._engine_identity_manager.active_engine_id,
-                instance_id=self._instance_id,
+                instance_id=self.instance_id,
                 session_id=self._session_manager.active_session_id,
                 timestamp=datetime.now(tz=UTC).isoformat(),
                 user=user,
