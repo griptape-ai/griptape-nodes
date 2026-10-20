@@ -196,6 +196,30 @@ class VideoProbe(NamedTuple):
     container_seconds: float | None = None
     nominal_fps: float | None = None
 
+    @property
+    def shortest_seconds(self) -> float | None:
+        """The shorter of the stream and container durations, or None if ffprobe reported neither.
+
+        Providers don't say which of the two they measure, so a maximum is checked against this one.
+        """
+        return min(self._durations(), default=None)
+
+    @property
+    def longest_seconds(self) -> float | None:
+        """The longer of the stream and container durations, or None if ffprobe reported neither.
+
+        A minimum is checked against this one.
+        """
+        return max(self._durations(), default=None)
+
+    def _durations(self) -> list[float]:
+        return [s for s in (self.seconds, self.container_seconds) if s is not None]
+
+
+# video_errors' default for `probe`, told apart by identity from a None the caller passes for a video
+# it couldn't read, so that video isn't probed a second time.
+_PROBE_NOT_GIVEN = VideoProbe(info=None, seconds=None)
+
 
 def local_video_probe(value: Any) -> VideoProbe | None:
     """The frame size, duration and frame rate of a video input, or None if it can't be read locally.
@@ -297,6 +321,7 @@ def check_dimensions(  # noqa: PLR0913
     subject: str,
     min_side: int | None = None,
     max_side: int | None = None,
+    min_megapixels: float | None = None,
     max_megapixels: float | None = None,
     docs_url: str | None = None,
 ) -> NodeError | None:
@@ -307,6 +332,7 @@ def check_dimensions(  # noqa: PLR0913
         subject: The input, from `input_subject`.
         min_side: The fewest pixels accepted for the width and for the height.
         max_side: The most pixels accepted for the width and for the height.
+        min_megapixels: The fewest pixels accepted in total, in millions.
         max_megapixels: The most pixels accepted in total, in millions.
         docs_url: The provider's page documenting the limit.
     """
@@ -322,6 +348,12 @@ def check_dimensions(  # noqa: PLR0913
             f"{subject} is {size} and each side must be at most {max_side} pixels. Resize it smaller.", docs_url
         )
     megapixels = info.width * info.height / 1_000_000
+    if min_megapixels is not None and megapixels < min_megapixels:
+        return _error(
+            f"{subject} is {size} ({_format_past(megapixels, min_megapixels, 1)} megapixels) and the minimum is "
+            f"{_format_limit(min_megapixels, round_up=True)} megapixels. Use a larger one.",
+            docs_url,
+        )
     if max_megapixels is not None and megapixels > max_megapixels:
         return _error(
             f"{subject} is {size} ({_format_past(megapixels, max_megapixels, 1)} megapixels) and the limit is "
@@ -458,6 +490,7 @@ def image_errors(  # noqa: PLR0913
     maximum_bytes: int | None = None,
     min_side: int | None = None,
     max_side: int | None = None,
+    min_megapixels: float | None = None,
     max_megapixels: float | None = None,
     widest: str | None = None,
     tallest: str | None = None,
@@ -467,8 +500,8 @@ def image_errors(  # noqa: PLR0913
 
     Reads the image once and runs only the checks whose limits are given: the format when
     `allowed_mime_types` is set, the file size with `maximum_bytes`, the sides and area with
-    `min_side`, `max_side` or `max_megapixels`, and the aspect ratio when both `widest` and
-    `tallest` are set. Like the checks it runs, it skips anything it can't read locally.
+    `min_side`, `max_side`, `min_megapixels` or `max_megapixels`, and the aspect ratio when both
+    `widest` and `tallest` are set. Like the checks it runs, it skips anything it can't read locally.
 
     Args:
         image: The image input.
@@ -477,6 +510,7 @@ def image_errors(  # noqa: PLR0913
         maximum_bytes: The largest file the provider accepts.
         min_side: The fewest pixels accepted for the width and for the height.
         max_side: The most pixels accepted for the width and for the height.
+        min_megapixels: The fewest pixels accepted in total, in millions.
         max_megapixels: The most pixels accepted in total, in millions.
         widest: The widest aspect ratio accepted, as the provider writes it, such as "2.5:1".
         tallest: The tallest aspect ratio accepted, such as "1:2.5".
@@ -495,13 +529,14 @@ def image_errors(  # noqa: PLR0913
                 local_size_bytes(image, kind="image"), maximum_bytes=maximum_bytes, subject=subject, docs_url=docs_url
             )
         )
-    if min_side is not None or max_side is not None or max_megapixels is not None:
+    if min_side is not None or max_side is not None or min_megapixels is not None or max_megapixels is not None:
         errors.append(
             check_dimensions(
                 info,
                 subject=subject,
                 min_side=min_side,
                 max_side=max_side,
+                min_megapixels=min_megapixels,
                 max_megapixels=max_megapixels,
                 docs_url=docs_url,
             )
@@ -522,6 +557,7 @@ def video_errors(  # noqa: PLR0913
     max_seconds: float | None = None,
     min_side: int | None = None,
     max_side: int | None = None,
+    min_megapixels: float | None = None,
     max_megapixels: float | None = None,
     widest: str | None = None,
     tallest: str | None = None,
@@ -529,14 +565,15 @@ def video_errors(  # noqa: PLR0913
     max_fps: float | None = None,
     duration_fix: str | None = None,
     docs_url: str | None = None,
+    probe: VideoProbe | None = _PROBE_NOT_GIVEN,
 ) -> list[NodeError]:
     """Every provider video limit a video input breaks, in one call.
 
     Probes the video once, with `local_video_probe`, and runs only the checks whose limits are
     given: the file size with `maximum_bytes`, the duration with `min_seconds` or `max_seconds`,
-    the displayed frame's sides and area with `min_side`, `max_side` or `max_megapixels`, the
-    aspect ratio when both `widest` and `tallest` are set, and the frame rate with `min_fps` or
-    `max_fps`. Like the checks it runs, it skips anything it can't read locally.
+    the displayed frame's sides and area with `min_side`, `max_side`, `min_megapixels` or
+    `max_megapixels`, the aspect ratio when both `widest` and `tallest` are set, and the frame rate
+    with `min_fps` or `max_fps`. Like the checks it runs, it skips anything it can't read locally.
 
     Args:
         video: The video input.
@@ -546,6 +583,7 @@ def video_errors(  # noqa: PLR0913
         max_seconds: The longest clip accepted.
         min_side: The fewest pixels accepted for the width and for the height.
         max_side: The most pixels accepted for the width and for the height.
+        min_megapixels: The fewest pixels accepted in total, in millions.
         max_megapixels: The most pixels accepted in total, in millions.
         widest: The widest aspect ratio accepted, as the provider writes it, such as "2.5:1".
         tallest: The tallest aspect ratio accepted, such as "1:2.5".
@@ -554,6 +592,9 @@ def video_errors(  # noqa: PLR0913
         duration_fix: What the artist can do about a clip of the wrong length. Defaults to
             `check_duration`'s.
         docs_url: The provider's page documenting the limits.
+        probe: The video's `local_video_probe` result, when the node has already read it for a check
+            of its own, such as a total duration across several videos; None for a video it
+            couldn't read. Left out, the video is probed here.
     """
     errors: list[NodeError | None] = []
     if maximum_bytes is not None:
@@ -565,38 +606,36 @@ def video_errors(  # noqa: PLR0913
     needs_frame = (
         min_side is not None
         or max_side is not None
+        or min_megapixels is not None
         or max_megapixels is not None
         or (widest is not None and tallest is not None)
     )
     needs_fps = min_fps is not None or max_fps is not None
     if min_seconds is None and max_seconds is None and not needs_frame and not needs_fps:
         return [error for error in errors if error]
-    probe = local_video_probe(video)
+    if probe is _PROBE_NOT_GIVEN:
+        probe = local_video_probe(video)
     info = None
     if probe is not None:
         info = probe.info
-    # Providers don't say whether they measure the video stream or the whole container, so each
-    # bound uses the reading it's easier to meet: the shorter for a maximum, the longer for a minimum.
-    durations = _durations(probe)
-    if max_seconds is not None:
-        errors.append(
-            check_duration(
-                min(durations, default=None), subject=subject, maximum=max_seconds, fix=duration_fix, docs_url=docs_url
-            )
+    errors.extend(
+        _duration_errors(
+            probe,
+            subject=subject,
+            min_seconds=min_seconds,
+            max_seconds=max_seconds,
+            fix=duration_fix,
+            docs_url=docs_url,
         )
-    if min_seconds is not None:
-        errors.append(
-            check_duration(
-                max(durations, default=None), subject=subject, minimum=min_seconds, fix=duration_fix, docs_url=docs_url
-            )
-        )
-    if min_side is not None or max_side is not None or max_megapixels is not None:
+    )
+    if min_side is not None or max_side is not None or min_megapixels is not None or max_megapixels is not None:
         errors.append(
             check_dimensions(
                 info,
                 subject=subject,
                 min_side=min_side,
                 max_side=max_side,
+                min_megapixels=min_megapixels,
                 max_megapixels=max_megapixels,
                 docs_url=docs_url,
             )
@@ -615,11 +654,31 @@ def video_errors(  # noqa: PLR0913
     return [error for error in errors if error]
 
 
-def _durations(probe: VideoProbe | None) -> list[float]:
-    """A probe's stream and container durations, leaving out the ones it doesn't have."""
-    if probe is None:
-        return []
-    return [s for s in (probe.seconds, probe.container_seconds) if s is not None]
+def _duration_errors(  # noqa: PLR0913
+    probe: VideoProbe | None,
+    *,
+    subject: str,
+    min_seconds: float | None,
+    max_seconds: float | None,
+    fix: str | None,
+    docs_url: str | None,
+) -> list[NodeError | None]:
+    """`video_errors`' duration checks.
+
+    Providers don't say whether they measure the video stream or the whole container, so each bound
+    uses the reading it's easier to meet: the shorter for a maximum, the longer for a minimum.
+    """
+    shortest = None
+    longest = None
+    if probe is not None:
+        shortest = probe.shortest_seconds
+        longest = probe.longest_seconds
+    errors: list[NodeError | None] = []
+    if max_seconds is not None:
+        errors.append(check_duration(shortest, subject=subject, maximum=max_seconds, fix=fix, docs_url=docs_url))
+    if min_seconds is not None:
+        errors.append(check_duration(longest, subject=subject, minimum=min_seconds, fix=fix, docs_url=docs_url))
+    return errors
 
 
 def _frame_rates(probe: VideoProbe | None) -> list[float]:

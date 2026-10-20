@@ -256,6 +256,18 @@ class TestLocalVideoProbe:
     def test_skips_a_remote_video(self) -> None:
         assert local_video_probe("https://example.com/clip.mp4") is None
 
+    @pytest.mark.parametrize(
+        ("stream", "container", "shortest", "longest"),
+        [(10.0, 31.0, 10.0, 31.0), (None, 7.5, 7.5, 7.5), (None, None, None, None)],
+        ids=["both", "container-only", "neither"],
+    )
+    def test_reports_the_shorter_and_longer_duration(
+        self, stream: float | None, container: float | None, shortest: float | None, longest: float | None
+    ) -> None:
+        probe = VideoProbe(info=None, seconds=stream, container_seconds=container)
+        assert probe.shortest_seconds == shortest
+        assert probe.longest_seconds == longest
+
 
 class TestLocalVideoInfo:
     @pytest.fixture
@@ -400,6 +412,19 @@ class TestCheckDimensions:
         error = check_dimensions(ImageInfo(2829, 2829, None), subject=SUBJECT, max_megapixels=8)
         assert "(8.003 megapixels)" in str(error)
 
+    def test_allows_exactly_the_minimum_area(self) -> None:
+        assert check_dimensions(ImageInfo(614, 664, None), subject=SUBJECT, min_megapixels=0.407696) is None
+
+    def test_rejects_too_few_pixels(self) -> None:
+        error = check_dimensions(ImageInfo(640, 480, None), subject=SUBJECT, min_megapixels=0.407696)
+        assert str(error) == (
+            f"{SUBJECT} is 640x480 (0.3 megapixels) and the minimum is 0.407696 megapixels. Use a larger one."
+        )
+
+    def test_reports_megapixels_just_under_the_minimum_as_under_it(self) -> None:
+        error = check_dimensions(ImageInfo(1999, 1000, None), subject=SUBJECT, min_megapixels=2)
+        assert "(1.999 megapixels) and the minimum is 2 megapixels" in str(error)
+
 
 class TestCheckAspectRatioRange:
     @pytest.mark.parametrize(("width", "height"), [(300, 900), (900, 300), (1000, 1000), (1920, 1080)])
@@ -462,6 +487,12 @@ class TestImageErrors:
         errors = image_errors(_data_uri(_png_bytes(400, 300)), subject=SUBJECT, max_megapixels=0.1)
         assert [str(e) for e in errors] == [
             f"{SUBJECT} is 400x300 (0.12 megapixels) and the limit is 0.1 megapixels. Resize it smaller."
+        ]
+
+    def test_checks_the_minimum_area(self) -> None:
+        errors = image_errors(_data_uri(_png_bytes(400, 300)), subject=SUBJECT, min_megapixels=0.2)
+        assert [str(e) for e in errors] == [
+            f"{SUBJECT} is 400x300 (0.1 megapixels) and the minimum is 0.2 megapixels. Use a larger one."
         ]
 
     def test_checks_the_size(self) -> None:
@@ -547,6 +578,14 @@ class TestVideoErrors:
         assert len(errors) == 1
         assert "megapixels" in str(errors[0])
 
+    def test_checks_the_minimum_area(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = self._probe(monkeypatch, ImageInfo(640, 480, None), 5.0)
+        errors = video_errors(str(clip), subject=SUBJECT, min_megapixels=0.407696)
+        assert [str(e) for e in errors] == [
+            f"{SUBJECT} is 640x480 (0.3 megapixels) and the minimum is 0.407696 megapixels. Use a larger one."
+        ]
+        assert len(calls) == 1
+
     @pytest.mark.parametrize(
         ("average", "nominal", "min_fps", "max_fps", "expected"),
         [
@@ -626,6 +665,23 @@ class TestVideoErrors:
         else:
             assert len(messages) == 1
             assert expected in messages[0]
+
+    def test_uses_a_probe_the_caller_already_read(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = self._probe(monkeypatch, ImageInfo(1280, 720, None), 5.0)
+        probe = VideoProbe(info=ImageInfo(4000, 1000, None), seconds=40.0)
+        errors = video_errors(str(clip), subject=SUBJECT, max_seconds=30, max_side=2048, probe=probe)
+        assert [str(e) for e in errors] == [
+            f"{SUBJECT} is 40.00 seconds long and the limit is 30. Use a Trim Video node to shorten it.",
+            f"{SUBJECT} is 4000x1000 and each side must be at most 2048 pixels. Resize it smaller.",
+        ]
+        assert calls == []
+
+    def test_does_not_probe_again_a_video_the_caller_could_not_read(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = self._probe(monkeypatch, ImageInfo(4000, 1000, None), 40.0)
+        assert video_errors(str(clip), subject=SUBJECT, max_seconds=30, max_side=2048, probe=None) == []
+        assert calls == []
 
     def test_does_not_probe_for_half_an_aspect_ratio_range(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         calls = self._probe(monkeypatch, ImageInfo(4000, 1000, None), 5.0)
