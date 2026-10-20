@@ -109,6 +109,10 @@ VALIDATION_PROBE_BUDGET_SECONDS = 5
 # outside a run, where each probe is limited only by FFPROBE_TIMEOUT_SECONDS.
 _probe_deadline: ContextVar[float | None] = ContextVar("input_check_probe_deadline", default=None)
 
+# EXIF Orientation tag (0x0112) values that display an image rotated a quarter turn.
+_EXIF_ORIENTATION_TAG = 0x0112
+_QUARTER_TURN_ORIENTATIONS = frozenset({5, 6, 7, 8})
+
 _QUARTER_TURN_DEGREES = 90
 _HALF_TURN_DEGREES = 180
 
@@ -158,7 +162,8 @@ def local_size_bytes(value: Any, *, kind: MediaKind) -> int | None:
 def local_image_info(value: Any) -> ImageInfo | None:
     """The pixel size and MIME type of an image input, or None if it can't be read locally.
 
-    Reads only the image header. Returns None for a remote URL, for a format Pillow can't open
+    Reads only the image header, and reports the size as displayed, so a phone photo stored landscape
+    with an EXIF rotation reads as portrait. Returns None for a remote URL, for a format Pillow can't open
     (HEIC, say), and for an image over Pillow's decompression-bomb limit (about 179 megapixels),
     which Pillow refuses to open without decoding anything. The checks that use it then skip,
     rather than reject a valid image or override a process-wide Pillow setting.
@@ -174,6 +179,7 @@ def local_image_info(value: Any) -> ImageInfo | None:
             image_format = image.format
             width = image.width
             height = image.height
+            orientation = _exif_orientation(image)
     # Pillow re-raises NotImplementedError from a format plugin that recognises a file but can't decode
     # it, such as a DDS texture in an unsupported DXGI format.
     except (
@@ -185,12 +191,28 @@ def local_image_info(value: Any) -> ImageInfo | None:
     ) as e:
         logger.debug("Could not read image header for a pre-run input check, skipping it: %s", e)
         return None
+    # Phones store a portrait shot landscape with an EXIF orientation of 5 to 8, which displays it a
+    # quarter turn round; report the size as displayed, as the video reader does.
+    if orientation in _QUARTER_TURN_ORIENTATIONS:
+        width, height = height, width
     # Phone and camera JPEGs with Multi-Picture extensions open as MPO; they are JPEG streams.
     if image_format == "MPO":
         mime_type = "image/jpeg"
     else:
         mime_type = Image.MIME.get(image_format or "")
     return ImageInfo(width=width, height=height, mime_type=mime_type)
+
+
+def _exif_orientation(image: Image.Image) -> int | None:
+    """An image's EXIF Orientation tag, read from its header, or None if it has none or it can't be read."""
+    try:
+        orientation = image.getexif().get(_EXIF_ORIENTATION_TAG)
+    except (OSError, ValueError, SyntaxError) as e:
+        logger.debug("Could not read an image's EXIF orientation for a pre-run input check: %s", e)
+        return None
+    if isinstance(orientation, int):
+        return orientation
+    return None
 
 
 class VideoProbe(NamedTuple):
@@ -242,9 +264,15 @@ def input_check_budget(seconds: float = VALIDATION_PROBE_BUDGET_SECONDS) -> Iter
     The engine opens one around each node's `validate_before_node_run`, so a node checking several
     videos blocks the event loop for at most `seconds` in all. Inside it, each probe gets the
     smaller of `FFPROBE_TIMEOUT_SECONDS` and the time left, and a probe that would start with no
-    time left is skipped.
+    time left is skipped. Opened inside another budget, it can shorten the time left but never
+    extend it.
     """
-    token = _probe_deadline.set(time.monotonic() + seconds)
+    deadline = time.monotonic() + seconds
+    # Nested inside another budget, this one can only end sooner, so the engine's cap always holds.
+    outer = _probe_deadline.get()
+    if outer is not None and outer < deadline:
+        deadline = outer
+    token = _probe_deadline.set(deadline)
     try:
         yield
     finally:

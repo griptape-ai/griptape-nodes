@@ -67,6 +67,15 @@ def _png_bytes(width: int, height: int) -> bytes:
     return buffer.getvalue()
 
 
+def _rotated_jpeg_bytes(width: int, height: int, orientation: int) -> bytes:
+    """A JPEG stored `width`x`height` with an EXIF Orientation tag, as phones save a rotated shot."""
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    buffer = BytesIO()
+    Image.new("RGB", (width, height)).save(buffer, format="JPEG", exif=exif.tobytes())
+    return buffer.getvalue()
+
+
 def _data_uri(data: bytes, mime_type: str = "image/png") -> str:
     return f"data:{mime_type};base64,{base64.b64encode(data).decode()}"
 
@@ -109,6 +118,16 @@ class TestLocalSizeBytes:
 class TestLocalImageInfo:
     def test_reads_a_data_uri(self) -> None:
         assert local_image_info(_data_uri(_png_bytes(40, 30))) == ImageInfo(40, 30, "image/png")
+
+    @pytest.mark.parametrize("orientation", [5, 6, 7, 8])
+    def test_reports_an_exif_rotated_photo_as_displayed(self, orientation: int) -> None:
+        image = _data_uri(_rotated_jpeg_bytes(400, 300, orientation), "image/jpeg")
+        assert local_image_info(image) == ImageInfo(300, 400, "image/jpeg")
+
+    @pytest.mark.parametrize("orientation", [1, 2, 3, 4])
+    def test_keeps_the_stored_size_when_exif_does_not_rotate_a_quarter_turn(self, orientation: int) -> None:
+        image = _data_uri(_rotated_jpeg_bytes(400, 300, orientation), "image/jpeg")
+        assert local_image_info(image) == ImageInfo(400, 300, "image/jpeg")
 
     def test_reads_a_local_file(self, tmp_path: Path) -> None:
         path = tmp_path / "image.jpg"
@@ -207,6 +226,19 @@ class TestLocalVideoDuration:
             now[0] += 3
             assert _probed_seconds(str(clip)) is None
         assert ffprobe_runs == []
+
+    def test_lets_a_nested_budget_shorten_but_not_extend_the_outer_one(
+        self, clip: Path, ffprobe_runs: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        now = [100.0]
+        monkeypatch.setattr(input_checks.time, "monotonic", lambda: now[0])
+        with input_check_budget(seconds=3):
+            with input_check_budget(seconds=60):
+                now[0] += 2.5
+                _probed_seconds(str(clip))
+            with input_check_budget(seconds=0.2):
+                _probed_seconds(str(clip))
+        assert [run["timeout"] for run in ffprobe_runs] == [0.5, pytest.approx(0.2)]
 
     def test_ends_the_budget_with_its_block(
         self, clip: Path, ffprobe_runs: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
@@ -522,6 +554,11 @@ class TestImageErrors:
         "widest": "2.5:1",
         "tallest": "1:2.5",
     }
+
+    def test_judges_an_exif_rotated_photo_by_its_displayed_shape(self) -> None:
+        # Stored 4032x3024 but shown portrait, as a phone saves a portrait shot.
+        photo = _data_uri(_rotated_jpeg_bytes(4032, 3024, 6), "image/jpeg")
+        assert image_errors(photo, subject=SUBJECT, widest="1:1", tallest="9:16") == []
 
     @pytest.mark.parametrize(("widest", "tallest"), [("3:1", None), (None, "1:3")], ids=["widest-only", "tallest-only"])
     def test_refuses_half_an_aspect_ratio_range(self, widest: str | None, tallest: str | None) -> None:
