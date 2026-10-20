@@ -45,12 +45,8 @@ async def test_the_child_engine_is_told_the_parent_run(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_parent_run_means_the_child_mints_its_own(tmp_path: Path) -> None:
-    """A workflow run on its own is a run of its own.
-
-    The id travels as an argument rather than in the environment, so a child cannot inherit one
-    its own parent was given.
-    """
+async def test_no_parent_run_passes_no_parent_run_id(tmp_path: Path) -> None:
+    """A workflow run outside any run starts the child with no parent run, so it counts on its own."""
     args = await _child_args(tmp_path, None)
 
     assert _parsed_parent_run_id(args) is None

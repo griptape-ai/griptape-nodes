@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.machines.control_flow import ControlFlowContext, ControlFlowMachine
+from griptape_nodes.machines.control_flow import CompleteState, ControlFlowContext, ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagNode
 from griptape_nodes.machines.parallel_resolution import ExecuteDagState
 from griptape_nodes.retained_mode.events.execution_events import (
@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
 
 def _dag_node() -> DagNode:
@@ -130,6 +131,31 @@ class TestRunId:
         assert flow_manager.current_run_id == "run-1"
 
 
+class TestRunEndEvents:
+    @pytest.mark.asyncio
+    async def test_a_run_ending_on_several_nodes_names_itself_on_one_end_event(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A client that closes a run on its end event must see exactly one for the id."""
+        monkeypatch.setattr(NodeManager, "result_parameter_values", staticmethod(lambda _node: {}))
+        engine = MagicMock()
+        context = _context()
+        context._engine = engine
+        context.is_isolated = False
+        context.flow_name = "Flow"
+        context.run_started_at = None
+        context.run_id = "run-1"
+        first, second = MagicMock(spec=BaseNode), MagicMock(spec=BaseNode)
+        first.name, second.name = "First", "Second"
+        context.current_nodes = [first, second]
+
+        await CompleteState.on_enter(context)
+
+        calls = engine.event_manager.put_event.call_args_list
+        resolved = [call.args[0].wrapped_event.payload for call in calls]
+        assert [(event.end_node_name, event.run_id) for event in resolved] == [("First", "run-1"), ("Second", None)]
+
+
 class _StartedRun(NamedTuple):
     machine: ControlFlowMachine
     engine: MagicMock
@@ -146,16 +172,21 @@ class TestRunIdMinting:
     """Which runs get an id of their own, and which share another run's."""
 
     @staticmethod
-    async def _start(*, is_isolated: bool, parent_run_id: str | None) -> _StartedRun:
-        """Start a machine with everything past choosing its run id stubbed out."""
+    def _machine(*, is_isolated: bool = False, parent_run_id: str | None = None) -> _StartedRun:
+        """A machine with everything past choosing its run id stubbed out."""
         engine = MagicMock()
         engine.config_manager.get_config_value.side_effect = lambda _key, default=None: default
         engine.flow_manager.parent_run_id = parent_run_id
         machine = ControlFlowMachine("Flow", is_isolated=is_isolated, engine=engine)
         machine._process_nodes_for_dag = AsyncMock(return_value=[])  # type: ignore[method-assign]
         machine.start = AsyncMock()  # type: ignore[method-assign]
-        await machine.start_flow(MagicMock(), MagicMock())
         return _StartedRun(machine=machine, engine=engine)
+
+    async def _start(self, *, is_isolated: bool, parent_run_id: str | None) -> _StartedRun:
+        """Start a machine once."""
+        run = self._machine(is_isolated=is_isolated, parent_run_id=parent_run_id)
+        await run.machine.start_flow(MagicMock(), MagicMock())
+        return run
 
     @pytest.mark.asyncio
     async def test_a_top_level_run_mints_and_announces_its_own_id(self) -> None:
@@ -182,30 +213,22 @@ class TestRunIdMinting:
     @pytest.mark.asyncio
     async def test_a_start_that_fails_setting_up_announces_no_run(self) -> None:
         """Nothing would ever end a run announced before a failed setup."""
-        engine = MagicMock()
-        engine.config_manager.get_config_value.side_effect = lambda _key, default=None: default
-        engine.flow_manager.parent_run_id = None
-        machine = ControlFlowMachine("Flow", engine=engine)
-        machine._process_nodes_for_dag = AsyncMock(side_effect=RuntimeError("setup failed"))  # type: ignore[method-assign]
+        run = self._machine()
+        run.machine._process_nodes_for_dag = AsyncMock(side_effect=RuntimeError("setup failed"))  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError, match="setup failed"):
-            await machine.start_flow(MagicMock(), MagicMock())
+            await run.machine.start_flow(MagicMock(), MagicMock())
 
-        assert _StartedRun(machine=machine, engine=engine).announced == []
-        assert machine.context.run_id is None
+        assert run.announced == []
+        assert run.machine.context.run_id is None
 
     @pytest.mark.asyncio
     async def test_starting_again_is_a_new_run(self) -> None:
         """Each start has its own end event, so each is a run, including a queued next start node."""
-        engine = MagicMock()
-        engine.config_manager.get_config_value.side_effect = lambda _key, default=None: default
-        engine.flow_manager.parent_run_id = None
-        machine = ControlFlowMachine("Flow", engine=engine)
-        machine._process_nodes_for_dag = AsyncMock(return_value=[])  # type: ignore[method-assign]
-        machine.start = AsyncMock()  # type: ignore[method-assign]
+        run = self._machine()
 
-        await machine.start_flow(MagicMock(), MagicMock())
-        await machine.start_flow(MagicMock(), MagicMock())
+        await run.machine.start_flow(MagicMock(), MagicMock())
+        await run.machine.start_flow(MagicMock(), MagicMock())
 
-        first, second = _StartedRun(machine=machine, engine=engine).announced
+        first, second = run.announced
         assert first != second

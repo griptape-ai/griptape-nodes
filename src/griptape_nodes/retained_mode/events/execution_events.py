@@ -432,7 +432,8 @@ class ControlFlowResolvedEvent(ExecutionPayload):
         parameter_output_values: That node's output values.
         run_seconds: Wall-clock seconds the whole run took, or None when the run was not timed.
         run_id: The id `FlowRunStartedEvent` announced for this run, or None for a run that announced
-            none, such as a node group run in a process of its own for another engine's run.
+            none, such as a node group run in a process of its own for another engine's run. A run
+            that ends on several nodes sends one of these per node, and only the first carries the id.
     """
 
     end_node_name: str

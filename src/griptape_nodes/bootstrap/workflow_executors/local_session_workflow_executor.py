@@ -70,8 +70,10 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         logger.info("Setting up session %s", self._session_id)
         GriptapeNodes.SessionManager().save_session(self._session_id)
         GriptapeNodes.SessionManager().active_session_id = self._session_id
-        GriptapeNodes.FlowManager().parent_run_id = self._parent_run_id
         await self._start_websocket_connection()
+        # Last, so a failure above cannot leave later runs in this process counted toward the parent:
+        # __aexit__, which clears it, does not run when __aenter__ raises.
+        GriptapeNodes.FlowManager().parent_run_id = self._parent_run_id
 
         return self
 

@@ -162,7 +162,10 @@ class CompleteState(State):
             logger.debug("Isolated subflow '%s' is complete.", context.flow_name)
             return None
 
-        # Broadcast completion events for any remaining current nodes
+        # Broadcast completion events for any remaining current nodes. Only the first carries the
+        # run's id, so a client that closes a run on its end event sees exactly one; the first is
+        # also the one LocalWorkflowExecutor treats as the workflow finishing.
+        run_id = context.run_id
         for current_node in context.current_nodes:
             context.engine.event_manager.put_event(
                 ExecutionGriptapeNodeEvent(
@@ -171,11 +174,12 @@ class CompleteState(State):
                             end_node_name=current_node.name,
                             parameter_output_values=NodeManager.result_parameter_values(current_node),
                             run_seconds=context.seconds_since_run_started(),
-                            run_id=context.run_id,
+                            run_id=run_id,
                         )
                     )
                 )
             )
+            run_id = None
         logger.debug("Flow is complete.")
         return None
 

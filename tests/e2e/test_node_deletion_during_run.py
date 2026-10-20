@@ -120,29 +120,6 @@ def _configure(
     _set_parameter(engine, node_name, "chunk", chunk)
 
 
-def _record_published(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch, payload_type: type, extract: Callable[[Any], Any]
-) -> list[Any]:
-    """Tap the event bus and record every published payload of the given type.
-
-    Assertions about what the editor would have *seen* have to read the published stream, not the
-    engine's internal state: the whole failure class here is a run that is internally fine and
-    externally silent.
-    """
-    recorded: list[Any] = []
-    event_manager = engine.event_manager
-    real_put_event = event_manager.put_event
-
-    def _collect(event: object) -> None:
-        payload = getattr(getattr(event, "wrapped_event", None), "payload", event)
-        if isinstance(payload, payload_type):
-            recorded.append(extract(payload))
-        real_put_event(event)
-
-    monkeypatch.setattr(event_manager, "put_event", _collect)
-    return recorded
-
-
 async def _wait_until_resolving(engine: Engine, node_name: str) -> None:
     """Block until the node has actually entered execution, so a deletion lands mid-run."""
     for _ in range(_POLL_ATTEMPTS):
@@ -235,9 +212,9 @@ async def _drain_cancelled_run(run: asyncio.Task) -> None:
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_the_running_node_cancels_the_run(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
 ) -> None:
     """Deleting the node that is currently executing must cancel the run, not wedge it."""
@@ -247,7 +224,7 @@ async def test_deleting_the_running_node_cancels_the_run(
     create_node(NODE_TYPE, "Runner", flow_name, library_name=LIBRARY_NAME)
     _configure(engine, "Runner", text="never finishes", gate_file=gate_file)
 
-    cancellations = _record_published(engine, monkeypatch, ControlFlowCancelledEvent, lambda _payload: True)
+    cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Runner")))
     await _wait_until_resolving(engine, "Runner")
@@ -275,9 +252,9 @@ async def test_deleting_the_running_node_cancels_the_run(
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_an_unresolved_upstream_cancels_the_run(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -291,7 +268,7 @@ async def test_deleting_an_unresolved_upstream_cancels_the_run(
     _configure(engine, "Upstream", text="from upstream", gate_file=upstream_gate)
     _configure(engine, "Downstream")
 
-    cancellations = _record_published(engine, monkeypatch, ControlFlowCancelledEvent, lambda _payload: True)
+    cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Downstream")))
     await _wait_until_resolving(engine, "Upstream")
@@ -319,9 +296,9 @@ async def test_deleting_an_unresolved_upstream_cancels_the_run(
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_a_finished_node_a_queued_consumer_still_needs_cancels_the_run(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -357,7 +334,7 @@ async def test_deleting_a_finished_node_a_queued_consumer_still_needs_cancels_th
     _configure(engine, "ConsumerB", gate_file=consumer_gate)
     _configure(engine, "Sink")
 
-    cancellations = _record_published(engine, monkeypatch, ControlFlowCancelledEvent, lambda _payload: True)
+    cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Sink")))
 
@@ -434,9 +411,9 @@ async def test_deleting_an_unresolved_node_from_a_control_chain_ends_the_run(
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_a_supplier_of_a_later_chain_member_cancels_the_run(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -471,7 +448,7 @@ async def test_deleting_a_supplier_of_a_later_chain_member_cancels_the_run(
     _configure(engine, "First", gate_file=first_gate)
     _configure(engine, "Second")
 
-    cancellations = _record_published(engine, monkeypatch, ControlFlowCancelledEvent, lambda _payload: True)
+    cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
 
@@ -503,9 +480,9 @@ async def test_deleting_a_supplier_of_a_later_chain_member_cancels_the_run(
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_a_supplier_a_data_hop_away_from_the_chain_cancels_the_run(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -544,7 +521,7 @@ async def test_deleting_a_supplier_a_data_hop_away_from_the_chain_cancels_the_ru
     _configure(engine, "First", gate_file=first_gate)
     _configure(engine, "Second")
 
-    cancellations = _record_published(engine, monkeypatch, ControlFlowCancelledEvent, lambda _payload: True)
+    cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
 
@@ -578,9 +555,9 @@ async def test_deleting_a_supplier_a_data_hop_away_from_the_chain_cancels_the_ru
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_a_supplier_two_hops_down_the_chain_cancels_the_run(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -617,7 +594,7 @@ async def test_deleting_a_supplier_two_hops_down_the_chain_cancels_the_run(
     _configure(engine, "Second")
     _configure(engine, "Third")
 
-    cancellations = _record_published(engine, monkeypatch, ControlFlowCancelledEvent, lambda _payload: True)
+    cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
     await _wait_until_resolving(engine, "First")
@@ -657,9 +634,9 @@ async def test_deleting_a_supplier_two_hops_down_the_chain_cancels_the_run(
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_an_unrelated_node_does_not_interrupt_streaming(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
 ) -> None:
     """The reported bug: deleting an unconnected bystander must not disturb a streaming run.
@@ -675,7 +652,7 @@ async def test_deleting_an_unrelated_node_does_not_interrupt_streaming(
     _configure(engine, "Survivor", text="survived", gate_file=gate_file, chunk="tick")
     _configure(engine, "Bystander", text="unrelated")
 
-    streamed = _record_published(engine, monkeypatch, ProgressEvent, lambda payload: payload.node_name)
+    streamed = record_published(ProgressEvent, lambda payload: payload.node_name)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Survivor")))
     await _wait_until_resolving(engine, "Survivor")
@@ -706,9 +683,9 @@ async def test_deleting_an_unrelated_node_does_not_interrupt_streaming(
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_a_resolved_upstream_leaves_its_running_successor_alone(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -732,7 +709,7 @@ async def test_deleting_a_resolved_upstream_leaves_its_running_successor_alone(
     _configure(engine, "Upstream", text="from upstream", gate_file=upstream_gate)
     _configure(engine, "Downstream", text="not from the connection", gate_file=downstream_gate)
 
-    unresolved = _record_published(engine, monkeypatch, NodeUnresolvedEvent, lambda payload: payload.node_name)
+    unresolved = record_published(NodeUnresolvedEvent, lambda payload: payload.node_name)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Downstream")))
 
@@ -847,9 +824,9 @@ async def test_a_later_run_does_not_keep_serving_the_deleted_connection(
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_a_downstream_node_that_has_not_started_leaves_the_run_alone(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -867,7 +844,7 @@ async def test_deleting_a_downstream_node_that_has_not_started_leaves_the_run_al
     _configure(engine, "Producer", text="produced", gate_file=gate_file, chunk="tick")
     _configure(engine, "Sink")
 
-    cancellations = _record_published(engine, monkeypatch, ControlFlowCancelledEvent, lambda _payload: True)
+    cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Producer")))
     await _wait_until_resolving(engine, "Producer")
@@ -888,9 +865,9 @@ async def test_deleting_a_downstream_node_that_has_not_started_leaves_the_run_al
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_a_supplier_for_a_chain_nobody_started_leaves_the_run_alone(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -923,8 +900,8 @@ async def test_deleting_a_supplier_for_a_chain_nobody_started_leaves_the_run_alo
     _configure(engine, "IdleMiddle")
     _configure(engine, "Shared", text="from shared")
 
-    cancellations = _record_published(engine, monkeypatch, ControlFlowCancelledEvent, lambda _payload: True)
-    streamed = _record_published(engine, monkeypatch, ProgressEvent, lambda payload: payload.node_name)
+    cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
+    streamed = record_published(ProgressEvent, lambda payload: payload.node_name)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Runner")))
     await _wait_until_resolving(engine, "Runner")
@@ -954,9 +931,9 @@ async def test_deleting_a_supplier_for_a_chain_nobody_started_leaves_the_run_alo
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_bystanders_then_the_running_node_answers_each_delete_on_its_own_terms(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -982,8 +959,8 @@ async def test_deleting_bystanders_then_the_running_node_answers_each_delete_on_
     _configure(engine, "LooseBystander", text="unrelated")
     _configure(engine, "DownstreamBystander")
 
-    cancellations = _record_published(engine, monkeypatch, ControlFlowCancelledEvent, lambda _payload: True)
-    streamed = _record_published(engine, monkeypatch, ProgressEvent, lambda payload: payload.node_name)
+    cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
+    streamed = record_published(ProgressEvent, lambda payload: payload.node_name)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Runner")))
     await _wait_until_resolving(engine, "Runner")
@@ -1018,9 +995,9 @@ async def test_deleting_bystanders_then_the_running_node_answers_each_delete_on_
 @pytest.mark.usefixtures("registered_library", "parallel_mode")
 @pytest.mark.asyncio
 async def test_deleting_a_settled_node_removes_it_from_the_live_dag(
+    record_published: Callable[..., list[Any]],
     tmp_path: Path,
     engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
     create_node: Callable[..., str],
     connect: Callable[..., None],
 ) -> None:
@@ -1041,7 +1018,7 @@ async def test_deleting_a_settled_node_removes_it_from_the_live_dag(
     _configure(engine, "Upstream", text="from upstream", gate_file=upstream_gate)
     _configure(engine, "Downstream", text="downstream default", gate_file=downstream_gate)
 
-    involved = _record_published(engine, monkeypatch, InvolvedNodesEvent, lambda payload: payload.involved_nodes)
+    involved = record_published(InvolvedNodesEvent, lambda payload: payload.involved_nodes)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Downstream")))
 

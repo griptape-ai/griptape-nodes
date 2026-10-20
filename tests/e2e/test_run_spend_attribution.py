@@ -16,16 +16,12 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import pytest
 
 from griptape_nodes.drivers.cloud_credentials import API_KEY_SECRET_NAME, BASE_URL_SETTING_NAME
 from griptape_nodes.retained_mode.events.budget_events import ReportUsageRequest
-from griptape_nodes.retained_mode.events.connection_events import (
-    CreateConnectionRequest,
-    CreateConnectionResultSuccess,
-)
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     FlowRunStartedEvent,
@@ -150,39 +146,19 @@ def three_node_flow(
     return flow_name
 
 
-def _record_payloads(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> list[Any]:
-    """Tap both event spellings and record every execution payload published."""
-    recorded: list[Any] = []
-    event_manager = engine.event_manager
-    real_put_event = event_manager.put_event
-    real_aput_event = event_manager.aput_event
-
-    def _note(event: object) -> None:
-        recorded.append(getattr(getattr(event, "wrapped_event", None), "payload", event))
-
-    def _collect(event: object) -> None:
-        _note(event)
-        real_put_event(event)
-
-    async def _acollect(event: object) -> None:
-        _note(event)
-        await real_aput_event(event)
-
-    monkeypatch.setattr(event_manager, "put_event", _collect)
-    monkeypatch.setattr(event_manager, "aput_event", _acollect)
-    return recorded
-
-
 def _announced_run_ids(payloads: list[Any]) -> list[str]:
     return [payload.run_id for payload in payloads if isinstance(payload, FlowRunStartedEvent)]
 
 
 @pytest.mark.asyncio
 async def test_every_call_in_a_run_carries_the_id_the_run_announced(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch, stub_cloud: _StubSpendServer, three_node_flow: str
+    engine: Engine,
+    record_published: Callable[..., list[Any]],
+    stub_cloud: _StubSpendServer,
+    three_node_flow: str,
 ) -> None:
     """One run, three calls: Cloud can total the run because all three carry its id."""
-    payloads = _record_payloads(engine, monkeypatch)
+    payloads = record_published(object)
 
     result = await engine.ahandle_request(StartFlowRequest(flow_name=three_node_flow))
     assert isinstance(result, StartFlowResultSuccess), result
@@ -199,10 +175,13 @@ async def test_every_call_in_a_run_carries_the_id_the_run_announced(
 
 @pytest.mark.asyncio
 async def test_the_next_run_gets_a_different_id(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch, stub_cloud: _StubSpendServer, three_node_flow: str
+    engine: Engine,
+    record_published: Callable[..., list[Any]],
+    stub_cloud: _StubSpendServer,
+    three_node_flow: str,
 ) -> None:
     """Two runs of one workflow write two separate totals, not one."""
-    payloads = _record_payloads(engine, monkeypatch)
+    payloads = record_published(object)
 
     for _ in range(2):
         result = await engine.ahandle_request(StartFlowRequest(flow_name=three_node_flow))
@@ -218,10 +197,10 @@ async def test_the_next_run_gets_a_different_id(
 @pytest.mark.usefixtures("three_node_flow")
 @pytest.mark.asyncio
 async def test_running_one_node_is_a_run_of_its_own(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch, stub_cloud: _StubSpendServer
+    engine: Engine, record_published: Callable[..., list[Any]], stub_cloud: _StubSpendServer
 ) -> None:
     """Running a single node from the editor is a run, and its calls are totalled as one."""
-    payloads = _record_payloads(engine, monkeypatch)
+    payloads = record_published(object)
 
     result = await engine.ahandle_request(ResolveNodeRequest(node_name=NODE_NAMES[0]))
     assert isinstance(result, ResolveNodeResultSuccess), result
@@ -242,18 +221,20 @@ async def test_spend_outside_a_run_carries_no_run_id(engine: Engine, stub_cloud:
     assert "run_id" not in reports[0]["tags"], reports[0]
 
 
-@pytest.mark.parametrize("execution_mode", ["Run Group Items One at a Time", "Run Group Items All at Once"])
-@pytest.mark.asyncio
-async def test_a_loop_s_iterations_count_toward_the_run_that_started_them(  # noqa: PLR0913
+class _LoopFlow(NamedTuple):
+    flow_name: str
+    group: str
+
+
+@pytest.fixture(params=["Run Group Items One at a Time", "Run Group Items All at Once"])
+def loop_flow(
+    request: pytest.FixtureRequest,
     engine: Engine,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     materialize_library: Callable[..., Path],
-    stub_cloud: _StubSpendServer,
-    *,
-    execution_mode: str,
-) -> None:
-    """Each iteration runs as its own isolated subflow, and must not start a run of its own."""
+    connect: Callable[..., None],
+) -> _LoopFlow:
+    """A three-iteration ForEach group whose body is a spending node, in each group execution mode."""
     for library_json in (
         materialize_library(
             tmp_path / "loop_library",
@@ -285,26 +266,28 @@ async def test_a_loop_s_iterations_count_toward_the_run_that_started_them(  # no
         )
         assert isinstance(body_result, CreateNodeResultSuccess), body_result
     group, body = group_result.node_name, body_result.node_name
-    for source_node, source_param, target_node, target_param in (
-        (group, "on_each", body, "exec_in"),
-        (body, "exec_out", group, "loop_complete"),
-    ):
-        connection_result = engine.handle_request(
-            CreateConnectionRequest(
-                source_node_name=source_node,
-                source_parameter_name=source_param,
-                target_node_name=target_node,
-                target_parameter_name=target_param,
-            )
-        )
-        assert isinstance(connection_result, CreateConnectionResultSuccess), connection_result
+    connect(group, "on_each", body, "exec_in")
+    connect(body, "exec_out", group, "loop_complete")
     engine.handle_request(
-        SetParameterValueRequest(parameter_name="execution_mode", node_name=group, value=execution_mode)
+        SetParameterValueRequest(parameter_name="execution_mode", node_name=group, value=request.param)
     )
-    payloads = _record_payloads(engine, monkeypatch)
+    return _LoopFlow(flow_name=flow_name, group=group)
 
-    with engine.context_manager.flow(flow_name):
-        run_result = await engine.ahandle_request(StartFlowRequest(flow_name=flow_name, flow_node_name=group))
+
+@pytest.mark.asyncio
+async def test_a_loop_s_iterations_count_toward_the_run_that_started_them(
+    engine: Engine,
+    record_published: Callable[..., list[Any]],
+    stub_cloud: _StubSpendServer,
+    loop_flow: _LoopFlow,
+) -> None:
+    """Each iteration runs as its own isolated subflow, and must not start a run of its own."""
+    payloads = record_published(object)
+
+    with engine.context_manager.flow(loop_flow.flow_name):
+        run_result = await engine.ahandle_request(
+            StartFlowRequest(flow_name=loop_flow.flow_name, flow_node_name=loop_flow.group)
+        )
     assert isinstance(run_result, StartFlowResultSuccess), run_result
 
     announced = _announced_run_ids(payloads)
@@ -315,7 +298,11 @@ async def test_a_loop_s_iterations_count_toward_the_run_that_started_them(  # no
 
 @pytest.mark.asyncio
 async def test_a_group_run_for_another_engine_counts_toward_that_engine_s_run(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch, stub_cloud: _StubSpendServer, three_node_flow: str
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    record_published: Callable[..., list[Any]],
+    stub_cloud: _StubSpendServer,
+    three_node_flow: str,
 ) -> None:
     """The engine that runs a node group in its own process reports under the parent's run.
 
@@ -323,7 +310,7 @@ async def test_a_group_run_for_another_engine_counts_toward_that_engine_s_run(
     the only one that says the run is over.
     """
     monkeypatch.setattr(engine.flow_manager, "parent_run_id", "parent-run")
-    payloads = _record_payloads(engine, monkeypatch)
+    payloads = record_published(object)
 
     result = await engine.ahandle_request(StartFlowRequest(flow_name=three_node_flow))
     assert isinstance(result, StartFlowResultSuccess), result
