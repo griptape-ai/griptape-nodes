@@ -18,9 +18,19 @@ context = contextvars.copy_context()
 threading.Thread(target=context.run, args=(work,)).start()
 ```
 
-`asyncio.to_thread` and `loop.run_in_executor` from a running task copy the context already. Events a
-node emits through its own methods, such as `publish_update_to_parameter`, name the node's workflow
-from any thread.
+Work handed to an executor needs the same copy, since `loop.run_in_executor` and
+`ThreadPoolExecutor.submit` run it in the executor thread's own context:
+
+```python
+import asyncio
+import contextvars
+
+context = contextvars.copy_context()
+await asyncio.get_running_loop().run_in_executor(None, context.run, work)
+```
+
+`asyncio.to_thread` copies the context already. Events a node emits through its own methods, such
+as `publish_update_to_parameter`, name the node's workflow from any thread.
 
 ## `worker.heartbeat_startup_grace_s` is now `worker.library_load_timeout_s`
 
