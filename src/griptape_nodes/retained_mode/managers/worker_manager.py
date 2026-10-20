@@ -410,6 +410,29 @@ class WorkerManager(EngineScoped):
                     self.unanswered_challenges_allowed,
                 )
 
+            await self._send_workflow_runtime_sweep()
+
+    async def _send_workflow_runtime_sweep(self) -> None:
+        """Tell every worker which workflows are open, so it releases the namespaces of the rest.
+
+        The backstop for `broadcast_drop_workflow_local_objects`: a drop that never arrived leaves a worker
+        holding a workflow's namespace and what it parked there, and nothing else would tell it the
+        workflow is gone. Sent on the heartbeat interval, ahead of any queued work.
+
+        Never raises, for the reason a failed challenge above does not end the loop: the transport raises
+        while a connection is re-establishing, and the next interval sends again.
+        """
+        open_workflow_ids = [runtime.workflow_id for runtime in self.engine.workflow_runtimes]
+        event = EventRequest(request=worker_events.SweepWorkflowRuntimesRequest(open_workflow_ids=open_workflow_ids))
+        try:
+            await self.broadcast_to_workers(event)
+        except Exception:
+            logger.warning(
+                "Could not tell the workers which workflows are open; they keep the workflows they hold "
+                "until the next heartbeat.",
+                exc_info=True,
+            )
+
     async def worker_heartbeat_monitor(self) -> None:
         """Shut down the worker if orchestrator heartbeats stop arriving.
 
@@ -1278,14 +1301,11 @@ class WorkerManager(EngineScoped):
         still to come, so a send failure must not abort them or displace the failure they were already
         reporting.
 
-        Lazy import breaks the same cycle as its siblings: `app.worker_routing` imports `EventManager`
-        from this package.
+        Sweeps cover a drop that does not arrive: see `_send_workflow_runtime_sweep`.
         """
-        from griptape_nodes.app.worker_routing import DropWorkflowLocalObjectsRequest
-
         if self._transport is None or not self._workers:
             return
-        event = EventRequest(request=DropWorkflowLocalObjectsRequest(), workflow_id=workflow.workflow_id)
+        event = EventRequest(request=worker_events.DropWorkflowLocalObjectsRequest(), workflow_id=workflow.workflow_id)
         try:
             await self.broadcast_to_workers(event)
         except Exception as e:
@@ -1436,6 +1456,14 @@ class WorkerManager(EngineScoped):
         """
         # Heartbeat responses update the last-seen timestamp but are not forwarded to the GUI.
         result_event_type = payload.get("result_type", "")
+        # A sweep's answer is internal like a heartbeat's: every worker sends one each interval.
+        if result_event_type == worker_events.SweepWorkflowRuntimesResultSuccess.__name__:
+            return
+        if result_event_type == worker_events.SweepWorkflowRuntimesResultFailure.__name__:
+            result = payload.get("result")
+            details = result.get("result_details") if isinstance(result, dict) else None
+            logger.warning("A worker could not release the workflows the orchestrator closed: %s", details)
+            return
         if result_event_type == worker_events.WorkerHeartbeatResultSuccess.__name__:
             response_topic = payload.get("response_topic", "")
             m = self._WORKER_RESPONSE_TOPIC_RE.match(response_topic)

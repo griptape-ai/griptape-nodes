@@ -38,10 +38,12 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
+    ExecuteNodeRequest,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
+from griptape_nodes.retained_mode.events.worker_events import DropWorkflowLocalObjectsRequest
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.run_scheduler import RunScheduler
 from griptape_nodes.retained_mode.runtime.binding import (
@@ -107,6 +109,11 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger("griptape_nodes")
+
+# The requests a worker makes a namespace for when they name a workflow it doesn't hold: running a node, which
+# is what puts anything in a namespace, and the orchestrator's drop of one, whose handler releases what the
+# namespace holds and forgets it right away.
+WORKER_RUNTIME_REQUESTS = (ExecuteNodeRequest, DropWorkflowLocalObjectsRequest)
 
 # Scoped override of the root engine. Set by `engine_scope`; `None` means "use the
 # process root". A ContextVar rather than a plain global so a test (or an embedder
@@ -561,9 +568,17 @@ class Engine:
             return runtime
         if self._library_manager.is_worker:
             # A worker holds none of the orchestrator's workflows. It keeps a namespace for each one it
-            # runs nodes for, under the orchestrator's id, made here on first use and dropped by
-            # DropWorkflowLocalObjectsRequest when the orchestrator clears that workflow.
-            return self.open_workflow_runtime(workflow_id)
+            # runs nodes for, under the orchestrator's id, made on the first node it runs for that workflow
+            # and dropped by DropWorkflowLocalObjectsRequest when the orchestrator clears the workflow.
+            # Any other request naming an id the worker doesn't hold would make a namespace nothing ends,
+            # so it fails instead.
+            if isinstance(request, WORKER_RUNTIME_REQUESTS):
+                return self.open_workflow_runtime(workflow_id)
+            msg = (
+                f"Attempted to handle '{type(request).__name__}' in a workflow. "
+                "Failed because this worker isn't running any nodes for that workflow."
+            )
+            raise WorkflowNotOpenError(msg)
         msg = (
             f"Attempted to handle '{type(request).__name__}' in a workflow. "
             "Failed because that workflow isn't open anymore."

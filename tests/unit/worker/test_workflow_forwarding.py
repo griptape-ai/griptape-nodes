@@ -20,19 +20,25 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadSuccess,
 )
+from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest
 from griptape_nodes.retained_mode.events.open_workflow_events import (
     ListOpenWorkflowsResultSuccess,
     OpenWorkflowRequest,
     OpenWorkflowResultSuccess,
 )
+from griptape_nodes.retained_mode.events.worker_events import DropWorkflowLocalObjectsRequest
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
 from griptape_nodes.retained_mode.request_handlers import RequestScope
+from griptape_nodes.retained_mode.runtime.binding import WorkflowNotOpenError
 from tests.unit.worker.harness import InProcessWorkerHarness
 
 
 @dataclass(kw_only=True)
-class _RunNodeProbe(RequestPayload):
-    """Stands in for ExecuteNodeRequest: the worker runs a node, which calls back to the orchestrator."""
+class _RunNodeProbe(ExecuteNodeRequest):
+    """Stands in for the node execution the worker runs, which calls back to the orchestrator.
+
+    An ExecuteNodeRequest because that is the request a worker makes a namespace for.
+    """
 
 
 @dataclass(kw_only=True)
@@ -95,7 +101,9 @@ class TestWorkerForwarding:
 
         await harness.start()
         try:
-            await harness.route_to_worker(EventRequest(request=_RunNodeProbe(), workflow_id=running.workflow_id))
+            await harness.route_to_worker(
+                EventRequest(request=_RunNodeProbe(node_name="probe"), workflow_id=running.workflow_id)
+            )
         finally:
             await harness.stop()
 
@@ -114,13 +122,73 @@ class TestWorkerForwarding:
 
         worker.event_manager.assign_manager_to_request_type(_RunNodeProbe, run_node, scope=RequestScope.WORKFLOW)
 
-        await worker.ahandle_request(_RunNodeProbe(), workflow_id="workflow-a")
-        await worker.ahandle_request(_RunNodeProbe(), workflow_id="workflow-b")
-        await worker.ahandle_request(_RunNodeProbe(), workflow_id="workflow-a")
+        await worker.ahandle_request(_RunNodeProbe(node_name="probe"), workflow_id="workflow-a")
+        await worker.ahandle_request(_RunNodeProbe(node_name="probe"), workflow_id="workflow-b")
+        await worker.ahandle_request(_RunNodeProbe(node_name="probe"), workflow_id="workflow-a")
 
         assert [runtime.workflow_id for runtime in worker.workflow_runtimes] == ["workflow-a", "workflow-b"]
         assert seen[0] is seen[2]
         assert seen[0] is not seen[1]
+
+
+class TestWorkerRuntimeCreation:
+    """A worker makes a namespace only for the requests that end with a drop from the orchestrator."""
+
+    @pytest.mark.asyncio
+    async def test_a_request_naming_an_unknown_workflow_fails_and_makes_no_namespace(self) -> None:
+        worker = Engine()
+        worker.library_manager._is_worker = True
+        worker.event_manager.assign_manager_to_request_type(
+            _CallbackProbe, lambda _request: _ProbeResult(result_details="ok"), scope=RequestScope.WORKFLOW
+        )
+
+        with pytest.raises(WorkflowNotOpenError, match="_CallbackProbe"):
+            worker.runtime_for_request(_CallbackProbe(), RequestScope.WORKFLOW, "gone")
+        result = await worker.ahandle_request(_CallbackProbe(), workflow_id="gone")
+
+        assert result.failed()
+        assert worker.workflow_runtimes == []
+
+    @pytest.mark.asyncio
+    async def test_a_request_naming_a_held_workflow_runs_in_it(self) -> None:
+        worker = Engine()
+        worker.library_manager._is_worker = True
+        held = worker.open_workflow_runtime("workflow-a")
+        seen: list[object] = []
+
+        def callback(_request: _CallbackProbe) -> _ProbeResult:
+            seen.append(worker.current_workflow)
+            return _ProbeResult(result_details="ok")
+
+        worker.event_manager.assign_manager_to_request_type(_CallbackProbe, callback, scope=RequestScope.WORKFLOW)
+
+        result = await worker.ahandle_request(_CallbackProbe(), workflow_id="workflow-a")
+
+        assert result.succeeded()
+        assert seen == [held]
+
+    def test_node_execution_makes_a_namespace_for_an_unknown_workflow(self) -> None:
+        worker = Engine()
+        worker.library_manager._is_worker = True
+
+        runtime = worker.runtime_for_request(ExecuteNodeRequest(node_name="node"), RequestScope.WORKFLOW, "workflow-a")
+
+        assert [held.workflow_id for held in worker.workflow_runtimes] == ["workflow-a"]
+        assert runtime is worker.workflow_runtimes[0]
+
+    def test_a_drop_makes_a_namespace_for_the_handler_to_release(self) -> None:
+        worker = Engine()
+        worker.library_manager._is_worker = True
+
+        runtime = worker.runtime_for_request(DropWorkflowLocalObjectsRequest(), RequestScope.WORKFLOW, "workflow-a")
+
+        assert runtime is worker.find_workflow_runtime("workflow-a")
+
+    def test_the_orchestrator_fails_a_request_naming_an_unknown_workflow(self) -> None:
+        orchestrator = Engine()
+
+        with pytest.raises(WorkflowNotOpenError, match="isn't open anymore"):
+            orchestrator.runtime_for_request(ExecuteNodeRequest(node_name="node"), RequestScope.WORKFLOW, "gone")
 
 
 class TestForwardToOrchestratorEnvelope:

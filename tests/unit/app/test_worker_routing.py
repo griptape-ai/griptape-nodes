@@ -36,8 +36,12 @@ from griptape_nodes.app.worker_routing import (
     ReloadAllLibrariesRequest,
     ReloadConfigRequest,
     RemoteHandler,
+    SweepWorkflowRuntimesRequest,
+    SweepWorkflowRuntimesResultFailure,
+    SweepWorkflowRuntimesResultSuccess,
     _handle_drop_local_objects,
     _handle_drop_workflow_local_objects,
+    _handle_sweep_workflow_runtimes,
     register_broadcast_handlers,
     register_remote_handlers,
 )
@@ -437,6 +441,15 @@ class TestDropWorkflowLocalObjectsHandler:
 
         assert runtime not in engine.workflow_runtimes
 
+    @pytest.mark.asyncio
+    async def test_succeeds_when_a_sweep_already_forgot_the_namespace(self, engine: Engine) -> None:
+        runtime = engine.open_workflow_runtime()
+        engine.remove_workflow_runtime(runtime)
+
+        result = await _drop_for(engine, runtime)
+
+        assert isinstance(result, DropWorkflowLocalObjectsResultSuccess)
+
 
 async def _drop_for(engine: Engine, runtime: WorkflowRuntime) -> ResultPayload:
     """Run the drop handler the way dispatch does: bound to, and passed, the workflow it is addressed to."""
@@ -444,6 +457,92 @@ async def _drop_for(engine: Engine, runtime: WorkflowRuntime) -> ResultPayload:
         return await _handle_drop_workflow_local_objects(
             DropWorkflowLocalObjectsRequest(), workflow=runtime, event_manager=engine.event_manager
         )
+
+
+class TestSweepWorkflowRuntimesHandler:
+    """The backstop for a drop that never arrived: release the workflows the orchestrator no longer lists."""
+
+    @pytest.mark.asyncio
+    async def test_releases_a_workflow_the_orchestrator_no_longer_lists(self, engine: Engine) -> None:
+        gone = engine.open_workflow_runtime()
+        key = engine.resource_manager.put_local_object(
+            object(), owner="Lib A", source="N", key="cfg", workflow_id=gone.workflow_id
+        )
+
+        result = await _sweep(engine, [])
+
+        assert isinstance(result, SweepWorkflowRuntimesResultSuccess)
+        assert gone not in engine.workflow_runtimes
+        assert engine.resource_manager.entry_for(key) is None
+
+    @pytest.mark.asyncio
+    async def test_keeps_a_workflow_the_orchestrator_lists(self, engine: Engine) -> None:
+        listed = engine.open_workflow_runtime()
+        gone = engine.open_workflow_runtime()
+        kept = engine.resource_manager.put_local_object(
+            object(), owner="Lib A", source="N", key="kept", workflow_id=listed.workflow_id
+        )
+
+        result = await _sweep(engine, [listed.workflow_id])
+
+        assert isinstance(result, SweepWorkflowRuntimesResultSuccess)
+        assert engine.workflow_runtimes == [listed]
+        assert gone not in engine.workflow_runtimes
+        assert engine.resource_manager.entry_for(kept) is not None
+
+    @pytest.mark.asyncio
+    async def test_keeps_everything_while_a_node_is_executing(self, engine: Engine) -> None:
+        running = engine.open_workflow_runtime()
+        key = engine.resource_manager.put_local_object(
+            object(), owner="Lib A", source="N", key="cfg", workflow_id=running.workflow_id
+        )
+
+        with engine.event_manager.node_execution_scope():
+            result = await _sweep(engine, [])
+
+        assert isinstance(result, SweepWorkflowRuntimesResultSuccess)
+        assert engine.workflow_runtimes == [running]
+        assert engine.resource_manager.entry_for(key) is not None
+
+    @pytest.mark.asyncio
+    async def test_keeps_a_workflow_whose_objects_could_not_be_released(self, engine: Engine) -> None:
+        stuck = engine.open_workflow_runtime()
+        released = engine.open_workflow_runtime()
+        real_drop = engine.resource_manager.drop_local_objects_for_workflow
+
+        def drop(workflow_id: str) -> int:
+            if workflow_id == stuck.workflow_id:
+                msg = "boom"
+                raise RuntimeError(msg)
+            return real_drop(workflow_id)
+
+        with patch.object(engine.resource_manager, "drop_local_objects_for_workflow", side_effect=drop):
+            result = await _sweep(engine, [])
+
+        assert isinstance(result, SweepWorkflowRuntimesResultFailure)
+        assert stuck.workflow_id in str(result.result_details)
+        assert engine.workflow_runtimes == [stuck]
+        assert released not in engine.workflow_runtimes
+
+    def test_is_answered_by_the_worker_itself(self) -> None:
+        assert SweepWorkflowRuntimesRequest in LOCAL_ONLY_REQUEST_TYPES
+
+    def test_is_a_host_request(self) -> None:
+        probe = EventManager()
+        register_broadcast_handlers(
+            probe,
+            config_manager=MagicMock(),
+            secrets_manager=MagicMock(),
+            project_manager=MagicMock(),
+        )
+
+        assert probe.scope_for(SweepWorkflowRuntimesRequest) is RequestScope.HOST
+
+
+async def _sweep(engine: Engine, open_workflow_ids: list[str]) -> ResultPayload:
+    return await _handle_sweep_workflow_runtimes(
+        SweepWorkflowRuntimesRequest(open_workflow_ids=open_workflow_ids), event_manager=engine.event_manager
+    )
 
 
 class TestDropLocalObjectsHandler:

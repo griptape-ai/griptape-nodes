@@ -99,6 +99,69 @@ class WorkerHeartbeatResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
 
 @dataclass
 @PayloadRegistry.register
+class DropWorkflowLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
+    """Sent by the orchestrator to each registered worker when a workflow's object state is cleared.
+
+    Clearing a workflow deletes its nodes and so every key referring to an object held for it, leaving
+    those objects unreachable while still holding what they hold. A broadcast rather than a local hook
+    because the worker, not the orchestrator, is the process holding them.
+
+    Acts on the workflow the request is addressed to, like any workflow request. The worker releases what
+    it parked while running that workflow's nodes and keeps the objects of the other open workflows.
+
+    SkipTheLineMixin for the same reason as its siblings: the alternative is a queued ExecuteNodeRequest
+    running against objects belonging to a workflow that is already gone.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class DropWorkflowLocalObjectsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Worker released every object it was holding for its libraries."""
+
+
+@dataclass
+@PayloadRegistry.register
+class DropWorkflowLocalObjectsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Worker failed to release the objects it was holding."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SweepWorkflowRuntimesRequest(RequestPayload, SkipTheLineMixin):
+    """Sent by the orchestrator to each worker on its heartbeat interval, naming the workflows it holds open.
+
+    A worker keeps a namespace for each workflow it has run nodes for, and the orchestrator ends one with
+    DropWorkflowLocalObjectsRequest when it clears that workflow. A drop that never arrives (lost in transit,
+    or sent while the worker was reconnecting) would leave the namespace, and what the worker parked under
+    it, for the life of the worker. This is the backstop: the worker releases the namespace of every
+    workflow not named here.
+
+    Uses SkipTheLineMixin so the worker compares the list against the workflows it holds at the moment it
+    arrives. Queued behind a long node, it would be applied hours late against a list that no longer
+    describes the orchestrator.
+
+    Args:
+        open_workflow_ids: The id of every workflow the orchestrator holds open.
+    """
+
+    open_workflow_ids: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class SweepWorkflowRuntimesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Worker compared its workflows against the orchestrator's and released the ones that were gone."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SweepWorkflowRuntimesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Worker could not release the workflows the orchestrator no longer holds."""
+
+
+@dataclass
+@PayloadRegistry.register
 class UnregisterWorkerRequest(RequestPayload):
     """Sent by a worker to the orchestrator's session topic on graceful shutdown.
 

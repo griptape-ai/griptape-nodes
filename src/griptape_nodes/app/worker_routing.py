@@ -66,8 +66,14 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlRequest,
 )
 from griptape_nodes.retained_mode.events.worker_events import (
+    DropWorkflowLocalObjectsRequest,
+    DropWorkflowLocalObjectsResultFailure,
+    DropWorkflowLocalObjectsResultSuccess,
     RegisterWorkerRequest,
     StartWorkerRequest,
+    SweepWorkflowRuntimesRequest,
+    SweepWorkflowRuntimesResultFailure,
+    SweepWorkflowRuntimesResultSuccess,
     UnregisterWorkerRequest,
     WorkerHeartbeatRequest,
 )
@@ -121,23 +127,6 @@ class ReloadConfigResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class DropWorkflowLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
-    """Sent by the orchestrator to each registered worker when a workflow's object state is cleared.
-
-    Clearing a workflow deletes its nodes and so every key referring to an object held for it, leaving
-    those objects unreachable while still holding what they hold. A broadcast rather than a local hook
-    because the worker, not the orchestrator, is the process holding them.
-
-    Acts on the workflow the request is addressed to, like any workflow request. The worker releases what
-    it parked while running that workflow's nodes and keeps the objects of the other open workflows.
-
-    SkipTheLineMixin for the same reason as its siblings: the alternative is a queued ExecuteNodeRequest
-    running against objects belonging to a workflow that is already gone.
-    """
-
-
-@dataclass
-@PayloadRegistry.register
 class DropLocalObjectsRequest(RequestPayload, SkipTheLineMixin):
     """Sent by the orchestrator when named held objects stop being referenced.
 
@@ -162,18 +151,6 @@ class DropLocalObjectsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class DropLocalObjectsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Worker failed while releasing the named objects."""
-
-
-@dataclass
-@PayloadRegistry.register
-class DropWorkflowLocalObjectsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Worker released every object it was holding for its libraries."""
-
-
-@dataclass
-@PayloadRegistry.register
-class DropWorkflowLocalObjectsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Worker failed to release the objects it was holding."""
 
 
 @dataclass
@@ -362,6 +339,10 @@ LOCAL_ONLY_REQUEST_TYPES: frozenset[type[RequestPayload]] = frozenset(
         # a RemoteHandler forwards.
         DropWorkflowLocalObjectsRequest,
         DropLocalObjectsRequest,
+        # Addressed to this worker: release the namespaces of workflows the orchestrator no longer holds.
+        # Its list describes the orchestrator's workflows, which a forwarded answer would compare against
+        # nothing.
+        SweepWorkflowRuntimesRequest,
         #
         # --- 2. The worker's own answer is the correct one ---------------------------------------
         #
@@ -517,9 +498,54 @@ async def _handle_drop_workflow_local_objects(
         )
         return DropWorkflowLocalObjectsResultFailure(result_details=details)
     # The orchestrator cleared the workflow, so the namespace kept for it goes too. A later node from
-    # the same workflow makes a fresh one.
-    engine.remove_workflow_runtime(workflow)
+    # the same workflow makes a fresh one. Already gone when a sweep released it while this waited.
+    if workflow in engine.workflow_runtimes:
+        engine.remove_workflow_runtime(workflow)
     return DropWorkflowLocalObjectsResultSuccess(result_details=f"Released {dropped} held object(s).")
+
+
+async def _handle_sweep_workflow_runtimes(
+    request: SweepWorkflowRuntimesRequest,
+    *,
+    event_manager: EventManager,
+) -> ResultPayload:
+    """Release the namespace of every workflow this worker holds that the orchestrator no longer holds open.
+
+    The backstop for a DropWorkflowLocalObjectsRequest that never arrived. Each orphan goes through the
+    drop handler's teardown, so what the worker parked for it is released before the namespace is forgotten.
+
+    Stops while a node is executing. The count of running nodes is process-wide and does not say which
+    workflow's node it is, and a node mid-run whose workflow is gone fails the requests it makes. The
+    next sweep, one heartbeat later, tries again.
+
+    Takes the event manager because that is how it reaches this engine, for the reason its sibling gives.
+    """
+    engine = event_manager.engine
+    open_workflow_ids = set(request.open_workflow_ids)
+    orphans = [runtime for runtime in engine.workflow_runtimes if runtime.workflow_id not in open_workflow_ids]
+
+    released = 0
+    failures: list[str] = []
+    for orphan in orphans:
+        if event_manager.in_node_execution():
+            break
+        result = await _handle_drop_workflow_local_objects(
+            DropWorkflowLocalObjectsRequest(), workflow=orphan, event_manager=event_manager
+        )
+        if isinstance(result, DropWorkflowLocalObjectsResultFailure):
+            failures.append(f"'{orphan.workflow_id}': {result.result_details}")
+            continue
+        released += 1
+
+    if failures:
+        details = (
+            f"Attempted to release the workflows this worker holds that the orchestrator closed. "
+            f"Failed for {len(failures)} of {len(orphans)}: {'; '.join(failures)}"
+        )
+        return SweepWorkflowRuntimesResultFailure(result_details=details)
+    return SweepWorkflowRuntimesResultSuccess(
+        result_details=f"Released {released} workflow(s) the orchestrator no longer holds open."
+    )
 
 
 async def _handle_drop_local_objects(
@@ -657,7 +683,7 @@ def register_broadcast_handlers(
 
 
 def _register_local_object_handlers(event_manager: EventManager) -> None:
-    """Wire the two teardown requests that free objects this worker is holding."""
+    """Wire the three teardown requests that free objects and workflow namespaces this worker is holding."""
 
     async def handle_drop_workflow_local_objects(
         request: DropWorkflowLocalObjectsRequest, workflow: WorkflowRuntime
@@ -665,6 +691,11 @@ def _register_local_object_handlers(event_manager: EventManager) -> None:
         return await _handle_drop_workflow_local_objects(request, workflow=workflow, event_manager=event_manager)
 
     event_manager.assign_manager_to_request_type(DropWorkflowLocalObjectsRequest, handle_drop_workflow_local_objects)
+
+    async def handle_sweep_workflow_runtimes(request: SweepWorkflowRuntimesRequest) -> ResultPayload:
+        return await _handle_sweep_workflow_runtimes(request, event_manager=event_manager)
+
+    event_manager.assign_manager_to_request_type(SweepWorkflowRuntimesRequest, handle_sweep_workflow_runtimes)
 
     async def handle_drop_local_objects(request: DropLocalObjectsRequest) -> ResultPayload:
         return await _handle_drop_local_objects(request, event_manager=event_manager)
