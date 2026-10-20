@@ -31,8 +31,6 @@ from griptape_nodes.exe_types.input_checks import (
     input_subject,
     local_image_info,
     local_size_bytes,
-    local_video_duration,
-    local_video_info,
     local_video_probe,
     video_errors,
 )
@@ -40,6 +38,23 @@ from griptape_nodes.exe_types.node_error import NodeError
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _probed_seconds(value: Any) -> float | None:
+    """The stream duration `local_video_probe` reads, or None when it reads nothing."""
+    probe = local_video_probe(value)
+    if probe is None:
+        return None
+    return probe.seconds
+
+
+def _probed_frame(value: Any) -> ImageInfo | None:
+    """The frame size `local_video_probe` reads, or None when it reads nothing."""
+    probe = local_video_probe(value)
+    if probe is None:
+        return None
+    return probe.info
+
 
 SUBJECT = "Image 2 in 'reference images'"
 DOCS = "https://example.com/limits"
@@ -155,10 +170,15 @@ class TestLocalVideoDuration:
         return runs
 
     def test_probes_a_local_file_with_a_short_timeout(self, clip: Path, ffprobe_runs: list[dict[str, Any]]) -> None:
-        assert local_video_duration(VideoUrlArtifact(value=str(clip))) == 9.5
+        assert _probed_seconds(VideoUrlArtifact(value=str(clip))) == 9.5
         assert ffprobe_runs[0]["cmd"][0] == "/usr/bin/ffprobe"
         assert ffprobe_runs[0]["cmd"][-1] == str(clip)
         assert ffprobe_runs[0]["timeout"] == input_checks.FFPROBE_TIMEOUT_SECONDS
+
+    def test_decodes_ffprobe_output_as_utf8(self, clip: Path, ffprobe_runs: list[dict[str, Any]]) -> None:
+        # ffprobe echoes the file name in UTF-8; decoding with Windows' code page fails on a non-Latin one.
+        _probed_seconds(str(clip))
+        assert ffprobe_runs[0]["encoding"] == "utf-8"
 
     def test_skips_when_ffprobe_times_out(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         def slow_run(cmd: list[str], **kwargs: Any) -> SimpleNamespace:
@@ -167,7 +187,7 @@ class TestLocalVideoDuration:
         monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: "/usr/bin/ffprobe")
         monkeypatch.setattr(input_checks.subprocess, "run", slow_run)
 
-        assert local_video_duration(str(clip)) is None
+        assert _probed_seconds(str(clip)) is None
 
     def test_skips_when_the_probe_fails(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         def failing_run(cmd: list[str], **_kwargs: Any) -> SimpleNamespace:
@@ -176,17 +196,17 @@ class TestLocalVideoDuration:
         monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: "/usr/bin/ffprobe")
         monkeypatch.setattr(input_checks.subprocess, "run", failing_run)
 
-        assert local_video_duration(str(clip)) is None
+        assert _probed_seconds(str(clip)) is None
 
     def test_skips_when_ffprobe_is_not_installed(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: None)
         monkeypatch.setattr(input_checks.subprocess, "run", lambda *_a, **_k: pytest.fail("ffprobe must not run"))
 
-        assert local_video_duration(str(clip)) is None
+        assert _probed_seconds(str(clip)) is None
 
     @pytest.mark.parametrize("value", ["https://example.com/clip.mp4", "data:video/mp4;base64,AAAA"])
     def test_does_not_probe_a_remote_or_inline_video(self, value: str, ffprobe_runs: list[dict[str, Any]]) -> None:
-        assert local_video_duration(value) is None
+        assert _probed_seconds(value) is None
         assert ffprobe_runs == []
 
 
@@ -286,11 +306,11 @@ class TestLocalVideoInfo:
 
     def test_reads_the_frame_size(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self._answer(monkeypatch, {"width": 1920, "height": 1080})
-        assert local_video_info(str(clip)) == ImageInfo(1920, 1080, None)
+        assert _probed_frame(str(clip)) == ImageInfo(1920, 1080, None)
 
     def test_treats_a_0x0_frame_size_as_unread(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self._answer(monkeypatch, {"width": 0, "height": 0})
-        assert local_video_info(str(clip)) is None
+        assert _probed_frame(str(clip)) is None
 
     @pytest.mark.parametrize(
         "stream",
@@ -304,14 +324,14 @@ class TestLocalVideoInfo:
         self, clip: Path, monkeypatch: pytest.MonkeyPatch, stream: dict[str, Any]
     ) -> None:
         self._answer(monkeypatch, stream)
-        assert local_video_info(str(clip)) == ImageInfo(1080, 1920, None)
+        assert _probed_frame(str(clip)) == ImageInfo(1080, 1920, None)
 
     def test_skips_when_ffprobe_is_not_installed(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: None)
-        assert local_video_info(str(clip)) is None
+        assert _probed_frame(str(clip)) is None
 
     def test_skips_a_remote_video(self) -> None:
-        assert local_video_info("https://example.com/clip.mp4") is None
+        assert _probed_frame("https://example.com/clip.mp4") is None
 
 
 class TestInstalledFfprobe:
@@ -464,6 +484,11 @@ class TestImageErrors:
         "widest": "2.5:1",
         "tallest": "1:2.5",
     }
+
+    @pytest.mark.parametrize(("widest", "tallest"), [("3:1", None), (None, "1:3")], ids=["widest-only", "tallest-only"])
+    def test_refuses_half_an_aspect_ratio_range(self, widest: str | None, tallest: str | None) -> None:
+        with pytest.raises(ValueError, match="only one of widest and tallest"):
+            image_errors(_data_uri(_png_bytes(4000, 1000)), subject=SUBJECT, widest=widest, tallest=tallest)
 
     def test_accepts_an_image_within_every_limit(self) -> None:
         assert image_errors(_data_uri(_png_bytes(800, 600)), subject=SUBJECT, **self.LIMITS) == []
@@ -687,9 +712,13 @@ class TestVideoErrors:
         assert video_errors(str(clip), subject=SUBJECT, max_seconds=30, max_side=2048, probe=None) == []
         assert calls == []
 
-    def test_does_not_probe_for_half_an_aspect_ratio_range(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize(("widest", "tallest"), [("3:1", None), (None, "1:3")], ids=["widest-only", "tallest-only"])
+    def test_refuses_half_an_aspect_ratio_range(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch, widest: str | None, tallest: str | None
+    ) -> None:
         calls = self._probe(monkeypatch, ImageInfo(4000, 1000, None), 5.0)
-        assert video_errors(str(clip), subject=SUBJECT, widest="3:1") == []
+        with pytest.raises(ValueError, match="only one of widest and tallest"):
+            video_errors(str(clip), subject=SUBJECT, widest=widest, tallest=tallest)
         assert calls == []
 
     def test_uses_the_given_duration_fix(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:

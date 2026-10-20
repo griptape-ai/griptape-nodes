@@ -5,10 +5,10 @@ credits. These helpers let a node refuse it first, from what it can read locally
 
 - **Combined checks** (`image_errors`, `video_errors`) run every image or video check a provider
   documents in one call, reading the input once. Most nodes need only these.
-- **Readers** (`local_size_bytes`, `local_image_info`, `local_video_probe`, `local_video_info`,
-  `local_video_duration`) read one property of a media input from data already on this machine.
-  None of them makes a network call or downloads a tool: the video readers use ffprobe only if it
-  is already installed. They return None when the value is a remote URL, can't be found or parsed,
+- **Readers** (`local_size_bytes`, `local_image_info`, `local_video_probe`) read a media input's
+  properties from data already on this machine. `local_video_probe` reads a video's frame size,
+  durations and frame rates in one ffprobe run. None of them makes a network call or downloads a
+  tool: the video reader uses ffprobe only if it is already installed. They return None when the value is a remote URL, can't be found or parsed,
   or when the tool to read it is missing or too slow.
 - **Checks** (`check_count`, `check_size`, `check_dimensions`, `check_aspect_ratio_range`,
   `check_mime_type`, `check_duration`, `check_frame_rate`) compare one value with a limit and
@@ -78,8 +78,6 @@ __all__ = [
     "input_subject",
     "local_image_info",
     "local_size_bytes",
-    "local_video_duration",
-    "local_video_info",
     "local_video_probe",
     "video_errors",
 ]
@@ -146,8 +144,10 @@ def local_size_bytes(value: Any, *, kind: MediaKind) -> int | None:
 def local_image_info(value: Any) -> ImageInfo | None:
     """The pixel size and MIME type of an image input, or None if it can't be read locally.
 
-    Reads only the image header. Returns None for a remote URL, and for a format Pillow can't open
-    (HEIC, say), so the checks that use it skip rather than reject a valid image.
+    Reads only the image header. Returns None for a remote URL, for a format Pillow can't open
+    (HEIC, say), and for an image over Pillow's decompression-bomb limit (about 179 megapixels),
+    which Pillow refuses to open without decoding anything. The checks that use it then skip,
+    rather than reject a valid image or override a process-wide Pillow setting.
     """
     location = coerce_media_url_or_data_uri(value, kind="image")
     if not location:
@@ -246,29 +246,6 @@ def local_video_probe(value: Any) -> VideoProbe | None:
     )
 
 
-def local_video_info(value: Any) -> ImageInfo | None:
-    """The frame size of a video input, or None if it can't be read locally.
-
-    The size comes back as an `ImageInfo` with no MIME type. Reports the size as displayed, so a phone clip stored landscape with a 90-degree rotation reads
-    as portrait. A node that also needs the duration should call `local_video_probe` once instead.
-    """
-    probe = local_video_probe(value)
-    if probe is None:
-        return None
-    return probe.info
-
-
-def local_video_duration(value: Any) -> float | None:
-    """The duration in seconds of a video input, or None if it can't be read locally.
-
-    A node that also needs the frame size should call `local_video_probe` once instead.
-    """
-    probe = local_video_probe(value)
-    if probe is None:
-        return None
-    return probe.seconds
-
-
 def check_count(
     count: int, *, maximum: int, parameter: str, noun: str = "items", docs_url: str | None = None
 ) -> NodeError | None:
@@ -328,7 +305,8 @@ def check_dimensions(  # noqa: PLR0913
     """An error when an image or video frame's pixel size is outside what the provider accepts.
 
     Args:
-        info: The pixel size, from `local_image_info` or `local_video_info`. None skips the check.
+        info: The pixel size, from `local_image_info` or a `local_video_probe` result's `info`. None skips
+            the check.
         subject: The input, from `input_subject`.
         min_side: The fewest pixels accepted for the width and for the height.
         max_side: The most pixels accepted for the width and for the height.
@@ -369,7 +347,8 @@ def check_aspect_ratio_range(
     """An error when an image or video frame is wider or taller than the provider accepts.
 
     Args:
-        info: The pixel size, from `local_image_info` or `local_video_info`. None skips the check.
+        info: The pixel size, from `local_image_info` or a `local_video_probe` result's `info`. None skips
+            the check.
         subject: The input, from `input_subject`.
         widest: The widest ratio accepted, as the provider writes it, such as "3:1".
         tallest: The tallest ratio accepted, such as "1:3".
@@ -421,7 +400,9 @@ def check_duration(  # noqa: PLR0913
     """An error when an audio or video input is shorter or longer than the provider accepts.
 
     Args:
-        seconds: The input's duration, such as from `local_video_duration`. None skips the check.
+        seconds: The input's duration. For a video, pass a `local_video_probe` result's
+            `shortest_seconds` for a maximum or `longest_seconds` for a minimum, the readings
+            `video_errors` uses. None skips the check.
         subject: The input, from `input_subject`.
         minimum: The shortest input accepted, in seconds.
         maximum: The longest input accepted, in seconds.
@@ -513,9 +494,13 @@ def image_errors(  # noqa: PLR0913
         min_megapixels: The fewest pixels accepted in total, in millions.
         max_megapixels: The most pixels accepted in total, in millions.
         widest: The widest aspect ratio accepted, as the provider writes it, such as "2.5:1".
-        tallest: The tallest aspect ratio accepted, such as "1:2.5".
+        tallest: The tallest aspect ratio accepted, such as "1:2.5". Pass both bounds or neither.
         docs_url: The provider's page documenting the limits.
+
+    Raises:
+        ValueError: If only one of `widest` and `tallest` is given, which would check nothing.
     """
+    _require_both_aspect_ratio_bounds(widest, tallest)
     info = local_image_info(image)
     errors: list[NodeError | None] = []
     if allowed_mime_types:
@@ -586,7 +571,7 @@ def video_errors(  # noqa: PLR0913
         min_megapixels: The fewest pixels accepted in total, in millions.
         max_megapixels: The most pixels accepted in total, in millions.
         widest: The widest aspect ratio accepted, as the provider writes it, such as "2.5:1".
-        tallest: The tallest aspect ratio accepted, such as "1:2.5".
+        tallest: The tallest aspect ratio accepted, such as "1:2.5". Pass both bounds or neither.
         min_fps: The lowest frame rate accepted.
         max_fps: The highest frame rate accepted.
         duration_fix: What the artist can do about a clip of the wrong length. Defaults to
@@ -595,7 +580,11 @@ def video_errors(  # noqa: PLR0913
         probe: The video's `local_video_probe` result, when the node has already read it for a check
             of its own, such as a total duration across several videos; None for a video it
             couldn't read. Left out, the video is probed here.
+
+    Raises:
+        ValueError: If only one of `widest` and `tallest` is given, which would check nothing.
     """
+    _require_both_aspect_ratio_bounds(widest, tallest)
     errors: list[NodeError | None] = []
     if maximum_bytes is not None:
         errors.append(
@@ -688,6 +677,14 @@ def _frame_rates(probe: VideoProbe | None) -> list[float]:
     return [rate for rate in (probe.fps, probe.nominal_fps) if rate is not None]
 
 
+def _require_both_aspect_ratio_bounds(widest: str | None, tallest: str | None) -> None:
+    """Raise when only one aspect-ratio bound is given, which `check_aspect_ratio_range` can't check."""
+    if (widest is None) == (tallest is None):
+        return
+    msg = "Attempted to check an aspect ratio. Failed because only one of widest and tallest was given; pass both."
+    raise ValueError(msg)
+
+
 def _error(message: str, docs_url: str | None) -> NodeError:
     if not docs_url:
         return NodeError(message, links=None)
@@ -726,7 +723,14 @@ def _probe_local_video(value: Any, args: list[str]) -> dict[str, Any] | None:  #
     cmd = [ffprobe, "-v", "error", "-print_format", "json", *args, str(path)]
     try:
         result = subprocess.run(  # noqa: S603
-            cmd, capture_output=True, text=True, check=True, timeout=FFPROBE_TIMEOUT_SECONDS
+            cmd,
+            capture_output=True,
+            # ffprobe writes UTF-8 whatever the locale; the default would decode it with Windows' code
+            # page and fail on a non-Latin file name, which it echoes back.
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=FFPROBE_TIMEOUT_SECONDS,
         )
     except (subprocess.SubprocessError, OSError, ValueError) as e:
         logger.debug("Could not probe a video for a pre-run input check, skipping it: %s", e)
