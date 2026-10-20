@@ -4856,12 +4856,7 @@ class FlowManager(EngineScoped):
             # Get or create machine
             if self._global_control_flow_machine is None:
                 self._global_control_flow_machine = ControlFlowMachine(flow.name, engine=self.engine)
-            try:
-                await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
-            except Exception:
-                # The run was already announced, so it has to be ended as well, as start_flow does.
-                await self._abandon_running_flow()
-                raise
+            await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
         """Handle execution queue processing after execution completes."""
@@ -4871,12 +4866,7 @@ class FlowManager(EngineScoped):
             self._global_flow_queue.task_done()
             machine = self._global_control_flow_machine
             if machine is not None:
-                try:
-                    await machine.start_flow(start_node, debug_mode=debug_mode)
-                except Exception:
-                    # The run was already announced, so it has to be ended as well, as start_flow does.
-                    await self._abandon_running_flow()
-                    raise
+                await machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
         # We are now going to have different behavior depending on how the node is behaving.

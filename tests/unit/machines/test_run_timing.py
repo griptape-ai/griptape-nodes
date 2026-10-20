@@ -180,6 +180,21 @@ class TestRunIdMinting:
         assert run.announced == []
 
     @pytest.mark.asyncio
+    async def test_a_start_that_fails_setting_up_announces_no_run(self) -> None:
+        """Nothing would ever end a run announced before a failed setup."""
+        engine = MagicMock()
+        engine.config_manager.get_config_value.side_effect = lambda _key, default=None: default
+        engine.flow_manager.parent_run_id = None
+        machine = ControlFlowMachine("Flow", engine=engine)
+        machine._process_nodes_for_dag = AsyncMock(side_effect=RuntimeError("setup failed"))  # type: ignore[method-assign]
+
+        with pytest.raises(RuntimeError, match="setup failed"):
+            await machine.start_flow(MagicMock(), MagicMock())
+
+        assert _StartedRun(machine=machine, engine=engine).announced == []
+        assert machine.context.run_id is None
+
+    @pytest.mark.asyncio
     async def test_starting_again_is_a_new_run(self) -> None:
         """Each start has its own end event, so each is a run, including a queued next start node."""
         engine = MagicMock()

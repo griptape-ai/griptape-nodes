@@ -219,9 +219,10 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     ) -> None:
         self._context.run_started_at = time.perf_counter()
         flow_manager = self._context.engine.flow_manager
-        self._begin_run(flow_manager)
         # If using DAG resolution, process data_nodes from queue first
         current_nodes = await self._process_nodes_for_dag(start_node)
+        # Announced once the run can go ahead, so a start that fails setting up announces nothing.
+        self._begin_run(flow_manager)
         self._context.current_nodes = current_nodes
         self._context.end_node = end_node
         # Set entry control parameter for initial node (None for workflow start)

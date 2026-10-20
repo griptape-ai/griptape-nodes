@@ -82,10 +82,11 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         exc_tb: TracebackType | None,
     ) -> None:
         """Async context manager exit."""
+        # First, so a failure below cannot leave later runs in this process counted toward the parent.
+        GriptapeNodes.FlowManager().parent_run_id = None
         await self._stop_websocket_connection()
 
         GriptapeNodes.SessionManager().remove_session(self._session_id)
-        GriptapeNodes.FlowManager().parent_run_id = None
 
         # TODO: Broadcast shutdown https://github.com/griptape-ai/griptape-nodes/issues/2149
 
