@@ -365,7 +365,7 @@ class TestDropWorkflowLocalObjectsHandler:
         Freeing under a running forward pass is what must not happen; forgetting where the object is cannot
         hurt a node that already holds it. Declining both would report success for work nothing re-issues.
         """
-        runtime = engine.open_workflow_runtime()
+        runtime = engine.worker_namespace("workflow-a")
         released: list[str] = []
         key = engine.resource_manager.put_local_object(
             object(),
@@ -388,7 +388,7 @@ class TestDropWorkflowLocalObjectsHandler:
     @pytest.mark.asyncio
     async def test_releases_off_the_event_loop(self, engine: Engine) -> None:
         """A worker whose loop is blocked past the heartbeat timeout is evicted mid-load."""
-        runtime = engine.open_workflow_runtime()
+        runtime = engine.worker_namespace("workflow-a")
         release_threads: list[int] = []
         engine.resource_manager.put_local_object(
             object(),
@@ -407,7 +407,7 @@ class TestDropWorkflowLocalObjectsHandler:
 
     @pytest.mark.asyncio
     async def test_reports_failure_rather_than_raising_at_the_transport(self, engine: Engine) -> None:
-        runtime = engine.open_workflow_runtime()
+        runtime = engine.worker_namespace("workflow-a")
         with patch.object(engine.resource_manager, "drop_local_objects_for_workflow", side_effect=RuntimeError("boom")):
             result = await _drop_for(engine, runtime)
 
@@ -417,8 +417,8 @@ class TestDropWorkflowLocalObjectsHandler:
     async def test_keeps_the_objects_of_other_workflows(self, engine: Engine) -> None:
         """A worker serves every open workflow, so closing one must not empty another's cache."""
         manager = engine.resource_manager
-        staying = engine.open_workflow_runtime()
-        closing = engine.open_workflow_runtime()
+        staying = engine.worker_namespace("workflow-a")
+        closing = engine.worker_namespace("workflow-b")
         kept = manager.put_local_object(
             object(), owner="Lib A", source="N", key="kept", workflow_id=staying.workflow_id
         )
@@ -435,16 +435,16 @@ class TestDropWorkflowLocalObjectsHandler:
     @pytest.mark.asyncio
     async def test_forgets_the_namespace_kept_for_the_workflow(self, engine: Engine) -> None:
         """The orchestrator cleared the workflow, so the worker's namespace for it goes too."""
-        runtime = engine.open_workflow_runtime()
+        runtime = engine.worker_namespace("workflow-a")
 
         await _drop_for(engine, runtime)
 
-        assert runtime not in engine.workflow_runtimes
+        assert runtime not in engine.worker_namespaces
 
     @pytest.mark.asyncio
     async def test_succeeds_when_a_sweep_already_forgot_the_namespace(self, engine: Engine) -> None:
-        runtime = engine.open_workflow_runtime()
-        engine.remove_workflow_runtime(runtime)
+        runtime = engine.worker_namespace("workflow-a")
+        engine.remove_worker_namespace(runtime)
 
         result = await _drop_for(engine, runtime)
 
@@ -464,7 +464,7 @@ class TestSweepWorkflowRuntimesHandler:
 
     @pytest.mark.asyncio
     async def test_releases_a_workflow_the_orchestrator_no_longer_lists(self, engine: Engine) -> None:
-        gone = engine.open_workflow_runtime()
+        gone = engine.worker_namespace("workflow-a")
         key = engine.resource_manager.put_local_object(
             object(), owner="Lib A", source="N", key="cfg", workflow_id=gone.workflow_id
         )
@@ -472,13 +472,13 @@ class TestSweepWorkflowRuntimesHandler:
         result = await _sweep(engine, [])
 
         assert isinstance(result, SweepWorkflowRuntimesResultSuccess)
-        assert gone not in engine.workflow_runtimes
+        assert gone not in engine.worker_namespaces
         assert engine.resource_manager.entry_for(key) is None
 
     @pytest.mark.asyncio
     async def test_keeps_a_workflow_the_orchestrator_lists(self, engine: Engine) -> None:
-        listed = engine.open_workflow_runtime()
-        gone = engine.open_workflow_runtime()
+        listed = engine.worker_namespace("workflow-a")
+        gone = engine.worker_namespace("workflow-b")
         kept = engine.resource_manager.put_local_object(
             object(), owner="Lib A", source="N", key="kept", workflow_id=listed.workflow_id
         )
@@ -486,13 +486,13 @@ class TestSweepWorkflowRuntimesHandler:
         result = await _sweep(engine, [listed.workflow_id])
 
         assert isinstance(result, SweepWorkflowRuntimesResultSuccess)
-        assert engine.workflow_runtimes == [listed]
-        assert gone not in engine.workflow_runtimes
+        assert engine.worker_namespaces == [listed]
+        assert gone not in engine.worker_namespaces
         assert engine.resource_manager.entry_for(kept) is not None
 
     @pytest.mark.asyncio
     async def test_keeps_everything_while_a_node_is_executing(self, engine: Engine) -> None:
-        running = engine.open_workflow_runtime()
+        running = engine.worker_namespace("workflow-a")
         key = engine.resource_manager.put_local_object(
             object(), owner="Lib A", source="N", key="cfg", workflow_id=running.workflow_id
         )
@@ -501,13 +501,13 @@ class TestSweepWorkflowRuntimesHandler:
             result = await _sweep(engine, [])
 
         assert isinstance(result, SweepWorkflowRuntimesResultSuccess)
-        assert engine.workflow_runtimes == [running]
+        assert engine.worker_namespaces == [running]
         assert engine.resource_manager.entry_for(key) is not None
 
     @pytest.mark.asyncio
     async def test_keeps_a_workflow_whose_objects_could_not_be_released(self, engine: Engine) -> None:
-        stuck = engine.open_workflow_runtime()
-        released = engine.open_workflow_runtime()
+        stuck = engine.worker_namespace("workflow-a")
+        released = engine.worker_namespace("workflow-b")
         real_drop = engine.resource_manager.drop_local_objects_for_workflow
 
         def drop(workflow_id: str) -> int:
@@ -521,8 +521,19 @@ class TestSweepWorkflowRuntimesHandler:
 
         assert isinstance(result, SweepWorkflowRuntimesResultFailure)
         assert stuck.workflow_id in str(result.result_details)
-        assert engine.workflow_runtimes == [stuck]
-        assert released not in engine.workflow_runtimes
+        assert engine.worker_namespaces == [stuck]
+        assert released not in engine.worker_namespaces
+
+    @pytest.mark.asyncio
+    async def test_leaves_open_workflows_alone(self, engine: Engine) -> None:
+        open_workflow = engine.open_workflow_runtime()
+        namespace = engine.worker_namespace("workflow-a")
+
+        result = await _sweep(engine, [])
+
+        assert isinstance(result, SweepWorkflowRuntimesResultSuccess)
+        assert engine.workflow_runtimes == [open_workflow]
+        assert namespace not in engine.worker_namespaces
 
     def test_is_answered_by_the_worker_itself(self) -> None:
         assert SweepWorkflowRuntimesRequest in LOCAL_ONLY_REQUEST_TYPES

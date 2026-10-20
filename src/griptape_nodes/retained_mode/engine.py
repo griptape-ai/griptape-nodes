@@ -54,7 +54,7 @@ from griptape_nodes.retained_mode.runtime.binding import (
     bound_workflow,
 )
 from griptape_nodes.retained_mode.runtime.read_observer import observe_read_without_workflow
-from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
+from griptape_nodes.retained_mode.runtime.workflow_runtime import RuntimeKind, WorkflowRuntime
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
@@ -110,9 +110,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
-# The requests a worker makes a namespace for when they name a workflow it doesn't hold: running a node, which
-# is what puts anything in a namespace, and the orchestrator's drop of one, whose handler releases what the
-# namespace holds and forgets it right away.
+# The requests a worker makes a namespace for when they name a workflow it holds none for: running a node,
+# which is what puts anything in a namespace, and the orchestrator's drop of one, whose handler releases what
+# the namespace holds and forgets it right away. A namespace is not an open workflow; the worker keeps it
+# apart from `workflow_runtimes`.
 WORKER_RUNTIME_REQUESTS = (ExecuteNodeRequest, DropWorkflowLocalObjectsRequest)
 
 # Scoped override of the root engine. Set by `engine_scope`; `None` means "use the
@@ -196,6 +197,7 @@ class Engine:
     _workflow_registry: _WorkflowRegistry
     _open_workflows_manager: OpenWorkflowsManager
     _workflow_runtimes: list[WorkflowRuntime]
+    _worker_namespaces: dict[str, WorkflowRuntime]
     _run_scheduler: RunScheduler
 
     def __init__(self) -> None:  # noqa: PLR0915
@@ -246,6 +248,8 @@ class Engine:
         # No workflow is open until something opens one: OpenWorkflowRequest, or the first workflow
         # request from a client that works on a single workflow (see `runtime_for_request`).
         self._workflow_runtimes = []
+        # A worker's namespaces, by the orchestrator's workflow id. Always empty on the orchestrator.
+        self._worker_namespaces = {}
         self._run_scheduler = RunScheduler(
             is_running=self.is_workflow_running, display_name_of=self._workflow_display_name
         )
@@ -424,8 +428,13 @@ class Engine:
 
     @property
     def workflow_runtimes(self) -> list[WorkflowRuntime]:
-        """Every open runtime, in the order they were opened."""
+        """Every open workflow's runtime, in the order they were opened. Never a worker's namespaces."""
         return list(self._workflow_runtimes)
+
+    @property
+    def worker_namespaces(self) -> list[WorkflowRuntime]:
+        """The namespaces this worker keeps for the orchestrator's workflows, in the order they were made."""
+        return list(self._worker_namespaces.values())
 
     @property
     def current_workflow(self) -> WorkflowRuntime:
@@ -465,6 +474,7 @@ class Engine:
         return self._only_open_workflow()
 
     def find_workflow_runtime(self, workflow_id: str) -> WorkflowRuntime | None:
+        """The open workflow with this id, or None. Does not look in a worker's namespaces."""
         for runtime in self._workflow_runtimes:
             if runtime.workflow_id == workflow_id:
                 return runtime
@@ -507,9 +517,22 @@ class Engine:
         return runtime
 
     def remove_workflow_runtime(self, runtime: WorkflowRuntime) -> None:
-        """Forget a runtime whose objects the caller has cleared."""
+        """Forget an open workflow's runtime, whose objects the caller has cleared."""
         self._workflow_runtimes.remove(runtime)
         self._run_scheduler.release(runtime)
+
+    def worker_namespace(self, workflow_id: str) -> WorkflowRuntime:
+        """The namespace this worker keeps for the orchestrator's workflow, made if it has none yet."""
+        namespace = self._worker_namespaces.get(workflow_id)
+        if namespace is None:
+            namespace = WorkflowRuntime(owner=self, workflow_id=workflow_id, kind=RuntimeKind.WORKER_NAMESPACE)
+            self._worker_namespaces[workflow_id] = namespace
+        return namespace
+
+    def remove_worker_namespace(self, namespace: WorkflowRuntime) -> None:
+        """Forget a namespace whose objects the caller has released. Does nothing if it is already gone."""
+        if self._worker_namespaces.get(namespace.workflow_id) is namespace:
+            del self._worker_namespaces[namespace.workflow_id]
 
     @contextmanager
     def bind_workflow(self, runtime: WorkflowRuntime | NoWorkflow) -> Iterator[None]:
@@ -565,13 +588,17 @@ class Engine:
         if runtime is not None:
             return runtime
         if self._library_manager.is_worker:
-            # A worker holds none of the orchestrator's workflows. It keeps a namespace for each one it
-            # runs nodes for, under the orchestrator's id, made on the first node it runs for that workflow
-            # and dropped by DropWorkflowLocalObjectsRequest when the orchestrator clears the workflow.
-            # Any other request naming an id the worker doesn't hold would make a namespace nothing ends,
-            # so it fails instead.
+            # A worker holds none of the orchestrator's workflows open. It keeps a namespace for each one
+            # it runs nodes for, under the orchestrator's id, made on the first node it runs for that
+            # workflow and dropped by DropWorkflowLocalObjectsRequest when the orchestrator clears the
+            # workflow. Any request addressed to a workflow the worker holds a namespace for runs in it,
+            # such as a node's request made while it runs. Any other request naming an id the worker holds
+            # none for would make a namespace nothing ends, so it fails instead.
+            namespace = self._worker_namespaces.get(workflow_id)
+            if namespace is not None:
+                return namespace
             if isinstance(request, WORKER_RUNTIME_REQUESTS):
-                return self.open_workflow_runtime(workflow_id)
+                return self.worker_namespace(workflow_id)
             msg = (
                 f"Attempted to handle '{type(request).__name__}' in a workflow. "
                 "Failed because this worker isn't running any nodes for that workflow."

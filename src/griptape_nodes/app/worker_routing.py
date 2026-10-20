@@ -498,9 +498,9 @@ async def _handle_drop_workflow_local_objects(
         )
         return DropWorkflowLocalObjectsResultFailure(result_details=details)
     # The orchestrator cleared the workflow, so the namespace kept for it goes too. A later node from
-    # the same workflow makes a fresh one. Already gone when a sweep released it while this waited.
-    if workflow in engine.workflow_runtimes:
-        engine.remove_workflow_runtime(workflow)
+    # the same workflow makes a fresh one. Already gone when a sweep released it while this waited, which
+    # `remove_worker_namespace` allows.
+    engine.remove_worker_namespace(workflow)
     return DropWorkflowLocalObjectsResultSuccess(result_details=f"Released {dropped} held object(s).")
 
 
@@ -522,7 +522,7 @@ async def _handle_sweep_workflow_runtimes(
     """
     engine = event_manager.engine
     open_workflow_ids = set(request.open_workflow_ids)
-    orphans = [runtime for runtime in engine.workflow_runtimes if runtime.workflow_id not in open_workflow_ids]
+    orphans = [namespace for namespace in engine.worker_namespaces if namespace.workflow_id not in open_workflow_ids]
 
     released = 0
     failures: list[str] = []

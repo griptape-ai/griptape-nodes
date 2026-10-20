@@ -422,6 +422,7 @@ class WorkerManager(EngineScoped):
         Never raises, for the reason a failed challenge above does not end the loop: the transport raises
         while a connection is re-establishing, and the next interval sends again.
         """
+        # `workflow_runtimes` is the open workflows only: the orchestrator holds no worker namespaces.
         open_workflow_ids = [runtime.workflow_id for runtime in self.engine.workflow_runtimes]
         event = EventRequest(request=worker_events.SweepWorkflowRuntimesRequest(open_workflow_ids=open_workflow_ids))
         try:

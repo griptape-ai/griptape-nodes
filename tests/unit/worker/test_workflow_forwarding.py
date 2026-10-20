@@ -22,6 +22,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest
 from griptape_nodes.retained_mode.events.open_workflow_events import (
+    ListOpenWorkflowsRequest,
     ListOpenWorkflowsResultSuccess,
     OpenWorkflowRequest,
     OpenWorkflowResultSuccess,
@@ -30,6 +31,7 @@ from griptape_nodes.retained_mode.events.worker_events import DropWorkflowLocalO
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
 from griptape_nodes.retained_mode.request_handlers import RequestScope
 from griptape_nodes.retained_mode.runtime.binding import WorkflowNotOpenError
+from griptape_nodes.retained_mode.runtime.workflow_runtime import RuntimeKind
 from tests.unit.worker.harness import InProcessWorkerHarness
 
 
@@ -126,7 +128,8 @@ class TestWorkerForwarding:
         await worker.ahandle_request(_RunNodeProbe(node_name="probe"), workflow_id="workflow-b")
         await worker.ahandle_request(_RunNodeProbe(node_name="probe"), workflow_id="workflow-a")
 
-        assert [runtime.workflow_id for runtime in worker.workflow_runtimes] == ["workflow-a", "workflow-b"]
+        assert [runtime.workflow_id for runtime in worker.worker_namespaces] == ["workflow-a", "workflow-b"]
+        assert worker.workflow_runtimes == []
         assert seen[0] is seen[2]
         assert seen[0] is not seen[1]
 
@@ -148,12 +151,13 @@ class TestWorkerRuntimeCreation:
 
         assert result.failed()
         assert worker.workflow_runtimes == []
+        assert worker.worker_namespaces == []
 
     @pytest.mark.asyncio
-    async def test_a_request_naming_a_held_workflow_runs_in_it(self) -> None:
+    async def test_a_request_naming_a_held_namespace_runs_in_it(self) -> None:
         worker = Engine()
         worker.library_manager._is_worker = True
-        held = worker.open_workflow_runtime("workflow-a")
+        held = worker.worker_namespace("workflow-a")
         seen: list[object] = []
 
         def callback(_request: _CallbackProbe) -> _ProbeResult:
@@ -173,8 +177,10 @@ class TestWorkerRuntimeCreation:
 
         runtime = worker.runtime_for_request(ExecuteNodeRequest(node_name="node"), RequestScope.WORKFLOW, "workflow-a")
 
-        assert [held.workflow_id for held in worker.workflow_runtimes] == ["workflow-a"]
-        assert runtime is worker.workflow_runtimes[0]
+        assert [held.workflow_id for held in worker.worker_namespaces] == ["workflow-a"]
+        assert runtime is worker.worker_namespaces[0]
+        assert worker.worker_namespaces[0].kind is RuntimeKind.WORKER_NAMESPACE
+        assert worker.workflow_runtimes == []
 
     def test_a_drop_makes_a_namespace_for_the_handler_to_release(self) -> None:
         worker = Engine()
@@ -182,7 +188,35 @@ class TestWorkerRuntimeCreation:
 
         runtime = worker.runtime_for_request(DropWorkflowLocalObjectsRequest(), RequestScope.WORKFLOW, "workflow-a")
 
-        assert runtime is worker.find_workflow_runtime("workflow-a")
+        assert runtime is worker.worker_namespace("workflow-a")
+        assert worker.find_workflow_runtime("workflow-a") is None
+
+    @pytest.mark.asyncio
+    async def test_a_namespace_is_not_an_open_workflow(self) -> None:
+        worker = Engine()
+        worker.library_manager._is_worker = True
+        worker.worker_namespace("workflow-a")
+
+        result = await worker.ahandle_request(ListOpenWorkflowsRequest())
+
+        assert isinstance(result, ListOpenWorkflowsResultSuccess)
+        assert result.workflows == []
+        assert worker.describe_open_workflows()["open_workflows"] == []
+
+    def test_a_namespace_does_not_change_how_an_unaddressed_request_is_bound(self) -> None:
+        with_namespace = Engine()
+        with_namespace.library_manager._is_worker = True
+        with_namespace.worker_namespace("workflow-a")
+        without_namespace = Engine()
+        without_namespace.library_manager._is_worker = True
+
+        for scope in (RequestScope.WORKFLOW, RequestScope.OPTIONAL_WORKFLOW):
+            bound_with = with_namespace.runtime_for_request(_CallbackProbe(), scope, None)
+            bound_without = without_namespace.runtime_for_request(_CallbackProbe(), scope, None)
+            assert type(bound_with) is type(bound_without)
+
+        assert len(with_namespace.workflow_runtimes) == len(without_namespace.workflow_runtimes)
+        assert "workflow-a" not in [runtime.workflow_id for runtime in with_namespace.workflow_runtimes]
 
     def test_the_orchestrator_fails_a_request_naming_an_unknown_workflow(self) -> None:
         orchestrator = Engine()
@@ -206,7 +240,7 @@ class TestForwardToOrchestratorEnvelope:
             worker_response_topic="worker/response",
             websocket_event_loop=broker_loop,
         )
-        runtime = worker.open_workflow_runtime("workflow-a")
+        runtime = worker.worker_namespace("workflow-a")
         request = _CallbackProbe()
         try:
             with worker.bind_workflow(runtime):
