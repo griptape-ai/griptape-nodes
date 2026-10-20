@@ -805,8 +805,9 @@ class WorkerManager(EngineScoped):
             return
         for wid in worker_ids:
             self._workers.pop(wid, None)
-        for library_name in library_names:
-            self._remote_libraries.pop(library_name, None)
+        self._remote_libraries = {
+            name: machine for name, machine in self._remote_libraries.items() if name not in library_names
+        }
 
     def _withdraw_spawn_requests(self, *, library_names: set[str | None] | None, action: str) -> None:
         """Forget the named libraries' spawn requests (every library's when None), so a later one is honored.
@@ -1080,6 +1081,12 @@ class WorkerManager(EngineScoped):
         orchestrator's session comes from that orchestrator, and starts a worker that serves it.
         """
         if request.originator_session_id is not None:
+            # Another machine sends only the libraries assigned to this one; the general-purpose worker
+            # serves the machine that runs it.
+            if request.library_name is None:
+                return worker_events.StartWorkerResultFailure(
+                    result_details="Attempted to start a worker for another machine. Failed because it named no library."
+                )
             return await self._start_worker_for_originator(request.library_name, request.originator_session_id)
         library_name = request.library_name
         # Checked, declared, and scheduled with no await between, so two requests cannot both pass.
