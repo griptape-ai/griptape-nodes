@@ -251,8 +251,7 @@ class WorkflowCatalog(EngineScoped):
         runtime = self.engine.open_workflows_manager.find_runtime_by_name(workflow_name)
         if runtime is None:
             return not_found
-        with self.engine.bind_workflow(runtime):
-            file_path = self.engine.context_manager.get_current_workflow_file_path()
+        file_path = runtime.context.get_current_workflow_file_path()
         if file_path is None:
             return not_found
         try:
