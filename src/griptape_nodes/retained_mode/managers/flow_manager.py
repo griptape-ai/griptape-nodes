@@ -355,10 +355,10 @@ class FlowManager(EngineScoped):
         """
         if not self.check_for_existing_running_flow():
             return None
-        if self.parent_run_id is not None:
-            return self.parent_run_id
         if self._global_control_flow_machine is None:
             return None
+        if self.parent_run_id is not None:
+            return self.parent_run_id
         return self._global_control_flow_machine.context.run_id
 
     @property
@@ -4758,29 +4758,6 @@ class FlowManager(EngineScoped):
 
         self._end_cancelled_run()
 
-    def _end_cancelled_run(self) -> None:
-        """Reset the machine and tell the editor the run is over, with the run's timing and id.
-
-        Both are read before the reset, which clears them, and sent on the run's
-        `ControlFlowCancelledEvent`. The id is None when another end event already carried it.
-        """
-        run_seconds = None
-        run_id = None
-        if self._global_control_flow_machine is not None:
-            run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
-            run_id = self._global_control_flow_machine.context.end_run()
-            self._global_control_flow_machine.reset_machine(cancel=True)
-        self._global_single_node_resolution = False
-        self._global_dag_builder.clear()
-        self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
-        )
-        self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds, run_id=run_id))
-            )
-        )
-
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
         self._global_flow_queue.queue.clear()
@@ -4826,6 +4803,29 @@ class FlowManager(EngineScoped):
     ) -> bool:
         """Check if a connection exists between the specified nodes and parameters."""
         return self._has_connection(source_node, source_parameter, target_node, target_parameter)
+
+    def _end_cancelled_run(self) -> None:
+        """Reset the machine and tell the editor the run is over, with the run's timing and id.
+
+        Both are read before the reset, which clears them, and sent on the run's
+        `ControlFlowCancelledEvent`. The id is None when another end event already carried it.
+        """
+        run_seconds = None
+        run_id = None
+        if self._global_control_flow_machine is not None:
+            run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
+            run_id = self._global_control_flow_machine.context.end_run()
+            self._global_control_flow_machine.reset_machine(cancel=True)
+        self._global_single_node_resolution = False
+        self._global_dag_builder.clear()
+        self.engine.event_manager.put_event(
+            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+        )
+        self.engine.event_manager.put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds, run_id=run_id))
+            )
+        )
 
     # Internal execution queue helper methods to consolidate redundant operations
     async def _handle_flow_start_if_not_running(

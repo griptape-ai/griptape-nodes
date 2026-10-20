@@ -234,3 +234,18 @@ def record_published(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Callabl
         return recorded
 
     return _record
+
+
+@pytest.fixture(params=["sequential", "parallel"])
+def execution_mode(request: pytest.FixtureRequest, engine: Engine) -> Iterator[str]:
+    """Run a test under both schedulers, restoring the engine's configuration afterwards."""
+    config_manager = engine.config_manager
+    previous_mode = config_manager.get_config_value("workflow_execution_mode")
+    previous_max = config_manager.get_config_value("max_nodes_in_parallel")
+    config_manager.set_config_value("workflow_execution_mode", request.param)
+    config_manager.set_config_value("max_nodes_in_parallel", 4)
+    try:
+        yield request.param
+    finally:
+        config_manager.set_config_value("workflow_execution_mode", previous_mode)
+        config_manager.set_config_value("max_nodes_in_parallel", previous_max)

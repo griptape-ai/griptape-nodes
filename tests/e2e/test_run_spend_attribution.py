@@ -11,6 +11,7 @@ id the run announced on `FlowRunStartedEvent`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 import json
 import threading
@@ -22,6 +23,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 import pytest
 
 from griptape_nodes.drivers.cloud_credentials import API_KEY_SECRET_NAME, BASE_URL_SETTING_NAME
+from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.retained_mode.events.budget_events import ReportUsageRequest
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
@@ -40,7 +42,6 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
-from tests.e2e import test_node_deletion_during_run as deletion
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -66,6 +67,7 @@ LOOP_ITERATIONS = 3
 
 SPEND_PATH = "/api/spend"
 REPORT_WAIT_SECONDS = 10.0
+RUN_TIMEOUT_SECONDS = 30.0
 
 
 class _StubSpendServer(HTTPServer):
@@ -329,49 +331,34 @@ async def test_a_group_run_for_another_engine_counts_toward_that_engine_s_run(
     assert [report["tags"].get("run_id") for report in reports] == ["parent-run"] * len(NODE_NAMES), reports
 
 
-@pytest.fixture(params=["parallel", "sequential"])
-def execution_mode(request: pytest.FixtureRequest, engine: Engine) -> Iterator[str]:
-    """Run under both schedulers, restoring the engine's configuration afterwards."""
-    config_manager = engine.config_manager
-    previous_mode = config_manager.get_config_value("workflow_execution_mode")
-    config_manager.set_config_value("workflow_execution_mode", request.param)
-    try:
-        yield request.param
-    finally:
-        config_manager.set_config_value("workflow_execution_mode", previous_mode)
-
-
 @pytest.mark.usefixtures("execution_mode")
 @pytest.mark.asyncio
 async def test_a_cancelled_run_names_itself_on_its_cancelled_event_only(
     engine: Engine,
     tmp_path: Path,
-    materialize_library: Callable[..., Path],
-    create_node: Callable[..., str],
     record_published: Callable[..., list[Any]],
+    three_node_flow: str,
 ) -> None:
     """Cancelling mid-run passes the run through its normal ending on the way out.
 
     That ending must not carry the run's id: a client that closes a run on its end event would
     otherwise record a cancelled run as finished, then see a second end event for it.
     """
-    library_json = materialize_library(
-        tmp_path / "library", template=deletion.FIXTURE_LIBRARY_JSON_TEMPLATE, node_file=deletion.FIXTURE_NODE_FILE
+    gate = tmp_path / "gates" / "first.gate"
+    engine.handle_request(
+        SetParameterValueRequest(parameter_name="gate_file", node_name=NODE_NAMES[0], value=str(gate))
     )
-    registered = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
-    assert isinstance(registered, RegisterLibraryFromFileResultSuccess), registered
-    flow_name = deletion._new_flow(engine, "run_spend_cancel_wf")
-    gate = tmp_path / "gates" / "runner.gate"
-    create_node(deletion.NODE_TYPE, "Runner", flow_name, library_name=deletion.LIBRARY_NAME)
-    deletion._configure(engine, "Runner", text="x", gate_file=gate)
     payloads = record_published(object)
 
-    run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
-    await deletion._wait_until_resolving(engine, "Runner")
-    cancelled = await engine.ahandle_request(CancelFlowRequest(flow_name=flow_name))
+    run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=three_node_flow)))
+    await _wait_until_running(engine, NODE_NAMES[0])
+    cancelled = await engine.ahandle_request(CancelFlowRequest(flow_name=three_node_flow))
     assert cancelled.succeeded(), cancelled
-    deletion._open_gate(gate)
-    await deletion._drain_cancelled_run(run)
+    gate.parent.mkdir(parents=True, exist_ok=True)
+    gate.write_text("open")
+    with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+        await asyncio.wait_for(asyncio.shield(run), timeout=RUN_TIMEOUT_SECONDS)
+    run.cancel()
 
     announced = _announced_run_ids(payloads)
     assert len(announced) == 1, announced
@@ -383,3 +370,14 @@ async def test_a_cancelled_run_names_itself_on_its_cancelled_event_only(
     assert ends_with_id == ["ControlFlowCancelledEvent"], ends_with_id
     cancelled_ids = [payload.run_id for payload in payloads if isinstance(payload, ControlFlowCancelledEvent)]
     assert announced[0] in cancelled_ids, cancelled_ids
+
+
+async def _wait_until_running(engine: Engine, node_name: str) -> None:
+    """Block until the node is running, so a cancel lands mid-run."""
+    deadline = time.monotonic() + RUN_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if engine.node_manager.get_node_by_name(node_name).state is NodeResolutionState.RESOLVING:
+            return
+        await asyncio.sleep(0.01)
+    msg = f"Node '{node_name}' never started running, so the cancel could not land mid-run."
+    raise AssertionError(msg)

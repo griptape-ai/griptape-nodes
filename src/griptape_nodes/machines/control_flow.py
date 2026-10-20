@@ -12,7 +12,7 @@ from griptape_nodes.exe_types.node_types import (
     NodeResolutionState,
 )
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNodeCategories
-from griptape_nodes.machines.fsm import FSM, State, WorkflowState
+from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.retained_mode.engine import EngineScoped, current_engine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
@@ -58,6 +58,9 @@ class ControlFlowContext(EngineScoped):
     # Names the current run in spend attribution, so Griptape Cloud can total what one run cost.
     # Only a top-level run has one; an isolated subflow's spend reads the global machine's.
     run_id: str | None = None
+    # Set when the run is cancelled, whatever its nodes do about it, so its end event is the
+    # ControlFlowCancelledEvent that cancelling sends rather than the resolved one it passes on the way.
+    cancel_requested: bool = False
 
     def __init__(
         self,
@@ -96,6 +99,7 @@ class ControlFlowContext(EngineScoped):
         self.paused = False
         self.run_started_at = None
         self.run_id = None
+        self.cancel_requested = False
 
     def seconds_since_run_started(self) -> float | None:
         """Seconds since the current run started, or None when no run is being timed."""
@@ -173,8 +177,10 @@ class CompleteState(State):
             return None
 
         # A cancelled run passes through here on its way out, but its end event is the
-        # ControlFlowCancelledEvent that cancelling sends, so it keeps its id for that.
-        cancelled = context.resolution_machine.context.workflow_state is WorkflowState.CANCELED
+        # ControlFlowCancelledEvent that cancelling sends, so it keeps its id for that. Asked of the
+        # cancel request, not the resolution's outcome: a node may catch the cancellation and finish
+        # or fail, and a node task can end cancelled when nobody cancelled the run.
+        cancelled = context.cancel_requested
 
         # Broadcast completion events for any remaining current nodes. Only the first carries the
         # run's id (end_run hands it over once), which is also the one LocalWorkflowExecutor treats
@@ -238,6 +244,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self, start_node: BaseNode, end_node: BaseNode | None = None, *, debug_mode: bool = False
     ) -> None:
         self._context.run_started_at = time.perf_counter()
+        self._context.cancel_requested = False
         flow_manager = self._context.engine.flow_manager
         # If using DAG resolution, process data_nodes from queue first
         current_nodes = await self._process_nodes_for_dag(start_node)
@@ -445,6 +452,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     async def cancel_flow(self) -> None:
         """Cancel all nodes in the flow by delegating to the resolution machine."""
+        self._context.cancel_requested = True
         await self.resolution_machine.cancel_all_nodes()
 
     def reset_machine(self, *, cancel: bool = False) -> None:

@@ -8,6 +8,7 @@ import pytest
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowContext, ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagNode
+from griptape_nodes.machines.fsm import WorkflowState
 from griptape_nodes.machines.parallel_resolution import ExecuteDagState
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowCancelledEvent,
@@ -139,12 +140,9 @@ class TestRunId:
 
 
 class TestRunEndEvents:
-    @pytest.mark.asyncio
-    async def test_a_run_ending_on_several_nodes_names_itself_on_one_end_event(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A client that closes a run on its end event must see exactly one for the id."""
-        monkeypatch.setattr(NodeManager, "result_parameter_values", staticmethod(lambda _node: {}))
+    @staticmethod
+    def _ending(*, end_nodes: list[str], cancel_requested: bool) -> tuple[ControlFlowContext, MagicMock]:
+        """A context at the end of run "run-1", with its engine to read the sent events from."""
         engine = MagicMock()
         context = _context()
         context._engine = engine
@@ -152,15 +150,58 @@ class TestRunEndEvents:
         context.flow_name = "Flow"
         context.run_started_at = None
         context.run_id = "run-1"
-        first, second = MagicMock(spec=BaseNode), MagicMock(spec=BaseNode)
-        first.name, second.name = "First", "Second"
-        context.current_nodes = [first, second]
+        context.cancel_requested = cancel_requested
+        nodes = []
+        for name in end_nodes:
+            node = MagicMock(spec=BaseNode)
+            node.name = name
+            nodes.append(node)
+        context.current_nodes = nodes
+        return context, engine
+
+    @staticmethod
+    def _resolved(engine: MagicMock) -> list[tuple[str, str | None]]:
+        calls = engine.event_manager.put_event.call_args_list
+        return [
+            (call.args[0].wrapped_event.payload.end_node_name, call.args[0].wrapped_event.payload.run_id)
+            for call in calls
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_run_ending_on_several_nodes_names_itself_on_one_end_event(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A client that closes a run on its end event must see exactly one for the id."""
+        monkeypatch.setattr(NodeManager, "result_parameter_values", staticmethod(lambda _node: {}))
+        context, engine = self._ending(end_nodes=["First", "Second"], cancel_requested=False)
 
         await CompleteState.on_enter(context)
 
-        calls = engine.event_manager.put_event.call_args_list
-        resolved = [call.args[0].wrapped_event.payload for call in calls]
-        assert [(event.end_node_name, event.run_id) for event in resolved] == [("First", "run-1"), ("Second", None)]
+        assert self._resolved(engine) == [("First", "run-1"), ("Second", None)]
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_run_leaves_its_id_to_the_cancelled_event(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Even when a node caught the cancellation and finished, so the resolution never read CANCELED."""
+        monkeypatch.setattr(NodeManager, "result_parameter_values", staticmethod(lambda _node: {}))
+        context, engine = self._ending(end_nodes=["Runner"], cancel_requested=True)
+
+        await CompleteState.on_enter(context)
+
+        assert self._resolved(engine) == [("Runner", None)]
+        assert context.end_run() == "run-1"
+
+    @pytest.mark.asyncio
+    async def test_a_run_nobody_cancelled_names_itself_on_its_resolved_event(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A node task that ends cancelled on its own sends no cancelled event, so this is the run's end."""
+        monkeypatch.setattr(NodeManager, "result_parameter_values", staticmethod(lambda _node: {}))
+        context, engine = self._ending(end_nodes=["Runner"], cancel_requested=False)
+        context.resolution_machine.context.workflow_state = WorkflowState.CANCELED
+
+        await CompleteState.on_enter(context)
+
+        assert self._resolved(engine) == [("Runner", "run-1")]
 
 
 class _StartedRun(NamedTuple):
