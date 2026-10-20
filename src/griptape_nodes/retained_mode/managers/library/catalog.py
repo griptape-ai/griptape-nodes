@@ -38,6 +38,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibrarySourceInfoRequest,
     GetLibrarySourceInfoResultFailure,
     GetLibrarySourceInfoResultSuccess,
+    GetNodeCatalogRequest,
+    GetNodeCatalogResultFailure,
+    GetNodeCatalogResultSuccess,
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultFailure,
     GetNodeMetadataFromLibraryResultSuccess,
@@ -53,6 +56,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+    NodeCatalogCategory,
+    NodeCatalogLibrary,
+    NodeCatalogNode,
     ParameterDescription,
     WidgetInfo,
 )
@@ -65,6 +71,7 @@ from griptape_nodes.retained_mode.request_handlers import handles
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from griptape_nodes.node_library.library_registry import Library
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -438,6 +445,37 @@ class LibraryCatalog(EngineScoped):
             result_details=details,
         )
 
+    @handles(GetNodeCatalogRequest)
+    async def on_get_node_catalog_request(self, request: GetNodeCatalogRequest) -> ResultPayload:
+        """Return every node type's name, category, description, and deprecation, grouped by library.
+
+        Reads only the metadata each library registered, so node modules that deferred
+        registration has not imported yet stay unimported and no node is constructed.
+        """
+        library_manager = self.engine.library_manager
+        # Loop because another coroutine may close the gate between it opening and this resuming.
+        while not library_manager._libraries_loading_complete.is_set():
+            await library_manager._libraries_loading_complete.wait()
+
+        registered_names = LibraryRegistry.list_libraries()
+        if request.libraries is None:
+            library_names = registered_names
+        else:
+            library_names = list(dict.fromkeys(request.libraries))
+
+        unknown_names = [name for name in library_names if name not in registered_names]
+        if unknown_names:
+            quoted_names = ", ".join(f"'{name}'" for name in unknown_names)
+            details = (
+                f"Attempted to get the node catalog. Failed because no Library is registered under: {quoted_names}."
+            )
+            return GetNodeCatalogResultFailure(result_details=details)
+
+        catalog = [self._build_node_catalog_library(LibraryRegistry.get_library(name)) for name in library_names]
+        node_count = sum(len(category.nodes) for library in catalog for category in library.categories)
+        details = f"Successfully retrieved the node catalog: {node_count} node types in {len(catalog)} Libraries."
+        return GetNodeCatalogResultSuccess(libraries=catalog, result_details=details)
+
     @handles(ListCategoriesInLibraryRequest)
     def list_categories_in_library_request(self, request: ListCategoriesInLibraryRequest) -> ResultPayload:
         # Does this library exist?
@@ -655,3 +693,32 @@ class LibraryCatalog(EngineScoped):
                 )
             )
         return widgets_info
+
+    @staticmethod
+    def _build_node_catalog_library(library: Library) -> NodeCatalogLibrary:
+        """Group a library's node types by category, from registered metadata only.
+
+        Categories come in the order the library declares them. A category a node names but the
+        library does not declare follows the declared ones, in the order nodes first name it.
+        """
+        nodes_by_category: dict[str, list[NodeCatalogNode]] = {}
+        for category_definitions in library.get_categories():
+            for category_name in category_definitions:
+                nodes_by_category[category_name] = []
+
+        for node_type in library.get_registered_nodes():
+            metadata = library.get_node_metadata(node_type)
+            catalog_node = NodeCatalogNode(
+                type=node_type,
+                display_name=metadata.display_name,
+                description=metadata.description,
+                deprecated=metadata.deprecation is not None,
+            )
+            nodes_by_category.setdefault(metadata.category, []).append(catalog_node)
+
+        categories = [
+            NodeCatalogCategory(name=category_name, nodes=nodes)
+            for category_name, nodes in nodes_by_category.items()
+            if nodes
+        ]
+        return NodeCatalogLibrary(name=library.get_library_data().name, categories=categories)

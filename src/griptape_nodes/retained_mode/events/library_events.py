@@ -327,6 +327,90 @@ class DescribeNodeTypeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 
 @dataclass
+class NodeCatalogNode:
+    """One node type in the node catalog.
+
+    Args:
+        type: Node type name, the exact string to pass to CreateNodeRequest.node_type
+            and DescribeNodeTypeRequest.node_type
+        display_name: Name the editor shows for the node type
+        description: What the node type does, as written by the library author
+        deprecated: True when the library marks the node type deprecated; prefer another node
+    """
+
+    type: str
+    display_name: str
+    description: str
+    deprecated: bool
+
+
+@dataclass
+class NodeCatalogCategory:
+    """The node types of one library category.
+
+    Args:
+        name: Category name, the value of each node type's metadata.category
+        nodes: Node types in the category, in library registration order
+    """
+
+    name: str
+    nodes: list[NodeCatalogNode]
+
+
+@dataclass
+class NodeCatalogLibrary:
+    """The node types of one registered library, grouped by category.
+
+    Args:
+        name: Registered library name, the value to pass as `library` in other requests
+        categories: Categories in the order the library declares them. Categories that
+            hold no node types are left out.
+    """
+
+    name: str
+    categories: list[NodeCatalogCategory]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNodeCatalogRequest(RequestPayload):
+    """List every node type in one call, grouped by library and category, with descriptions.
+
+    Use when: planning a workflow and choosing which node types to create, or finding the
+    library and exact type name for a node. One call replaces ListRegisteredLibrariesRequest
+    followed by ListNodeTypesInLibraryRequest per library. Read-only, and built from library
+    metadata alone, so it is cheap. For a node type's parameters, follow up with
+    DescribeNodeTypeRequest.
+
+    Args:
+        libraries: Names of the libraries to include, in the order given. None includes every
+            registered library.
+
+    Results: GetNodeCatalogResultSuccess (with the catalog) | GetNodeCatalogResultFailure (a named library is not registered)
+    """
+
+    libraries: list[str] | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNodeCatalogResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node catalog retrieved successfully.
+
+    Args:
+        libraries: One entry per library, each listing its categories and their node types
+    """
+
+    libraries: list[NodeCatalogLibrary]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNodeCatalogResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node catalog retrieval failed. Common causes: a requested library is not registered."""
+
+
+@dataclass
 @PayloadRegistry.register
 class RegisterSandboxNodeFromSourceRequest(RequestPayload):
     """Register a node type from a `.py` file already on disk inside the sandbox library directory.

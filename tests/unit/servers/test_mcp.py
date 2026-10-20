@@ -283,6 +283,17 @@ class TestListTools:
         assert "ValidateFlowDependenciesRequest" in names
 
     @pytest.mark.asyncio
+    async def test_advertises_node_catalog_request_with_its_docstring(self) -> None:
+        result = await list_tools(_NO_CONTEXT, None)
+
+        tools_by_name = {tool.name: tool for tool in result.tools}
+        catalog_tool = tools_by_name["GetNodeCatalogRequest"]
+        assert catalog_tool.description is not None
+        assert "Use when:" in catalog_tool.description
+        assert "libraries" in catalog_tool.input_schema["properties"]
+        assert catalog_tool.input_schema.get("required", []) == []
+
+    @pytest.mark.asyncio
     async def test_every_tool_carries_an_object_input_schema(self) -> None:
         result = await list_tools(_NO_CONTEXT, None)
 
