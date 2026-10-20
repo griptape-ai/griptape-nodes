@@ -22,8 +22,9 @@ from griptape_nodes.retained_mode.managers.external_environment import (  # noqa
     LIBRARY_PATHS_ENV_VAR,
     LIBRARY_WORKER_REQUESTS_ENV_VAR,
 )
-from griptape_nodes.retained_mode.runtime.binding import HostWorkflowRead, host_workflow_reads  # noqa: E402
+from griptape_nodes.retained_mode.runtime.read_observer import install_workflow_read_observer  # noqa: E402
 from griptape_nodes.utils import engine_dirs  # noqa: E402
+from tests.unit.host_workflow_reads import HostWorkflowRead, HostWorkflowReadRecorder  # noqa: E402
 
 # The redirect must be in place before the first test module is imported, earlier than any
 # fixture can run: `agent_manager` and `servers.mcp` build a `ConfigManager` at module
@@ -175,12 +176,13 @@ def fail_on_host_workflow_reads() -> Generator[list[HostWorkflowRead], None, Non
     A host request a client sends acts on no workflow, so such a read gets none: its handler depends on a
     workflow it should take, or declare with `@handles(scope=...)`. See `RequestScope`.
     """
-    recorded: list[HostWorkflowRead] = []
-    token = host_workflow_reads.set(recorded)
+    recorder = HostWorkflowReadRecorder()
+    previous = install_workflow_read_observer(recorder)
     try:
-        yield recorded
+        yield recorder.reads
     finally:
-        host_workflow_reads.reset(token)
+        install_workflow_read_observer(previous)
+    recorded = recorder.reads
     assert recorded == [], "Host requests read the current workflow while one was open: " + "; ".join(
         f"{read.request_type_name} {read.read}" for read in recorded
     )

@@ -48,14 +48,13 @@ from griptape_nodes.retained_mode.request_handlers import (
 )
 from griptape_nodes.retained_mode.run_scheduler import current_run
 from griptape_nodes.retained_mode.runtime.binding import (
-    NO_WORKFLOW,
     NoWorkflow,
     WorkflowNotNamedError,
     WorkflowNotOpenError,
     bound_workflow,
     bound_workflow_id,
-    host_request_from_client,
 )
+from griptape_nodes.retained_mode.runtime.read_observer import observe_dispatch
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
@@ -1269,22 +1268,6 @@ class EventManager(EngineScoped):
         return {"workflow": None}
 
     @staticmethod
-    def _host_request_from_client(
-        request_type: type[RequestPayload], scope: RequestScope, binding: WorkflowRuntime | NoWorkflow | None
-    ) -> type[RequestPayload] | None:
-        """The host request a client sent that this dispatch is for, if any (see `host_request_from_client`).
-
-        A host request a client sent is bound to no workflow. A request bound to a workflow is for that
-        workflow. Any other request, issued from other work, keeps what that work was for: a nested request
-        that gets no workflow because a host request issued it is still for that host request.
-        """
-        if isinstance(binding, WorkflowRuntime):
-            return None
-        if scope is RequestScope.HOST and binding is NO_WORKFLOW:
-            return request_type
-        return host_request_from_client.get()
-
-    @staticmethod
     def _result_context_for(binding: WorkflowRuntime | NoWorkflow | None, context: ResultContext) -> ResultContext:
         """The caller's result context, plus the workflow the request acts on, for its result event."""
         if isinstance(binding, WorkflowRuntime):
@@ -1335,41 +1318,40 @@ class EventManager(EngineScoped):
         binding_token = None
         if binding is not None:
             binding_token = bound_workflow.set(binding)
-        host_token = host_request_from_client.set(self._host_request_from_client(request_type, scope, binding))
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
         try:
-            # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
-            # the manager callback runs.
-            short_circuit = self._run_pre_dispatch_hooks(request, result_context)
-            if short_circuit is not None:
+            with observe_dispatch(request_type, scope, binding):
+                # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+                # the manager callback runs.
+                short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+                if short_circuit is not None:
+                    return self._handle_request_core(
+                        request,
+                        short_circuit,
+                        context=result_context,
+                    )
+
+                try:
+                    # Actually make the handler callback (support both sync and async):
+                    result_payload: ResultPayload = await call_function(
+                        callback, request, **self._handler_arguments(request_type, binding)
+                    )
+
+                    # Queue flush request for async context (unless result type should skip flush)
+                    with operation_depth_mgr:
+                        if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                            self._flush_tracked_parameter_changes()
+                except Exception as exc:
+                    return self._result_for_handler_exception(request, exc, context=result_context)
+
                 return self._handle_request_core(
                     request,
-                    short_circuit,
+                    cast("ResultPayload", result_payload),
                     context=result_context,
                 )
-
-            try:
-                # Actually make the handler callback (support both sync and async):
-                result_payload: ResultPayload = await call_function(
-                    callback, request, **self._handler_arguments(request_type, binding)
-                )
-
-                # Queue flush request for async context (unless result type should skip flush)
-                with operation_depth_mgr:
-                    if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                        self._flush_tracked_parameter_changes()
-            except Exception as exc:
-                return self._result_for_handler_exception(request, exc, context=result_context)
-
-            return self._handle_request_core(
-                request,
-                cast("ResultPayload", result_payload),
-                context=result_context,
-            )
         finally:
             _active_request_type.reset(token)
-            host_request_from_client.reset(host_token)
             if binding_token is not None:
                 bound_workflow.reset(binding_token)
 
@@ -1410,40 +1392,39 @@ class EventManager(EngineScoped):
         binding_token = None
         if binding is not None:
             binding_token = bound_workflow.set(binding)
-        host_token = host_request_from_client.set(self._host_request_from_client(request_type, scope, binding))
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
         try:
-            # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
-            # the manager callback runs.
-            short_circuit = self._run_pre_dispatch_hooks(request, result_context)
-            if short_circuit is not None:
+            with observe_dispatch(request_type, scope, binding):
+                # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
+                # the manager callback runs.
+                short_circuit = self._run_pre_dispatch_hooks(request, result_context)
+                if short_circuit is not None:
+                    return self._handle_request_core(
+                        request,
+                        short_circuit,
+                        context=result_context,
+                    )
+
+                try:
+                    result_payload = self._invoke_handler_from_sync(
+                        callback, request, self._handler_arguments(request_type, binding)
+                    )
+
+                    # Queue flush request for sync context (unless result type should skip flush)
+                    with operation_depth_mgr:
+                        if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                            self._flush_tracked_parameter_changes()
+                except Exception as exc:
+                    return self._result_for_handler_exception(request, exc, context=result_context)
+
                 return self._handle_request_core(
                     request,
-                    short_circuit,
+                    cast("ResultPayload", result_payload),
                     context=result_context,
                 )
-
-            try:
-                result_payload = self._invoke_handler_from_sync(
-                    callback, request, self._handler_arguments(request_type, binding)
-                )
-
-                # Queue flush request for sync context (unless result type should skip flush)
-                with operation_depth_mgr:
-                    if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                        self._flush_tracked_parameter_changes()
-            except Exception as exc:
-                return self._result_for_handler_exception(request, exc, context=result_context)
-
-            return self._handle_request_core(
-                request,
-                cast("ResultPayload", result_payload),
-                context=result_context,
-            )
         finally:
             _active_request_type.reset(token)
-            host_request_from_client.reset(host_token)
             if binding_token is not None:
                 bound_workflow.reset(binding_token)
 

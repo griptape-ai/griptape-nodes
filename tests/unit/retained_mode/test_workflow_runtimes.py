@@ -78,7 +78,6 @@ from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManag
 from griptape_nodes.retained_mode.run_scheduler import RunRefusedError, current_run
 from griptape_nodes.retained_mode.runtime.binding import (
     NO_WORKFLOW,
-    HostWorkflowRead,
     WorkflowNotNamedError,
     bound_workflow,
 )
@@ -89,6 +88,7 @@ if TYPE_CHECKING:
 
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
+    from tests.unit.host_workflow_reads import HostWorkflowRead
 
 
 def _open_new_workflow_with_note(engine: Engine, note_name: str) -> OpenWorkflowResultSuccess:

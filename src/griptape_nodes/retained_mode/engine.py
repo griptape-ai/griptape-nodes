@@ -46,14 +46,12 @@ from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.run_scheduler import RunScheduler
 from griptape_nodes.retained_mode.runtime.binding import (
     NO_WORKFLOW,
-    HostWorkflowRead,
     NoWorkflow,
     WorkflowNotNamedError,
     WorkflowNotOpenError,
     bound_workflow,
-    host_request_from_client,
-    host_workflow_reads,
 )
+from griptape_nodes.retained_mode.runtime.read_observer import observe_read_without_workflow
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -455,7 +453,7 @@ class Engine:
         """
         bound = bound_workflow.get()
         if bound is NO_WORKFLOW:
-            self.report_host_workflow_read("read the current workflow")
+            observe_read_without_workflow(self, "read the current workflow")
             return None
         if isinstance(bound, WorkflowRuntime) and bound.owner is self:
             return bound
@@ -519,8 +517,7 @@ class Engine:
 
     def is_workflow_running(self, runtime: WorkflowRuntime) -> bool:
         """Whether `runtime`'s run is in progress, by its own execution state."""
-        with self.bind_workflow(runtime):
-            return self._flow_manager.check_for_existing_running_flow(runtime)
+        return self._flow_manager.check_for_existing_running_flow(runtime)
 
     def describe_open_workflows(self) -> dict[str, Any]:
         """Describe the open workflows for a heartbeat or discovery record, as the heartbeat's fields.
@@ -596,24 +593,6 @@ class Engine:
         # A client that works on a single workflow never names one, so its first workflow request
         # opens one.
         return self.open_workflow_runtime()
-
-    def report_host_workflow_read(self, read: str) -> None:
-        """Note a read of the current workflow made for a host request a client sent, while a workflow is open.
-
-        The request acts on no workflow, so the read gets none, and its handler most likely depends on a
-        workflow it should take (see `RequestScope`). Logged, and recorded where something collects them.
-        """
-        request_type = host_request_from_client.get()
-        if request_type is None or not self._workflow_runtimes:
-            return
-        logger.debug(
-            "'%s' is a host request, so it acts on no workflow, but it %s while a workflow is open.",
-            request_type.__name__,
-            read,
-        )
-        recorded = host_workflow_reads.get()
-        if recorded is not None:
-            recorded.append(HostWorkflowRead(request_type_name=request_type.__name__, read=read))
 
     def _resolve_unbound_workflow(self) -> WorkflowRuntime | None:
         """The workflow an unbound read of the current workflow gets: the only one open, or the running one.

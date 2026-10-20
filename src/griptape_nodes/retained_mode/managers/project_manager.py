@@ -147,6 +147,7 @@ from griptape_nodes.retained_mode.publishing.project_packager import (
     rename_project_template,
 )
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.runtime.read_observer import observe_read_without_workflow
 from griptape_nodes.retained_mode.variable_types import FlowVariable, VariableLayer, VariablePermission
 from griptape_nodes.utils.dict_utils import get_dot_value
 from griptape_nodes.utils.file_utils import find_files_recursive
@@ -4971,7 +4972,7 @@ class ProjectManager(EngineScoped):
             project_info: Information about the current project
             workflow_context: The workflow `workflow_name` and `workflow_dir` are answered from
             report_missing_workflow: Whether a workflow builtin asked for with no workflow is reported as a
-                read the request depends on (see `Engine.report_host_workflow_read`)
+                read the request depends on (see `WorkflowReadObserver`)
 
         Returns:
             String value of the builtin variable
@@ -5016,7 +5017,7 @@ class ProjectManager(EngineScoped):
     def _no_workflow_error(self, var_name: str, *, report_missing_workflow: bool) -> RuntimeError:
         """The error for a workflow builtin asked for with no workflow, reporting the read if asked to."""
         if report_missing_workflow:
-            self.engine.report_host_workflow_read(f"resolved {{{var_name}}}")
+            observe_read_without_workflow(self.engine, f"resolved {{{var_name}}}")
         return RuntimeError("No current workflow")
 
     def _resolve_builtin_workspace_dir(self) -> str:
