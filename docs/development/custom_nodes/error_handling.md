@@ -327,6 +327,74 @@ including a list of validation problems. Otherwise it is a plain sentence for th
 `fields={"job_id": ...}` for anything else a user may need to quote. If a 2xx body is not JSON, call
 `from_http_response` on it too, so it isn't reported as a connection failure.
 
+#### Checking inputs before a run
+
+A provider that rejects an input still costs the user an upload and a wait, and sometimes credits.
+When its documentation gives limits on the files it accepts, check them in
+`validate_before_node_run` so the node fails before it starts. `griptape_nodes.exe_types.input_checks`
+reads what it needs locally and builds the `NodeError` for you:
+
+| Helper                                    | Use it when                                                                      |
+| ----------------------------------------- | -------------------------------------------------------------------------------- |
+| `image_errors(image, subject=..., ...)`   | An image input has limits on its format, file size, pixel size, or aspect ratio. |
+| `video_errors(video, subject=..., ...)`   | A video input has limits on its file size, length, frame size, or frame rate.    |
+| `check_count(count, maximum=..., ...)`    | A list parameter accepts only so many items.                                     |
+| `input_subject(parameter, noun=..., ...)` | You need the start of the message, such as "Image 2 in 'reference images'".      |
+
+Each takes only the limits you pass and returns a list of errors, empty when the input is within
+them. The single checks they use (`check_size`, `check_dimensions`, `check_duration` and the rest)
+are there too for a limit that isn't about one file.
+
+```python
+from griptape_nodes.exe_types.input_checks import check_count, image_errors, input_subject
+
+MAX_IMAGES = 4
+MAX_BYTES = 10 * 1024 * 1024
+
+
+def validate_before_node_run(self) -> list[Exception] | None:
+    exceptions = super().validate_before_node_run() or []
+    model = self.get_parameter_value("model")
+    docs_url = MODEL_LIMITS_URLS[model]
+    images = self.get_parameter_list_value("reference_images") or []
+
+    too_many = check_count(
+        len(images), maximum=MAX_IMAGES, parameter="reference images", noun="images", docs_url=docs_url
+    )
+    if too_many:
+        exceptions.append(too_many)
+    for position, image in enumerate(images, start=1):
+        exceptions.extend(
+            image_errors(
+                image,
+                subject=input_subject("reference images", noun="image", position=position),
+                allowed_mime_types=("image/jpeg", "image/png"),
+                maximum_bytes=MAX_BYTES,
+                min_side=300,
+                docs_url=docs_url,
+            )
+        )
+    return exceptions or None
+```
+
+A too-small image then fails with "Image 2 in 'reference images' is 200x1000 and each side must be
+at least 300 pixels. Use a larger one." and a "Provider limits" link.
+
+The checks follow these rules:
+
+- **Skip what can't be read locally, don't fail it.** A remote URL, a format Pillow can't open, a
+    video when ffprobe isn't installed, or a probe that takes longer than 5 seconds is left for the
+    provider to judge. A check refuses only an input it has read and found outside the limit.
+- **Pass the provider's limits and a docs link for the selected model.** The checks know nothing
+    about any provider. Your node passes the limits the provider documents, only for the inputs its
+    request sends, and `docs_url` for the page that documents them, so the user can see the rule.
+- **No network calls.** Validation runs before every run, on the engine's event loop. The checks
+    never download an input or a tool: they measure files on this machine and data URIs, and use
+    ffprobe only when it is already installed.
+- **Where a limit is ambiguous, refuse less.** Sizes are in MiB. A maximum length is checked
+    against the shorter of the video stream and the whole file, and a minimum against the longer.
+    Frame rates work the same way, with 1% leeway so 23.976 fps passes a 24 fps minimum.
+
 #### Common failures
 
 - **A call to a service raises.** Catch the SDK's own exception and re-raise it with
@@ -357,6 +425,9 @@ request, an unsupported input, a missing API key, a plain `KeyError`, and valida
 Use `validate_before_node_run()` for complex validation:
 
 ```python
+from griptape_nodes.exe_types.input_checks import check_count
+
+
 def validate_before_node_run(self) -> list[Exception] | None:
     """Validate parameters before running the node."""
     exceptions = []
@@ -364,8 +435,9 @@ def validate_before_node_run(self) -> list[Exception] | None:
     model = self.get_parameter_value("model")
     if model == "advanced":
         images = self.get_parameter_list_value("images") or []
-        if len(images) > MAX_IMAGES:
-            exceptions.append(ValueError(f"Maximum {MAX_IMAGES} images allowed, got {len(images)}"))
+        too_many = check_count(len(images), maximum=MAX_IMAGES, parameter="images", noun="images")
+        if too_many:
+            exceptions.append(too_many)
 
     return exceptions if exceptions else None
 ```
