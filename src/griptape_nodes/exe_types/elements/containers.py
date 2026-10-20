@@ -295,7 +295,7 @@ class ParameterList(ParameterContainer):
 
     @property
     def concatenates_list_rows(self) -> bool:
-        """Whether a row holding a list adds its items, rather than being one item. False when lists are valid items."""
+        """Whether list-valued rows contribute items; false when lists are valid items."""
         whole_item_bases = {ParameterTypeBuiltin.ANY.value, ParameterTypeBuiltin.ALL.value, "list"}
         item_types = super()._custom_getter_for_property_input_types()
         return all(
@@ -303,7 +303,7 @@ class ParameterList(ParameterContainer):
         )
 
     def row_value_is_items(self, value: Any) -> bool:
-        """Whether a row's `value` adds its items to this list, rather than being one item."""
+        """Return whether `value` contributes its items rather than one item."""
         return isinstance(value, list) and self.concatenates_list_rows
 
     @staticmethod
@@ -324,7 +324,7 @@ class ParameterList(ParameterContainer):
             self._widen_row_input_types(row)
 
     def _widen_row_input_types(self, row: Parameter) -> None:
-        # The item types come from the base getter. `self.input_types` is the container's list-shaped set.
+        # `self.input_types` is the container's list-shaped set, not its item types.
         row.input_types = self._with_list_variants(super()._custom_getter_for_property_input_types())
 
     def _custom_setter_for_property_output_type(self, value: str | None) -> None:
