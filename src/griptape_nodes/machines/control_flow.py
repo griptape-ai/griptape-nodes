@@ -12,7 +12,7 @@ from griptape_nodes.exe_types.node_types import (
     NodeResolutionState,
 )
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNodeCategories
-from griptape_nodes.machines.fsm import FSM, State
+from griptape_nodes.machines.fsm import FSM, State, WorkflowState
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.retained_mode.engine import EngineScoped, current_engine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
@@ -103,6 +103,16 @@ class ControlFlowContext(EngineScoped):
             return None
         return time.perf_counter() - self.run_started_at
 
+    def end_run(self) -> str | None:
+        """Hand over the run's id for its end event, once.
+
+        Whichever end event goes out first carries the id and any later one carries None, so a
+        client that closes a run on its end event sees exactly one.
+        """
+        run_id = self.run_id
+        self.run_id = None
+        return run_id
+
 
 # GOOD!
 class ResolveNodeState(State):
@@ -162,11 +172,18 @@ class CompleteState(State):
             logger.debug("Isolated subflow '%s' is complete.", context.flow_name)
             return None
 
+        # A cancelled run passes through here on its way out, but its end event is the
+        # ControlFlowCancelledEvent that cancelling sends, so it keeps its id for that.
+        cancelled = context.resolution_machine.context.workflow_state is WorkflowState.CANCELED
+
         # Broadcast completion events for any remaining current nodes. Only the first carries the
-        # run's id, so a client that closes a run on its end event sees exactly one; the first is
-        # also the one LocalWorkflowExecutor treats as the workflow finishing.
-        run_id = context.run_id
+        # run's id (end_run hands it over once), which is also the one LocalWorkflowExecutor treats
+        # as the workflow finishing.
         for current_node in context.current_nodes:
+            if cancelled:
+                run_id = None
+            else:
+                run_id = context.end_run()
             context.engine.event_manager.put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
@@ -179,7 +196,6 @@ class CompleteState(State):
                     )
                 )
             )
-            run_id = None
         logger.debug("Flow is complete.")
         return None
 
@@ -225,8 +241,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         flow_manager = self._context.engine.flow_manager
         # If using DAG resolution, process data_nodes from queue first
         current_nodes = await self._process_nodes_for_dag(start_node)
-        # Announced once the run can go ahead, so a start that fails setting up announces nothing.
-        self._begin_run(flow_manager)
         self._context.current_nodes = current_nodes
         self._context.end_node = end_node
         # Set entry control parameter for initial node (None for workflow start)
@@ -249,6 +263,9 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                     wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
                 )
             )
+        # Announced last, once setup has succeeded, so a start that fails setting up announces no run
+        # that nothing would end. From here on the run's own failures end it.
+        self._begin_run(flow_manager)
         await self.start(ResolveNodeState)  # Begins the flow
 
     async def update(self) -> None:

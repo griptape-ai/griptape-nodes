@@ -10,6 +10,7 @@ id the run announced on `FlowRunStartedEvent`.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 import threading
@@ -23,6 +24,8 @@ import pytest
 from griptape_nodes.drivers.cloud_credentials import API_KEY_SECRET_NAME, BASE_URL_SETTING_NAME
 from griptape_nodes.retained_mode.events.budget_events import ReportUsageRequest
 from griptape_nodes.retained_mode.events.execution_events import (
+    CancelFlowRequest,
+    ControlFlowCancelledEvent,
     ControlFlowResolvedEvent,
     FlowRunStartedEvent,
     ResolveNodeRequest,
@@ -37,6 +40,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from tests.e2e import test_node_deletion_during_run as deletion
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -72,14 +76,17 @@ class _StubSpendServer(HTTPServer):
         self.reports: list[dict[str, Any]] = []
         self.lock = threading.Lock()
 
-    def wait_for_reports(self, count: int) -> list[dict[str, Any]]:
-        """Wait for `count` reports, since the engine posts them from a background thread."""
+    async def wait_for_reports(self, count: int) -> list[dict[str, Any]]:
+        """Wait for `count` reports, since the engine posts them from a background thread.
+
+        Waits with `asyncio.sleep`, so the engine's event loop keeps running meanwhile.
+        """
         deadline = time.monotonic() + REPORT_WAIT_SECONDS
         while time.monotonic() < deadline:
             with self.lock:
                 if len(self.reports) >= count:
                     return list(self.reports)
-            time.sleep(0.05)
+            await asyncio.sleep(0.05)
         with self.lock:
             return list(self.reports)
 
@@ -165,7 +172,7 @@ async def test_every_call_in_a_run_carries_the_id_the_run_announced(
 
     announced = _announced_run_ids(payloads)
     assert len(announced) == 1, f"A run should announce exactly one id, got {announced}"
-    reports = stub_cloud.wait_for_reports(len(NODE_NAMES))
+    reports = await stub_cloud.wait_for_reports(len(NODE_NAMES))
     assert [report["tags"].get("run_id") for report in reports] == announced * len(NODE_NAMES), (
         f"Every call in the run should carry the run's id, so Cloud can total it: {reports}"
     )
@@ -189,7 +196,7 @@ async def test_the_next_run_gets_a_different_id(
 
     first, second = _announced_run_ids(payloads)
     assert first != second, "Two runs of one workflow must not share an id, or Cloud adds them together."
-    reports = stub_cloud.wait_for_reports(2 * len(NODE_NAMES))
+    reports = await stub_cloud.wait_for_reports(2 * len(NODE_NAMES))
     run_ids = [report["tags"].get("run_id") for report in reports]
     assert run_ids == [first] * len(NODE_NAMES) + [second] * len(NODE_NAMES), run_ids
 
@@ -207,7 +214,7 @@ async def test_running_one_node_is_a_run_of_its_own(
 
     announced = _announced_run_ids(payloads)
     assert len(announced) == 1, f"Running one node should announce one run, got {announced}"
-    reports = stub_cloud.wait_for_reports(1)
+    reports = await stub_cloud.wait_for_reports(1)
     assert [report["tags"].get("run_id") for report in reports] == announced
 
 
@@ -216,7 +223,7 @@ async def test_spend_outside_a_run_carries_no_run_id(engine: Engine, stub_cloud:
     """A call made between runs, such as from the agent chat, belongs to no run."""
     engine.handle_request(ReportUsageRequest(declared_cost_micro_usd=1, model="gpt-5-nano"))
 
-    reports = stub_cloud.wait_for_reports(1)
+    reports = await stub_cloud.wait_for_reports(1)
     assert len(reports) == 1, reports
     assert "run_id" not in reports[0]["tags"], reports[0]
 
@@ -292,7 +299,7 @@ async def test_a_loop_s_iterations_count_toward_the_run_that_started_them(
 
     announced = _announced_run_ids(payloads)
     assert len(announced) == 1, f"Only the run the artist started should announce an id, got {announced}"
-    reports = stub_cloud.wait_for_reports(LOOP_ITERATIONS)
+    reports = await stub_cloud.wait_for_reports(LOOP_ITERATIONS)
     assert [report["tags"].get("run_id") for report in reports] == announced * LOOP_ITERATIONS, reports
 
 
@@ -318,5 +325,61 @@ async def test_a_group_run_for_another_engine_counts_toward_that_engine_s_run(
     assert _announced_run_ids(payloads) == []
     resolved = [payload.run_id for payload in payloads if isinstance(payload, ControlFlowResolvedEvent)]
     assert resolved == [None], resolved
-    reports = stub_cloud.wait_for_reports(len(NODE_NAMES))
+    reports = await stub_cloud.wait_for_reports(len(NODE_NAMES))
     assert [report["tags"].get("run_id") for report in reports] == ["parent-run"] * len(NODE_NAMES), reports
+
+
+@pytest.fixture(params=["parallel", "sequential"])
+def execution_mode(request: pytest.FixtureRequest, engine: Engine) -> Iterator[str]:
+    """Run under both schedulers, restoring the engine's configuration afterwards."""
+    config_manager = engine.config_manager
+    previous_mode = config_manager.get_config_value("workflow_execution_mode")
+    config_manager.set_config_value("workflow_execution_mode", request.param)
+    try:
+        yield request.param
+    finally:
+        config_manager.set_config_value("workflow_execution_mode", previous_mode)
+
+
+@pytest.mark.usefixtures("execution_mode")
+@pytest.mark.asyncio
+async def test_a_cancelled_run_names_itself_on_its_cancelled_event_only(
+    engine: Engine,
+    tmp_path: Path,
+    materialize_library: Callable[..., Path],
+    create_node: Callable[..., str],
+    record_published: Callable[..., list[Any]],
+) -> None:
+    """Cancelling mid-run passes the run through its normal ending on the way out.
+
+    That ending must not carry the run's id: a client that closes a run on its end event would
+    otherwise record a cancelled run as finished, then see a second end event for it.
+    """
+    library_json = materialize_library(
+        tmp_path / "library", template=deletion.FIXTURE_LIBRARY_JSON_TEMPLATE, node_file=deletion.FIXTURE_NODE_FILE
+    )
+    registered = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
+    assert isinstance(registered, RegisterLibraryFromFileResultSuccess), registered
+    flow_name = deletion._new_flow(engine, "run_spend_cancel_wf")
+    gate = tmp_path / "gates" / "runner.gate"
+    create_node(deletion.NODE_TYPE, "Runner", flow_name, library_name=deletion.LIBRARY_NAME)
+    deletion._configure(engine, "Runner", text="x", gate_file=gate)
+    payloads = record_published(object)
+
+    run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
+    await deletion._wait_until_resolving(engine, "Runner")
+    cancelled = await engine.ahandle_request(CancelFlowRequest(flow_name=flow_name))
+    assert cancelled.succeeded(), cancelled
+    deletion._open_gate(gate)
+    await deletion._drain_cancelled_run(run)
+
+    announced = _announced_run_ids(payloads)
+    assert len(announced) == 1, announced
+    ends_with_id = [
+        type(payload).__name__
+        for payload in payloads
+        if isinstance(payload, (ControlFlowResolvedEvent, ControlFlowCancelledEvent)) and payload.run_id is not None
+    ]
+    assert ends_with_id == ["ControlFlowCancelledEvent"], ends_with_id
+    cancelled_ids = [payload.run_id for payload in payloads if isinstance(payload, ControlFlowCancelledEvent)]
+    assert announced[0] in cancelled_ids, cancelled_ids

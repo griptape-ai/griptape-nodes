@@ -4762,13 +4762,13 @@ class FlowManager(EngineScoped):
         """Reset the machine and tell the editor the run is over, with the run's timing and id.
 
         Both are read before the reset, which clears them, and sent on the run's
-        `ControlFlowCancelledEvent`.
+        `ControlFlowCancelledEvent`. The id is None when another end event already carried it.
         """
         run_seconds = None
         run_id = None
         if self._global_control_flow_machine is not None:
             run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
-            run_id = self._global_control_flow_machine.context.run_id
+            run_id = self._global_control_flow_machine.context.end_run()
             self._global_control_flow_machine.reset_machine(cancel=True)
         self._global_single_node_resolution = False
         self._global_dag_builder.clear()

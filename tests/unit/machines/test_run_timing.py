@@ -78,7 +78,7 @@ class TestRunSeconds:
         machine = MagicMock()
         machine.cancel_flow = AsyncMock()
         machine.context.seconds_since_run_started.return_value = 1.5
-        machine.context.run_id = "run-1"
+        machine.context.end_run.return_value = "run-1"
         # Resetting the real machine clears the run's start time, so the time must be read first.
         machine.reset_machine.side_effect = lambda **_: setattr(
             machine.context.seconds_since_run_started, "return_value", None
@@ -95,6 +95,13 @@ class TestRunSeconds:
 
 
 class TestRunId:
+    def test_a_run_hands_over_its_id_once(self) -> None:
+        context = _context()
+        context.run_id = "run-1"
+
+        assert context.end_run() == "run-1"
+        assert context.end_run() is None
+
     def test_resetting_a_run_forgets_its_id(self) -> None:
         context = _context()
         context.run_id = "run-1"
@@ -221,6 +228,16 @@ class TestRunIdMinting:
 
         assert run.announced == []
         assert run.machine.context.run_id is None
+
+    @pytest.mark.asyncio
+    async def test_a_start_that_fails_after_building_its_dag_announces_no_run(self) -> None:
+        run = self._machine()
+        run.engine.flow_manager.get_flow_by_name.side_effect = KeyError("Flow")
+
+        with pytest.raises(KeyError):
+            await run.machine.start_flow(MagicMock(), MagicMock())
+
+        assert run.announced == []
 
     @pytest.mark.asyncio
     async def test_starting_again_is_a_new_run(self) -> None:
